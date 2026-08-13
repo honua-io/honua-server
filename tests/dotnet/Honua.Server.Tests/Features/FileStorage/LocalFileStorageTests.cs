@@ -287,6 +287,29 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
+    public async Task UploadIfMatchAsync_StaleValidator_PreservesNewGeneration()
+    {
+        const string objectKey = "tiles/layer/0/0/1.png";
+        var original = await UploadObjectAsync(objectKey, "old-generation"u8.ToArray());
+        var replacementBytes = "new-generation"u8.ToArray();
+        var replacement = await UploadObjectAsync(objectKey, replacementBytes);
+
+        await using var staleContent = new MemoryStream("stale-writer"u8.ToArray());
+        var staleUpload = await _storage.UploadIfMatchAsync(new FileUploadRequest
+        {
+            Content = staleContent,
+            FileName = "tile.png",
+            ContentType = "image/png",
+            SizeBytes = staleContent.Length,
+            ObjectKeyOverride = objectKey,
+        }, original.File!.ETag);
+
+        staleUpload.Success.Should().BeFalse();
+        (await _storage.DownloadBytesAsync(objectKey)).Should().Equal(replacementBytes);
+        (await _storage.GetMetadataAsync(objectKey))!.ETag.Should().Be(replacement.File!.ETag);
+    }
+
+    [UnitTest]
     public async Task UploadBatchAsync_MultipleFiles_ShouldUploadAll()
     {
         // Arrange
@@ -623,6 +646,19 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         };
 
         return await _storage.UploadAsync(request);
+    }
+
+    private async Task<UploadResult> UploadObjectAsync(string objectKey, byte[] content)
+    {
+        await using var stream = new MemoryStream(content);
+        return await _storage.UploadAsync(new FileUploadRequest
+        {
+            Content = stream,
+            FileName = "tile.png",
+            ContentType = "image/png",
+            SizeBytes = content.LongLength,
+            ObjectKeyOverride = objectKey
+        });
     }
 
     private static LocalFileStorage CreateStorage(string basePath)

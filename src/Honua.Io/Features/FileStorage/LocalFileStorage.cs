@@ -54,9 +54,28 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     public override CloudStorageProvider Provider => CloudStorageProvider.Local;
 
     /// <inheritdoc />
-    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override Task<UploadResult> UploadAsync(
+        FileUploadRequest request,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: false, expectedETag: null, cancellationToken);
+
+    public override Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: true, expectedETag, cancellationToken);
+
+    private async Task<UploadResult> UploadCoreAsync(
+        FileUploadRequest request,
+        bool conditional,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (conditional && expectedETag is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
@@ -103,6 +122,20 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             mutationLock = GetMutationLock(fileId);
             await mutationLock.WaitAsync(linkedCancellationSource.Token).ConfigureAwait(false);
             mutationLockHeld = true;
+
+            if (conditional)
+            {
+                _fileIndex.TryGetValue(fileId, out var current);
+                var preconditionMatches = expectedETag is null
+                    ? current is null
+                    : current is not null
+                      && string.Equals(current.ETag, expectedETag, StringComparison.Ordinal);
+                if (!preconditionMatches)
+                {
+                    throw new InvalidOperationException(
+                        $"The object '{fileId}' changed before the conditional upload could commit.");
+                }
+            }
 
             // Ensure directory exists
             var directory = Path.GetDirectoryName(fullPath);

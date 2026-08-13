@@ -47,9 +47,28 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
-    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override Task<UploadResult> UploadAsync(
+        FileUploadRequest request,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: false, expectedETag: null, cancellationToken);
+
+    public override Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: true, expectedETag, cancellationToken);
+
+    private async Task<UploadResult> UploadCoreAsync(
+        FileUploadRequest request,
+        bool conditional,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (conditional && expectedETag is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
@@ -89,7 +108,12 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 HttpHeaders = new BlobHttpHeaders
                 {
                     ContentType = request.ContentType
-                }
+                },
+                Conditions = conditional
+                    ? expectedETag is null
+                        ? new BlobRequestConditions { IfNoneMatch = ETag.All }
+                        : new BlobRequestConditions { IfMatch = new ETag(expectedETag) }
+                    : null
             };
 
             if (request.Progress != null)

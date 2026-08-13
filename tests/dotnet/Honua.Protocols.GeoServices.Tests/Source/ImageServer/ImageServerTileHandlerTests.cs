@@ -204,7 +204,10 @@ public class ImageServerTileHandlerTests
         storage.Provider.Returns(CloudStorageProvider.AwsS3);
         storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((CloudFile?)null);
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(
+                Arg.Any<FileUploadRequest>(),
+                null,
+                Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 var request = call.ArgAt<FileUploadRequest>(0);
@@ -216,6 +219,7 @@ public class ImageServerTileHandlerTests
                     ContentType = request.ContentType,
                     SizeBytes = request.SizeBytes ?? 0,
                     UploadedAt = DateTimeOffset.UtcNow,
+                    ETag = "etag-generated",
                     Provider = CloudStorageProvider.AwsS3,
                     Metadata = request.Metadata
                 });
@@ -252,7 +256,7 @@ public class ImageServerTileHandlerTests
 
         var fileResult = result.Should().BeOfType<FileContentHttpResult>().Subject;
         fileResult.FileContents.ToArray().Should().Equal(tileData);
-        await storage.Received(1).UploadAsync(
+        await storage.Received(1).UploadIfMatchAsync(
             Arg.Is<FileUploadRequest>(request =>
                 request.ObjectKeyOverride != null &&
                 request.ObjectKeyOverride.StartsWith("geo-cache/imageserver/tiles/", StringComparison.Ordinal) &&
@@ -260,6 +264,7 @@ public class ImageServerTileHandlerTests
                 request.FileName == "0-0-0.png" &&
                 request.Metadata["protocol"] == "ImageServer" &&
                 request.Metadata["operation"] == "tile"),
+            null,
             Arg.Any<CancellationToken>());
     }
 

@@ -57,9 +57,28 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
-    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override Task<UploadResult> UploadAsync(
+        FileUploadRequest request,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: false, expectedETag: null, cancellationToken);
+
+    public override Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: true, expectedETag, cancellationToken);
+
+    private async Task<UploadResult> UploadCoreAsync(
+        FileUploadRequest request,
+        bool conditional,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (conditional && expectedETag is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
@@ -97,6 +116,17 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 ContentType = request.ContentType,
                 InputStream = request.Content
             };
+            if (conditional)
+            {
+                if (expectedETag is null)
+                {
+                    putRequest.IfNoneMatch = "*";
+                }
+                else
+                {
+                    putRequest.IfMatch = expectedETag;
+                }
+            }
 
             if (request.Progress != null)
             {

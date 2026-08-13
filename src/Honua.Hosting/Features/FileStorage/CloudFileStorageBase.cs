@@ -25,6 +25,11 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
     public abstract Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default);
 
+    public abstract Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default);
+
     public async Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

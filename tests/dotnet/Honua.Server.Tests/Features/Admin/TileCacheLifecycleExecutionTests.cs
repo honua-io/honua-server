@@ -215,6 +215,56 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_SameGenerationAcrossTenants_DoesNotResetOriginalTenantBudget()
+    {
+        const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/tenant-a/2/0/0.png";
+        const string second = "prefix/imageserver/tiles/1/webmercatorquad/default/tenant-a/2/0/1.png";
+        const string outsideOriginalCap = "prefix/imageserver/tiles/1/webmercatorquad/default/tenant-a/2/0/2.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(first, 100, "tenant_a");
+        index.Seed(second, 100, "tenant_a");
+        index.Seed(outsideOriginalCap, 100, "tenant_a");
+        var failSecond = true;
+        var storage = CreateStorage();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<string>(0);
+                if (failSecond && string.Equals(key, second, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("transient");
+                }
+
+                return Task.FromResult(true);
+            });
+        var checkpointStore = new InMemoryTileCacheGenerationCheckpointStore();
+        var request = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            MaxTiles = 2,
+            GenerationId = "shared-client-generation"
+        };
+
+        (await ExecuteAsync(request, index, storage, checkpointStore, schemaName: "tenant_a"))
+            .Status.Should().Be(OperationStatus.Failed);
+
+        // A second tenant owns a different checkpoint even when the client-controlled
+        // generation id and lifecycle window are otherwise identical.
+        (await ExecuteAsync(request, index, storage, checkpointStore, schemaName: "tenant_b"))
+            .Status.Should().Be(OperationStatus.Completed);
+
+        failSecond = false;
+        (await ExecuteAsync(request, index, storage, checkpointStore, schemaName: "tenant_a"))
+            .Status.Should().Be(OperationStatus.Completed);
+
+        index.Removed.Should().BeEquivalentTo([first, second]);
+        index.Remaining.Should().BeEquivalentTo([outsideOriginalCap]);
+        await storage.DidNotReceive().DeleteAsync(outsideOriginalCap, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task Delete_CancellationAfterSuccess_PersistsCumulativeCapBeforeRetry()
     {
         const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
@@ -253,7 +303,6 @@ public sealed class TileCacheLifecycleExecutionTests
             checkpointStore,
             cancellationToken: cancellation.Token);
         await cancelled.Should().ThrowAsync<OperationCanceledException>();
-        (await checkpointStore.LoadAsync(request.GenerationId!))!.CompletedUnitCount.Should().Be(1);
 
         var retry = await ExecuteAsync(request, index, storage, checkpointStore);
 

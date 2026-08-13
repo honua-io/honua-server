@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -87,11 +90,14 @@ internal sealed partial class TileOperationExecutionCore
 
         var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
         var generationId = string.IsNullOrWhiteSpace(request.GenerationId) ? null : request.GenerationId;
-        var checkpointEnabled = _checkpointStore is not null && generationId is not null;
+        var checkpointId = generationId is null
+            ? null
+            : window.BuildCheckpointId(generationId, request.Operation, maxTiles);
+        var checkpointEnabled = _checkpointStore is not null && checkpointId is not null;
         var checkpoint = checkpointEnabled
             ? deleteBytes
-                ? await _checkpointStore!.LoadAsync(generationId!, cancellationToken).ConfigureAwait(false)
-                : await LoadCheckpointBestEffortAsync(generationId!, cancellationToken).ConfigureAwait(false)
+                ? await _checkpointStore!.LoadAsync(checkpointId!, cancellationToken).ConfigureAwait(false)
+                : await LoadCheckpointBestEffortAsync(checkpointId!, cancellationToken).ConfigureAwait(false)
             : null;
         var attempt = (checkpoint?.Attempt ?? 0) + 1;
         if (checkpoint is not null)
@@ -208,7 +214,7 @@ internal sealed partial class TileOperationExecutionCore
                 newFailedUnits.Add(unit);
                 deleteReservations++;
                 await PersistLifecycleDeleteCheckpointAsync(
-                    generationId!,
+                    checkpointId!,
                     request.Operation,
                     i,
                     deleteReservations,
@@ -315,7 +321,7 @@ internal sealed partial class TileOperationExecutionCore
                 if (checkpointEnabled)
                 {
                     await PersistCheckpointBestEffortAsync(
-                        generationId!,
+                        checkpointId!,
                         request.Operation,
                         i + 1,
                         deleteBytes ? deleteReservations : affected,
@@ -352,7 +358,7 @@ internal sealed partial class TileOperationExecutionCore
         {
             if (checkpointEnabled)
             {
-                await DeleteCheckpointBestEffortAsync(generationId!, cancellationToken).ConfigureAwait(false);
+                await DeleteCheckpointBestEffortAsync(checkpointId!, cancellationToken).ConfigureAwait(false);
             }
 
             return current with
@@ -568,6 +574,48 @@ internal sealed partial class TileOperationExecutionCore
                 "tiff" or "cog" => "tif",
                 _ => sanitized
             };
+        }
+
+        public string BuildCheckpointId(string generationId, string operation, int maxTiles)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(generationId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+
+            var scope = new StringBuilder(384);
+            AppendScopeComponent(scope, "v1");
+            AppendScopeComponent(scope, generationId.Trim());
+            AppendScopeComponent(scope, operation);
+            AppendScopeComponent(scope, _tenantScope);
+            AppendScopeComponent(scope, _anyLayer ? "all" : "selected");
+            foreach (var layerId in _layers.Order())
+            {
+                AppendScopeComponent(scope, layerId.ToString(CultureInfo.InvariantCulture));
+            }
+
+            AppendScopeComponent(scope, _gridset);
+            AppendScopeComponent(scope, _style);
+            AppendScopeComponent(scope, _format);
+            AppendScopeComponent(scope, _minZoom.ToString(CultureInfo.InvariantCulture));
+            AppendScopeComponent(scope, _maxZoom.ToString(CultureInfo.InvariantCulture));
+            AppendScopeComponent(scope, _hasBbox ? "bbox" : "global");
+            AppendScopeComponent(scope, _westLon.ToString("R", CultureInfo.InvariantCulture));
+            AppendScopeComponent(scope, _minLat.ToString("R", CultureInfo.InvariantCulture));
+            AppendScopeComponent(scope, _eastLon.ToString("R", CultureInfo.InvariantCulture));
+            AppendScopeComponent(scope, _maxLat.ToString("R", CultureInfo.InvariantCulture));
+            AppendScopeComponent(scope, maxTiles.ToString(CultureInfo.InvariantCulture));
+
+            var digest = SHA256.HashData(Encoding.UTF8.GetBytes(scope.ToString()));
+            return $"lifecycle-{Convert.ToHexString(digest).ToLowerInvariant()}";
+        }
+
+        private static void AppendScopeComponent(StringBuilder scope, string? value)
+        {
+            var normalized = value ?? string.Empty;
+            _ = scope
+                .Append(normalized.Length.ToString(CultureInfo.InvariantCulture))
+                .Append(':')
+                .Append(normalized)
+                .Append('|');
         }
 
         public bool Matches(TileCacheEntry entry)

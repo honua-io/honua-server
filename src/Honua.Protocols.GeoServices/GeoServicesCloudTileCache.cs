@@ -22,6 +22,8 @@ internal static class GeoServicesCloudTileCache
 
     internal readonly record struct Hit(byte[] Data, string ContentType);
 
+    private readonly record struct GenerationObservation(bool IsFresh, bool Exists, string? ETag);
+
     internal static async Task<Hit?> TryReadAsync(
         ICloudFileStorage? storage,
         CloudStorageOptions? storageOptions,
@@ -126,11 +128,12 @@ internal static class GeoServicesCloudTileCache
             async Task UploadAndRecordAsync(TileCacheMutationContext mutationContext)
             {
                 var mutationToken = mutationContext.CancellationToken;
-                if (await IsFreshAsync(
+                var observation = await ObserveGenerationAsync(
                         storage,
                         keyIndex,
                         objectKey,
-                        mutationToken).ConfigureAwait(false))
+                        mutationToken).ConfigureAwait(false);
+                if (observation.IsFresh)
                 {
                     // Another waiter committed the same cold tile while this request waited for
                     // the mutation fence. Reuse that generation instead of serializing another
@@ -138,10 +141,17 @@ internal static class GeoServicesCloudTileCache
                     return;
                 }
 
+                if (observation.Exists && string.IsNullOrWhiteSpace(observation.ETag))
+                {
+                    throw new InvalidOperationException(
+                        $"The stale tile '{objectKey}' has no provider ETag for a generation-fenced replacement.");
+                }
+
                 var ttl = ResolveTileCacheTtl(storageOptions);
                 var expiresAt = DateTimeOffset.UtcNow.Add(ttl);
                 using var stream = new MemoryStream(data, writable: false);
-                var upload = await storage.UploadAsync(new FileUploadRequest
+                mutationContext.LeaseLostToken.ThrowIfCancellationRequested();
+                var upload = await storage.UploadIfMatchAsync(new FileUploadRequest
                 {
                     Content = stream,
                     FileName = fileName,
@@ -151,7 +161,7 @@ internal static class GeoServicesCloudTileCache
                     Metadata = metadata,
                     ObjectKeyOverride = objectKey,
                     EnableChunkedUpload = false
-                }, mutationToken).ConfigureAwait(false);
+                }, observation.ETag, mutationToken).ConfigureAwait(false);
 
                 if (!upload.Success)
                 {
@@ -271,21 +281,20 @@ internal static class GeoServicesCloudTileCache
         }
     }
 
-    private static async Task<bool> IsFreshAsync(
+    private static async Task<GenerationObservation> ObserveGenerationAsync(
         ICloudFileStorage storage,
         ITileCacheKeyIndex? keyIndex,
         string objectKey,
         CancellationToken cancellationToken)
     {
-        if (keyIndex is { IsEnabled: true }
-            && await keyIndex.IsExpiredAsync(objectKey, cancellationToken).ConfigureAwait(false))
-        {
-            return false;
-        }
+        var expiredInIndex = keyIndex is { IsEnabled: true }
+            && await keyIndex.IsExpiredAsync(objectKey, cancellationToken).ConfigureAwait(false);
 
         var current = await storage.GetMetadataAsync(objectKey, cancellationToken).ConfigureAwait(false);
-        return current is not null
+        var fresh = current is not null
+            && !expiredInIndex
             && (!current.ExpiresAt.HasValue || current.ExpiresAt.Value > DateTimeOffset.UtcNow);
+        return new GenerationObservation(fresh, current is not null, current?.ETag);
     }
 
     internal static string BuildObjectKey(CloudStorageOptions? storageOptions, params string[] segments)

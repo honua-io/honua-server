@@ -40,7 +40,7 @@ public sealed class GeoServicesCloudTileCacheTests
     {
         var storage = Substitute.For<ICloudFileStorage>();
         var storedExpiresAt = DateTimeOffset.UtcNow.AddHours(3);
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(new CloudFile
             {
                 FileId = ObjectKey,
@@ -81,7 +81,7 @@ public sealed class GeoServicesCloudTileCacheTests
     public async Task TryWriteAsync_FailedUpload_DoesNotClearExpiration()
     {
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateFailure("upload failed"));
         var keyIndex = Substitute.For<ITileCacheKeyIndex>();
         keyIndex.IsEnabled.Returns(true);
@@ -106,10 +106,64 @@ public sealed class GeoServicesCloudTileCacheTests
     }
 
     [UnitTest]
+    public async Task TryWriteAsync_StaleGeneration_UsesObservedETagAndDoesNotRecordConflict()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns(new CloudFile
+        {
+            FileId = ObjectKey,
+            FileName = "1.png",
+            StoragePath = ObjectKey,
+            ContentType = "image/png",
+            SizeBytes = 3,
+            UploadedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1),
+            ETag = "etag-observed",
+            Provider = CloudStorageProvider.Local
+        });
+        storage.UploadIfMatchAsync(
+                Arg.Any<FileUploadRequest>(),
+                "etag-observed",
+                Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateFailure("precondition failed"));
+        var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
+        keyIndex.IsEnabled.Returns(true);
+        var mutationCoordinator = (ITileCacheMutationCoordinator)keyIndex;
+        mutationCoordinator.ExecuteSerializedAsync(
+                ObjectKey,
+                Arg.Any<Func<TileCacheMutationContext, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<Func<TileCacheMutationContext, Task>>(1)(
+                new TileCacheMutationContext(CancellationToken.None, CancellationToken.None)));
+
+        await GeoServicesCloudTileCache.TryWriteAsync(
+            storage,
+            new CloudStorageOptions { Enabled = true },
+            ObjectKey,
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            "1.png",
+            ImmutableDictionary<string, string>.Empty,
+            CancellationToken.None,
+            keyIndex);
+
+        await storage.Received(1).UploadIfMatchAsync(
+            Arg.Any<FileUploadRequest>(),
+            "etag-observed",
+            Arg.Any<CancellationToken>());
+        await keyIndex.DidNotReceive().RecordWriteAsync(
+            Arg.Any<string>(),
+            Arg.Any<long>(),
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task TryWriteAsync_FailedIndexCommit_RollsBackUploadInsideMutationFence()
     {
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(new CloudFile
             {
                 FileId = ObjectKey,
@@ -192,7 +246,7 @@ public sealed class GeoServicesCloudTileCacheTests
     {
         using var requestCancellation = new CancellationTokenSource();
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(new CloudFile
             {
                 FileId = ObjectKey,
@@ -285,7 +339,7 @@ public sealed class GeoServicesCloudTileCacheTests
     {
         using var leaseLost = new CancellationTokenSource();
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(new CloudFile
             {
                 FileId = ObjectKey,
@@ -341,7 +395,7 @@ public sealed class GeoServicesCloudTileCacheTests
     public async Task TryWriteAsync_LeaseChangesAfterStorageRollback_DoesNotRemoveNewIndexGeneration()
     {
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(new CloudFile
             {
                 FileId = ObjectKey,
@@ -403,7 +457,7 @@ public sealed class GeoServicesCloudTileCacheTests
     public async Task TryWriteAsync_StaleRollback_DoesNotDeleteOrUnindexNewerStorageGeneration()
     {
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(new CloudFile
             {
                 FileId = ObjectKey,
@@ -493,7 +547,7 @@ public sealed class GeoServicesCloudTileCacheTests
         };
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetMetadataAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns((CloudFile?)null, freshFile);
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateSuccess(freshFile));
 
         var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
@@ -520,8 +574,9 @@ public sealed class GeoServicesCloudTileCacheTests
                 keyIndex);
         }
 
-        await storage.Received(1).UploadAsync(
+        await storage.Received(1).UploadIfMatchAsync(
             Arg.Any<FileUploadRequest>(),
+            null,
             Arg.Any<CancellationToken>());
         await keyIndex.Received(1).RecordWriteAsync(
             ObjectKey,
