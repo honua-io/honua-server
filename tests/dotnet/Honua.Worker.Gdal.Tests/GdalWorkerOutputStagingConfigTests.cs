@@ -95,6 +95,31 @@ public sealed class GdalWorkerOutputStagingConfigTests
             .Which.Message.Should().Contain("LocalRootPath");
     }
 
+    [Fact]
+    public void EnabledTraversalKeyPrefix_FailsClosedOnOptionsResolution()
+    {
+        var root = Directory.CreateTempSubdirectory("honua-staging-config-").FullName;
+        try
+        {
+            var provider = BuildProvider(new Dictionary<string, string?>
+            {
+                ["Geoprocessing:OutputStaging:Enabled"] = "true",
+                ["Geoprocessing:OutputStaging:Provider"] = "local",
+                ["Geoprocessing:OutputStaging:LocalRootPath"] = root,
+                ["Geoprocessing:OutputStaging:KeyPrefix"] = "gp/../outputs",
+            });
+
+            var act = () => provider.GetRequiredService<IOptions<GeoprocessingOutputStagingOptions>>().Value;
+
+            act.Should().Throw<OptionsValidationException>()
+                .Which.Message.Should().Contain("KeyPrefix");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static ServiceProvider BuildProvider(Dictionary<string, string?> settings)
     {
         var configuration = new ConfigurationBuilder()

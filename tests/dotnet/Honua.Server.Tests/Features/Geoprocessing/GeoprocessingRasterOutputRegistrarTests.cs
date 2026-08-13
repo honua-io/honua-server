@@ -208,6 +208,27 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
         objectStore.Holds.Should().Contain(objectKey);
     }
 
+    [UnitTest]
+    public async Task EnsureRegistered_HoldRemovedDuringCatalogWrite_ReestablishesAfterSuccess()
+    {
+        var objectStore = new HoldRecordingOutputObjectStore();
+        var objectKey = $"gp/outputs/{JobId}/a1/{OutputName}/result.tif";
+        objectStore.Objects.Add(objectKey);
+        var cogStore = new UniqueConstraintCogStore
+        {
+            AfterSuccessfulRegistration = () => objectStore.Holds.Remove(objectKey),
+        };
+        var registrar = CreateRegistrar(cogStore, objectStore);
+        var job = CreateSucceededJob("cog-catalog:7");
+
+        await registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+
+        cogStore.Rows.Should().ContainSingle();
+        objectStore.Holds.Should().Contain(objectKey,
+            "a successful concurrent registration must repair a hold removed by another caller's compensation");
+    }
+
     private static GeoprocessingRasterOutputRegistrar CreateRegistrar(
         ICogStore cogStore,
         Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null)
@@ -323,6 +344,8 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
 
         public bool FailRegistration { get; init; }
 
+        public Action? AfterSuccessfulRegistration { get; init; }
+
         public Task<CogRegistration?> GetAsync(long id, CancellationToken cancellationToken = default)
             => Task.FromResult(Rows.FirstOrDefault(row => row.Id == id));
 
@@ -348,7 +371,9 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
                     $"A COG is already registered for {request.Provider}://{request.Bucket}/{request.ObjectKey}.");
             }
 
-            return Task.FromResult(Insert(request));
+            var registered = Insert(request);
+            AfterSuccessfulRegistration?.Invoke();
+            return Task.FromResult(registered);
         }
 
         public Task<bool> UnregisterAsync(long id, CancellationToken cancellationToken = default)

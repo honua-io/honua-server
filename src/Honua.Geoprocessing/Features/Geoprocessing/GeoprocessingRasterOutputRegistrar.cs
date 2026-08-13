@@ -152,6 +152,13 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
             {
                 rasterId = await RegisterOrGetAsync(
                     cogStore, layerId, staged, cancellationToken).ConfigureAwait(false);
+
+                // A concurrent caller that originally added the shared hold can fail and
+                // compensate while this catalog write is in flight. Re-establish the hold
+                // after every successful write/convergence so the permanent row can never
+                // outlive protection of its immutable staged object.
+                _ = await EnsureRetentionHoldAsync(
+                    job.OperationId, outputName, staged, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {

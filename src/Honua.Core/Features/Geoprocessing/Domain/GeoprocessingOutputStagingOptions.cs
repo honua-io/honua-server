@@ -57,8 +57,8 @@ public sealed class GeoprocessingOutputStagingOptions
 
     /// <summary>Key prefix staged outputs are written under.</summary>
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^[A-Za-z0-9][A-Za-z0-9._/-]{0,158}$",
-        ErrorMessage = "KeyPrefix must be a bounded relative key prefix")]
+    [RegularExpression("^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,158}$",
+        ErrorMessage = "KeyPrefix must be a bounded relative key prefix without traversal segments")]
     public string KeyPrefix { get; set; } = "gp/outputs";
 
     /// <summary>
