@@ -73,6 +73,7 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.UseSetting("Saml:Enabled", "true");
                 builder.UseSetting("Scim:BearerToken", EntitlementProbeRegistry.IdentityScimBearerToken);
+                builder.UseSetting("Scim:OidcIssuer", "https://issuer.example.com");
                 // #2958 demoted mTLS back to experimental; #2346/ADR-0058 ships branch
                 // versioning experimental-off by default. Both entitlement checks sit BEHIND
                 // these capability gates, so the sweep must opt in to reach them at all.

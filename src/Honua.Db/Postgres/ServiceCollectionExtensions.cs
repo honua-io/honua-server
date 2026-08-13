@@ -335,6 +335,29 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register the Postgres-backed durable managed-user + SCIM provisioning stores
+        // (#3141). Durable storage wins over the in-memory defaults registered later in
+        // Program.cs (ControlPlaneIamDefaults uses TryAdd), so managed-identity membership
+        // — SCIM provisioning, role assignment, deactivation — survives restart and is
+        // shared across scaled nodes; ManagedUserPrincipalMembershipSource misses become
+        // authoritative for the deferred-lane fail-closed control (#3119/#3081). The
+        // concrete store is registered once and projected onto both user contracts so the
+        // admin and SCIM surfaces operate over the same record set. Singleton (over the
+        // singleton NpgsqlDataSource, like the promotion stores) because the singleton
+        // ManagedUserPrincipalMembershipSource captures IUserStore.
+        services.AddSingleton(serviceProvider =>
+            new Features.Identity.PostgresUserStore(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                configuration["Database:Schema"]));
+        services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore>(static serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Identity.PostgresUserStore>());
+        services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IScimUserStore>(static serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Identity.PostgresUserStore>());
+        services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IScimGroupStore>(serviceProvider =>
+            new Features.Identity.PostgresScimGroupStore(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                configuration["Database:Schema"]));
+
         // Register Postgres-backed row-level security policy store (#502, epic #1275).
         // Backs IRlsPolicyStore so per-layer row-visibility policies are durable and
         // shared across scaled nodes; resolved per-request and AND-ed into queries.
