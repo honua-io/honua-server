@@ -70,7 +70,10 @@ public sealed class GeoprocessingOutputStagingOptions
         ErrorMessage = "MaxInlineArtifactBytes must be between 1 KiB and the 8 MiB contract ceiling")]
     public int MaxInlineArtifactBytes { get; set; } = 4 * 1024 * 1024;
 
-    /// <summary>Read lease granted to a download stream so the sweeper cannot delete it mid-read.</summary>
+    /// <summary>
+    /// Read lease granted to a download stream so the sweeper cannot delete it mid-read.
+    /// Must be positive and no more than one day.
+    /// </summary>
     public TimeSpan ReadLeaseDuration { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>Interval between orphan sweeps.</summary>

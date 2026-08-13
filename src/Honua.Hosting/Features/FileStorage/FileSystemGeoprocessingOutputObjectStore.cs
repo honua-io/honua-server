@@ -28,8 +28,11 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
 
     private readonly string _root;
     private readonly TimeSpan _pendingRetention;
-    private readonly object _pendingGate = new();
-    private readonly HashSet<string> _activePendingWrites = new(StringComparer.Ordinal);
+    // FileStream.Lock coordinates distinct processes, but POSIX record locks are
+    // process-scoped. Keep the in-process roster shared across store instances so
+    // a server-side sweeper cannot reclaim a worker write hosted in the same process.
+    private static readonly object PendingGate = new();
+    private static readonly HashSet<string> ActivePendingWrites = new(StringComparer.Ordinal);
 
     public FileSystemGeoprocessingOutputObjectStore(IOptions<GeoprocessingOutputStagingOptions> options)
     {
@@ -69,9 +72,9 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var pendingPath = path + PendingSuffix;
 
-        lock (_pendingGate)
+        lock (PendingGate)
         {
-            if (!_activePendingWrites.Add(pendingPath))
+            if (!ActivePendingWrites.Add(pendingPath))
             {
                 throw new InvalidOperationException(
                     $"Staged output object '{objectKey}' already has an active write.");
@@ -112,9 +115,9 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         }
         finally
         {
-            lock (_pendingGate)
+            lock (PendingGate)
             {
-                _activePendingWrites.Remove(pendingPath);
+                ActivePendingWrites.Remove(pendingPath);
             }
         }
 
@@ -189,9 +192,9 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
 
     private void TryReclaimAbandonedPending(string pendingPath)
     {
-        lock (_pendingGate)
+        lock (PendingGate)
         {
-            if (_activePendingWrites.Contains(pendingPath))
+            if (ActivePendingWrites.Contains(pendingPath))
             {
                 return;
             }
@@ -211,7 +214,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
                     return;
                 }
 
-                // _activePendingWrites is process-local. The exclusive access probe
+                // ActivePendingWrites is process-local. The exclusive access probe
                 // and advisory byte-range lock also coordinate with writers in other
                 // server/worker processes on Windows and Linux.
                 // FileShare.Delete lets this process unlink the abandoned file while

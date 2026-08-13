@@ -191,6 +191,7 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
 
         await foreach (var _ in _store.ListAsync("gp/outputs"))
         {
+            // Enumeration drives pending-object reconciliation.
         }
 
         File.Exists(pendingPath).Should().BeFalse();
@@ -207,6 +208,7 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
 
         await foreach (var _ in _store.ListAsync("gp/outputs"))
         {
+            // Enumeration drives pending-object reconciliation.
         }
 
         File.Exists(pendingPath).Should().BeTrue();

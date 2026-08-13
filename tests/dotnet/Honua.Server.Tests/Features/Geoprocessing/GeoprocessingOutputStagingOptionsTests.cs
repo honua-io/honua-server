@@ -56,6 +56,30 @@ public sealed class GeoprocessingOutputStagingOptionsTests
         options.SweepInterval.Should().Be(TimeSpan.FromMinutes(15));
     }
 
+    [Theory]
+    [InlineData("00:00:00")]
+    [InlineData("-00:00:01")]
+    [InlineData("1.00:00:01")]
+    public void AddGeoprocessingOutputStaging_InvalidReadLeaseDuration_FailsValidation(string readLeaseDuration)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{GeoprocessingOutputStagingOptions.SectionName}:ReadLeaseDuration"] = readLeaseDuration,
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddGeoprocessingOutputStaging(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var readOptions = () => provider
+            .GetRequiredService<IOptions<GeoprocessingOutputStagingOptions>>()
+            .Value;
+
+        readOptions.Should().Throw<OptionsValidationException>()
+            .WithMessage("*ReadLeaseDuration*");
+    }
+
     [UnitTest]
     public void AddGeoprocessing_StagingWithRedis_RegistersJobStoreAndSweeper()
     {

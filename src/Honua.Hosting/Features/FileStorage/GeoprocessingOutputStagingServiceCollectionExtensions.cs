@@ -54,6 +54,10 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
                 options => options.SweepInterval > TimeSpan.Zero
                     && options.SweepInterval <= TimeSpan.FromDays(1),
                 "Geoprocessing:OutputStaging:SweepInterval must be greater than zero and no more than one day.")
+            .Validate(
+                options => options.ReadLeaseDuration > TimeSpan.Zero
+                    && options.ReadLeaseDuration <= TimeSpan.FromDays(1),
+                "Geoprocessing:OutputStaging:ReadLeaseDuration must be greater than zero and no more than one day.")
             .ValidateOnStart();
 
         if (section.GetValue<bool>(nameof(GeoprocessingOutputStagingOptions.Enabled)))
