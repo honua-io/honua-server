@@ -31,8 +31,10 @@ public static class IdentityServiceCollectionExtensions
         services.AddOptions<ScimProvisioningOptions>()
             .Bind(configuration.GetSection(ScimProvisioningOptions.SectionName))
             .Validate(
-                static options => options.OidcIssuer is null || options.OidcIssuer.Length <= 2048,
-                "Scim:OidcIssuer must be at most 2048 characters.")
+                static options => string.IsNullOrWhiteSpace(options.BearerToken)
+                    || IsValidOidcIssuer(options.OidcIssuer),
+                "Scim:OidcIssuer must be an absolute HTTP(S) URI of at most 2048 characters "
+                    + "when Scim:BearerToken enables provisioning.")
             .ValidateOnStart();
 
         services.AddOptions<SamlAuthenticationOptions>()
@@ -42,4 +44,12 @@ public static class IdentityServiceCollectionExtensions
 
         return services;
     }
+
+    private static bool IsValidOidcIssuer(string? issuer)
+        => !string.IsNullOrWhiteSpace(issuer)
+           && issuer.Length <= 2048
+           && Uri.TryCreate(issuer, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+           && string.IsNullOrEmpty(uri.Query)
+           && string.IsNullOrEmpty(uri.Fragment);
 }

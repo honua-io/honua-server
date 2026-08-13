@@ -22,8 +22,9 @@ the main per-provider variable and is exercised by the conformance matrix tests.
   user/group lifecycle (create / replace / patch-active / patch-membership / deprovision)
   that every listed IdP's SCIM client drives, plus the RFC 7643 §5-7 discovery documents
   (`/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas`).
-  Set `Scim:OidcIssuer` to the exact OIDC `iss` value for the IdP connected to this SCIM
-  endpoint. Honua persists that trusted configuration with each SCIM `externalId`, forming
+  `Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
+  match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua
+  persists that trusted configuration with each SCIM `externalId`, forming
   an issuer-plus-subject key; this prevents identical, case-sensitive `sub` values from
   different configured issuers from sharing role membership.
 - **SAML Single Logout** — `SamlBridgeEndpointsTests` drives the `/saml/slo` endpoint with a
