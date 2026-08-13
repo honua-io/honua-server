@@ -128,6 +128,7 @@ internal static partial class FeatureStreamEndpoints
             deps,
             logger,
             context,
+            isSse,
             filterResult.Mode,
             filterResult.Filter).ConfigureAwait(false);
         if (snapshotError is not null)

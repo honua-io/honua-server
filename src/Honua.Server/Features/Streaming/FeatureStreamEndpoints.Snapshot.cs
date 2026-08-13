@@ -4,7 +4,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Events;
@@ -33,9 +35,10 @@ namespace Honua.Server.Features.Streaming;
 /// is therefore in the baseline if and only if a delta describing it would be admitted,
 /// which is what makes the subscription-local sequence meaningful across the boundary.</para>
 /// <para><b>Bounds.</b> Snapshots require an explicit layer scope and are bounded by
-/// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/> and
-/// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>. Hitting either bound ends the
-/// snapshot with <c>complete: false</c> rather than silently truncating.</para>
+    /// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/>,
+    /// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>, and
+    /// <see cref="FeatureStreamOptions.MaxSnapshotBytes"/>. Hitting any bound ends the snapshot
+    /// with <c>complete: false</c> rather than silently truncating.</para>
 /// </remarks>
 internal static partial class FeatureStreamEndpoints
 {
@@ -50,15 +53,6 @@ internal static partial class FeatureStreamEndpoints
     /// </summary>
     private static bool IsSnapshotMode(FeatureStreamSubscriptionMode mode)
         => mode is FeatureStreamSubscriptionMode.Snapshot or FeatureStreamSubscriptionMode.SnapshotThenDelta;
-
-    /// <summary>
-    /// Fixed per-frame cost of a <c>snapshot-feature</c> frame excluding its geometry and
-    /// attributes: frame type, snapshot/subscription ids, sequence, cursor, service/layer
-    /// identity, feature/object id, CRS, JSON punctuation, and the SSE event framing. Used to
-    /// hold the baseline inside <see cref="FeatureStreamOptions.MaxSnapshotBytes"/> without
-    /// serializing every frame twice.
-    /// </summary>
-    private const int SnapshotFrameOverheadBytes = 256;
 
     /// <summary>
     /// Client-safe descriptions of why a baseline ended incomplete. They name the bound that was
@@ -108,6 +102,21 @@ internal static partial class FeatureStreamEndpoints
         /// </summary>
         public virtual bool BatchesFrames => false;
 
+        /// <summary>
+        /// Returns a conservative encoded-byte count for the mandatory baseline envelope. The
+        /// count includes JSON and transport framing; streamed sinks reserve an end sequence at
+        /// its maximum width so the emitted value can never exceed the budget later.
+        /// </summary>
+        public abstract int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end);
+
+        /// <summary>
+        /// Returns the encoded-byte increment for one admitted feature, including transport
+        /// framing and any feature-count/comma growth in a batched frame.
+        /// </summary>
+        public abstract int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount);
+
         public abstract Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken);
 
         public abstract Task WriteFeatureAsync(FeatureStreamSnapshotFeatureFrame frame, CancellationToken cancellationToken);
@@ -134,9 +143,43 @@ internal static partial class FeatureStreamEndpoints
             return Task.CompletedTask;
         }
 
+        public sealed override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
+        {
+            var featureBytes = JsonSerializer.SerializeToUtf8Bytes(
+                ToBatchedFeature(frame),
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeature).Length;
+            var commaBytes = featureCount > 1 ? 1 : 0;
+            var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
+            var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
+            return featureBytes + commaBytes + currentDigits - previousDigits;
+        }
+
         public sealed override Task WriteFeatureAsync(FeatureStreamSnapshotFeatureFrame frame, CancellationToken cancellationToken)
         {
-            _features.Add(new FeatureStreamSnapshotFeature
+            _features.Add(ToBatchedFeature(frame));
+            return Task.CompletedTask;
+        }
+
+        protected static FeatureStreamSnapshotFrame CreateEmptyMeasuredFrame(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => new()
+            {
+                SnapshotId = end.SnapshotId,
+                SubscriptionId = end.SubscriptionId,
+                Sequence = end.Sequence,
+                Cursor = end.Cursor,
+                Reason = begin.Reason,
+                ServiceId = begin.ServiceId,
+                LayerIds = begin.LayerIds,
+                FeatureCount = 0,
+                // False is one byte longer than true, so it safely reserves either outcome.
+                Complete = false,
+                Features = []
+            };
+
+        private static FeatureStreamSnapshotFeature ToBatchedFeature(FeatureStreamSnapshotFeatureFrame frame)
+            => new()
             {
                 Id = frame.FeatureId,
                 SourceId = frame.ServiceId,
@@ -148,9 +191,7 @@ internal static partial class FeatureStreamEndpoints
                     Geometry = frame.Geometry,
                     Properties = frame.Attributes
                 }
-            });
-            return Task.CompletedTask;
-        }
+            };
 
         public sealed override Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken)
         {
@@ -192,6 +233,15 @@ internal static partial class FeatureStreamEndpoints
     /// </remarks>
     private sealed class BatchedSseSnapshotSink(HttpResponse response) : BatchedSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => MeasureSseEventBytes(
+                "snapshot",
+                CreateEmptyMeasuredFrame(begin, end),
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame,
+                end.Cursor);
+
         protected override async Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
         {
             await WriteSseEventAsync(
@@ -210,6 +260,13 @@ internal static partial class FeatureStreamEndpoints
     /// </summary>
     private sealed class BatchedWebSocketSnapshotSink(WebSocket webSocket, SemaphoreSlim writeLock) : BatchedSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => JsonSerializer.SerializeToUtf8Bytes(
+                CreateEmptyMeasuredFrame(begin, end),
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame).Length;
+
         protected override Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
             => SendWebSocketJsonAsync(
                 webSocket,
@@ -256,6 +313,32 @@ internal static partial class FeatureStreamEndpoints
     /// </remarks>
     private sealed class SseSnapshotSink(HttpResponse response) : FeatureStreamSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => MeasureSseEventBytes(
+                "snapshot-begin",
+                begin,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame,
+                null)
+                + MeasureSseEventBytes(
+                    "snapshot-end",
+                    end,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame,
+                    end.Cursor);
+
+        public override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
+        {
+            var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
+            var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
+            return MeasureSseEventBytes(
+                "snapshot-feature",
+                frame,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame,
+                null)
+                + currentDigits - previousDigits;
+        }
+
         public override async Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken)
         {
             await WriteSseEventAsync(
@@ -298,6 +381,26 @@ internal static partial class FeatureStreamEndpoints
 
     private sealed class WebSocketSnapshotSink(WebSocket webSocket, SemaphoreSlim writeLock) : FeatureStreamSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => JsonSerializer.SerializeToUtf8Bytes(
+                begin,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame).Length
+                + JsonSerializer.SerializeToUtf8Bytes(
+                    end,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame).Length;
+
+        public override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
+        {
+            var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
+            var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
+            return JsonSerializer.SerializeToUtf8Bytes(
+                frame,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame).Length
+                + currentDigits - previousDigits;
+        }
+
         public override Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken)
             => SendWebSocketJsonAsync(
                 webSocket,
@@ -318,6 +421,22 @@ internal static partial class FeatureStreamEndpoints
                 writeLock,
                 JsonSerializer.SerializeToUtf8Bytes(frame, FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame),
                 cancellationToken);
+    }
+
+    private static int MeasureSseEventBytes<T>(
+        string eventName,
+        T payload,
+        JsonTypeInfo<T> jsonTypeInfo,
+        long? id)
+    {
+        var json = JsonSerializer.Serialize(payload, jsonTypeInfo);
+        var frame = id.HasValue
+            ? string.Concat(
+                "id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n",
+                "event: ", eventName, "\n",
+                "data: ", json, "\n\n")
+            : string.Concat("event: ", eventName, "\n", "data: ", json, "\n\n");
+        return Encoding.UTF8.GetByteCount(frame);
     }
 
     /// <summary>
@@ -404,12 +523,38 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context,
+        bool isSse,
         FeatureStreamSubscriptionMode mode,
         IStreamSubscriptionFilter? subscriptionFilter)
     {
         if (!IsSnapshotMode(mode) ||
             subscriptionFilter is not StreamSubscriptionFilter filter ||
             filter.LayerIds is not { Length: > 0 } layerIds)
+        {
+            return null;
+        }
+
+        // A reconnect whose cursor remains inside the retained event window takes the delta-only
+        // replay path and never reads the feature store. Do not let a temporary feature-read
+        // outage block a resume the event store can satisfy by itself (#3206 review).
+        var cursorValue = context.Request.Query["cursor"].ToString();
+        long? cursor = long.TryParse(cursorValue, CultureInfo.InvariantCulture, out var parsedCursor)
+            ? parsedCursor
+            : null;
+        if (!cursor.HasValue && isSse)
+        {
+            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
+            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var parsedLastEventId))
+            {
+                cursor = parsedLastEventId;
+            }
+        }
+
+        if (cursor.HasValue &&
+            await ResolveResnapshotReasonAsync(
+                deps.EventStore,
+                cursor.Value,
+                context.RequestAborted).ConfigureAwait(false) is null)
         {
             return null;
         }
@@ -531,25 +676,43 @@ internal static partial class FeatureStreamEndpoints
             return batchedSequence.Value;
         }
 
-        await sink.WriteBeginAsync(
-            new FeatureStreamSnapshotBeginFrame
-            {
-                SnapshotId = snapshotId,
-                SubscriptionId = subscriptionId,
-                Sequence = AllocateSequence(),
-                Cursor = baselineCursor,
-                Reason = reason,
-                ServiceId = filter.ServiceId,
-                LayerIds = layerIds
-            },
-            cancellationToken).ConfigureAwait(false);
+        var beginFrame = new FeatureStreamSnapshotBeginFrame
+        {
+            SnapshotId = snapshotId,
+            SubscriptionId = subscriptionId,
+            Sequence = AllocateSequence(),
+            Cursor = baselineCursor,
+            Reason = reason,
+            ServiceId = filter.ServiceId,
+            LayerIds = layerIds
+        };
+        var measuredEndFrame = new FeatureStreamSnapshotEndFrame
+        {
+            SnapshotId = snapshotId,
+            SubscriptionId = subscriptionId,
+            Sequence = sink.BatchesFrames ? beginFrame.Sequence : long.MaxValue,
+            Cursor = baselineCursor,
+            FeatureCount = 0,
+            Complete = false
+        };
+        var fixedBytes = sink.MeasureFixedBytes(beginFrame, measuredEndFrame);
+        if (fixedBytes > options.MaxSnapshotBytes)
+        {
+            return new SnapshotEmitResult(
+                baselineCursor,
+                0,
+                Complete: false,
+                SnapshotIncompleteReasons.ByteBudget);
+        }
+
+        await sink.WriteBeginAsync(beginFrame, cancellationToken).ConfigureAwait(false);
 
         var graph = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var service = filter.ServiceId is null ? null : ResolveStreamService(graph, filter.ServiceId);
 
         long emitted = 0;
         long scanned = 0;
-        long emittedBytes = 0;
+        long emittedBytes = fixedBytes;
         var complete = true;
         string? incompleteReason = null;
 
@@ -651,7 +814,9 @@ internal static partial class FeatureStreamEndpoints
                     // a gap. Truncating here is the same fail-closed outcome as the feature cap,
                     // and it is the bound that keeps a baseline deliverable through a response
                     // path that buffers (honua-server#3181).
-                    if (emittedBytes + projection.Value.EstimatedBytes > options.MaxSnapshotBytes)
+                    var measuredFrame = projection.Value.ToFrame(long.MaxValue);
+                    var featureBytes = sink.MeasureFeatureBytes(measuredFrame, emitted + 1);
+                    if (emittedBytes + featureBytes > options.MaxSnapshotBytes)
                     {
                         capped = true;
                         complete = false;
@@ -663,7 +828,7 @@ internal static partial class FeatureStreamEndpoints
                         projection.Value.ToFrame(AllocateSequence()),
                         cancellationToken).ConfigureAwait(false);
                     emitted++;
-                    emittedBytes += projection.Value.EstimatedBytes;
+                    emittedBytes += featureBytes;
                 }
 
                 if (capped)
@@ -748,8 +913,7 @@ internal static partial class FeatureStreamEndpoints
         long ObjectId,
         JsonElement? Geometry,
         string? GeometryCrs,
-        Dictionary<string, JsonElement>? Attributes,
-        int EstimatedBytes)
+        Dictionary<string, JsonElement>? Attributes)
     {
         public FeatureStreamSnapshotFeatureFrame ToFrame(long sequence)
             => new()
@@ -813,13 +977,6 @@ internal static partial class FeatureStreamEndpoints
             ? string.Concat("EPSG:", enrichment.GeometrySrid.Value.ToString(CultureInfo.InvariantCulture))
             : null;
 
-        // The serialized geometry and properties dominate the frame; everything else is the
-        // fixed envelope. Measuring the source JSON avoids serializing each frame twice on the
-        // baseline hot path while staying within a few percent of the emitted size.
-        var estimatedBytes = SnapshotFrameOverheadBytes
-            + (geometry.HasValue ? enrichment.GeometryJson?.Length ?? 0 : 0)
-            + (enrichment.PropertiesJson?.Length ?? 0);
-
         return new SnapshotFeatureProjection(
             snapshotId,
             subscriptionId,
@@ -830,8 +987,7 @@ internal static partial class FeatureStreamEndpoints
             objectId,
             geometry,
             geometryCrs,
-            FeatureStreamPublisher.ParseAttributes(enrichment.PropertiesJson),
-            estimatedBytes);
+            FeatureStreamPublisher.ParseAttributes(enrichment.PropertiesJson));
     }
 
     /// <summary>

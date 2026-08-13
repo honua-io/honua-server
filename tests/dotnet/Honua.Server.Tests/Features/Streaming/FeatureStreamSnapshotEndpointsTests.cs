@@ -1164,7 +1164,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Sse_SnapshotMode_PayloadBudgetReached_TruncatesAndNamesTheCondition()
+    public async Task Sse_SnapshotMode_MandatoryEnvelopeExceedsPayloadBudget_StopsBeforeTheBaseline()
     {
         // MaxSnapshotFeatures bounds the feature COUNT, which says nothing about response size:
         // a layer of large geometries produces a baseline orders of magnitude bigger than the
@@ -1189,17 +1189,19 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
-            var baseline = await ReadBaselineAsync(reader, cts.Token);
+            JsonElement? terminal;
+            do
+            {
+                terminal = await ReadUntilEventAsync(reader, "status", cts.Token);
+            }
+            while (terminal.HasValue &&
+                !string.Equals(
+                    terminal.Value.GetProperty("status").GetString(),
+                    "error",
+                    StringComparison.Ordinal));
 
-            baseline.Features.Should().BeEmpty("no frame fits inside a 64-byte payload budget");
-            baseline.End.GetProperty("complete").GetBoolean().Should().BeFalse(
-                "a payload-bounded baseline is truncated, and truncation is never advertised as authoritative");
-            baseline.EventIds.Should().OnlyContain(id => id == null,
-                "no frame of an incomplete snapshot may publish a resumable SSE id");
-
-            var terminal = await ReadUntilEventAsync(reader, "status", cts.Token);
             terminal.Should().NotBeNull(
-                "the stream must name why it is ending rather than closing silently");
+                "a mandatory envelope that cannot fit must stop before snapshot-begin rather than exceed the advertised budget");
             terminal!.Value.GetProperty("status").GetString().Should().Be("error");
             terminal.Value.GetProperty("message").GetString().Should().Contain("maxSnapshotBytes");
         }
@@ -1267,6 +1269,31 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_ReplayableCursor_SkipsTheSnapshotStorePreflight()
+    {
+        // A replayable resume is served entirely from the event store. Feature-store availability
+        // is irrelevant until the retained window requires a replacement snapshot (#3206 review).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateFixtureWithUnreadableFeatureReader();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+            using var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "cursor 0 is replayable in an empty retention window and needs no feature read");
         }
         finally
         {
