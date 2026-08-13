@@ -291,7 +291,7 @@ internal static class OgcRecordsEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
         var record = records.FirstOrDefault(candidate =>
-            string.Equals(candidate.Feature.Id, recordId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(candidate.Feature.Id, recordId, StringComparison.Ordinal));
         if (record is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Record '{recordId}' not found.");
@@ -526,9 +526,9 @@ internal static class OgcRecordsEndpoints
         string? type,
         string? externalIds)
     {
-        var idSet = SplitCsv(ids);
-        var typeSet = SplitCsv(type);
-        var externalIdSet = SplitCsv(externalIds);
+        var idSet = SplitCsv(ids, StringComparer.Ordinal);
+        var typeSet = SplitCsv(type, StringComparer.OrdinalIgnoreCase);
+        var externalIdSet = SplitCsv(externalIds, StringComparer.OrdinalIgnoreCase);
         var terms = string.IsNullOrWhiteSpace(q)
             ? Array.Empty<string>()
             : q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -791,11 +791,11 @@ internal static class OgcRecordsEndpoints
             : recordBbox[0] <= filter.MaxX && recordBbox[2] >= filter.MinX;
     }
 
-    private static HashSet<string> SplitCsv(string? value)
+    private static HashSet<string> SplitCsv(string? value, StringComparer comparer)
         => string.IsNullOrWhiteSpace(value)
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            ? new HashSet<string>(comparer)
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                .ToHashSet(comparer);
 
     private static bool IsCatalogCollection(string collectionId)
         => string.Equals(collectionId, CatalogCollectionId, StringComparison.OrdinalIgnoreCase);
