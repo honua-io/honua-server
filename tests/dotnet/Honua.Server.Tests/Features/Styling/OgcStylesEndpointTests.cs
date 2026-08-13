@@ -456,6 +456,28 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_StandaloneStyle_NonObjectDrawingInfo_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+
+        foreach (var payload in new[] { "null", "[]", "\"renderer\"", "42" })
+        {
+            using var content = new StringContent(payload, Encoding.UTF8, EsriDrawingInfoMediaType);
+            using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+            {
+                Content = content
+            };
+
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
     public async Task PutStyle_LayerBoundCatalogStyle_WritesThroughToLayerStyle()
     {
         var client = _fixture.CreateAdminClient();

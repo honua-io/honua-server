@@ -228,6 +228,50 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
     }
 
     /// <inheritdoc />
+    public async Task<StyleCatalogRecord?> UpdateStyleAsync(
+        string styleId,
+        string mapLibreStyleJson,
+        string? title = null,
+        string? description = null,
+        string? drawingInfoJson = null,
+        string? revisedBy = null,
+        string? changeSummary = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mapLibreStyleJson);
+
+        var sql = $"""
+            UPDATE {_stylesTable}
+            SET title = COALESCE(@title, title),
+                description = COALESCE(@description, description),
+                maplibre_style = @mapLibreStyle,
+                drawing_info = @drawingInfo,
+                style_version = style_version + 1,
+                updated_at = NOW(),
+                revised_by = @revisedBy,
+                change_summary = @changeSummary
+            WHERE style_id = @styleId
+            RETURNING {SelectColumns}
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@styleId", styleId);
+        AddNullableText(command, "@title", title);
+        AddNullableText(command, "@description", description);
+        AddJsonb(command, "@mapLibreStyle", mapLibreStyleJson);
+        AddNullableJsonb(command, "@drawingInfo", drawingInfoJson);
+        AddNullableText(command, "@revisedBy", revisedBy);
+        AddNullableText(command, "@changeSummary", changeSummary);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadStyle(reader)
+            : null;
+    }
+
+    /// <inheritdoc />
     public async Task<bool> DeleteStyleAsync(string styleId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);

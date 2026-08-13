@@ -445,8 +445,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, error);
         }
 
-        await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
-        return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null);
+        var updated = await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return updated
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null)
+            : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
     }
 
     // Phase 2 write path: update a standalone catalog style from an Esri drawingInfo
@@ -462,6 +464,13 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         if (_independentStyleCatalog is null)
         {
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        if (drawingInfo.ValueKind != JsonValueKind.Object)
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "drawingInfo must be a JSON object.");
         }
 
         var existing = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
@@ -503,21 +512,23 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 warnings);
         }
 
-        await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
-        return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings);
+        var updated = await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return updated
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings)
+            : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
     }
 
     // Replaces the canonical MapLibre document of an existing catalog style, keeping its
     // descriptive metadata and letting the store increment style_version. The cached
     // drawingInfo column is deliberately cleared: the Esri encoding is derived from the
     // canonical style on read, so a stale cache must never outlive the style it mirrored.
-    private async Task PersistCatalogStyleAsync(
+    private async Task<bool> PersistCatalogStyleAsync(
         StyleCatalogRecord existing,
         string mapLibreStyleJson,
         CancellationToken cancellationToken)
     {
-        _ = await _independentStyleCatalog!
-            .UpsertStyleAsync(
+        var updated = await _independentStyleCatalog!
+            .UpdateStyleAsync(
                 existing.StyleId,
                 mapLibreStyleJson,
                 existing.Title,
@@ -527,6 +538,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 changeSummary: null,
                 cancellationToken)
             .ConfigureAwait(false);
+        return updated is not null;
     }
 
     /// <inheritdoc />

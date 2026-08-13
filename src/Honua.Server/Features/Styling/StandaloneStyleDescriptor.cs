@@ -77,12 +77,15 @@ internal static class StandaloneStyleDescriptor
                 continue;
             }
 
-            foreach (var info in infos.EnumerateArray().Where(info => info.ValueKind == JsonValueKind.Object))
+            var inferredGeometryType = infos.EnumerateArray()
+                .Where(info => info.ValueKind == JsonValueKind.Object)
+                .Select(info => TryReadSymbolGeometry(info, "symbol", out var inferred)
+                    ? inferred
+                    : GeometryType.None)
+                .FirstOrDefault(candidate => candidate != GeometryType.None);
+            if (inferredGeometryType != GeometryType.None)
             {
-                if (TryReadSymbolGeometry(info, "symbol", out geometryType))
-                {
-                    return geometryType;
-                }
+                return inferredGeometryType;
             }
         }
 
