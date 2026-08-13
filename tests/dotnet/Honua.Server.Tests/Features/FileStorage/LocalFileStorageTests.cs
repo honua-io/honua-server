@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -548,6 +549,41 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
 
         var exists = await _storage.ExistsAsync(uploadResult.File!.FileId);
         exists.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task CleanupExpiredFilesAsync_PreUpgradeMetadataWithoutETag_RemovesExpiredGeneration()
+    {
+        var basePath = Path.Join(Path.GetTempPath(), $"honua-legacy-etag-{Guid.NewGuid():N}");
+        try
+        {
+            var originalStorage = CreateStorage(basePath);
+            var content = "legacy generation"u8.ToArray();
+            await using var stream = new MemoryStream(content);
+            var upload = await originalStorage.UploadAsync(new FileUploadRequest
+            {
+                Content = stream,
+                FileName = "legacy.txt",
+                ContentType = "text/plain",
+                TimeToLive = TimeSpan.FromMilliseconds(1),
+            });
+
+            var legacyMetadata = upload.File! with { ETag = null };
+            var metadataPath = Path.Join(basePath, ".metadata", $"{legacyMetadata.FileId}.json");
+            await File.WriteAllTextAsync(
+                metadataPath,
+                JsonSerializer.Serialize(legacyMetadata, FileStorageJsonContext.Default.CloudFile));
+            await Task.Delay(50);
+
+            var upgradedStorage = CreateStorage(basePath);
+            (await upgradedStorage.GetMetadataAsync(legacyMetadata.FileId))!.ETag.Should().StartWith("legacy-");
+            (await upgradedStorage.CleanupExpiredFilesAsync()).Should().Be(1);
+            (await upgradedStorage.ExistsAsync(legacyMetadata.FileId)).Should().BeFalse();
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(basePath);
+        }
     }
 
     [UnitTest]

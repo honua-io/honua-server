@@ -532,6 +532,18 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 var cloudFile = JsonSerializer.Deserialize(json, FileStorageJsonContext.Default.CloudFile);
                 if (cloudFile is not null)
                 {
+                    // Metadata written before generation validators were introduced has no
+                    // ETag. Give that on-disk generation a stable legacy validator at startup
+                    // so expiry cleanup can remain conditional instead of either leaking it
+                    // forever or risking deletion of a later replacement.
+                    if (string.IsNullOrWhiteSpace(cloudFile.ETag))
+                    {
+                        cloudFile = cloudFile with
+                        {
+                            ETag = $"legacy-{cloudFile.UploadedAt.UtcDateTime.Ticks:x16}-{cloudFile.SizeBytes:x16}",
+                        };
+                    }
+
                     _fileIndex[cloudFile.FileId] = cloudFile;
 
                     // Rebuild batch index
