@@ -126,6 +126,8 @@ internal sealed class ImageServerWmtsHandler(
         int layerId,
         string advertisedLayerIdentifier,
         string? restPath = null,
+        string? publicationId = null,
+        int? cacheLayerId = null,
         CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(restPath))
@@ -135,6 +137,8 @@ internal sealed class ImageServerWmtsHandler(
                 layerId,
                 advertisedLayerIdentifier,
                 restPath,
+                publicationId,
+                cacheLayerId,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -172,6 +176,8 @@ internal sealed class ImageServerWmtsHandler(
                 context,
                 layerId,
                 advertisedLayerIdentifier,
+                publicationId,
+                cacheLayerId,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -196,6 +202,8 @@ internal sealed class ImageServerWmtsHandler(
         int layerId,
         string advertisedLayerIdentifier,
         string restPath,
+        string? publicationId,
+        int? cacheLayerId,
         CancellationToken cancellationToken)
     {
         var segments = restPath
@@ -235,6 +243,8 @@ internal sealed class ImageServerWmtsHandler(
             tileMatrixValue,
             tileRowValue,
             tileColValue,
+            publicationId,
+            cacheLayerId,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -242,6 +252,8 @@ internal sealed class ImageServerWmtsHandler(
         HttpContext context,
         int layerId,
         string advertisedLayerIdentifier,
+        string? publicationId,
+        int? cacheLayerId,
         CancellationToken cancellationToken)
     {
         var query = context.Request.Query;
@@ -277,6 +289,8 @@ internal sealed class ImageServerWmtsHandler(
             tileMatrix,
             tileRow,
             tileCol,
+            publicationId,
+            cacheLayerId,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -291,6 +305,8 @@ internal sealed class ImageServerWmtsHandler(
         string tileMatrix,
         string tileRow,
         string tileCol,
+        string? publicationId,
+        int? cacheLayerId,
         CancellationToken cancellationToken)
     {
         if (!IsLayerIdentifierMatch(layerValue, layerId, advertisedLayerIdentifier))
@@ -347,6 +363,8 @@ internal sealed class ImageServerWmtsHandler(
                 gridRow,
                 gridCol,
                 tileFormatToken,
+                publicationId,
+                cacheLayerId,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -391,6 +409,8 @@ internal sealed class ImageServerWmtsHandler(
             row,
             col,
             tileFormatToken,
+            publicationId,
+            cacheLayerId,
             cancellationToken).ConfigureAwait(false);
     }
 

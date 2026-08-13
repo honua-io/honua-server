@@ -57,6 +57,8 @@ internal sealed class ImageServerTileHandler
         int row,
         int col,
         string format,
+        string? publicationId = null,
+        int? cacheLayerId = null,
         CancellationToken cancellationToken = default)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -72,7 +74,10 @@ internal sealed class ImageServerTileHandler
         {
             // Validate layer exists in the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolved = publicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            if (resolved is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -106,8 +111,10 @@ internal sealed class ImageServerTileHandler
                 return editionError;
             }
 
+            var resolvedLayer = resolved.Value;
+            var tileCacheLayerId = cacheLayerId ?? resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
-                resolved.Resource,
+                resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
 
             var tileGeometry = CreateTileEnvelope(level, row, col);
@@ -138,8 +145,8 @@ internal sealed class ImageServerTileHandler
                 var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
-                    resolved.Publication.Metadata.Id,
-                    layerId,
+                    resolvedLayer.Publication.Metadata.Id,
+                    tileCacheLayerId,
                     TileMatrixSetRegistry.WebMercatorQuadId,
                     DefaultStyleId,
                     ResolveTenantAuthKey(context),
@@ -272,6 +279,8 @@ internal sealed class ImageServerTileHandler
         int row,
         int col,
         string format,
+        string? publicationId = null,
+        int? cacheLayerId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(grid);
@@ -289,7 +298,10 @@ internal sealed class ImageServerTileHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolved = publicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            if (resolved is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -316,8 +328,10 @@ internal sealed class ImageServerTileHandler
                 return editionError;
             }
 
+            var resolvedLayer = resolved.Value;
+            var tileCacheLayerId = cacheLayerId ?? resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
-                resolved.Resource,
+                resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
 
             var tileGeometry = ImageServerMosaicHelpers.CreateEnvelopeGeometry(
@@ -357,8 +371,8 @@ internal sealed class ImageServerTileHandler
             var tileCacheKey = ImageServerTileCacheKey.Build(
                 storageOptions,
                 snapshot.Etag,
-                resolved.Publication.Metadata.Id,
-                layerId,
+                resolvedLayer.Publication.Metadata.Id,
+                tileCacheLayerId,
                 grid.Id,
                 DefaultStyleId,
                 ResolveTenantAuthKey(context),

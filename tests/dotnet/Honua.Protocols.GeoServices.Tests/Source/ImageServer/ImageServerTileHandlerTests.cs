@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Tiles;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -197,7 +198,7 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task GetImageTileAsync_CloudCacheMiss_WritesGeneratedTile()
+    public async Task GetImageTileAsync_CloudCacheMiss_WritesResolvedPublicationAndLayerScope()
     {
         var tileData = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
         var storage = Substitute.For<ICloudFileStorage>();
@@ -252,14 +253,24 @@ public class ImageServerTileHandlerTests
             services.AddSingleton<IOptions<CloudStorageOptions>>(options);
         });
 
-        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
+        var result = await _handler.GetImageTileAsync(
+            context,
+            1,
+            0,
+            0,
+            0,
+            "png",
+            publicationId: "publication-1",
+            cacheLayerId: 7);
 
         var fileResult = result.Should().BeOfType<FileContentHttpResult>().Subject;
         fileResult.FileContents.ToArray().Should().Equal(tileData);
         await storage.Received(1).UploadIfMatchAsync(
             Arg.Is<FileUploadRequest>(request =>
                 request.ObjectKeyOverride != null &&
-                request.ObjectKeyOverride.StartsWith("geo-cache/imageserver/tiles/", StringComparison.Ordinal) &&
+                request.ObjectKeyOverride.StartsWith(
+                    $"geo-cache/imageserver/tiles/v2/{TileCachePublicationScope.Create("publication-1")}/7/",
+                    StringComparison.Ordinal) &&
                 request.ContentType == "image/png" &&
                 request.FileName == "0-0-0.png" &&
                 request.Metadata["protocol"] == "ImageServer" &&
