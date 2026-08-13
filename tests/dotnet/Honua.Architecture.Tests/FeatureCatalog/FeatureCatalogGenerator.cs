@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Capabilities;
 using Honua.Server;
 using Honua.TestKit.Attributes;
+using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
@@ -158,7 +159,8 @@ internal static class FeatureCatalogGenerator
     {
         var map = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var method in ArchitectureTestHelpers.IntegrationTestMethods())
+        foreach (var method in ArchitectureTestHelpers.IntegrationTestMethods()
+                     .Where(static method => !IsUnconditionallySkipped(method)))
         {
             var testId = $"{method.DeclaringType?.FullName}.{method.Name}";
             foreach (var key in method
@@ -183,6 +185,11 @@ internal static class FeatureCatalogGenerator
 
         return map;
     }
+
+    private static bool IsUnconditionallySkipped(MethodInfo method)
+        => method.GetCustomAttributes(inherit: true)
+            .OfType<FactAttribute>()
+            .Any(static attribute => !string.IsNullOrWhiteSpace(attribute.Skip));
 
     /// <summary>
     /// Produces a stable, lower-kebab id from the method and route so catalog
