@@ -25,6 +25,11 @@ internal static partial class UserManagementEndpoints
     private const int MaxListLimit = 1_000;
 
     /// <summary>
+    /// Maximum persisted role-name length from migration 106.
+    /// </summary>
+    private const int MaxRoleNameLength = 256;
+
+    /// <summary>
     /// Log category for user management endpoints.
     /// </summary>
     internal sealed class UserManagementEndpointsLog;
@@ -176,6 +181,15 @@ internal static partial class UserManagementEndpoints
             [FromServices] ILogger<UserManagementEndpointsLog> logger,
             HttpContext context)
     {
+        if (request.Roles is null || request.Roles.Any(static role =>
+            role is not null && role.Trim().Length > MaxRoleNameLength))
+        {
+            return TypedResults.Problem(
+                title: "Invalid user roles",
+                detail: $"Role names must be at most {MaxRoleNameLength} characters.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         try
         {
             var updated = await store.UpdateUserRolesAsync(id, request.Roles, context.RequestAborted);
