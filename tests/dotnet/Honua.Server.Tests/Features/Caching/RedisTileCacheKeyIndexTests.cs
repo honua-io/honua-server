@@ -136,6 +136,49 @@ public sealed class RedisTileCacheKeyIndexTests
     }
 
     [Fact]
+    public async Task RecordAccessIfCurrentAsync_GuardsMetadataRefreshByObservedWriteVersion()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("current_version", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+
+        await index.RecordAccessIfCurrentAsync(
+            "tile-key",
+            42,
+            expiresAt,
+            "tenant_a",
+            "etag-observed");
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("current_version = redis.call('HGET', KEYS[6]", StringComparison.Ordinal) &&
+                script.Contains("current_version ~= ARGV[6]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 6 &&
+                keys[5].ToString() == "honua:tile-cache:write-version"),
+            Arg.Is<RedisValue[]>(values =>
+                values.Length == 7 &&
+                values[0].ToString() == "tile-key" &&
+                values[5].ToString() == "etag-observed" &&
+                values[6].ToString() == "1"),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
     public async Task SnapshotWithStatusAsync_DrainsEveryExpiredStorageBatchBeforeReadingIndex()
     {
         var redis = Substitute.For<IConnectionMultiplexer>();

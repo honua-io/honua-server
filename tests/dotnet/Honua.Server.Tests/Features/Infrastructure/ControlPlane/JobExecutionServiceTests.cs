@@ -257,6 +257,12 @@ public sealed class JobExecutionServiceTests
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>())
             .Returns(true);
+        jobStore.RenewLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var jobQueue = Substitute.For<IJobQueue>();
         var executor = Substitute.For<IJobExecutor>();
@@ -284,6 +290,69 @@ public sealed class JobExecutionServiceTests
         await jobStore.Received(1).ReleaseLeaseAsync(
             Arg.Is<string>(value => value.StartsWith("partition:", StringComparison.Ordinal)),
             $"{provisioning.ClaimedBy}:{provisioning.OperationId}",
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ProcessJob_RequeuesNormalExecutorReturn_WhenFinalOwnershipCheckFails()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = "tilecache:svc:webmercatorquad:default",
+                RequiresExclusiveLease = true
+            }
+        };
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
+        jobStore.TryAcquireLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.RenewLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+        var service = new JobExecutionService(
+            jobQueue,
+            jobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(),
+            null,
+            NullLogger<JobExecutionService>.Instance,
+            partitionLeaseDuration: TimeSpan.FromHours(2),
+            partitionLeaseRenewInterval: TimeSpan.FromHours(1),
+            partitionLeaseContentionDelay: TimeSpan.FromMilliseconds(10));
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.Received(1).RenewLeaseAsync(
+            Arg.Is<string>(value => value.StartsWith("partition:", StringComparison.Ordinal)),
+            $"{provisioning.ClaimedBy}:{provisioning.OperationId}",
+            Arg.Any<TimeSpan>(),
+            CancellationToken.None);
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Queued),
+            Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
 

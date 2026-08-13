@@ -81,11 +81,12 @@ internal static class GeoServicesCloudTileCache
             // Cache hit: refresh the tile's last-access score so hot tiles survive LRU eviction (#1917).
             if (keyIndex is { IsEnabled: true })
             {
-                await keyIndex.RecordAccessAsync(
+                await keyIndex.RecordAccessIfCurrentAsync(
                     objectKey,
                     data.LongLength,
                     metadata.ExpiresAt,
                     tenantScope,
+                    metadata.ETag,
                     cancellationToken).ConfigureAwait(false);
             }
 

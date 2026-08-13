@@ -72,6 +72,26 @@ public interface ITileCacheKeyIndex
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Records a tile-cache access only when the indexed write generation still matches the
+    /// provider ETag observed by the storage read. Implementations without generation tracking
+    /// inherit the ordinary best-effort access update.
+    /// </summary>
+    /// <param name="key">The tile cache key (the storage object key).</param>
+    /// <param name="sizeBytes">The stored tile size in bytes.</param>
+    /// <param name="expiresAt">The storage object's absolute expiration time, when available.</param>
+    /// <param name="tenantScope">Tenant/schema scope that owns the cached object.</param>
+    /// <param name="observedWriteVersion">The provider ETag observed before downloading the object.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    Task RecordAccessIfCurrentAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        string? tenantScope,
+        string? observedWriteVersion,
+        CancellationToken cancellationToken = default)
+        => RecordAccessAsync(key, sizeBytes, expiresAt, tenantScope, cancellationToken);
+
+    /// <summary>
     /// Records a newly written tile, advances its write generation, and clears any
     /// explicit-expiration marker for the key. Durable implementations surface failures so the
     /// cache-write boundary can treat an uncommitted lifecycle update as a failed cache write.

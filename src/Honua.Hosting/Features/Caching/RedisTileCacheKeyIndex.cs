@@ -46,6 +46,16 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         if not redis.call('ZSCORE', KEYS[1], ARGV[1]) then
             return 0
         end
+        if ARGV[7] == '1' then
+            local current_version = redis.call('HGET', KEYS[6], ARGV[1])
+            if ARGV[6] == '' then
+                if current_version then
+                    return 0
+                end
+            elseif current_version ~= ARGV[6] then
+                return 0
+            end
+        end
         redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
         redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
         redis.call('ZADD', KEYS[3], 0, ARGV[1])
@@ -208,7 +218,33 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         DateTimeOffset? expiresAt,
         string? tenantScope = null,
         CancellationToken cancellationToken = default)
-        => await RecordAsync(key, sizeBytes, expiresAt, tenantScope, isWrite: false, cancellationToken).ConfigureAwait(false);
+        => await RecordAsync(
+            key,
+            sizeBytes,
+            expiresAt,
+            tenantScope,
+            isWrite: false,
+            observedWriteVersion: null,
+            requireMatchingWriteVersion: false,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task RecordAccessIfCurrentAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        string? tenantScope,
+        string? observedWriteVersion,
+        CancellationToken cancellationToken = default)
+        => await RecordAsync(
+            key,
+            sizeBytes,
+            expiresAt,
+            tenantScope,
+            isWrite: false,
+            observedWriteVersion,
+            requireMatchingWriteVersion: true,
+            cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
     public async Task RecordWriteAsync(
@@ -217,7 +253,15 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         DateTimeOffset expiresAt,
         string? tenantScope = null,
         CancellationToken cancellationToken = default)
-        => await RecordAsync(key, sizeBytes, expiresAt, tenantScope, isWrite: true, cancellationToken).ConfigureAwait(false);
+        => await RecordAsync(
+            key,
+            sizeBytes,
+            expiresAt,
+            tenantScope,
+            isWrite: true,
+            observedWriteVersion: null,
+            requireMatchingWriteVersion: false,
+            cancellationToken).ConfigureAwait(false);
 
     private async Task RecordAsync(
         string key,
@@ -225,6 +269,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         DateTimeOffset? expiresAt,
         string? tenantScope,
         bool isWrite,
+        string? observedWriteVersion,
+        bool requireMatchingWriteVersion,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(key))
@@ -257,7 +303,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                         SizeHashKey,
                         MembershipSetKey,
                         TenantScopeHashKey,
-                        StorageExpirationSetKey
+                        StorageExpirationSetKey,
+                        WriteVersionHashKey
                     },
                     new RedisValue[]
                     {
@@ -265,7 +312,9 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                         score,
                         sizeBytes,
                         expiresAt?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                        tenantScope ?? string.Empty
+                        tenantScope ?? string.Empty,
+                        observedWriteVersion ?? string.Empty,
+                        requireMatchingWriteVersion ? 1 : 0
                     },
                     CommandFlags.DemandMaster).ConfigureAwait(false);
                 return;

@@ -416,7 +416,14 @@ internal sealed partial class JobExecutionService(
                 return;
             }
 
-            if (partitionLeaseLostCts.IsCancellationRequested)
+            var partitionLeaseIsCurrent = !partitionLeaseLostCts.IsCancellationRequested
+                && await VerifyPartitionLeaseOwnershipAsync(
+                        operationId,
+                        partitionKey,
+                        partitionLeaseId,
+                        partitionLeaseOwner)
+                    .ConfigureAwait(false);
+            if (!partitionLeaseIsCurrent)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, "Exclusive partition lease lost.");
                 await AbandonJobAsync(
@@ -613,6 +620,36 @@ internal sealed partial class JobExecutionService(
             await partitionLeaseLostCts.CancelAsync().ConfigureAwait(false);
             await jobCts.CancelAsync().ConfigureAwait(false);
             return;
+        }
+    }
+
+    private async Task<bool> VerifyPartitionLeaseOwnershipAsync(
+        string operationId,
+        string? partitionKey,
+        string? partitionLeaseId,
+        string? partitionLeaseOwner)
+    {
+        if (partitionLeaseId is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            // Redis LockExtend is an atomic owner comparison and renewal. Performing it after the
+            // executor returns closes the interval before terminal finalization in which a paused
+            // worker's lease can expire before the background renewal observes the loss.
+            return await jobStore.RenewLeaseAsync(
+                    partitionLeaseId,
+                    partitionLeaseOwner!,
+                    _partitionLeaseDuration,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.PartitionLeaseRenewalFailed(logger, operationId, partitionKey!, ex);
+            return false;
         }
     }
 
