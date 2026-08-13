@@ -49,6 +49,7 @@
         "sourceId": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 200,
           "description": "Identifier of the layer or datasource the control reads its domain from (e.g. the layer whose field values populate a filterSelect, or the layer a timeSlider ranges over). Data-binding kinds normally set it; presentation-only kinds (navigation, scale, fullscreen, attribution) omit it. Resolution of the identifier within the document is a validation-gate responsibility, as for layer references."
         },
         "config": {

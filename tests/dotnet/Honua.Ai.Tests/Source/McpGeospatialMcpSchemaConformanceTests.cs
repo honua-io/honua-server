@@ -497,6 +497,29 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
+    public void CompositionControlSourceIdSchemas_MatchTheRuntimeLengthLimit()
+    {
+        var oversizedSourceId = new string('s', 201);
+        var input = JObject.Parse(
+            $$"""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "control": {
+                "id": "filter",
+                "kind": "filterSelect",
+                "sourceId": "{{oversizedSourceId}}"
+              }
+            }
+            """);
+        var live = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.AddControlArgumentSchema));
+        var standard = LoadSchema(Path.Join(SchemaRoot, "tools", "add_control.schema.json"));
+
+        input.IsValid(live).Should().BeFalse();
+        input.IsValid(standard).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void CompositionInteractionIdSchemas_RejectWhitespaceLikeTheHandlers()
     {
         var bindInput = JObject.Parse("""
