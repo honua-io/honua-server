@@ -70,23 +70,23 @@ internal static class ODataV2Lookups
             }
 
             var resource = snapshot.ResolveResource(pub);
-            if (resource is null)
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }
 
-            var storageLayerId = ResolveStorageLayerId(snapshot, pub, resource);
+            var storageLayerId = ResolveStorageLayerId(snapshot, pub, resource!);
             if (!storageLayerId.HasValue)
             {
                 continue;
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
             {
                 continue;
             }
 
-            resolved.Add(new ResolvedODataPublication(pub, resource, service, pub.LayerIndex.Value, storageLayerId.Value));
+            resolved.Add(new ResolvedODataPublication(pub, resource!, service, pub.LayerIndex.Value, storageLayerId.Value));
         }
 
         resolved.Sort(static (a, b) => a.LayerIndex.CompareTo(b.LayerIndex));
@@ -128,18 +128,18 @@ internal static class ODataV2Lookups
             }
 
             var resource = snapshot.ResolveResource(pub);
-            if (resource is null)
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }
 
-            var storageLayerId = ResolveStorageLayerId(snapshot, pub, resource);
+            var storageLayerId = ResolveStorageLayerId(snapshot, pub, resource!);
             if (!storageLayerId.HasValue)
             {
                 continue;
             }
 
-            resolved.Add(new ResolvedODataPublication(pub, resource, service, pub.LayerIndex.Value, storageLayerId.Value));
+            resolved.Add(new ResolvedODataPublication(pub, resource!, service, pub.LayerIndex.Value, storageLayerId.Value));
         }
 
         resolved.Sort(static (a, b) => a.LayerIndex.CompareTo(b.LayerIndex));

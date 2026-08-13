@@ -179,6 +179,28 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_RetiredPublication_ReturnsNotFoundAndIsNotListed()
+    {
+        _fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, enabled: false);
+
+        var collectionResponse = await _fixture.Client.GetAsync(
+            $"/ogc/tiles/collections/{WebAppFixture.TestLayerId}");
+        var listResponse = await _fixture.Client.GetAsync("/ogc/tiles/collections");
+        var collections = await listResponse.Content.ReadFromJsonAsync<Collections>();
+
+        collectionResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        listResponse.Be200Ok();
+        collections.Should().NotBeNull();
+        collections!.CollectionList.Should().NotContain(collection =>
+            string.Equals(
+                collection.Id,
+                WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
     public async Task GetCollection_WithTemporalFields_AdvertisesTemporalExtent()
     {
         var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0");

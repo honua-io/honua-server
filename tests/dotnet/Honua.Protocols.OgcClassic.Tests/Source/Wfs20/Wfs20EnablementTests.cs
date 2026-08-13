@@ -70,6 +70,21 @@ public sealed class Wfs20EnablementTests
         descriptors.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task GetPublishedFeatureTypesAsync_WithRetiredPublication_SkipsPublication()
+    {
+        var provider = CreateProvider(
+            serviceProtocols: [MetadataV2ServiceProtocols.Wfs20],
+            publicationLifecycle: MetadataV2LifecycleStatus.Retired);
+        var handler = CreateHandler(provider);
+        using var serviceProvider = CreateServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = serviceProvider };
+
+        var descriptors = await InvokeGetPublishedFeatureTypesAsync(handler, context);
+
+        descriptors.Should().BeEmpty();
+    }
+
     private static async Task<object[]> InvokeGetPublishedFeatureTypesAsync(
         Wfs20Handler handler,
         HttpContext context)
@@ -99,14 +114,16 @@ public sealed class Wfs20EnablementTests
             .BuildServiceProvider();
     }
 
-    private static TestMetadataV2GraphProvider CreateProvider(IReadOnlyList<string> serviceProtocols)
+    private static TestMetadataV2GraphProvider CreateProvider(
+        IReadOnlyList<string> serviceProtocols,
+        MetadataV2LifecycleStatus publicationLifecycle = MetadataV2LifecycleStatus.Active)
     {
         const int storageLayerId = 1;
         const string resourceId = "res-layer-1";
         const string bindingId = "binding-layer-1";
         const string serviceId = "svc-alpha";
 
-        return new TestMetadataV2GraphBuilder()
+        var graph = new TestMetadataV2GraphBuilder()
             .AddResource(
                 resourceId,
                 "Layer1",
@@ -128,7 +145,17 @@ public sealed class Wfs20EnablementTests
                 layerIndex: storageLayerId,
                 storageBindingId: bindingId,
                 publicationType: MetadataV2PublicationType.OgcCollection)
-            .BuildProvider();
+            .Build();
+        graph = graph with
+        {
+            Publications = graph.Publications
+                .Select(publication => publication with
+                {
+                    Status = publication.Status with { Lifecycle = publicationLifecycle }
+                })
+                .ToArray()
+        };
+        return new TestMetadataV2GraphProvider(graph);
     }
 
     private static Wfs20Handler CreateHandler(IMetadataV2GraphProvider metadataProvider)

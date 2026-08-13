@@ -120,4 +120,8 @@ internal static partial class FeatureStreamLog
         string subscriptionId,
         long requestedCursor,
         long firstAvailableCursor);
+
+    [LoggerMessage(EventId = 5025, Level = LogLevel.Warning,
+        Message = "Feature stream routability refresh failed; scoped subscriptions are failing closed until metadata is readable.")]
+    public static partial void RoutabilityRefreshFailed(ILogger logger, Exception exception);
 }

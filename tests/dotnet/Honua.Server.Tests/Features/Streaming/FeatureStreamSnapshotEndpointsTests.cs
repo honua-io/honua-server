@@ -35,6 +35,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     private const string SnapshotEnd = "snapshot-end";
     private const string FeatureChange = "feature-change";
     private const string TestServiceId = "test";
+    private const string TestServiceCatalogId = "svc-test";
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
@@ -56,7 +57,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+        using var request = BuildSseRequest(
+            $"/api/v1/streaming/features?serviceId={TestServiceId}&layers=0&mode=snapshot");
         var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -133,11 +135,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         foreach (var feature in features)
         {
-            // Baseline identity must match the delta envelope's identity exactly, or a client
-            // would key the baseline record and its later deltas as two different records.
+            // Baselines expose the resolved catalog identity rather than the route alias so
+            // same-spelling IDs and names cannot redirect snapshot probes to another service.
             var id = feature.GetProperty("id").GetString();
             id.Should().NotBeNullOrWhiteSpace();
-            feature.GetProperty("sourceId").GetString().Should().Be(TestServiceId);
+            feature.GetProperty("sourceId").GetString().Should().Be(TestServiceCatalogId);
 
             var geoJson = feature.GetProperty("feature");
             geoJson.GetProperty("type").GetString().Should().Be("Feature");

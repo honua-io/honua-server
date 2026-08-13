@@ -90,6 +90,7 @@ public sealed class LayerAccessAuthorizerTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
         var resource = new MetadataV2Resource
         {
@@ -97,12 +98,14 @@ public sealed class LayerAccessAuthorizerTests
             StorageBindingIds = ["binding"],
             PrimaryStorageBindingId = "binding",
             AccessPolicy = new AccessPolicy { AllowedRoles = ["reader"] },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
         var binding = new MetadataV2StorageBinding
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "binding", Name = "binding" },
             ResourceId = resource.Metadata.Id,
             StorageLayerId = storageLayerId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
         var publication = new MetadataV2Publication
         {
@@ -116,6 +119,7 @@ public sealed class LayerAccessAuthorizerTests
             ResourceId = resource.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
             LayerIndex = 1,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
         return new MetadataV2GraphSnapshot(

@@ -81,6 +81,7 @@ internal sealed partial class GeoprocessingServiceSeeder(
             ServiceType = MetadataV2ServiceType.Custom,
             Route = $"/rest/services/{ServiceName}/GPServer",
             Protocols = [MetadataV2ServiceProtocols.GPServer],
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             // Discovery/submit on the GP facade is anonymous by design (execution is
             // still authorized by the shared process-execute grant), matching the
             // AllowAnonymous GPServer endpoints.

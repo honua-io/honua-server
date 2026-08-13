@@ -161,6 +161,80 @@ public sealed class StacFilterHelpersTests
     }
 
     [UnitTest]
+    public async Task StacPublicationLookups_ExcludeRetiredPublicationAndResourceLifecycles()
+    {
+        var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var baseGraph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-stac",
+                "stac",
+                protocols: [StacProtocolConstants.ProtocolName],
+                accessPolicy: AnonymousAccess())
+            .AddResource("res-active", "active")
+            .AddResource("res-retired-publication", "retired-publication")
+            .AddResource("res-retired-resource", "retired-resource")
+            .AddPublication(
+                "pub-active",
+                "svc-stac",
+                "res-active",
+                layerIndex: 0,
+                serviceLocalId: "active",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-retired-publication",
+                "svc-stac",
+                "res-retired-publication",
+                layerIndex: 1,
+                serviceLocalId: "retired-publication",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-retired-resource",
+                "svc-stac",
+                "res-retired-resource",
+                layerIndex: 2,
+                serviceLocalId: "retired-resource",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+        var graph = baseGraph with
+        {
+            Resources = baseGraph.Resources
+                .Select(resource => resource with
+                {
+                    Status = resource.Metadata.Id == "res-retired-resource" ? retiredStatus : activeStatus,
+                })
+                .ToArray(),
+            Publications = baseGraph.Publications
+                .Select(publication => publication with
+                {
+                    Status = publication.Metadata.Id == "pub-retired-publication" ? retiredStatus : activeStatus,
+                })
+                .ToArray(),
+        };
+        using var provider = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = provider };
+
+        var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
+        var active = await StacV2Lookups.ResolveStacPublicationAsync(context, "active", CancellationToken.None);
+        var retiredPublication = await StacV2Lookups.ResolveStacPublicationAsync(
+            context,
+            "retired-publication",
+            CancellationToken.None);
+        var retiredResource = await StacV2Lookups.ResolveStacPublicationAsync(
+            context,
+            "retired-resource",
+            CancellationToken.None);
+
+        visible.Should().ContainSingle().Which.Publication.Metadata.Id.Should().Be("pub-active");
+        active.Should().NotBeNull();
+        retiredPublication.Should().BeNull();
+        retiredResource.Should().BeNull();
+    }
+
+    [UnitTest]
     public void ParseBbox_WithDatelineCrossingBBox_ReturnsMultiPolygonFilter()
     {
         var filter = StacFilterHelpers.ParseBbox("170,-10,-170,10");

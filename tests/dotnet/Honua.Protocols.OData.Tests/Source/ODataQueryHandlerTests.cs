@@ -46,9 +46,26 @@ public sealed class ODataQueryHandlerTests
         visible[0].Resource.Metadata.Name.Should().Be("Layer1");
     }
 
-    private static ServiceProvider CreateProvider(IReadOnlyList<string> protocols)
+    [UnitTest]
+    public async Task ResolveODataPublications_WithRetiredPublication_OmitsDiscoveryEntry()
     {
-        var graphProvider = new TestMetadataV2GraphBuilder()
+        using var provider = CreateProvider(
+            ["OData"],
+            publicationLifecycle: MetadataV2LifecycleStatus.Retired);
+        var context = CreateContext(provider);
+
+        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, CancellationToken.None);
+        var all = await ODataV2Lookups.ResolveAllODataPublicationsAsync(context, CancellationToken.None);
+
+        visible.Should().BeEmpty();
+        all.Should().BeEmpty();
+    }
+
+    private static ServiceProvider CreateProvider(
+        IReadOnlyList<string> protocols,
+        MetadataV2LifecycleStatus publicationLifecycle = MetadataV2LifecycleStatus.Active)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
             .AddResource(
                 "res-layer-1",
                 "Layer1",
@@ -84,7 +101,17 @@ public sealed class ODataQueryHandlerTests
                 layerIndex: 1,
                 storageBindingId: "binding-layer-1",
                 publicationType: MetadataV2PublicationType.ODataEntitySet)
-            .BuildProvider();
+            .Build();
+        graph = graph with
+        {
+            Publications = graph.Publications
+                .Select(publication => publication with
+                {
+                    Status = publication.Status with { Lifecycle = publicationLifecycle }
+                })
+                .ToArray()
+        };
+        var graphProvider = new TestMetadataV2GraphProvider(graph);
 
         return new ServiceCollection()
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()

@@ -829,14 +829,14 @@ internal sealed class ODataCrudHandler(
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }
 
             var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
-                resource,
+                resource!,
                 service,
                 cancellationToken).ConfigureAwait(false);
             if (rbacError == null)

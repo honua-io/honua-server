@@ -82,6 +82,11 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
+            if (!service.IsRoutable())
+            {
+                continue;
+            }
+
             // Derive the catalog "type" from every Esri-family protocol the service
             // exposes, not just the primary one. A service reachable under multiple
             // Esri types (e.g. both FeatureServer and MapServer, or a vector layer that
@@ -98,6 +103,7 @@ internal static class GeoservicesCatalogEndpoints
             // Project publications -> resources, filtering by access.
             var visibleResources = new List<MetadataV2Resource>();
             foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
                 .Select(snapshot.ResolveResource)
                 .OfType<MetadataV2Resource>())
             {
@@ -376,7 +382,7 @@ internal static class GeoservicesCatalogEndpoints
     {
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
-            if (publication.LayerIndex is not { } layerIndex)
+            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
             {
                 continue;
             }

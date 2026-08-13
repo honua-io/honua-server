@@ -3,9 +3,13 @@
 
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Streaming;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -584,6 +588,288 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Broadcast_UnscopedGuardStopsMatchingWhenPublicationIsRetired()
+    {
+        const string serviceName = "mutable-stream";
+        const int storageLayerId = 41;
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("res-mutable-stream", "Mutable Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-mutable-stream",
+                "res-mutable-stream",
+                "test.layers.mutable_stream",
+                storageLayerId: storageLayerId)
+            .AddService("svc-mutable-stream", serviceName)
+            .AddPublication(
+                "pub-mutable-stream",
+                "svc-mutable-stream",
+                "res-mutable-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-mutable-stream")
+            .Build();
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var guard = new FeatureStreamRoutabilityGuard();
+        guard.Update(guard.BeginRefresh(), await provider.GetCurrentAsync());
+        var filter = new StreamSubscriptionFilter(routabilityGuard: guard);
+        using var session = _manager.CreateSession("WebSocket", "metadata-routability", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1, layerId: storageLayerId, serviceId: serviceName)));
+        Assert.True(session.Reader.TryRead(out _));
+
+        provider.SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications
+                .Select(publication => publication with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                })
+                .ToArray()
+        });
+        guard.Update(guard.BeginRefresh(), await provider.GetCurrentAsync());
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 2, layerId: storageLayerId, serviceId: serviceName)));
+        Assert.False(session.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public async Task RoutabilityGuard_LaterRollbackSnapshot_WinsOverEarlierRefresh()
+    {
+        const string serviceName = "versioned-stream";
+        const int storageLayerId = 43;
+        var activeGraph = new TestMetadataV2GraphBuilder()
+            .WithRevision(8)
+            .AddResource("res-versioned-stream", "Versioned Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-versioned-stream",
+                "res-versioned-stream",
+                "test.layers.versioned_stream",
+                storageLayerId: storageLayerId)
+            .AddService("svc-versioned-stream", serviceName)
+            .AddPublication(
+                "pub-versioned-stream",
+                "svc-versioned-stream",
+                "res-versioned-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-versioned-stream")
+            .Build();
+        var retiredGraph = activeGraph with
+        {
+            Revision = 7,
+            Publications = activeGraph.Publications
+                .Select(publication => publication with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                })
+                .ToArray(),
+        };
+        var activeSnapshot = await new TestMetadataV2GraphProvider(activeGraph).GetCurrentAsync();
+        var retiredSnapshot = await new TestMetadataV2GraphProvider(retiredGraph).GetCurrentAsync();
+        var guard = new FeatureStreamRoutabilityGuard();
+
+        guard.Update(guard.BeginRefresh(), activeSnapshot);
+        var earlierRefresh = guard.BeginRefresh();
+        var rollbackRefresh = guard.BeginRefresh();
+        guard.Update(rollbackRefresh, retiredSnapshot);
+        guard.Update(earlierRefresh, activeSnapshot);
+
+        Assert.False(guard.IsRoutable(serviceName, storageLayerId));
+    }
+
+    [UnitTest]
+    public async Task RoutabilityGuard_ExactServiceIdsRemainCaseSensitiveAndShadowNameAlias()
+    {
+        const string activeServiceId = "roads";
+        const string shadowedIdentity = "Roads";
+        const int storageLayerId = 45;
+        var activeGraph = new TestMetadataV2GraphBuilder()
+            .AddResource("res-shadowed-stream", "Shadowed Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-shadowed-stream",
+                "res-shadowed-stream",
+                "test.layers.shadowed_stream",
+                storageLayerId: storageLayerId)
+            .AddService(activeServiceId, shadowedIdentity)
+            .AddService(shadowedIdentity, "retired-shadow")
+            .AddPublication(
+                "pub-active-stream",
+                activeServiceId,
+                "res-shadowed-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-shadowed-stream")
+            .AddPublication(
+                "pub-retired-shadow",
+                shadowedIdentity,
+                "res-shadowed-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-shadowed-stream")
+            .Build();
+        var graph = activeGraph with
+        {
+            Publications = activeGraph.Publications
+                .Select(publication => publication.Metadata.Id == "pub-retired-shadow"
+                    ? publication with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                    }
+                    : publication)
+                .ToArray(),
+        };
+        var snapshot = await new TestMetadataV2GraphProvider(graph).GetCurrentAsync();
+        var guard = new FeatureStreamRoutabilityGuard();
+
+        guard.Update(guard.BeginRefresh(), snapshot);
+
+        Assert.Equal(
+            shadowedIdentity,
+            FeatureStreamEndpoints.ResolveStreamService(snapshot, shadowedIdentity)?.Metadata.Id);
+        Assert.Equal(
+            activeServiceId,
+            FeatureStreamEndpoints.ResolveStreamService(snapshot, "ROADS")?.Metadata.Id);
+        Assert.True(guard.IsRoutable(activeServiceId, storageLayerId));
+        Assert.False(guard.IsRoutable(shadowedIdentity, storageLayerId));
+
+        var exactFilter = new StreamSubscriptionFilter(
+            serviceId: activeServiceId,
+            serviceIdIsExact: true,
+            routabilityGuard: guard);
+        Assert.True(exactFilter.Matches(CreateEnvelope(
+            cursor: 1,
+            layerId: storageLayerId,
+            serviceId: activeServiceId),
+            geometryEnvelope: null,
+            propertiesJson: null));
+        Assert.False(exactFilter.Matches(CreateEnvelope(
+            cursor: 2,
+            layerId: storageLayerId,
+            serviceId: shadowedIdentity),
+            geometryEnvelope: null,
+            propertiesJson: null));
+
+        var aliasFilter = new StreamSubscriptionFilter(
+            serviceId: shadowedIdentity,
+            resolvedServiceId: activeServiceId,
+            routabilityGuard: guard);
+        Assert.Equal(activeServiceId, aliasFilter.ResolvedServiceId);
+        Assert.True(aliasFilter.Matches(CreateEnvelope(
+            cursor: 3,
+            layerId: storageLayerId,
+            serviceId: activeServiceId),
+            geometryEnvelope: null,
+            propertiesJson: null));
+        Assert.False(aliasFilter.Matches(CreateEnvelope(
+            cursor: 4,
+            layerId: storageLayerId,
+            serviceId: shadowedIdentity),
+            geometryEnvelope: null,
+            propertiesJson: null));
+
+        var bothRoutableSnapshot = await new TestMetadataV2GraphProvider(activeGraph).GetCurrentAsync();
+        guard.Update(guard.BeginRefresh(), bothRoutableSnapshot);
+        Assert.True(guard.IsRoutable(shadowedIdentity, storageLayerId));
+        Assert.True(aliasFilter.Matches(CreateEnvelope(
+            cursor: 5,
+            layerId: storageLayerId,
+            serviceId: "ROADS"),
+            geometryEnvelope: null,
+            propertiesJson: null));
+        Assert.False(aliasFilter.Matches(CreateEnvelope(
+            cursor: 6,
+            layerId: storageLayerId,
+            serviceId: shadowedIdentity),
+            geometryEnvelope: null,
+            propertiesJson: null));
+    }
+
+    [UnitTest]
+    public async Task RefreshRoutability_WithinBoundedInterval_ReusesOnlyValidRouteSet()
+    {
+        var snapshot = await new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
+        var provider = new CountingMetadataV2GraphProvider(snapshot);
+        using var services = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => provider)
+            .BuildServiceProvider();
+        var guard = new FeatureStreamRoutabilityGuard();
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions()),
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            routabilityGuard: guard,
+            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
+
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.Equal(1, provider.ReadCount);
+
+        guard.Invalidate(guard.BeginRefresh());
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.Equal(2, provider.ReadCount);
+    }
+
+    [UnitTest]
+    public async Task RefreshRoutability_CanceledRead_DoesNotThrottleImmediateRetry()
+    {
+        const string serviceName = "cancel-refresh-stream";
+        const int storageLayerId = 44;
+        var activeGraph = new TestMetadataV2GraphBuilder()
+            .WithRevision(8)
+            .AddResource("res-cancel-refresh", "Cancel Refresh", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-cancel-refresh",
+                "res-cancel-refresh",
+                "test.layers.cancel_refresh",
+                storageLayerId: storageLayerId)
+            .AddService("svc-cancel-refresh", serviceName)
+            .AddPublication(
+                "pub-cancel-refresh",
+                "svc-cancel-refresh",
+                "res-cancel-refresh",
+                layerIndex: 1,
+                storageBindingId: "binding-cancel-refresh")
+            .Build();
+        var retiredGraph = activeGraph with
+        {
+            Revision = 9,
+            Publications = activeGraph.Publications
+                .Select(publication => publication with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                })
+                .ToArray(),
+        };
+        var activeSnapshot = await new TestMetadataV2GraphProvider(activeGraph).GetCurrentAsync();
+        var retiredSnapshot = await new TestMetadataV2GraphProvider(retiredGraph).GetCurrentAsync();
+        var provider = new CancelFirstMetadataV2GraphProvider(retiredSnapshot);
+        var guard = new FeatureStreamRoutabilityGuard();
+        guard.Update(guard.BeginRefresh(), activeSnapshot);
+        var earlierRefresh = guard.BeginRefresh();
+        using var services = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => provider)
+            .BuildServiceProvider();
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions()),
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            routabilityGuard: guard,
+            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
+        using var cancellation = new CancellationTokenSource();
+
+        var canceledRefresh = manager.RefreshRoutabilityAsync(cancellation.Token).AsTask();
+        await provider.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRefresh);
+        guard.Update(earlierRefresh, activeSnapshot);
+        Assert.False(guard.IsRoutable(serviceName, storageLayerId));
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.False(guard.IsRoutable(serviceName, storageLayerId));
+        Assert.Equal(2, provider.ReadCount);
+    }
+
+    [UnitTest]
     public void Broadcast_WithBboxFilter_OnlyDeliversIntersectingEvents()
     {
         var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
@@ -893,6 +1179,66 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             session.SessionId,
             FeatureStreamSessionManager.DefaultSubscriptionId,
             eventId));
+    }
+
+    [UnitTest]
+    public async Task ClusterBroadcast_MetadataRefreshYield_PreservesMessageOrder()
+    {
+        var subscriber = Substitute.For<ISubscriber>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var handlers = new List<Action<RedisChannel, RedisValue>>();
+        redis.GetSubscriber().Returns(subscriber);
+        subscriber.Subscribe(
+            Arg.Any<RedisChannel>(),
+            Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
+        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var channel = callInfo.Arg<RedisChannel>();
+                var value = callInfo.Arg<RedisValue>();
+                foreach (var handler in handlers)
+                {
+                    handler(channel, value);
+                }
+
+                return handlers.Count;
+            });
+
+        var options = Options.Create(new FeatureStreamOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            MaxBufferPerConnection = 4,
+            ReplayBatchSize = 100,
+        });
+        var metadataSnapshot = await new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
+        var metadataProvider = new BlockingMetadataV2GraphProvider(metadataSnapshot);
+        using var metadataServices = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => metadataProvider)
+            .BuildServiceProvider();
+        using var localManager = new FeatureStreamSessionManager(
+            options,
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            redis);
+        using var remoteManager = new FeatureStreamSessionManager(
+            options,
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            redis,
+            new FeatureStreamRoutabilityGuard(),
+            metadataServices.GetRequiredService<IServiceScopeFactory>());
+        using var remoteSession = remoteManager.CreateSession("WebSocket", "ordered-remote");
+
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 201)));
+        await metadataProvider.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 202)));
+        metadataProvider.AllowFirstReadToComplete.TrySetResult();
+
+        var first = await remoteSession.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        var second = await remoteSession.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(201L, first.Envelope.Cursor);
+        Assert.Equal(202L, second.Envelope.Cursor);
     }
 
     [UnitTest]
@@ -1330,5 +1676,77 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             Interlocked.Increment(ref _sendCount);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class BlockingMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        private int _readCount;
+
+        public TaskCompletionSource FirstReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowFirstReadToComplete { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                FirstReadStarted.TrySetResult();
+                await AllowFirstReadToComplete.Task.WaitAsync(cancellationToken);
+            }
+
+            return snapshot;
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
+    }
+
+    private sealed class CountingMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        private int _readCount;
+
+        public int ReadCount => Volatile.Read(ref _readCount);
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _readCount);
+            return ValueTask.FromResult(snapshot);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
+    }
+
+    private sealed class CancelFirstMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        private int _readCount;
+
+        public int ReadCount => Volatile.Read(ref _readCount);
+
+        public TaskCompletionSource FirstReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                FirstReadStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            return snapshot;
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
     }
 }

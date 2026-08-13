@@ -189,6 +189,41 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
+    internal static void MutateResourceObjectMetadata(
+        WebAppFixture fixture,
+        int layerIndex,
+        Func<MetadataV2ObjectMetadata, MetadataV2ObjectMetadata> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        var publication = snapshot.Graph.Publications.FirstOrDefault(candidate =>
+            candidate.LayerIndex == layerIndex)
+            ?? throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        var resources = snapshot.Graph.Resources.ToArray();
+        var resourceIndex = Array.FindIndex(resources, resource =>
+            string.Equals(resource.Metadata.Id, publication.ResourceId, StringComparison.Ordinal));
+        if (resourceIndex < 0)
+        {
+            throw MissingResourceMutation(
+                layerIndex,
+                publication.ResourceId,
+                nameof(MutateResourceObjectMetadata));
+        }
+
+        resources[resourceIndex] = resources[resourceIndex] with
+        {
+            Metadata = mutate(resources[resourceIndex].Metadata)
+        };
+        WriteGraph(fixture, provider, snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = resources
+        });
+    }
+
     /// <summary>
     /// Adds or replaces a Metadata v2 schema field on the resource published at
     /// <paramref name="layerIndex"/>. Match on field name is case-insensitive so callers

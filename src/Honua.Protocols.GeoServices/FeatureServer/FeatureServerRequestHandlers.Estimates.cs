@@ -163,7 +163,7 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 

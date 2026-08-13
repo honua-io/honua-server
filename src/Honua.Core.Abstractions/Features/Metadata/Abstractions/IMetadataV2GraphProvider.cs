@@ -50,3 +50,33 @@ public interface IMetadataV2GraphStore : IMetadataV2GraphProvider
         string? expectedCurrentEtag,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Reports a graph commit whose durable outcome could not be determined while preserving
+/// the pending snapshot identity needed by coordinated writers to reconcile or compensate it.
+/// </summary>
+public sealed class MetadataV2GraphCommitOutcomeUnknownException : Exception
+{
+    /// <summary>
+    /// Creates an indeterminate graph-commit exception.
+    /// </summary>
+    public MetadataV2GraphCommitOutcomeUnknownException(
+        MetadataV2GraphSnapshot pendingSnapshot,
+        string transactionId,
+        Exception innerException)
+        : base("The Metadata v2 graph commit outcome could not be determined.", innerException)
+    {
+        PendingSnapshot = pendingSnapshot ?? throw new ArgumentNullException(nameof(pendingSnapshot));
+        TransactionId = transactionId ?? throw new ArgumentNullException(nameof(transactionId));
+    }
+
+    /// <summary>
+    /// Snapshot that may have become durable, including its reconciliation ETag.
+    /// </summary>
+    public MetadataV2GraphSnapshot PendingSnapshot { get; }
+
+    /// <summary>
+    /// PostgreSQL transaction identity for the indeterminate commit.
+    /// </summary>
+    public string TransactionId { get; }
+}

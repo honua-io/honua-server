@@ -5,10 +5,13 @@ using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Protocols.GeoServices.MapServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -22,6 +25,44 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
     private readonly WebAppFixture _fixture;
 
     public MapServerTileEndpointTests(WebAppFixture fixture) => _fixture = fixture;
+
+    [UnitTest]
+    public async Task ResolveTileLayerDescriptors_DraftStorageBinding_ExcludesPublication()
+    {
+        const string serviceId = "svc-binding-lifecycle";
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-binding-lifecycle", "Binding lifecycle")
+            .AddStorageBinding(
+                "binding-lifecycle",
+                "resource-binding-lifecycle",
+                "features",
+                storageLayerId: 17)
+            .AddService(serviceId, "Binding lifecycle", protocols: [ServiceProtocols.MapServer])
+            .AddPublication(
+                "publication-binding-lifecycle",
+                serviceId,
+                "resource-binding-lifecycle",
+                layerIndex: 0,
+                storageBindingId: "binding-lifecycle",
+                publicationType: MetadataV2PublicationType.EsriMapLayer)
+            .Build();
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings
+                .Select(binding => binding with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft },
+                })
+                .ToArray(),
+        };
+        var snapshot = await new TestMetadataV2GraphProvider(graph).GetCurrentAsync();
+
+        var layers = MapServerEndpoints.ResolveTileLayerDescriptors(
+            snapshot,
+            snapshot.Index.ServicesById[serviceId]);
+
+        layers.Should().BeEmpty();
+    }
 
     [IntegrationTest]
     [Operation(Operations.Tile)]
