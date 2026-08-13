@@ -19,16 +19,26 @@ internal sealed class FeatureStreamRoutabilityGuard
 
     public long BeginRefresh() => Interlocked.Increment(ref _nextRefreshGeneration);
 
-    public async ValueTask<MetadataV2GraphSnapshot> RefreshAsync(
+    public bool HasValidState => Volatile.Read(ref _state).IsValid;
+
+    public ValueTask<MetadataV2GraphSnapshot> RefreshAsync(
         IMetadataV2GraphProvider provider,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provider);
+        return RefreshAsync(provider.GetCurrentAsync, cancellationToken);
+    }
+
+    public async ValueTask<MetadataV2GraphSnapshot> RefreshAsync(
+        Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> readSnapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(readSnapshot);
 
         var refreshGeneration = BeginRefresh();
         try
         {
-            var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await readSnapshot(cancellationToken).ConfigureAwait(false);
             Update(refreshGeneration, snapshot);
             return snapshot;
         }
@@ -68,7 +78,7 @@ internal sealed class FeatureStreamRoutabilityGuard
             }
         }
 
-        var next = new RoutabilityState(refreshGeneration, routes);
+        var next = new RoutabilityState(refreshGeneration, routes, IsValid: true);
         while (true)
         {
             var current = Volatile.Read(ref _state);
@@ -98,7 +108,8 @@ internal sealed class FeatureStreamRoutabilityGuard
 
             var invalid = new RoutabilityState(
                 refreshGeneration,
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                IsValid: false);
             if (ReferenceEquals(Interlocked.CompareExchange(ref _state, invalid, current), current))
             {
                 return;
@@ -112,10 +123,11 @@ internal sealed class FeatureStreamRoutabilityGuard
     private static string RouteKey(string serviceId, int layerId)
         => string.Concat(serviceId, "\u001f", layerId.ToString(CultureInfo.InvariantCulture));
 
-    private sealed record RoutabilityState(long RefreshGeneration, HashSet<string> Routes)
+    private sealed record RoutabilityState(long RefreshGeneration, HashSet<string> Routes, bool IsValid)
     {
         public static RoutabilityState Empty { get; } = new(
             0,
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            IsValid: false);
     }
 }

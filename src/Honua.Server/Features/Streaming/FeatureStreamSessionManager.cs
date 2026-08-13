@@ -132,7 +132,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         var now = Environment.TickCount64;
-        if (now < Volatile.Read(ref _nextRoutabilityRefreshTimestamp))
+        if (CanReuseRoutabilityRefresh(now))
         {
             return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
         }
@@ -143,12 +143,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         try
         {
             now = Environment.TickCount64;
-            if (now < Volatile.Read(ref _nextRoutabilityRefreshTimestamp))
+            if (CanReuseRoutabilityRefresh(now))
             {
                 return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
             }
 
-            await RefreshScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
+            await _routabilityGuard.RefreshAsync(
+                ReadScopedMetadataAsync,
+                cancellationToken).ConfigureAwait(false);
             Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 1);
             return true;
         }
@@ -176,11 +178,21 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    private async ValueTask RefreshScopedMetadataAsync(CancellationToken cancellationToken)
+    private bool CanReuseRoutabilityRefresh(long now)
+    {
+        if (now >= Volatile.Read(ref _nextRoutabilityRefreshTimestamp))
+        {
+            return false;
+        }
+
+        return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) == 0 || _routabilityGuard!.HasValidState;
+    }
+
+    private async ValueTask<MetadataV2GraphSnapshot> ReadScopedMetadataAsync(CancellationToken cancellationToken)
     {
         await using var scope = _serviceScopeFactory!.CreateAsyncScope();
         var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        await _routabilityGuard!.RefreshAsync(provider, cancellationToken).ConfigureAwait(false);
+        return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

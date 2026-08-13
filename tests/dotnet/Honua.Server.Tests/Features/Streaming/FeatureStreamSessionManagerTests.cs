@@ -679,7 +679,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public async Task RefreshRoutability_WithinBoundedInterval_ReusesCurrentRouteSet()
+    public async Task RefreshRoutability_WithinBoundedInterval_ReusesOnlyValidRouteSet()
     {
         var snapshot = await new TestMetadataV2GraphProvider(
             new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
@@ -687,17 +687,21 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         using var services = new ServiceCollection()
             .AddScoped<IMetadataV2GraphProvider>(_ => provider)
             .BuildServiceProvider();
+        var guard = new FeatureStreamRoutabilityGuard();
         using var manager = new FeatureStreamSessionManager(
             Options.Create(new FeatureStreamOptions()),
             NullLogger<FeatureStreamSessionManager>.Instance,
             TestTelemetry.CreateFeatureStreamMetrics(),
-            routabilityGuard: new FeatureStreamRoutabilityGuard(),
+            routabilityGuard: guard,
             serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
 
         Assert.True(await manager.RefreshRoutabilityAsync());
         Assert.True(await manager.RefreshRoutabilityAsync());
-
         Assert.Equal(1, provider.ReadCount);
+
+        guard.Invalidate(guard.BeginRefresh());
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.Equal(2, provider.ReadCount);
     }
 
     [UnitTest]
