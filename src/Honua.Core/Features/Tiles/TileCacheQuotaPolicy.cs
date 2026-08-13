@@ -22,7 +22,11 @@ public readonly record struct TileCacheEntry(
     long SizeBytes,
     DateTimeOffset LastAccessUtc,
     string? WriteVersion = null,
-    string? TenantScope = null);
+    string? TenantScope = null)
+{
+    /// <summary>Whether an operator already marked this write expired.</summary>
+    public bool IsExplicitlyExpired { get; init; }
+}
 
 /// <summary>
 /// Pure size-quota / LRU eviction policy for the tile cache (#1837). Given the current cache

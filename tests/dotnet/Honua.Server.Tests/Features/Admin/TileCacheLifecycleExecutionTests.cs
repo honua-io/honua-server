@@ -558,6 +558,31 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Expire_MaxTiles_RepeatedJobsAdvancePastExistingMarkers()
+    {
+        const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
+        const string second = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        const string third = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/2.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(first, 100);
+        index.Seed(second, 100);
+        index.Seed(third, 100);
+        var request = new TileOperationStartRequest
+        {
+            Operation = "expire",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            MaxTiles = 1
+        };
+
+        (await ExecuteAsync(request, index, CreateStorage())).SuccessfulTiles.Should().Be(1);
+        (await ExecuteAsync(request, index, CreateStorage())).SuccessfulTiles.Should().Be(1);
+        (await ExecuteAsync(request, index, CreateStorage())).SuccessfulTiles.Should().Be(1);
+
+        index.Expired.Should().BeEquivalentTo([first, second, third]);
+    }
+
+    [UnitTest]
     public async Task Expire_DoesNotReadExpirationBeforeIdempotentMarkerWrite()
     {
         var index = new StatefulKeyIndex { FailExpirationReads = true };
@@ -622,7 +647,7 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
-    public async Task Expire_AfterPartialFailure_ReplaysIdempotentMarkersWithoutRecountingPriorSuccesses()
+    public async Task Expire_AfterPartialFailure_RetriesOnlyUnmarkedEntries()
     {
         const string key1 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
         const string key2 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
@@ -647,9 +672,9 @@ public sealed class TileCacheLifecycleExecutionTests
         var second = await ExecuteAsync(request, index, CreateStorage(), checkpointStore);
 
         second.Status.Should().Be(OperationStatus.Completed);
-        second.TotalTiles.Should().Be(2);
-        second.ProcessedTiles.Should().Be(2);
-        second.SuccessfulTiles.Should().Be(2);
+        second.TotalTiles.Should().Be(1);
+        second.ProcessedTiles.Should().Be(1);
+        second.SuccessfulTiles.Should().Be(1);
         second.FailedTiles.Should().Be(0);
         index.Expired.Should().BeEquivalentTo([key1, key2]);
     }
@@ -1013,7 +1038,10 @@ public sealed class TileCacheLifecycleExecutionTests
                     kvp.Key,
                     kvp.Value.SizeBytes,
                     DateTimeOffset.UtcNow,
-                    TenantScope: kvp.Value.TenantScope))]);
+                    TenantScope: kvp.Value.TenantScope)
+                {
+                    IsExplicitlyExpired = Expired.Contains(kvp.Key)
+                })]);
 
         public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
             CancellationToken cancellationToken = default)

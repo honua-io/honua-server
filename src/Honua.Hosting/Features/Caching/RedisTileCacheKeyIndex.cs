@@ -123,6 +123,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             snapshot[#snapshot + 1] = redis.call('HGET', KEYS[3], key) or ''
                 snapshot[#snapshot + 1] = redis.call('HGET', KEYS[4], key) or ''
                 snapshot[#snapshot + 1] = redis.call('HGET', KEYS[5], key) or ''
+                snapshot[#snapshot + 1] = redis.call('SISMEMBER', KEYS[6], key)
             else
                 redis.call('ZREM', KEYS[1], key)
             end
@@ -439,7 +440,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                         LastAccessSetKey,
                         SizeHashKey,
                         WriteVersionHashKey,
-                        TenantScopeHashKey
+                        TenantScopeHashKey,
+                        ExpiredSetKey
                     },
                     new RedisValue[] { cursor, pageSize },
                     CommandFlags.DemandMaster).ConfigureAwait(false);
@@ -477,7 +479,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
 
         const int headerFields = 2;
-        const int fieldsPerEntry = 5;
+        const int fieldsPerEntry = 6;
         if ((snapshot.Length - headerFields) % fieldsPerEntry != 0)
         {
             throw new RedisException("Tile-cache snapshot script returned a malformed result.");
@@ -515,7 +517,16 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                 tenantScope = null;
             }
 
-            entries.Add(new TileCacheEntry(key, size, lastAccess, writeVersion, tenantScope));
+            var isExplicitlyExpired = (long)snapshot[i + 5] == 1L;
+            entries.Add(new TileCacheEntry(
+                key,
+                size,
+                lastAccess,
+                writeVersion,
+                tenantScope)
+            {
+                IsExplicitlyExpired = isExplicitlyExpired
+            });
         }
 
         return (
@@ -606,17 +617,15 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                 }
 
                 var stored = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
-                if (stored is not null)
+                if (stored is not null
+                    && (string.IsNullOrWhiteSpace(stored.ETag)
+                        || !await _storage.DeleteIfMatchAsync(key, stored.ETag, token).ConfigureAwait(false)))
                 {
-                    if (string.IsNullOrWhiteSpace(stored.ETag)
-                        || !await _storage.DeleteIfMatchAsync(key, stored.ETag, token).ConfigureAwait(false))
+                    var current = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
+                    if (current is not null)
                     {
-                        var current = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
-                        if (current is not null)
-                        {
-                            throw new InvalidOperationException(
-                                $"Could not delete incomplete legacy tile-cache object '{key}'.");
-                        }
+                        throw new InvalidOperationException(
+                            $"Could not delete incomplete legacy tile-cache object '{key}'.");
                     }
                 }
 

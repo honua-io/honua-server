@@ -207,17 +207,18 @@ public sealed class RedisTileCacheKeyIndexTests
                 Arg.Any<RedisValue[]>(),
                 CommandFlags.DemandMaster)
             .Returns(
-                CreateSnapshotResult("b", 2, ("a", "1000", "tenant_a"), ("b", "2000", "tenant_a")),
-                CreateSnapshotResult("c", 1, ("c", "3000", "tenant_a")));
+                CreateSnapshotResult("b", 2, ("a", "1000", "tenant_a", false), ("b", "2000", "tenant_a", true)),
+                CreateSnapshotResult("c", 1, ("c", "3000", "tenant_a", false)));
         var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
 
-        var entries = new List<string>();
+        var entries = new List<TileCacheEntry>();
         await foreach (var page in index.ReadPagesAsync(2))
         {
-            entries.AddRange(page.Entries.Select(static entry => entry.Key));
+            entries.AddRange(page.Entries);
         }
 
-        entries.Should().Equal("a", "b", "c");
+        entries.Select(static entry => entry.Key).Should().Equal("a", "b", "c");
+        entries.Single(entry => entry.Key == "b").IsExplicitlyExpired.Should().BeTrue();
         var cursors = database.ReceivedCalls()
             .Where(call =>
                 call.GetMethodInfo().Name == nameof(IDatabase.ScriptEvaluateAsync) &&
@@ -227,6 +228,15 @@ public sealed class RedisTileCacheKeyIndexTests
             .ToArray();
         cursors.Should().BeEquivalentTo(new[] { new[] { string.Empty, "2" }, new[] { "b", "2" } },
             options => options.WithStrictOrdering());
+        await database.Received(2).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("ZRANGEBYLEX", StringComparison.Ordinal) &&
+                script.Contains("SISMEMBER', KEYS[6]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 6 &&
+                keys[5].ToString() == "honua:tile-cache:expired"),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
     }
 
     [Fact]
@@ -359,7 +369,7 @@ public sealed class RedisTileCacheKeyIndexTests
     private static RedisResult CreateSnapshotResult(
         string cursor,
         int rawCount,
-        params (string Key, string Score, string TenantScope)[] entries)
+        params (string Key, string Score, string TenantScope, bool IsExplicitlyExpired)[] entries)
         => RedisResult.Create(
             new RedisResult[]
             {
@@ -371,7 +381,8 @@ public sealed class RedisTileCacheKeyIndexTests
                 RedisResult.Create((RedisValue)entry.Score),
                 RedisResult.Create((RedisValue)"42"),
                 RedisResult.Create((RedisValue)"version"),
-                RedisResult.Create((RedisValue)entry.TenantScope)
+                RedisResult.Create((RedisValue)entry.TenantScope),
+                RedisResult.Create((RedisValue)(entry.IsExplicitlyExpired ? 1 : 0))
             })).ToArray());
 
     [Theory]

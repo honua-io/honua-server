@@ -144,6 +144,15 @@ internal sealed partial class TileOperationExecutionCore
                     continue;
                 }
 
+                // Expiration retains the index row and storage bytes. Exclude a marker observed in
+                // the same bounded snapshot before applying MaxTiles so repeated capped jobs move
+                // forward instead of selecting the same lexicographic prefix forever. Delete still
+                // includes marked entries because it must remove their retained bytes.
+                if (!deleteBytes && entry.IsExplicitlyExpired)
+                {
+                    continue;
+                }
+
                 matchedCount++;
                 if (deleteBytes && pendingDeleteUnits.Contains(TruncateUnit(entry.Key)))
                 {
@@ -172,9 +181,9 @@ internal sealed partial class TileOperationExecutionCore
         var phase = deleteBytes ? "Deleting tiles" : "Expiring tiles";
         var total = (long)matched.Count;
         // The snapshot is the complete accounting window for this attempt. Delete retries no
-        // longer contain successfully removed keys, while expire retries still contain already
-        // expired keys; carrying the prior checkpoint count into either snapshot would make the
-        // reported and metered success count exceed TotalTiles.
+        // longer contain successfully removed keys, and expire retries exclude entries whose
+        // markers were present in the snapshot; carrying the prior checkpoint count into either
+        // snapshot would make the reported and metered success count exceed TotalTiles.
         var affected = 0L;
         var processed = 0L;
         var failed = 0L;
