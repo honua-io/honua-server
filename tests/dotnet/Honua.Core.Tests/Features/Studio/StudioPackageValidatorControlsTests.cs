@@ -164,6 +164,39 @@ public sealed class StudioPackageValidatorControlsTests
     }
 
     [UnitTest]
+    public void Validate_NullControlTitle_Fails()
+    {
+        // A whole-envelope update must not slip `null` past the wire-shape gate: the published
+        // control schema permits only strings when `title` is present, and deserialization would
+        // otherwise treat the null as an omission and mark the draft valid.
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [],
+              "controls": [{ "id": "nav", "kind": "navigation", "title": null }]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.control.title.string");
+    }
+
+    [UnitTest]
+    public void Validate_NullControlSourceId_Fails()
+    {
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [],
+              "controls": [{ "id": "filter", "kind": "filterSelect", "sourceId": null }]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.control.sourceId.string");
+    }
+
+    [UnitTest]
     public void Validate_NullControlEntry_Fails()
     {
         var summary = ValidateBody("""{"format":"honua_map_package.v1","layers":[],"controls":[null]}""");

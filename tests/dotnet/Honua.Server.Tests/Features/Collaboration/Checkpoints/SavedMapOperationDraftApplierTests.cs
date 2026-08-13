@@ -76,9 +76,10 @@ public sealed class SavedMapOperationDraftApplierTests
                 SavedMapOperationKind.ReplaceWebMapDocument,
                 """{"controls":[{"id":"filter","kind":"filterSelect","sourceId":"ds-parcels"}]}""")]);
 
-        applied.Body!.Value.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
-        applied.Body.Value.GetProperty("controls")[0].GetProperty("sourceId").GetString()
-            .Should().Be("ds-parcels");
+        applied.Body.Should().NotBeNull();
+        var body = applied.Body!.Value;
+        body.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
+        body.GetProperty("controls")[0].GetProperty("sourceId").GetString().Should().Be("ds-parcels");
     }
 
     [UnitTest]

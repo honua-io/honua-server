@@ -608,6 +608,11 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                     canDeserialize &= ValidateRequiredString(
                         control, "kind", path, "studio.control.kind.required", diagnostics);
 
+                    canDeserialize &= ValidateOptionalString(
+                        control, "title", path, "studio.control.title.string", diagnostics);
+                    canDeserialize &= ValidateOptionalString(
+                        control, "sourceId", path, "studio.control.sourceId.string", diagnostics);
+
                     if (control.TryGetProperty("config", out var config) && config.ValueKind != JsonValueKind.Object)
                     {
                         diagnostics.Add(Error(
@@ -667,6 +672,25 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         }
 
         diagnostics.Add(Error(code, $"{path}/{memberName}", $"{memberName} must be a string."));
+        return false;
+    }
+
+    private static bool ValidateOptionalString(
+        JsonElement value,
+        string memberName,
+        string path,
+        string code,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        // An absent member is legal; a present one must be a string. `null` is rejected
+        // explicitly so a stored document cannot disagree with the published schema,
+        // which allows only strings when the property is present.
+        if (!value.TryGetProperty(memberName, out var member) || member.ValueKind == JsonValueKind.String)
+        {
+            return true;
+        }
+
+        diagnostics.Add(Error(code, $"{path}/{memberName}", $"{memberName} must be a string when present."));
         return false;
     }
 

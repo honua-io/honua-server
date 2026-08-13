@@ -484,9 +484,16 @@ public sealed partial class McpTaxonomyAlignmentTests
 
         var liveAdd = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.AddControlArgumentSchema));
         var liveRemove = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.RemoveControlArgumentSchema));
+        // The standard schemas are asserted alongside the live ones so a published
+        // conformance contract can never accept an id the handler rejects — the same
+        // pairing the interaction ids get below.
+        var standardAdd = LoadSchema(Path.Join(SchemaRoot, "tools", "add_control.schema.json"));
+        var standardRemove = LoadSchema(Path.Join(SchemaRoot, "tools", "remove_control.schema.json"));
 
         addInput.IsValid(liveAdd).Should().BeFalse();
+        addInput.IsValid(standardAdd).Should().BeFalse();
         removeInput.IsValid(liveRemove).Should().BeFalse();
+        removeInput.IsValid(standardRemove).Should().BeFalse();
     }
 
     [UnitTest]
