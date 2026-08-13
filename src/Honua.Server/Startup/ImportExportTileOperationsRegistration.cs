@@ -175,7 +175,8 @@ internal static class ImportExportTileOperationsRegistration
             services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheKeyIndex>(sp =>
                 new RedisTileCacheKeyIndex(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<ILogger<RedisTileCacheKeyIndex>>()));
+                    sp.GetRequiredService<ILogger<RedisTileCacheKeyIndex>>(),
+                    sp.GetService<ICloudFileStorage>()));
         }
         else
         {

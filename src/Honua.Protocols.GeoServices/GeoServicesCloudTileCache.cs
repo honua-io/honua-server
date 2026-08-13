@@ -181,12 +181,36 @@ internal static class GeoServicesCloudTileCache
                 {
                     try
                     {
-                        await keyIndex.RecordWriteAsync(
-                            objectKey,
-                            data.LongLength,
-                            recordedExpiresAt,
-                            tenantScope,
-                            mutationToken).ConfigureAwait(false);
+                        if (mutationContext.TryRecordWriteIfLeaseOwnedAsync is { } tryRecordWrite)
+                        {
+                            if (string.IsNullOrWhiteSpace(uploadedETag))
+                            {
+                                throw new InvalidOperationException(
+                                    $"The uploaded tile '{objectKey}' has no provider ETag for a generation-fenced lifecycle commit.");
+                            }
+
+                            var committed = await tryRecordWrite(
+                                new TileCacheWriteRegistration(
+                                    data.LongLength,
+                                    recordedExpiresAt,
+                                    tenantScope,
+                                    uploadedETag),
+                                mutationToken).ConfigureAwait(false);
+                            if (!committed)
+                            {
+                                throw new InvalidOperationException(
+                                    $"The mutation lease for tile '{objectKey}' changed before its lifecycle state was committed.");
+                            }
+                        }
+                        else
+                        {
+                            await keyIndex.RecordWriteAsync(
+                                objectKey,
+                                data.LongLength,
+                                recordedExpiresAt,
+                                tenantScope,
+                                mutationToken).ConfigureAwait(false);
+                        }
                     }
                     catch (Exception exception) when (exception is not OutOfMemoryException)
                     {

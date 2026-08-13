@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Tiles;
 using StackExchange.Redis;
 
@@ -56,31 +57,28 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         """;
     private const string MigrateMembershipScript = """
         if redis.call('EXISTS', KEYS[3]) == 1 then
-            return '0'
+            return {'0', '0'}
         end
         local batch = redis.call('ZSCAN', KEYS[1], ARGV[1], 'COUNT', ARGV[2])
         local values = batch[2]
+        local incomplete = {}
         for index = 1, #values, 2 do
             local key = values[index]
             if redis.call('HEXISTS', KEYS[4], key) == 1
                 and redis.call('HEXISTS', KEYS[5], key) == 1
+                and redis.call('HEXISTS', KEYS[6], key) == 1
                 and redis.call('ZSCORE', KEYS[8], key) then
                 redis.call('ZADD', KEYS[2], 0, key)
             else
-                redis.call('ZREM', KEYS[1], key)
-                redis.call('ZREM', KEYS[2], key)
-                redis.call('HDEL', KEYS[4], key)
-                redis.call('HDEL', KEYS[5], key)
-                redis.call('HDEL', KEYS[6], key)
-                redis.call('SREM', KEYS[7], key)
-                redis.call('ZREM', KEYS[8], key)
+                incomplete[#incomplete + 1] = key
             end
         end
         local next_cursor = tostring(batch[1])
-        if next_cursor == '0' then
-            redis.call('SET', KEYS[3], '1')
+        local result = {next_cursor, tostring(#incomplete)}
+        for _, key in ipairs(incomplete) do
+            result[#result + 1] = key
         end
-        return next_cursor
+        return result
         """;
     private const string RemoveIfLeaseOwnerScript = """
         if redis.call('GET', KEYS[1]) ~= ARGV[1] then
@@ -93,6 +91,19 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         redis.call('SREM', KEYS[6], ARGV[2])
         redis.call('ZREM', KEYS[7], ARGV[2])
         redis.call('ZREM', KEYS[8], ARGV[2])
+        return 1
+        """;
+    private const string RecordWriteIfLeaseOwnerScript = """
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+            return 0
+        end
+        redis.call('ZADD', KEYS[2], ARGV[3], ARGV[2])
+        redis.call('HSET', KEYS[3], ARGV[2], ARGV[4])
+        redis.call('HSET', KEYS[4], ARGV[2], ARGV[7])
+        redis.call('HSET', KEYS[5], ARGV[2], ARGV[6])
+        redis.call('ZADD', KEYS[6], 0, ARGV[2])
+        redis.call('SREM', KEYS[7], ARGV[2])
+        redis.call('ZADD', KEYS[8], ARGV[5], ARGV[2])
         return 1
         """;
     private const string SnapshotScript = """
@@ -151,11 +162,15 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
 
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisTileCacheKeyIndex> _logger;
+    private readonly ICloudFileStorage? _storage;
     private readonly TimeSpan _mutationLeaseDuration;
     private readonly TimeSpan _mutationLeaseRenewalInterval;
 
-    public RedisTileCacheKeyIndex(IConnectionMultiplexer redis, ILogger<RedisTileCacheKeyIndex> logger)
-        : this(redis, logger, DefaultMutationLeaseDuration, DefaultMutationLeaseRenewalInterval)
+    public RedisTileCacheKeyIndex(
+        IConnectionMultiplexer redis,
+        ILogger<RedisTileCacheKeyIndex> logger,
+        ICloudFileStorage? storage = null)
+        : this(redis, logger, DefaultMutationLeaseDuration, DefaultMutationLeaseRenewalInterval, storage)
     {
     }
 
@@ -163,10 +178,12 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         IConnectionMultiplexer redis,
         ILogger<RedisTileCacheKeyIndex> logger,
         TimeSpan mutationLeaseDuration,
-        TimeSpan mutationLeaseRenewalInterval)
+        TimeSpan mutationLeaseRenewalInterval,
+        ICloudFileStorage? storage = null)
     {
         _redis = redis ?? throw new ArgumentNullException(nameof(redis));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _storage = storage;
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mutationLeaseDuration, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mutationLeaseRenewalInterval, TimeSpan.Zero);
         if (mutationLeaseRenewalInterval >= mutationLeaseDuration)
@@ -509,7 +526,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             cursor);
     }
 
-    private static async Task EnsureStableMembershipAsync(
+    private async Task EnsureStableMembershipAsync(
         IDatabase database,
         int pageSize,
         CancellationToken cancellationToken)
@@ -518,7 +535,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await database.ScriptEvaluateAsync(
+            var result = (RedisResult[]?)await database.ScriptEvaluateAsync(
                 MigrateMembershipScript,
                 new RedisKey[]
                 {
@@ -533,9 +550,84 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                 },
                 new RedisValue[] { cursor, pageSize },
                 CommandFlags.DemandMaster).ConfigureAwait(false);
-            cursor = (string?)result ?? "0";
+            if (result is null || result.Length < 2)
+            {
+                throw new RedisException("Tile-cache membership migration returned a malformed result.");
+            }
+
+            cursor = (string?)result[0] ?? "0";
+            var countText = (string?)result[1];
+            if (!int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var incompleteCount)
+                || incompleteCount < 0
+                || result.Length != incompleteCount + 2)
+            {
+                throw new RedisException("Tile-cache membership migration returned invalid cleanup candidates.");
+            }
+
+            for (var index = 0; index < incompleteCount; index++)
+            {
+                var key = (string?)result[index + 2];
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    throw new RedisException("Tile-cache membership migration returned an empty cleanup key.");
+                }
+
+                await DeleteIncompleteLegacyEntryAsync(database, key, cancellationToken).ConfigureAwait(false);
+            }
         }
         while (!string.Equals(cursor, "0", StringComparison.Ordinal));
+
+        _ = await database.StringSetAsync(MembershipMigrationMarkerKey, "1").ConfigureAwait(false);
+    }
+
+    private async Task DeleteIncompleteLegacyEntryAsync(
+        IDatabase database,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        if (_storage is null)
+        {
+            throw new InvalidOperationException(
+                $"Cannot reconcile incomplete tile-cache lifecycle state for '{key}' without its storage backend.");
+        }
+
+        await ExecuteSerializedAsync(
+            key,
+            async mutationContext =>
+            {
+                var token = mutationContext.CancellationToken;
+                var metadataComplete = await database.HashExistsAsync(WriteVersionHashKey, key).ConfigureAwait(false)
+                    && await database.HashExistsAsync(TenantScopeHashKey, key).ConfigureAwait(false)
+                    && await database.HashExistsAsync(SizeHashKey, key).ConfigureAwait(false)
+                    && await database.SortedSetScoreAsync(StorageExpirationSetKey, key).ConfigureAwait(false) is not null;
+                if (metadataComplete)
+                {
+                    return;
+                }
+
+                var stored = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
+                if (stored is not null)
+                {
+                    if (string.IsNullOrWhiteSpace(stored.ETag)
+                        || !await _storage.DeleteIfMatchAsync(key, stored.ETag, token).ConfigureAwait(false))
+                    {
+                        var current = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
+                        if (current is not null)
+                        {
+                            throw new InvalidOperationException(
+                                $"Could not delete incomplete legacy tile-cache object '{key}'.");
+                        }
+                    }
+                }
+
+                if (mutationContext.TryRemoveIndexIfLeaseOwnedAsync is not { } tryRemove
+                    || !await tryRemove(mutationContext.LeaseLostToken).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        $"Lost the tile-cache mutation lease before removing legacy state for '{key}'.");
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -652,6 +744,39 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             return removed == 1;
         }
 
+        async Task<bool> TryRecordWriteIfLeaseOwnedAsync(
+            TileCacheWriteRegistration registration,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            ArgumentException.ThrowIfNullOrWhiteSpace(registration.WriteVersion);
+            var recorded = (long)await database.ScriptEvaluateAsync(
+                RecordWriteIfLeaseOwnerScript,
+                new RedisKey[]
+                {
+                    leaseKey,
+                    LastAccessSetKey,
+                    SizeHashKey,
+                    WriteVersionHashKey,
+                    TenantScopeHashKey,
+                    MembershipSetKey,
+                    ExpiredSetKey,
+                    StorageExpirationSetKey
+                },
+                new RedisValue[]
+                {
+                    owner,
+                    key,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    registration.SizeBytes,
+                    registration.ExpiresAt.ToUnixTimeMilliseconds(),
+                    registration.TenantScope ?? string.Empty,
+                    registration.WriteVersion
+                },
+                CommandFlags.DemandMaster).ConfigureAwait(false);
+            return recorded == 1;
+        }
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -660,7 +785,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                 await mutation(new TileCacheMutationContext(
                     mutationCancellation.Token,
                     leaseLost.Token,
-                    TryRemoveIndexIfLeaseOwnedAsync)).ConfigureAwait(false);
+                    TryRemoveIndexIfLeaseOwnedAsync,
+                    TryRecordWriteIfLeaseOwnedAsync)).ConfigureAwait(false);
             }
             catch (OperationCanceledException ex) when (
                 leaseLost.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

@@ -78,6 +78,64 @@ public sealed class GeoServicesCloudTileCacheTests
     }
 
     [UnitTest]
+    public async Task TryWriteAsync_CoordinatedWrite_AtomicallyRegistersUploadedGeneration()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var storedExpiresAt = DateTimeOffset.UtcNow.AddHours(3);
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = ObjectKey,
+                FileName = "1.png",
+                StoragePath = ObjectKey,
+                ContentType = "image/png",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = storedExpiresAt,
+                ETag = "etag-1",
+                Provider = CloudStorageProvider.Local
+            }));
+        var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
+        keyIndex.IsEnabled.Returns(true);
+        TileCacheWriteRegistration? registration = null;
+        var mutationCoordinator = (ITileCacheMutationCoordinator)keyIndex;
+        mutationCoordinator.ExecuteSerializedAsync(
+                ObjectKey,
+                Arg.Any<Func<TileCacheMutationContext, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<Func<TileCacheMutationContext, Task>>(1)(
+                new TileCacheMutationContext(
+                    CancellationToken.None,
+                    CancellationToken.None,
+                    null,
+                    (value, _) =>
+                    {
+                        registration = value;
+                        return Task.FromResult(true);
+                    })));
+
+        await GeoServicesCloudTileCache.TryWriteAsync(
+            storage,
+            new CloudStorageOptions { Enabled = true },
+            ObjectKey,
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            "1.png",
+            ImmutableDictionary<string, string>.Empty,
+            CancellationToken.None,
+            keyIndex,
+            tenantScope: "tenant_a");
+
+        registration.Should().Be(new TileCacheWriteRegistration(3, storedExpiresAt, "tenant_a", "etag-1"));
+        await keyIndex.DidNotReceive().RecordWriteAsync(
+            Arg.Any<string>(),
+            Arg.Any<long>(),
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task TryWriteAsync_FailedUpload_DoesNotClearExpiration()
     {
         var storage = Substitute.For<ICloudFileStorage>();
