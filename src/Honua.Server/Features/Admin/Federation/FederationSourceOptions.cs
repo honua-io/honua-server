@@ -34,38 +34,38 @@ public sealed class FederationSourceConfig
     /// Gets the stable identifier, unique within the deployment.
     /// </summary>
     [Required]
-    public string Id { get; init; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets the human-readable display name.
     /// </summary>
-    public string? DisplayName { get; init; }
+    public string? DisplayName { get; set; }
 
     /// <summary>
     /// Gets the transport family of the source.
     /// </summary>
-    public FederatedSourceKind Kind { get; init; }
+    public FederatedSourceKind Kind { get; set; }
 
     /// <summary>
     /// Gets the base endpoint URL of the remote service.
     /// </summary>
     [Required]
-    public string Endpoint { get; init; } = string.Empty;
+    public string Endpoint { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets the remote layer or collection identifier exposed for federated joins.
     /// </summary>
     [Required]
-    public string RemoteLayer { get; init; } = string.Empty;
+    public string RemoteLayer { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets the per-request timeout in seconds applied to remote calls. Defaults to 30s.
     /// </summary>
     [Range(1, 600)]
-    public int RequestTimeoutSeconds { get; init; } = 30;
+    public int RequestTimeoutSeconds { get; set; } = 30;
 
     /// <summary>
     /// Gets a value indicating whether the source is enabled for federation.
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; set; } = true;
 }
