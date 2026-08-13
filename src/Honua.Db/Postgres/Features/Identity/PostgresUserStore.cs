@@ -555,16 +555,30 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         if (active)
         {
+            var lockedExisting = await ReadUserByCanonicalIdAsync(
+                connection,
+                transaction,
+                canonicalId,
+                cancellationToken).ConfigureAwait(false);
+            if (lockedExisting is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return null;
+            }
+
             var update = $"UPDATE {_usersTable} SET is_active = TRUE, updated_at = NOW() WHERE user_id = @user_id";
             await using var command = new NpgsqlCommand(update, connection, transaction);
             command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, canonicalId);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-            // Group memberships intentionally survive deprovisioning. Restore their mapped
-            // roles when the user is reactivated so the durable group view and user role view
-            // cannot diverge after delete/reprovision flows.
-            var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
-            await ReplaceRolesAsync(connection, transaction, canonicalId, groupRoles, cancellationToken).ConfigureAwait(false);
+            if (!lockedExisting.IsActive)
+            {
+                // Group memberships intentionally survive deprovisioning. Restore their mapped
+                // roles only when transitioning back to active. An idempotent activation must
+                // preserve direct roles assigned while the account was already active.
+                var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
+                await ReplaceRolesAsync(connection, transaction, canonicalId, groupRoles, cancellationToken).ConfigureAwait(false);
+            }
         }
         else
         {

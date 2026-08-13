@@ -303,6 +303,32 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task SetActive_AlreadyActive_PreservesDirectRoles()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
+        try
+        {
+            await EnsureManagedUserTablesAsync(schema);
+            var store = CreateStore(schema);
+
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "active-user@example.com",
+                Roles = ["editor"],
+            });
+
+            var unchanged = await store.SetActiveAsync("active-user@example.com", active: true);
+
+            unchanged!.IsActive.Should().BeTrue();
+            unchanged.Roles.Should().BeEquivalentTo(["editor"]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ReplaceUser_OmittedExternalId_PreservesStoredSubject()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
