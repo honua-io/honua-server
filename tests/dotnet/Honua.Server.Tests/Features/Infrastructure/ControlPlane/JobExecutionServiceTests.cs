@@ -263,6 +263,13 @@ public sealed class JobExecutionServiceTests
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>())
             .Returns(true);
+        jobStore.TrySetIfLeaseOwnedAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var jobQueue = Substitute.For<IJobQueue>();
         var executor = Substitute.For<IJobExecutor>();
@@ -317,6 +324,13 @@ public sealed class JobExecutionServiceTests
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.TrySetIfLeaseOwnedAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
             .Returns(false);
 
         var jobQueue = Substitute.For<IJobQueue>();
@@ -341,10 +355,11 @@ public sealed class JobExecutionServiceTests
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
-        await jobStore.Received(1).RenewLeaseAsync(
+        await jobStore.Received(1).TrySetIfLeaseOwnedAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),
             Arg.Is<string>(value => value.StartsWith("partition:", StringComparison.Ordinal)),
             $"{provisioning.ClaimedBy}:{provisioning.OperationId}",
-            Arg.Any<TimeSpan>(),
+            Arg.Any<TimeSpan?>(),
             CancellationToken.None);
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),

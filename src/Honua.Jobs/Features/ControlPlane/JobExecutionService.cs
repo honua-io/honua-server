@@ -440,7 +440,26 @@ internal sealed partial class JobExecutionService(
             if (result.Status == ExecutionJobStatus.Succeeded)
             {
                 activity?.SetStatus(ActivityStatusCode.Ok);
-                await FinalizeJobAsync(operationId, workerId, result, CancellationToken.None).ConfigureAwait(false);
+                var finalized = await FinalizeJobAsync(
+                        operationId,
+                        workerId,
+                        result,
+                        partitionLeaseId,
+                        partitionLeaseOwner,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (!finalized)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, "Exclusive partition lease lost before finalization.");
+                    await AbandonJobAsync(
+                            running,
+                            workerId,
+                            "Exclusive partition lease was lost before finalization.",
+                            CancellationToken.None,
+                            forceRequeue: true,
+                            requeueDelayOverride: _partitionLeaseContentionDelay)
+                        .ConfigureAwait(false);
+                }
             }
             else
             {
@@ -659,22 +678,24 @@ internal sealed partial class JobExecutionService(
         return $"partition:{Convert.ToHexString(hash)}";
     }
 
-    private async Task FinalizeJobAsync(
+    private async Task<bool> FinalizeJobAsync(
         string operationId,
         string workerId,
         JobExecutionResult result,
+        string? partitionLeaseId,
+        string? partitionLeaseOwner,
         CancellationToken cancellationToken)
     {
         var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (job == null)
         {
-            return;
+            return true;
         }
 
         if (IsTerminalOrNotOwnedBy(job, workerId))
         {
             Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
-            return;
+            return true;
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -691,11 +712,18 @@ internal sealed partial class JobExecutionService(
             CurrentPhase = result.Status == ExecutionJobStatus.Succeeded ? "Completed" : "Failed"
         };
 
-        if (!await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false))
+        var finalized = partitionLeaseId is null
+            ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
+            : await jobStore.TrySetIfLeaseOwnedAsync(
+                    final,
+                    partitionLeaseId,
+                    partitionLeaseOwner!,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        if (!finalized)
         {
-            Log.TerminalStateSkipped(logger, operationId, "CAS conflict on finalize");
-            cancellationTokens.Remove(operationId, workerId);
-            return;
+            Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
+            return false;
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, final);
@@ -729,6 +757,7 @@ internal sealed partial class JobExecutionService(
 
         await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
         Log.JobExecutionCompleted(logger, operationId, result.Status.ToString());
+        return true;
     }
 
     private async Task TerminateJobAsync(
