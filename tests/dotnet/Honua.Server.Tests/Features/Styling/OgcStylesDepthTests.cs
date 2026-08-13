@@ -371,7 +371,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", drawingInfo);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("not bound to a Honua layer");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("not an existing Honua layer");
 
         var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
         fetched.Be200Ok();
