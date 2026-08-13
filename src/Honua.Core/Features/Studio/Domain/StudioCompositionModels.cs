@@ -68,6 +68,14 @@ public sealed record StudioCompositionBody
     /// </summary>
     [JsonPropertyName("controls")]
     public IReadOnlyList<StudioCompositionControl>? Controls { get; init; }
+
+    /// <summary>
+    /// Canonical map-package source binding identifiers projected from the stored
+    /// <c>sourceBindings</c> block. This validation-only projection is not serialized;
+    /// <c>StudioCompositionBodyEditor</c> preserves the original block verbatim.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlySet<string> SourceBindingIds { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -389,7 +397,8 @@ public static class StudioInteractionVocabulary
             return false;
         }
 
-        return (body.Layers ?? []).Any(layer => layer is not null
+        return body.SourceBindingIds.Contains(sourceId)
+            || (body.Layers ?? []).Any(layer => layer is not null
             && (string.Equals(layer.Id, sourceId, StringComparison.Ordinal)
                 || string.Equals(layer.SourceId, sourceId, StringComparison.Ordinal)));
     }

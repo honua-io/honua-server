@@ -149,6 +149,32 @@ public sealed class StudioCompositionControlsTests
     }
 
     [UnitTest]
+    public void AddControl_ResolvesSourceIdAgainstCanonicalSourceBindingsWithoutALayer()
+    {
+        using var stored = JsonDocument.Parse(
+            """
+            {
+              "sourceBindings": [
+                {
+                  "sourceId": "ds-parcels",
+                  "protocol": "ogc_api_features",
+                  "locator": { "url": "https://example.test/collections/parcels" }
+                }
+              ],
+              "layers": []
+            }
+            """);
+        var body = StudioCompositionBodyEditor.ReadBody(
+            BuildEnvelope(StudioPackageFamily.Map, stored.RootElement.Clone()));
+
+        var updated = StudioCompositionBodyEditor.AddControl(
+            body,
+            new StudioCompositionControl { Id = "filter", Kind = "filterSelect", SourceId = "ds-parcels" });
+
+        Assert.Equal("ds-parcels", Assert.Single(updated.Controls!).SourceId);
+    }
+
+    [UnitTest]
     public void AddControl_WithoutASourceId_IsAcceptedForPresentationOnlyKinds()
     {
         // navigation/scale/fullscreen/attribution render no dataset, so omitting sourceId

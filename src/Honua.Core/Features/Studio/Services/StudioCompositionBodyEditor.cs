@@ -78,6 +78,7 @@ public static class StudioCompositionBodyEditor
             {
                 Layers = composition.Layers ?? [],
                 Widgets = composition.Widgets ?? [],
+                SourceBindingIds = ReadSourceBindingIds(body),
             };
         }
         catch (JsonException ex)
@@ -85,6 +86,30 @@ public static class StudioCompositionBodyEditor
             throw new StudioCompositionBodyException(
                 "The draft's composition body is not a valid Studio composition payload.", ex);
         }
+    }
+
+    private static HashSet<string> ReadSourceBindingIds(JsonElement body)
+    {
+        var sourceIds = new HashSet<string>(StringComparer.Ordinal);
+        if (!body.TryGetProperty("sourceBindings", out var bindings)
+            || bindings.ValueKind != JsonValueKind.Array)
+        {
+            return sourceIds;
+        }
+
+        foreach (var binding in bindings.EnumerateArray())
+        {
+            if (binding.ValueKind == JsonValueKind.Object
+                && binding.TryGetProperty("sourceId", out var sourceId)
+                && sourceId.ValueKind == JsonValueKind.String
+                && sourceId.GetString() is { } value
+                && !string.IsNullOrWhiteSpace(value))
+            {
+                sourceIds.Add(value);
+            }
+        }
+
+        return sourceIds;
     }
 
     private static void EnsureReferenceNodesArePresent(StudioCompositionBody composition)
