@@ -497,6 +497,15 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 "The stored style is not bound to a Honua layer, so an Esri drawingInfo update cannot preserve its source. Submit a MapLibre style document instead.");
         }
 
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.StorageBindingsByStorageLayerId.ContainsKey(descriptor.Id)
+            || !snapshot.Index.ResourcesByStorageLayerId.ContainsKey(descriptor.Id))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The stored style references a source that is not an existing Honua layer, so an Esri drawingInfo update cannot preserve its source. Submit a MapLibre style document instead.");
+        }
+
         var geometryType = StandaloneStyleDescriptor.InferGeometryType(drawingInfo);
         if (geometryType == MetadataV2GeometryType.None)
         {

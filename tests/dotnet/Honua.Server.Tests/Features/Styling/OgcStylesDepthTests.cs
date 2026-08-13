@@ -345,13 +345,13 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             {
               "version": 8,
               "sources": {
-                "external": {
+                "layer-123": {
                   "type": "vector",
                   "tiles": ["https://example.test/tiles/{z}/{x}/{y}.mvt"]
                 }
               },
               "layers": [
-                { "id": "external-points", "type": "circle", "source": "external" }
+                { "id": "external-points", "type": "circle", "source": "layer-123" }
               ]
             }
             """;
@@ -376,7 +376,9 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
         fetched.Be200Ok();
         using var document = JsonDocument.Parse(await fetched.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("sources").TryGetProperty("external", out _).Should().BeTrue();
+        var sources = document.RootElement.GetProperty("sources");
+        sources.TryGetProperty("layer-123", out var externalSource).Should().BeTrue();
+        externalSource.GetProperty("tiles")[0].GetString().Should().StartWith("https://example.test/");
         document.RootElement.GetProperty("sources").TryGetProperty("layer-0", out _).Should().BeFalse();
     }
 
