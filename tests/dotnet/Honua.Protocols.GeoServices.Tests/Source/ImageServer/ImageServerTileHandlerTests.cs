@@ -77,6 +77,52 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_PublicationIdentityChanged_ReauthorizesBeforeRasterAccess()
+    {
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "replacement-resource",
+                "replacement",
+                MetadataV2ResourceType.RasterDataset,
+                accessPolicy: new AccessPolicy { AllowedRoles = ["imagery-admin"] })
+            .AddStorageBinding(
+                "replacement-binding",
+                "replacement-resource",
+                "replacement.rasters",
+                storageLayerId: 1)
+            .AddService("replacement-service", "replacement", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "publication-1",
+                "replacement-service",
+                "replacement-resource",
+                layerIndex: 1,
+                storageBindingId: "replacement-binding",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var handler = new ImageServerTileHandler(
+            graphProvider,
+            _rasterStore,
+            NullLogger<ImageServerTileHandler>.Instance);
+        var context = CreateImageServerContext(services => services.AddValidationServices());
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
+
+        var result = await handler.GetImageTileAsync(
+            context,
+            1,
+            0,
+            0,
+            0,
+            "png",
+            publicationId: "publication-1",
+            cacheLayerId: 1);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status403Forbidden);
+        await _rasterStore.DidNotReceive()
+            .QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
     public async Task ResolveFirstAccessibleLayerAsync_NonNumericPublication_UsesStorageLayerFallback()
     {
         var graphProvider = new TestMetadataV2GraphBuilder()
@@ -317,7 +363,9 @@ public class ImageServerTileHandlerTests
         {
             services.AddSingleton(storage);
             services.AddSingleton<IOptions<CloudStorageOptions>>(options);
+            services.AddValidationServices();
         });
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
         var graphProvider = new TestMetadataV2GraphBuilder()
             .AddResource("resource-1", "test-layer", MetadataV2ResourceType.RasterDataset)
             .AddStorageBinding("binding-1", "resource-1", "imagery.rasters", storageLayerId: 1)

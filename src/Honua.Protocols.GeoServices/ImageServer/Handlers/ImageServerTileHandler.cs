@@ -12,6 +12,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Authentication;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Protocols.GeoServices;
 using Honua.Infrastructure.Models;
@@ -117,6 +118,11 @@ internal sealed class ImageServerTileHandler
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            {
+                return accessError;
             }
 
             var tileCacheLayerId = resolvedLayer.Publication.LayerIndex ?? layerId;
@@ -342,6 +348,11 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
+            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            {
+                return accessError;
+            }
+
             var tileCacheLayerId = resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
                 resolvedLayer.Resource,
@@ -489,6 +500,20 @@ internal sealed class ImageServerTileHandler
         var currentCacheLayerId = publication.LayerIndex ?? currentStorageLayerId;
         return currentStorageLayerId == expectedStorageLayerId
             && currentCacheLayerId == (expectedCacheLayerId ?? expectedStorageLayerId);
+    }
+
+    private static IResult? RequireCurrentPublicationAccess(
+        MetadataV2GraphSnapshot snapshot,
+        ImageServerV2Lookups.ResolvedImageLayer resolvedLayer,
+        HttpContext context)
+    {
+        if (resolvedLayer.Resource is null ||
+            !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var service))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+        }
+
+        return AccessPolicyHelpers.RequireResourceAccess(context, resolvedLayer.Resource, service);
     }
 
     private static byte[] CreateTileEnvelope(int level, int row, int col)
