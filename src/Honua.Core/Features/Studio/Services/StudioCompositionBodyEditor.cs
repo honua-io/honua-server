@@ -286,17 +286,32 @@ public static class StudioCompositionBodyEditor
     {
         ArgumentNullException.ThrowIfNull(body);
         ArgumentException.ThrowIfNullOrWhiteSpace(layerId);
-        if (!body.Layers.Any(existing => string.Equals(existing.Id, layerId, StringComparison.Ordinal)))
+        var removedLayer = body.Layers.FirstOrDefault(
+            existing => string.Equals(existing.Id, layerId, StringComparison.Ordinal));
+        if (removedLayer is null)
         {
             throw new StudioCompositionNotFoundException($"No layer with id '{layerId}' exists in the composition.");
         }
 
         EnsureComponentIsUnreferenced(body, StudioInteractionVocabulary.LayerRefPrefix + layerId);
 
-        return body with
+        var updated = body with
         {
             Layers = body.Layers.Where(existing => !string.Equals(existing.Id, layerId, StringComparison.Ordinal)).ToList()
         };
+        var orphanedControl = (body.Controls ?? []).FirstOrDefault(control =>
+            control.SourceId is not null
+            && (string.Equals(control.SourceId, removedLayer.Id, StringComparison.Ordinal)
+                || string.Equals(control.SourceId, removedLayer.SourceId, StringComparison.Ordinal))
+            && !StudioInteractionVocabulary.IsDeclaredSourceId(updated, control.SourceId));
+        if (orphanedControl is not null)
+        {
+            throw new StudioCompositionConflictException(
+                $"Cannot remove layer '{layerId}' because control '{orphanedControl.Id}' still uses sourceId "
+                + $"'{orphanedControl.SourceId}'. Remove or rebind the control first.");
+        }
+
+        return updated;
     }
 
     /// <summary>Sets (or clears) a layer's bound <see cref="StudioCompositionLayer.StyleRef"/>.</summary>
@@ -459,6 +474,12 @@ public static class StudioCompositionBodyEditor
         {
             throw new StudioCompositionConflictException(
                 $"A control 'id' must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.");
+        }
+
+        if (control.Title is { Length: > StudioInteractionVocabulary.MaxControlTitleLength })
+        {
+            throw new StudioCompositionConflictException(
+                $"A control 'title' must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.");
         }
 
         if (!StudioInteractionVocabulary.IsControlKind(control.Kind))

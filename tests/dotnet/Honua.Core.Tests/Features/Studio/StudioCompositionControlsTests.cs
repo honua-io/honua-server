@@ -99,6 +99,21 @@ public sealed class StudioCompositionControlsTests
     }
 
     [UnitTest]
+    public void AddControl_WithOversizedTitle_IsRejected()
+    {
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.AddControl(
+                ParcelComposition(),
+                Control("navigation", "navigation") with
+                {
+                    Title = new string('t', StudioInteractionVocabulary.MaxControlTitleLength + 1),
+                }));
+
+        Assert.Contains("title", error.Message, StringComparison.Ordinal);
+        Assert.Contains("characters or fewer", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void AddControl_WithAnUnresolvableSourceId_IsRejected()
     {
         // ADR-0031 makes source resolution a validation-gate responsibility. A misspelled

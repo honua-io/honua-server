@@ -790,6 +790,12 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
                 $"'control.id' must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.");
         }
 
+        if (control.Title is { Length: > StudioInteractionVocabulary.MaxControlTitleLength })
+        {
+            throw new GeoprocessingValidationException(
+                $"'control.title' must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.");
+        }
+
         if (!StudioInteractionVocabulary.IsControlKind(control.Kind))
         {
             throw new GeoprocessingValidationException(
