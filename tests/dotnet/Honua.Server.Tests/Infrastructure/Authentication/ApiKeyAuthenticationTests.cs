@@ -64,9 +64,11 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     /// <summary>
     /// Helper method to configure WebApplicationFactory with proper test environment settings.
     /// </summary>
-    private static WebApplicationFactory<Program> CreateTestFactory(Action<IWebHostBuilder> configure)
+    private static WebApplicationFactory<Program> CreateTestFactory(
+        string environmentName,
+        Action<IWebHostBuilder> configure)
     {
-        return new TestWebApplicationFactory()
+        return new TestWebApplicationFactory(environmentName)
             .WithWebHostBuilder(builder =>
             {
                 // Apply additional test-specific configuration first
@@ -207,7 +209,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_DevelopmentBypass_ExplicitlyEnabled_AllowsAccess()
     {
         // Arrange - Explicitly enable development bypass (HONUA_DEV_AUTH + operator ack).
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Test", builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "true");
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
@@ -229,7 +231,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange - HONUA_DEV_AUTH=true is set but the operator ack flag is absent.
         // Defence-in-depth: the bypass must not activate without both flags.
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Test", builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "true");
@@ -250,7 +252,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_ProductionEnvironment_NoBypass_RequiresAuth()
     {
         // Arrange - Production environment without bypass
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
@@ -277,7 +279,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // misconfiguration never reaches the auth handler at all.
         var exception = Assert.Throws<InvalidOperationException>(() =>
         {
-            using var factory = CreateTestFactory(builder =>
+            using var factory = CreateTestFactory("Staging", builder =>
             {
                 builder.UseEnvironment("Staging");
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
@@ -298,7 +300,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // in any environment other than Development or Test.
         var exception = Assert.Throws<InvalidOperationException>(() =>
         {
-            using var factory = CreateTestFactory(builder =>
+            using var factory = CreateTestFactory("QA", builder =>
             {
                 builder.UseEnvironment("QA");
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
@@ -319,7 +321,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // configure HONUA_ADMIN_PASSWORD for development access instead.
         var exception = Assert.Throws<InvalidOperationException>(() =>
         {
-            using var factory = CreateTestFactory(builder =>
+            using var factory = CreateTestFactory("Development", builder =>
             {
                 builder.UseEnvironment("Development");
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
@@ -341,7 +343,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string adminPassword = TestAdminPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -363,7 +365,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_InvalidApiKey_DeniesAccess()
     {
         // Arrange
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", CorrectAdminPassword);
@@ -388,7 +390,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_EmptyApiKey_DeniesAccess()
     {
         // Arrange
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
@@ -409,7 +411,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_NoApiKeyHeader_DeniesAccess()
     {
         // Arrange
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
@@ -433,7 +435,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_NoAdminPassword_DeniesAccess()
     {
         // Arrange - Test environment with no admin password configured
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Test", builder =>
         {
             builder.UseEnvironment("Test");
             // Don't set HONUA_ADMIN_PASSWORD
@@ -458,7 +460,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -484,7 +486,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -514,7 +516,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -541,7 +543,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_TrustedForwardedHttps_AllowsAccess()
     {
         const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -566,7 +568,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string adminPassword = TestBasicPriorityPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Test", builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -592,7 +594,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Test", builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
@@ -620,7 +622,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task HealthEndpoint_NoAuth_AlwaysAccessible()
     {
         // Arrange - Production environment with auth required
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
@@ -640,7 +642,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task FeatureServerEndpoint_NoAuth_RequiresAuthByDefault()
     {
         // Arrange - Production environment with auth required and mocked services
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
@@ -668,7 +670,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task FeatureServerEndpoint_NoAuth_AllowPublicRead_AllowsAccess()
     {
         // Arrange - Production environment with allow-public enabled and mocked services
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
@@ -699,7 +701,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_CaseSensitiveApiKey_DeniesAccess()
     {
         // Arrange
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", CaseSensitiveAdminPassword);
@@ -721,7 +723,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         // Arrange
         const string complexPassword = "Test@123!#$%^&*()_+-=[]{}|;:,.<>?";
-        using var factory = CreateTestFactory(builder =>
+        using var factory = CreateTestFactory("Production", builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", complexPassword);

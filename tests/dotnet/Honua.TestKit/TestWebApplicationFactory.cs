@@ -34,17 +34,31 @@ namespace Honua.TestKit;
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
+    private readonly string _environmentName;
+
+    public TestWebApplicationFactory(string environmentName = "Test")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+        _environmentName = environmentName;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
-        => ConfigureForTests(builder);
+        => ConfigureForTests(builder, _environmentName);
 
     protected override IHost CreateHost(IHostBuilder builder)
-        => ConfiguredWebApplicationFactory.StartInTestEnvironment(() => base.CreateHost(builder));
+        => ConfiguredWebApplicationFactory.StartInEnvironment(
+            () => base.CreateHost(builder),
+            _environmentName,
+            enableTestSchemaHeaders: string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase));
 
     internal static void ConfigureForTests(IWebHostBuilder builder)
+        => ConfigureForTests(builder, "Test");
+
+    internal static void ConfigureForTests(IWebHostBuilder builder, string environmentName)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        builder.UseEnvironment("Test");
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+        builder.UseEnvironment(environmentName);
         builder.ConfigureServices(services =>
         {
             services.AddScoped<IDatabaseHealthChecker, Honua.TestKit.Infrastructure.MockHealthyDatabaseChecker>();

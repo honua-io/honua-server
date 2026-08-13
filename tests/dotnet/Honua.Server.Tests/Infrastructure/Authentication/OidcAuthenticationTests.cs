@@ -56,9 +56,10 @@ public class OidcAuthenticationTests
     /// </summary>
     private static WebApplicationFactory<Program> CreateOidcTestFactory(
         Action<IWebHostBuilder>? configure = null,
-        Dictionary<string, string?>? oidcSettings = null)
+        Dictionary<string, string?>? oidcSettings = null,
+        string environmentName = "Test")
     {
-        return new TestWebApplicationFactory()
+        return new TestWebApplicationFactory(environmentName)
             .WithWebHostBuilder(builder =>
             {
                 configure?.Invoke(builder);
@@ -590,7 +591,8 @@ public class OidcAuthenticationTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
             },
-            oidcSettings: settings);
+            oidcSettings: settings,
+            environmentName: "Production");
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with API key
@@ -619,7 +621,8 @@ public class OidcAuthenticationTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
             },
-            oidcSettings: settings);
+            oidcSettings: settings,
+            environmentName: "Production");
         using var client = factory.CreateClient();
 
         // Generate a valid-looking JWT token
@@ -1405,7 +1408,8 @@ public class OidcAuthenticationTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
             },
-            oidcSettings: settings);
+            oidcSettings: settings,
+            environmentName: "Production");
         using var client = factory.CreateClient();
 
         // Act - Access public health endpoint
@@ -1434,7 +1438,8 @@ public class OidcAuthenticationTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
             },
-            oidcSettings: settings);
+            oidcSettings: settings,
+            environmentName: "Production");
         using var client = factory.CreateClient();
 
         // Act - Access FeatureServer endpoint without auth

@@ -29,8 +29,19 @@ internal static class ConfiguredWebApplicationFactory
     /// later Production or Staging factory cannot inherit the Test environment.
     /// </summary>
     internal static IHost StartInTestEnvironment(Func<IHost> startHost)
+        => StartInEnvironment(startHost, "Test", enableTestSchemaHeaders: true);
+
+    /// <summary>
+    /// Starts a host with the environment value that <c>Program.cs</c> must observe before
+    /// later web-host callbacks run.
+    /// </summary>
+    internal static IHost StartInEnvironment(
+        Func<IHost> startHost,
+        string environmentName,
+        bool enableTestSchemaHeaders)
     {
         ArgumentNullException.ThrowIfNull(startHost);
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
 
         lock (_testEnvironmentGate)
         {
@@ -39,9 +50,16 @@ internal static class ConfiguredWebApplicationFactory
             var schemaHeaders = Environment.GetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS");
             try
             {
-                Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Test");
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
-                Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", "true");
+                Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", environmentName);
+                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", environmentName);
+                if (enableTestSchemaHeaders)
+                {
+                    Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", "true");
+                }
+                else
+                {
+                    Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", null);
+                }
                 return startHost();
             }
             finally

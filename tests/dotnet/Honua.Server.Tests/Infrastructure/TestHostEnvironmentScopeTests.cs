@@ -51,4 +51,43 @@ public sealed class TestHostEnvironmentScopeTests
             Environment.SetEnvironmentVariable(schemaHeadersKey, originalSchemaHeaders);
         }
     }
+
+    [Fact]
+    public void StartInEnvironment_RequestedEnvironmentIsVisibleDuringStartupAndRestored()
+    {
+        const string dotnetKey = "DOTNET_ENVIRONMENT";
+        const string aspnetKey = "ASPNETCORE_ENVIRONMENT";
+        const string schemaHeadersKey = "HONUA_TEST_SCHEMA_HEADERS";
+        var originalDotnet = Environment.GetEnvironmentVariable(dotnetKey);
+        var originalAspnet = Environment.GetEnvironmentVariable(aspnetKey);
+        var originalSchemaHeaders = Environment.GetEnvironmentVariable(schemaHeadersKey);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(dotnetKey, "Test");
+            Environment.SetEnvironmentVariable(aspnetKey, "Test");
+            Environment.SetEnvironmentVariable(schemaHeadersKey, "true");
+
+            _ = ConfiguredWebApplicationFactory.StartInEnvironment(
+                () =>
+                {
+                    Environment.GetEnvironmentVariable(dotnetKey).Should().Be("Production");
+                    Environment.GetEnvironmentVariable(aspnetKey).Should().Be("Production");
+                    Environment.GetEnvironmentVariable(schemaHeadersKey).Should().BeNull();
+                    return Substitute.For<IHost>();
+                },
+                "Production",
+                enableTestSchemaHeaders: false);
+
+            Environment.GetEnvironmentVariable(dotnetKey).Should().Be("Test");
+            Environment.GetEnvironmentVariable(aspnetKey).Should().Be("Test");
+            Environment.GetEnvironmentVariable(schemaHeadersKey).Should().Be("true");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(dotnetKey, originalDotnet);
+            Environment.SetEnvironmentVariable(aspnetKey, originalAspnet);
+            Environment.SetEnvironmentVariable(schemaHeadersKey, originalSchemaHeaders);
+        }
+    }
 }
