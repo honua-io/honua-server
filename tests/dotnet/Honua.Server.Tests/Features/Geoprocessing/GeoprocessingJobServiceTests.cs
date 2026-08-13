@@ -1249,7 +1249,7 @@ public sealed class GeoprocessingJobServiceTests
     {
         var membershipSource = Substitute.For<IPrincipalMembershipSource>();
         membershipSource
-            .ResolveMembershipAsync("subject-123", Arg.Any<CancellationToken>())
+            .ResolveMembershipAsync("subject-123", Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<PrincipalMembership?>(
                 new PrincipalMembership(IsActive: true, Roles: [])));
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -1277,7 +1277,7 @@ public sealed class GeoprocessingJobServiceTests
         thrown.DenialReason.Should().Be(AuthorizationDenialReason.StalePrincipalMembership);
         thrown.Message.Should().Contain("current role membership");
         await membershipSource.Received(1)
-            .ResolveMembershipAsync("subject-123", Arg.Any<CancellationToken>());
+            .ResolveMembershipAsync("subject-123", Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
@@ -1289,7 +1289,7 @@ public sealed class GeoprocessingJobServiceTests
     {
         var membershipSource = Substitute.For<IPrincipalMembershipSource>();
         membershipSource
-            .ResolveMembershipAsync("subject-123", Arg.Any<CancellationToken>())
+            .ResolveMembershipAsync("subject-123", Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<PrincipalMembership?>(
                 new PrincipalMembership(IsActive: true, Roles: ["analyst"])));
         ClaimsPrincipal? evaluatedPrincipal = null;
