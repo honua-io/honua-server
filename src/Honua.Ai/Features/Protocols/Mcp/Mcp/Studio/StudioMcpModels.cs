@@ -233,6 +233,30 @@ internal sealed class McpStudioSetLayerStyleArgument
 }
 
 // -----------------------------------------------------------------------
+// honua_studio_set_layer_visibility
+// -----------------------------------------------------------------------
+
+/// <summary>Arguments for <c>honua_studio_set_layer_visibility</c>.</summary>
+internal sealed class McpStudioSetLayerVisibilityArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public string? LayerId { get; set; }
+
+    /// <summary>
+    /// The visibility to store. Required: an omitted/null <c>visible</c> is rejected rather than
+    /// defaulted, so an agent can never "toggle" a layer into a state it did not ask for.
+    /// </summary>
+    [JsonPropertyName("visible")]
+    public bool? Visible { get; set; }
+}
+
+// -----------------------------------------------------------------------
 // honua_studio_set_view
 // -----------------------------------------------------------------------
 

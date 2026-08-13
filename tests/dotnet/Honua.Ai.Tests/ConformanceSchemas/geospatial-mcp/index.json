@@ -421,6 +421,14 @@
       "notes": "Honua extension (honua-server#3002): sets or clears a composed layer's bound style reference, generation-checked. Pending formalization in the standard's map/app composition family."
     },
     {
+      "standardName": "studio_set_layer_visibility",
+      "referenceToolName": "honua_studio_set_layer_visibility",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_set_layer_visibility.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3199): shows or hides a composed layer, generation-checked. The persisted counterpart of the ADR-0030 'setVisibility' action verb, so a client-local toggle is no longer overwritten by the next draft sync. Pending formalization in the standard's map/app composition family."
+    },
+    {
       "standardName": "studio_set_view",
       "referenceToolName": "honua_studio_set_view",
       "family": "Studio composition and lifecycle (Honua extension)",

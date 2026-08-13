@@ -199,6 +199,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             "honua_studio_add_layer",
             "honua_studio_remove_layer",
             "honua_studio_set_layer_style",
+            "honua_studio_set_layer_visibility",
             "honua_studio_set_view",
             "honua_studio_add_widget",
             "honua_studio_remove_widget",

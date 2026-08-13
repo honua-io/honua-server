@@ -313,6 +313,36 @@ public static class StudioCompositionBodyEditor
         return body with { Layers = layers };
     }
 
+    /// <summary>
+    /// Sets a layer's <see cref="StudioCompositionLayer.Visible"/> flag (honua-server#3199).
+    /// </summary>
+    /// <remarks>
+    /// <c>visible</c> is part of the stored composition wire shape, but <see cref="AddLayer"/>
+    /// writes it once and rejects duplicate ids — so before this seam existed there was no way to
+    /// change a composed layer's visibility, and a draft sync overwrote any client-side toggle
+    /// with the stored value. Both the <c>honua_studio_set_layer_visibility</c> MCP tool and the
+    /// live-collaboration <c>SetLayerVisibility</c> operation apply the toggle through here, so
+    /// the two surfaces cannot diverge on lookup or not-found behaviour.
+    /// </remarks>
+    /// <param name="body">The composition to mutate.</param>
+    /// <param name="layerId">Id of the layer to toggle.</param>
+    /// <param name="visible">The visibility to store.</param>
+    /// <returns>The composition with that layer's visibility set.</returns>
+    public static StudioCompositionBody SetLayerVisibility(StudioCompositionBody body, string layerId, bool visible)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentException.ThrowIfNullOrWhiteSpace(layerId);
+        var layers = body.Layers.ToList();
+        var index = layers.FindIndex(existing => string.Equals(existing.Id, layerId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            throw new StudioCompositionNotFoundException($"No layer with id '{layerId}' exists in the composition.");
+        }
+
+        layers[index] = layers[index] with { Visible = visible };
+        return body with { Layers = layers };
+    }
+
     /// <summary>Replaces the composition view wholesale (mirrors the SDK agent-tools <c>setViewport</c>).</summary>
     public static StudioCompositionBody SetView(StudioCompositionBody body, StudioCompositionView view)
     {

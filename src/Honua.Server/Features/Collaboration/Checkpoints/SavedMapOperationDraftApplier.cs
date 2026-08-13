@@ -163,15 +163,10 @@ internal static class SavedMapOperationDraftApplier
             throw new SavedMapCheckpointPayloadException(operation, "The layer-visibility payload requires a boolean 'visible'.");
         }
 
-        var layers = body.Layers.ToList();
-        var index = layers.FindIndex(layer => string.Equals(layer.Id, layerId, StringComparison.Ordinal));
-        if (index < 0)
-        {
-            throw new StudioCompositionNotFoundException($"No layer with id '{layerId}' exists in the composition.");
-        }
-
-        layers[index] = layers[index] with { Visible = visibleElement.GetBoolean() };
-        return body with { Layers = layers };
+        // Shared seam with the honua_studio_set_layer_visibility MCP tool (honua-server#3199),
+        // exactly as ApplyPatchStyle shares SetLayerStyleRef: this applier owns only payload
+        // admission, never the lookup/not-found behaviour.
+        return StudioCompositionBodyEditor.SetLayerVisibility(body, layerId, visibleElement.GetBoolean());
     }
 
     private static StudioCompositionBody ApplyReorderLayers(
