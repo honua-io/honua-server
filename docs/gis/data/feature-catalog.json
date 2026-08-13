@@ -13047,7 +13047,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupWrites_OverlongPersistedFields_ReturnInvalidValue"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -20002,7 +20003,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupWrites_OverlongPersistedFields_ReturnInvalidValue"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -21381,7 +21383,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupWrites_OverlongPersistedFields_ReturnInvalidValue",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ReplaceGroup_DuplicateDisplayName_ReturnsConflict"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
