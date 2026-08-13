@@ -851,6 +851,21 @@ train_pr_admission 10 "${clean_comment_head}" \
   || bad "admission: exact-head clean Codex comment was rejected"
 TRAIN_PR_LIST_JSON="${admission_pr_list}"
 unset ADMISSION_CASE
+large_review_head="$(printf 'a%.0s' {1..40})"
+printf -v large_review_body '%*s' 8192 ''
+large_review_snapshot="$(jq -nc --arg head "${large_review_head}" --arg body "Codex Review ${large_review_body}" '
+  {
+    reviews: [range(0; 320) | {
+      author: {login: "chatgpt-codex-connector"}, body: $body,
+      submittedAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z",
+      state: "COMMENTED", commit: {oid: $head}
+    }],
+    cleanComments: [], reviewThreads: []
+  }')"
+train_refresh_review_gate 10 "${large_review_head}" "${large_review_snapshot}" \
+  && ok "admission: large paginated review history is streamed without ARG_MAX overflow" \
+  || bad "admission: large paginated review history overflowed the process argument vector"
+unset large_review_head large_review_body large_review_snapshot
 status_record="${SCRATCH}/review-gate-status"; : >"${status_record}"
 export FIXTURE_REVIEW_STATUS_RECORD="${status_record}"
 export ADMISSION_CASE=review-fail TRAIN_APPLY=1

@@ -143,6 +143,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_studio_set_view", "studio_set_view", "execution"),
             ("honua_studio_add_widget", "studio_add_widget", "execution"),
             ("honua_studio_remove_widget", "studio_remove_widget", "execution"),
+            // Declarative interactions (geospatial-mcp ADR-0030, opt-in `composition`
+            // conformance profile). Unlike the studio_* extensions above these DO carry
+            // bare standard names — the standard publishes bind_interaction /
+            // remove_interaction schemas, and Honua is their reference implementation.
+            ("honua_studio_bind_interaction", "bind_interaction", "execution"),
+            ("honua_studio_remove_interaction", "remove_interaction", "execution"),
             // No publish/share/embed execution tool: honua_studio_propose_publication
             // only records intent on the draft (REQ-003/REQ-009).
             ("honua_studio_propose_publication", "studio_propose_publication", "lifecycle"),

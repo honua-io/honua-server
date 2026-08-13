@@ -28,6 +28,21 @@ internal static class StudioMcpSchemas
     private const string FamilyEnumJson =
         """["query", "analysis", "map", "dashboard", "report", "form", "app", "workflow", "gp", "etl"]""";
 
+    /// <summary>
+    /// The ADR-0030 component-reference grammar as a JSON-schema pattern
+    /// (<c>map | layer:{id} | widget:{id} | control:{id}</c>), rendered from the shared
+    /// vocabulary's prefixes. Escaped for embedding in a JSON string literal.
+    /// </summary>
+    private static readonly string ComponentRefPattern =
+        $"^({StudioInteractionVocabulary.MapRef}"
+        + $"|{StudioInteractionVocabulary.LayerRefPrefix}.+"
+        + $"|{StudioInteractionVocabulary.WidgetRefPrefix}.+"
+        + $"|{StudioInteractionVocabulary.ControlRefPrefix}.+)$";
+
+    private static readonly string EventNameEnumJson = EnumJson(StudioInteractionVocabulary.EventNames);
+
+    private static readonly string ActionVerbEnumJson = EnumJson(StudioInteractionVocabulary.ActionVerbs);
+
     private const string PackageKeyPropertyJson = """
         {
           "type": "string",
@@ -85,6 +100,70 @@ internal static class StudioMcpSchemas
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "sourceId": { "type": "string", "maxLength": 200, "description": "Bound source identifier." },
             "config": { "type": "object", "description": "Widget-specific bounded configuration." }
+          }
+        }
+        """;
+
+    // The closed event/verb sets, the component-reference grammar and the fan-out cap come
+    // from the shared ADR-0030 vocabulary (StudioInteractionVocabulary) rather than being
+    // restated here, so the advertised schema, the composition-editor admission gate and
+    // the StudioPackageValidator document gate cannot drift apart — the same anti-drift
+    // move ViewInputSchemaJson made for StudioCompositionViewBounds.
+    private static readonly string InteractionInputSchemaJson = $$"""
+        {
+          "type": "object",
+          "required": ["id", "on", "do"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Stable interaction id, unique within the composition. Binding an existing id replaces that interaction." },
+            "on": {
+              "type": "object",
+              "required": ["ref", "event"],
+              "additionalProperties": false,
+              "properties": {
+                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Event-source component declared in the same document: 'map', 'layer:{id}' or 'widget:{id}'. 'control:{id}' is grammatical but never resolves — Studio composition documents declare no controls collection." },
+                "event": { "type": "string", "enum": {{EventNameEnumJson}}, "description": "User-gesture event: featureSelect/featureHover (layers), selection (widgets), change (controls), viewportChange (map)." }
+              },
+              "description": "The user-gesture event source. At most {{StudioInteractionVocabulary.MaxInteractionsPerEventSource}} interactions may share the same (ref, event) pair."
+            },
+            "do": {
+              "type": "object",
+              "required": ["ref", "verb"],
+              "additionalProperties": false,
+              "properties": {
+                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Action-target component declared in the same document." },
+                "verb": { "type": "string", "enum": {{ActionVerbEnumJson}}, "description": "Presentation/exploration verb. Interactions never mutate source records." },
+                "args": { "type": "object", "description": "Static JSON arguments. A string value beginning with '$event.' is substituted at dispatch time from the event payload; there is no expression language." }
+              },
+              "description": "The action. Actions never emit events, so bindings cannot cascade."
+            },
+            "disabled": { "type": "boolean", "default": false, "description": "Authored-but-inactive binding: retained in the document, skipped at dispatch." }
+          }
+        }
+        """;
+
+    private static readonly string BindInteractionArgumentSchemaJson = $$"""
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "interaction"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "interaction": {{InteractionInputSchemaJson}}
+          }
+        }
+        """;
+
+    private const string RemoveInteractionArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "interactionId"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
           }
         }
         """;
@@ -266,6 +345,12 @@ internal static class StudioMcpSchemas
     /// <summary>Schema for <see cref="McpStudioRemoveWidgetArgument"/>.</summary>
     public static readonly JsonElement RemoveWidgetArgumentSchema = Parse(RemoveWidgetArgumentSchemaJson);
 
+    /// <summary>Schema for <see cref="McpStudioBindInteractionArgument"/>.</summary>
+    public static readonly JsonElement BindInteractionArgumentSchema = Parse(BindInteractionArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpStudioRemoveInteractionArgument"/>.</summary>
+    public static readonly JsonElement RemoveInteractionArgumentSchema = Parse(RemoveInteractionArgumentSchemaJson);
+
     /// <summary>Schema for <see cref="McpStudioProposePublicationArgument"/>.</summary>
     public static readonly JsonElement ProposePublicationArgumentSchema = Parse(ProposePublicationArgumentSchemaJson);
 
@@ -280,4 +365,11 @@ internal static class StudioMcpSchemas
     /// schema is identical on every host locale.
     /// </summary>
     private static string Number(double value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Renders a shared closed vocabulary as a JSON string-array literal, so the advertised
+    /// enum is generated from the domain contract rather than restated in the schema text.
+    /// </summary>
+    private static string EnumJson(IReadOnlyList<string> values) =>
+        "[" + string.Join(", ", values.Select(value => "\"" + value + "\"")) + "]";
 }

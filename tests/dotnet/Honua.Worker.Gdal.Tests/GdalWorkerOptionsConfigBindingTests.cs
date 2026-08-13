@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal;
 using Honua.Worker.Gdal.Execution;
@@ -76,6 +77,74 @@ public sealed class GdalWorkerOptionsConfigBindingTests
 
         worker.AllowedRasterInputFormats.Should().BeEquivalentTo(new[] { "TIFF", "PNG", "JPEG" });
         hardening.SkipDrivers.Should().Contain("JP2OpenJPEG").And.Contain("VRT").And.Contain("NITF");
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_BindsRegisteredS3EndpointForVsiReads()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["FileStorage:AwsS3:Region"] = "us-west-2",
+            ["FileStorage:AwsS3:ServiceUrl"] = "http://minio:9000",
+            ["FileStorage:AwsS3:ForcePathStyle"] = "true",
+        });
+
+        var options = provider.GetRequiredService<IOptions<AwsS3Options>>().Value;
+
+        options.Region.Should().Be("us-west-2");
+        options.ServiceUrl.Should().Be("http://minio:9000");
+        options.ForcePathStyle.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_BindsRegisteredAzureConnectionForVsiReads()
+    {
+        const string connectionString =
+            "DefaultEndpointsProtocol=https;AccountName=registered;AccountKey=secret;EndpointSuffix=core.windows.net";
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["FileStorage:AzureBlob:ConnectionString"] = connectionString,
+        });
+
+        provider.GetRequiredService<IOptions<AzureBlobOptions>>().Value.ConnectionString
+            .Should().Be(connectionString);
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_ResolvesCloudCredentialEnvironmentReferences()
+    {
+        const string accessVariable = "HONUA_TEST_GDAL_S3_ACCESS";
+        const string secretVariable = "HONUA_TEST_GDAL_S3_SECRET";
+        const string azureVariable = "HONUA_TEST_GDAL_AZURE_CONNECTION";
+        const string azureConnection =
+            "DefaultEndpointsProtocol=https;AccountName=resolved;AccountKey=resolved-secret";
+        var previousAccess = Environment.GetEnvironmentVariable(accessVariable);
+        var previousSecret = Environment.GetEnvironmentVariable(secretVariable);
+        var previousAzure = Environment.GetEnvironmentVariable(azureVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(accessVariable, "resolved-access");
+            Environment.SetEnvironmentVariable(secretVariable, "resolved-secret");
+            Environment.SetEnvironmentVariable(azureVariable, azureConnection);
+            using var provider = BuildProvider(new Dictionary<string, string?>
+            {
+                ["FileStorage:AwsS3:AccessKeyId"] = $"env:{accessVariable}",
+                ["FileStorage:AwsS3:SecretAccessKey"] = $"env:{secretVariable}",
+                ["FileStorage:AzureBlob:ConnectionString"] = $"env:{azureVariable}",
+            });
+
+            var s3 = provider.GetRequiredService<IOptions<AwsS3Options>>().Value;
+            s3.AccessKeyId.Should().Be("resolved-access");
+            s3.SecretAccessKey.Should().Be("resolved-secret");
+            provider.GetRequiredService<IOptions<AzureBlobOptions>>().Value.ConnectionString
+                .Should().Be(azureConnection);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(accessVariable, previousAccess);
+            Environment.SetEnvironmentVariable(secretVariable, previousSecret);
+            Environment.SetEnvironmentVariable(azureVariable, previousAzure);
+        }
     }
 
     private static ServiceProvider BuildProvider(IDictionary<string, string?> configValues)

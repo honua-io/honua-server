@@ -6,8 +6,8 @@
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
 # These ARG defaults are the single source of truth for the GHCR mirror of these
 # bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:d8ee39817ca03a3757288e83c37ed73cc969a286c603b827c7cbe33add1c2d1c
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:ad7cd1ed2e913fbd806f8ecc0e8bb8e9e8fb7cfd4d3fa43be9aa0b4cd8008bf5
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:379b17d7d388a2a1b5330bfc2429a01091f85e255d3bce7981d65927d786c000
 
 # Build stage with security hardening
 FROM ${DOTNET_SDK_IMAGE} AS build

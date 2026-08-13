@@ -5,9 +5,11 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -34,6 +36,71 @@ public sealed class AzureBatchComputeBackendTests
         stub.LastSubmission!.PoolId.Should().Be("gdal-heavy-pool");
         stub.LastSubmission.ContainerImage.Should().Be("ghcr.io/honua-io/gdal-worker:2026.04");
         stub.LastSubmission.OutputContainerUrl.Should().NotBeNullOrWhiteSpace();
+        stub.LastSubmission.EnvironmentSettings["HONUA_CONTRACT_VERSION"].Should().Be("1");
+    }
+
+    [Fact]
+    public async Task StartAsync_V2JobWithUnattestedSelectedImage_FailsBeforeSubmission()
+    {
+        var stub = new StubAzureBatchClient();
+        var backend = CreateBackend(stub, new AzureBatchExecutionOptions
+        {
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = "ghcr.io/honua-io/gdal-worker:v2",
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
+        });
+        var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["azure.batch.account_url"] = "https://acct.eastus.batch.azure.com",
+            ["azure.batch.pool_id"] = "gdal-heavy-pool",
+            ["azure.batch.container_image"] = "ghcr.io/honua-io/gdal-worker:v1",
+        });
+        job = job with { Spec = job.Spec with { ContractVersion = RasterSourceContract.JobContractVersion } };
+
+        var submission = await backend.StartAsync(job);
+
+        submission.Status.Should().Be(ExecutionJobStatus.Failed);
+        submission.Message.Should().Contain("supports execution contract version 1");
+        stub.LastSubmission.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StartAsync_V2JobWithAttestedArtifactImage_SubmitsStampedContract()
+    {
+        const string image = "ghcr.io/honua-io/gdal-worker:v2";
+        var stub = new StubAzureBatchClient();
+        var backend = CreateBackend(stub, new AzureBatchExecutionOptions
+        {
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = image,
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
+        });
+        var job = CreateJob();
+        job = job with
+        {
+            Spec = job.Spec with
+            {
+                Artifact = image,
+                ContractVersion = RasterSourceContract.JobContractVersion,
+            }
+        };
+
+        var submission = await backend.StartAsync(job);
+
+        submission.Status.Should().Be(ExecutionJobStatus.Queued);
+        stub.LastSubmission.Should().NotBeNull();
+        stub.LastSubmission!.ContainerImage.Should().Be(image);
+        stub.LastSubmission.EnvironmentSettings["HONUA_CONTRACT_VERSION"].Should().Be("2");
     }
 
     [Fact]
@@ -664,16 +731,35 @@ public sealed class AzureBatchComputeBackendTests
     [Fact]
     public async Task GetCapabilitiesAsync_AdvertisesCancellationRetryAndArtifactStaging()
     {
-        var backend = new AzureBatchComputeBackend(new StubAzureBatchClient(), NullLogger<AzureBatchComputeBackend>.Instance);
+        var backend = CreateBackend(new StubAzureBatchClient(), new AzureBatchExecutionOptions
+        {
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = "ghcr.io/honua-io/gdal-worker:v2",
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
+        });
 
         var capabilities = await backend.GetCapabilitiesAsync();
 
         capabilities.SupportsCancellation.Should().BeTrue();
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
         capabilities.SupportsProgressPolling.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
     }
+
+    private static AzureBatchComputeBackend CreateBackend(
+        IAzureBatchClient client,
+        AzureBatchExecutionOptions azureBatchOptions)
+        => new(
+            client,
+            Options.Create(new ControlPlaneOptions { AzureBatch = azureBatchOptions }),
+            NullLogger<AzureBatchComputeBackend>.Instance);
 
     private static ExecutionJobRecord CreateJob(
         string? providerJobId = null,

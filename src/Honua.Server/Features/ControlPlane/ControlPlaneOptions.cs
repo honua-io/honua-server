@@ -41,6 +41,12 @@ internal sealed class ControlPlaneOptions
     public KubernetesExecutionOptions Kubernetes { get; set; } = new();
 
     /// <summary>
+    /// Optional Azure Batch worker-image contract attestations. Unlisted images remain
+    /// compatible with only the v1 execution contract during rolling deployments.
+    /// </summary>
+    public AzureBatchExecutionOptions AzureBatch { get; set; } = new();
+
+    /// <summary>
     /// Optional versioned platform release that co-versions the serving and geoprocessing planes
     /// (ADR-0060 WS2). When declared, both catalogs project their artifact from it: deploy targets
     /// without an explicit artifact inherit <see cref="PlatformReleaseOptions.ServingArtifactReference"/>
@@ -218,6 +224,20 @@ internal sealed class KubernetesExecutionOptions
     public string? DefaultImage { get; set; }
 
     /// <summary>
+    /// Highest execution contract supported by <see cref="DefaultImage"/>. Defaults to v1 so a
+    /// control-plane rollout cannot send a newer durable spec to an older worker image unless the
+    /// deployment explicitly attests that image's contract.
+    /// </summary>
+    public int DefaultImageMaxSupportedContractVersion { get; set; } = 1;
+
+    /// <summary>
+    /// Image contract attestations for images selectable by a job's artifact or <c>k8s.image</c>
+    /// override. Image identities are entry values because tags/digests contain configuration-path
+    /// delimiters. Unlisted overrides are treated as v1 workers.
+    /// </summary>
+    public List<WorkerImageContractOptions> ImageContracts { get; set; } = [];
+
+    /// <summary>
     /// Fallback image pull policy (<c>Always</c>, <c>IfNotPresent</c>, <c>Never</c>).
     /// </summary>
     public string? DefaultImagePullPolicy { get; set; }
@@ -269,6 +289,29 @@ internal sealed class KubernetesExecutionOptions
     /// automatically without relying on the canonical runtime's retention.
     /// </summary>
     public int? DefaultTtlSecondsAfterFinished { get; set; } = 3600;
+}
+
+/// <summary>
+/// Configuration model for Azure Batch worker-image execution contracts.
+/// </summary>
+internal sealed class AzureBatchExecutionOptions
+{
+    /// <summary>
+    /// Image contract attestations for images selectable through <c>azure.batch.container_image</c>
+    /// or an execution workload's artifact reference. Image identities are entry values because
+    /// tags/digests contain configuration-path delimiters. Unlisted images are treated as v1 workers.
+    /// </summary>
+    public List<WorkerImageContractOptions> ImageContracts { get; set; } = [];
+}
+
+/// <summary>An exact worker-image identity and its supported execution contract.</summary>
+internal sealed class WorkerImageContractOptions
+{
+    /// <summary>Exact tagged or digest image reference selected by the workload.</summary>
+    public string Image { get; set; } = string.Empty;
+
+    /// <summary>Highest execution contract understood by this image.</summary>
+    public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
 /// <summary>
