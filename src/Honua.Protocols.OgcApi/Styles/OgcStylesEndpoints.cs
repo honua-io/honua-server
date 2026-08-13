@@ -530,7 +530,7 @@ public static class OgcStylesEndpoints
     {
         var encoded = Uri.EscapeDataString(styleId);
         var stylesheetHref = $"{baseUrl}/ogc/styles/{encoded}";
-        var links = ImmutableArray.CreateBuilder<Link>(4);
+        var links = ImmutableArray.CreateBuilder<Link>(5);
         links.Add(Link.Create(
             href: stylesheetHref,
             rel: RelationTypes.Stylesheet,
@@ -546,6 +546,11 @@ public static class OgcStylesEndpoints
             rel: RelationTypes.Stylesheet,
             type: MediaTypes.Sld11,
             title: "SLD 1.1 stylesheet (derived)"));
+        links.Add(Link.Create(
+            href: stylesheetHref,
+            rel: RelationTypes.Stylesheet,
+            type: MediaTypes.EsriDrawingInfo,
+            title: "Esri drawingInfo stylesheet (derived)"));
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/styles/{encoded}/metadata",
             rel: RelationTypes.DescribedBy,

@@ -104,6 +104,9 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         links.Should().Contain(l =>
             l.GetProperty("rel").GetString() == "stylesheet"
             && l.GetProperty("type").GetString() == MapboxStyleMediaType);
+        links.Should().Contain(l =>
+            l.GetProperty("rel").GetString() == "stylesheet"
+            && l.GetProperty("type").GetString() == EsriDrawingInfoMediaType);
     }
 
     [IntegrationTest]
