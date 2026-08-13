@@ -54,7 +54,11 @@ internal sealed class FeatureStreamRoutabilityGuard
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(refreshGeneration);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var exactServiceIds = new HashSet<string>(
+            snapshot.Graph.Services.Select(static service => service.Metadata.Id),
+            StringComparer.OrdinalIgnoreCase);
+        var exactRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nameRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var service in snapshot.Graph.Services)
         {
             foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
@@ -73,12 +77,17 @@ internal sealed class FeatureStreamRoutabilityGuard
                     continue;
                 }
 
-                routes.Add(RouteKey(service.Metadata.Id, layerId.Value));
-                routes.Add(RouteKey(service.Metadata.Name, layerId.Value));
+                exactRoutes.Add(RouteKey(service.Metadata.Id, layerId.Value));
+                nameRoutes.Add(RouteKey(service.Metadata.Name, layerId.Value));
             }
         }
 
-        var next = new RoutabilityState(refreshGeneration, routes, IsValid: true);
+        var next = new RoutabilityState(
+            refreshGeneration,
+            exactServiceIds,
+            exactRoutes,
+            nameRoutes,
+            IsValid: true);
         while (true)
         {
             var current = Volatile.Read(ref _state);
@@ -109,6 +118,8 @@ internal sealed class FeatureStreamRoutabilityGuard
             var invalid = new RoutabilityState(
                 refreshGeneration,
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 IsValid: false);
             if (ReferenceEquals(Interlocked.CompareExchange(ref _state, invalid, current), current))
             {
@@ -118,15 +129,28 @@ internal sealed class FeatureStreamRoutabilityGuard
     }
 
     public bool IsRoutable(string serviceId, int layerId)
-        => Volatile.Read(ref _state).Routes.Contains(RouteKey(serviceId, layerId));
+    {
+        var state = Volatile.Read(ref _state);
+        var routes = state.ExactServiceIds.Contains(serviceId)
+            ? state.ExactRoutes
+            : state.NameRoutes;
+        return routes.Contains(RouteKey(serviceId, layerId));
+    }
 
     private static string RouteKey(string serviceId, int layerId)
         => string.Concat(serviceId, "\u001f", layerId.ToString(CultureInfo.InvariantCulture));
 
-    private sealed record RoutabilityState(long RefreshGeneration, HashSet<string> Routes, bool IsValid)
+    private sealed record RoutabilityState(
+        long RefreshGeneration,
+        HashSet<string> ExactServiceIds,
+        HashSet<string> ExactRoutes,
+        HashSet<string> NameRoutes,
+        bool IsValid)
     {
         public static RoutabilityState Empty { get; } = new(
             0,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             IsValid: false);
     }

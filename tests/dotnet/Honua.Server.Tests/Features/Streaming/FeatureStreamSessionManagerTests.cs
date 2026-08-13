@@ -679,6 +679,53 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public async Task RoutabilityGuard_ExactServiceIdShadowsActiveNameAlias()
+    {
+        const string shadowedIdentity = "shadowed-service";
+        const int storageLayerId = 45;
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("res-shadowed-stream", "Shadowed Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-shadowed-stream",
+                "res-shadowed-stream",
+                "test.layers.shadowed_stream",
+                storageLayerId: storageLayerId)
+            .AddService("svc-active-stream", shadowedIdentity)
+            .AddService(shadowedIdentity, "retired-shadow")
+            .AddPublication(
+                "pub-active-stream",
+                "svc-active-stream",
+                "res-shadowed-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-shadowed-stream")
+            .AddPublication(
+                "pub-retired-shadow",
+                shadowedIdentity,
+                "res-shadowed-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-shadowed-stream")
+            .Build();
+        graph = graph with
+        {
+            Publications = graph.Publications
+                .Select(publication => publication.Metadata.Id == "pub-retired-shadow"
+                    ? publication with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                    }
+                    : publication)
+                .ToArray(),
+        };
+        var snapshot = await new TestMetadataV2GraphProvider(graph).GetCurrentAsync();
+        var guard = new FeatureStreamRoutabilityGuard();
+
+        guard.Update(guard.BeginRefresh(), snapshot);
+
+        Assert.True(guard.IsRoutable("svc-active-stream", storageLayerId));
+        Assert.False(guard.IsRoutable(shadowedIdentity, storageLayerId));
+    }
+
+    [UnitTest]
     public async Task RefreshRoutability_WithinBoundedInterval_ReusesOnlyValidRouteSet()
     {
         var snapshot = await new TestMetadataV2GraphProvider(
