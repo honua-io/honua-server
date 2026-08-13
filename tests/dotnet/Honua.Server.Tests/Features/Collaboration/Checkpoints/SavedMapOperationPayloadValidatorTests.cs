@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Server.Features.Collaboration.Checkpoints;
 using Xunit;
 
@@ -236,6 +237,20 @@ public sealed class SavedMapOperationPayloadValidatorTests
 
     [Trait("Category", "Unit")]
     [Fact]
+    public void TryValidate_ReplacementControlTitle_EnforcesCompositionLimit()
+    {
+        var title = new string('t', StudioInteractionVocabulary.MaxControlTitleLength + 1);
+        var payload = $$"""{"controls":[{"id":"nav","kind":"navigation","title":"{{title}}"}]}""";
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain($"{StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer");
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
     public void TryValidate_ReplacementInteractionBoundToADeclaredControl_IsAccepted()
     {
         // The control-ref flip, at the collaboration gate: the same binding is rejected when
@@ -259,17 +274,17 @@ public sealed class SavedMapOperationPayloadValidatorTests
 
     [Trait("Category", "Unit")]
     [Fact]
-    public void TryValidate_ReplacementControlSourceId_MustResolveToADeclaredLayerOrDatasource()
+    public void TryValidate_ReplacementControlSourceId_ResolutionIsDeferredToCheckpointState()
     {
-        // ADR-0031 makes control source resolution a validation-gate responsibility, so a
-        // misspelled sourceId is refused here rather than persisted as an affordance whose
-        // domain no host can populate.
+        // sourceBindings is a canonical package member preserved by the checkpoint applier,
+        // not part of this replacement projection. Admission therefore cannot classify a
+        // source absent from the payload as unresolved; the state-aware applier does so after
+        // combining the replacement with the preserved binding ids.
         SavedMapOperationPayloadValidator.TryValidate(
             SavedMapOperationKind.ReplaceWebMapDocument,
             Parse("""{"layers":[{"id":"parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"parcel"}]}"""),
             out var error)
-            .Should().BeFalse();
-        error.Should().Contain("does not resolve");
+            .Should().BeTrue(because: error);
 
         // A layer id resolves...
         SavedMapOperationPayloadValidator.TryValidate(
@@ -291,6 +306,43 @@ public sealed class SavedMapOperationPayloadValidatorTests
             Parse("""{"controls":[{"id":"nav","kind":"navigation"}]}"""),
             out var omitted)
             .Should().BeTrue(because: omitted);
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlWithOversizedSourceId_IsRejected()
+    {
+        var sourceId = new string('s', StudioInteractionVocabulary.MaxControlSourceIdLength + 1);
+        var payload = $$"""{"controls":[{"id":"f","kind":"filterSelect","sourceId":"{{sourceId}}"}]}""";
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse(payload),
+            out var error).Should().BeFalse();
+
+        error.Should().Contain("sourceId");
+        error.Should().Contain("characters or fewer");
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlWithNonChangeEvent_IsRejected()
+    {
+        const string payload = """
+            {
+              "controls": [{ "id": "year", "kind": "timeSlider" }],
+              "interactions": [
+                { "id": "i", "on": { "ref": "control:year", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } }
+              ]
+            }
+            """;
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse(payload),
+            out var error).Should().BeFalse();
+
+        error.Should().Contain("does not emit");
     }
 
     [Trait("Category", "Unit")]

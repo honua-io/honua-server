@@ -34,7 +34,8 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 200,
-          "description": "Stable identifier, unique within the document's controls block. `control:{id}` references in the interactions and layout blocks resolve against this value; add_control replaces an existing control with the same id."
+          "pattern": "\\S",
+          "description": "Stable identifier, unique within the document's controls block. `control:{id}` references in the interactions block resolve against this value; controls are chrome and cannot appear in layout items. add_control replaces an existing control with the same id."
         },
         "kind": {
           "$ref": "#/$defs/controlKind",

@@ -227,6 +227,38 @@ public sealed class StudioControlMcpToolTests
         error.Which.Message.Should().Contain("characters or fewer");
     }
 
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_add_control")]
+    public async Task AddControl_WithOversizedTitle_SurfacesInvalidArgumentWithoutPersisting()
+    {
+        var harness = await StudioDraftHarness.CreateAsync();
+        var title = new string('t', StudioInteractionVocabulary.MaxControlTitleLength + 1);
+
+        var act = () => harness.AddAsync(
+            $$"""{"id":"navigation","kind":"navigation","title":"{{title}}"}""");
+
+        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("control.title");
+        (await harness.ReadCompositionAsync()).Controls.Should().BeNullOrEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_add_control")]
+    public async Task AddControl_WithOversizedSourceId_SurfacesInvalidArgumentWithoutPersisting()
+    {
+        var harness = await StudioDraftHarness.CreateAsync();
+        var sourceId = new string('s', StudioInteractionVocabulary.MaxControlSourceIdLength + 1);
+
+        var act = () => harness.AddAsync(
+            $$"""{"id":"filter","kind":"filterSelect","sourceId":"{{sourceId}}"}""");
+
+        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("control.sourceId");
+        (await harness.ReadCompositionAsync()).Controls.Should().BeNullOrEmpty();
+    }
+
     [Theory]
     [InlineData("""{"draftId":"33333333-3333-3333-3333-333333333333","generation":1}""")]
     [InlineData("""{"draftId":"33333333-3333-3333-3333-333333333333","generation":1,"control":{"kind":"navigation"}}""")]

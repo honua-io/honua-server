@@ -99,6 +99,39 @@ public sealed class StudioCompositionControlsTests
     }
 
     [UnitTest]
+    public void AddControl_WithOversizedTitle_IsRejected()
+    {
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.AddControl(
+                ParcelComposition(),
+                Control("navigation", "navigation") with
+                {
+                    Title = new string('t', StudioInteractionVocabulary.MaxControlTitleLength + 1),
+                }));
+
+        Assert.Contains("title", error.Message, StringComparison.Ordinal);
+        Assert.Contains("characters or fewer", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void AddControl_WithOversizedSourceId_IsRejected()
+    {
+        var sourceId = new string('s', StudioInteractionVocabulary.MaxControlSourceIdLength + 1);
+        var body = ParcelComposition() with
+        {
+            Layers = [new StudioCompositionLayer { Id = sourceId }],
+        };
+
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.AddControl(
+                body,
+                new StudioCompositionControl { Id = "filter", Kind = "filterSelect", SourceId = sourceId }));
+
+        Assert.Contains("sourceId", error.Message, StringComparison.Ordinal);
+        Assert.Contains("characters or fewer", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void AddControl_WithAnUnresolvableSourceId_IsRejected()
     {
         // ADR-0031 makes source resolution a validation-gate responsibility. A misspelled
@@ -131,6 +164,32 @@ public sealed class StudioCompositionControlsTests
         var byDatasource = StudioCompositionBodyEditor.AddControl(
             body, new StudioCompositionControl { Id = "b", Kind = "filterSelect", SourceId = "ds-parcels" });
         Assert.Equal("ds-parcels", Assert.Single(byDatasource.Controls!).SourceId);
+    }
+
+    [UnitTest]
+    public void AddControl_ResolvesSourceIdAgainstCanonicalSourceBindingsWithoutALayer()
+    {
+        using var stored = JsonDocument.Parse(
+            """
+            {
+              "sourceBindings": [
+                {
+                  "sourceId": "ds-parcels",
+                  "protocol": "ogc_api_features",
+                  "locator": { "url": "https://example.test/collections/parcels" }
+                }
+              ],
+              "layers": []
+            }
+            """);
+        var body = StudioCompositionBodyEditor.ReadBody(
+            BuildEnvelope(StudioPackageFamily.Map, stored.RootElement.Clone()));
+
+        var updated = StudioCompositionBodyEditor.AddControl(
+            body,
+            new StudioCompositionControl { Id = "filter", Kind = "filterSelect", SourceId = "ds-parcels" });
+
+        Assert.Equal("ds-parcels", Assert.Single(updated.Controls!).SourceId);
     }
 
     [UnitTest]
@@ -359,6 +418,7 @@ public sealed class StudioCompositionControlsTests
         Assert.DoesNotContain("draw", StudioInteractionVocabulary.ControlKinds);
         Assert.Equal(200, StudioInteractionVocabulary.MaxControlIdLength);
         Assert.Equal(200, StudioInteractionVocabulary.MaxControlTitleLength);
+        Assert.Equal(200, StudioInteractionVocabulary.MaxControlSourceIdLength);
         Assert.True(StudioInteractionVocabulary.IsControlRef("control:year-slider"));
         Assert.False(StudioInteractionVocabulary.IsControlRef("control:"));
         Assert.False(StudioInteractionVocabulary.IsControlRef("widget:area-chart"));

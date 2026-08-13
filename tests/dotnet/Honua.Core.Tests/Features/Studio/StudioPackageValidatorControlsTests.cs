@@ -133,6 +133,22 @@ public sealed class StudioPackageValidatorControlsTests
     }
 
     [UnitTest]
+    public void Validate_OversizedControlSourceId_Fails()
+    {
+        var sourceId = new string('s', StudioInteractionVocabulary.MaxControlSourceIdLength + 1);
+        var summary = ValidateBody(
+            $$"""
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "{{sourceId}}" }],
+              "controls": [{ "id": "filter", "kind": "filterSelect", "sourceId": "{{sourceId}}" }]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.control.source.too-long");
+    }
+
+    [UnitTest]
     public void Validate_ControlConfigThatIsNotAnObject_Fails()
     {
         var summary = ValidateBody(

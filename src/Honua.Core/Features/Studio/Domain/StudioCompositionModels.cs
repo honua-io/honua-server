@@ -68,6 +68,14 @@ public sealed record StudioCompositionBody
     /// </summary>
     [JsonPropertyName("controls")]
     public IReadOnlyList<StudioCompositionControl>? Controls { get; init; }
+
+    /// <summary>
+    /// Canonical map-package source binding identifiers projected from the stored
+    /// <c>sourceBindings</c> block. This validation-only projection is not serialized;
+    /// <c>StudioCompositionBodyEditor</c> preserves the original block verbatim.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlySet<string> SourceBindingIds { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -289,6 +297,9 @@ public static class StudioInteractionVocabulary
     /// <summary>Largest accepted control title length (ADR-0031 <c>control.title</c>).</summary>
     public const int MaxControlTitleLength = 200;
 
+    /// <summary>Largest accepted control source identifier length (ADR-0031 <c>control.sourceId</c>).</summary>
+    public const int MaxControlSourceIdLength = 200;
+
     /// <summary>Smallest accepted <see cref="StudioLayoutGrid.Columns"/>.</summary>
     public const int MinGridColumns = 1;
 
@@ -316,6 +327,25 @@ public static class StudioInteractionVocabulary
     /// <summary>Returns true when <paramref name="value"/> is a member of the closed event set.</summary>
     public static bool IsEventName(string? value) =>
         value is not null && EventNames.Contains(value, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Returns whether an event belongs to the component type named by its source reference.
+    /// Maps emit <c>viewportChange</c>, layers emit feature selection/hover, widgets emit
+    /// <c>selection</c>, and controls emit <c>change</c>.
+    /// </summary>
+    public static bool IsEventSupportedBySource(string? reference, string? eventName)
+        => reference switch
+        {
+            MapRef => string.Equals(eventName, "viewportChange", StringComparison.Ordinal),
+            not null when reference.StartsWith(LayerRefPrefix, StringComparison.Ordinal) =>
+                string.Equals(eventName, "featureSelect", StringComparison.Ordinal)
+                || string.Equals(eventName, "featureHover", StringComparison.Ordinal),
+            not null when reference.StartsWith(WidgetRefPrefix, StringComparison.Ordinal) =>
+                string.Equals(eventName, "selection", StringComparison.Ordinal),
+            not null when reference.StartsWith(ControlRefPrefix, StringComparison.Ordinal) =>
+                string.Equals(eventName, "change", StringComparison.Ordinal),
+            _ => false,
+        };
 
     /// <summary>
     /// The closed control-kind set (geospatial-mcp ADR-0031,
@@ -389,7 +419,8 @@ public static class StudioInteractionVocabulary
             return false;
         }
 
-        return (body.Layers ?? []).Any(layer => layer is not null
+        return body.SourceBindingIds.Contains(sourceId)
+            || (body.Layers ?? []).Any(layer => layer is not null
             && (string.Equals(layer.Id, sourceId, StringComparison.Ordinal)
                 || string.Equals(layer.SourceId, sourceId, StringComparison.Ordinal)));
     }

@@ -78,6 +78,7 @@ public static class StudioCompositionBodyEditor
             {
                 Layers = composition.Layers ?? [],
                 Widgets = composition.Widgets ?? [],
+                SourceBindingIds = ReadSourceBindingIds(body),
             };
         }
         catch (JsonException ex)
@@ -85,6 +86,27 @@ public static class StudioCompositionBodyEditor
             throw new StudioCompositionBodyException(
                 "The draft's composition body is not a valid Studio composition payload.", ex);
         }
+    }
+
+    private static HashSet<string> ReadSourceBindingIds(JsonElement body)
+    {
+        var sourceIds = new HashSet<string>(StringComparer.Ordinal);
+        if (!body.TryGetProperty("sourceBindings", out var bindings)
+            || bindings.ValueKind != JsonValueKind.Array)
+        {
+            return sourceIds;
+        }
+
+        foreach (var binding in bindings.EnumerateArray().Where(static binding =>
+                     binding.ValueKind == JsonValueKind.Object
+                     && binding.TryGetProperty("sourceId", out var sourceId)
+                     && sourceId.ValueKind == JsonValueKind.String
+                     && !string.IsNullOrWhiteSpace(sourceId.GetString())))
+        {
+            sourceIds.Add(binding.GetProperty("sourceId").GetString()!);
+        }
+
+        return sourceIds;
     }
 
     private static void EnsureReferenceNodesArePresent(StudioCompositionBody composition)
@@ -286,17 +308,32 @@ public static class StudioCompositionBodyEditor
     {
         ArgumentNullException.ThrowIfNull(body);
         ArgumentException.ThrowIfNullOrWhiteSpace(layerId);
-        if (!body.Layers.Any(existing => string.Equals(existing.Id, layerId, StringComparison.Ordinal)))
+        var removedLayer = body.Layers.FirstOrDefault(
+            existing => string.Equals(existing.Id, layerId, StringComparison.Ordinal));
+        if (removedLayer is null)
         {
             throw new StudioCompositionNotFoundException($"No layer with id '{layerId}' exists in the composition.");
         }
 
         EnsureComponentIsUnreferenced(body, StudioInteractionVocabulary.LayerRefPrefix + layerId);
 
-        return body with
+        var updated = body with
         {
             Layers = body.Layers.Where(existing => !string.Equals(existing.Id, layerId, StringComparison.Ordinal)).ToList()
         };
+        var orphanedControl = (body.Controls ?? []).FirstOrDefault(control =>
+            control.SourceId is not null
+            && (string.Equals(control.SourceId, removedLayer.Id, StringComparison.Ordinal)
+                || string.Equals(control.SourceId, removedLayer.SourceId, StringComparison.Ordinal))
+            && !StudioInteractionVocabulary.IsDeclaredSourceId(updated, control.SourceId));
+        if (orphanedControl is not null)
+        {
+            throw new StudioCompositionConflictException(
+                $"Cannot remove layer '{layerId}' because control '{orphanedControl.Id}' still uses sourceId "
+                + $"'{orphanedControl.SourceId}'. Remove or rebind the control first.");
+        }
+
+        return updated;
     }
 
     /// <summary>Sets (or clears) a layer's bound <see cref="StudioCompositionLayer.StyleRef"/>.</summary>
@@ -461,6 +498,18 @@ public static class StudioCompositionBodyEditor
                 $"A control 'id' must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.");
         }
 
+        if (control.Title is { Length: > StudioInteractionVocabulary.MaxControlTitleLength })
+        {
+            throw new StudioCompositionConflictException(
+                $"A control 'title' must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.");
+        }
+
+        if (control.SourceId is { Length: > StudioInteractionVocabulary.MaxControlSourceIdLength })
+        {
+            throw new StudioCompositionConflictException(
+                $"A control 'sourceId' must be {StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer.");
+        }
+
         if (!StudioInteractionVocabulary.IsControlKind(control.Kind))
         {
             throw new StudioCompositionConflictException(
@@ -588,6 +637,12 @@ public static class StudioCompositionBodyEditor
 
         EnsureRefResolves(body, interaction.On.Ref, "on.ref");
         EnsureRefResolves(body, interaction.Do.Ref, "do.ref");
+        if (!StudioInteractionVocabulary.IsEventSupportedBySource(interaction.On.Ref, interaction.On.Event))
+        {
+            throw new StudioCompositionConflictException(
+                $"Component '{interaction.On.Ref}' does not emit event '{interaction.On.Event}'.");
+        }
+
         EnsureFanOutCap(body, interaction);
     }
 

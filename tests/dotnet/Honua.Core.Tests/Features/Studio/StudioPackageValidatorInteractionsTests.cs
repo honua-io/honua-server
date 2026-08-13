@@ -177,6 +177,24 @@ public sealed class StudioPackageValidatorInteractionsTests
     }
 
     [UnitTest]
+    public void Validate_ControlRefWithNonChangeEvent_FailsCompatibilityGate()
+    {
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "controls": [{ "id": "year-slider", "kind": "timeSlider", "sourceId": "parcels" }],
+              "interactions": [
+                { "id": "i1", "on": { "ref": "control:year-slider", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } }
+              ]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.interaction.event.source.unsupported");
+    }
+
+    [UnitTest]
     public void Validate_UnknownControlRef_FailsWithTheGenericUnresolvedMessage()
     {
         // A control ref naming no declared control is an ordinary unresolved reference now;
