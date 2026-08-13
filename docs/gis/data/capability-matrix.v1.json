@@ -1248,10 +1248,10 @@
       "displayName": "OGC API Processes",
       "category": "Process",
       "edition": "Community",
-      "entryCount": 10,
-      "provingTestCount": 129,
+      "entryCount": 11,
+      "provingTestCount": 137,
       "maturity": {
-        "implemented": 10
+        "implemented": 11
       },
       "noSurface": null,
       "cite": [],
