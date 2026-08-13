@@ -40,6 +40,9 @@
     <PackageReference Include="NBomber.Http" />
     <PackageReference Include="Newtonsoft.Json.Schema" />
     <PackageReference Include="NSubstitute" />
+    <!-- Direct pin of Testcontainers' transitive SSH.NET to the patched release
+         (GHSA-q939-rpr3-3284). -->
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="Testcontainers.MySql" />
     <PackageReference Include="Testcontainers.PostgreSql" />
