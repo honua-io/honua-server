@@ -21425,6 +21425,7 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_Strict_Returns400WithDiagnostics",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_MalformedJson_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_SimpleRenderer_RoundTripsThroughCanonicalMapLibre",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_UnboundStyle_Returns400WithoutRebindingToLayerZero",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_MalformedJson_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_StandaloneStyle_UpdatesCatalogStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnknownStyleId_Returns404",
