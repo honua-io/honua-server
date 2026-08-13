@@ -342,14 +342,13 @@ internal static class SavedMapOperationPayloadValidator
         // Control source resolution runs here rather than in the wire-shape pass because it
         // needs the deserialized layers to resolve against (ADR-0031: a control's sourceId
         // resolves like a layer reference).
-        foreach (var control in (body.Controls ?? []).Where(control => control.SourceId is not null))
+        foreach (var control in (body.Controls ?? []).Where(control =>
+                     control.SourceId is not null
+                     && !StudioInteractionVocabulary.IsDeclaredSourceId(body, control.SourceId)))
         {
-            if (!StudioInteractionVocabulary.IsDeclaredSourceId(body, control.SourceId))
-            {
-                error = $"The document-replace payload's control '{control.Id}' has sourceId '{control.SourceId}', "
-                    + "which does not resolve to a layer or datasource declared in the payload.";
-                return false;
-            }
+            error = $"The document-replace payload's control '{control.Id}' has sourceId '{control.SourceId}', "
+                + "which does not resolve to a layer or datasource declared in the payload.";
+            return false;
         }
 
         foreach (var interaction in body.Interactions ?? [])
@@ -462,6 +461,16 @@ internal static class SavedMapOperationPayloadValidator
             if (!controlIds.Add(controlId))
             {
                 error = $"The document-replace payload repeats control id '{controlId}'; control ids must be unique.";
+                return false;
+            }
+
+            if (control.TryGetProperty("title", out var title)
+                && title.ValueKind != JsonValueKind.Null
+                && (title.ValueKind != JsonValueKind.String
+                    || title.GetString()!.Length > StudioInteractionVocabulary.MaxControlTitleLength))
+            {
+                error = $"{subject}'s 'title' must be a string of "
+                    + $"{StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.";
                 return false;
             }
 

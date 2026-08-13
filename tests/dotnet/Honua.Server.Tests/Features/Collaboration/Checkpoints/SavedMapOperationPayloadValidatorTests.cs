@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Server.Features.Collaboration.Checkpoints;
 using Xunit;
 
@@ -232,6 +233,20 @@ public sealed class SavedMapOperationPayloadValidatorTests
             .Should().BeFalse();
 
         error.Should().Contain(expected);
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlTitle_EnforcesCompositionLimit()
+    {
+        var title = new string('t', StudioInteractionVocabulary.MaxControlTitleLength + 1);
+        var payload = $$"""{"controls":[{"id":"nav","kind":"navigation","title":"{{title}}"}]}""";
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain($"{StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer");
     }
 
     [Trait("Category", "Unit")]
