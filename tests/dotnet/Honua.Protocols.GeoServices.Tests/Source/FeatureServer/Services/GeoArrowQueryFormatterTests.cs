@@ -506,15 +506,15 @@ public sealed class GeoArrowQueryFormatterTests
         var outputDirectory = Environment.GetEnvironmentVariable("HONUA_GEOARROW_FIXTURE_OUTPUT_DIR");
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
-            outputDirectory = Path.GetFullPath(Path.Combine("tests", "TestResults", "geoarrow-interop"));
+            outputDirectory = Path.GetFullPath(Path.Join("tests", "TestResults", "geoarrow-interop"));
         }
 
         Directory.CreateDirectory(outputDirectory);
-        var fixturePath = Path.Combine(outputDirectory, FixtureFileName);
+        var fixturePath = Path.Join(outputDirectory, FixtureFileName);
         var sha256 = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
         await File.WriteAllBytesAsync(fixturePath, payload);
         await File.WriteAllTextAsync(
-            Path.Combine(outputDirectory, $"{FixtureFileName}.sha256"),
+            Path.Join(outputDirectory, $"{FixtureFileName}.sha256"),
             $"{sha256}  {FixtureFileName}{Environment.NewLine}");
 
         var receipt = new
@@ -547,7 +547,7 @@ public sealed class GeoArrowQueryFormatterTests
         };
         var receiptJson = JsonSerializer.Serialize(receipt, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(
-            Path.Combine(outputDirectory, $"{FixtureFileName}.provenance.json"),
+            Path.Join(outputDirectory, $"{FixtureFileName}.provenance.json"),
             $"{receiptJson}{Environment.NewLine}");
     }
 
