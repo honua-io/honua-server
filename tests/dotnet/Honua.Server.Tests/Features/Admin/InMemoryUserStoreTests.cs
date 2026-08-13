@@ -159,6 +159,27 @@ public sealed class InMemoryUserStoreTests
     }
 
     [Fact]
+    public async Task ReplaceUser_SetActiveFalse_ClearsRoles()
+    {
+        var store = new InMemoryUserStore();
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "inactive@example.com",
+            Roles = ["editor"],
+        });
+
+        var replaced = await store.ReplaceUserAsync("inactive@example.com", new ScimUserProvisioning
+        {
+            UserName = "inactive@example.com",
+            Active = false,
+            Roles = ["editor"],
+        });
+
+        replaced!.IsActive.Should().BeFalse();
+        replaced.Roles.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ReplaceUser_DuplicateIssuerScopedExternalId_ThrowsWithoutChangingOwner()
     {
         var store = new InMemoryUserStore();

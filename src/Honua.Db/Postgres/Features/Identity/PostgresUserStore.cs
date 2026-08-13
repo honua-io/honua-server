@@ -83,6 +83,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        await PostgresUserIdentityLock.AcquireAsync(connection, transaction, user.UserId, cancellationToken).ConfigureAwait(false);
+
         await using (var command = new NpgsqlCommand(upsert, connection, transaction))
         {
             command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, user.UserId);
@@ -272,6 +274,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             return null;
         }
 
+        await PostgresUserIdentityLock.AcquireAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
+
         await ReplaceRolesAsync(connection, transaction, canonicalId, NormalizeRoles(roles), cancellationToken).ConfigureAwait(false);
         await TouchUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
 
@@ -292,6 +296,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return false;
         }
+
+        await PostgresUserIdentityLock.AcquireAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
 
         await DeactivateAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -322,6 +328,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await PostgresUserIdentityLock.AcquireAsync(connection, transaction, userId, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -458,6 +466,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             return null;
         }
 
+        await PostgresUserIdentityLock.AcquireAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
+
         // The record id (userName) is immutable, matching the in-memory store. external_id
         // is only overwritten when the IdP supplies one: losing the stable subject on a PUT
         // that omits it would orphan in-flight deferred snapshots keyed by that subject.
@@ -490,14 +500,14 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            var replacementRoles = NormalizeRoles(provisioning.Roles);
+            var replacementRoles = new List<string>();
             if (provisioning.Active)
             {
                 // A PUT may reactivate a deprovisioned user whose durable SCIM group
                 // memberships were intentionally retained. Reconcile those memberships in
                 // the same transaction so the user and group role projections cannot diverge.
                 var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
-                replacementRoles = NormalizeRoles([.. replacementRoles, .. groupRoles]);
+                replacementRoles = NormalizeRoles([.. provisioning.Roles, .. groupRoles]);
             }
 
             await ReplaceRolesAsync(connection, transaction, canonicalId, replacementRoles, cancellationToken).ConfigureAwait(false);
@@ -526,6 +536,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return null;
         }
+
+        await PostgresUserIdentityLock.AcquireAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
 
         if (active)
         {

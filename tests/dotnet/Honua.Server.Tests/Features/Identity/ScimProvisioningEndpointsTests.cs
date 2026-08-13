@@ -193,6 +193,27 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /scim/v2/Users/{id}")]
+    public async Task ReplaceUser_SetActiveFalse_RevokesExistingRoles()
+    {
+        const string userName = "put-deactivate@example.com";
+        await CreateUserAsync(userName);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        await store.UpdateUserRolesAsync(userName, ["editor"]);
+
+        var response = await _client.PutAsJsonAsync($"/scim/v2/Users/{userName}", new
+        {
+            userName,
+            active = false,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var managed = await store.GetUserAsync(userName);
+        Assert.False(managed!.IsActive);
+        Assert.Empty(managed.Roles);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Users/{id}")]
     public async Task ReplaceUser_OverlongExternalId_ReturnsInvalidValue()
     {
         await CreateUserAsync("replace-invalid@example.com");

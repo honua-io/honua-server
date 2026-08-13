@@ -116,6 +116,39 @@ public sealed class PostgresScimGroupStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task MembershipRemoval_BeforeReactivation_DoesNotRestoreRemovedRole()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresScimGroupStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var (users, groups) = CreateStores(schema);
+            const string userName = "removed-before-reactivation@example.com";
+
+            await users.CreateUserAsync(new ScimUserProvisioning { UserName = userName });
+            var group = await groups.CreateGroupAsync(new ScimGroupProvisioning
+            {
+                DisplayName = "removed-role",
+                MemberUserIds = [userName],
+            });
+            await users.SetActiveAsync(userName, active: false);
+
+            await groups.UpdateMembersAsync(group!.GroupId, new ScimGroupMemberChange
+            {
+                Remove = [userName],
+            });
+            var reactivated = await users.SetActiveAsync(userName, active: true);
+
+            reactivated!.IsActive.Should().BeTrue();
+            reactivated.Roles.Should().NotContain("removed-role");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task UpdateMembers_AddAndRemove_SyncsRolesOnDurableRecords()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresScimGroupStoreTests));

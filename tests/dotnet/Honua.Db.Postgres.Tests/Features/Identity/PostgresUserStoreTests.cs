@@ -338,6 +338,36 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ReplaceUser_SetActiveFalse_ClearsRoles()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
+        try
+        {
+            await EnsureManagedUserTablesAsync(schema);
+            var store = CreateStore(schema);
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "put-deactivate@example.com",
+                Roles = ["editor"],
+            });
+
+            var replaced = await store.ReplaceUserAsync("put-deactivate@example.com", new ScimUserProvisioning
+            {
+                UserName = "put-deactivate@example.com",
+                Active = false,
+                Roles = ["editor"],
+            });
+
+            replaced!.IsActive.Should().BeFalse();
+            replaced.Roles.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ListUsers_AdminFilter_ByRoleSourceAndActive_WithPagination()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));

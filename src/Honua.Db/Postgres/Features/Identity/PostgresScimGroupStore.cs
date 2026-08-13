@@ -65,6 +65,8 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        await PostgresUserIdentityLock.AcquireManyAsync(connection, transaction, members, cancellationToken).ConfigureAwait(false);
+
         try
         {
             await using (var command = new NpgsqlCommand(insert, connection, transaction))
@@ -198,6 +200,12 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         var newMembers = NormalizeMembers(provisioning.MemberUserIds);
         var newName = provisioning.DisplayName.Trim();
 
+        await PostgresUserIdentityLock.AcquireManyAsync(
+            connection,
+            transaction,
+            existing.MemberUserIds.Concat(newMembers),
+            cancellationToken).ConfigureAwait(false);
+
         // A rename re-maps the role: revoke the old role from everyone, then grant the new.
         var renamed = !existing.DisplayName.Equals(newName, StringComparison.OrdinalIgnoreCase);
 
@@ -264,6 +272,12 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
             return null;
         }
 
+        await PostgresUserIdentityLock.AcquireManyAsync(
+            connection,
+            transaction,
+            change.Remove.Concat(change.Add),
+            cancellationToken).ConfigureAwait(false);
+
         foreach (var userId in NormalizeMembers(change.Remove))
         {
             var removed = await RemoveMemberAsync(connection, transaction, existing.GroupId, userId, cancellationToken).ConfigureAwait(false);
@@ -306,6 +320,12 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return false;
         }
+
+        await PostgresUserIdentityLock.AcquireManyAsync(
+            connection,
+            transaction,
+            existing.MemberUserIds,
+            cancellationToken).ConfigureAwait(false);
 
         foreach (var userId in existing.MemberUserIds)
         {

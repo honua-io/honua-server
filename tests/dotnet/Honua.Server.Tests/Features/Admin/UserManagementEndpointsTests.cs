@@ -174,6 +174,18 @@ public class UserManagementEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/users/{id}/roles")]
+    public async Task UpdateUserRoles_OverlongRole_ReturnsBadRequestWithoutChangingRoles()
+    {
+        var request = new UpdateUserRolesRequest { Roles = [new string('r', 257)] };
+        var response = await _client.PutAsJsonAsync("/api/v1/admin/users/user-1/roles", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        Assert.Equal(["viewer"], (await store.GetUserAsync("user-1"))!.Roles);
+    }
+
+    [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/users/{id}")]
     public async Task DeleteUser_ExistingId_ReturnsSuccess()
     {

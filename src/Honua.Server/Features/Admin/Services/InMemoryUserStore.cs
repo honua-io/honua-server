@@ -238,7 +238,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
                 ProvisioningSource = existing.ProvisioningSource,
                 ProviderId = existing.ProviderId,
                 IsActive = provisioning.Active,
-                Roles = NormalizeRoles(provisioning.Roles),
+                Roles = provisioning.Active ? NormalizeRoles(provisioning.Roles) : [],
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,
             };
