@@ -265,8 +265,10 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
         stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
         var stacProviders = stacDocument.RootElement.GetProperty("providers");
-        stacProviders.GetArrayLength().Should().Be(1);
-        var stacProvider = stacProviders[0];
+        stacProviders.GetArrayLength().Should().Be(2);
+        var stacProvider = stacProviders.EnumerateArray().Single(provider =>
+            provider.TryGetProperty("roles", out var roles) &&
+            roles.EnumerateArray().Any(role => role.GetString() == "producer"));
         stacProvider.GetProperty("name").GetString().Should().Be(publisher);
         stacProvider.GetProperty("roles")
             .EnumerateArray()
@@ -399,6 +401,12 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1,
             Services = services,
         });
+        var persistedSnapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var persistedService = persistedSnapshot.Graph.Services.Single(service =>
+            publishingServiceIds.Contains(service.Metadata.Id));
+        persistedService.Metadata.License.Should().Be(license);
+        persistedService.Metadata.Attribution.Should().Be(attribution);
+        persistedService.Metadata.Publisher.Should().Be(publisher);
 
         var layerId = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
@@ -414,14 +422,14 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             await featureServer.Content.ReadAsStringAsync(),
             license,
             attribution,
-            publisher,
+            publisher: null,
             licenseUrl,
             sourceUrl);
         AssertGeoServicesGovernance(
             await mapServer.Content.ReadAsStringAsync(),
             license,
             attribution,
-            publisher,
+            publisher: null,
             licenseUrl,
             sourceUrl);
 
@@ -436,7 +444,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
         stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
-        stacDocument.RootElement.GetProperty("providers")[0].GetProperty("name").GetString().Should().Be(publisher);
+        stacDocument.RootElement.GetProperty("providers")[0].GetProperty("name").GetString().Should().Be(attribution);
         AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
         AssertGovernanceLink(
             stacDocument.RootElement.GetProperty("links"),
@@ -1867,15 +1875,24 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         string payload,
         string license,
         string attribution,
-        string publisher,
+        string? publisher,
         string licenseUrl,
         string sourceUrl)
     {
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
-        root.GetProperty("copyrightText").GetString().Should().Be(attribution);
+        root.TryGetProperty("copyrightText", out var copyrightText)
+            .Should().BeTrue($"GeoServices governance payload: {payload}");
+        copyrightText.GetString().Should().Be(attribution);
         root.GetProperty("license").GetString().Should().Be(license);
-        root.GetProperty("publisher").GetString().Should().Be(publisher);
+        if (publisher is null)
+        {
+            root.TryGetProperty("publisher", out _).Should().BeFalse();
+        }
+        else
+        {
+            root.GetProperty("publisher").GetString().Should().Be(publisher);
+        }
         var links = root.GetProperty("links");
         AssertGovernanceLink(links, "license", licenseUrl, license);
         AssertGovernanceLink(links, "describedby", sourceUrl, "Source documentation");
@@ -2254,11 +2271,16 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         });
     }
 
-    private async Task SaveMetadataGraphAsync(MetadataV2Graph graph)
+    private Task SaveMetadataGraphAsync(MetadataV2Graph graph)
     {
         using var scope = _fixture.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-        await store.SaveAsync(graph, expectedEtag: null);
+        var provider = scope.ServiceProvider.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
+        // This fixture owns an isolated provider, while its admin publish transaction may
+        // have initialized either the request-schema partition or the private baseline.
+        // Keep both views aligned when this test mutates the graph outside an HTTP request.
+        provider.SetGraph(graph, schema: string.Empty);
+        return Task.CompletedTask;
     }
 
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)

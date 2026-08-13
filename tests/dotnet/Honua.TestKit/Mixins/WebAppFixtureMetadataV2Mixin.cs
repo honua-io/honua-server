@@ -152,6 +152,11 @@ internal static class WebAppFixtureMetadataV2Mixin
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
             .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding(
+                "binding-image-test",
+                "res-image-test",
+                "rasters",
+                storageLayerId: TestLayerId)
             .AddService("svc-image-test", TestServiceId, protocols: [MetadataV2ServiceProtocols.ImageServer])
             .AddPublication(
                 id: "pub-image-test",

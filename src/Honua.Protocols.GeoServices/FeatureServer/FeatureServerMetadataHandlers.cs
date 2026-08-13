@@ -84,6 +84,10 @@ internal static partial class FeatureServerEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(publication =>
+                ServiceProtocols.IsPreferredPublicationType(
+                    ServiceProtocols.FeatureServer,
+                    publication.PublicationType))
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
             .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))

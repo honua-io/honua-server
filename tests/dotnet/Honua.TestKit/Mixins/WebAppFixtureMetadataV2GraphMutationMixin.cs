@@ -46,8 +46,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     /// Shared-server fixture mutations run outside an HTTP request, so the ambient request
     /// schema is not populated; passing the fixture's schema explicitly keeps
     /// read-modify-write cycles scoped to the test's isolated schema and parallel-safe.
-    /// Isolated fixtures own their provider instance, so they intentionally use the baseline
-    /// partition.
+    /// Isolated fixtures own their provider instance but still send a schema header for
+    /// database routing, so their graph reads and writes use that same schema partition.
     /// </summary>
     private static MetadataV2GraphSnapshot ReadCurrent(WebAppFixture fixture, TestMetadataV2GraphProvider provider)
         => provider.GetCurrentForSchema(fixture.MetadataGraphSchema);

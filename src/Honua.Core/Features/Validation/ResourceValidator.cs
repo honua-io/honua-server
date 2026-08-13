@@ -271,6 +271,17 @@ public sealed class ResourceValidator : IResourceValidator
         }
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var serviceExists = snapshot.Index.ServicesById.TryGetValue(serviceId, out var exactService)
+            ? exactService.IsRoutable()
+            : snapshot.Graph.Services.Any(service =>
+                service.IsRoutable() &&
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
+        if (!serviceExists)
+        {
+            return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
+                ErrorMessages.NotFound.FormatService(serviceId));
+        }
+
         var service = ResolveServiceForLayer(snapshot, serviceId, layerId, requiredProtocol);
         if (service is null)
         {

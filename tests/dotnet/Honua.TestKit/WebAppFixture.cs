@@ -101,7 +101,10 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     public string? CurrentSchema => _currentSchema;
 
-    internal string? MetadataGraphSchema => _useSharedServer ? _currentSchema : null;
+    // HTTP clients always send the fixture schema header, including for isolated hosts.
+    // Keep out-of-request graph reads and writes on that same partition so a request-side
+    // IMetadataV2GraphStore.SaveAsync does not fork away from the fixture's baseline view.
+    internal string? MetadataGraphSchema => _currentSchema;
 
     /// <summary>
     /// Gets the database connection provider for test scenarios.
