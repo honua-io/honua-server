@@ -189,21 +189,12 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
 
     private static bool IsReferencedByJob(ExecutionJobRecord job, string objectKey)
     {
-        var parsedDescriptors = job.ArtifactReferences
+        return job.ArtifactReferences
             .Select(static reference => RasterOutputJson.TryDeserialize(reference, out var descriptor)
                 ? descriptor
                 : null)
-            .Where(static descriptor => descriptor is StagedObjectRasterOutputDescriptor);
-        foreach (var descriptor in parsedDescriptors)
-        {
-            if (descriptor is StagedObjectRasterOutputDescriptor staged
-                && string.Equals(staged.ObjectKey, objectKey, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+            .OfType<StagedObjectRasterOutputDescriptor>()
+            .Any(staged => string.Equals(staged.ObjectKey, objectKey, StringComparison.Ordinal));
     }
 
     /// <summary>Outcome of one sweep pass.</summary>

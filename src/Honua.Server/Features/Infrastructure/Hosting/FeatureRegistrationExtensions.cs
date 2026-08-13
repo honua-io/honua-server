@@ -307,6 +307,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcStylesEndpoints();
+        endpoints.MapGeoprocessingOutputArtifactEndpoints();
         endpoints.MapOgcProcessesEndpoints();
         endpoints.MapOgcRecordsEndpoints();
         endpoints.MapOgcTilesEndpoints();

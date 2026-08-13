@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.FileStorage;
 using Honua.TestKit.Attributes;
@@ -131,9 +132,11 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         }
 
         (await _store.HasRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeFalse();
-        (await _store.SetRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
+        (await _store.SetRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().Be(
+            GeoprocessingRetentionHoldResult.Added);
         // Idempotent.
-        (await _store.SetRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
+        (await _store.SetRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().Be(
+            GeoprocessingRetentionHoldResult.AlreadyHeld);
         (await _store.HasRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
 
         // The hold sidecar is store bookkeeping, never a listed object.
@@ -144,12 +147,16 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         }
 
         listed.Should().ContainSingle().Which.Should().Be("gp/outputs/job/a1/output1/result.tif");
+
+        await _store.ReleaseRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif");
+        (await _store.HasRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeFalse();
     }
 
     [UnitTest]
     public async Task RetentionHold_MissingObject_ReturnsFalse()
     {
-        (await _store.SetRetentionHoldAsync("gp/outputs/absent/a1/output1/result.tif")).Should().BeFalse();
+        (await _store.SetRetentionHoldAsync("gp/outputs/absent/a1/output1/result.tif")).Should().Be(
+            GeoprocessingRetentionHoldResult.ObjectMissing);
     }
 
     [UnitTest]

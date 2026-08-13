@@ -66,7 +66,6 @@ public static partial class EndpointRegistry
         new("GET", "/ogc/processes/jobs"),
         new("GET", "/ogc/processes/jobs/{jobId}"),
         new("GET", "/ogc/processes/jobs/{jobId}/results"),
-        new("GET", "/ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content"),
         new("DELETE", "/ogc/processes/jobs/{jobId}"),
 
         new("GET", "/ogc/tiles"),

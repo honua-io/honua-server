@@ -143,11 +143,26 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
             // Protect the staged object before publishing its permanent catalog row.
             // A failed catalog write can be retried against the held immutable object;
             // the reverse order could expose a row whose object was never protected.
-            await EnsureRetentionHoldAsync(job.OperationId, outputName, staged, cancellationToken)
+            var holdResult = await EnsureRetentionHoldAsync(
+                    job.OperationId, outputName, staged, cancellationToken)
                 .ConfigureAwait(false);
 
-            var rasterId = await RegisterOrGetAsync(
-                cogStore, layerId, staged, cancellationToken).ConfigureAwait(false);
+            long rasterId;
+            try
+            {
+                rasterId = await RegisterOrGetAsync(
+                    cogStore, layerId, staged, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                if (holdResult == Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult.Added)
+                {
+                    await ReleaseNewHoldIfRegistrationAbsentAsync(
+                        cogStore, layerId, staged).ConfigureAwait(false);
+                }
+
+                throw;
+            }
 
             registeredByOutput[outputName] = (layerId, rasterId);
             Log.OutputRegistered(logger, job.OperationId, outputName, layerId, rasterId);
@@ -156,7 +171,30 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
         return ApplyRegistrationMetadata(package, registeredByOutput);
     }
 
-    private async Task EnsureRetentionHoldAsync(
+    private async Task ReleaseNewHoldIfRegistrationAbsentAsync(
+        ICogStore cogStore,
+        int layerId,
+        StagedObjectRasterOutputDescriptor staged)
+    {
+        try
+        {
+            // Compensation is not interrupted by request cancellation. If the catalog cannot be
+            // queried, retain the hold fail-safe; release it only after proving no matching row won.
+            var existing = await FindExistingAsync(
+                cogStore, layerId, staged, CancellationToken.None).ConfigureAwait(false);
+            if (existing is null)
+            {
+                await outputStore!.ReleaseRetentionHoldAsync(
+                    staged.ObjectKey, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (Exception cleanupException) when (cleanupException is not OutOfMemoryException)
+        {
+            Log.RetentionHoldCompensationFailed(logger, staged.ObjectKey, cleanupException);
+        }
+    }
+
+    private async Task<Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult> EnsureRetentionHoldAsync(
         string jobId,
         string outputName,
         StagedObjectRasterOutputDescriptor staged,
@@ -169,12 +207,16 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
                 + $"'{staged.ObjectKey}': no matching output store is configured on this host.");
         }
 
-        if (!await outputStore!.SetRetentionHoldAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+        var result = await outputStore!.SetRetentionHoldAsync(
+            staged.ObjectKey, cancellationToken).ConfigureAwait(false);
+        if (result == Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult.ObjectMissing)
         {
             throw new InvalidOperationException(
                 $"Registered output '{outputName}' of job '{jobId}' references staged object "
                 + $"'{staged.ObjectKey}' which no longer exists in the output store.");
         }
+
+        return result;
     }
 
     /// <summary>
@@ -309,6 +351,11 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
             "Registered geoprocessing output '{OutputName}' of job {OperationId} into the COG catalog (layer {LayerId}, raster {RasterId})")]
         public static partial void OutputRegistered(
             ILogger logger, string operationId, string outputName, int layerId, long rasterId);
+
+        [LoggerMessage(8032, LogLevel.Warning,
+            "Could not compensate retention hold for staged object {ObjectKey} after catalog registration failed")]
+        public static partial void RetentionHoldCompensationFailed(
+            ILogger logger, string objectKey, Exception exception);
 
     }
 }

@@ -171,6 +171,43 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
         cogStore.Rows.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task EnsureRegistered_FailedCatalogWrite_ReleasesNewRetentionHold()
+    {
+        var cogStore = new UniqueConstraintCogStore { FailRegistration = true };
+        var objectStore = new HoldRecordingOutputObjectStore();
+        var objectKey = $"gp/outputs/{JobId}/a1/{OutputName}/result.tif";
+        objectStore.Objects.Add(objectKey);
+        var registrar = CreateRegistrar(cogStore, objectStore);
+        var job = CreateSucceededJob("cog-catalog:7");
+
+        var act = () => registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        cogStore.Rows.Should().BeEmpty();
+        objectStore.Holds.Should().NotContain(objectKey);
+    }
+
+    [UnitTest]
+    public async Task EnsureRegistered_FailedCatalogWrite_PreservesExistingRetentionHold()
+    {
+        var cogStore = new UniqueConstraintCogStore { FailRegistration = true };
+        var objectStore = new HoldRecordingOutputObjectStore();
+        var objectKey = $"gp/outputs/{JobId}/a1/{OutputName}/result.tif";
+        objectStore.Objects.Add(objectKey);
+        objectStore.Holds.Add(objectKey);
+        var registrar = CreateRegistrar(cogStore, objectStore);
+        var job = CreateSucceededJob("cog-catalog:7");
+
+        var act = () => registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        cogStore.Rows.Should().BeEmpty();
+        objectStore.Holds.Should().Contain(objectKey);
+    }
+
     private static GeoprocessingRasterOutputRegistrar CreateRegistrar(
         ICogStore cogStore,
         Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null)
@@ -284,6 +321,8 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
 
         public bool InsertRaceRegistration { get; init; }
 
+        public bool FailRegistration { get; init; }
+
         public Task<CogRegistration?> GetAsync(long id, CancellationToken cancellationToken = default)
             => Task.FromResult(Rows.FirstOrDefault(row => row.Id == id));
 
@@ -291,6 +330,11 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
             CogRegistrationRequest request,
             CancellationToken cancellationToken = default)
         {
+            if (FailRegistration)
+            {
+                throw new InvalidOperationException("Catalog write failed.");
+            }
+
             if (InsertRaceRegistration && _raceArmed)
             {
                 // A concurrent replay wins the insert race just before this call.
@@ -388,18 +432,29 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
         public Task<bool> HasActiveReadLeaseAsync(string objectKey, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
-        public Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+        public Task<Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult> SetRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
         {
             if (!Objects.Contains(objectKey))
             {
-                return Task.FromResult(false);
+                return Task.FromResult(
+                    Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult.ObjectMissing);
             }
 
-            Holds.Add(objectKey);
-            return Task.FromResult(true);
+            var added = Holds.Add(objectKey);
+            return Task.FromResult(added
+                ? Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult.Added
+                : Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult.AlreadyHeld);
         }
 
         public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
             => Task.FromResult(Holds.Contains(objectKey));
+
+        public Task ReleaseRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+        {
+            Holds.Remove(objectKey);
+            return Task.CompletedTask;
+        }
     }
 }

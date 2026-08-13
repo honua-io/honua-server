@@ -6,6 +6,19 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Abstractions;
 
+/// <summary>Result of atomically establishing a durable retention hold.</summary>
+public enum GeoprocessingRetentionHoldResult
+{
+    /// <summary>The object no longer exists, so no hold was established.</summary>
+    ObjectMissing,
+
+    /// <summary>A durable hold already existed.</summary>
+    AlreadyHeld,
+
+    /// <summary>This call established the durable hold.</summary>
+    Added
+}
+
 /// <summary>
 /// Deterministic-key object store for staged geoprocessing output artifacts (#3089).
 /// </summary>
@@ -100,8 +113,18 @@ public interface IGeoprocessingOutputObjectStore
     /// </summary>
     /// <param name="objectKey">Object key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Whether the hold is in place.</returns>
-    Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default);
+    /// <returns>Whether this call added the hold, found one, or found no object.</returns>
+    Task<GeoprocessingRetentionHoldResult> SetRetentionHoldAsync(
+        string objectKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Releases a durable retention hold. Used only to compensate a newly established hold after
+    /// the corresponding permanent catalog write definitively failed. Idempotent.
+    /// </summary>
+    /// <param name="objectKey">Object key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ReleaseRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default);
 
     /// <summary>Whether a durable retention hold exists for the object.</summary>
     /// <param name="objectKey">Object key.</param>

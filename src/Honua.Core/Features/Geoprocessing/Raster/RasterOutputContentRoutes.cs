@@ -13,8 +13,8 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 /// </summary>
 public static class RasterOutputContentRoutes
 {
-    /// <summary>Route pattern registered by the OGC API Processes jobs surface.</summary>
-    public const string RoutePattern = "/ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex:int}/content";
+    /// <summary>Protocol-neutral route pattern registered by the geoprocessing subsystem.</summary>
+    public const string RoutePattern = "/api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex:int}/content";
 
     /// <summary>
     /// Whether the registered output store on this host can serve a staged artifact
@@ -47,6 +47,6 @@ public static class RasterOutputContentRoutes
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{baseUrl.TrimEnd('/')}/ogc/processes/jobs/{Uri.EscapeDataString(jobId)}/results/artifacts/{artifactIndex}/content");
+            $"{baseUrl.TrimEnd('/')}/api/geoprocessing/jobs/{Uri.EscapeDataString(jobId)}/artifacts/{artifactIndex}/content");
     }
 }

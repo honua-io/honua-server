@@ -944,6 +944,28 @@
       "capability": "enrichment.datasets"
     },
     {
+      "id": "get-api-geoprocessing-jobs-jobid-artifacts-artifactindex-content",
+      "route": "/api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content",
+      "method": "GET",
+      "family": "Geoprocessing Output Artifacts",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Geoprocessing.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_CancelledJob_NeverExposesStagedOutput",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_DescriptorFromAnotherJob_FailsClosed",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_IfNoneMatchWithCurrentETag_Returns304",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_IndexOutOfRange_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_InvalidDurableDescriptor_FailsClosed",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_RunningJob_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_SucceededJob_StreamsStagedObject",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_UnreconciledRegistrationIntent_FailsClosed",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactStoreUnavailableTests.ArtifactContent_NoMatchingStore_Returns503"
+      ],
+      "proof_ledger_surface": "geoprocessing-output-artifacts",
+      "maturity": "implemented",
+      "capability": "process.geoprocessing"
+    },
+    {
       "id": "get-api-scenes",
       "route": "/api/scenes",
       "method": "GET",
@@ -6901,25 +6923,6 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobResults_SucceededArtifactBackedJob_ReturnsNonEmptyResultEvidence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.JobResults_StagedArtifact_LinksContentRouteWithoutPayload",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactStoreUnavailableTests.JobResults_NoMatchingStore_DoesNotAdvertiseContentLink"
-      ],
-      "proof_ledger_surface": "ogc-api-processes",
-      "maturity": "implemented",
-      "capability": "process.ogc-api-processes"
-    },
-    {
-      "id": "get-ogc-processes-jobs-jobid-results-artifacts-artifactindex-content",
-      "route": "/ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content",
-      "method": "GET",
-      "family": "OGC API Processes",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_CancelledJob_NeverExposesStagedOutput",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_IfNoneMatchWithCurrentETag_Returns304",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_IndexOutOfRange_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_RunningJob_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_SucceededJob_StreamsStagedObject",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactStoreUnavailableTests.ArtifactContent_NoMatchingStore_Returns503"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",

@@ -368,19 +368,29 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         public Task<bool> HasActiveReadLeaseAsync(string objectKey, CancellationToken cancellationToken = default)
             => Task.FromResult(ReadLeases.Contains(objectKey));
 
-        public Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+        public Task<GeoprocessingRetentionHoldResult> SetRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
         {
             if (!Objects.ContainsKey(objectKey))
             {
-                return Task.FromResult(false);
+                return Task.FromResult(GeoprocessingRetentionHoldResult.ObjectMissing);
             }
 
-            RetentionHolds.Add(objectKey);
-            return Task.FromResult(true);
+            var added = RetentionHolds.Add(objectKey);
+            return Task.FromResult(added
+                ? GeoprocessingRetentionHoldResult.Added
+                : GeoprocessingRetentionHoldResult.AlreadyHeld);
         }
 
         public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
             => Task.FromResult(RetentionHolds.Contains(objectKey));
+
+        public Task ReleaseRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+        {
+            RetentionHolds.Remove(objectKey);
+            return Task.CompletedTask;
+        }
 
         public HashSet<string> RetentionHolds { get; } = new(StringComparer.Ordinal);
     }

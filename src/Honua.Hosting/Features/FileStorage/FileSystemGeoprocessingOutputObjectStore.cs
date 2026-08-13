@@ -222,27 +222,40 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         }
     }
 
-    public Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+    public Task<GeoprocessingRetentionHoldResult> SetRetentionHoldAsync(
+        string objectKey,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var path = ResolveContainedPath(objectKey);
         if (!File.Exists(path))
         {
-            return Task.FromResult(false);
+            return Task.FromResult(GeoprocessingRetentionHoldResult.ObjectMissing);
         }
 
         var holdPath = path + RetentionHoldSuffix;
-        if (!File.Exists(holdPath))
+        try
         {
-            var tempPath = holdPath + "." + Guid.NewGuid().ToString("N");
-            File.WriteAllText(tempPath, "held");
-            File.Move(tempPath, holdPath, overwrite: true);
+            using var hold = new FileStream(holdPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            using var writer = new StreamWriter(hold);
+            writer.Write("held");
+            return Task.FromResult(GeoprocessingRetentionHoldResult.Added);
         }
-
-        return Task.FromResult(true);
+        catch (IOException) when (File.Exists(holdPath))
+        {
+            return Task.FromResult(GeoprocessingRetentionHoldResult.AlreadyHeld);
+        }
     }
 
     public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
         => Task.FromResult(File.Exists(ResolveContainedPath(objectKey) + RetentionHoldSuffix));
+
+    public Task ReleaseRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        File.Delete(ResolveContainedPath(objectKey) + RetentionHoldSuffix);
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Maps an object key to a contained absolute path, rejecting rooted keys, drive

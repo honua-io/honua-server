@@ -139,7 +139,8 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
     public async Task Sweep_RegisteredObjectWithExpiredJobRecord_IsNeverDeleted()
     {
         var key = await StageObjectAsync("job-registered", attempt: 1);
-        (await _store.SetRetentionHoldAsync(key)).Should().BeTrue();
+        (await _store.SetRetentionHoldAsync(key)).Should().Be(
+            Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult.Added);
         _jobStore.GetAsync("job-registered", Arg.Any<CancellationToken>()).Returns((ExecutionJobRecord?)null);
 
         var result = await CreateSweeper().SweepOnceAsync(CancellationToken.None);
@@ -296,9 +297,13 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
             string objectKey, CancellationToken cancellationToken = default)
             => inner.HasActiveReadLeaseAsync(objectKey, cancellationToken);
 
-        public Task<bool> SetRetentionHoldAsync(
+        public Task<Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingRetentionHoldResult> SetRetentionHoldAsync(
             string objectKey, CancellationToken cancellationToken = default)
             => inner.SetRetentionHoldAsync(objectKey, cancellationToken);
+
+        public Task ReleaseRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+            => inner.ReleaseRetentionHoldAsync(objectKey, cancellationToken);
 
         public async Task<bool> HasRetentionHoldAsync(
             string objectKey, CancellationToken cancellationToken = default)

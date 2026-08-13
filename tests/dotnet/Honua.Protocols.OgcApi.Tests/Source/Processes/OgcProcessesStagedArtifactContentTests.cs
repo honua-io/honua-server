@@ -41,11 +41,11 @@ public sealed class OgcProcessesStagedArtifactContentTests
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_SucceededJob_StreamsStagedObject()
     {
         var response = await _fixture.App.Client.GetAsync(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/results/artifacts/0/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/artifacts/0/content");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("image/tiff");
@@ -60,11 +60,11 @@ public sealed class OgcProcessesStagedArtifactContentTests
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_IfNoneMatchWithCurrentETag_Returns304()
     {
         var url =
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/results/artifacts/0/content";
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/artifacts/0/content";
         var first = await _fixture.App.Client.GetAsync(url);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         var etag = first.Headers.ETag;
@@ -79,44 +79,67 @@ public sealed class OgcProcessesStagedArtifactContentTests
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_RunningJob_Returns404()
     {
         var response = await _fixture.App.Client.GetAsync(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.RunningJobId}/results/artifacts/0/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.RunningJobId}/artifacts/0/content");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_CancelledJob_NeverExposesStagedOutput()
     {
         var response = await _fixture.App.Client.GetAsync(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.CancelledJobId}/results/artifacts/0/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.CancelledJobId}/artifacts/0/content");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_IndexOutOfRange_Returns404()
     {
         var response = await _fixture.App.Client.GetAsync(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/results/artifacts/7/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/artifacts/7/content");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_InvalidDurableDescriptor_FailsClosed()
+    {
+        var response = await _fixture.App.Client.GetAsync(
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.InvalidDescriptorJobId}/artifacts/0/content");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Headers.ETag.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_DescriptorFromAnotherJob_FailsClosed()
+    {
+        var response = await _fixture.App.Client.GetAsync(
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.MismatchedDescriptorJobId}/artifacts/0/content");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_UnreconciledRegistrationIntent_FailsClosed()
     {
         var response = await _fixture.App.Client.GetAsync(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.RegistrationPendingJobId}/results/artifacts/0/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.RegistrationPendingJobId}/artifacts/0/content");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         (await response.Content.ReadAsByteArrayAsync()).Should().NotEqual(_fixture.StagedPayload);
@@ -138,7 +161,7 @@ public sealed class OgcProcessesStagedArtifactContentTests
         var output = json.RootElement.EnumerateObject().First().Value;
         var href = output.GetProperty("href").GetString();
         href.Should().Contain(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/results/artifacts/0/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/artifacts/0/content");
 
         // The link is a stable authenticated route, not a provider location.
         href.Should().NotContain("gp-outputs");
@@ -174,7 +197,7 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTests
         var body = await response.Content.ReadAsStringAsync();
 
         // No dead link, no descriptor internals, no payload.
-        body.Should().NotContain("/results/artifacts/");
+        body.Should().NotContain("/api/geoprocessing/jobs/");
         body.Should().NotContain("gp-outputs");
         body.Should().NotContain("secret.tif");
         body.Should().NotContain("base64");
@@ -182,11 +205,11 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTests
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
-    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task ArtifactContent_NoMatchingStore_Returns503()
     {
         var response = await _fixture.App.Client.GetAsync(
-            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactStoreUnavailableTestsFixture.JobId}/results/artifacts/0/content");
+            $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactStoreUnavailableTestsFixture.JobId}/artifacts/0/content");
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
@@ -265,6 +288,8 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
     public const string RunningJobId = "gp-staged-running-001";
     public const string CancelledJobId = "gp-staged-cancelled-001";
     public const string RegistrationPendingJobId = "gp-staged-registration-pending-001";
+    public const string InvalidDescriptorJobId = "gp-staged-invalid-descriptor-001";
+    public const string MismatchedDescriptorJobId = "gp-staged-mismatched-descriptor-001";
 
     private readonly string _storeRoot = Directory.CreateTempSubdirectory("honua-ogc-staged-content-").FullName;
 
@@ -301,6 +326,14 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             ObjectKey = objectKey,
         };
         var reference = RasterOutputJson.Serialize(descriptor);
+        var invalidDescriptorReference = RasterOutputJson.Serialize(descriptor with
+        {
+            JobId = InvalidDescriptorJobId,
+            Content = descriptor.Content! with
+            {
+                Checksum = new RasterChecksum("sha256", "invalid")
+            }
+        });
 
         var succeeded = CreateJob(SucceededJobId, ExecutionJobStatus.Succeeded, reference);
         var running = CreateJob(RunningJobId, ExecutionJobStatus.Running, reference);
@@ -310,17 +343,25 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             ExecutionJobStatus.Succeeded,
             reference,
             registrationTarget: "cog-catalog:7");
+        var invalidDescriptor = CreateJob(
+            InvalidDescriptorJobId, ExecutionJobStatus.Succeeded, invalidDescriptorReference);
+        var mismatchedDescriptor = CreateJob(
+            MismatchedDescriptorJobId, ExecutionJobStatus.Succeeded, reference);
 
         var mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         mockJobStore.GetAsync(SucceededJobId, Arg.Any<CancellationToken>()).Returns(succeeded);
         mockJobStore.GetAsync(RunningJobId, Arg.Any<CancellationToken>()).Returns(running);
         mockJobStore.GetAsync(CancelledJobId, Arg.Any<CancellationToken>()).Returns(cancelled);
         mockJobStore.GetAsync(RegistrationPendingJobId, Arg.Any<CancellationToken>()).Returns(registrationPending);
+        mockJobStore.GetAsync(InvalidDescriptorJobId, Arg.Any<CancellationToken>()).Returns(invalidDescriptor);
+        mockJobStore.GetAsync(MismatchedDescriptorJobId, Arg.Any<CancellationToken>()).Returns(mismatchedDescriptor);
         mockJobStore.GetAsync(
                 Arg.Is<string>(id => id != SucceededJobId
                     && id != RunningJobId
-                    && id != CancelledJobId
-                    && id != RegistrationPendingJobId),
+                     && id != CancelledJobId
+                    && id != RegistrationPendingJobId
+                    && id != InvalidDescriptorJobId
+                    && id != MismatchedDescriptorJobId),
                 Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
 
