@@ -764,7 +764,7 @@ internal sealed class Wcs20Handler
             service = snapshot.FindService(serviceId);
         }
 
-        if (service is null)
+        if (service is null || !service.IsRoutable())
         {
             return new ServiceResolutionResult(
                 null,

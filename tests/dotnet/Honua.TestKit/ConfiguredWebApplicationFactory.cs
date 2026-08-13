@@ -16,10 +16,12 @@ internal static class ConfiguredWebApplicationFactory
     private static readonly object _testEnvironmentGate = new();
 
     public static WebApplicationFactory<Program> Create(
-        Action<IWebHostBuilder> configure)
+        Action<IWebHostBuilder> configure,
+        string environmentName = "Test")
     {
         ArgumentNullException.ThrowIfNull(configure);
-        return new DirectlyConfiguredFactory(configure);
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+        return new DirectlyConfiguredFactory(configure, environmentName);
     }
 
     /// <summary>
@@ -72,9 +74,11 @@ internal static class ConfiguredWebApplicationFactory
     }
 
     private sealed class DirectlyConfiguredFactory(
-        Action<IWebHostBuilder> configure) : WebApplicationFactory<Program>
+        Action<IWebHostBuilder> configure,
+        string environmentName) : WebApplicationFactory<Program>
     {
         private readonly Action<IWebHostBuilder> _configure = configure;
+        private readonly string _environmentName = environmentName;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -82,6 +86,9 @@ internal static class ConfiguredWebApplicationFactory
         }
 
         protected override IHost CreateHost(IHostBuilder builder)
-            => StartInTestEnvironment(() => base.CreateHost(builder));
+            => StartInEnvironment(
+                () => base.CreateHost(builder),
+                _environmentName,
+                enableTestSchemaHeaders: string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase));
     }
 }

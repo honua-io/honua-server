@@ -8,6 +8,7 @@ using Honua.Protocols.Ogc.Classic.Wcs20;
 using Honua.Protocols.Ogc.Classic.Wms;
 using Honua.Protocols.Ogc.Classic.Wmts;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
 
@@ -73,6 +74,26 @@ public sealed class MetadataV2LifecycleRoutingTests
         arguments[2].Should().BeNull();
     }
 
+    [UnitTest]
+    public void WcsServiceResolver_WithRetiredService_RejectsRoute()
+    {
+        var snapshot = CreateSnapshot(
+            publicationLifecycle: MetadataV2LifecycleStatus.Active,
+            serviceLifecycle: MetadataV2LifecycleStatus.Retired);
+        var method = typeof(Wcs20Handler).GetMethod(
+            "ResolveService",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        method.Should().NotBeNull();
+
+        var result = method!.Invoke(
+            null,
+            [new DefaultHttpContext(), snapshot, new Wcs20RouteScope(null, "service-ogc")]);
+
+        result.Should().NotBeNull();
+        result!.GetType().GetProperty("Service")!.GetValue(result).Should().BeNull();
+        result.GetType().GetProperty("Error")!.GetValue(result).Should().NotBeNull();
+    }
+
     private static Array InvokeLayerResolver(
         Type handlerType,
         string methodName,
@@ -96,7 +117,8 @@ public sealed class MetadataV2LifecycleRoutingTests
             // Explicit lifecycle: MetadataV2Status defaults to Draft, which would make the
             // publication non-routable for service-lifecycle reasons and mask the
             // publication/binding lifecycle behaviour these cases are proving.
-            Status = new MetadataV2Status { Lifecycle = serviceLifecycle }
+            Status = new MetadataV2Status { Lifecycle = serviceLifecycle },
+            Protocols = ["WCS"]
         };
         var resource = new MetadataV2Resource
         {

@@ -52,6 +52,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private Action<IWebHostBuilder>? _configureWebHost;
     private WebApplicationFactory<Program>? _factory;
     private string? _currentSchema;
+    private string _environmentName = "Test";
     private bool _useSharedServer;
     private string? _seedPath;
     private string? _seedProfile;
@@ -112,7 +113,9 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public IServiceProvider Services => ActiveFactory.Services;
 
-    private bool HasCustomConfiguration => _serviceConfigurations.Count > 0 || _configureWebHost != null;
+    private bool HasCustomConfiguration => _serviceConfigurations.Count > 0
+        || _configureWebHost != null
+        || !string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns the active <see cref="WebApplicationFactory{TEntryPoint}"/> for this
@@ -165,7 +168,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                         () => _currentSchema,
                         _serviceConfigurations);
                 });
-            });
+            },
+            _environmentName);
 
         Client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
@@ -429,6 +433,21 @@ public sealed class WebAppFixture : IAsyncLifetime
     public WebAppFixture ConfigureWebHost(Action<IWebHostBuilder> configure)
     {
         _configureWebHost = _configureWebHost == null ? configure : _configureWebHost + configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the environment that both early <c>Program.cs</c> startup and the final
+    /// web host observe. Must be called before <see cref="InitializeAsync"/>.
+    /// </summary>
+    public WebAppFixture UseEnvironment(string environmentName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+        _environmentName = environmentName;
+        Action<IWebHostBuilder> configureEnvironment = builder => builder.UseEnvironment(environmentName);
+        _configureWebHost = _configureWebHost == null
+            ? configureEnvironment
+            : _configureWebHost + configureEnvironment;
         return this;
     }
 
