@@ -1336,6 +1336,39 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_SnapshotMode_SseResumeHeaders_DoNotSkipTheSnapshotStorePreflight()
+    {
+        // WebSocket wins transport selection when both upgrade and SSE Accept headers are present.
+        // Last-Event-ID is SSE-only, so it must not suppress the pre-handshake storage probe.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateFixtureWithUnreadableFeatureReader();
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            wsClient.ConfigureRequest = request =>
+            {
+                request.Headers["Accept"] = "text/event-stream";
+                request.Headers["Last-Event-ID"] = "0";
+            };
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                wsClient.ConnectAsync(
+                    new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot"),
+                    cts.Token));
+
+            exception.Message.Should().Contain("503",
+                "the WebSocket handshake must fail before an unreadable initial snapshot is accepted");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private static async Task<IReadOnlyList<int>> ReadSubscribableLayerIdsAsync(

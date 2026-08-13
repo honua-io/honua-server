@@ -90,8 +90,8 @@ internal static partial class FeatureStreamEndpoints
         // Determine transport from request headers.
         var isWebSocket = context.WebSockets.IsWebSocketRequest;
         var accept = context.Request.Headers.Accept.ToString();
-        var isSse = accept.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
-        if (!isWebSocket && !isSse)
+        var acceptsSse = accept.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
+        if (!isWebSocket && !acceptsSse)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -144,7 +144,8 @@ internal static partial class FeatureStreamEndpoints
             deps,
             logger,
             context,
-            isSse,
+            // A WebSocket upgrade wins even when its request also advertises SSE.
+            isSse: !isWebSocket,
             filterResult.Mode,
             filterResult.Filter).ConfigureAwait(false);
         if (snapshotError is not null)
