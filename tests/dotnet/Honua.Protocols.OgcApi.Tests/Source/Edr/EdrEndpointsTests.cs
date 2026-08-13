@@ -131,6 +131,112 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter()
+    {
+        using var doc = await GetJsonAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&parameter-name=band_2");
+
+        doc.RootElement.GetProperty("parameters").EnumerateObject().Select(p => p.Name).Should().Equal("band_2");
+        var ranges = doc.RootElement.GetProperty("ranges");
+        ranges.EnumerateObject().Select(p => p.Name).Should().Equal("band_2");
+        ranges.GetProperty("band_2").GetProperty("values").EnumerateArray().First().GetDouble().Should().Be(12.0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_ValidParameterNameSubset_ReturnsOnlyRequestedParameters()
+    {
+        using var doc = await GetJsonAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&parameter-name=band_1,band_3");
+
+        var ranges = doc.RootElement.GetProperty("ranges");
+        ranges.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("band_1", "band_3");
+        ranges.GetProperty("band_3").GetProperty("values").EnumerateArray()
+            .Select(v => v.GetDouble()).Should().AllBeEquivalentTo(13.0);
+    }
+
+    // #3184: an unknown parameter-name previously fell back to band_1, returning a different
+    // physical quantity than the client asked for. OGC API - EDR /req/edr/parameter-name-response
+    // requires the value to come from the collection's enumerated parameter list and that only
+    // the listed parameters be returned, so an unknown name is an invalid query-parameter value.
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_UnknownParameterName_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&parameter-name=temperature");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        doc.RootElement.GetProperty("title").GetString().Should().Be("Bad Request");
+        var detail = doc.RootElement.GetProperty("detail").GetString();
+        detail.Should().Contain("parameter-name").And.Contain("temperature").And.Contain("band_1");
+
+        // The rejected quantity must never leak through as substituted band data.
+        content.Should().NotContain("\"ranges\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_UnknownParameterName_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=-122.5,37.7,-122.3,37.9&parameter-name=temperature");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        doc.RootElement.GetProperty("detail").GetString().Should().Contain("temperature");
+        content.Should().NotContain("\"ranges\"");
+    }
+
+    // Mixed valid + unknown names are rejected too (documented deterministic choice): a
+    // silently narrowed selection is indistinguishable from a complete result to the client.
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_MixedValidAndUnknownParameterNames_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&parameter-name=band_1,temperature");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+
+        using var doc = JsonDocument.Parse(content);
+        var detail = doc.RootElement.GetProperty("detail").GetString();
+        detail.Should().Contain("temperature");
+        // Only the unknown name is reported as offending; the valid one is not.
+        detail.Should().NotContain("offer: band_1");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_MixedValidAndUnknownParameterNames_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=-122.5,37.7,-122.3,37.9&parameter-name=band_1,temperature");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /edr/collections/{collectionId}")]
     public async Task Edr_UnknownCollection_Returns404()
