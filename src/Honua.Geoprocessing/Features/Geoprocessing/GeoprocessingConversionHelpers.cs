@@ -265,9 +265,7 @@ internal static class GeoprocessingConversionHelpers
             ArtifactId = artifact.ArtifactId,
             ArtifactClass = ToProtoArtifactClass(artifact.Kind),
             ArtifactVersion = 1,
-            ProducerRef = artifact.Uri
-                ?? artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.ContentRoute)
-                ?? artifact.Label
+            ProducerRef = artifact.Uri ?? artifact.Label
         };
 
     private static Proto.ProvenanceRecord ToProtoProvenance(ProvenanceRecord provenance)

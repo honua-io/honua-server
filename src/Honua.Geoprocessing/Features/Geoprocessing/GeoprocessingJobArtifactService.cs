@@ -35,6 +35,7 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
     private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
     private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
+    private readonly IGeoprocessingOutputObjectStore? _outputStore;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
@@ -46,7 +47,8 @@ internal sealed class GeoprocessingJobArtifactService
         IProcessCatalog processCatalog,
         IGeoprocessingResultPackageStore? resultPackageStore = null,
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
-        GeoprocessingRasterOutputRegistrar? outputRegistrar = null)
+        GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
+        IGeoprocessingOutputObjectStore? outputStore = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -54,6 +56,7 @@ internal sealed class GeoprocessingJobArtifactService
         _resultPackageStore = resultPackageStore;
         _rasterSourceResolver = rasterSourceResolver;
         _outputRegistrar = outputRegistrar;
+        _outputStore = outputStore;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -271,7 +274,7 @@ internal sealed class GeoprocessingJobArtifactService
                         StringComparison.Ordinal))
                 {
                     GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
-                    return storedPackage;
+                    return ProjectStagedArtifactAvailability(storedPackage, jobId, _outputStore);
                 }
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -315,6 +318,48 @@ internal sealed class GeoprocessingJobArtifactService
         }
 
         GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
-        return synthesizedPackage;
+        return ProjectStagedArtifactAvailability(synthesizedPackage, jobId, _outputStore);
+    }
+
+    /// <summary>
+    /// Projects canonical staged-content routes only when this serving host has the
+    /// matching output store. Every protocol consumes this package, so performing the
+    /// availability check here prevents gRPC, MCP, and workflow consumers from
+    /// advertising a route that is guaranteed to return 503 in a split-host topology.
+    /// </summary>
+    internal static AnalysisResultPackage ProjectStagedArtifactAvailability(
+        AnalysisResultPackage package,
+        string jobId,
+        IGeoprocessingOutputObjectStore? outputStore)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+
+        ArtifactRef[]? projected = null;
+        for (var index = 0; index < package.Artifacts.Count; index++)
+        {
+            var artifact = package.Artifacts[index];
+            if (!artifact.Metadata.TryGetValue(RasterOutputArtifactMetadata.Staged, out var staged)
+                || !string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var uri = RasterOutputContentRoutes.CanServe(
+                    outputStore,
+                    artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreProvider),
+                    artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreReference))
+                ? RasterOutputContentRoutes.BuildRelative(jobId, index)
+                : null;
+            if (string.Equals(uri, artifact.Uri, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            projected ??= package.Artifacts.ToArray();
+            projected[index] = artifact with { Uri = uri };
+        }
+
+        return projected is null ? package : package with { Artifacts = projected };
     }
 }

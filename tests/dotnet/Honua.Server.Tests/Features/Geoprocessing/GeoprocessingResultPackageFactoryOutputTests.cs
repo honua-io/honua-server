@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
@@ -71,6 +72,41 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
         artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Staged);
         artifact.Metadata[RasterOutputArtifactMetadata.ObjectKey].Should().Be(descriptor.ObjectKey);
         artifact.Metadata[RasterOutputArtifactMetadata.ContentRoute].Should().Be(
+            "/api/geoprocessing/jobs/job-x/artifacts/0/content");
+    }
+
+    [UnitTest]
+    public void ProjectStagedArtifactAvailability_MismatchedStore_RemovesCanonicalUri()
+    {
+        var package = CreateStagedPackage();
+        var store = Substitute.For<IGeoprocessingOutputObjectStore>();
+        store.Provider.Returns(Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.Local);
+        store.StoreReference.Returns("different-store");
+
+        var projected = GeoprocessingJobArtifactService.ProjectStagedArtifactAvailability(
+            package, "job-x", store);
+
+        projected.Artifacts.Should().ContainSingle().Which.Uri.Should().BeNull();
+        package.Artifacts.Should().ContainSingle().Which.Uri.Should().NotBeNull(
+            "availability projection must not mutate the durable package");
+    }
+
+    [UnitTest]
+    public void ProjectStagedArtifactAvailability_MatchingStore_UsesCanonicalUri()
+    {
+        var durablePackage = CreateStagedPackage();
+        var package = durablePackage with
+        {
+            Artifacts = [durablePackage.Artifacts[0] with { Uri = null }]
+        };
+        var store = Substitute.For<IGeoprocessingOutputObjectStore>();
+        store.Provider.Returns(Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.Local);
+        store.StoreReference.Returns("gp-outputs");
+
+        var projected = GeoprocessingJobArtifactService.ProjectStagedArtifactAvailability(
+            package, "job-x", store);
+
+        projected.Artifacts.Should().ContainSingle().Which.Uri.Should().Be(
             "/api/geoprocessing/jobs/job-x/artifacts/0/content");
     }
 
@@ -152,5 +188,28 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
                 WorkloadName = "raster.resample"
             }
         };
+    }
+
+    private static AnalysisResultPackage CreateStagedPackage()
+    {
+        var descriptor = new StagedObjectRasterOutputDescriptor
+        {
+            JobId = "job-x",
+            AttemptNumber = 1,
+            OutputName = "output1",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 10,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+            },
+            ProducingEngine = RasterOutputContract.GdalWorkerEngine,
+            Provider = Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.Local,
+            StoreReference = "gp-outputs",
+            ObjectKey = "gp/outputs/job-x/a1/output1/result.tif",
+        };
+
+        return GeoprocessingResultPackageFactory.Create(
+            CreateSucceededJob(RasterOutputJson.Serialize(descriptor)), Substitute.For<IProcessCatalog>());
     }
 }
