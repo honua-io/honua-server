@@ -57,7 +57,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+        using var request = BuildSseRequest(
+            $"/api/v1/streaming/features?serviceId={TestServiceId}&layers=0&mode=snapshot");
         var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

@@ -156,7 +156,9 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 
         // 1. Service filter — cheapest, short-circuits first.
         if (_serviceId is not null &&
-            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison))
+            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison) &&
+            (_resolvedServiceId is null ||
+             !string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal)))
         {
             return false;
         }

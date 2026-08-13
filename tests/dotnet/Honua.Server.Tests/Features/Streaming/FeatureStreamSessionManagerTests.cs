@@ -753,6 +753,18 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             resolvedServiceId: activeServiceId,
             routabilityGuard: guard);
         Assert.Equal(activeServiceId, aliasFilter.ResolvedServiceId);
+        Assert.True(aliasFilter.Matches(CreateEnvelope(
+            cursor: 3,
+            layerId: storageLayerId,
+            serviceId: activeServiceId),
+            geometryEnvelope: null,
+            propertiesJson: null));
+        Assert.False(aliasFilter.Matches(CreateEnvelope(
+            cursor: 4,
+            layerId: storageLayerId,
+            serviceId: shadowedIdentity),
+            geometryEnvelope: null,
+            propertiesJson: null));
     }
 
     [UnitTest]
