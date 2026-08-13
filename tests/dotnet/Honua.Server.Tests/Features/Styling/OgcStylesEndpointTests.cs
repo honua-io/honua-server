@@ -308,6 +308,23 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Exact style-layer-{id} identifiers are reserved even before that layer has a
+        // mirrored catalog row; otherwise an ordinary record becomes undeletable later.
+        const string reservedStyleId = "style-layer-1";
+        using var reservedContent = new StringContent(
+            BuildDefaultStyleJson(),
+            Encoding.UTF8,
+            MapboxStyleMediaType);
+        using var reservedRequest = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles")
+        {
+            Content = reservedContent
+        };
+        reservedRequest.Headers.TryAddWithoutValidation("X-Style-Id", reservedStyleId);
+
+        var reservedResponse = await client.SendAsync(reservedRequest);
+
+        reservedResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [IntegrationTest]
