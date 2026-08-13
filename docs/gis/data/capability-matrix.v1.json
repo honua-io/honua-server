@@ -1798,7 +1798,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 8,
-      "provingTestCount": 13,
+      "provingTestCount": 33,
       "maturity": {
         "implemented": 8
       },
@@ -1815,7 +1815,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 6,
-      "provingTestCount": 15,
+      "provingTestCount": 28,
       "maturity": {
         "implemented": 6
       },
@@ -1934,7 +1934,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 6,
-      "provingTestCount": 11,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 6
       },
