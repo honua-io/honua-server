@@ -274,7 +274,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         {
             // Phase 2: the styleId may identify a catalog style rather than a collection-keyed
             // one. Keep PUT symmetric with POST/DELETE, which already reach the catalog.
-            var bound = await ResolveCatalogStyleLayerAsync(styleId, cancellationToken).ConfigureAwait(false);
+            var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
             if (bound is null)
             {
                 return await UpdateCatalogStyleAsync(styleId, mapLibreStyleJson, strict, cancellationToken).ConfigureAwait(false);
@@ -332,7 +332,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         {
             // Phase 2: catalog styles accept the negotiated Esri encoding on write too, so
             // the console's drawingInfo authoring mode reaches them.
-            var bound = await ResolveCatalogStyleLayerAsync(styleId, cancellationToken).ConfigureAwait(false);
+            var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
             if (bound is null)
             {
                 return await UpdateCatalogStyleFromDrawingInfoAsync(styleId, drawingInfo, strict, cancellationToken).ConfigureAwait(false);
@@ -385,34 +385,38 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         };
     }
 
-    // A catalog style whose id is not a collection name may still be bound to a layer — the
-    // per-layer default styles are mirrored into the catalog as "style-layer-{id}" and listed
-    // through this surface. Writing only the catalog copy for those would leave the canonical
-    // per-layer store (which every renderer reads) stale, so resolve the primary association
-    // and route the update through the same per-layer path a collection-keyed style uses; that
-    // path re-mirrors into the catalog, keeping one source of truth.
-    private async Task<(MetadataV2Resource Resource, int StorageLayerId)?> ResolveCatalogStyleLayerAsync(
+    // A catalog style whose id is not a collection name may be a mirrored layer default. These
+    // per-layer defaults are stored as "style-layer-{id}" at ordinal zero and listed
+    // through this surface. Only that reserved mirror writes through to the canonical per-layer
+    // store; ordinary associated styles remain independently editable catalog records.
+    private async Task<(MetadataV2Resource Resource, int StorageLayerId)?> ResolveMirroredLayerStyleAsync(
         string styleId,
         CancellationToken cancellationToken)
     {
-        if (_independentStyleCatalog is null)
+        const string mirroredStylePrefix = "style-layer-";
+        if (_independentStyleCatalog is null
+            || !styleId.StartsWith(mirroredStylePrefix, StringComparison.Ordinal)
+            || !int.TryParse(
+                styleId.AsSpan(mirroredStylePrefix.Length),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var storageLayerId))
         {
             return null;
         }
 
         var associations = await _independentStyleCatalog.ListAssociationsAsync(cancellationToken).ConfigureAwait(false);
-        var association = associations
-            .Where(candidate => string.Equals(candidate.StyleId, styleId, StringComparison.Ordinal))
-            .OrderBy(candidate => candidate.Ordinal)
-            .FirstOrDefault();
-        if (association is null)
+        if (!associations.Any(candidate =>
+                candidate.LayerId == storageLayerId
+                && candidate.Ordinal == 0
+                && string.Equals(candidate.StyleId, styleId, StringComparison.Ordinal)))
         {
             return null;
         }
 
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(association.LayerId, out var resource) && resource is not null
-            ? (resource, association.LayerId)
+        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource) && resource is not null
+            ? (resource, storageLayerId)
             : null;
     }
 

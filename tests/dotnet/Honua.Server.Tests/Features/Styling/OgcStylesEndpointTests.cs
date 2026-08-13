@@ -9,12 +9,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
 
@@ -482,6 +484,46 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
             .GetProperty("layers")[0].GetProperty("paint").GetProperty("circle-color")
             .GetString().Should().Be("#ff0000");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_AssociatedCatalogStyle_UpdatesOnlyRequestedStyle()
+    {
+        var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
+        }
+
+        using var content = new StringContent(
+            BuildStyleJson(MetadataV2GeometryType.LineString),
+            Encoding.UTF8,
+            MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = content
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var requestedStyle = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        requestedStyle.Be200Ok();
+        using var requestedDocument = JsonDocument.Parse(await requestedStyle.Content.ReadAsStringAsync());
+        requestedDocument.RootElement.GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("line");
+
+        var layerStyle = await client.GetAsync($"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style");
+        layerStyle.Be200Ok();
+        using var layerDocument = JsonDocument.Parse(await layerStyle.Content.ReadAsStringAsync());
+        layerDocument.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
+            .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("circle");
     }
 
     [IntegrationTest]

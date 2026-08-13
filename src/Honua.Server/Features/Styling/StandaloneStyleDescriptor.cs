@@ -77,9 +77,9 @@ internal static class StandaloneStyleDescriptor
                 continue;
             }
 
-            foreach (var info in infos.EnumerateArray())
+            foreach (var info in infos.EnumerateArray().Where(info => info.ValueKind == JsonValueKind.Object))
             {
-                if (info.ValueKind == JsonValueKind.Object && TryReadSymbolGeometry(info, "symbol", out geometryType))
+                if (TryReadSymbolGeometry(info, "symbol", out geometryType))
                 {
                     return geometryType;
                 }
@@ -154,9 +154,8 @@ internal static class StandaloneStyleDescriptor
             return 0;
         }
 
-        foreach (var source in sources.EnumerateObject())
+        foreach (var name in sources.EnumerateObject().Select(source => source.Name))
         {
-            var name = source.Name;
             if (!name.StartsWith("layer-", StringComparison.Ordinal))
             {
                 continue;
