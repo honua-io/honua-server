@@ -67,6 +67,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
         {
             userName = "alice@example.com",
+            externalId = "oidc|alice",
             displayName = "Alice Example",
             active = true,
             emails = new[] { new { value = "alice@example.com", primary = true } },
@@ -82,6 +83,21 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var managed = await store.GetUserAsync("alice@example.com");
         Assert.NotNull(managed);
         Assert.Equal("scim", managed!.ProvisioningSource);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Users")]
+    public async Task CreateUser_WithoutExternalId_ReturnsInvalidValue()
+    {
+        var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
+        {
+            userName = "missing-subject@example.com",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
+        Assert.Contains("externalId", error.GetProperty("detail").GetString(), StringComparison.Ordinal);
     }
 
     [IntegrationTest]
@@ -142,6 +158,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
         {
             userName = "dup@example.com",
+            externalId = "oidc|dup-duplicate",
         });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -515,6 +532,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
         {
             userName,
+            externalId = $"oidc|{userName}",
             displayName = userName,
             active = true,
         });

@@ -152,6 +152,14 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "userName is required.", "invalidValue");
         }
 
+        if (string.IsNullOrWhiteSpace(input.ExternalId))
+        {
+            return ScimErrorResult(
+                StatusCodes.Status400BadRequest,
+                "externalId is required and must contain the OIDC subject provisioned by this SCIM connection.",
+                "invalidValue");
+        }
+
         var email = SelectEmail(input.Emails);
         if (ValidateUserInput(input, email) is { } validationError)
         {
@@ -162,7 +170,7 @@ internal static partial class ScimEndpoints
             new ScimUserProvisioning
             {
                 UserName = input.UserName.Trim(),
-                ExternalId = input.ExternalId,
+                ExternalId = input.ExternalId.Trim(),
                 ExternalIssuer = options.Value.OidcIssuer,
                 DisplayName = input.DisplayName,
                 Email = email,
