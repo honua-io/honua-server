@@ -784,7 +784,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     // runs in geospatial-mcp CI.
     // -------------------------------------------------------------------
 
-    private static IReadOnlyList<IMcpTool> BuildLiveToolRoster()
+    private static IMcpTool[] BuildLiveToolRoster()
     {
         // BuildTools is the single static test roster for the live /mcp DI
         // registration. Keeping one roster prevents package-review tools from
