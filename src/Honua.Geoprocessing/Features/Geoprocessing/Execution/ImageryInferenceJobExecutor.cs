@@ -8,6 +8,8 @@ using System.Text.Json;
 using NetTopologySuite.Features;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Shared.Models;
 using Honua.Geoprocessing.Inference;
@@ -20,8 +22,8 @@ namespace Honua.Geoprocessing.Execution;
 /// Production <see cref="IJobExecutor"/> for the <c>imagery.classify</c> process
 /// (#2241) — the imagery/ML GP lane that DELEGATES inference to a configured
 /// cloud endpoint instead of bundling a model runtime. The executor reads the
-/// source GeoTIFF (inline, or materialized at submit time from a
-/// <c>layerId</c>/<c>rasterId</c> catalog raster), submits it with the caller's
+/// source GeoTIFF (inline, or conditionally materialized at execution time from a
+/// pinned <c>layerId</c>/<c>rasterId</c> catalog reference), submits it with the caller's
 /// model reference to the configured <see cref="IImageryInferenceClient"/>
 /// provider adapter, validates the returned classification raster or detected
 /// features, and publishes the result as a standard GP data-URI artifact.
@@ -60,12 +62,14 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly FrozenDictionary<string, IImageryInferenceClient> _clients;
     private readonly ILogger<ImageryInferenceJobExecutor> _logger;
+    private readonly IReadOnlyList<ICloudRangeReader> _rangeReaders;
 
     public ImageryInferenceJobExecutor(
         IOptionsMonitor<ImageryInferenceOptions> inferenceOptions,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IEnumerable<IImageryInferenceClient> clients,
-        ILogger<ImageryInferenceJobExecutor> logger)
+        ILogger<ImageryInferenceJobExecutor> logger,
+        IEnumerable<ICloudRangeReader>? rangeReaders = null)
     {
         ArgumentNullException.ThrowIfNull(inferenceOptions);
         ArgumentNullException.ThrowIfNull(executorOptions);
@@ -76,6 +80,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         _executorOptions = executorOptions;
         _clients = clients.ToFrozenDictionary(c => c.Provider, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
+        _rangeReaders = rangeReaders?.ToArray() ?? [];
     }
 
     /// <summary>
@@ -143,7 +148,24 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
 
         var maxArtifactBytes = _executorOptions.CurrentValue.MaxArtifactBytes;
 
-        if (!TryReadStepInputs(parameters, options, maxArtifactBytes, out var inputs, out var inputError))
+        var referencedSource = await ReadReferencedSourceAsync(
+                parameters,
+                maxArtifactBytes,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (referencedSource.Error is { } referenceError)
+        {
+            Log.InvalidInputs(_logger, job.OperationId, referenceError);
+            return JobExecutionResult.Failed($"Invalid imagery.classify inputs: {referenceError}");
+        }
+
+        if (!TryReadStepInputs(
+                parameters,
+                options,
+                maxArtifactBytes,
+                referencedSource.Bytes,
+                out var inputs,
+                out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid imagery.classify inputs: {inputError}");
@@ -337,10 +359,122 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         return JobExecutionResult.Succeeded();
     }
 
+    private async Task<(byte[]? Bytes, string? Error)> ReadReferencedSourceAsync(
+        IReadOnlyDictionary<string, string> parameters,
+        long maxArtifactBytes,
+        CancellationToken cancellationToken)
+    {
+        var legacyKey = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.source";
+        var descriptorKey = $"{ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix}0.source";
+        if (!parameters.TryGetValue(descriptorKey, out var descriptorJson))
+        {
+            return (null, null);
+        }
+
+        if (parameters.ContainsKey(legacyKey))
+        {
+            return (null, "input 'source' has both typed and legacy source representations");
+        }
+
+        RasterSourceDescriptor descriptor;
+        try
+        {
+            descriptor = RasterSourceJson.Deserialize(descriptorJson);
+        }
+        catch (JsonException)
+        {
+            return (null, "typed raster input 'source' is not a valid descriptor");
+        }
+
+        var validation = RasterSourceDescriptorValidator.Validate(
+            descriptor,
+            new RasterSourceValidationOptions
+            {
+                MaxInlineBytes = (int)Math.Min(maxArtifactBytes, int.MaxValue),
+            },
+            cancellationToken);
+        if (!validation.IsValid)
+        {
+            var failure = validation.Errors[0];
+            return (null,
+                $"typed raster input 'source' is invalid ({failure.Code}): {failure.Message}");
+        }
+
+        if (descriptor.Selection is not null)
+        {
+            return (null,
+                "typed raster input 'source' uses a source selection that imagery.classify does not support");
+        }
+
+        if (descriptor is InlineRasterSourceDescriptor inline)
+        {
+            return (inline.Payload, null);
+        }
+
+        if (descriptor is not ObjectStoreCogRasterSourceDescriptor cog)
+        {
+            return (null,
+                "typed raster input 'source' must be an inline raster or an object-store COG");
+        }
+
+        if (cog.Content.SizeBytes <= 0
+            || cog.Content.SizeBytes > maxArtifactBytes
+            || cog.Content.SizeBytes > int.MaxValue)
+        {
+            return (null,
+                $"referenced input 'source' size {cog.Content.SizeBytes} bytes exceeds configured "
+                + $"MaxArtifactBytes={maxArtifactBytes}");
+        }
+
+        if (string.IsNullOrWhiteSpace(cog.Content.ETag))
+        {
+            return (null, "referenced input 'source' requires an ETag for a conditional execution read");
+        }
+
+        var reader = _rangeReaders.FirstOrDefault(candidate => candidate.Provider == cog.Provider);
+        if (reader is null)
+        {
+            return (null,
+                $"no execution reader is configured for referenced input provider '{cog.Provider}'");
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = await reader.ReadRangeAsync(
+                    cog.StoreReference,
+                    cog.ObjectKey,
+                    0,
+                    checked((int)cog.Content.SizeBytes),
+                    cog.Content.ETag,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return (null,
+                $"referenced input 'source' could not be read with its pinned object identity ({ex.GetType().Name})");
+        }
+
+        if (bytes.LongLength != cog.Content.SizeBytes)
+        {
+            return (null,
+                $"referenced input 'source' returned {bytes.LongLength} bytes; expected the pinned "
+                + $"{cog.Content.SizeBytes}-byte object");
+        }
+
+        return (bytes, null);
+    }
+
     private static bool TryReadStepInputs(
         IReadOnlyDictionary<string, string> parameters,
         ImageryInferenceOptions options,
         long maxArtifactBytes,
+        byte[]? referencedSourceBytes,
         out InferenceInputs inputs,
         out string error)
     {
@@ -349,36 +483,43 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
 
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
 
-        if (!parameters.TryGetValue(prefix + "source", out var source) || string.IsNullOrWhiteSpace(source))
-        {
-            error = "missing required input 'source'; supply an inline base64 GeoTIFF or a layerId/rasterId " +
-                "that resolves to a registered catalog raster at submit time";
-            return false;
-        }
-
-        // Bound the payload BEFORE allocating it. Base64 carries 3 bytes per 4
-        // characters, so the encoded length gives the decoded size without
-        // decoding; checking only afterwards would already have materialized the
-        // array (and the outbound JSON request duplicates it again), letting a
-        // caller drive worker-memory allocation straight past the configured
-        // artifact ceiling before any backend call happens.
-        var estimatedDecodedBytes = (long)source.Length / 4 * 3;
-        if (estimatedDecodedBytes > maxArtifactBytes)
-        {
-            error = $"input 'source' is approximately {estimatedDecodedBytes} bytes once decoded, which exceeds "
-                + $"configured MaxArtifactBytes={maxArtifactBytes}";
-            return false;
-        }
-
         byte[] sourceBytes;
-        try
+        if (referencedSourceBytes is not null)
         {
-            sourceBytes = Convert.FromBase64String(source);
+            sourceBytes = referencedSourceBytes;
         }
-        catch (FormatException)
+        else
         {
-            error = "input 'source' is not valid base64";
-            return false;
+            if (!parameters.TryGetValue(prefix + "source", out var source) || string.IsNullOrWhiteSpace(source))
+            {
+                error = "missing required input 'source'; supply an inline base64 GeoTIFF or a layerId/rasterId " +
+                    "that resolves to a registered catalog raster at submit time";
+                return false;
+            }
+
+            // Bound the payload BEFORE allocating it. Base64 carries 3 bytes per 4
+            // characters, so the encoded length gives the decoded size without
+            // decoding; checking only afterwards would already have materialized the
+            // array (and the outbound JSON request duplicates it again), letting a
+            // caller drive worker-memory allocation straight past the configured
+            // artifact ceiling before any backend call happens.
+            var estimatedDecodedBytes = (long)source.Length / 4 * 3;
+            if (estimatedDecodedBytes > maxArtifactBytes)
+            {
+                error = $"input 'source' is approximately {estimatedDecodedBytes} bytes once decoded, which exceeds "
+                    + $"configured MaxArtifactBytes={maxArtifactBytes}";
+                return false;
+            }
+
+            try
+            {
+                sourceBytes = Convert.FromBase64String(source);
+            }
+            catch (FormatException)
+            {
+                error = "input 'source' is not valid base64";
+                return false;
+            }
         }
 
         // Exact enforcement once the true size is known: the estimate above is

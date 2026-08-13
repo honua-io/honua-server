@@ -47,6 +47,28 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         }
     }
 
+    public async Task<ReplicaState> RegisterAtCurrentGenerationAsync(
+        ReplicaState replica,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        var registeredRecord = await _repository
+            .RegisterAtCurrentGenerationAsync(ToRecord(replica), cancellationToken)
+            .ConfigureAwait(false);
+        var registered = ToState(registeredRecord);
+
+        try
+        {
+            await _cache.SetAsync(registered, ttl, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.CacheWriteFailed(_logger, replica.ReplicaId, ex);
+        }
+
+        return registered;
+    }
+
     public async Task<bool> TrySetSyncStateAsync(
         ReplicaState replica,
         long expectedLastSyncGeneration,

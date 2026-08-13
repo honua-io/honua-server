@@ -43,14 +43,25 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.KubernetesJob;
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new BatchComputeBackendCapabilities
+    {
+        var snapshot = options.CurrentValue;
+        var configuredImageMaximum = snapshot.ImageContracts
+            .Where(contract => !string.IsNullOrWhiteSpace(contract.Image))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
+        return Task.FromResult(new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
-            SupportsArtifactStaging = true
+            SupportsArtifactStaging = true,
+            MaxSupportedContractVersion = Math.Max(
+                snapshot.DefaultImageMaxSupportedContractVersion,
+                configuredImageMaximum)
         });
+    }
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
@@ -70,6 +81,17 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Failed,
                 Message = "No container image resolved for the Kubernetes execution job."
+            };
+        }
+
+        var imageContractVersion = ResolveImageMaxSupportedContractVersion(image);
+        if (job.Spec.ContractVersion > imageContractVersion)
+        {
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = $"Kubernetes worker image '{image}' supports execution contract version "
+                    + $"{imageContractVersion}, but the job requires version {job.Spec.ContractVersion}."
             };
         }
 
@@ -625,6 +647,24 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
         var snapshot = options.CurrentValue;
         return Normalize(snapshot.DefaultImage);
+    }
+
+    private int ResolveImageMaxSupportedContractVersion(string image)
+    {
+        var snapshot = options.CurrentValue;
+        var configuredVersion = snapshot.ImageContracts
+            .Where(contract => string.Equals(contract.Image, image, StringComparison.Ordinal))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(0)
+            .Max();
+        if (configuredVersion > 0)
+        {
+            return configuredVersion;
+        }
+
+        return string.Equals(Normalize(snapshot.DefaultImage), image, StringComparison.Ordinal)
+            ? Math.Max(1, snapshot.DefaultImageMaxSupportedContractVersion)
+            : 1;
     }
 
     private (string Namespace, string Name) ResolveCoordinates(ExecutionJobRecord job)

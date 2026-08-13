@@ -4,7 +4,7 @@
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx
 # and to keep Trivy scans deterministic. Refresh cadence + remediation rationale:
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
 ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:6228848061d53f16eb774d4f1ddfce45c973376ad38da844dff144cc3e11e517
 
 FROM ${DOTNET_SDK_IMAGE} AS build

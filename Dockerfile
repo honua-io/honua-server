@@ -10,10 +10,10 @@
 # These ARG defaults are the single source of truth for the mirrored bases:
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
-# digest pinned 2026-07-24
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664
-# digest pinned 2026-07-24
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:27b6b84beeede74fd16886177d360799c8e4299ceadfbd64eef57bafead7878a
+# digest pinned 2026-08-12
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
+# digest pinned 2026-08-12
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:c4b29bf368004ad9076c1ab9bc91fb373561e3905b4345637e14e8b8c57e3be8
 
 # Build stage
 FROM ${DOTNET_SDK_IMAGE} AS build

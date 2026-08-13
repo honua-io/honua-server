@@ -47,6 +47,7 @@ internal static class TiffConstants
     // GeoTIFF tag IDs
     public const ushort TagModelTiepointTag = 33922;
     public const ushort TagModelPixelScaleTag = 33550;
+    public const ushort TagModelTransformationTag = 34264;
     public const ushort TagGeoKeyDirectoryTag = 34735;
 
     // GeoKey IDs within GeoKeyDirectoryTag

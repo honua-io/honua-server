@@ -24,10 +24,12 @@ internal interface IDockerCommandInvoker
     /// The full argument vector after the executable — typically
     /// <c>["run", "--rm", …, image, tool, …toolArgs]</c>.
     /// </param>
+    /// <param name="environment">Environment supplied out of band to the container runtime.</param>
     /// <param name="cancellationToken">Cancellation token; kills the process when triggered.</param>
     Task<GdalCommandResult> RunAsync(
         string executable,
         IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string>? environment,
         CancellationToken cancellationToken);
 
     /// <summary>

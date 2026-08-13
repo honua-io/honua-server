@@ -3,7 +3,7 @@
 # Release and deployment workflows use docker/Dockerfile.lambda.aot.
 
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:f061e5a7532b36fa1d1b684857fe1f504ba92115b9934f154643266613c44c62
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
 
 # Build stage - Use official .NET SDK but target linux-x64 for AL2 compatibility
 FROM ${DOTNET_SDK_IMAGE} AS build

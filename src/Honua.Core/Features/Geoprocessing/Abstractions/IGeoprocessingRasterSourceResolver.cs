@@ -1,18 +1,20 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Raster;
+
 namespace Honua.Core.Features.Geoprocessing.Abstractions;
 
 /// <summary>
 /// Resolves a geoprocessing raster-source reference (<c>layerId</c> / <c>rasterId</c>)
-/// to readable raster bytes so native raster/surface processes can run against
-/// registered catalog rasters without a manual inline upload (#2264).
+/// to immutable, metadata-only raster descriptors so native raster/surface workers can
+/// open registered catalog rasters directly without a manual inline upload (#2264/#3090).
 ///
 /// <para>
 /// The resolver runs on the SUBMIT side (the serving image, where the raster
-/// catalog and cloud range readers are available), NOT inside the lean GDAL worker.
-/// The submit path materializes the resolved bytes onto the canonical base64
-/// <c>source</c> step input, so the worker contract is unchanged. Deployments
+/// catalog and cloud range readers are available), NOT inside the GDAL worker.
+/// It performs catalog lookup and provider HEAD/properties requests only; object bytes
+/// remain in object storage and the selected worker opens the pinned descriptor. Deployments
 /// without a raster catalog leave this unregistered; the submit path then rejects
 /// layer-referenced plans with a clear "not available in this deployment" message
 /// rather than failing later in the worker.
@@ -31,14 +33,12 @@ public interface IGeoprocessingRasterSourceResolver
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Resolves <paramref name="reference"/> to raster bytes, rejecting any resolved
-    /// object larger than <paramref name="maxBytes"/>. Returns a failure result
-    /// (never throws) when the reference cannot be resolved so the caller maps it
-    /// onto the submit-time validation channel.
+    /// Resolves <paramref name="reference"/> to a metadata-only immutable descriptor.
+    /// Returns a failure result (never throws) when the reference cannot be resolved so
+    /// the caller maps it onto the submit-time validation channel.
     /// </summary>
     Task<RasterSourceResolution> ResolveAsync(
         RasterSourceReference reference,
-        long maxBytes,
         CancellationToken cancellationToken = default);
 }
 
@@ -78,11 +78,11 @@ public sealed record RasterSourceLayerResolution
 /// </summary>
 public sealed record RasterSourceResolution
 {
-    /// <summary>Whether the reference resolved to readable raster bytes.</summary>
+    /// <summary>Whether the reference resolved to an immutable descriptor.</summary>
     public bool Found { get; init; }
 
-    /// <summary>The resolved raster bytes when <see cref="Found"/> is <c>true</c>.</summary>
-    public byte[]? Bytes { get; init; }
+    /// <summary>The resolved descriptor when <see cref="Found"/> is <c>true</c>.</summary>
+    public RasterSourceDescriptor? Descriptor { get; init; }
 
     /// <summary>
     /// A caller-safe explanation when <see cref="Found"/> is <c>false</c>. Must not
@@ -90,9 +90,9 @@ public sealed record RasterSourceResolution
     /// </summary>
     public string? FailureReason { get; init; }
 
-    /// <summary>Builds a successful resolution carrying <paramref name="bytes"/>.</summary>
-    public static RasterSourceResolution Success(byte[] bytes) =>
-        new() { Found = true, Bytes = bytes };
+    /// <summary>Builds a successful resolution carrying <paramref name="descriptor"/>.</summary>
+    public static RasterSourceResolution Success(RasterSourceDescriptor descriptor) =>
+        new() { Found = true, Descriptor = descriptor };
 
     /// <summary>Builds a failed resolution carrying a caller-safe <paramref name="reason"/>.</summary>
     public static RasterSourceResolution Failure(string reason) =>

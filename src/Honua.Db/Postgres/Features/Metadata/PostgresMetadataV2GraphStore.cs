@@ -21,6 +21,10 @@ namespace Honua.Db.Postgres.Features.Metadata;
 /// </summary>
 internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
 {
+    // Shared with schema-coupled metadata publishers such as the demo STAC seed.
+    // The environment hash is the second key so unrelated environments can publish concurrently.
+    internal const int MetadataWriteLockNamespace = 144047714;
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IMetadataV2GraphCacheInvalidator? _cacheInvalidator;
     private readonly string _environment;
@@ -116,14 +120,22 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
         CancellationToken cancellationToken)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await TryBuildCompatSnapshotFromV1CatalogAsync(connection, transaction: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         // Read the V1 catalog from the same schema the store qualifies its v2 tables
         // with (validated + quoted to keep it injection-safe).
         var catalogSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(_schemaName);
         var sql = MetadataV2CompatSnapshotSql.BuildDocumentFromV1Catalog
             .Replace(MetadataV2CompatSnapshotSql.CatalogSchemaPlaceholder, catalogSchema, StringComparison.Ordinal);
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@environment", _environment);
 
         try
@@ -152,6 +164,22 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             // is no catalog to fall back to; let the caller surface "no snapshot".
             return null;
         }
+    }
+
+    private async Task<bool> HasV1CatalogAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT to_regclass(format('%I.%I', @schema, 'layers')) IS NOT NULL
+               AND to_regclass(format('%I.%I', @schema, 'service_layers')) IS NOT NULL
+               AND to_regclass(format('%I.%I', @schema, 'services')) IS NOT NULL
+               AND to_regclass(format('%I.%I', @schema, 'layer_fields')) IS NOT NULL;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("schema", _schemaName);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
     }
 
     public async ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
@@ -192,9 +220,6 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
                 $"Metadata v2 graph failed validation: {string.Join("; ", validation.Errors)}");
         }
 
-        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        var etag = ComputeEtag(json);
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Self-heal the Metadata v2 schema so a fresh-DB container where migration
@@ -205,15 +230,48 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Lock before reading metadata_v2_current. FOR UPDATE cannot lock an absent bootstrap
+        // row, so the advisory lock is the authoritative serialization seam for both bootstrap
+        // and established environments. Every publisher uses this lock/order before touching
+        // the current pointer, preventing revision-1 overwrite and cross-writer deadlocks.
+        await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         if (expectedEtag is not null)
         {
-            var currentEtag = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-            if (currentEtag is not null && !string.Equals(currentEtag, expectedEtag, StringComparison.Ordinal))
+            // A deployment without a v2 current row still returns an exact synthesized ETag:
+            // either a V1 compatibility graph or the empty graph. Recompute that bootstrap
+            // base after acquiring the authoritative environment lock so V1 catalog changes
+            // are detected just like a stale v2 pointer. No other non-null ETag is accepted
+            // without a v2 current.
+            var actualEtag = current?.Etag;
+            if (current is null)
+            {
+                var hasV1Catalog = await HasV1CatalogAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false);
+                actualEtag = hasV1Catalog
+                    ? (await TryBuildCompatSnapshotFromV1CatalogAsync(
+                        connection, transaction, cancellationToken).ConfigureAwait(false))?.Etag
+                    : null;
+                actualEtag ??= BuildEmptySnapshot().Etag;
+            }
+
+            if (!string.Equals(actualEtag, expectedEtag, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {currentEtag}.");
+                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {actualEtag ?? "<none>"}.");
             }
         }
+
+        // Revisions are a store-owned allocation, not a caller-owned identifier. The
+        // caller necessarily builds its document before this lock is acquired; another
+        // publisher may therefore have consumed the proposed revision, and an interrupted
+        // writer may have left a higher orphan snapshot. Allocate above every retained
+        // snapshot while holding the shared environment lock.
+        var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        graph = graph with { Revision = revision };
+        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
+        var etag = ComputeEtag(json);
 
         // Bootstrap reconciliation (honua-server#1395): when no current snapshot is
         // activated for this environment the caller (LoadCurrentOrEmptyGraphAsync) started
@@ -226,7 +284,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // rather than only the target (environment, revision), so the first write reconciles
         // cleanly instead of 500ing the layer-publish path and never leaves orphaned
         // revisions behind.
-        var isBootstrap = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false) is null;
+        var isBootstrap = current is null;
 
         await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
         await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
@@ -245,6 +303,60 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         _cacheInvalidator?.Invalidate(_environment);
 
         return snapshot;
+    }
+
+    public async Task<MetadataV2GraphSnapshot> ActivateRevisionAsync(
+        long revision,
+        string? expectedCurrentEtag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(revision);
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        if (expectedCurrentEtag is not null &&
+            !string.Equals(current?.Etag, expectedCurrentEtag, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedCurrentEtag} but found {current?.Etag ?? "<none>"}.");
+        }
+
+        var target = await ReadSnapshotAsync(connection, transaction, revision, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"Metadata v2 revision {revision} is not retained for environment '{_environment}'.");
+
+        // A bootstrap write can clear sidecars for every retained revision before it
+        // activates its new snapshot. Rebuild the target revision's derived indexes from
+        // the immutable document before repointing current so the activated graph and its
+        // lookup surfaces become visible atomically without allocating a new revision.
+        await RefreshSidecarsAsync(
+            connection,
+            transaction,
+            target.Graph,
+            clearStaleEnvironmentRows: false,
+            cancellationToken).ConfigureAwait(false);
+        await UpsertCurrentAsync(connection, transaction, revision, target.Etag, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+
+        _cachedCurrent = target;
+        _cacheInvalidator?.Invalidate(_environment);
+        return target;
+    }
+
+    private async Task AcquireEnvironmentWriteLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        const string sql = "SELECT pg_advisory_xact_lock(@namespace, hashtext(@environment))";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@namespace", MetadataWriteLockNamespace);
+        command.Parameters.AddWithValue("@environment", _environment);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureSchemaAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
@@ -387,7 +499,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         }
     }
 
-    private async Task<string?> ReadCurrentEtagAsync(
+    private async Task<(long Revision, string Etag)?> ReadCurrentStateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -398,11 +510,45 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // second snapshot upsert silently overwrites the first writer's document. With the
         // row lock the loser blocks until the winner commits, observes the winner's etag,
         // and surfaces the existing mismatch InvalidOperationException instead.
-        var sql = $"SELECT etag FROM {_currentTable} WHERE environment = @environment FOR UPDATE";
+        var sql = $"SELECT revision, etag FROM {_currentTable} WHERE environment = @environment FOR UPDATE";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@environment", _environment);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is string s ? s : null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? (reader.GetInt64(0), reader.GetString(1))
+            : null;
+    }
+
+    private async Task<MetadataV2GraphSnapshot?> ReadSnapshotAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long revision,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"SELECT document, etag FROM {_snapshotsTable} WHERE environment = @environment AND revision = @revision";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@environment", _environment);
+        command.Parameters.AddWithValue("@revision", revision);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return MaterializeSnapshot(reader.GetString(0), reader.GetString(1));
+    }
+
+    private async Task<long> ReadNextRevisionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"SELECT COALESCE(MAX(revision), 0) + 1 FROM {_snapshotsTable} WHERE environment = @environment";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@environment", _environment);
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private async Task UpsertSnapshotAsync(

@@ -14,6 +14,15 @@
 #                                               # fail if the workflow consumes a
 #                                               # BASE_REPO tag this map does not
 #                                               # mirror (or mirrors an unused tag)
+#   scripts/ci/base-image-mirrors.sh --inventory-markdown
+#                                               # render every digest-pinned .NET
+#                                               # Dockerfile ARG as Markdown
+#   scripts/ci/base-image-mirrors.sh --verify-inventory-doc <markdown-file>
+#                                               # fail if the marked generated
+#                                               # inventory differs from Dockerfiles
+#   scripts/ci/base-image-mirrors.sh --self-test # exercise portable discovery,
+#                                               # Dockerfile ARG grammar, and
+#                                               # discovery-failure propagation
 
 set -euo pipefail
 
@@ -65,6 +74,116 @@ print_mirror_set() {
   done
 }
 
+print_dotnet_inventory_markdown() {
+  local path dockerfile line arg_name source_ref discovered_paths
+
+  printf '%s\n' '| Dockerfile | Build argument | Image reference |'
+  printf '%s\n' '| --- | --- | --- |'
+
+  if ! discovered_paths="$(
+    {
+      printf '%s\n' "${REPO_ROOT}/Dockerfile"
+      find "${REPO_ROOT}/docker" -type f -name 'Dockerfile*' -print
+    } | LC_ALL=C sort
+  )"; then
+    echo "::error::failed to discover Dockerfiles for the .NET base-image inventory" >&2
+    return 1
+  fi
+
+  while IFS= read -r path; do
+    [[ -n "${path}" ]] || continue
+    if [[ ! -f "${path}" ]]; then
+      echo "::error::discovered inventory Dockerfile ${path} is missing" >&2
+      return 1
+    fi
+    dockerfile="${path#"${REPO_ROOT}/"}"
+    while IFS= read -r line; do
+      line="${line%$'\r'}"
+      if [[ "${line}" =~ ^[[:space:]]*[Aa][Rr][Gg][[:space:]]+(DOTNET_(SDK|ASPNET|RUNTIME_DEPS)_IMAGE)=(.*)$ ]]; then
+        arg_name="${BASH_REMATCH[1]}"
+        source_ref="${BASH_REMATCH[3]}"
+        source_ref="${source_ref%"${source_ref##*[![:space:]]}"}"
+        if [[ "${source_ref}" =~ ${DIGEST_REF_PATTERN} ]]; then
+          printf '| `%s` | `%s` | `%s` |\n' "${dockerfile}" "${arg_name}" "${source_ref}"
+        fi
+      fi
+    done < "${path}"
+  done <<< "${discovered_paths}"
+}
+
+verify_inventory_doc() {
+  local doc="$1" begin_marker end_marker begin_count end_count expected actual
+  begin_marker='<!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->'
+  end_marker='<!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->'
+
+  if [[ ! -f "${doc}" ]]; then
+    echo "::error::inventory document ${doc} not found" >&2
+    return 1
+  fi
+
+  begin_count="$(grep -Fxc "${begin_marker}" "${doc}" || true)"
+  end_count="$(grep -Fxc "${end_marker}" "${doc}" || true)"
+  if [[ "${begin_count}" -ne 1 || "${end_count}" -ne 1 ]]; then
+    echo "::error::${doc} must contain exactly one generated .NET inventory marker pair" >&2
+    return 1
+  fi
+
+  expected="$(print_dotnet_inventory_markdown)"
+  actual="$(awk -v begin="${begin_marker}" -v end="${end_marker}" '
+    $0 == begin { capture = 1; next }
+    $0 == end { capture = 0; next }
+    capture { sub(/\r$/, ""); print }
+  ' "${doc}")"
+
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "::error::${doc} .NET base-image inventory differs from digest-pinned Dockerfile ARG defaults" >&2
+    diff -u <(printf '%s\n' "${actual}") <(printf '%s\n' "${expected}") || true
+    return 1
+  fi
+
+  echo "Generated .NET base-image inventory is current in ${doc}."
+}
+
+run_self_tests() {
+  local fixture_root failure_root output
+  fixture_root="$(mktemp -d)"
+  failure_root="$(mktemp -d)"
+
+  mkdir -p "${fixture_root}/scripts/ci" "${fixture_root}/docker/nested" \
+    "${failure_root}/scripts/ci"
+  cp "${BASH_SOURCE[0]}" "${fixture_root}/scripts/ci/base-image-mirrors.sh"
+  cp "${BASH_SOURCE[0]}" "${failure_root}/scripts/ci/base-image-mirrors.sh"
+
+  printf '  arg DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:%064d\n' 0 \
+    > "${fixture_root}/Dockerfile"
+  printf 'ArG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:%064d\n' 1 \
+    > "${fixture_root}/docker/nested/Dockerfile.aot"
+  printf 'ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:%064d\n' 0 \
+    > "${failure_root}/Dockerfile"
+
+  output="$(bash "${fixture_root}/scripts/ci/base-image-mirrors.sh" --inventory-markdown)"
+  if ! grep -Fq '| `Dockerfile` | `DOTNET_SDK_IMAGE` |' <<< "${output}" ||
+     ! grep -Fq '| `docker/nested/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` |' <<< "${output}"; then
+    echo "::error::inventory self-test omitted lowercase, indented, or recursively discovered ARG" >&2
+    rm -rf "${fixture_root}" "${failure_root}"
+    return 1
+  fi
+
+  if output="$(bash "${failure_root}/scripts/ci/base-image-mirrors.sh" --inventory-markdown 2>&1)"; then
+    echo "::error::inventory self-test expected missing docker/ traversal to fail" >&2
+    rm -rf "${fixture_root}" "${failure_root}"
+    return 1
+  fi
+  if ! grep -Fq 'failed to discover Dockerfiles' <<< "${output}"; then
+    echo "::error::inventory self-test did not receive an explicit discovery failure" >&2
+    rm -rf "${fixture_root}" "${failure_root}"
+    return 1
+  fi
+
+  rm -rf "${fixture_root}" "${failure_root}"
+  echo "Base-image inventory portability and fail-closed self-tests passed."
+}
+
 verify_consumers() {
   local status=0 workflow entry tag consumed mirrored used
 
@@ -103,6 +222,36 @@ verify_consumers() {
 }
 
 main() {
+  if [[ "${1:-}" == "--self-test" ]]; then
+    shift
+    if [[ "$#" -gt 0 ]]; then
+      echo "::error::--self-test does not accept additional arguments" >&2
+      exit 2
+    fi
+    run_self_tests
+    exit 0
+  fi
+
+  if [[ "${1:-}" == "--inventory-markdown" ]]; then
+    shift
+    if [[ "$#" -gt 0 ]]; then
+      echo "::error::--inventory-markdown does not accept additional arguments" >&2
+      exit 2
+    fi
+    print_dotnet_inventory_markdown
+    exit 0
+  fi
+
+  if [[ "${1:-}" == "--verify-inventory-doc" ]]; then
+    shift
+    if [[ "$#" -ne 1 ]]; then
+      echo "::error::--verify-inventory-doc requires exactly one Markdown file" >&2
+      exit 2
+    fi
+    verify_inventory_doc "$1"
+    exit 0
+  fi
+
   if [[ "${1:-}" == "--verify" ]]; then
     shift
     if [[ "$#" -eq 0 ]]; then

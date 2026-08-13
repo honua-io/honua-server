@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -180,6 +181,17 @@ public sealed class GdalMultidimCoverageExecutorTests
     {
         GdalVsiPath.Build(CloudStorageProvider.AwsS3, "bucket", "a/b.nc").Should().Be("/vsis3/bucket/a/b.nc");
         GdalVsiPath.Build(CloudStorageProvider.AzureBlob, "container", "/a/b.nc").Should().Be("/vsiaz/container/a/b.nc");
+    }
+
+    [Theory]
+    [InlineData("folder/a file.tif")]
+    [InlineData("folder/hash#colon:source.tif")]
+    [InlineData("folder//preserved-empty-segment.tif")]
+    [InlineData("http-data/source.tif")]
+    public void VsiPath_PreservesLegalCloudObjectKeys(string objectKey)
+    {
+        GdalVsiPath.Build(CloudStorageProvider.AwsS3, "bucket", objectKey)
+            .Should().Be($"/vsis3/bucket/{objectKey}");
     }
 
     [UnitTest]

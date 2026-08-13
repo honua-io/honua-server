@@ -5,6 +5,7 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -153,21 +154,20 @@ public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrat
     }
 
     [Fact]
-    public async Task ProcessPool_DeclaresBaselineContractVersion_SoNewerContractJobsAreRejected()
+    public async Task ProcessPool_DeclaresCurrentRasterSourceContractVersion()
     {
         // The serving↔worker job-contract gate (ADR-0060 principle #3b) is enforced by the shared
         // dispatcher, which consults the backend's MaxSupportedContractVersion. This asserts the local
-        // process backend declares the baseline (v1) so a v2 job is refused during a rolling version
-        // step — the backend seam the dispatcher's rejection at
-        // GeoprocessingJobDispatcher (contract-version gate) depends on.
+        // process backend declares the upgraded raster-source contract so registered COG jobs can
+        // dispatch through this substrate after the serving and worker code are upgraded together.
         using var context = CreateBackend(maxConcurrent: 1);
 
         var capabilities = await context.Backend.GetCapabilitiesAsync();
-        capabilities.MaxSupportedContractVersion.Should().Be(1);
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
 
-        // A v1 job runs on this backend; a v2 job exceeds its supported contract and is rejected by the gate.
+        // Both the baseline and the current raster-source contract are admitted by this backend.
         (1 > capabilities.MaxSupportedContractVersion).Should().BeFalse();
-        (2 > capabilities.MaxSupportedContractVersion).Should().BeTrue();
+        (RasterSourceContract.JobContractVersion > capabilities.MaxSupportedContractVersion).Should().BeFalse();
     }
 
     private BackendContext CreateBackend(int maxConcurrent)

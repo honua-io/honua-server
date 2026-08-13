@@ -18,23 +18,23 @@ public sealed class SecureConfigurationOptions
     /// <summary>
     /// Whether to encrypt sensitive configuration values.
     /// </summary>
-    public bool EncryptSensitiveValues { get; init; } = true;
+    public bool EncryptSensitiveValues { get; set; } = true;
 
     /// <summary>
     /// Key derivation iterations for encryption.
     /// </summary>
     [Range(1000, 100000)]
-    public int KeyDerivationIterations { get; init; } = 10000;
+    public int KeyDerivationIterations { get; set; } = 10000;
 
     /// <summary>
     /// Salt for key derivation.
     /// </summary>
-    public string? EncryptionSalt { get; init; }
+    public string? EncryptionSalt { get; set; }
 
     /// <summary>
     /// Whether to validate configuration signatures.
     /// </summary>
-    public bool ValidateSignatures { get; init; }
+    public bool ValidateSignatures { get; set; }
 
     /// <summary>
     /// Whether startup should fail when secret validation fails outside development.
@@ -49,5 +49,5 @@ public sealed class SecureConfigurationOptions
     /// <summary>
     /// Allowed configuration sources.
     /// </summary>
-    public HashSet<string> AllowedSources { get; init; } = new() { "appsettings.json", "environment", "commandline" };
+    public HashSet<string> AllowedSources { get; set; } = new() { "appsettings.json", "environment", "commandline" };
 }
