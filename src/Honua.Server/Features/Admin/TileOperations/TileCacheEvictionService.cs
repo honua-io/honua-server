@@ -132,7 +132,7 @@ internal sealed partial class TileCacheEvictionService(
                             // Hold the same per-key fence as hot cache writes across both the
                             // irreversible storage delete and the conditional index removal.
                             if (!await TileCacheStorageDeletion
-                                    .DeleteOrConfirmMissingAsync(_storage, key, mutationToken)
+                                    .DeleteCurrentOrConfirmMissingAsync(_storage, key, mutationToken)
                                     .ConfigureAwait(false))
                             {
                                 return;
@@ -180,12 +180,26 @@ internal sealed partial class TileCacheEvictionService(
 /// </summary>
 internal static class TileCacheStorageDeletion
 {
-    public static async Task<bool> DeleteOrConfirmMissingAsync(
+    public static async Task<bool> DeleteCurrentOrConfirmMissingAsync(
         ICloudFileStorage storage,
         string key,
         CancellationToken cancellationToken)
     {
-        if (await storage.DeleteAsync(key, cancellationToken).ConfigureAwait(false))
+        var target = await storage.GetMetadataAsync(key, cancellationToken).ConfigureAwait(false);
+        if (target is null)
+        {
+            return true;
+        }
+
+        // Lifecycle and quota sweeps act on an index snapshot. Capture the exact storage
+        // generation while the per-key mutation fence is held and make the destructive call
+        // conditional, so a stale sweep can never remove replacement bytes at the same key.
+        if (string.IsNullOrWhiteSpace(target.ETag))
+        {
+            return false;
+        }
+
+        if (await storage.DeleteIfMatchAsync(key, target.ETag, cancellationToken).ConfigureAwait(false))
         {
             return true;
         }

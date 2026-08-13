@@ -44,7 +44,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(OtherZoomKey, 100);
         index.Seed(OtherStyleKey, 100);
 
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(
@@ -75,7 +75,7 @@ public sealed class TileCacheLifecycleExecutionTests
         var index = new StatefulKeyIndex();
         index.Seed(tenantAKey, 100, "tenant_a");
         index.Seed(tenantBKey, 100, "tenant_b");
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(
@@ -101,7 +101,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100, "public");
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(
@@ -134,7 +134,7 @@ public sealed class TileCacheLifecycleExecutionTests
                 TileMatrixSetId = "WebMercatorQuad"
             },
             index,
-            Substitute.For<ICloudFileStorage>());
+            CreateStorage());
 
         result.Status.Should().Be(OperationStatus.Completed);
         result.TotalTiles.Should().Be(0);
@@ -150,7 +150,7 @@ public sealed class TileCacheLifecycleExecutionTests
         var index = new StatefulKeyIndex();
         index.Seed(first, 100);
         index.Seed(second, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(new TileOperationStartRequest
@@ -180,7 +180,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(second, 100);
         index.Seed(outsideOriginalCap, 100);
         var failSecond = true;
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
@@ -225,7 +225,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(second, 100);
         index.Seed(outsideOriginalCap, 100);
         using var cancellation = new CancellationTokenSource();
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
@@ -267,7 +267,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         var request = new TileOperationStartRequest
         {
@@ -294,7 +294,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         var request = new TileOperationStartRequest
         {
@@ -319,7 +319,7 @@ public sealed class TileCacheLifecycleExecutionTests
     [UnitTest]
     public async Task Delete_WhenIndexIsDisabled_FailsInsteadOfReportingFalseSuccess()
     {
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
 
         var result = await ExecuteAsync(
             new TileOperationStartRequest
@@ -342,7 +342,7 @@ public sealed class TileCacheLifecycleExecutionTests
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100);
 
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>())
             .Returns<Task<bool>>(_ => throw new InvalidOperationException("boom"));
 
@@ -368,7 +368,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(false);
         storage.GetMetadataAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(StoredTile(InBoundKey));
 
@@ -393,7 +393,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(false);
         storage.GetMetadataAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns((CloudFile?)null);
 
@@ -417,7 +417,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex { SnapshotAvailable = false };
         index.Seed(InBoundKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
 
         var result = await ExecuteAsync(
             new TileOperationStartRequest
@@ -445,7 +445,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(key2, 100);
 
         var failSecond = true;
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -488,7 +488,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(InBoundKey, 100);
         index.Seed(OtherLayerKey, 100);
 
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
 
         var result = await ExecuteAsync(
             new TileOperationStartRequest
@@ -522,7 +522,7 @@ public sealed class TileCacheLifecycleExecutionTests
                 TileMatrixSetId = "WebMercatorQuad"
             },
             index,
-            Substitute.For<ICloudFileStorage>());
+            CreateStorage());
 
         result.Status.Should().Be(OperationStatus.Completed);
         index.ExpirationReadCount.Should().Be(0);
@@ -552,7 +552,7 @@ public sealed class TileCacheLifecycleExecutionTests
                 TileMatrixSetId = "WebMercatorQuad"
             },
             index,
-            Substitute.For<ICloudFileStorage>());
+            CreateStorage());
         await markerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         var writerEntered = false;
@@ -589,13 +589,13 @@ public sealed class TileCacheLifecycleExecutionTests
             GenerationId = "gen-expire-resume"
         };
 
-        var first = await ExecuteAsync(request, index, Substitute.For<ICloudFileStorage>(), checkpointStore);
+        var first = await ExecuteAsync(request, index, CreateStorage(), checkpointStore);
         first.Status.Should().Be(OperationStatus.Failed);
         first.SuccessfulTiles.Should().Be(1);
         first.FailedTiles.Should().Be(1);
 
         index.FailingExpirationKey = null;
-        var second = await ExecuteAsync(request, index, Substitute.For<ICloudFileStorage>(), checkpointStore);
+        var second = await ExecuteAsync(request, index, CreateStorage(), checkpointStore);
 
         second.Status.Should().Be(OperationStatus.Completed);
         second.TotalTiles.Should().Be(2);
@@ -614,7 +614,7 @@ public sealed class TileCacheLifecycleExecutionTests
         var key = $"prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/1/1.{extension}";
         var index = new StatefulKeyIndex();
         index.Seed(key, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(key, Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(
@@ -640,7 +640,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(InBoundKey, 100);
         index.Seed(OtherLayerKey, 100);
 
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         var graphProvider = new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build());
 
@@ -669,7 +669,7 @@ public sealed class TileCacheLifecycleExecutionTests
         var index = new StatefulKeyIndex();
         index.Seed(storageLayerKey, 100);
         index.Seed(localIndexKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         var graphProvider = new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
             .AddResource("resource", "resource")
@@ -695,7 +695,7 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         var index = new StatefulKeyIndex { RejectConditionalRemove = true };
         index.Seed(InBoundKey, 100);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(new TileOperationStartRequest
@@ -719,7 +719,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(InBoundKey, 100);
         var deleteStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseDelete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(async _ =>
         {
             deleteStarted.SetResult();
@@ -761,7 +761,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(inside, 100);
         index.Seed(outside, 100);
 
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(
@@ -794,7 +794,7 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Seed(easternDateline, 100);
         index.Seed(middle, 100);
 
-        var storage = Substitute.For<ICloudFileStorage>();
+        var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await ExecuteAsync(
@@ -881,8 +881,24 @@ public sealed class TileCacheLifecycleExecutionTests
         ContentType = "image/png",
         SizeBytes = 100,
         UploadedAt = DateTimeOffset.UtcNow,
+        ETag = $"etag:{key}",
         Provider = CloudStorageProvider.Local,
     };
+
+    private static ICloudFileStorage CreateStorage()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => StoredTile(call.ArgAt<string>(0)));
+        storage.DeleteIfMatchAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => storage.DeleteAsync(
+                call.ArgAt<string>(0),
+                call.ArgAt<CancellationToken>(2)));
+        return storage;
+    }
 
     private sealed class StatefulKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
     {

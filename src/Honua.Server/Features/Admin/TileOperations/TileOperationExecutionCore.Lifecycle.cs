@@ -234,7 +234,7 @@ internal sealed partial class TileOperationExecutionCore
                             }
 
                             if (!await TileCacheStorageDeletion
-                                    .DeleteOrConfirmMissingAsync(storage!, entry.Key, mutationToken)
+                                    .DeleteCurrentOrConfirmMissingAsync(storage!, entry.Key, mutationToken)
                                     .ConfigureAwait(false))
                             {
                                 throw new InvalidOperationException(

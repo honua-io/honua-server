@@ -240,6 +240,52 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
+    public async Task DeleteIfMatchAsync_ConcurrentReplacement_WaitsAndPreservesNewGeneration()
+    {
+        const string objectKey = "tiles/layer/0/0/0.png";
+        var originalBytes = "old-generation"u8.ToArray();
+        await using (var originalContent = new MemoryStream(originalBytes))
+        {
+            var original = await _storage.UploadAsync(new FileUploadRequest
+            {
+                Content = originalContent,
+                FileName = "tile.png",
+                ContentType = "image/png",
+                SizeBytes = originalBytes.Length,
+                ObjectKeyOverride = objectKey,
+            });
+            original.Success.Should().BeTrue();
+
+            var replacementBytes = "new-generation"u8.ToArray();
+            await using var replacementContent = new GatedReadStream(replacementBytes);
+            var replacementTask = _storage.UploadAsync(new FileUploadRequest
+            {
+                Content = replacementContent,
+                FileName = "tile.png",
+                ContentType = "image/png",
+                SizeBytes = replacementBytes.Length,
+                ObjectKeyOverride = objectKey,
+            });
+
+            await replacementContent.ReadStarted.WaitAsync(TimeSpan.FromSeconds(5));
+            var staleDelete = _storage.DeleteIfMatchAsync(objectKey, original.File!.ETag!);
+
+            await Task.Delay(100);
+            staleDelete.IsCompleted.Should().BeFalse(
+                "a delete for the old ETag must serialize with an in-progress replacement at the same deterministic key");
+
+            replacementContent.ReleaseRead();
+            var replacement = await replacementTask;
+            replacement.Success.Should().BeTrue();
+            (await staleDelete).Should().BeFalse();
+
+            var bytes = await _storage.DownloadBytesAsync(objectKey);
+            bytes.Should().Equal(replacementBytes);
+            (await _storage.GetMetadataAsync(objectKey))!.ETag.Should().Be(replacement.File!.ETag);
+        }
+    }
+
+    [UnitTest]
     public async Task UploadBatchAsync_MultipleFiles_ShouldUploadAll()
     {
         // Arrange
@@ -572,6 +618,67 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             FileName = fileName,
             ContentType = contentType
         };
+    }
+
+    private sealed class GatedReadStream(byte[] content) : Stream
+    {
+        private readonly MemoryStream _inner = new(content);
+        private readonly TaskCompletionSource _readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _gateEntered;
+
+        public Task ReadStarted => _readStarted.Task;
+
+        public void ReleaseRead() => _releaseRead.TrySetResult();
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException("The storage upload path must use asynchronous reads.");
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _gateEntered, 1) == 0)
+            {
+                _readStarted.TrySetResult();
+                await _releaseRead.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
     }
 
     public void Dispose()

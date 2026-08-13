@@ -116,31 +116,27 @@ public sealed class TileCacheEvictionServiceTests
     }
 
     [UnitTest]
-    public async Task SweepAsync_WhenStorageDeleteReturnsFalseAndObjectExists_LeavesKeyTracked()
+    public async Task SweepAsync_WhenConditionalDeleteMissesNewerGeneration_LeavesKeyTracked()
     {
         var index = new FakeTileCacheKeyIndex(enabled: true);
         index.Seed(new TileCacheEntry("oldest", 100, DateTimeOffset.UtcNow.AddMinutes(-30)));
         var storage = Substitute.For<ICloudFileStorage>();
-        storage.DeleteAsync("oldest", Arg.Any<CancellationToken>()).Returns(false);
-        storage.GetMetadataAsync("oldest", Arg.Any<CancellationToken>()).Returns(new CloudFile
-        {
-            FileId = "oldest",
-            FileName = "tile.png",
-            StoragePath = "oldest",
-            ContentType = "image/png",
-            SizeBytes = 100,
-            UploadedAt = DateTimeOffset.UtcNow,
-            Provider = CloudStorageProvider.Local,
-        });
+        storage.GetMetadataAsync("oldest", Arg.Any<CancellationToken>()).Returns(
+            StoredTile("oldest", "etag-old"),
+            StoredTile("oldest", "etag-new"));
+        storage.DeleteIfMatchAsync("oldest", "etag-old", Arg.Any<CancellationToken>()).Returns(false);
         var service = CreateService(
             index,
-            new TileCacheEvictionOptions { Enabled = true, MaxEntries = 0 },
+            new TileCacheEvictionOptions { Enabled = true, MaxBytes = 50 },
             storage);
 
         var result = await service.SweepAsync(CancellationToken.None);
 
         result.Evicted.Should().Be(0);
         index.Removed.Should().BeEmpty();
+        await storage.Received(1)
+            .DeleteIfMatchAsync("oldest", "etag-old", Arg.Any<CancellationToken>());
+        await storage.DidNotReceive().DeleteAsync("oldest", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -155,15 +151,30 @@ public sealed class TileCacheEvictionServiceTests
         var storage = Substitute.For<ICloudFileStorage>();
         var service = CreateService(
             index,
-            new TileCacheEvictionOptions { Enabled = true, MaxEntries = 0 },
+            new TileCacheEvictionOptions { Enabled = true, MaxBytes = 50 },
             storage);
 
         var result = await service.SweepAsync(CancellationToken.None);
 
         result.Evicted.Should().Be(0);
         index.Removed.Should().BeEmpty();
+        await storage.DidNotReceive().GetMetadataAsync("oldest", Arg.Any<CancellationToken>());
+        await storage.DidNotReceive()
+            .DeleteIfMatchAsync("oldest", Arg.Any<string>(), Arg.Any<CancellationToken>());
         await storage.DidNotReceive().DeleteAsync("oldest", Arg.Any<CancellationToken>());
     }
+
+    private static CloudFile StoredTile(string key, string eTag) => new()
+    {
+        FileId = key,
+        FileName = "tile.png",
+        StoragePath = key,
+        ContentType = "image/png",
+        SizeBytes = 100,
+        UploadedAt = DateTimeOffset.UtcNow,
+        ETag = eTag,
+        Provider = CloudStorageProvider.Local,
+    };
 
     private static TileCacheEvictionService CreateService(
         FakeTileCacheKeyIndex index,
