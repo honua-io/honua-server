@@ -42,11 +42,26 @@ public static class RasterOutputContentRoutes
     public static string Build(string baseUrl, string jobId, int artifactIndex)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{baseUrl.TrimEnd('/')}{BuildRelative(jobId, artifactIndex)}");
+    }
+
+    /// <summary>
+    /// Builds the host-relative authenticated content route for protocol surfaces that
+    /// do not have an HTTP request base URL, such as the gRPC result contract.
+    /// </summary>
+    /// <param name="jobId">Durable job identifier.</param>
+    /// <param name="artifactIndex">Zero-based artifact position within the result package.</param>
+    /// <returns>The host-relative content route.</returns>
+    public static string BuildRelative(string jobId, int artifactIndex)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentOutOfRangeException.ThrowIfNegative(artifactIndex);
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{baseUrl.TrimEnd('/')}/api/geoprocessing/jobs/{Uri.EscapeDataString(jobId)}/artifacts/{artifactIndex}/content");
+            $"/api/geoprocessing/jobs/{Uri.EscapeDataString(jobId)}/artifacts/{artifactIndex}/content");
     }
 }

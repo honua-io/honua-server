@@ -16,10 +16,17 @@ public static class RasterOutputArtifactMetadata
 
     /// <summary>
     /// "true" when the durable reference is descriptor-shaped but this release cannot
-    /// interpret it (for example a future contract version). The artifact is surfaced
-    /// as unavailable rather than leaking the raw descriptor JSON to clients.
+    /// safely interpret or validate it (for example a future contract version or an
+    /// invalid content identity). The artifact is surfaced as unavailable rather than
+    /// leaking the raw descriptor JSON to clients.
     /// </summary>
     public const string Unsupported = "raster.output.unsupported";
+
+    /// <summary>
+    /// Host-relative authenticated route for downloading a staged artifact. This is
+    /// protocol-neutral and never contains a provider location or credential.
+    /// </summary>
+    public const string ContentRoute = "raster.output.contentRoute";
 
     /// <summary>Producing attempt number.</summary>
     public const string Attempt = "raster.output.attempt";

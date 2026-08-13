@@ -70,6 +70,66 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
         artifact.ContentType.Should().Be("image/tiff");
         artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Staged);
         artifact.Metadata[RasterOutputArtifactMetadata.ObjectKey].Should().Be(descriptor.ObjectKey);
+        artifact.Metadata[RasterOutputArtifactMetadata.ContentRoute].Should().Be(
+            "/api/geoprocessing/jobs/job-x/artifacts/0/content");
+    }
+
+    [UnitTest]
+    public void Create_StagedDescriptorWithoutChecksum_IsUnavailable()
+    {
+        var descriptor = new StagedObjectRasterOutputDescriptor
+        {
+            JobId = "job-x",
+            AttemptNumber = 1,
+            OutputName = "output1",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 10,
+                MediaType = "image/tiff",
+                Checksum = null,
+            },
+            ProducingEngine = RasterOutputContract.GdalWorkerEngine,
+            Provider = Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.Local,
+            StoreReference = "gp-outputs",
+            ObjectKey = "gp/outputs/job-x/a1/output1/result.tif",
+        };
+
+        var package = GeoprocessingResultPackageFactory.Create(
+            CreateSucceededJob(RasterOutputJson.Serialize(descriptor)), Substitute.For<IProcessCatalog>());
+
+        var artifact = package.Artifacts.Should().ContainSingle().Subject;
+        artifact.Uri.Should().BeNull();
+        artifact.ContentType.Should().BeNull();
+        artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Unsupported);
+        artifact.Metadata.Should().NotContainKey(RasterOutputArtifactMetadata.Staged);
+        artifact.Metadata.Should().NotContainKey(RasterOutputArtifactMetadata.ContentRoute);
+    }
+
+    [UnitTest]
+    public void Create_InlineDescriptorWithMismatchedChecksum_IsUnavailable()
+    {
+        var descriptor = new InlineRasterOutputDescriptor
+        {
+            JobId = "job-x",
+            AttemptNumber = 1,
+            OutputName = "output1",
+            Payload = [1, 2, 3],
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 3,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum("sha256", new string('0', 64)),
+            },
+            ProducingEngine = RasterOutputContract.GdalWorkerEngine,
+        };
+
+        var package = GeoprocessingResultPackageFactory.Create(
+            CreateSucceededJob(RasterOutputJson.Serialize(descriptor)), Substitute.For<IProcessCatalog>());
+
+        var artifact = package.Artifacts.Should().ContainSingle().Subject;
+        artifact.Uri.Should().BeNull();
+        artifact.ContentType.Should().BeNull();
+        artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Unsupported);
     }
 
     private static ExecutionJobRecord CreateSucceededJob(string reference)

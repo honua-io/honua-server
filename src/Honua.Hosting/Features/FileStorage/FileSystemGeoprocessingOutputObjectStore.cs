@@ -24,9 +24,12 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
 {
     internal const string ReadLeaseSuffix = ".readlease";
     internal const string RetentionHoldSuffix = ".hold";
-    private const string PendingSuffix = ".pending";
+    internal const string PendingSuffix = ".pending";
 
     private readonly string _root;
+    private readonly TimeSpan _pendingRetention;
+    private readonly object _pendingGate = new();
+    private readonly HashSet<string> _activePendingWrites = new(StringComparer.Ordinal);
 
     public FileSystemGeoprocessingOutputObjectStore(IOptions<GeoprocessingOutputStagingOptions> options)
     {
@@ -40,6 +43,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         }
 
         _root = Path.GetFullPath(value.LocalRootPath);
+        _pendingRetention = value.SweepGrace;
         Directory.CreateDirectory(_root);
     }
 
@@ -65,6 +69,15 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var pendingPath = path + PendingSuffix;
 
+        lock (_pendingGate)
+        {
+            if (!_activePendingWrites.Add(pendingPath))
+            {
+                throw new InvalidOperationException(
+                    $"Staged output object '{objectKey}' already has an active write.");
+            }
+        }
+
         long size;
         byte[] digest;
         try
@@ -86,6 +99,13 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         {
             TryDeleteQuietly(pendingPath);
             throw;
+        }
+        finally
+        {
+            lock (_pendingGate)
+            {
+                _activePendingWrites.Remove(pendingPath);
+            }
         }
 
         return new RasterContentIdentity
@@ -137,9 +157,14 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         foreach (var file in Directory.EnumerateFiles(prefixPath, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (file.EndsWith(PendingSuffix, StringComparison.Ordinal))
+            {
+                TryReclaimAbandonedPending(file);
+                continue;
+            }
+
             if (file.EndsWith(ReadLeaseSuffix, StringComparison.Ordinal)
-                || file.EndsWith(RetentionHoldSuffix, StringComparison.Ordinal)
-                || file.EndsWith(PendingSuffix, StringComparison.Ordinal))
+                || file.EndsWith(RetentionHoldSuffix, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -150,6 +175,26 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         }
 
         await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    private void TryReclaimAbandonedPending(string pendingPath)
+    {
+        lock (_pendingGate)
+        {
+            if (_activePendingWrites.Contains(pendingPath))
+            {
+                return;
+            }
+
+            var info = new FileInfo(pendingPath);
+            if (!info.Exists || DateTimeOffset.UtcNow - info.LastWriteTimeUtc < _pendingRetention)
+            {
+                return;
+            }
+
+            TryDeleteQuietly(pendingPath);
+            PruneEmptyDirectories(info.DirectoryName);
+        }
     }
 
     public Task<bool> DeleteAsync(string objectKey, CancellationToken cancellationToken = default)

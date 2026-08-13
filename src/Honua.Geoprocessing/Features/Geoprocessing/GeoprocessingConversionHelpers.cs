@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Proto = Geospatial.V1;
 using DomainPlan = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan;
 using DomainPlanStep = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStep;
@@ -264,7 +265,9 @@ internal static class GeoprocessingConversionHelpers
             ArtifactId = artifact.ArtifactId,
             ArtifactClass = ToProtoArtifactClass(artifact.Kind),
             ArtifactVersion = 1,
-            ProducerRef = artifact.Uri ?? artifact.Label
+            ProducerRef = artifact.Uri
+                ?? artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.ContentRoute)
+                ?? artifact.Label
         };
 
     private static Proto.ProvenanceRecord ToProtoProvenance(ProvenanceRecord provenance)

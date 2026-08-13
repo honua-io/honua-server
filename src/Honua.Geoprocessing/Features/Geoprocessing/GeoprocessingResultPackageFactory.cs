@@ -138,13 +138,20 @@ internal static class GeoprocessingResultPackageFactory
             // legacy data-URI value shape for protocol compatibility.
             string? uri = string.IsNullOrWhiteSpace(reference) ? null : reference;
             string? contentType;
-            if (RasterOutputJson.TryDeserialize(reference, out var descriptor))
+            if (RasterOutputJson.TryDeserialize(reference, out var descriptor)
+                && IsValidDescriptorForJob(descriptor, job))
             {
                 AppendDescriptorMetadata(metadata, descriptor);
                 contentType = descriptor.Content.MediaType;
                 uri = descriptor is InlineRasterOutputDescriptor inline
                     ? $"data:{descriptor.Content.MediaType};base64,{Convert.ToBase64String(inline.Payload)}"
                     : null;
+
+                if (descriptor is StagedObjectRasterOutputDescriptor)
+                {
+                    metadata[RasterOutputArtifactMetadata.ContentRoute] =
+                        RasterOutputContentRoutes.BuildRelative(job.OperationId, index);
+                }
             }
             else if (RasterOutputJson.LooksLikeDescriptor(reference))
             {
@@ -176,6 +183,13 @@ internal static class GeoprocessingResultPackageFactory
 
         return artifacts;
     }
+
+    private static bool IsValidDescriptorForJob(
+        RasterOutputDescriptor descriptor,
+        ExecutionJobRecord job)
+        => RasterOutputDescriptorValidator.Validate(descriptor).IsValid
+           && string.Equals(descriptor.JobId, job.OperationId, StringComparison.Ordinal)
+           && descriptor.AttemptNumber == job.AttemptCount;
 
     /// <summary>
     /// Projects the descriptor's content identity, grid summary, producing engine, and

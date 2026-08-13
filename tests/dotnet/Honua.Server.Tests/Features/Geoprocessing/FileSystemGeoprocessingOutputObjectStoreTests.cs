@@ -180,6 +180,39 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
     }
 
     [UnitTest]
+    public async Task List_ReclaimsPendingWriteOlderThanSweepGrace()
+    {
+        var pendingPath = Path.Join(
+            _root,
+            "gp/outputs/abandoned/a1/output1/result.tif" + FileSystemGeoprocessingOutputObjectStore.PendingSuffix);
+        Directory.CreateDirectory(Path.GetDirectoryName(pendingPath)!);
+        await File.WriteAllBytesAsync(pendingPath, [1, 2, 3]);
+        File.SetLastWriteTimeUtc(pendingPath, DateTime.UtcNow.AddHours(-2));
+
+        await foreach (var _ in _store.ListAsync("gp/outputs"))
+        {
+        }
+
+        File.Exists(pendingPath).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task List_KeepsPendingWriteWithinSweepGrace()
+    {
+        var pendingPath = Path.Join(
+            _root,
+            "gp/outputs/recent/a1/output1/result.tif" + FileSystemGeoprocessingOutputObjectStore.PendingSuffix);
+        Directory.CreateDirectory(Path.GetDirectoryName(pendingPath)!);
+        await File.WriteAllBytesAsync(pendingPath, [1, 2, 3]);
+
+        await foreach (var _ in _store.ListAsync("gp/outputs"))
+        {
+        }
+
+        File.Exists(pendingPath).Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task Delete_RemovesObjectAndLease()
     {
         await using (var content = new MemoryStream(new byte[] { 1 }))
