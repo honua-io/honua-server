@@ -1150,6 +1150,7 @@ internal static partial class FeatureStreamEndpoints
         }
 
         var layerIds = ResolveControlLayerIds(control);
+        bool hasExplicitLayerScope = layerIds is { Length: > 0 };
         if (serviceId is null && layerIds is null && !IsAdmin(context.User))
         {
             return (null, "Unfiltered all-layer feature streams require admin access.");
@@ -1334,13 +1335,15 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return (new StreamSubscriptionFilter(
-            serviceId,
-            serviceIdIsExact,
-            layerIds,
-            bbox,
-            attributeFilter,
-            temporalFilter,
-            deps.RoutabilityGuard), null);
+            serviceId: serviceId,
+            serviceIdIsExact: serviceIdIsExact,
+            resolvedServiceId: service?.Metadata.Id,
+            hasExplicitLayerScope: hasExplicitLayerScope,
+            layerIds: layerIds,
+            bbox: bbox,
+            attributeFilter: attributeFilter,
+            temporalFilter: temporalFilter,
+            routabilityGuard: deps.RoutabilityGuard), null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

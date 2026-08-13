@@ -18,7 +18,9 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         new Dictionary<string, JsonElement>(0, StringComparer.Ordinal);
 
     private readonly string? _serviceId;
+    private readonly string? _resolvedServiceId;
     private readonly StringComparison _serviceIdComparison;
+    private readonly bool _hasExplicitLayerScope;
     private readonly int[]? _layerIds;
     private readonly double[]? _bbox;
     private readonly FilterExpression? _attributeFilter;
@@ -30,6 +32,8 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// </summary>
     /// <param name="serviceId">Allowed service ID (null = all services).</param>
     /// <param name="serviceIdIsExact">Whether <paramref name="serviceId"/> is an exact catalog identity.</param>
+    /// <param name="resolvedServiceId">Resolved catalog service ID, retained separately from a display-name scope.</param>
+    /// <param name="hasExplicitLayerScope">Whether the client explicitly supplied one or more layer IDs.</param>
     /// <param name="layerIds">Allowed layer IDs (null = all layers).</param>
     /// <param name="bbox">Bounding box [MinX, MinY, MaxX, MaxY] (null = no spatial filter).</param>
     /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
@@ -38,6 +42,8 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     public StreamSubscriptionFilter(
         string? serviceId = null,
         bool serviceIdIsExact = false,
+        string? resolvedServiceId = null,
+        bool hasExplicitLayerScope = false,
         int[]? layerIds = null,
         double[]? bbox = null,
         FilterExpression? attributeFilter = null,
@@ -45,6 +51,8 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         FeatureStreamRoutabilityGuard? routabilityGuard = null)
     {
         _serviceId = serviceId;
+        _resolvedServiceId = resolvedServiceId;
+        _hasExplicitLayerScope = hasExplicitLayerScope;
         _serviceIdComparison = serviceIdIsExact
             ? StringComparison.Ordinal
             : StringComparison.OrdinalIgnoreCase;
@@ -59,6 +67,16 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// Service ID restriction, if any.
     /// </summary>
     public string? ServiceId => _serviceId;
+
+    /// <summary>
+    /// Resolved catalog service identity, if admission resolved a service scope.
+    /// </summary>
+    public string? ResolvedServiceId => _resolvedServiceId;
+
+    /// <summary>
+    /// Whether the client explicitly supplied the layer scope rather than inheriting all service layers.
+    /// </summary>
+    public bool HasExplicitLayerScope => _hasExplicitLayerScope;
 
     /// <summary>
     /// Layer restrictions, if any.

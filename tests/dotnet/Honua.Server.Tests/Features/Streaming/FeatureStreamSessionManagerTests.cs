@@ -725,6 +725,9 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(
             shadowedIdentity,
             FeatureStreamEndpoints.ResolveStreamService(snapshot, shadowedIdentity)?.Metadata.Id);
+        Assert.Equal(
+            activeServiceId,
+            FeatureStreamEndpoints.ResolveStreamService(snapshot, "ROADS")?.Metadata.Id);
         Assert.True(guard.IsRoutable(activeServiceId, storageLayerId));
         Assert.False(guard.IsRoutable(shadowedIdentity, storageLayerId));
 
@@ -744,6 +747,12 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             serviceId: shadowedIdentity),
             geometryEnvelope: null,
             propertiesJson: null));
+
+        var aliasFilter = new StreamSubscriptionFilter(
+            serviceId: shadowedIdentity,
+            resolvedServiceId: activeServiceId,
+            routabilityGuard: guard);
+        Assert.Equal(activeServiceId, aliasFilter.ResolvedServiceId);
     }
 
     [UnitTest]

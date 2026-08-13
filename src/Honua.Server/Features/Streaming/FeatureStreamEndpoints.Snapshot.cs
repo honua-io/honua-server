@@ -328,7 +328,9 @@ internal static partial class FeatureStreamEndpoints
             return null;
         }
 
-        if (filter is not StreamSubscriptionFilter scoped || scoped.LayerIds is not { Length: > 0 })
+        if (filter is not StreamSubscriptionFilter scoped ||
+            !scoped.HasExplicitLayerScope ||
+            scoped.LayerIds is not { Length: > 0 })
         {
             return "snapshot subscriptions require an explicit layer scope; supply the layers parameter (or the layers/layerId control-frame field).";
         }
@@ -439,7 +441,8 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
 
         var graph = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = filter.ServiceId is null ? null : ResolveStreamService(graph, filter.ServiceId);
+        var snapshotServiceId = filter.ResolvedServiceId ?? filter.ServiceId;
+        var service = snapshotServiceId is null ? null : ResolveStreamService(graph, snapshotServiceId);
 
         long emitted = 0;
         long scanned = 0;

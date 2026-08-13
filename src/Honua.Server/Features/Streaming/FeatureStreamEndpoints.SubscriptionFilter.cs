@@ -86,6 +86,7 @@ internal static partial class FeatureStreamEndpoints
         // `layers` is the canonical parameter; `layerIds` is a legacy alias. Both
         // must be parsed, validated, and access-checked through the same helper.
         var layerSource = !string.IsNullOrWhiteSpace(layersParam) ? layersParam : legacyLayerIdsParam;
+        bool hasExplicitLayerScope = !string.IsNullOrWhiteSpace(layerSource);
         if (!string.IsNullOrWhiteSpace(layerSource))
         {
             var (parsedIds, layerError) = ParseAndAuthorizeLayerIds(
@@ -313,6 +314,8 @@ internal static partial class FeatureStreamEndpoints
         var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
             serviceIdIsExact: serviceIdIsExact,
+            resolvedServiceId: service?.Metadata.Id,
+            hasExplicitLayerScope: hasExplicitLayerScope,
             layerIds: layerIds,
             bbox: bbox,
             attributeFilter: attributeFilter,
