@@ -12,13 +12,13 @@ namespace Honua.Core.Features.AuditLog.Export;
 public sealed record AuditExportDispatcherOptions
 {
     /// <summary>Maximum number of retry attempts after the initial send (default 3).</summary>
-    public int MaxRetries { get; init; } = 3;
+    public int MaxRetries { get; set; } = 3;
 
     /// <summary>Delay before the first retry; grows by <see cref="BackoffMultiplier"/> each attempt (default 200ms).</summary>
-    public TimeSpan BaseDelay { get; init; } = TimeSpan.FromMilliseconds(200);
+    public TimeSpan BaseDelay { get; set; } = TimeSpan.FromMilliseconds(200);
 
     /// <summary>Exponential backoff multiplier applied to <see cref="BaseDelay"/> per retry (default 2.0).</summary>
-    public double BackoffMultiplier { get; init; } = 2.0;
+    public double BackoffMultiplier { get; set; } = 2.0;
 }
 
 /// <summary>
