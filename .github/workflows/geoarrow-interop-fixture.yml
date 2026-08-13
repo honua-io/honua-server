@@ -5,9 +5,23 @@ on:
     branches: [trunk]
     paths:
       - '.github/workflows/geoarrow-interop-fixture.yml'
+      - '.github/actions/setup-dotnet-ci/**'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj'
+      - 'src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/**'
+      - 'src/Honua.Core/Honua.Core.csproj'
+      - 'src/Honua.Core/Configuration/**'
+      - 'src/Honua.Core/Features/FeatureStore/Domain/**'
       - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs'
       - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoParquetQueryFormatter.cs'
       - 'src/Honua.Core/Features/Infrastructure/Crs/GeoParquetProjJsonCatalog.cs'
+      - 'src/Honua.Core/Features/Shared/Models/**'
+      - 'src/Honua.Hosting/Honua.Hosting.csproj'
+      - 'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs'
+      - 'src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoArrowQueryFormatterTests.cs'
   workflow_dispatch:
 
@@ -23,6 +37,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   HONUA_GEOARROW_FIXTURE_OUTPUT_DIR: ${{ github.workspace }}/tests/TestResults/geoarrow-interop
+  HONUA_GEOARROW_PRODUCER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   produce:
@@ -31,6 +46,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HONUA_GEOARROW_PRODUCER_COMMIT }}
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -50,7 +67,7 @@ jobs:
       - name: Retain exact fixture, digest, and provenance
         uses: actions/upload-artifact@v7
         with:
-          name: honua-server-geoarrow-02-${{ github.sha }}
+          name: honua-server-geoarrow-02-${{ env.HONUA_GEOARROW_PRODUCER_COMMIT }}
           path: |
             tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow
             tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow.sha256

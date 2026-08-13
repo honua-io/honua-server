@@ -523,7 +523,7 @@ public sealed class GeoArrowQueryFormatterTests
             producer = new
             {
                 repository = "https://github.com/honua-io/honua-server",
-                commit = Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "local-uncommitted",
+                commit = Environment.GetEnvironmentVariable("HONUA_GEOARROW_PRODUCER_COMMIT") ?? "local-uncommitted",
                 formatter = "src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs",
                 test = $"{typeof(GeoArrowQueryFormatterTests).FullName}.{nameof(FormatAsGeoArrowAsync_ContractFixture_IsDeterministicAndEmitsGovernedArtifact)}"
             },
