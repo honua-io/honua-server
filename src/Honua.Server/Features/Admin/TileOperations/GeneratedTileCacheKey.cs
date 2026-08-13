@@ -8,10 +8,12 @@ namespace Honua.Server.Features.Admin.TileOperations;
 /// <summary>
 /// A parsed generated tile-cache object key. The generated cache stores loose per-tile objects whose
 /// key encodes every window-scoping dimension as trailing path segments
-/// (<c>[prefix.../]{layerId}/{gridset}/{style}/{hash}/{z}/{x}/{y}.{format}</c>), so a bounded
-/// lifecycle operation (issue #2661) can reconstruct the window from the tracked keys alone.
+/// (<c>[prefix.../]v2/{publicationScope}/{layerId}/{gridset}/{style}/{hash}/{z}/{x}/{y}.{format}</c>),
+/// so a bounded lifecycle operation (issue #2661) can reconstruct the window from the tracked keys
+/// alone.
 /// </summary>
 internal readonly record struct ParsedGeneratedTileKey(
+    string? PublicationScope,
     int LayerId,
     string Gridset,
     string Style,
@@ -32,6 +34,8 @@ internal static class GeneratedTileCacheKey
     /// Parses a generated tile-cache object key from its tail so the parse is independent of any
     /// provider key prefix. Returns <c>false</c> for keys that are not shaped like a generated tile
     /// (fewer than seven segments, or non-numeric layer/level/col/row), which are then never matched.
+    /// Legacy keys remain readable with a null publication identity, but service-scoped lifecycle
+    /// operations fail closed for those ambiguous entries.
     /// </summary>
     public static bool TryParse(string key, out ParsedGeneratedTileKey parsed)
     {
@@ -65,7 +69,13 @@ internal static class GeneratedTileCacheKey
             return false;
         }
 
+        var publicationScope = segments.Length >= 9
+            && string.Equals(segments[^9], "v2", StringComparison.Ordinal)
+                ? segments[^8]
+                : null;
+
         parsed = new ParsedGeneratedTileKey(
+            publicationScope,
             layerId,
             segments[^6],
             segments[^5],

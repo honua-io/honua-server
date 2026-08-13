@@ -6,6 +6,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Tiles;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
@@ -47,6 +48,7 @@ public class ImageServerTileCacheKeyTests
         string tileMatrixSetId = "WebMercatorQuad",
         string styleId = "default",
         string tenantAuthKey = "",
+        string publicationId = "publication-7",
         int layerId = 7,
         RasterFormat format = RasterFormat.PNG,
         DateTimeOffset? timestamp = null,
@@ -58,6 +60,7 @@ public class ImageServerTileCacheKeyTests
         => ImageServerTileCacheKey.Build(
             storageOptions: null,
             metadataEtag: "etag-1",
+            publicationId: publicationId,
             layerId: layerId,
             tileMatrixSetId: tileMatrixSetId,
             styleId: styleId,
@@ -113,7 +116,11 @@ public class ImageServerTileCacheKeyTests
     [UnitTest]
     public void Build_VariesByLayerIdentity()
     {
-        // Layer index and the participating raster set are both part of the layer identity.
+        // Publication id, layer index, and the participating raster set are all part of the layer
+        // identity.
+        Build(publicationId: "publication-a").Should().NotBe(Build(publicationId: "publication-b"));
+        Build(publicationId: "Publication A").Should().Contain(
+            $"/v2/{TileCachePublicationScope.Create("Publication A")}/7/");
         Build(layerId: 7).Should().NotBe(Build(layerId: 8));
 
         var otherRasters = new[] { Rasters[0] with { Id = 999 } };

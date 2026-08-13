@@ -84,9 +84,9 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var targetLayers = await TileCacheTargetResolver.ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
+        var target = await TileCacheTargetResolver.ResolveAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
         tenantScope ??= TileCacheTenantScope.Resolve(serviceProvider);
-        var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits, tenantScope);
+        var window = TileCacheKeyWindow.Create(request, target, _tileLimits, tenantScope);
 
         var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
         var generationId = string.IsNullOrWhiteSpace(request.GenerationId) ? null : request.GenerationId;
@@ -469,13 +469,16 @@ internal sealed partial class TileOperationExecutionCore
     /// <summary>
     /// The bounded target window for a generated-tile-cache expire/delete run. Encapsulates the
     /// single object-key convention the generated tile cache uses so the delete window is derived in
-    /// exactly one place: a key is matched when its parsed <c>(layerId, gridset, style, format, z, x,
-    /// y)</c> falls inside the requested <c>(service→layers, gridset, style, format, z-range,
-    /// extent)</c> bound. Keys that do not parse as generated tiles never match.
+    /// exactly one place: a key is matched when its parsed <c>(publicationScope, layerId, gridset,
+    /// style, format, z, x, y)</c> falls inside the requested <c>(service→publications, gridset,
+    /// style, format, z-range, extent)</c> bound. Keys that do not parse as generated tiles never
+    /// match.
     /// </summary>
     private readonly struct TileCacheKeyWindow
     {
         private readonly HashSet<int> _layers;
+        private readonly HashSet<string> _publicationScopes;
+        private readonly bool _serviceScoped;
         private readonly bool _anyLayer;
         private readonly string _gridset;
         private readonly string _style;
@@ -491,6 +494,8 @@ internal sealed partial class TileOperationExecutionCore
 
         private TileCacheKeyWindow(
             HashSet<int> layers,
+            HashSet<string> publicationScopes,
+            bool serviceScoped,
             bool anyLayer,
             string gridset,
             string style,
@@ -505,6 +510,8 @@ internal sealed partial class TileOperationExecutionCore
             string? tenantScope)
         {
             _layers = layers;
+            _publicationScopes = publicationScopes;
+            _serviceScoped = serviceScoped;
             _anyLayer = anyLayer;
             _gridset = gridset;
             _style = style;
@@ -521,14 +528,17 @@ internal sealed partial class TileOperationExecutionCore
 
         public static TileCacheKeyWindow Create(
             TileOperationStartRequest request,
-            IReadOnlyList<int> targetLayers,
+            TileCacheTargetResolution target,
             TileLimits tileLimits,
             string? tenantScope)
         {
             // An unscoped internal request may target every layer. A named service that does not
             // resolve must instead match nothing; treating its empty layer set as "all layers"
             // would turn a misspelled service id into a deployment-wide lifecycle operation.
-            var layers = new HashSet<int>(targetLayers);
+            var layers = new HashSet<int>(target.LayerIds);
+            var publicationScopes = target.PublicationIds
+                .Select(TileCachePublicationScope.Create)
+                .ToHashSet(StringComparer.Ordinal);
             var anyLayer = layers.Count == 0
                 && string.IsNullOrWhiteSpace(request.ServiceId)
                 && !request.LayerId.HasValue;
@@ -550,6 +560,8 @@ internal sealed partial class TileOperationExecutionCore
 
             return new TileCacheKeyWindow(
                 layers,
+                publicationScopes,
+                target.IsServiceScoped,
                 anyLayer,
                 gridset,
                 style,
@@ -581,7 +593,7 @@ internal sealed partial class TileOperationExecutionCore
             ArgumentException.ThrowIfNullOrWhiteSpace(operation);
 
             var scope = new StringBuilder(384);
-            AppendScopeComponent(scope, "v1");
+            AppendScopeComponent(scope, "v2");
             AppendScopeComponent(scope, generationId.Trim());
             AppendScopeComponent(scope, operation);
             AppendScopeComponent(scope, _tenantScope);
@@ -589,6 +601,12 @@ internal sealed partial class TileOperationExecutionCore
             foreach (var layerId in _layers.Order())
             {
                 AppendScopeComponent(scope, layerId.ToString(CultureInfo.InvariantCulture));
+            }
+
+            AppendScopeComponent(scope, _serviceScoped ? "service" : "any-service");
+            foreach (var publicationScope in _publicationScopes.Order(StringComparer.Ordinal))
+            {
+                AppendScopeComponent(scope, publicationScope);
             }
 
             AppendScopeComponent(scope, _gridset);
@@ -626,6 +644,12 @@ internal sealed partial class TileOperationExecutionCore
             }
 
             if (!_anyLayer && !_layers.Contains(parsed.LayerId))
+            {
+                return false;
+            }
+
+            if (_serviceScoped
+                && (parsed.PublicationScope is null || !_publicationScopes.Contains(parsed.PublicationScope)))
             {
                 return false;
             }

@@ -788,13 +788,20 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
-    public async Task Delete_ServiceFilter_UsesPublicationLayerIndexInsteadOfStorageLayerId()
+    public async Task Delete_ServiceFilter_UsesPublicationIdentityAndLayerIndex()
     {
-        const string storageLayerKey = "prefix/imageserver/tiles/42/webmercatorquad/default/abc/2/1/1.png";
-        const string localIndexKey = "prefix/imageserver/tiles/7/webmercatorquad/default/abc/2/1/1.png";
+        var publicationScope = TileCachePublicationScope.Create("publication");
+        var otherPublicationScope = TileCachePublicationScope.Create("other-publication");
+        var serviceKey =
+            $"prefix/imageserver/tiles/v2/{publicationScope}/7/webmercatorquad/default/abc/2/1/1.png";
+        var storageLayerKey =
+            $"prefix/imageserver/tiles/v2/{publicationScope}/42/webmercatorquad/default/abc/2/1/1.png";
+        var otherServiceKey =
+            $"prefix/imageserver/tiles/v2/{otherPublicationScope}/7/webmercatorquad/default/abc/2/1/1.png";
         var index = new StatefulKeyIndex();
+        index.Seed(serviceKey, 100);
         index.Seed(storageLayerKey, 100);
-        index.Seed(localIndexKey, 100);
+        index.Seed(otherServiceKey, 100);
         var storage = CreateStorage();
         storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         var graphProvider = new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
@@ -802,6 +809,8 @@ public sealed class TileCacheLifecycleExecutionTests
             .AddStorageBinding("binding", "resource", "features", storageLayerId: 42)
             .AddService("service", "service")
             .AddPublication("publication", "service", "resource", layerIndex: 7, storageBindingId: "binding")
+            .AddService("other-service", "other-service")
+            .AddPublication("other-publication", "other-service", "resource", layerIndex: 7, storageBindingId: "binding")
             .Build());
 
         var result = await ExecuteAsync(new TileOperationStartRequest
@@ -812,8 +821,8 @@ public sealed class TileCacheLifecycleExecutionTests
         }, index, storage, graphProvider: graphProvider);
 
         result.Status.Should().Be(OperationStatus.Completed);
-        index.Removed.Should().BeEquivalentTo([localIndexKey]);
-        index.Remaining.Should().BeEquivalentTo([storageLayerKey]);
+        index.Removed.Should().BeEquivalentTo([serviceKey]);
+        index.Remaining.Should().BeEquivalentTo([storageLayerKey, otherServiceKey]);
     }
 
     [UnitTest]

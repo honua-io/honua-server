@@ -138,6 +138,7 @@ internal sealed class ImageServerTileHandler
                 var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
+                    resolved.Publication.Metadata.Id,
                     layerId,
                     TileMatrixSetRegistry.WebMercatorQuadId,
                     DefaultStyleId,
@@ -356,6 +357,7 @@ internal sealed class ImageServerTileHandler
             var tileCacheKey = ImageServerTileCacheKey.Build(
                 storageOptions,
                 snapshot.Etag,
+                resolved.Publication.Metadata.Id,
                 layerId,
                 grid.Id,
                 DefaultStyleId,

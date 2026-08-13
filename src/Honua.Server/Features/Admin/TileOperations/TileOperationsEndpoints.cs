@@ -71,15 +71,20 @@ internal static class TileOperationsEndpoints
         [FromQuery] string? gridset = null,
         CancellationToken cancellationToken = default)
     {
-        // Resolve the optional service filter to its published storage-layer ids so tracked keys
-        // (which carry layer ids, not service names) can be scoped without touching the serve path.
+        // Resolve the optional service filter to its publications so service-local layer indices
+        // cannot make inventory include another service's cache entries.
         HashSet<int>? layerFilter = null;
+        HashSet<string>? publicationScopeFilter = null;
         if (!string.IsNullOrWhiteSpace(serviceId))
         {
-            layerFilter = [.. await TileCacheTargetResolver.ResolveLayerIdsAsync(
+            var target = await TileCacheTargetResolver.ResolveAsync(
                 new TileOperationStartRequest { Operation = "inventory", ServiceId = serviceId },
                 graphProvider,
-                cancellationToken).ConfigureAwait(false)];
+                cancellationToken).ConfigureAwait(false);
+            layerFilter = [.. target.LayerIds];
+            publicationScopeFilter = target.PublicationIds
+                .Select(TileCachePublicationScope.Create)
+                .ToHashSet(StringComparer.Ordinal);
         }
 
         var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
@@ -109,6 +114,13 @@ internal static class TileOperationsEndpoints
                     }
 
                     if (layerFilter is not null && !layerFilter.Contains(parsed.LayerId))
+                    {
+                        continue;
+                    }
+
+                    if (publicationScopeFilter is not null
+                        && (parsed.PublicationScope is null
+                            || !publicationScopeFilter.Contains(parsed.PublicationScope)))
                     {
                         continue;
                     }
