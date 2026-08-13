@@ -90,6 +90,24 @@ public interface IGeoprocessingOutputObjectStore
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Whether a live read lease exists.</returns>
     Task<bool> HasActiveReadLeaseAsync(string objectKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Places a durable retention hold on the object. Held objects are permanently
+    /// exempt from orphan sweeping: registration into a long-lived catalog (for
+    /// example <c>cloud_raster_catalog</c>) outlives the expiring job record, so the
+    /// hold — not the job record — is what keeps the registered object alive.
+    /// Idempotent. Returns <see langword="false"/> when the object does not exist.
+    /// </summary>
+    /// <param name="objectKey">Object key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the hold is in place.</returns>
+    Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether a durable retention hold exists for the object.</summary>
+    /// <param name="objectKey">Object key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the object is held.</returns>
+    Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Metadata for a staged geoprocessing output object.</summary>

@@ -484,7 +484,10 @@ internal static class GPServerEndpoints
 
             return await BuildExecuteSuccessResponseAsync(
                 jobService, terminal, context.User, envControls, workingSrid,
-                BaseUrlResolver.GetBaseUrl(context), ct);
+                BaseUrlResolver.GetBaseUrl(context),
+                context.RequestServices
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
+                ct);
         }
         catch (TimeoutException)
         {
@@ -574,13 +577,17 @@ internal static class GPServerEndpoints
     /// <summary>
     /// Resolves the GP result value for an artifact. Staged output artifacts (#3089)
     /// deliberately carry no durable Uri; their value is the canonical authenticated
-    /// content route so no provider location or expiring URL leaks to clients.
+    /// content route so no provider location or expiring URL leaks to clients. When
+    /// this host's output store cannot serve the artifact (split-host staging
+    /// misconfiguration) the value degrades to the label rather than advertising a
+    /// link that is guaranteed to fail.
     /// </summary>
     private static string ResolveArtifactValue(
         ArtifactRef artifact,
         string jobId,
         int artifactIndex,
-        string baseUrl)
+        string baseUrl,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore)
     {
         if (artifact.Uri is { } uri)
         {
@@ -589,7 +596,13 @@ internal static class GPServerEndpoints
 
         if (artifact.Metadata.TryGetValue(
                 Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var staged)
-            && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase)
+            && Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.CanServe(
+                outputStore,
+                artifact.Metadata.GetValueOrDefault(
+                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreProvider),
+                artifact.Metadata.GetValueOrDefault(
+                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreReference)))
         {
             return Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(
                 baseUrl, jobId, artifactIndex);
@@ -629,6 +642,7 @@ internal static class GPServerEndpoints
         EnvControls envControls,
         int workingSrid,
         string baseUrl,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore,
         CancellationToken ct)
     {
         var results = new List<GPResultResponse>();
@@ -663,7 +677,7 @@ internal static class GPServerEndpoints
                 var artifact = resultPackage.Artifacts[index];
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
                 var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
-                var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl);
+                var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl, outputStore);
 
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
@@ -1044,7 +1058,10 @@ internal static class GPServerEndpoints
                 }
             }
 
-            var value = ResolveArtifactValue(artifact, job.OperationId, artifactIndex, BaseUrlResolver.GetBaseUrl(context));
+            var value = ResolveArtifactValue(
+                artifact, job.OperationId, artifactIndex, BaseUrlResolver.GetBaseUrl(context),
+                context.RequestServices
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>());
 
             // Honor env:outSR on the async path: when the job was submitted with
             // env:outSR, apply the same reprojection the synchronous execute path

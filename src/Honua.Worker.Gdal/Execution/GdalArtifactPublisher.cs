@@ -79,8 +79,15 @@ internal static partial class GdalArtifactPublisher
             staged.StagingOptions.MaxInlineArtifactBytes,
             RasterOutputContract.MaximumInlinePayloadBytes);
 
+        // An output with a post-success registration intent must be staged regardless
+        // of size: only staged objects can register into the COG catalog, and an
+        // inline descriptor would deterministically fail registration on every results
+        // read, permanently wedging a Succeeded job (#3089 review).
+        var hasRegistrationIntent = staged.Job.Spec.Parameters.ContainsKey(
+            GdalWorkerParameterKeys.OutputRegistrationPrefix + outputName);
+
         RasterOutputDescriptor descriptor;
-        if (info.Length <= inlineCeiling)
+        if (info.Length <= inlineCeiling && !hasRegistrationIntent)
         {
             var payload = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
             descriptor = new InlineRasterOutputDescriptor
@@ -272,7 +279,16 @@ internal static partial class GdalArtifactPublisher
                 PixelScale = probe.PixelScale,
             };
         }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or EndOfStreamException)
+        catch (Exception ex) when (ex is InvalidDataException
+            or IOException
+            or EndOfStreamException
+            // Truncated or hostile TIFF directories can surface as argument/overflow
+            // faults from the bounded IFD parser rather than InvalidDataException; the
+            // grid summary is best-effort metadata, so any parse fault degrades to a
+            // null grid instead of failing the publication.
+            or ArgumentOutOfRangeException
+            or ArgumentException
+            or OverflowException)
         {
             return null;
         }

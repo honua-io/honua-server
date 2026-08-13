@@ -16,6 +16,24 @@ public static class RasterOutputContentRoutes
     /// <summary>Route pattern registered by the OGC API Processes jobs surface.</summary>
     public const string RoutePattern = "/ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex:int}/content";
 
+    /// <summary>
+    /// Whether the registered output store on this host can serve a staged artifact
+    /// with the given provider/store identity. Protocol adapters must not advertise
+    /// content links the serving host provably cannot satisfy (a worker-enabled but
+    /// server-disabled or mismatched staging configuration).
+    /// </summary>
+    /// <param name="store">The host's registered output store, or null.</param>
+    /// <param name="providerName">Descriptor provider name (enum name string).</param>
+    /// <param name="storeReference">Descriptor logical store reference.</param>
+    /// <returns>Whether the content route can stream this artifact.</returns>
+    public static bool CanServe(
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? store,
+        string? providerName,
+        string? storeReference)
+        => store is not null
+           && string.Equals(store.Provider.ToString(), providerName, StringComparison.OrdinalIgnoreCase)
+           && string.Equals(store.StoreReference, storeReference, StringComparison.Ordinal);
+
     /// <summary>Builds the absolute content link for one staged artifact.</summary>
     /// <param name="baseUrl">Request base URL without a trailing slash.</param>
     /// <param name="jobId">Durable job identifier.</param>

@@ -129,6 +129,25 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
         (await _store.GetInfoAsync(key)).Should().BeNull();
     }
 
+    /// <summary>
+    /// #3089 review: a COG-catalog registration is permanent while the job record
+    /// expires from Redis. The durable retention hold written at registration must
+    /// exempt the object from sweeping forever — even after the job record is gone
+    /// and the orphan retention window has passed — or the catalog row dangles.
+    /// </summary>
+    [UnitTest]
+    public async Task Sweep_RegisteredObjectWithExpiredJobRecord_IsNeverDeleted()
+    {
+        var key = await StageObjectAsync("job-registered", attempt: 1);
+        (await _store.SetRetentionHoldAsync(key)).Should().BeTrue();
+        _jobStore.GetAsync("job-registered", Arg.Any<CancellationToken>()).Returns((ExecutionJobRecord?)null);
+
+        var result = await CreateSweeper().SweepOnceAsync(CancellationToken.None);
+
+        result.Deleted.Should().Be(0);
+        (await _store.GetInfoAsync(key)).Should().NotBeNull();
+    }
+
     [UnitTest]
     public async Task Sweep_ActivelyReadObject_IsNeverDeleted()
     {

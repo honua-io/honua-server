@@ -105,6 +105,78 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         store.Objects.Keys.Should().Contain(key => key.Contains("/a2/"));
     }
 
+    /// <summary>
+    /// #3089 review: an output carrying a post-success registration intent must be
+    /// staged regardless of size — only staged objects can register into the COG
+    /// catalog, so an inline descriptor would deterministically fail registration on
+    /// every results read and permanently wedge the succeeded job.
+    /// </summary>
+    [Fact]
+    public async Task PublishFileAsync_SmallOutputWithRegistrationIntent_IsStagedNotInlined()
+    {
+        var (context, store) = CreateStagedContext(attemptCount: 1, maxInlineBytes: 64 * 1024);
+        var jobWithIntent = context.Job with
+        {
+            Spec = context.Job.Spec with
+            {
+                Parameters = new Dictionary<string, string>(context.Job.Spec.Parameters, StringComparer.Ordinal)
+                {
+                    // The publisher resolves this slot's name as "output1" (no
+                    // recorded output-name parameters), so the intent targets it.
+                    ["honua.geoprocessing.output_registration.output1"] = "cog-catalog:7",
+                }
+            }
+        };
+        var inner = Inner(context);
+        var intentContext = new GdalStagedOutputContext(inner, jobWithIntent, store, context.StagingOptions);
+        var outputPath = WriteOutput("result.tif", size: 512);
+
+        var error = await GdalArtifactPublisher.PublishFileAsync(
+            intentContext, CreateOptions(), NullLogger.Instance, "job-1", outputPath,
+            "image/tiff", "Output raster", CancellationToken.None);
+
+        error.Should().BeNull();
+        var recorded = inner.Artifacts.Should().ContainSingle().Subject;
+        RasterOutputJson.TryDeserialize(recorded, out var descriptor).Should().BeTrue();
+        descriptor.Should().BeOfType<StagedObjectRasterOutputDescriptor>();
+        store.Objects.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// #3089 review: the grid summary is best-effort — a malformed/truncated TIFF
+    /// whose bounded header parse faults (including argument/overflow faults from the
+    /// IFD parser) must degrade to a null grid, never fail the publication.
+    /// </summary>
+    [Fact]
+    public async Task PublishFileAsync_MalformedTiff_DegradesToNullGrid()
+    {
+        var (context, store) = CreateStagedContext(attemptCount: 1, maxInlineBytes: 16);
+        // A syntactically plausible little-endian TIFF header whose first IFD offset
+        // points at a directory the file does not contain, so directory parsing
+        // faults after the header probe accepts it.
+        var bytes = new byte[64];
+        bytes[0] = (byte)'I';
+        bytes[1] = (byte)'I';
+        bytes[2] = 42;
+        bytes[3] = 0;
+        bytes[4] = 56; // IFD offset near the end of the file
+        // Declared entry count far larger than the remaining bytes.
+        bytes[56] = 0xFF;
+        bytes[57] = 0x7F;
+        var outputPath = Path.Combine(_scratch, Guid.NewGuid().ToString("N") + "-malformed.tif");
+        File.WriteAllBytes(outputPath, bytes);
+
+        var error = await GdalArtifactPublisher.PublishFileAsync(
+            context, CreateOptions(), NullLogger.Instance, "job-1", outputPath,
+            "image/tiff", "Output raster", CancellationToken.None);
+
+        error.Should().BeNull();
+        var recorded = Inner(context).Artifacts.Should().ContainSingle().Subject;
+        RasterOutputJson.TryDeserialize(recorded, out var descriptor).Should().BeTrue();
+        descriptor!.Grid.Should().BeNull();
+        store.Objects.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task PublishFileAsync_WithoutStore_KeepsLegacyBoundedDataUri()
     {
@@ -294,5 +366,21 @@ public sealed class GdalArtifactPublisherTests : IDisposable
 
         public Task<bool> HasActiveReadLeaseAsync(string objectKey, CancellationToken cancellationToken = default)
             => Task.FromResult(ReadLeases.Contains(objectKey));
+
+        public Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+        {
+            if (!Objects.ContainsKey(objectKey))
+            {
+                return Task.FromResult(false);
+            }
+
+            RetentionHolds.Add(objectKey);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+            => Task.FromResult(RetentionHolds.Contains(objectKey));
+
+        public HashSet<string> RetentionHolds { get; } = new(StringComparer.Ordinal);
     }
 }

@@ -12,12 +12,30 @@ using Microsoft.Extensions.Options;
 namespace Honua.Geoprocessing;
 
 /// <summary>
+/// Dispatches the staged-output orphan sweep as a scheduled control-plane tick so
+/// event-triggered (serverless) deployments reclaim staged outputs without hosting
+/// the in-process timer (mirrors <see cref="WorkspaceCleanupScheduledTickHandler"/>).
+/// </summary>
+internal sealed class GeoprocessingOutputArtifactSweeperScheduledTickHandler(
+    GeoprocessingOutputArtifactSweeper service)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.GeoprocessingOutputSweep;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => service.SweepOnceAsync(cancellationToken);
+}
+
+/// <summary>
 /// Reconciles orphaned staged geoprocessing output objects (#3089): losing-attempt
 /// staging left behind by retries, staged-but-never-published objects from crashed
 /// attempts, and expired outputs whose job record no longer exists. It never deletes
 /// an object that may still be publishing (the current attempt of a live job, or any
-/// object younger than the sweep grace) or that is being read (an unexpired read
-/// lease). Keys outside the canonical attempt-scoped scheme are never touched.
+/// object younger than the sweep grace), that is being read (an unexpired read
+/// lease), or that carries a durable retention hold (a COG-catalog registration
+/// outliving the job record). Keys outside the canonical attempt-scoped scheme are
+/// never touched.
 /// </summary>
 internal sealed partial class GeoprocessingOutputArtifactSweeper(
     IGeoprocessingOutputObjectStore store,
@@ -67,6 +85,16 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
             {
                 if (await ShouldDeleteAsync(staged, current, now, cancellationToken).ConfigureAwait(false))
                 {
+                    // Narrow the check-then-delete window: a reader may have acquired
+                    // a lease while ShouldDeleteAsync evaluated the job record. A
+                    // residual race remains inherent to the sidecar protocol (POSIX
+                    // unlink keeps an already-open read intact); this recheck protects
+                    // the acquire-then-open sequence on other filesystems.
+                    if (await store.HasActiveReadLeaseAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
                     await store.DeleteAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false);
                     deleted++;
                     Log.OrphanDeleted(logger, staged.ObjectKey);
@@ -111,6 +139,14 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
 
         // Never delete an object a caller is actively streaming.
         if (await store.HasActiveReadLeaseAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        // Never delete a registered object. COG-catalog rows are permanent while job
+        // records expire from Redis, so the durable retention hold written at
+        // registration — not the job record — is what keeps a registered object alive.
+        if (await store.HasRetentionHoldAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }

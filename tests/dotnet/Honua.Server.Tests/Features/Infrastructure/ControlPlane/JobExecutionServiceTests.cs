@@ -369,6 +369,51 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// #3089 review: a durable cancellation stamp that lands while the executor is
+    /// finishing must win at finalization. The artifact publication fence already
+    /// refused to publish after the stamp, so finalizing Succeeded would durably
+    /// expose a success with silently missing outputs and no repair path.
+    /// </summary>
+    [UnitTest]
+    public async Task FinalizeJob_SuccessRacingDurableCancellation_FinalizesAsCancelled()
+    {
+        var provisioning = CreateProvisioningJob(claimedBy: "worker-test");
+        var runningWithCancel = provisioning with
+        {
+            Status = ExecutionJobStatus.Running,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        // Reads: initial, pre-Running re-read (no stamp yet), then the finalize
+        // re-read observes the durable cancellation that raced execution completion.
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning, provisioning, runningWithCancel);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, "worker-test");
+
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// #3089: persistent unexplained version conflicts must surface as an error
     /// instead of silently losing the published artifact reference.
     /// </summary>

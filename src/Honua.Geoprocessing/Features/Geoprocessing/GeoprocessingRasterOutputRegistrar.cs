@@ -26,7 +26,8 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal sealed partial class GeoprocessingRasterOutputRegistrar(
     IServiceScopeFactory serviceScopeFactory,
-    ILogger<GeoprocessingRasterOutputRegistrar> logger)
+    ILogger<GeoprocessingRasterOutputRegistrar> logger,
+    Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null)
 {
     private const string CogCatalogTargetPrefix = "cog-catalog:";
     private const string PostgisTargetPrefix = "postgis:";
@@ -130,11 +131,43 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
 
             var rasterId = await RegisterOrGetAsync(
                 cogStore, layerId, staged, cancellationToken).ConfigureAwait(false);
+
+            // The catalog row is permanent while the job record expires from Redis, so
+            // the durable retention hold on the staged object — not the job record —
+            // is what exempts a registered object from orphan sweeping. Setting the
+            // hold is part of registration: failing it fails this pass, and the
+            // idempotent replay (terminal callback or next results read) completes it.
+            await EnsureRetentionHoldAsync(job.OperationId, outputName, staged, cancellationToken)
+                .ConfigureAwait(false);
+
             registeredByOutput[outputName] = (layerId, rasterId);
             Log.OutputRegistered(logger, job.OperationId, outputName, layerId, rasterId);
         }
 
         return ApplyRegistrationMetadata(package, registeredByOutput);
+    }
+
+    private async Task EnsureRetentionHoldAsync(
+        string jobId,
+        string outputName,
+        StagedObjectRasterOutputDescriptor staged,
+        CancellationToken cancellationToken)
+    {
+        if (!RasterOutputContentRoutes.CanServe(outputStore, staged.Provider.ToString(), staged.StoreReference))
+        {
+            // No matching store on this host: the hold cannot be written here. This is
+            // the split-host misconfiguration surfaced by the content route as well;
+            // log loudly rather than failing registration for a store-topology issue.
+            Log.RetentionHoldStoreUnavailable(logger, jobId, outputName);
+            return;
+        }
+
+        if (!await outputStore!.SetRetentionHoldAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                $"Registered output '{outputName}' of job '{jobId}' references staged object "
+                + $"'{staged.ObjectKey}' which no longer exists in the output store.");
+        }
     }
 
     /// <summary>
@@ -270,5 +303,9 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
             "Registered geoprocessing output '{OutputName}' of job {OperationId} into the COG catalog (layer {LayerId}, raster {RasterId})")]
         public static partial void OutputRegistered(
             ILogger logger, string operationId, string outputName, int layerId, long rasterId);
+
+        [LoggerMessage(8037, LogLevel.Warning,
+            "No matching staged output store on this host for registered output '{OutputName}' of job {OperationId}; the retention hold cannot be written here and the object may be swept once the job record expires. Configure Geoprocessing:OutputStaging identically on the serving host.")]
+        public static partial void RetentionHoldStoreUnavailable(ILogger logger, string operationId, string outputName);
     }
 }

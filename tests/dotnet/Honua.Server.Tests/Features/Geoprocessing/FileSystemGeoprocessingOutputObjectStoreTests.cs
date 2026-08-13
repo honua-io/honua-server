@@ -102,6 +102,56 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         (await _store.HasActiveReadLeaseAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
     }
 
+    /// <summary>
+    /// #3089 review: an EXISTING lease sidecar that cannot be parsed (torn concurrent
+    /// refresh) must count as ACTIVE — failing open would let the sweeper delete an
+    /// object that is being read right now.
+    /// </summary>
+    [UnitTest]
+    public async Task ReadLease_UnparsableExistingSidecar_CountsAsActive()
+    {
+        await using (var content = new MemoryStream(new byte[] { 1 }))
+        {
+            await _store.WriteAsync("gp/outputs/job/a1/output1/result.tif", content, "image/tiff");
+        }
+
+        File.WriteAllText(
+            Path.Combine(_root, "gp/outputs/job/a1/output1/result.tif.readlease"),
+            "not-a-tick-count");
+
+        (await _store.HasActiveReadLeaseAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RetentionHold_RoundTrips_AndSurvivesListing()
+    {
+        await using (var content = new MemoryStream(new byte[] { 1 }))
+        {
+            await _store.WriteAsync("gp/outputs/job/a1/output1/result.tif", content, "image/tiff");
+        }
+
+        (await _store.HasRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeFalse();
+        (await _store.SetRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
+        // Idempotent.
+        (await _store.SetRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
+        (await _store.HasRetentionHoldAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();
+
+        // The hold sidecar is store bookkeeping, never a listed object.
+        var listed = new List<string>();
+        await foreach (var info in _store.ListAsync("gp/outputs"))
+        {
+            listed.Add(info.ObjectKey);
+        }
+
+        listed.Should().ContainSingle().Which.Should().Be("gp/outputs/job/a1/output1/result.tif");
+    }
+
+    [UnitTest]
+    public async Task RetentionHold_MissingObject_ReturnsFalse()
+    {
+        (await _store.SetRetentionHoldAsync("gp/outputs/absent/a1/output1/result.tif")).Should().BeFalse();
+    }
+
     [UnitTest]
     public async Task List_ExcludesLeaseSidecars()
     {

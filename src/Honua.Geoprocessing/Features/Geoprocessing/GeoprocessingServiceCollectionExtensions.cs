@@ -135,16 +135,23 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Referenced raster outputs (#3089): opt-in staged output store, the
         // idempotent post-success COG-catalog registrar, and the orphan sweeper that
-        // reconciles staged-but-unpublished and expired staging. The sweeper is
-        // hosted only when the staging store is registered (staging enabled) and an
-        // execution job store exists to interrogate job state.
+        // reconciles staged-but-unpublished and expired staging. The sweeper follows
+        // the WorkspaceCleanup dual-mode pattern: its idempotent tick handler is
+        // registered whenever the staging store and job store exist, while the
+        // in-process timer is hosted only under TriggerMode=Poll — so event-triggered
+        // (serverless) deployments still reclaim staged outputs via the scheduled
+        // tick dispatcher.
         services.AddGeoprocessingOutputStaging(configuration);
         services.TryAddSingleton<GeoprocessingRasterOutputRegistrar>();
         if (services.Any(d => d.ServiceType == typeof(IGeoprocessingOutputObjectStore))
-            && services.Any(d => d.ServiceType == typeof(IExecutionJobStore))
-            && ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+            && services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
-            services.AddHostedService<GeoprocessingOutputArtifactSweeper>();
+            services.TryAddSingleton<GeoprocessingOutputArtifactSweeper>();
+            services.AddSingleton<IScheduledTickHandler, GeoprocessingOutputArtifactSweeperScheduledTickHandler>();
+            if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+            {
+                services.AddHostedService(sp => sp.GetRequiredService<GeoprocessingOutputArtifactSweeper>());
+            }
         }
 
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters

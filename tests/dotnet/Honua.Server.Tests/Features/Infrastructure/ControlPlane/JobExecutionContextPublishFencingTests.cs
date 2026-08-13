@@ -59,8 +59,15 @@ public sealed class JobExecutionContextPublishFencingTests
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// #3089 review: legacy references keep strict APPEND semantics. Two distinct
+    /// outputs can legitimately produce byte-identical payloads (identical data URIs);
+    /// deduping them would make the second output vanish and shift the positional
+    /// slot/kind mapping downstream. Only typed descriptors — which carry an
+    /// (attempt, output name) identity — dedupe.
+    /// </summary>
     [UnitTest]
-    public async Task PublishArtifact_IdenticalReference_IsIdempotent()
+    public async Task PublishArtifact_IdenticalLegacyReference_AppendsSecondEntry()
     {
         var reference = "data:image/tiff;base64,AAAA";
         var published = CreateRunningJob(attemptCount: 1) with
@@ -74,8 +81,13 @@ public sealed class JobExecutionContextPublishFencingTests
 
         await context.PublishArtifactAsync(reference, CancellationToken.None);
 
-        await jobStore.DidNotReceive().TrySetAsync(
-            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.ArtifactReferences.Count == 2
+                && record.ArtifactReferences[0] == reference
+                && record.ArtifactReferences[1] == reference),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

@@ -419,18 +419,39 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        // Durable cancellation wins over a racing success (#3089): the artifact
+        // publication fence already refuses to publish once CancellationRequestedAt
+        // is stamped, so finalizing this record as Succeeded would durably expose a
+        // success with silently missing outputs and no repair path. Honour the stamp
+        // and finalize as Cancelled instead — consistent with every other path that
+        // observes the durable signal.
+        var effectiveStatus = result.Status;
+        if (result.Status == ExecutionJobStatus.Succeeded && job.CancellationRequestedAt.HasValue)
+        {
+            Log.FinalizeHonouredDurableCancellation(logger, operationId);
+            effectiveStatus = ExecutionJobStatus.Cancelled;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var final = job with
         {
-            Status = result.Status,
+            Status = effectiveStatus,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = result.Status == ExecutionJobStatus.Failed
-                ? SafeExecutionFailureMessage
-                : null,
+            ErrorMessage = effectiveStatus switch
+            {
+                ExecutionJobStatus.Failed => SafeExecutionFailureMessage,
+                ExecutionJobStatus.Cancelled => "Cancelled by operator (durable signal honoured at finalization).",
+                _ => null
+            },
             Warnings = result.Warnings,
-            PercentComplete = result.Status == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
-            CurrentPhase = result.Status == ExecutionJobStatus.Succeeded ? "Completed" : "Failed"
+            PercentComplete = effectiveStatus == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
+            CurrentPhase = effectiveStatus switch
+            {
+                ExecutionJobStatus.Succeeded => "Completed",
+                ExecutionJobStatus.Cancelled => "Cancelled",
+                _ => "Failed"
+            }
         };
 
         if (!await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -470,7 +491,7 @@ internal sealed partial class JobExecutionService(
         }
 
         await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
-        Log.JobExecutionCompleted(logger, operationId, result.Status.ToString());
+        Log.JobExecutionCompleted(logger, operationId, effectiveStatus.ToString());
     }
 
     private async Task TerminateJobAsync(
@@ -882,6 +903,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9074, LogLevel.Warning, "Job executor returned failure: {OperationId}, Error={ErrorMessage}")]
         public static partial void JobExecutorReturnedFailure(ILogger logger, string operationId, string errorMessage);
+
+        [LoggerMessage(9077, LogLevel.Information, "Finalize honoured durable cancellation signal for job {OperationId}: success result finalized as Cancelled")]
+        public static partial void FinalizeHonouredDurableCancellation(ILogger logger, string operationId);
     }
 }
 
@@ -971,10 +995,10 @@ internal sealed partial class JobExecutionContext(
     /// the write is rejected when the job is no longer owned by this worker, when the
     /// record's attempt no longer matches the claimed attempt (a retried attempt owns
     /// the record now), or when durable cancellation was requested. Publication is
-    /// idempotent — republishing an identical reference, or a typed raster output
-    /// descriptor for an output name this attempt already published, cannot produce a
-    /// duplicate entry. Version conflicts are re-read and retried instead of being
-    /// silently dropped.
+    /// idempotent for typed raster output descriptors — republishing a descriptor for
+    /// an output name this attempt already published cannot produce a duplicate entry.
+    /// Legacy references keep append semantics (distinct outputs may be byte-identical).
+    /// Version conflicts are re-read and retried instead of being silently dropped.
     /// </summary>
     public async Task PublishArtifactAsync(
         string artifactReference,
@@ -1042,9 +1066,12 @@ internal sealed partial class JobExecutionContext(
 
     /// <summary>
     /// Builds the updated reference list, returning <see langword="false"/> when the
-    /// publication is already durably present. Typed raster output descriptors are keyed
-    /// by (attempt, output name): republishing the same logical output within an attempt
-    /// replaces its entry instead of appending a duplicate.
+    /// publication is already durably present. Only typed raster output descriptors
+    /// dedupe — they carry an (attempt, output name) identity, so republishing the same
+    /// logical output within an attempt replaces its entry instead of appending a
+    /// duplicate. Legacy references (data URIs, provider links) keep strict append
+    /// semantics: two distinct outputs may legitimately have byte-identical payloads,
+    /// and collapsing them would shift the positional slot/kind mapping downstream.
     /// </summary>
     private static bool TryAppendArtifactReference(
         IReadOnlyList<string> existing,
@@ -1083,11 +1110,6 @@ internal sealed partial class JobExecutionContext(
             }
 
             return true;
-        }
-
-        if (existing.Contains(artifactReference, StringComparer.Ordinal))
-        {
-            return false;
         }
 
         updated.AddRange(existing);

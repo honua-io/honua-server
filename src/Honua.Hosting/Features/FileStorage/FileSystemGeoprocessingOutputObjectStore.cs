@@ -23,6 +23,7 @@ namespace Honua.FileStorage;
 internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingOutputObjectStore
 {
     internal const string ReadLeaseSuffix = ".readlease";
+    internal const string RetentionHoldSuffix = ".hold";
     private const string PendingSuffix = ".pending";
 
     private readonly string _root;
@@ -137,6 +138,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (file.EndsWith(ReadLeaseSuffix, StringComparison.Ordinal)
+                || file.EndsWith(RetentionHoldSuffix, StringComparison.Ordinal)
                 || file.EndsWith(PendingSuffix, StringComparison.Ordinal))
             {
                 continue;
@@ -160,6 +162,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         }
 
         TryDeleteQuietly(path + ReadLeaseSuffix);
+        TryDeleteQuietly(path + RetentionHoldSuffix);
         PruneEmptyDirectories(Path.GetDirectoryName(path));
         return Task.FromResult(existed);
     }
@@ -175,11 +178,18 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
             return false;
         }
 
+        // Refresh atomically: a truncate-then-write (FileMode.Create) leaves a window
+        // where a concurrent sweeper reads an empty/partial sidecar. Writing a sibling
+        // temp file and moving it into place means the sidecar is always either the
+        // old complete lease or the new complete lease.
         var expiry = DateTimeOffset.UtcNow.Add(duration);
+        var leasePath = path + ReadLeaseSuffix;
+        var tempPath = leasePath + "." + Guid.NewGuid().ToString("N");
         await File.WriteAllTextAsync(
-            path + ReadLeaseSuffix,
+            tempPath,
             expiry.UtcTicks.ToString(CultureInfo.InvariantCulture),
             cancellationToken).ConfigureAwait(false);
+        File.Move(tempPath, leasePath, overwrite: true);
         return true;
     }
 
@@ -194,8 +204,16 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         try
         {
             var text = await File.ReadAllTextAsync(leasePath, cancellationToken).ConfigureAwait(false);
-            return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks)
-                && new DateTimeOffset(ticks, TimeSpan.Zero) > DateTimeOffset.UtcNow;
+            if (!long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks))
+            {
+                // An existing sidecar we cannot parse (torn concurrent refresh) must
+                // count as ACTIVE — failing open here would let the sweeper delete an
+                // object that is being read right now. The next successful refresh or
+                // lease expiry resolves the ambiguity.
+                return true;
+            }
+
+            return new DateTimeOffset(ticks, TimeSpan.Zero) > DateTimeOffset.UtcNow;
         }
         catch (IOException)
         {
@@ -203,6 +221,28 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
             return true;
         }
     }
+
+    public Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+    {
+        var path = ResolveContainedPath(objectKey);
+        if (!File.Exists(path))
+        {
+            return Task.FromResult(false);
+        }
+
+        var holdPath = path + RetentionHoldSuffix;
+        if (!File.Exists(holdPath))
+        {
+            var tempPath = holdPath + "." + Guid.NewGuid().ToString("N");
+            File.WriteAllText(tempPath, "held");
+            File.Move(tempPath, holdPath, overwrite: true);
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(File.Exists(ResolveContainedPath(objectKey) + RetentionHoldSuffix));
 
     /// <summary>
     /// Maps an object key to a contained absolute path, rejecting rooted keys, drive

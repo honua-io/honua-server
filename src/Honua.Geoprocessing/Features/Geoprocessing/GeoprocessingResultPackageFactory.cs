@@ -146,6 +146,16 @@ internal static class GeoprocessingResultPackageFactory
                     ? $"data:{descriptor.Content.MediaType};base64,{Convert.ToBase64String(inline.Payload)}"
                     : null;
             }
+            else if (RasterOutputJson.LooksLikeDescriptor(reference))
+            {
+                // Descriptor-shaped but not interpretable by this release (for example
+                // a future contract version). The raw JSON carries store-internal
+                // identities (store reference, object key) that must never become the
+                // client-facing href/value — surface the artifact as unavailable.
+                uri = null;
+                contentType = null;
+                metadata[RasterOutputArtifactMetadata.Unsupported] = "true";
+            }
             else
             {
                 contentType = InferContentType(reference, kind);

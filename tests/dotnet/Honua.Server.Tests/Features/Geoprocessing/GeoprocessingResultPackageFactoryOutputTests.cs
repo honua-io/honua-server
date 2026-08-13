@@ -1,0 +1,96 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Geoprocessing;
+using Honua.TestKit.Attributes;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Geoprocessing;
+
+/// <summary>
+/// Result-package projection of typed raster output descriptors (#3089): staged
+/// descriptors surface as metadata-rich artifacts with no payload/provider value,
+/// and — per the review — a descriptor-shaped reference this release cannot
+/// interpret (for example a future contract version) must surface as an
+/// unavailable artifact, never leaking the raw descriptor JSON (store reference,
+/// object key, checksum) as the client-facing value.
+/// </summary>
+public sealed class GeoprocessingResultPackageFactoryOutputTests
+{
+    [UnitTest]
+    public void Create_UnsupportedDescriptorShapedReference_DoesNotLeakDescriptorJson()
+    {
+        var unsupported =
+            "{\"outputType\":\"staged-object\",\"outputContractVersion\":999," +
+            "\"jobId\":\"job-x\",\"attemptNumber\":1,\"outputName\":\"output1\"," +
+            "\"content\":{\"sizeBytes\":10,\"mediaType\":\"image/tiff\"}," +
+            "\"producingEngine\":\"gdal-worker\",\"provider\":\"Local\"," +
+            "\"storeReference\":\"gp-outputs\",\"objectKey\":\"gp/outputs/job-x/a1/output1/secret.tif\"}";
+
+        var package = GeoprocessingResultPackageFactory.Create(
+            CreateSucceededJob(unsupported), Substitute.For<IProcessCatalog>());
+
+        var artifact = package.Artifacts.Should().ContainSingle().Subject;
+        artifact.Uri.Should().BeNull();
+        artifact.ContentType.Should().BeNull();
+        artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Unsupported)
+            .WhoseValue.Should().Be("true");
+        artifact.Metadata.Should().NotContainKey(RasterOutputArtifactMetadata.Staged);
+    }
+
+    [UnitTest]
+    public void Create_SupportedStagedDescriptor_KeepsUriNullWithStagedMetadata()
+    {
+        var descriptor = new StagedObjectRasterOutputDescriptor
+        {
+            JobId = "job-x",
+            AttemptNumber = 1,
+            OutputName = "output1",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 10,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+            },
+            ProducingEngine = RasterOutputContract.GdalWorkerEngine,
+            Provider = Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.Local,
+            StoreReference = "gp-outputs",
+            ObjectKey = "gp/outputs/job-x/a1/output1/result.tif",
+        };
+
+        var package = GeoprocessingResultPackageFactory.Create(
+            CreateSucceededJob(RasterOutputJson.Serialize(descriptor)), Substitute.For<IProcessCatalog>());
+
+        var artifact = package.Artifacts.Should().ContainSingle().Subject;
+        artifact.Uri.Should().BeNull();
+        artifact.ContentType.Should().Be("image/tiff");
+        artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Staged);
+        artifact.Metadata[RasterOutputArtifactMetadata.ObjectKey].Should().Be(descriptor.ObjectKey);
+    }
+
+    private static ExecutionJobRecord CreateSucceededJob(string reference)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = "job-x",
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now.AddMinutes(-5),
+            UpdatedAt = now,
+            CompletedAt = now,
+            AttemptCount = 1,
+            ArtifactReferences = [reference],
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "raster.resample"
+            }
+        };
+    }
+}

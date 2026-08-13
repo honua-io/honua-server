@@ -14,6 +14,13 @@ public static class RasterOutputArtifactMetadata
     /// <summary>"true" when the artifact is a staged object served through the content route.</summary>
     public const string Staged = "raster.output.staged";
 
+    /// <summary>
+    /// "true" when the durable reference is descriptor-shaped but this release cannot
+    /// interpret it (for example a future contract version). The artifact is surfaced
+    /// as unavailable rather than leaking the raw descriptor JSON to clients.
+    /// </summary>
+    public const string Unsupported = "raster.output.unsupported";
+
     /// <summary>Producing attempt number.</summary>
     public const string Attempt = "raster.output.attempt";
 

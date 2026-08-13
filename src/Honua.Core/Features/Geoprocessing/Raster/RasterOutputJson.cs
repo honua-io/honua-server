@@ -54,6 +54,29 @@ public static class RasterOutputJson
     }
 
     /// <summary>
+    /// Whether a durable artifact reference is descriptor-shaped (a JSON object
+    /// carrying the <c>outputType</c> discriminator), regardless of whether this
+    /// release can deserialize it. Readers must never expose a descriptor-shaped
+    /// reference that fails <see cref="TryDeserialize"/> as a raw value: it carries
+    /// store-internal identities (store reference, object key) that are not
+    /// client-facing.
+    /// </summary>
+    /// <param name="artifactReference">Durable artifact reference string.</param>
+    /// <returns>Whether the reference looks like a raster output descriptor.</returns>
+    public static bool LooksLikeDescriptor(string? artifactReference)
+    {
+        if (string.IsNullOrWhiteSpace(artifactReference))
+        {
+            return false;
+        }
+
+        var trimmed = artifactReference.AsSpan().TrimStart();
+        return trimmed.Length > 0
+            && trimmed[0] == '{'
+            && trimmed.Contains(EnvelopeProbe, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Attempts to interpret a durable artifact reference as a typed raster output
     /// descriptor. Returns <see langword="false"/> for legacy references (data URIs,
     /// provider links, workspace paths) and malformed or unsupported-version JSON.
@@ -71,8 +94,7 @@ public static class RasterOutputJson
             return false;
         }
 
-        var trimmed = artifactReference.AsSpan().TrimStart();
-        if (trimmed.Length == 0 || trimmed[0] != '{' || !trimmed.Contains(EnvelopeProbe, StringComparison.Ordinal))
+        if (!LooksLikeDescriptor(artifactReference))
         {
             return false;
         }

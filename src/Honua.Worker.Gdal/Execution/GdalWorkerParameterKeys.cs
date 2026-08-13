@@ -52,6 +52,15 @@ internal static class GdalWorkerParameterKeys
     public const string GPServerOutputNamePrefix = "gpserver.output.";
 
     /// <summary>
+    /// Prefix of the optional post-success output registration intents (#3089;
+    /// mirrors <c>ExecutionJobParameterKeys.GeoprocessingOutputRegistrationPrefix</c>).
+    /// An output carrying an intent must be published as a staged object — the
+    /// registrar can only register staged artifacts, so publishing it inline would
+    /// permanently wedge the job's results path.
+    /// </summary>
+    public const string OutputRegistrationPrefix = "honua.geoprocessing.output_registration.";
+
+    /// <summary>
     /// Separator for the ordered process-definitions list.
     /// </summary>
     public const string MetadataListSeparator = "|";

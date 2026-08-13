@@ -406,7 +406,13 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
-        var resultsDocument = ToOgcResultsDocument(resultPackage, BaseUrlResolver.GetBaseUrl(context), jobId);
+        var resultsDocument = ToOgcResultsDocument(
+            resultPackage,
+            BaseUrlResolver.GetBaseUrl(context),
+            jobId,
+            context.RequestServices
+                .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
+            logger);
         return Results.Json(
             resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
@@ -534,12 +540,19 @@ internal static class JobEndpoints
             return ArtifactNotAvailableResult(jobId, artifactIndex);
         }
 
-        if (staged.Content.Checksum is { } checksum)
-        {
-            context.Response.Headers.ETag = $"\"{checksum.Algorithm}:{checksum.Value}\"";
-        }
+        // The checksum-derived ETag flows through Results.Stream (not a raw header) so
+        // the framework honours If-None-Match / If-Range conditional and range requests.
+        var entityTag = staged.Content.Checksum is { } checksum
+            ? new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{checksum.Algorithm}:{checksum.Value}\"")
+            : null;
 
-        return Results.Stream(stream, staged.Content.MediaType, enableRangeProcessing: true);
+        return Results.Stream(
+            stream,
+            staged.Content.MediaType,
+            fileDownloadName: null,
+            lastModified: null,
+            entityTag: entityTag,
+            enableRangeProcessing: true);
     }
 
     private static IResult ArtifactNotAvailableResult(string jobId, int artifactIndex)
@@ -1047,7 +1060,9 @@ internal static class JobEndpoints
     private static OgcResultsDocument ToOgcResultsDocument(
         AnalysisResultPackage resultPackage,
         string baseUrl,
-        string jobId)
+        string jobId,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore,
+        ILogger logger)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
@@ -1056,14 +1071,29 @@ internal static class JobEndpoints
 
             // Staged output artifacts (#3089) link through the canonical authenticated
             // content route; their durable Uri is deliberately null so no provider
-            // location or expiring URL leaks into result links.
+            // location or expiring URL leaks into result links. A link is only
+            // advertised when this host's registered output store can actually serve
+            // it — a worker-enabled/server-disabled (or mismatched) staging topology
+            // must surface as an explicit unavailable state, not a guaranteed 503.
             var href = artifact.Uri;
             if (href is null
                 && artifact.Metadata.TryGetValue(
                     Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var isStaged)
                 && string.Equals(isStaged, "true", StringComparison.OrdinalIgnoreCase))
             {
-                href = Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(baseUrl, jobId, index);
+                if (Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.CanServe(
+                        outputStore,
+                        artifact.Metadata.GetValueOrDefault(
+                            Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreProvider),
+                        artifact.Metadata.GetValueOrDefault(
+                            Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreReference)))
+                {
+                    href = Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(baseUrl, jobId, index);
+                }
+                else
+                {
+                    OgcProcessesLog.ArtifactStoreUnavailable(logger, jobId, index);
+                }
             }
 
             var outputName = ResolveUniqueOutputName(ResolveOutputName(artifact, outputs.Count), outputs);

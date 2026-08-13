@@ -119,14 +119,53 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
                 RasterOutputArtifactMetadata.RegisteredCatalogRasterId))
             .FirstOrDefault(value => value is not null);
 
-    private static GeoprocessingRasterOutputRegistrar CreateRegistrar(ICogStore cogStore)
+    [UnitTest]
+    public async Task EnsureRegistered_SetsDurableRetentionHoldOnRegisteredObject()
+    {
+        // The catalog row is permanent while the job record expires from Redis; the
+        // retention hold is what exempts the registered object from orphan sweeping.
+        var cogStore = new UniqueConstraintCogStore();
+        var objectStore = new HoldRecordingOutputObjectStore();
+        objectStore.Objects.Add($"gp/outputs/{JobId}/a1/{OutputName}/result.tif");
+        var registrar = CreateRegistrar(cogStore, objectStore);
+        var job = CreateSucceededJob("cog-catalog:7");
+
+        await registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+        // Replay must be idempotent for the hold as well.
+        await registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+
+        objectStore.Holds.Should().ContainSingle()
+            .Which.Should().Be($"gp/outputs/{JobId}/a1/{OutputName}/result.tif");
+    }
+
+    [UnitTest]
+    public async Task EnsureRegistered_StagedObjectMissingAtHoldTime_FailsClosed()
+    {
+        var cogStore = new UniqueConstraintCogStore();
+        var objectStore = new HoldRecordingOutputObjectStore(); // object absent
+        var registrar = CreateRegistrar(cogStore, objectStore);
+        var job = CreateSucceededJob("cog-catalog:7");
+
+        var act = () => registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("no longer exists");
+    }
+
+    private static GeoprocessingRasterOutputRegistrar CreateRegistrar(
+        ICogStore cogStore,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null)
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => cogStore);
         var provider = services.BuildServiceProvider();
         return new GeoprocessingRasterOutputRegistrar(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<GeoprocessingRasterOutputRegistrar>.Instance);
+            NullLogger<GeoprocessingRasterOutputRegistrar>.Instance,
+            outputStore);
     }
 
     private static AnalysisResultPackage GeoprocessingResultPackageFactoryProxy(ExecutionJobRecord job)
@@ -279,5 +318,64 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
                && row.Provider == request.Provider
                && string.Equals(row.Bucket, request.Bucket, StringComparison.Ordinal)
                && string.Equals(row.ObjectKey, request.ObjectKey, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Minimal output-store double for hold assertions: matches the descriptors'
+    /// (Local, gp-outputs) identity and records retention holds.
+    /// </summary>
+    private sealed class HoldRecordingOutputObjectStore
+        : Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore
+    {
+        public HashSet<string> Objects { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> Holds { get; } = new(StringComparer.Ordinal);
+
+        public CloudStorageProvider Provider => CloudStorageProvider.Local;
+
+        public string StoreReference => "gp-outputs";
+
+        public Task<RasterContentIdentity> WriteAsync(
+            string objectKey, Stream content, string mediaType, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<Stream?> OpenReadAsync(string objectKey, CancellationToken cancellationToken = default)
+            => Task.FromResult<Stream?>(null);
+
+        public Task<Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingStagedObjectInfo?> GetInfoAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+            => Task.FromResult<Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingStagedObjectInfo?>(null);
+
+        public async IAsyncEnumerable<Honua.Core.Features.Geoprocessing.Abstractions.GeoprocessingStagedObjectInfo> ListAsync(
+            string keyPrefix,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public Task<bool> DeleteAsync(string objectKey, CancellationToken cancellationToken = default)
+            => Task.FromResult(Objects.Remove(objectKey));
+
+        public Task<bool> TryAcquireReadLeaseAsync(
+            string objectKey, TimeSpan duration, CancellationToken cancellationToken = default)
+            => Task.FromResult(Objects.Contains(objectKey));
+
+        public Task<bool> HasActiveReadLeaseAsync(string objectKey, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> SetRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+        {
+            if (!Objects.Contains(objectKey))
+            {
+                return Task.FromResult(false);
+            }
+
+            Holds.Add(objectKey);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
+            => Task.FromResult(Holds.Contains(objectKey));
     }
 }

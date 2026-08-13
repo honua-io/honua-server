@@ -13,6 +13,15 @@ namespace Honua.Core.Features.Geoprocessing.Domain;
 /// one side resolve on the other. Staging is opt-in: when disabled, workers keep the
 /// legacy bounded inline publication path.
 /// </summary>
+/// <remarks>
+/// OPERATIONAL REQUIREMENT: this section must be configured IDENTICALLY (enabled state,
+/// provider, <see cref="StoreReference"/>, and — for the local provider — a shared
+/// <see cref="LocalRootPath"/> volume) on every host that runs the GDAL worker or serves
+/// results. A worker-enabled/server-disabled or mismatched-store split means the serving
+/// host cannot stream staged artifacts: result links are then withheld (surfaced as
+/// unavailable, logged per artifact), registration retention holds cannot be written,
+/// and no orphan sweeper reclaims that store.
+/// </remarks>
 public sealed class GeoprocessingOutputStagingOptions
 {
     /// <summary>Configuration section name.</summary>

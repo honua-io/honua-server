@@ -54,6 +54,29 @@ public sealed class OgcProcessesStagedArtifactContentTests
         response.Headers.ETag.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// #3089 review: the checksum ETag flows through Results.Stream, so conditional
+    /// requests (If-None-Match) are honoured with 304 instead of re-streaming.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_IfNoneMatchWithCurrentETag_Returns304()
+    {
+        var url =
+            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/results/artifacts/0/content";
+        var first = await _fixture.App.Client.GetAsync(url);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var etag = first.Headers.ETag;
+        etag.Should().NotBeNull();
+
+        using var conditional = new HttpRequestMessage(HttpMethod.Get, url);
+        conditional.Headers.IfNoneMatch.Add(etag!);
+        var second = await _fixture.App.Client.SendAsync(conditional);
+
+        second.StatusCode.Should().Be(HttpStatusCode.NotModified);
+    }
+
     [IntegrationTest]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
@@ -108,6 +131,115 @@ public sealed class OgcProcessesStagedArtifactContentTests
         // The link is a stable authenticated route, not a provider location.
         href.Should().NotContain("gp-outputs");
     }
+}
+
+/// <summary>
+/// #3089 review (split-host staging config): when the serving host has NO matching
+/// output store — worker-enabled/server-disabled or a mismatched StoreReference — the
+/// results document must not advertise content links that are guaranteed to fail, and
+/// the content route reports the store as unavailable. No descriptor internals leak.
+/// </summary>
+[Collection("Database.OgcApiData")]
+[Protocol(TestProtocols.OgcApiProcesses)]
+public sealed class OgcProcessesStagedArtifactStoreUnavailableTests
+    : IClassFixture<OgcProcessesStagedArtifactStoreUnavailableTestsFixture>
+{
+    private readonly OgcProcessesStagedArtifactStoreUnavailableTestsFixture _fixture;
+
+    public OgcProcessesStagedArtifactStoreUnavailableTests(
+        OgcProcessesStagedArtifactStoreUnavailableTestsFixture fixture)
+        => _fixture = fixture;
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_NoMatchingStore_DoesNotAdvertiseContentLink()
+    {
+        var response = await _fixture.App.Client.GetAsync(
+            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactStoreUnavailableTestsFixture.JobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+
+        // No dead link, no descriptor internals, no payload.
+        body.Should().NotContain("/results/artifacts/");
+        body.Should().NotContain("gp-outputs");
+        body.Should().NotContain("secret.tif");
+        body.Should().NotContain("base64");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_NoMatchingStore_Returns503()
+    {
+        var response = await _fixture.App.Client.GetAsync(
+            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactStoreUnavailableTestsFixture.JobId}/results/artifacts/0/content");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
+}
+
+/// <summary>
+/// Fixture hosting the server WITHOUT a registered staged-output store while a
+/// succeeded job references a staged artifact (the split-host misconfiguration).
+/// </summary>
+public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAsyncLifetime
+{
+    public const string JobId = "gp-staged-storeless-001";
+
+    public WebAppFixture App { get; }
+
+    public OgcProcessesStagedArtifactStoreUnavailableTestsFixture()
+    {
+        var descriptor = new StagedObjectRasterOutputDescriptor
+        {
+            JobId = JobId,
+            AttemptNumber = 1,
+            OutputName = "outputRaster",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 1024,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+            },
+            ProducingEngine = RasterOutputContract.GdalWorkerEngine,
+            Provider = CloudStorageProvider.Local,
+            StoreReference = "gp-outputs",
+            ObjectKey = $"gp/outputs/{JobId}/a1/outputRaster/secret.tif",
+        };
+
+        var now = DateTimeOffset.UtcNow;
+        var succeeded = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now.AddMinutes(-10),
+            UpdatedAt = now,
+            CompletedAt = now,
+            AttemptCount = 1,
+            ArtifactReferences = [RasterOutputJson.Serialize(descriptor)],
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "raster.resample"
+            }
+        };
+
+        var mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        mockJobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(succeeded);
+        mockJobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+
+        App = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(mockJobStore));
+    }
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
 }
 
 /// <summary>
