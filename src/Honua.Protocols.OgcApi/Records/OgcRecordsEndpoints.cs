@@ -371,7 +371,11 @@ internal static class OgcRecordsEndpoints
             .Where(item => item.Primary is not null)
             .OrderByDescending(item => item.HasStorageLayer)
             .ThenBy(item => item.LayerSort)
+            // Multiple protocol resources may share one legacy storage-layer id.
+            // Keep the feature dataset as the canonical layer:{id} catalog record.
+            .ThenBy(item => item.Resource.Type == MetadataV2ResourceType.FeatureDataset ? 0 : 1)
             .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
+        var resourceRecordIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in resourceRecords)
         {
             // Pick the primary publication if any (prefer IsPrimary, else first).
@@ -386,7 +390,11 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            records.Add(CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl));
+            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl);
+            if (resourceRecordIds.Add(record.Feature.Id))
+            {
+                records.Add(record);
+            }
         }
 
         return records;

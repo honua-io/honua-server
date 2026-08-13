@@ -137,7 +137,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
             Publications = publications,
             StorageBindings = [.. snapshot.Graph.StorageBindings, secondaryBinding],
             Revision = snapshot.Graph.Revision + 1
-        });
+        }, schema: _fixture.CurrentSchema);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
