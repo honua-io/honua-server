@@ -36,6 +36,7 @@ public sealed class IdentityEntitlementGateTests
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("Saml:Enabled", "true");
                 builder.UseSetting("Scim:BearerToken", ScimToken);
+                builder.UseSetting("Scim:OidcIssuer", "https://issuer.example.com");
                 if (devGrantEdition is not null)
                 {
                     builder.UseSetting("Licensing:DevGrantEdition", devGrantEdition);

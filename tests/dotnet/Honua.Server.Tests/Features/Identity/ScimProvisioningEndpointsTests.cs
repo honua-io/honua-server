@@ -24,6 +24,7 @@ namespace Honua.Server.Tests.Features.Identity;
 public class ScimProvisioningEndpointsTests : IAsyncLifetime
 {
     private const string ScimToken = "scim-integration-bearer-token";
+    private const string ScimOidcIssuer = "https://issuer.example.com";
     private static readonly JsonSerializerOptions _json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -46,6 +47,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
                 // in IdentityEntitlementGateTests).
                 builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
                 builder.UseSetting("Scim:BearerToken", ScimToken);
+                builder.UseSetting("Scim:OidcIssuer", ScimOidcIssuer);
             });
     }
 
@@ -65,6 +67,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
         {
             userName = "alice@example.com",
+            externalId = "oidc|alice",
             displayName = "Alice Example",
             active = true,
             emails = new[] { new { value = "alice@example.com", primary = true } },
@@ -84,12 +87,78 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /scim/v2/Users")]
+    public async Task CreateUser_WithoutExternalId_ReturnsInvalidValue()
+    {
+        var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
+        {
+            userName = "missing-subject@example.com",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
+        Assert.Contains("externalId", error.GetProperty("detail").GetString(), StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Users")]
+    public async Task CreateUser_WithExternalId_RoundTripsAndResolvesByStableSubject()
+    {
+        // #3141: the IdP-owned externalId (conventionally the OIDC subject) must persist,
+        // round-trip on the SCIM resource, and resolve the SAME managed record as the
+        // userName — deferred security snapshots capture the OIDC subject, not the SCIM
+        // userName.
+        var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
+        {
+            userName = "subject-user@example.com",
+            externalId = "auth0|abc123",
+            displayName = "Subject User",
+            active = true,
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var user = await ReadAsync(response);
+        Assert.Equal("auth0|abc123", user.GetProperty("externalId").GetString());
+
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        var bySubject = await store.GetUserAsync("auth0|abc123");
+        Assert.NotNull(bySubject);
+        Assert.Equal("subject-user@example.com", bySubject!.UserId);
+        Assert.Equal(ScimOidcIssuer, bySubject.ExternalIssuer);
+        Assert.NotNull(await store.GetUserByPrincipalIdAsync("auth0|abc123", ScimOidcIssuer));
+        Assert.Null(await store.GetUserByPrincipalIdAsync("auth0|abc123", "https://other.example.com"));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Users")]
+    public async Task CreateUser_OverlongPersistedFields_ReturnInvalidValue()
+    {
+        object[] invalidUsers =
+        [
+            new { userName = new string('u', 257) },
+            new { userName = "long-external@example.com", externalId = new string('s', 257) },
+            new { userName = "long-display@example.com", displayName = new string('d', 513) },
+            new { userName = "long-email@example.com", emails = new[] { new { value = new string('e', 321), primary = true } } },
+        ];
+
+        foreach (var invalidUser in invalidUsers)
+        {
+            var response = await _client.PostAsJsonAsync("/scim/v2/Users", invalidUser);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var error = await ReadAsync(response);
+            Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Users")]
     public async Task CreateUser_DuplicateUserName_ReturnsConflict()
     {
         await CreateUserAsync("dup@example.com");
         var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
         {
             userName = "dup@example.com",
+            externalId = "oidc|dup-duplicate",
         });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -137,6 +206,43 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var user = await ReadAsync(response);
         Assert.Equal("Renamed Person", user.GetProperty("displayName").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Users/{id}")]
+    public async Task ReplaceUser_SetActiveFalse_RevokesExistingRoles()
+    {
+        const string userName = "put-deactivate@example.com";
+        await CreateUserAsync(userName);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        await store.UpdateUserRolesAsync(userName, ["editor"]);
+
+        var response = await _client.PutAsJsonAsync($"/scim/v2/Users/{userName}", new
+        {
+            userName,
+            active = false,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var managed = await store.GetUserAsync(userName);
+        Assert.False(managed!.IsActive);
+        Assert.Empty(managed.Roles);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Users/{id}")]
+    public async Task ReplaceUser_OverlongExternalId_ReturnsInvalidValue()
+    {
+        await CreateUserAsync("replace-invalid@example.com");
+        var response = await _client.PutAsJsonAsync("/scim/v2/Users/replace-invalid@example.com", new
+        {
+            userName = "replace-invalid@example.com",
+            externalId = new string('s', 257),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
     }
 
     [IntegrationTest]
@@ -195,6 +301,59 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
 
         var list = await _client.GetAsync("/scim/v2/Groups");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Groups")]
+    [Endpoint("PUT /scim/v2/Groups/{id}")]
+    [Endpoint("PATCH /scim/v2/Groups/{id}")]
+    public async Task GroupWrites_OverlongPersistedFields_ReturnInvalidValue()
+    {
+        var overlongDisplayName = await _client.PostAsJsonAsync("/scim/v2/Groups", new
+        {
+            displayName = new string('g', 257),
+        });
+        await AssertInvalidValueAsync(overlongDisplayName);
+
+        var create = await _client.PostAsJsonAsync("/scim/v2/Groups", new { displayName = "length-validation" });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var groupId = (await ReadAsync(create)).GetProperty("id").GetString()!;
+
+        var overlongPutMember = await _client.PutAsJsonAsync($"/scim/v2/Groups/{groupId}", new
+        {
+            displayName = "length-validation",
+            members = new[] { new { value = new string('m', 257) } },
+        });
+        await AssertInvalidValueAsync(overlongPutMember);
+
+        var overlongPatchMember = await _client.PatchAsync($"/scim/v2/Groups/{groupId}", JsonContent.Create(new
+        {
+            Operations = new[]
+            {
+                new { op = "add", path = "members", value = new[] { new { value = new string('p', 257) } } },
+            },
+        }));
+        await AssertInvalidValueAsync(overlongPatchMember);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Groups/{id}")]
+    public async Task ReplaceGroup_DuplicateDisplayName_ReturnsConflict()
+    {
+        var first = await _client.PostAsJsonAsync("/scim/v2/Groups", new { displayName = "rename-source" });
+        var second = await _client.PostAsJsonAsync("/scim/v2/Groups", new { displayName = "rename-target" });
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        var firstId = (await ReadAsync(first)).GetProperty("id").GetString()!;
+
+        var response = await _client.PutAsJsonAsync($"/scim/v2/Groups/{firstId}", new
+        {
+            displayName = "rename-target",
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("uniqueness", error.GetProperty("scimType").GetString());
     }
 
     [IntegrationTest]
@@ -373,10 +532,18 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
         {
             userName,
+            externalId = $"oidc|{userName}",
             displayName = userName,
             active = true,
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    private static async Task AssertInvalidValueAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
     }
 
     private static async Task<JsonElement> ReadAsync(HttpResponseMessage response)

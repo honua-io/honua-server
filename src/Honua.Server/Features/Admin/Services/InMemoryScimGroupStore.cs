@@ -90,6 +90,12 @@ internal sealed class InMemoryScimGroupStore(InMemoryUserStore userStore) : ISci
 
             var newMembers = NormalizeMembers(provisioning.MemberUserIds);
             var newName = provisioning.DisplayName.Trim();
+            if (_groups.Values.Any(group =>
+                !group.GroupId.Equals(existing.GroupId, StringComparison.OrdinalIgnoreCase) &&
+                group.DisplayName.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($"A group named '{newName}' already exists.");
+            }
 
             // A rename re-maps the role: revoke the old role from everyone, then grant the new.
             var renamed = !existing.DisplayName.Equals(newName, StringComparison.OrdinalIgnoreCase);

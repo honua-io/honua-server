@@ -52,9 +52,11 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
-        // Seed test users
-        var store = _fixture.Services.GetRequiredService<IUserStore>() as InMemoryUserStore;
-        store?.Seed(new ManagedUser
+        // Seed test users. The registered IUserStore is the durable PostgresUserStore in
+        // the fixture host (#3141) — its records live in the shared honua.managed_users
+        // table, so seeding is an upsert that restores the baseline before every test.
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        await SeedUserAsync(store, new ManagedUser
         {
             UserId = "user-1",
             DisplayName = "Test User One",
@@ -62,7 +64,7 @@ public class UserManagementEndpointsTests : IAsyncLifetime
             ProvisioningSource = "oidc",
             Roles = ["viewer"],
         });
-        store?.Seed(new ManagedUser
+        await SeedUserAsync(store, new ManagedUser
         {
             UserId = "user-2",
             DisplayName = "Test User Two",
@@ -70,6 +72,22 @@ public class UserManagementEndpointsTests : IAsyncLifetime
             ProvisioningSource = "scim",
             Roles = ["editor"],
         });
+    }
+
+    private static async Task SeedUserAsync(IUserStore store, ManagedUser user)
+    {
+        switch (store)
+        {
+            case InMemoryUserStore inMemory:
+                inMemory.Seed(user);
+                break;
+            case Honua.Db.Postgres.Features.Identity.PostgresUserStore postgres:
+                await postgres.SeedAsync(user);
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"No test seeding path for IUserStore implementation '{store.GetType().Name}'.");
+        }
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -153,6 +171,18 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         var request = new UpdateUserRolesRequest { Roles = ["viewer"] };
         var response = await _client.PutAsJsonAsync("/api/v1/admin/users/nonexistent/roles", request, _jsonOptions);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/users/{id}/roles")]
+    public async Task UpdateUserRoles_OverlongRole_ReturnsBadRequestWithoutChangingRoles()
+    {
+        var request = new UpdateUserRolesRequest { Roles = [new string('r', 257)] };
+        var response = await _client.PutAsJsonAsync("/api/v1/admin/users/user-1/roles", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        Assert.Equal(["viewer"], (await store.GetUserAsync("user-1"))!.Roles);
     }
 
     [IntegrationTest]

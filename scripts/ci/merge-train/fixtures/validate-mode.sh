@@ -72,3 +72,20 @@ self_chain_if="$(awk '
 grep -Fq "steps.mode.outputs.train_reset_state == '0'" <<<"${self_chain_if}" \
   || { printf 'FAIL: self-chain condition does not exclude reset-only runs: %s\n' "${self_chain_if}" >&2; exit 1; }
 printf 'PASS: self-chain excludes reset-only runs\n'
+
+# A live operator may opt into Bedrock judgment or autofix for one dispatch,
+# but continuous draining must return to the deterministic defaults. Otherwise
+# one opt-in run permanently turns the optional/costly path on for the queue.
+self_chain_step="$(awk '
+  /^      - name: Self-chain next run while PRs remain$/ { found=1 }
+  found { print }
+' "${WORKFLOW}")"
+grep -Fq -- '-f use_llm=false' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not explicitly disable optional LLM judgment\n' >&2; exit 1; }
+grep -Fq -- '-f use_autofix=false' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not explicitly disable optional autofix\n' >&2; exit 1; }
+if grep -Eq -- '-f use_(llm|autofix)=true' <<<"${self_chain_step}"; then
+  printf 'FAIL: self-chain silently enables an optional Bedrock path\n' >&2
+  exit 1
+fi
+printf 'PASS: self-chain preserves deterministic LLM/autofix defaults\n'
