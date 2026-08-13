@@ -7,7 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 namespace Honua.Server.Features.Admin.TileOperations;
 
 /// <summary>
-/// Resolves protocol-facing tile-operation targets to the storage-layer identities embedded in
+/// Resolves protocol-facing tile-operation targets to the publication layer indices embedded in
 /// generated tile cache keys.
 /// </summary>
 internal static class TileCacheTargetResolver
@@ -35,7 +35,7 @@ internal static class TileCacheTargetResolver
         }
 
         return snapshot.PublicationsForService(service.Metadata.Id)
-            .Select(snapshot.ResolveStorageLayerId)
+            .Select(static publication => publication.LayerIndex)
             .Where(static layerId => layerId.HasValue)
             .Select(static layerId => layerId!.Value)
             .Distinct()

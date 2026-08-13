@@ -788,7 +788,7 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
-    public async Task Delete_ServiceFilter_UsesStorageLayerIdInsteadOfServiceLocalIndex()
+    public async Task Delete_ServiceFilter_UsesPublicationLayerIndexInsteadOfStorageLayerId()
     {
         const string storageLayerKey = "prefix/imageserver/tiles/42/webmercatorquad/default/abc/2/1/1.png";
         const string localIndexKey = "prefix/imageserver/tiles/7/webmercatorquad/default/abc/2/1/1.png";
@@ -812,8 +812,8 @@ public sealed class TileCacheLifecycleExecutionTests
         }, index, storage, graphProvider: graphProvider);
 
         result.Status.Should().Be(OperationStatus.Completed);
-        index.Removed.Should().BeEquivalentTo([storageLayerKey]);
-        index.Remaining.Should().BeEquivalentTo([localIndexKey]);
+        index.Removed.Should().BeEquivalentTo([localIndexKey]);
+        index.Remaining.Should().BeEquivalentTo([storageLayerKey]);
     }
 
     [UnitTest]
