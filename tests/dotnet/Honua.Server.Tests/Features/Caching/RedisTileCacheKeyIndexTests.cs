@@ -220,7 +220,7 @@ public sealed class RedisTileCacheKeyIndexTests
     }
 
     [Fact]
-    public async Task ReadPagesAsync_MigratesLegacyEntriesIntoStableMembership()
+    public async Task ReadPagesAsync_MigratesOnlyEntriesWithCompleteLifecycleMetadata()
     {
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
@@ -251,12 +251,15 @@ public sealed class RedisTileCacheKeyIndexTests
         await database.Received(1).ScriptEvaluateAsync(
             Arg.Is<string>(script =>
                 script.Contains("HEXISTS', KEYS[4]", StringComparison.Ordinal) &&
-                script.Contains("HSET', KEYS[4]", StringComparison.Ordinal) &&
+                script.Contains("ZSCORE', KEYS[8]", StringComparison.Ordinal) &&
                 script.Contains("ZADD', KEYS[2]", StringComparison.Ordinal) &&
+                script.Contains("ZREM', KEYS[1]", StringComparison.Ordinal) &&
+                script.Contains("HDEL', KEYS[6]", StringComparison.Ordinal) &&
                 script.Contains("SET', KEYS[3]", StringComparison.Ordinal)),
             Arg.Is<RedisKey[]>(keys =>
-                keys.Length == 5 &&
-                keys.Any(key => key.ToString() == "honua:tile-cache:members-migrated:v2")),
+                keys.Length == 8 &&
+                keys.Any(key => key.ToString() == "honua:tile-cache:members-migrated:v3") &&
+                keys.Any(key => key.ToString() == "honua:tile-cache:storage-expiration")),
             Arg.Any<RedisValue[]>(),
             CommandFlags.DemandMaster);
     }
@@ -394,5 +397,49 @@ public sealed class RedisTileCacheKeyIndexTests
             Arg.Any<RedisKey>(),
             Arg.Any<RedisValue>(),
             Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task ExecuteSerializedAsync_CompensationRemovesIndexOnlyForCurrentLeaseOwner()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.LockTakeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.LockReleaseAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)1));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        await index.ExecuteSerializedAsync(
+            "tile-key",
+            async context =>
+            {
+                context.TryRemoveIndexIfLeaseOwnedAsync.Should().NotBeNull();
+                (await context.TryRemoveIndexIfLeaseOwnedAsync!(CancellationToken.None)).Should().BeTrue();
+            });
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal) &&
+                script.Contains("redis.call('ZREM', KEYS[8]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 8 &&
+                keys[0].ToString() == "honua:tile-cache:mutation:tile-key"),
+            Arg.Is<RedisValue[]>(values => values.Length == 2 && values[1].ToString() == "tile-key"),
+            CommandFlags.DemandMaster);
     }
 }

@@ -202,11 +202,10 @@ internal static class GeoServicesCloudTileCache
                             HonuaTelemetry.RecordException(Activity.Current, rollbackException);
                         }
 
-                        if (storageRolledBack)
+                        if (storageRolledBack
+                            && mutationContext.TryRemoveIndexIfLeaseOwnedAsync is { } tryRemoveIndex)
                         {
-                            await keyIndex.RemoveAsync(
-                                    objectKey,
-                                    mutationContext.LeaseLostToken)
+                            _ = await tryRemoveIndex(mutationContext.LeaseLostToken)
                                 .ConfigureAwait(false);
                         }
 

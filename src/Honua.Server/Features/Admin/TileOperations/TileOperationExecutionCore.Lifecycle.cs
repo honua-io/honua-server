@@ -477,9 +477,9 @@ internal sealed partial class TileOperationExecutionCore
         private readonly string? _format;
         private readonly int _minZoom;
         private readonly int _maxZoom;
-        private readonly double _minLon;
+        private readonly double _westLon;
         private readonly double _minLat;
-        private readonly double _maxLon;
+        private readonly double _eastLon;
         private readonly double _maxLat;
         private readonly bool _hasBbox;
         private readonly string? _tenantScope;
@@ -492,9 +492,9 @@ internal sealed partial class TileOperationExecutionCore
             string? format,
             int minZoom,
             int maxZoom,
-            double minLon,
+            double westLon,
             double minLat,
-            double maxLon,
+            double eastLon,
             double maxLat,
             bool hasBbox,
             string? tenantScope)
@@ -506,9 +506,9 @@ internal sealed partial class TileOperationExecutionCore
             _format = format;
             _minZoom = minZoom;
             _maxZoom = maxZoom;
-            _minLon = minLon;
+            _westLon = westLon;
             _minLat = minLat;
-            _maxLon = maxLon;
+            _eastLon = eastLon;
             _maxLat = maxLat;
             _hasBbox = hasBbox;
             _tenantScope = tenantScope;
@@ -551,9 +551,9 @@ internal sealed partial class TileOperationExecutionCore
                 format,
                 minZoom,
                 maxZoom,
-                Math.Min(bbox[0], bbox[2]),
+                bbox[0],
                 Math.Min(bbox[1], bbox[3]),
-                Math.Max(bbox[0], bbox[2]),
+                bbox[2],
                 Math.Max(bbox[1], bbox[3]),
                 hasBbox,
                 tenantScope);
@@ -610,11 +610,14 @@ internal sealed partial class TileOperationExecutionCore
             }
 
             var n = 1 << z;
-            var xMin = LonToTileX(_minLon, z, n);
-            var xMax = LonToTileX(_maxLon, z, n);
+            var xWest = LonToTileX(_westLon, z, n);
+            var xEast = LonToTileX(_eastLon, z, n);
             var yMin = LatToTileY(_maxLat, z, n);
             var yMax = LatToTileY(_minLat, z, n);
-            return parsed.X >= xMin && parsed.X <= xMax && parsed.Y >= yMin && parsed.Y <= yMax;
+            var xMatches = _westLon <= _eastLon
+                ? parsed.X >= xWest && parsed.X <= xEast
+                : parsed.X >= xWest || parsed.X <= xEast;
+            return xMatches && parsed.Y >= yMin && parsed.Y <= yMax;
         }
     }
 }

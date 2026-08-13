@@ -25,9 +25,15 @@ public enum TileCacheExpirationMarkResult
 /// mutations must use this token so caller cancellation cannot interrupt cleanup, while lease
 /// loss prevents cleanup from racing a newer owner.
 /// </param>
+/// <param name="TryRemoveIndexIfLeaseOwnedAsync">
+/// Atomically removes the current key's lifecycle index state only while this mutation still owns
+/// its distributed lease. Compensation must use this callback rather than treating an uncancelled
+/// token as proof of ownership.
+/// </param>
 public readonly record struct TileCacheMutationContext(
     CancellationToken CancellationToken,
-    CancellationToken LeaseLostToken);
+    CancellationToken LeaseLostToken,
+    Func<CancellationToken, Task<bool>>? TryRemoveIndexIfLeaseOwnedAsync = null);
 
 /// <summary>
 /// Serializes object-storage mutations for one generated tile key across replicas. Implementations

@@ -783,6 +783,38 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Remaining.Should().BeEquivalentTo([outside]);
     }
 
+    [UnitTest]
+    public async Task Delete_WithAntimeridianBbox_RemovesOnlyDatelineTiles()
+    {
+        const string westernDateline = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        const string easternDateline = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/3/1.png";
+        const string middle = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/1/1.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(westernDateline, 100);
+        index.Seed(easternDateline, 100);
+        index.Seed(middle, 100);
+
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad",
+                MinZoom = 2,
+                MaxZoom = 2,
+                Bbox = [170d, -80d, -170d, 80d]
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        index.Removed.Should().BeEquivalentTo([westernDateline, easternDateline]);
+        index.Remaining.Should().BeEquivalentTo([middle]);
+    }
+
     private static async Task<TileOperationProgress> ExecuteAsync(
         TileOperationStartRequest request,
         ITileCacheKeyIndex keyIndex,
