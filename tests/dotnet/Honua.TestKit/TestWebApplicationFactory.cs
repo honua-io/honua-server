@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.TestKit;
 
@@ -36,6 +37,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
         => ConfigureForTests(builder);
+
+    protected override IHost CreateHost(IHostBuilder builder)
+        => ConfiguredWebApplicationFactory.StartInTestEnvironment(() => base.CreateHost(builder));
 
     internal static void ConfigureForTests(IWebHostBuilder builder)
     {

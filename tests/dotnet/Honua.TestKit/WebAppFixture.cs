@@ -87,16 +87,6 @@ public sealed class WebAppFixture : IAsyncLifetime
     public const string SharedAdminPassword = "test-admin-password";
     private static readonly TimeSpan _defaultTestClientTimeout = TimeSpan.FromMinutes(5);
 
-    public WebAppFixture()
-    {
-        // Program reads these host values before WebApplicationFactory's
-        // ConfigureWebHost callback. Set them at fixture construction so the test-only
-        // schema middleware is registered even when host startup precedes InitializeAsync.
-        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Test");
-        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
-        Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", "true");
-    }
-
     public HttpClient Client { get; private set; } = null!;
 
     public PostgresFixture Postgres => _useSharedServer
