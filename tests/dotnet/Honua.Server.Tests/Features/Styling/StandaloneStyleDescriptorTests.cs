@@ -62,6 +62,7 @@ public sealed class StandaloneStyleDescriptorTests
         var descriptor = StandaloneStyleDescriptor.FromMapLibre("roads", style);
 
         Assert.Equal(22, descriptor.Id);
+        Assert.True(descriptor.IsBoundToStorageLayer);
         Assert.Equal(MetadataV2GeometryType.LineString, descriptor.GeometryType);
     }
 
@@ -80,6 +81,7 @@ public sealed class StandaloneStyleDescriptorTests
         var descriptor = StandaloneStyleDescriptor.FromMapLibre("roads", style);
 
         Assert.Equal(7, descriptor.Id);
+        Assert.True(descriptor.IsBoundToStorageLayer);
     }
 
     [UnitTest]
@@ -102,6 +104,25 @@ public sealed class StandaloneStyleDescriptorTests
         var descriptor = StandaloneStyleDescriptor.FromMapLibre("roads", style);
 
         Assert.Equal(0, descriptor.Id);
+        Assert.False(descriptor.IsBoundToStorageLayer);
         Assert.Equal(MetadataV2GeometryType.LineString, descriptor.GeometryType);
+    }
+
+    [UnitTest]
+    public void FromMapLibre_LayerZero_RemainsBound()
+    {
+        const string style =
+            """
+            {
+              "version": 8,
+              "sources": { "layer-0": { "type": "vector" } },
+              "layers": [ { "id": "parcels", "type": "fill", "source": "layer-0" } ]
+            }
+            """;
+
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre("parcels", style);
+
+        Assert.Equal(0, descriptor.Id);
+        Assert.True(descriptor.IsBoundToStorageLayer);
     }
 }

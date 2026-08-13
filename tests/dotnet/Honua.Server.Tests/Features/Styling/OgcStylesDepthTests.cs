@@ -338,6 +338,51 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_EsriDrawingInfo_UnboundStyle_Returns400WithoutRebindingToLayerZero()
+    {
+        const string unboundStyle =
+            """
+            {
+              "version": 8,
+              "sources": {
+                "external": {
+                  "type": "vector",
+                  "tiles": ["https://example.test/tiles/{z}/{x}/{y}.mvt"]
+                }
+              },
+              "layers": [
+                { "id": "external-points", "type": "circle", "source": "external" }
+              ]
+            }
+            """;
+        var client = _fixture.CreateAdminClient();
+        var styleId = $"unbound-{Guid.NewGuid():N}";
+        using (var content = new StringContent(unboundStyle, Encoding.UTF8, MapboxStyleMediaType))
+        using (var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content })
+        {
+            request.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        using var drawingInfo = new StringContent(
+            SimpleRendererDrawingInfoJson,
+            Encoding.UTF8,
+            EsriDrawingInfoMediaType);
+        var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", drawingInfo);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("not bound to a Honua layer");
+
+        var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        fetched.Be200Ok();
+        using var document = JsonDocument.Parse(await fetched.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("sources").TryGetProperty("external", out _).Should().BeTrue();
+        document.RootElement.GetProperty("sources").TryGetProperty("layer-0", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
     public async Task PutStyle_EsriDrawingInfo_MalformedJson_Returns400()
     {
         var client = _fixture.CreateAdminClient();

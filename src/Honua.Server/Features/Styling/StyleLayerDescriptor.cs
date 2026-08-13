@@ -8,7 +8,8 @@ namespace Honua.Server.Features.Styling;
 internal readonly record struct StyleLayerDescriptor(
     int Id,
     string Name,
-    MetadataV2GeometryType GeometryType)
+    MetadataV2GeometryType GeometryType,
+    bool IsBoundToStorageLayer = true)
 {
     public static StyleLayerDescriptor FromResource(MetadataV2Resource resource, int storageLayerId)
     {

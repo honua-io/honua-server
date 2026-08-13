@@ -27,7 +27,7 @@ internal static class StandaloneStyleDescriptor
     /// <returns>A descriptor usable by the style converters.</returns>
     public static StyleLayerDescriptor FromMapLibre(string styleId, string mapLibreStyleJson)
     {
-        var layerId = 0;
+        int? layerId = null;
         var geometryType = GeometryType.None;
 
         try
@@ -47,7 +47,11 @@ internal static class StandaloneStyleDescriptor
             // their default documents for GeometryType.None.
         }
 
-        return new StyleLayerDescriptor(layerId, styleId, geometryType);
+        return new StyleLayerDescriptor(
+            layerId ?? 0,
+            styleId,
+            geometryType,
+            IsBoundToStorageLayer: layerId.HasValue);
     }
 
     /// <summary>
@@ -180,30 +184,31 @@ internal static class StandaloneStyleDescriptor
     /// Resolves the storage-layer id the conversion must be bound to, preferring the source
     /// the symbolizing layer actually references.
     /// </summary>
-    private static int ResolveStorageLayerId(JsonElement root, string? sourceName)
+    private static int? ResolveStorageLayerId(JsonElement root, string? sourceName)
     {
         if (!root.TryGetProperty("sources", out var sources) || sources.ValueKind != JsonValueKind.Object)
         {
-            return 0;
+            return null;
         }
 
         // Bind to the source the selected layer draws from. With several layer-* sources
         // present, declaration order says nothing about which one the style symbolizes, and
         // picking the wrong one silently repoints the rebuilt canonical document (and its
         // tile URL) at an unrelated data layer.
-        if (!string.IsNullOrEmpty(sourceName)
-            && sources.TryGetProperty(sourceName, out _)
-            && TryParseStorageLayerId(sourceName, out var boundLayerId))
+        if (!string.IsNullOrEmpty(sourceName))
         {
-            return boundLayerId;
+            return sources.TryGetProperty(sourceName, out _)
+                && TryParseStorageLayerId(sourceName, out var boundLayerId)
+                    ? boundLayerId
+                    : null;
         }
 
-        // The symbolizing layer named no usable Honua source, so fall back to the document's
-        // own binding — but only while it is unambiguous. Several distinct layer-* sources
+        // The symbolizing layer named no source, so fall back to the document's own binding —
+        // but only while it is unambiguous. Several distinct layer-* sources
         // with nothing selecting between them is a genuine ambiguity: report "no layer"
         // rather than guessing, so the converters use their geometry-only default instead of
         // rebuilding the style against an arbitrary layer.
-        var resolved = 0;
+        int? resolved = null;
         foreach (var name in sources.EnumerateObject().Select(source => source.Name))
         {
             if (!TryParseStorageLayerId(name, out var candidate))
@@ -211,9 +216,9 @@ internal static class StandaloneStyleDescriptor
                 continue;
             }
 
-            if (resolved != 0 && resolved != candidate)
+            if (resolved.HasValue && resolved.Value != candidate)
             {
-                return 0;
+                return null;
             }
 
             resolved = candidate;

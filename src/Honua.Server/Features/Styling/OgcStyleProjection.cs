@@ -490,6 +490,13 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         // Both converters are geometry-driven. Prefer the geometry the submitted renderer
         // symbolizes; fall back to the geometry the stored canonical style already uses.
         var descriptor = StandaloneStyleDescriptor.FromMapLibre(styleId, existing.MapLibreStyleJson);
+        if (!descriptor.IsBoundToStorageLayer)
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The stored style is not bound to a Honua layer, so an Esri drawingInfo update cannot preserve its source. Submit a MapLibre style document instead.");
+        }
+
         var geometryType = StandaloneStyleDescriptor.InferGeometryType(drawingInfo);
         if (geometryType == MetadataV2GeometryType.None)
         {
