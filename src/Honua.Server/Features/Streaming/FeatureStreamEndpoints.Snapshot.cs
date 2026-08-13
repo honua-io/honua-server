@@ -175,7 +175,11 @@ internal static partial class FeatureStreamEndpoints
                 FeatureCount = 0,
                 // False is one byte longer than true, so it safely reserves either outcome.
                 Complete = false,
-                Features = []
+                Features = [],
+                // The emitted frame receives a fresh UtcNow timestamp. Reserve the longest
+                // DateTimeOffset JSON representation so fractional-second trimming can never
+                // make the later payload larger than the measured empty envelope.
+                Timestamp = DateTimeOffset.MaxValue
             };
 
         private static FeatureStreamSnapshotFeature ToBatchedFeature(FeatureStreamSnapshotFeatureFrame frame)
