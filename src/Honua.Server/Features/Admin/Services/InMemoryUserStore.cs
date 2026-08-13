@@ -11,11 +11,15 @@ namespace Honua.Server.Features.Admin.Services;
 /// In-memory user store for the admin API surface. Also backs the SCIM 2.0 provisioning
 /// surface (<see cref="IScimUserStore"/>, #510) over the same record set so users created by
 /// an identity provider are immediately visible to the admin endpoints.
-/// Will be replaced by a persistent implementation when #496/#498 land.
+/// Default for no-database/test profiles only: on Postgres profiles the durable
+/// <c>PostgresUserStore</c> registered by <c>AddPostgreSqlServices</c> takes precedence
+/// (#3141), because a node-local store cannot answer managed-membership queries across
+/// replicas or restarts (honua-server#3081).
 /// </summary>
 internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 {
     private readonly ConcurrentDictionary<string, ManagedUser> _users = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _externalIdWriteLock = new();
 
     /// <summary>
     /// Seeds a user into the store (for testing).
@@ -55,8 +59,47 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
     public Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        _users.TryGetValue(userId, out var user);
-        return Task.FromResult(user);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Task.FromResult<ManagedUser?>(null);
+        }
+
+        if (_users.TryGetValue(userId, out var user))
+        {
+            return Task.FromResult<ManagedUser?>(user);
+        }
+
+        // Fall back to the stable external subject (SCIM externalId / OIDC sub) so a
+        // deferred security snapshot keyed by the OIDC subject resolves the managed record
+        // even when the SCIM userName differs from the subject (honua-server#3141).
+        var matches = _users.Values
+            .Where(user => ExternalIdEquals(user, userId, issuer: null, requireIssuerMatch: false))
+            .Take(2)
+            .ToArray();
+        return Task.FromResult(matches.Length == 1 ? matches[0] : null);
+    }
+
+    public Task<ManagedUser?> GetUserByPrincipalIdAsync(
+        string principalId,
+        string? issuer = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(principalId))
+        {
+            return Task.FromResult<ManagedUser?>(null);
+        }
+
+        // Authentication snapshots are keyed by the IdP-owned subject. Resolve that
+        // namespace first so an unrelated record whose userId happens to equal the
+        // subject cannot contribute its roles.
+        var externalUser = FindByExternalIdInternal(principalId, issuer);
+        if (issuer is not null)
+        {
+            return Task.FromResult(externalUser);
+        }
+
+        return Task.FromResult(externalUser ??
+            (_users.TryGetValue(principalId, out var directUser) ? directUser : null));
     }
 
     public Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
@@ -69,6 +112,8 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         var updated = new ManagedUser
         {
             UserId = existing.UserId,
+            ExternalId = existing.ExternalId,
+            ExternalIssuer = existing.ExternalIssuer,
             DisplayName = existing.DisplayName,
             Email = existing.Email,
             ProvisioningSource = existing.ProvisioningSource,
@@ -102,27 +147,36 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
         // SCIM userName is the IdP-owned, unique login identifier; reuse it as the stable
         // user id so re-provisioning is idempotent on the same key. A conflicting userName
-        // is reported to the caller (SCIM 409) rather than silently overwriting.
-        if (FindByUserNameInternal(provisioning.UserName) is not null)
+        // or externalId is reported to the caller (SCIM 409) rather than silently
+        // overwriting.
+        var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? null : provisioning.ExternalId.Trim();
+        lock (_externalIdWriteLock)
         {
-            return Task.FromResult<ManagedUser?>(null);
+            if (FindByUserNameInternal(provisioning.UserName) is not null ||
+                (externalId is not null && FindByExternalIdInternal(externalId, provisioning.ExternalIssuer) is not null))
+            {
+                return Task.FromResult<ManagedUser?>(null);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var user = new ManagedUser
+            {
+                UserId = provisioning.UserName,
+                ExternalId = externalId,
+                ExternalIssuer = NormalizeIssuer(provisioning.ExternalIssuer),
+                DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
+                Email = provisioning.Email,
+                ProvisioningSource = "scim",
+                IsActive = provisioning.Active,
+                Roles = NormalizeRoles(provisioning.Roles),
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            // Serialize external-id validation with writes so two concurrent requests cannot
+            // both claim the same issuer-scoped subject under different user names.
+            return Task.FromResult(_users.TryAdd(user.UserId, user) ? user : null);
         }
-
-        var now = DateTimeOffset.UtcNow;
-        var user = new ManagedUser
-        {
-            UserId = provisioning.UserName,
-            DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
-            Email = provisioning.Email,
-            ProvisioningSource = "scim",
-            IsActive = provisioning.Active,
-            Roles = NormalizeRoles(provisioning.Roles),
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-
-        // Guard against a concurrent create racing on the same key.
-        return Task.FromResult(_users.TryAdd(user.UserId, user) ? user : null);
     }
 
     public Task<ManagedUser?> FindByUserNameAsync(string userName, CancellationToken cancellationToken = default)
@@ -151,26 +205,47 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
     {
         ArgumentNullException.ThrowIfNull(provisioning);
 
-        if (!_users.TryGetValue(userId, out var existing))
+        lock (_externalIdWriteLock)
         {
-            return Task.FromResult<ManagedUser?>(null);
+            if (!_users.TryGetValue(userId, out var existing))
+            {
+                return Task.FromResult<ManagedUser?>(null);
+            }
+
+            var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId)
+                ? existing.ExternalId
+                : provisioning.ExternalId.Trim();
+            var externalIssuer = string.IsNullOrWhiteSpace(provisioning.ExternalId)
+                ? existing.ExternalIssuer
+                : NormalizeIssuer(provisioning.ExternalIssuer);
+            if (externalId is not null && _users.Values.Any(user =>
+                !user.UserId.Equals(existing.UserId, StringComparison.OrdinalIgnoreCase) &&
+                ExternalIdEquals(user, externalId, externalIssuer, requireIssuerMatch: true)))
+            {
+                throw new InvalidOperationException($"Another user already has externalId '{externalId}'.");
+            }
+
+            var updated = new ManagedUser
+            {
+                UserId = existing.UserId,
+                // external_id is only overwritten when the IdP supplies one: losing the stable
+                // subject on a PUT that omits it would orphan in-flight deferred snapshots
+                // keyed by that subject (honua-server#3141).
+                ExternalId = externalId,
+                ExternalIssuer = externalIssuer,
+                DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
+                Email = provisioning.Email,
+                ProvisioningSource = existing.ProvisioningSource,
+                ProviderId = existing.ProviderId,
+                IsActive = provisioning.Active,
+                Roles = provisioning.Active ? NormalizeRoles(provisioning.Roles) : [],
+                CreatedAt = existing.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            _users[userId] = updated;
+            return Task.FromResult<ManagedUser?>(updated);
         }
-
-        var updated = new ManagedUser
-        {
-            UserId = existing.UserId,
-            DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
-            Email = provisioning.Email,
-            ProvisioningSource = existing.ProvisioningSource,
-            ProviderId = existing.ProviderId,
-            IsActive = provisioning.Active,
-            Roles = NormalizeRoles(provisioning.Roles),
-            CreatedAt = existing.CreatedAt,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
-
-        _users[userId] = updated;
-        return Task.FromResult<ManagedUser?>(updated);
     }
 
     public Task<ManagedUser?> SetActiveAsync(string userId, bool active, CancellationToken cancellationToken = default)
@@ -247,11 +322,31 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return _users.Values.FirstOrDefault(u => u.UserId.Equals(userName, StringComparison.OrdinalIgnoreCase));
     }
 
+    private ManagedUser? FindByExternalIdInternal(string externalId, string? issuer)
+        => string.IsNullOrWhiteSpace(externalId)
+            ? null
+            : _users.Values.FirstOrDefault(u =>
+                ExternalIdEquals(u, externalId, issuer, requireIssuerMatch: true));
+
+    private static bool ExternalIdEquals(
+        ManagedUser user,
+        string externalId,
+        string? issuer,
+        bool requireIssuerMatch)
+        => user.ExternalId is not null
+            && user.ExternalId.Equals(externalId, StringComparison.Ordinal)
+            && (!requireIssuerMatch || string.Equals(user.ExternalIssuer, NormalizeIssuer(issuer), StringComparison.Ordinal));
+
+    private static string? NormalizeIssuer(string? issuer)
+        => string.IsNullOrWhiteSpace(issuer) ? null : issuer.Trim();
+
     private static ManagedUser Deactivate(ManagedUser existing) => Clone(existing, isActive: false, roles: []);
 
     private static ManagedUser Clone(ManagedUser existing, bool isActive, IReadOnlyList<string> roles) => new()
     {
         UserId = existing.UserId,
+        ExternalId = existing.ExternalId,
+        ExternalIssuer = existing.ExternalIssuer,
         DisplayName = existing.DisplayName,
         Email = existing.Email,
         ProvisioningSource = existing.ProvisioningSource,

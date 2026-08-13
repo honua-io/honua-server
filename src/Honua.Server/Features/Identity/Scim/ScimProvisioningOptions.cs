@@ -19,4 +19,11 @@ public sealed class ScimProvisioningOptions
     /// default — there is no implicit anonymous access).
     /// </summary>
     public string? BearerToken { get; set; }
+
+    /// <summary>
+    /// Validated OIDC issuer whose subjects are provisioned as SCIM <c>externalId</c>
+    /// values. Configure this when SCIM-provisioned users authenticate through OIDC so
+    /// identical subjects from different issuers cannot share membership.
+    /// </summary>
+    public string? OidcIssuer { get; set; }
 }

@@ -25,6 +25,12 @@ internal static partial class ScimEndpoints
 {
     private const string BearerPrefix = "Bearer ";
     private const int MaxPageSize = 200;
+    private const int MaxUserNameLength = 256;
+    private const int MaxExternalIdLength = 256;
+    private const int MaxDisplayNameLength = 512;
+    private const int MaxEmailLength = 320;
+    private const int MaxGroupDisplayNameLength = 256;
+    private const int MaxGroupMemberValueLength = 256;
 
     /// <summary>Log category for SCIM endpoints.</summary>
     internal sealed class ScimEndpointsLog;
@@ -146,19 +152,35 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "userName is required.", "invalidValue");
         }
 
+        if (string.IsNullOrWhiteSpace(input.ExternalId))
+        {
+            return ScimErrorResult(
+                StatusCodes.Status400BadRequest,
+                "externalId is required and must contain the OIDC subject provisioned by this SCIM connection.",
+                "invalidValue");
+        }
+
+        var email = SelectEmail(input.Emails);
+        if (ValidateUserInput(input, email) is { } validationError)
+        {
+            return validationError;
+        }
+
         var created = await store.CreateUserAsync(
             new ScimUserProvisioning
             {
                 UserName = input.UserName.Trim(),
+                ExternalId = input.ExternalId.Trim(),
+                ExternalIssuer = options.Value.OidcIssuer,
                 DisplayName = input.DisplayName,
-                Email = SelectEmail(input.Emails),
+                Email = email,
                 Active = input.Active,
             },
             context.RequestAborted).ConfigureAwait(false);
 
         if (created is null)
         {
-            return ScimErrorResult(StatusCodes.Status409Conflict, "A user with that userName already exists.", "uniqueness");
+            return ScimErrorResult(StatusCodes.Status409Conflict, "A user with that userName or externalId already exists.", "uniqueness");
         }
 
         ScimLog.UserProvisioned(logger, created.UserId);
@@ -200,19 +222,37 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "userName is required.", "invalidValue");
         }
 
+        var email = SelectEmail(input.Emails);
+        if (ValidateUserInput(input, email) is { } validationError)
+        {
+            return validationError;
+        }
+
         var existing = await store.GetUserAsync(id, context.RequestAborted).ConfigureAwait(false);
-        var replaced = await store.ReplaceUserAsync(
-            id,
-            new ScimUserProvisioning
-            {
-                UserName = input.UserName.Trim(),
-                DisplayName = input.DisplayName,
-                Email = SelectEmail(input.Emails),
-                Active = input.Active,
-                // Roles are owned by group membership sync; PUT preserves the current set.
-                Roles = existing?.Roles ?? [],
-            },
-            context.RequestAborted).ConfigureAwait(false);
+        ManagedUser? replaced;
+        try
+        {
+            replaced = await store.ReplaceUserAsync(
+                id,
+                new ScimUserProvisioning
+                {
+                    UserName = input.UserName.Trim(),
+                    ExternalId = input.ExternalId,
+                    ExternalIssuer = options.Value.OidcIssuer,
+                    DisplayName = input.DisplayName,
+                    Email = email,
+                    Active = input.Active,
+                    // Roles are owned by group membership sync; PUT preserves the current set.
+                    Roles = existing?.Roles ?? [],
+                },
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // The durable store rejects an externalId already owned by another user
+            // (unique index, honua-server#3141); report SCIM uniqueness rather than 500.
+            return ScimErrorResult(StatusCodes.Status409Conflict, "Another user already has that externalId.", "uniqueness");
+        }
 
         if (replaced is null)
         {
@@ -328,11 +368,18 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "displayName is required.", "invalidValue");
         }
 
+        var displayName = input.DisplayName.Trim();
+        var memberIds = ExtractMemberIds(input.Members);
+        if (ValidateGroupInput(displayName, memberIds) is { } validationError)
+        {
+            return validationError;
+        }
+
         var created = await store.CreateGroupAsync(
             new ScimGroupProvisioning
             {
-                DisplayName = input.DisplayName.Trim(),
-                MemberUserIds = ExtractMemberIds(input.Members),
+                DisplayName = displayName,
+                MemberUserIds = memberIds,
             },
             context.RequestAborted).ConfigureAwait(false);
 
@@ -380,14 +427,29 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "displayName is required.", "invalidValue");
         }
 
-        var replaced = await store.ReplaceGroupAsync(
-            id,
-            new ScimGroupProvisioning
-            {
-                DisplayName = input.DisplayName.Trim(),
-                MemberUserIds = ExtractMemberIds(input.Members),
-            },
-            context.RequestAborted).ConfigureAwait(false);
+        var displayName = input.DisplayName.Trim();
+        var memberIds = ExtractMemberIds(input.Members);
+        if (ValidateGroupInput(displayName, memberIds) is { } validationError)
+        {
+            return validationError;
+        }
+
+        ScimGroup? replaced;
+        try
+        {
+            replaced = await store.ReplaceGroupAsync(
+                id,
+                new ScimGroupProvisioning
+                {
+                    DisplayName = displayName,
+                    MemberUserIds = memberIds,
+                },
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            return ScimErrorResult(StatusCodes.Status409Conflict, "A group with that displayName already exists.", "uniqueness");
+        }
 
         if (replaced is null)
         {
@@ -419,6 +481,11 @@ internal static partial class ScimEndpoints
         if (!TryResolveMemberPatch(patch, out var change))
         {
             return ScimErrorResult(StatusCodes.Status400BadRequest, "Unsupported PATCH operation; only the 'members' attribute is patchable.", "invalidValue");
+        }
+
+        if (ValidateGroupMembers([.. change.Add, .. change.Remove]) is { } validationError)
+        {
+            return validationError;
         }
 
         var updated = await store.UpdateMembersAsync(id, change, context.RequestAborted).ConfigureAwait(false);
@@ -495,6 +562,7 @@ internal static partial class ScimEndpoints
     private static ScimUser ToScimUser(ManagedUser user) => new()
     {
         Id = user.UserId,
+        ExternalId = user.ExternalId,
         UserName = user.UserId,
         DisplayName = user.DisplayName,
         Active = user.IsActive,
@@ -535,6 +603,37 @@ internal static partial class ScimEndpoints
         return (primary ?? emails.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.Value)))?.Value;
     }
 
+    private static IResult? ValidateUserInput(ScimUser input, string? email)
+    {
+        var userName = input.UserName?.Trim();
+        if (userName is { Length: > MaxUserNameLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"userName must be at most {MaxUserNameLength} characters.", "invalidValue");
+        }
+
+        if (input.ExternalId?.Trim() is { Length: > MaxExternalIdLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"externalId must be at most {MaxExternalIdLength} characters.", "invalidValue");
+        }
+
+        var displayName = string.IsNullOrWhiteSpace(input.DisplayName) ? userName : input.DisplayName;
+        if (displayName is { Length: > MaxDisplayNameLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"displayName must be at most {MaxDisplayNameLength} characters.", "invalidValue");
+        }
+
+        if (email is { Length: > MaxEmailLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"email must be at most {MaxEmailLength} characters.", "invalidValue");
+        }
+
+        return null;
+    }
+
     private static List<string> ExtractMemberIds(IReadOnlyList<ScimMember>? members)
         => members is null
             ? []
@@ -543,6 +642,23 @@ internal static partial class ScimEndpoints
                 .Where(v => !string.IsNullOrWhiteSpace(v))
                 .Select(v => v!.Trim())
                 .ToList();
+
+    private static IResult? ValidateGroupInput(string displayName, IReadOnlyList<string> memberIds)
+    {
+        if (displayName.Length > MaxGroupDisplayNameLength)
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"displayName must be at most {MaxGroupDisplayNameLength} characters.", "invalidValue");
+        }
+
+        return ValidateGroupMembers(memberIds);
+    }
+
+    private static IResult? ValidateGroupMembers(IReadOnlyList<string> memberIds)
+        => memberIds.Any(static memberId => memberId.Length > MaxGroupMemberValueLength)
+            ? ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"member value must be at most {MaxGroupMemberValueLength} characters.", "invalidValue")
+            : null;
 
     // ---- Patch resolution -------------------------------------------------------------
 
