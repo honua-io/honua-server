@@ -56,9 +56,9 @@ internal static partial class FeatureStreamEndpoints
         StreamTemporalFilter? temporalFilter = null;
         bool hasAnyFilter = serviceId is not null;
 
-        var refreshGeneration = deps.RoutabilityGuard.BeginRefresh();
-        var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        deps.RoutabilityGuard.Update(refreshGeneration, snapshot);
+        var snapshot = await deps.RoutabilityGuard.RefreshAsync(
+            deps.MetadataV2GraphProvider,
+            context.RequestAborted).ConfigureAwait(false);
         MetadataV2Service? service = null;
 
         if (serviceId is not null)

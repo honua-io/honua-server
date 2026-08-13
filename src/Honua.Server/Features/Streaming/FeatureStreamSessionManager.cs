@@ -139,7 +139,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         await _routabilityRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var refreshGeneration = _routabilityGuard.BeginRefresh();
         var throttleNextRefresh = true;
         try
         {
@@ -149,8 +148,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
             }
 
-            var snapshot = await ReadScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
-            _routabilityGuard.Update(refreshGeneration, snapshot);
+            await RefreshScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
             Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 1);
             return true;
         }
@@ -161,7 +159,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _routabilityGuard.Invalidate(refreshGeneration);
             Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 0);
             FeatureStreamLog.RoutabilityRefreshFailed(_logger, ex);
             return false;
@@ -179,11 +176,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
-    private async ValueTask<MetadataV2GraphSnapshot> ReadScopedMetadataAsync(CancellationToken cancellationToken)
+    private async ValueTask RefreshScopedMetadataAsync(CancellationToken cancellationToken)
     {
         await using var scope = _serviceScopeFactory!.CreateAsyncScope();
         var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        await _routabilityGuard!.RefreshAsync(provider, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

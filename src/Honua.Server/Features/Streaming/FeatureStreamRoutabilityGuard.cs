@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Streaming;
@@ -17,6 +18,26 @@ internal sealed class FeatureStreamRoutabilityGuard
     private RoutabilityState _state = RoutabilityState.Empty;
 
     public long BeginRefresh() => Interlocked.Increment(ref _nextRefreshGeneration);
+
+    public async ValueTask<MetadataV2GraphSnapshot> RefreshAsync(
+        IMetadataV2GraphProvider provider,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        var refreshGeneration = BeginRefresh();
+        try
+        {
+            var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            Update(refreshGeneration, snapshot);
+            return snapshot;
+        }
+        catch
+        {
+            Invalidate(refreshGeneration);
+            throw;
+        }
+    }
 
     public void Update(long refreshGeneration, MetadataV2GraphSnapshot snapshot)
     {

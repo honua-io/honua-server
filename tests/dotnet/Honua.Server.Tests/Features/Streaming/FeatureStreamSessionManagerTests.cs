@@ -703,9 +703,40 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public async Task RefreshRoutability_CanceledRead_DoesNotThrottleImmediateRetry()
     {
-        var snapshot = await new TestMetadataV2GraphProvider(
-            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
-        var provider = new CancelFirstMetadataV2GraphProvider(snapshot);
+        const string serviceName = "cancel-refresh-stream";
+        const int storageLayerId = 44;
+        var activeGraph = new TestMetadataV2GraphBuilder()
+            .WithRevision(8)
+            .AddResource("res-cancel-refresh", "Cancel Refresh", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-cancel-refresh",
+                "res-cancel-refresh",
+                "test.layers.cancel_refresh",
+                storageLayerId: storageLayerId)
+            .AddService("svc-cancel-refresh", serviceName)
+            .AddPublication(
+                "pub-cancel-refresh",
+                "svc-cancel-refresh",
+                "res-cancel-refresh",
+                layerIndex: 1,
+                storageBindingId: "binding-cancel-refresh")
+            .Build();
+        var retiredGraph = activeGraph with
+        {
+            Revision = 9,
+            Publications = activeGraph.Publications
+                .Select(publication => publication with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                })
+                .ToArray(),
+        };
+        var activeSnapshot = await new TestMetadataV2GraphProvider(activeGraph).GetCurrentAsync();
+        var retiredSnapshot = await new TestMetadataV2GraphProvider(retiredGraph).GetCurrentAsync();
+        var provider = new CancelFirstMetadataV2GraphProvider(retiredSnapshot);
+        var guard = new FeatureStreamRoutabilityGuard();
+        guard.Update(guard.BeginRefresh(), activeSnapshot);
+        var earlierRefresh = guard.BeginRefresh();
         using var services = new ServiceCollection()
             .AddScoped<IMetadataV2GraphProvider>(_ => provider)
             .BuildServiceProvider();
@@ -713,7 +744,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             Options.Create(new FeatureStreamOptions()),
             NullLogger<FeatureStreamSessionManager>.Instance,
             TestTelemetry.CreateFeatureStreamMetrics(),
-            routabilityGuard: new FeatureStreamRoutabilityGuard(),
+            routabilityGuard: guard,
             serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
         using var cancellation = new CancellationTokenSource();
 
@@ -722,7 +753,10 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRefresh);
+        guard.Update(earlierRefresh, activeSnapshot);
+        Assert.False(guard.IsRoutable(serviceName, storageLayerId));
         Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.False(guard.IsRoutable(serviceName, storageLayerId));
         Assert.Equal(2, provider.ReadCount);
     }
 
