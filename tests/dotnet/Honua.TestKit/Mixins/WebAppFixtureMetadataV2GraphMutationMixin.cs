@@ -323,15 +323,16 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     /// enforcement can be exercised end-to-end against the served graph
     /// (honua-server#1271).
     /// </summary>
-    internal static async Task UpdateResourceAttributeRulesAsync(
+    internal static Task UpdateResourceAttributeRulesAsync(
         WebAppFixture fixture,
         int layerIndex,
         IReadOnlyList<MetadataV2AttributeRule>? attributeRules,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var provider = RequireProvider(fixture);
 
-        var snapshot = await provider.GetCurrentAsync(cancellationToken);
+        var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -365,7 +366,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -374,15 +376,16 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     /// <c>queryContingentValues</c> serving can be exercised end-to-end against the served
     /// graph (honua-server#1878).
     /// </summary>
-    internal static async Task UpdateResourceContingentValueGroupsAsync(
+    internal static Task UpdateResourceContingentValueGroupsAsync(
         WebAppFixture fixture,
         int layerIndex,
         IReadOnlyList<MetadataV2ContingentValueGroup>? contingentValueGroups,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var provider = RequireProvider(fixture);
 
-        var snapshot = await provider.GetCurrentAsync(cancellationToken);
+        var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
         if (pub is null)
         {
@@ -416,7 +419,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
         };
-        provider.SetGraph(updatedGraph);
+        WriteGraph(fixture, provider, updatedGraph);
+        return Task.CompletedTask;
     }
 
     /// <summary>

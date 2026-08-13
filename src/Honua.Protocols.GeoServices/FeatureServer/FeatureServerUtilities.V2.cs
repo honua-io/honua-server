@@ -617,6 +617,9 @@ internal static partial class FeatureServerEndpoints
         // Materialize the full publication list once so we can both default-return and filter
         // against it with stable layer-id resolution.
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(pub => ServiceProtocols.IsPreferredPublicationType(
+                ServiceProtocols.FeatureServer,
+                pub.PublicationType))
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
             .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))

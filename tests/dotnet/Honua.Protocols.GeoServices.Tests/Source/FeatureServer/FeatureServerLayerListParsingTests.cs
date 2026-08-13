@@ -103,6 +103,7 @@ public sealed class FeatureServerLayerListParsingTests
             ServiceId = service.Metadata.Id,
             ResourceId = activeResource.Metadata.Id,
             LayerIndex = 0,
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
             Status = activeStatus,
         };
         var retiredPublication = new MetadataV2Publication
@@ -111,6 +112,7 @@ public sealed class FeatureServerLayerListParsingTests
             ServiceId = service.Metadata.Id,
             ResourceId = retiredResource.Metadata.Id,
             LayerIndex = 1,
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
             Status = retiredStatus,
         };
         var snapshot = new MetadataV2GraphSnapshot(
@@ -146,6 +148,60 @@ public sealed class FeatureServerLayerListParsingTests
         retiredSelectorSpecified.Should().BeTrue();
         retiredLayers.Should().BeEmpty();
         retiredError.Should().Contain("valid layer identifiers");
+    }
+
+    [Fact]
+    public void TryResolveRequestedServiceLayersV2_CrossProtocolPublication_SelectsFeatureLayerOnce()
+    {
+        var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-a", Name = "alpha" },
+            Status = activeStatus,
+            Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OData],
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-a" },
+            Status = activeStatus,
+        };
+        var featurePublication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication-feature" },
+            ServiceId = service.Metadata.Id,
+            ResourceId = resource.Metadata.Id,
+            LayerIndex = 0,
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            Status = activeStatus,
+        };
+        var odataPublication = featurePublication with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication-odata" },
+            PublicationType = MetadataV2PublicationType.ODataEntitySet,
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph
+            {
+                Services = [service],
+                Resources = [resource],
+                Publications = [odataPublication, featurePublication],
+            },
+            "\"test\"",
+            DateTimeOffset.UtcNow);
+
+        var result = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
+            service,
+            snapshot,
+            new Dictionary<string, StringValues> { ["layers"] = "0" },
+            out var layers,
+            out var selectorSpecified,
+            out var error);
+
+        result.Should().BeTrue();
+        selectorSpecified.Should().BeTrue();
+        error.Should().BeNull();
+        layers.Should().ContainSingle()
+            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
     }
 
     [Fact]

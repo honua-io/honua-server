@@ -272,9 +272,11 @@ public sealed class ResourceValidator : IResourceValidator
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
         var serviceExists = snapshot.Index.ServicesById.TryGetValue(serviceId, out var exactService)
-            ? exactService.IsRoutable()
+            ? exactService.IsRoutable() &&
+              (requiredProtocol is null || ServiceProtocols.IsProtocolEnabled(exactService, requiredProtocol))
             : snapshot.Graph.Services.Any(service =>
                 service.IsRoutable() &&
+                (requiredProtocol is null || ServiceProtocols.IsProtocolEnabled(service, requiredProtocol)) &&
                 string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
         if (!serviceExists)
         {

@@ -196,6 +196,7 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeFalse();
         result.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+        result.ErrorMessage.Should().Contain("Service").And.NotContain("Layer");
     }
 
     [UnitTest]

@@ -61,9 +61,25 @@ public sealed class ODataQueryHandlerTests
         all.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task ResolveODataPublications_WithCrossProtocolPublication_SelectsODataEntitySetOnce()
+    {
+        using var provider = CreateProvider(["OData"], includeFeatureServerPublication: true);
+        var context = CreateContext(provider);
+
+        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, CancellationToken.None);
+        var all = await ODataV2Lookups.ResolveAllODataPublicationsAsync(context, CancellationToken.None);
+
+        visible.Should().ContainSingle()
+            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.ODataEntitySet);
+        all.Should().ContainSingle()
+            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.ODataEntitySet);
+    }
+
     private static ServiceProvider CreateProvider(
         IReadOnlyList<string> protocols,
-        MetadataV2LifecycleStatus publicationLifecycle = MetadataV2LifecycleStatus.Active)
+        MetadataV2LifecycleStatus publicationLifecycle = MetadataV2LifecycleStatus.Active,
+        bool includeFeatureServerPublication = false)
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource(
@@ -111,6 +127,22 @@ public sealed class ODataQueryHandlerTests
                 })
                 .ToArray()
         };
+        if (includeFeatureServerPublication)
+        {
+            var odataPublication = graph.Publications.Single();
+            graph = graph with
+            {
+                Publications =
+                [
+                    .. graph.Publications,
+                    odataPublication with
+                    {
+                        Metadata = odataPublication.Metadata with { Id = "pub-alpha-layer-1-feature" },
+                        PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    },
+                ],
+            };
+        }
         var graphProvider = new TestMetadataV2GraphProvider(graph);
 
         return new ServiceCollection()
