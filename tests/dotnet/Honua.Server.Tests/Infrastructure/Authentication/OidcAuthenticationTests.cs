@@ -59,7 +59,7 @@ public class OidcAuthenticationTests
         Dictionary<string, string?>? oidcSettings = null,
         string environmentName = "Test")
     {
-        return new TestWebApplicationFactory(environmentName)
+        return TestWebApplicationFactory.CreateForEnvironment(environmentName)
             .WithWebHostBuilder(builder =>
             {
                 configure?.Invoke(builder);

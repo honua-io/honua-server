@@ -45,11 +45,15 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     {
     }
 
-    public TestWebApplicationFactory(string environmentName)
+    private TestWebApplicationFactory(string environmentName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
         _environmentName = environmentName;
     }
+
+    /// <summary>Creates a factory whose early Program startup observes the requested environment.</summary>
+    public static TestWebApplicationFactory CreateForEnvironment(string environmentName)
+        => new(environmentName);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
         => ConfigureForTests(builder, _environmentName);

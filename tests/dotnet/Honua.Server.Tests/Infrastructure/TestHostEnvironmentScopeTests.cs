@@ -14,8 +14,12 @@ public sealed class TestHostEnvironmentScopeTests
     [Fact]
     public void TestWebApplicationFactory_ExposesParameterlessClassFixtureConstructor()
     {
-        typeof(TestWebApplicationFactory).GetConstructor(Type.EmptyTypes).Should().NotBeNull(
-            "xUnit must be able to construct IClassFixture<TestWebApplicationFactory> without resolving an environment-name fixture");
+        var publicConstructors = typeof(TestWebApplicationFactory).GetConstructors();
+
+        publicConstructors.Should().ContainSingle(
+            "xUnit requires class fixtures to expose exactly one public constructor");
+        publicConstructors[0].GetParameters().Should().BeEmpty(
+            "xUnit must construct IClassFixture<TestWebApplicationFactory> without resolving an environment-name fixture");
     }
 
     [Fact]

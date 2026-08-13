@@ -68,7 +68,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         string environmentName,
         Action<IWebHostBuilder> configure)
     {
-        return new TestWebApplicationFactory(environmentName)
+        return TestWebApplicationFactory.CreateForEnvironment(environmentName)
             .WithWebHostBuilder(builder =>
             {
                 // Apply additional test-specific configuration first
