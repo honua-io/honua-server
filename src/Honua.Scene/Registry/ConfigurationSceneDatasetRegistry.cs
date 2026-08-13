@@ -90,7 +90,7 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             TilesetFileName = string.IsNullOrWhiteSpace(entry.TilesetFileName)
                 ? "tileset.json"
                 : entry.TilesetFileName!,
-            AccessPolicy = entry.AccessPolicy
+            AccessPolicy = entry.AccessPolicy?.ToAccessPolicy()
         };
         return true;
     }

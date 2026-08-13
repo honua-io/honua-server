@@ -28,27 +28,27 @@ public sealed record StartupResilienceOptions
     /// serves non-database routes and retries connectivity in the background. Default
     /// <see langword="false"/> (fail fast).
     /// </summary>
-    public bool DegradedStartEnabled { get; init; }
+    public bool DegradedStartEnabled { get; set; }
 
     /// <summary>
     /// Whether the background retry loop attempts migrations when degraded start was triggered by a
     /// migration failure. Default <see langword="true"/>.
     /// </summary>
-    public bool RetryMigrationsInBackground { get; init; } = true;
+    public bool RetryMigrationsInBackground { get; set; } = true;
 
     /// <summary>
     /// Base delay for the first background retry attempt. Default 2 seconds.
     /// </summary>
-    public TimeSpan RetryBaseDelay { get; init; } = TimeSpan.FromSeconds(2);
+    public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Ceiling for any single background retry delay. Default 60 seconds.
     /// </summary>
-    public TimeSpan RetryMaxDelay { get; init; } = TimeSpan.FromSeconds(60);
+    public TimeSpan RetryMaxDelay { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Maximum number of background retry attempts before giving up (the process keeps running but
     /// stops retrying). 0 means retry indefinitely. Default 0.
     /// </summary>
-    public int MaxRetryAttempts { get; init; }
+    public int MaxRetryAttempts { get; set; }
 }
