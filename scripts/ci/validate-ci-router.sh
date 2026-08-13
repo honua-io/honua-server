@@ -623,6 +623,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Data and Sharing"
+# Capacity rebalance: Streaming executes only in the existing Data and Sharing
+# shard. Do not wake the Misc or Spec shards for a Streaming-only source diff.
+assert_exact_shards \
+  "streaming-source-exact-owner" \
+  "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
+  '["Server Features Data and Sharing"]'
 assert_descriptor \
   "collaboration-source-retains-owner" \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
