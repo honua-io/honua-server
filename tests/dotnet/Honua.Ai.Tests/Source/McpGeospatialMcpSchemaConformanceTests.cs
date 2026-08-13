@@ -13,7 +13,6 @@ using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
@@ -63,6 +62,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_clarify_intent"] = "clarify_intent",
             ["honua_validate_plan"] = "validate_plan",
             ["honua_dry_run_plan"] = "validate_plan",
+            ["honua_validate_package"] = "validate_package",
+            ["honua_preview_package"] = "preview_package",
             ["honua_execute_plan"] = "execute_plan",
             ["honua_cancel_job"] = "cancel_job",
             ["honua_propose_operation"] = "propose_operation",
@@ -785,17 +786,10 @@ public sealed partial class McpTaxonomyAlignmentTests
 
     private static IReadOnlyList<IMcpTool> BuildLiveToolRoster()
     {
-        // BuildTools() omits the package-review tools because they take extra
-        // service dependencies; the live /mcp DI registration advertises them, so
-        // the full advertised roster includes them here.
-        var reviewService = Substitute.For<IPackageReviewService>();
-        var jobService = Substitute.For<IGeoprocessingJobService>();
-        return
-        [
-            .. BuildTools(),
-            new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
-            new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
-        ];
+        // BuildTools is the single static test roster for the live /mcp DI
+        // registration. Keeping one roster prevents package-review tools from
+        // disappearing from taxonomy or registry conformance independently.
+        return BuildTools();
     }
 
     [UnitTest]

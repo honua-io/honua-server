@@ -33,5 +33,16 @@ require(
     r"dotnet test tests/dotnet/Honua\.Architecture\.Tests/Honua\.Architecture\.Tests\.csproj \\\s+--no-build \\\s+--no-restore",
     "run architecture tests without rebuilding or restoring",
 )
+require(
+    r"dotnet test tests/dotnet/Honua\.Ai\.Tests/Honua\.Ai\.Tests\.csproj \\\s+--no-build \\\s+--no-restore",
+    "run the focused MCP roster drift smoke without rebuilding or restoring",
+)
+require(
+    r"CapabilityRegistryConformanceTests\.LiveMcpTools_MatchRegistryToolDescriptors.*"
+    r"CapabilityRegistryConformanceTests\.RegistryToolDescriptors_MirrorLiveWorkflowFamilies.*"
+    r"McpTaxonomyAlignmentTests\.ToolNames_MatchTaxonomyRoster.*"
+    r"McpTaxonomyAlignmentTests\.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors",
+    "gate registry names, workflow families, and the taxonomy roster together",
+)
 
 print("Lean-gate command contract fixtures passed.")

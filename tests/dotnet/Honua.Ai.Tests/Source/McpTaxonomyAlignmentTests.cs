@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
@@ -38,6 +39,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_validate_plan",
         "honua_execute_plan",
         "honua_dry_run_plan",
+        "honua_validate_package",
+        "honua_preview_package",
         "honua_cancel_job",
         "honua_propose_operation",
         "honua_publish_service",
@@ -114,6 +117,21 @@ public sealed partial class McpTaxonomyAlignmentTests
         var names = tools.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
 
         names.Should().BeEquivalentTo(TaxonomyToolNames.OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    [UnitTest]
+    public void TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors()
+    {
+        var registryNames = new CapabilityRegistry().All
+            .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal))
+            .Select(d => d.McpToolName!)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        registryNames.Should().BeEquivalentTo(
+            TaxonomyToolNames.OrderBy(n => n, StringComparer.Ordinal),
+            "CapabilityRegistry MCP descriptors and McpTaxonomyAlignmentTests.TaxonomyToolNames "
+            + "must be updated together when the static /mcp tool roster changes");
     }
 
     [UnitTest]
@@ -240,15 +258,14 @@ public sealed partial class McpTaxonomyAlignmentTests
 
     /// <summary>
     /// Read-only tools per the geospatial-mcp taxonomy: planning, grounding,
-    /// validation, and map read tools never mutate server state. (The
-    /// package-review tools are read-only too but are constructed separately in
-    /// <c>PackageReviewTools_AreReadOnly_WithOutputSchemas</c> because they take
-    /// extra service dependencies that <see cref="BuildTools"/> does not wire.)
+    /// validation, and map read tools never mutate server state.
     /// </summary>
     private static readonly HashSet<string> ReadOnlyToolNames = new(StringComparer.Ordinal)
     {
         "honua_validate_plan",
         "honua_dry_run_plan",
+        "honua_validate_package",
+        "honua_preview_package",
         "honua_plan_analysis",
         "honua_ground_candidates",
         "honua_clarify_intent",
@@ -458,12 +475,8 @@ public sealed partial class McpTaxonomyAlignmentTests
     [UnitTest]
     public void StructuredTools_ErrorEnvelopeMatchesEveryAdvertisedOutputSchema()
     {
-        // BuildLiveToolRoster() advertises the full static /mcp roster the DI
-        // registration wires — including the package-review tools
-        // (honua_validate_package / honua_preview_package) that BuildTools() omits
-        // because they take extra service dependencies (#2853). Certifying against
-        // the full roster closes the coverage gap where those two tools were only
-        // asserted non-null-and-object by PackageReviewTools_AreReadOnly_WithOutputSchemas.
+        // BuildLiveToolRoster() advertises the full static /mcp roster wired by
+        // DI, including package-review tools (#2853).
         foreach (var tool in BuildLiveToolRoster())
         {
             AssertSharedErrorEnvelopeValidates(tool.Describe());
@@ -765,10 +778,13 @@ public sealed partial class McpTaxonomyAlignmentTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var groundingService = Substitute.For<IGroundingService>();
+        var reviewService = Substitute.For<Honua.Core.Features.PackageReview.Abstractions.IPackageReviewService>();
         return
         [
             new ValidatePlanTool(jobService, NullLogger<ValidatePlanTool>.Instance),
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
+            new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
+            new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
