@@ -84,8 +84,12 @@ internal static partial class FeatureServerEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(publication =>
+                ServiceProtocols.IsPreferredPublicationType(
+                    ServiceProtocols.FeatureServer,
+                    publication.PublicationType))
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Resource is not null)
+            .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
@@ -106,7 +110,7 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var visiblePairs = FilterAccessibleLayersV2(context, service, allPairs);
+        var visiblePairs = FilterAccessibleLayersV2(context, snapshot, service, allPairs);
 
         return await GetServiceMetadataAsync(
             context,

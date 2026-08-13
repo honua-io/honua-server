@@ -18,37 +18,65 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         new Dictionary<string, JsonElement>(0, StringComparer.Ordinal);
 
     private readonly string? _serviceId;
+    private readonly string? _resolvedServiceId;
+    private readonly StringComparison _serviceIdComparison;
+    private readonly bool _hasExplicitLayerScope;
     private readonly int[]? _layerIds;
     private readonly double[]? _bbox;
     private readonly FilterExpression? _attributeFilter;
     private readonly StreamTemporalFilter? _temporalFilter;
+    private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
 
     /// <summary>
     /// Creates a composite subscription filter.
     /// </summary>
     /// <param name="serviceId">Allowed service ID (null = all services).</param>
+    /// <param name="serviceIdIsExact">Whether <paramref name="serviceId"/> is an exact catalog identity.</param>
+    /// <param name="resolvedServiceId">Resolved catalog service ID, retained separately from a display-name scope.</param>
+    /// <param name="hasExplicitLayerScope">Whether the client explicitly supplied one or more layer IDs.</param>
     /// <param name="layerIds">Allowed layer IDs (null = all layers).</param>
     /// <param name="bbox">Bounding box [MinX, MinY, MaxX, MaxY] (null = no spatial filter).</param>
     /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
     /// <param name="temporalFilter">Parsed temporal interval filter (null = no temporal filter).</param>
+    /// <param name="routabilityGuard">Live metadata-derived routing guard for open subscriptions.</param>
     public StreamSubscriptionFilter(
         string? serviceId = null,
+        bool serviceIdIsExact = false,
+        string? resolvedServiceId = null,
+        bool hasExplicitLayerScope = false,
         int[]? layerIds = null,
         double[]? bbox = null,
         FilterExpression? attributeFilter = null,
-        StreamTemporalFilter? temporalFilter = null)
+        StreamTemporalFilter? temporalFilter = null,
+        FeatureStreamRoutabilityGuard? routabilityGuard = null)
     {
         _serviceId = serviceId;
+        _resolvedServiceId = resolvedServiceId;
+        _hasExplicitLayerScope = hasExplicitLayerScope;
+        _serviceIdComparison = serviceIdIsExact
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
         _layerIds = layerIds;
         _bbox = bbox;
         _attributeFilter = attributeFilter;
         _temporalFilter = temporalFilter;
+        _routabilityGuard = routabilityGuard;
     }
 
     /// <summary>
     /// Service ID restriction, if any.
     /// </summary>
     public string? ServiceId => _serviceId;
+
+    /// <summary>
+    /// Resolved catalog service identity, if admission resolved a service scope.
+    /// </summary>
+    public string? ResolvedServiceId => _resolvedServiceId;
+
+    /// <summary>
+    /// Whether the client explicitly supplied the layer scope rather than inheriting all service layers.
+    /// </summary>
+    public bool HasExplicitLayerScope => _hasExplicitLayerScope;
 
     /// <summary>
     /// Layer restrictions, if any.
@@ -120,9 +148,21 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
         ref bool propertiesParsed)
     {
+        if (_routabilityGuard is not null &&
+            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId))
+        {
+            return false;
+        }
+
         // 1. Service filter — cheapest, short-circuits first.
-        if (_serviceId is not null &&
-            !string.Equals(envelope.ServiceId, _serviceId, StringComparison.OrdinalIgnoreCase))
+        if (_resolvedServiceId is not null && _routabilityGuard is null &&
+            !string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (_resolvedServiceId is null && _serviceId is not null &&
+            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison))
         {
             return false;
         }

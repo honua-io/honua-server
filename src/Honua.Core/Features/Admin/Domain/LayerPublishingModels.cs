@@ -69,6 +69,12 @@ public sealed class LayerPublishRequest
     public bool Enabled { get; init; } = true;
 
     /// <summary>
+    /// Optional validated license, attribution, publisher, and source-documentation metadata.
+    /// Null preserves legacy publication behavior with no governance fields.
+    /// </summary>
+    public LayerSourceGovernance? SourceGovernance { get; init; }
+
+    /// <summary>
     /// Optional per-field value domains captured from the migration source,
     /// keyed by source field name (case-insensitive). When a published column
     /// matches a key, the domain is carried into the Metadata v2 field so it
@@ -347,6 +353,21 @@ public sealed class PublishedLayerSummary
     /// Optional layer description.
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>SPDX license expression or <c>proprietary</c>, when authored.</summary>
+    public string? License { get; init; }
+
+    /// <summary>Required public attribution, when authored.</summary>
+    public string? Attribution { get; init; }
+
+    /// <summary>Data producer or source organization, when authored.</summary>
+    public string? Publisher { get; init; }
+
+    /// <summary>Absolute license documentation URL, when authored.</summary>
+    public string? LicenseUrl { get; init; }
+
+    /// <summary>Absolute source documentation URL, when authored.</summary>
+    public string? SourceUrl { get; init; }
 
     /// <summary>
     /// Geometry type (e.g., "Point", "Polygon").

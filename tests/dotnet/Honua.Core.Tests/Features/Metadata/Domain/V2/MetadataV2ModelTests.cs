@@ -418,6 +418,389 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithMalformedContactUrl_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint { Name = "Invalid contact", Url = "not a URL" }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                "metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials",
+                StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithOversizedContactUrl_ReturnsValidationError()
+    {
+        const string prefix = "https://example.test/";
+        var oversizedUrl = prefix + new string(
+            'x',
+            MetadataV2ContactPoint.MaxUrlLength - prefix.Length + 1);
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint
+                        {
+                            Name = "Oversized contact",
+                            Url = oversizedUrl,
+                        },
+                    },
+                },
+            ],
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            $"metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters",
+            StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(oversizedUrl, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("not-an-email")]
+    [InlineData("a@")]
+    [InlineData("@")]
+    [InlineData("a@@example.test")]
+    [InlineData("a@example .test")]
+    [InlineData("a@exam\tple.test")]
+    [InlineData("a@exam\u0001ple.test")]
+    [Operation(Operations.Query)]
+    public void Validate_WithMalformedContactEmail_ReturnsValidationError(string email)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint { Name = "Invalid contact", Email = email }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                "metadata.contactPoint.email must contain non-empty local and domain parts",
+                StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(email, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidContactName_ReturnsValidationError(bool oversized)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        var contactName = oversized
+            ? new string('x', MetadataV2ContactPoint.MaxNameLength + 1)
+            : "invalid\u0001contact";
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint { Name = contactName },
+                    },
+                },
+            ],
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            "metadata.contactPoint.name must not exceed",
+            StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(contactName, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidAttributionOrPublisher_ReturnsValidationError(
+        bool attribution,
+        bool oversized)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        var maxLength = attribution
+            ? MetadataV2ObjectMetadata.MaxAttributionLength
+            : MetadataV2ObjectMetadata.MaxPublisherLength;
+        var value = oversized ? new string('x', maxLength + 1) : "invalid\u0001text";
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Attribution = attribution ? value : resource.Metadata.Attribution,
+                        Publisher = attribution ? resource.Metadata.Publisher : value,
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                attribution ? "metadata.attribution must not exceed" : "metadata.publisher must not exceed",
+                StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithCredentialBearingContactUrl_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint
+                        {
+                            Name = "Unsafe contact",
+                            Url = "https://user:secret@example.test/contact"
+                        }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains("must be an absolute HTTP(S) URL without credentials", StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error =>
+            error.Contains("user:secret", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithCredentialBearingGovernanceLink_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Links =
+                        [
+                            new MetadataV2Link
+                            {
+                                Href = "https://user:secret@example.test/license",
+                                Rel = "license"
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                "must be an absolute HTTP(S) URL without credentials for relation 'license'",
+                StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error =>
+            error.Contains("user:secret", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithPaddedGovernanceLink_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Links =
+                        [
+                            new MetadataV2Link
+                            {
+                                Href = " https://example.test/license ",
+                                Rel = "license"
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                "must be an absolute HTTP(S) URL without credentials for relation 'license'",
+                StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("license")]
+    [InlineData("describedby")]
+    [Operation(Operations.Query)]
+    public void Validate_WithOversizedGovernanceLink_ReturnsValidationError(string relation)
+    {
+        const string prefix = "https://example.test/";
+        var oversizedUrl = prefix + new string(
+            'x',
+            MetadataV2Link.MaxGovernanceHrefLength - prefix.Length + 1);
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Links = [new MetadataV2Link { Href = oversizedUrl, Rel = relation }],
+                    },
+                },
+            ],
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            $"must not exceed {MetadataV2Link.MaxGovernanceHrefLength} characters",
+            StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(oversizedUrl, StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithHostlessGovernanceLink_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Links =
+                        [
+                            new MetadataV2Link
+                            {
+                                Href = "https:/terms",
+                                Rel = "license"
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                "must be an absolute HTTP(S) URL without credentials for relation 'license'",
+                StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("Not-A-License")]
+    [InlineData(" MIT ")]
+    [InlineData("MIT\n")]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidCanonicalLicense_ReturnsValidationError(string license)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with { License = license }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            "metadata.license must be a canonical SPDX expression or the literal 'proprietary'",
+            StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithNullDeserializedResourceStorageBindingIds_ReturnsValidationError()
     {
         var json = JsonSerializer.Serialize(CreateValidGraph(), MetadataV2JsonContext.Default.MetadataV2Graph)

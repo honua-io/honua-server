@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 369,
-      "provingTestCount": 1005,
+      "provingTestCount": 1026,
       "maturity": {
         "implemented": 369
       },
@@ -1612,7 +1612,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 322,
+      "provingTestCount": 323,
       "maturity": {
         "implemented": 45
       },
@@ -1677,7 +1677,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 15,
+      "provingTestCount": 16,
       "maturity": {
         "implemented": 2
       },
@@ -1832,7 +1832,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 246,
+      "provingTestCount": 252,
       "maturity": {
         "implemented": 21
       },
@@ -1951,7 +1951,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 13,
-      "provingTestCount": 64,
+      "provingTestCount": 65,
       "maturity": {
         "implemented": 13
       },
@@ -2003,7 +2003,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 12,
-      "provingTestCount": 100,
+      "provingTestCount": 111,
       "maturity": {
         "implemented": 12
       },
@@ -2320,7 +2320,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 5,
-      "provingTestCount": 82,
+      "provingTestCount": 85,
       "maturity": {
         "implemented": 5
       },

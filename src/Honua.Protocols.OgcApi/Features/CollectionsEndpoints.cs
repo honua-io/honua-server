@@ -145,15 +145,15 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!snapshot.IsRoutable(publication))
                 {
                     continue;
                 }
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource!, service))
                 {
                     continue;
                 }
-                canonicalByResource[resource.Metadata.Id] = (publication, service);
+                canonicalByResource[resource!.Metadata.Id] = (publication, service);
             }
 
             var publicationsByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
@@ -168,15 +168,15 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!snapshot.IsRoutable(publication))
                 {
                     continue;
                 }
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource!, service))
                 {
                     continue;
                 }
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
                 {
                     continue;
                 }
@@ -186,23 +186,23 @@ internal static class CollectionsEndpoints
                 // canonical publication. Otherwise hide it (the resource may also be
                 // exposed via a secondary service the caller has access to, but
                 // surfacing it there would leak across canonical boundaries).
-                if (canonicalByResource.TryGetValue(resource.Metadata.Id, out var canonical))
+                if (canonicalByResource.TryGetValue(resource!.Metadata.Id, out var canonical))
                 {
-                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, canonical.Service))
+                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, canonical.Service))
                     {
                         continue;
                     }
-                    if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
+                    if (!publicationsByResource.ContainsKey(resource!.Metadata.Id))
                     {
-                        publicationsByResource[resource.Metadata.Id] = (canonical.Publication, canonical.Service, resource);
+                        publicationsByResource[resource.Metadata.Id] = (canonical.Publication, canonical.Service, resource!);
                     }
                     continue;
                 }
 
                 // No canonical publication exists for this resource — first match wins.
-                if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
+                if (!publicationsByResource.ContainsKey(resource!.Metadata.Id))
                 {
-                    publicationsByResource[resource.Metadata.Id] = (publication, service, resource);
+                    publicationsByResource[resource.Metadata.Id] = (publication, service, resource!);
                 }
             }
 
@@ -533,6 +533,7 @@ internal static class CollectionsEndpoints
         var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items";
         var collectionSegment = Uri.EscapeDataString(collectionId);
         var collectionLinks = ImmutableArray.CreateBuilder<Link>();
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service?.Metadata);
 
         // Self link
         collectionLinks.Add(Link.Create(
@@ -540,6 +541,32 @@ internal static class CollectionsEndpoints
             rel: RelationTypes.Self,
             type: MediaTypes.Json,
             title: displayName));
+
+        foreach (var governanceLink in governance.Links.Where(link =>
+                     string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase)))
+        {
+            collectionLinks.Add(new Link
+            {
+                Href = governanceLink.Href,
+                Rel = governanceLink.Rel,
+                Type = governanceLink.Type,
+                Title = governanceLink.Title,
+                HrefLang = governanceLink.Hreflang
+            });
+        }
+
+        if (!governance.Links.Any(link =>
+                string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase)) &&
+            SpdxLicensePolicy.GetLicenseUrl(governance.License) is { } derivedLicenseUrl)
+        {
+            collectionLinks.Add(new Link
+            {
+                Href = derivedLicenseUrl,
+                Rel = RelationTypes.License,
+                Title = governance.License
+            });
+        }
 
         // Items links for all supported encodings
         foreach (var format in OgcFeaturesUtilities.FeatureFormats)
@@ -710,6 +737,7 @@ internal static class CollectionsEndpoints
             Id = collectionId,
             Title = displayName,
             Description = description,
+            Attribution = governance.Attribution,
             Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,

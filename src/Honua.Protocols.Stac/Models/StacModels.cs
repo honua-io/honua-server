@@ -105,6 +105,12 @@ public sealed record StacCollection
     public required string License { get; init; }
 
     /// <summary>
+    /// Organizations responsible for producing or otherwise managing the collection.
+    /// </summary>
+    [JsonPropertyName("providers")]
+    public ImmutableArray<StacProvider>? Providers { get; init; }
+
+    /// <summary>
     /// Spatial and temporal extent.
     /// </summary>
     [JsonPropertyName("extent")]
@@ -121,6 +127,36 @@ public sealed record StacCollection
     /// </summary>
     [JsonPropertyName("stac_extensions")]
     public ImmutableArray<string>? StacExtensions { get; init; }
+}
+
+/// <summary>
+/// Organization responsible for producing or managing a STAC collection.
+/// </summary>
+public sealed record StacProvider
+{
+    /// <summary>
+    /// Human-readable organization name.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Provider responsibilities, such as <c>producer</c> or <c>licensor</c>.
+    /// </summary>
+    [JsonPropertyName("roles")]
+    public ImmutableArray<string>? Roles { get; init; }
+
+    /// <summary>
+    /// Additional information about the organization.
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    /// <summary>
+    /// Organization home page.
+    /// </summary>
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
 }
 
 /// <summary>

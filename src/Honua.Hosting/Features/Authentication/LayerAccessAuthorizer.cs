@@ -186,7 +186,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         var hasLivePublication = false;
 
         foreach (var publication in snapshot.Index.PublicationsByResource[storageResource.Metadata.Id]
-            .Where(candidate => !LayerValidationHelpers.IsRetired(candidate)))
+            .Where(snapshot.IsRoutable))
         {
             hasLivePublication = true;
             var service = snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId);

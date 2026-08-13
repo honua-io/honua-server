@@ -62,6 +62,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Description = "Deterministic SDK-backed mobile offline field operations fixture"
             },
             ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = $"/rest/services/{ServiceName}/FeatureServer",
             Protocols = [MetadataV2ServiceProtocols.FeatureServer],
             AccessPolicy = accessPolicy,
@@ -83,6 +84,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Description = "OGC API Features projection of the mobile offline fixture"
             },
             ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = "/ogc/features",
             Protocols = [MetadataV2ServiceProtocols.OgcFeatures],
             AccessPolicy = accessPolicy,
@@ -204,6 +206,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Description = description
             },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             AccessPolicy = accessPolicy,
@@ -252,6 +255,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Name = BindingId(layerId)
             },
             ResourceId = ResourceId(layerId),
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageType = MetadataV2StorageType.RelationalTable,
             Locator = "features",
             StorageLayerId = layerId,
@@ -277,6 +281,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Name = layerId.ToString(CultureInfo.InvariantCulture)
             },
             ServiceId = "svc-mobile-offline-demo-feature",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = ResourceId(layerId),
             StorageBindingId = BindingId(layerId),
             Identifier = new MetadataV2PublicationIdentifier
@@ -296,6 +301,7 @@ public static class MobileOfflineDemoGraphPublisher
                 Name = layerId.ToString(CultureInfo.InvariantCulture)
             },
             ServiceId = "svc-mobile-offline-demo-ogc",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = ResourceId(layerId),
             StorageBindingId = BindingId(layerId),
             Identifier = new MetadataV2PublicationIdentifier

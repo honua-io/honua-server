@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Shared.Models;
+using Honua.Protocols.GeoServices.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -23,6 +24,18 @@ public sealed class FeatureServerResponse
     /// Human-readable description of the service
     /// </summary>
     public required string ServiceDescription { get; init; }
+
+    /// <summary>Service attribution in the standard GeoServices copyright field.</summary>
+    public string? CopyrightText { get; init; }
+
+    /// <summary>SPDX license expression from canonical metadata.</summary>
+    public string? License { get; init; }
+
+    /// <summary>Data producer or source organization from canonical metadata.</summary>
+    public string? Publisher { get; init; }
+
+    /// <summary>Additive license/source documentation links.</summary>
+    public GeoServicesGovernanceLink[]? Links { get; init; }
 
     /// <summary>
     /// Layers available in this service

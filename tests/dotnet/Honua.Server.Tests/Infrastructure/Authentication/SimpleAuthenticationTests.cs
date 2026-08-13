@@ -78,7 +78,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public async Task DevelopmentBypass_NoPassword_ShouldRequireExplicitOptIn()
     {
         // Arrange - Development environment with no password and no explicit HONUA_DEV_AUTH
-        using var factory = new TestWebApplicationFactory()
+        using var factory = new TestWebApplicationFactory("Development")
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
@@ -106,7 +106,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public void DevelopmentBypass_ExplicitDevAuth_ShouldBeRejectedAtStartup()
     {
         // Arrange - Development environment with HONUA_DEV_AUTH explicitly set to true
-        using var factory = new TestWebApplicationFactory()
+        using var factory = new TestWebApplicationFactory("Development")
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
@@ -130,7 +130,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public void ExplicitDevBypass_Production_ShouldBeRejected()
     {
         // Arrange - Explicitly enable development bypass in production
-        using var factory = new TestWebApplicationFactory()
+        using var factory = new TestWebApplicationFactory("Production")
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
@@ -164,7 +164,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public void MissingConnectionEncryptionMasterKey_Production_ShouldBeRejected()
     {
         // Arrange - Production startup with no encryption key configuration.
-        using var factory = new TestWebApplicationFactory()
+        using var factory = new TestWebApplicationFactory("Production")
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
@@ -191,7 +191,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public void InvalidConnectionEncryptionSalt_Production_ShouldBeRejected()
     {
         // Arrange - Production startup with an invalid base64 encryption salt.
-        using var factory = new TestWebApplicationFactory()
+        using var factory = new TestWebApplicationFactory("Production")
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");

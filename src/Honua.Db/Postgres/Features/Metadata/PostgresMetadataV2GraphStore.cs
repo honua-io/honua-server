@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -229,6 +230,9 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         await EnsureSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         // Lock before reading metadata_v2_current. FOR UPDATE cannot lock an absent bootstrap
         // row, so the advisory lock is the authoritative serialization seam for both bootstrap
@@ -290,10 +294,43 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
 
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-
         var snapshot = new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
-        _cachedCurrent = snapshot;
+        var commitWasReconciled = false;
+        try
+        {
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException)
+        {
+            // SaveAsync is the mutation-receipt boundary for every graph writer. If PostgreSQL made
+            // this exact xid durable before the acknowledgement was lost, preserving the receipt lets
+            // the caller either commit its paired catalog transaction or compensate this graph write.
+            // A raw commit exception would leave the caller with no mutation identity and an orphan graph.
+            var committed = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(_connectionProvider, transactionId)
+                .ConfigureAwait(false);
+            if (committed == false)
+            {
+                throw;
+            }
+
+            if (committed is null)
+            {
+                _cachedCurrent = null;
+                _cacheInvalidator?.Invalidate(_environment);
+                throw new MetadataV2GraphCommitOutcomeUnknownException(
+                    snapshot,
+                    transactionId,
+                    commitException);
+            }
+
+            commitWasReconciled = true;
+        }
+
+        // A concurrent writer may have advanced current while the lost acknowledgement was being
+        // reconciled. The xid proves this snapshot committed, but not that it is still current, so do
+        // not regress the process-local cache to it in that path.
+        _cachedCurrent = commitWasReconciled ? null : snapshot;
 
         // Drop the shared read-through snapshot cache for this environment so read surfaces
         // (MCP tools, REST/OGC metadata) observe the committed mutation immediately on this node

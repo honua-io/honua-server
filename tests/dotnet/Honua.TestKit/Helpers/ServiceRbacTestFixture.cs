@@ -355,6 +355,14 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     publicationType: MetadataV2PublicationType.ODataEntitySet,
                     isPrimary: isPrimary);
+                builder.AddPublication(
+                    $"{serviceId}-feature-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    serviceId,
+                    $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    layerIndex: layerId,
+                    storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                    isPrimary: isPrimary);
             }
         }
 

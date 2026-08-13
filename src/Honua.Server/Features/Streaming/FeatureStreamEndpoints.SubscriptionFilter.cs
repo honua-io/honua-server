@@ -54,14 +54,18 @@ internal static partial class FeatureStreamEndpoints
         double[]? bbox = null;
         FilterExpression? attributeFilter = null;
         StreamTemporalFilter? temporalFilter = null;
+        bool serviceIdIsExact = false;
         bool hasAnyFilter = serviceId is not null;
 
-        var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var snapshot = await deps.RoutabilityGuard.RefreshAsync(
+            deps.MetadataV2GraphProvider,
+            context.RequestAborted).ConfigureAwait(false);
         MetadataV2Service? service = null;
 
         if (serviceId is not null)
         {
-            service = ResolveStreamService(snapshot, serviceId);
+            serviceIdIsExact = snapshot.Index.ServicesById.TryGetValue(serviceId, out service);
+            service ??= ResolveStreamService(snapshot, serviceId);
             if (service is null)
             {
                 var msg = $"Service '{serviceId}' not found.";
@@ -69,7 +73,7 @@ internal static partial class FeatureStreamEndpoints
                 return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
-            serviceId = service.Metadata.Name;
+            serviceId = serviceIdIsExact ? service.Metadata.Id : service.Metadata.Name;
         }
 
         if (!string.IsNullOrWhiteSpace(polygonParam))
@@ -82,6 +86,7 @@ internal static partial class FeatureStreamEndpoints
         // `layers` is the canonical parameter; `layerIds` is a legacy alias. Both
         // must be parsed, validated, and access-checked through the same helper.
         var layerSource = !string.IsNullOrWhiteSpace(layersParam) ? layersParam : legacyLayerIdsParam;
+        bool hasExplicitLayerScope = !string.IsNullOrWhiteSpace(layerSource);
         if (!string.IsNullOrWhiteSpace(layerSource))
         {
             var (parsedIds, layerError) = ParseAndAuthorizeLayerIds(
@@ -101,11 +106,17 @@ internal static partial class FeatureStreamEndpoints
 
         if (service is not null && layerIds is null)
         {
-            var accessError = RequireAllLayerAccess(context, snapshot, service);
+            var (serviceLayerIds, accessError) = ResolveAndAuthorizeServiceLayerIds(
+                context,
+                logger,
+                snapshot,
+                service);
             if (accessError is not null)
             {
                 return SubscriptionParseResult.Failed(accessError);
             }
+
+            layerIds = serviceLayerIds;
         }
 
         // Parse bbox (minX,minY,maxX,maxY).
@@ -293,15 +304,23 @@ internal static partial class FeatureStreamEndpoints
                 return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, unscopedSnapshotError));
             }
 
-            return new SubscriptionParseResult(null, false, mode, null);
+            // An unfiltered subscription still needs the live metadata guard. A null filter is
+            // treated as an unconditional match by both replay and live fan-out, which would
+            // otherwise allow events from retired/draft routes to remain deliverable.
+            var unscopedFilter = new StreamSubscriptionFilter(routabilityGuard: deps.RoutabilityGuard);
+            return new SubscriptionParseResult(unscopedFilter, false, mode, null);
         }
 
         var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
+            serviceIdIsExact: serviceIdIsExact,
+            resolvedServiceId: service?.Metadata.Id,
+            hasExplicitLayerScope: hasExplicitLayerScope,
             layerIds: layerIds,
             bbox: bbox,
             attributeFilter: attributeFilter,
-            temporalFilter: temporalFilter);
+            temporalFilter: temporalFilter,
+            routabilityGuard: deps.RoutabilityGuard);
 
         var snapshotScopeError = ValidateSnapshotScope(mode, filter);
         if (snapshotScopeError is not null)
@@ -481,21 +500,30 @@ internal static partial class FeatureStreamEndpoints
         return (resolvedIds.ToArray(), null);
     }
 
-    private static IResult? RequireAllLayerAccess(
+    private static (int[]? Ids, IResult? Error) ResolveAndAuthorizeServiceLayerIds(
         HttpContext context,
+        ILogger logger,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
     {
-        foreach (var layer in ResolveServiceStreamLayers(snapshot, service))
+        var layers = ResolveServiceStreamLayers(snapshot, service).ToArray();
+        if (layers.Length == 0)
+        {
+            var msg = $"Service '{service.Metadata.Name}' has no routable layers.";
+            FeatureStreamLog.FilterValidationFailed(logger, msg);
+            return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+        }
+
+        foreach (var layer in layers)
         {
             var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
             if (accessError is not null)
             {
-                return accessError;
+                return (null, accessError);
             }
         }
 
-        return null;
+        return (layers.Select(static layer => layer.LayerId).Distinct().ToArray(), null);
     }
 
     private static IResult? RequireStreamLayerAccess(
@@ -513,18 +541,18 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2GraphSnapshot snapshot,
         string serviceId)
     {
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
-        {
-            return byName;
-        }
-
         if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
         {
             return byId;
         }
 
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+        {
+            return byName;
+        }
+
         return snapshot.Graph.Services.FirstOrDefault(candidate =>
-            string.Equals(candidate.Metadata.Id, serviceId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Metadata.Id, serviceId, StringComparison.Ordinal) ||
             string.Equals(candidate.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -557,6 +585,7 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
         => snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(snapshot.IsRoutable)
             .Select(publication => CreateStreamLayer(snapshot, publication, service))
             .OfType<StreamLayerDescriptor>();
 
@@ -565,7 +594,8 @@ internal static partial class FeatureStreamEndpoints
         foreach (var binding in snapshot.Index.StorageBindingsByStorageLayerId.Values)
         {
             if (!binding.StorageLayerId.HasValue ||
-                !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(binding.StorageLayerId.Value, out var resource))
+                !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(binding.StorageLayerId.Value, out var resource) ||
+                !binding.IsRoutable(resource))
             {
                 continue;
             }
@@ -591,13 +621,13 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2Service? service)
     {
         var resource = snapshot.ResolveResource(publication);
-        if (resource is null)
+        if (!snapshot.IsRoutable(publication))
         {
             return null;
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? snapshot.ResolveStorageLayerId(resource!)
             ?? publication.LayerIndex;
         if (!storageLayerId.HasValue)
         {
@@ -605,7 +635,7 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return new StreamLayerDescriptor(
-            resource,
+            resource!,
             service,
             publication,
             storageLayerId.Value,
@@ -616,7 +646,9 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Resource resource)
         => snapshot.Graph.Publications
-            .Where(publication => string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            .Where(publication =>
+                string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                snapshot.IsRoutable(publication))
             .OrderByDescending(static publication => publication.IsPrimary)
             .ThenBy(publication =>
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)

@@ -129,6 +129,7 @@ internal static partial class FeatureStreamEndpoints
                 context,
                 filterResult.Filter,
                 addDefaultSubscription: filterResult.HasSubscription || isAdmin,
+                announceInitialSubscription: filterResult.HasSubscription,
                 filterResult.Mode).ConfigureAwait(false);
             return Results.Empty;
         }

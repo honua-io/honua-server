@@ -638,9 +638,48 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateOneMetadata(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
     {
-        if (metadata.ContactPoint is { Email: { } email } && !string.IsNullOrWhiteSpace(email) && !email.Contains('@'))
+        if (!SpdxLicensePolicy.IsValidCanonicalValue(metadata.License))
         {
-            errors.Add($"{ownerLabel} metadata.contactPoint.email '{email}' must contain '@'.");
+            errors.Add(
+                $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
+        }
+
+        if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.attribution must not exceed {MetadataV2ObjectMetadata.MaxAttributionLength} characters or contain control characters.");
+        }
+        if (!IsValidGovernanceText(metadata.Publisher, MetadataV2ObjectMetadata.MaxPublisherLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.publisher must not exceed {MetadataV2ObjectMetadata.MaxPublisherLength} characters or contain control characters.");
+        }
+
+        if (metadata.ContactPoint is { Name: { } contactName } &&
+            !IsValidGovernanceText(contactName, MetadataV2ContactPoint.MaxNameLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.contactPoint.name must not exceed {MetadataV2ContactPoint.MaxNameLength} characters or contain control characters.");
+        }
+        if (metadata.ContactPoint is { Email: { } email } &&
+            !string.IsNullOrWhiteSpace(email) &&
+            !HasNonEmptyEmailParts(email))
+        {
+            errors.Add($"{ownerLabel} metadata.contactPoint.email must contain non-empty local and domain parts.");
+        }
+        if (metadata.ContactPoint is { Url: { } contactUrl } &&
+            !string.IsNullOrWhiteSpace(contactUrl))
+        {
+            if (contactUrl.Length > MetadataV2ContactPoint.MaxUrlLength)
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
+            }
+            else if (!IsSafePublicHttpUrl(contactUrl))
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
+            }
         }
 
         for (var i = 0; i < metadata.Links.Count; i++)
@@ -654,7 +693,46 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add($"{ownerLabel} metadata.links[{i}].rel is required.");
             }
+            if (string.IsNullOrWhiteSpace(link.Href) ||
+                (!string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (link.Href.Length > MetadataV2Link.MaxGovernanceHrefLength)
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.links[{i}].href must not exceed {MetadataV2Link.MaxGovernanceHrefLength} characters for relation '{link.Rel}'.");
+            }
+            else if (!IsSafePublicHttpUrl(link.Href))
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.links[{i}].href must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
+            }
         }
+    }
+
+    private static bool IsSafePublicHttpUrl(string value)
+        => string.Equals(value, value.Trim(), StringComparison.Ordinal) &&
+           Uri.TryCreate(value, UriKind.Absolute, out var parsedUrl) &&
+           (string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+           !string.IsNullOrWhiteSpace(parsedUrl.Host) &&
+           string.IsNullOrEmpty(parsedUrl.UserInfo);
+
+    private static bool IsValidGovernanceText(string? value, int maxLength)
+        => value is null || (value.Length <= maxLength && !value.Any(char.IsControl));
+
+    private static bool HasNonEmptyEmailParts(string value)
+    {
+        var separator = value.IndexOf('@');
+        return separator > 0 &&
+               separator == value.LastIndexOf('@') &&
+               separator < value.Length - 1 &&
+               !string.IsNullOrWhiteSpace(value[..separator]) &&
+               !string.IsNullOrWhiteSpace(value[(separator + 1)..]) &&
+               value.All(character => !char.IsWhiteSpace(character) && !char.IsControl(character));
     }
 
     private static void ValidateServices(

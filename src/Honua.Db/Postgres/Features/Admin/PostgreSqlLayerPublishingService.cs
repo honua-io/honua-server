@@ -16,6 +16,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -79,11 +80,26 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
-        var layers = new List<PublishedLayerSummary>();
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
+        var layers = await ReadPublishedLayersAsync(
+                connection,
+                transaction: null,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
 
+        return await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string normalizedService,
+        CancellationToken cancellationToken)
+    {
+        var layers = new List<PublishedLayerSummary>();
         const string sql = """
             SELECT
                 l.layer_id,
@@ -115,7 +131,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             ORDER BY l.layer_id;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@serviceName", normalizedService);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -273,6 +289,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
@@ -337,29 +356,62 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // layer row). Doing it first means a projection failure leaves the layer transaction uncommitted and
         // rolled back on dispose â€” instead of committing an orphaned layer that then blocks re-publish with
         // "Layer already exists". (Publish is atomic from the caller's perspective.)
-        await UpsertPublishedLayerMetadataV2Async(
-                serviceName,
-                request,
-                layerId,
-                schema,
-                table,
-                primaryKeyColumn.Name,
-                geometryColumn,
-                geometryType,
-                srid,
-                storageSrid,
-                fields,
-                extent,
-                cancellationToken)
-            .ConfigureAwait(false);
+        MetadataV2GraphMutation? metadataMutation = null;
+        try
+        {
+            metadataMutation = await UpsertPublishedLayerMetadataV2Async(
+                    serviceName,
+                    request,
+                    layerId,
+                    schema,
+                    table,
+                    primaryKeyColumn.Name,
+                    geometryColumn,
+                    geometryType,
+                    srid,
+                    storageSrid,
+                    fields,
+                    extent,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-        await transaction.CommitSafelyAsync(cancellationToken);
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
+        {
+            // A dropped COMMIT acknowledgement does not prove rollback. PostgreSQL's xid status is
+            // the marker for this exact transaction, unlike an idempotent service-layer row that may
+            // have existed before it began.
+            var commitVisible = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(connectionString, transactionId)
+                .ConfigureAwait(false);
+            if (commitVisible == false)
+            {
+                await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+                throw;
+            }
+
+            if (commitVisible is null)
+            {
+                throw;
+            }
+        }
+        catch (Exception commitException) when (metadataMutation is not null)
+        {
+            await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+            throw;
+        }
 
         return new PublishedLayerSummary
         {
             LayerId = layerId,
             LayerName = request.LayerName.Trim(),
             Description = request.Description,
+            License = request.SourceGovernance?.License,
+            Attribution = request.SourceGovernance?.Attribution,
+            Publisher = request.SourceGovernance?.Publisher,
+            LicenseUrl = request.SourceGovernance?.EffectiveLicenseUrl,
+            SourceUrl = request.SourceGovernance?.SourceUrl,
             Schema = schema,
             Table = table,
             GeometryType = geometryType,
@@ -389,6 +441,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         var layer = await GetLayerSummaryByIdAsync(connection, transaction, layerId, cancellationToken)
             .ConfigureAwait(false);
@@ -409,7 +464,46 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var linkedLayer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken)
             .ConfigureAwait(false);
 
-        await transaction.CommitSafelyAsync(cancellationToken);
+        MetadataV2GraphMutation? metadataMutation = null;
+        try
+        {
+            if (linkedLayer is not null)
+            {
+                metadataMutation = await UpsertLinkedLayerMetadataV2Async(
+                        normalizedService,
+                        linkedLayer,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                linkedLayer = HydrateSourceGovernance(
+                    linkedLayer,
+                    metadataMutation.PersistedGraph,
+                    normalizedService);
+            }
+
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
+        {
+            var commitVisible = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(connectionString, transactionId)
+                .ConfigureAwait(false);
+            if (commitVisible == false)
+            {
+                await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+                throw;
+            }
+
+            if (commitVisible is null)
+            {
+                throw;
+            }
+        }
+        catch (Exception commitException) when (metadataMutation is not null)
+        {
+            await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+            throw;
+        }
+
         return linkedLayer;
     }
 
@@ -520,6 +614,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         var layer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken);
         if (layer == null)
@@ -527,12 +624,29 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             return null;
         }
 
+        // Resolve response-only governance before changing transactional state. A graph read failure
+        // must not turn a successfully committed enablement change into an apparent request failure.
+        var hydratedLayers = await HydrateSourceGovernanceAsync([layer], normalizedService, cancellationToken)
+            .ConfigureAwait(false);
+        layer = hydratedLayers[0];
+
         await SetLayerEnabledCoreAsync(connection, transaction, layerId, enabled, cancellationToken)
             .ConfigureAwait(false);
         layer = CloneWithEnabled(layer, enabled);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
-        await transaction.CommitSafelyAsync(cancellationToken);
+        var metadataMutation = await UpdateLayerLifecycleMetadataV2Async(
+                [layerId],
+                enabled,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await CommitLayerLifecycleTransactionAsync(
+                transaction,
+                connectionString,
+                transactionId,
+                metadataMutation,
+                cancellationToken)
+            .ConfigureAwait(false);
         return layer;
     }
 
@@ -549,6 +663,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        var layerIds = await ListServiceLayerIdsAsync(
+                connection,
+                transaction,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         const string updateSql = """
             UPDATE honua.layers
@@ -566,9 +689,61 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
-        await transaction.CommitSafelyAsync(cancellationToken);
+        var layers = await ReadPublishedLayersAsync(
+                connection,
+                transaction,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken)
+            .ConfigureAwait(false);
+        var metadataMutation = await UpdateLayerLifecycleMetadataV2Async(
+                layerIds.ToHashSet(),
+                enabled,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await CommitLayerLifecycleTransactionAsync(
+                transaction,
+                connectionString,
+                transactionId,
+                metadataMutation,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return hydratedLayers;
+    }
 
-        return await ListPublishedLayersAsync(connectionString, normalizedService, cancellationToken);
+    private async Task CommitLayerLifecycleTransactionAsync(
+        NpgsqlTransaction transaction,
+        string connectionString,
+        string transactionId,
+        MetadataV2GraphMutation? metadataMutation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
+        {
+            var commitVisible = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(connectionString, transactionId)
+                .ConfigureAwait(false);
+            if (commitVisible == false)
+            {
+                await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+                throw;
+            }
+
+            if (commitVisible is null)
+            {
+                throw;
+            }
+        }
+        catch (Exception commitException) when (metadataMutation is not null)
+        {
+            await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
@@ -696,4 +871,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string? PrimaryKey,
         int? ServiceSrid,
         int? TargetSrid);
+
+    internal sealed record MetadataV2GraphMutation(
+        MetadataV2Graph PreviousGraph,
+        MetadataV2Graph PersistedGraph,
+        string PersistedEtag);
 }

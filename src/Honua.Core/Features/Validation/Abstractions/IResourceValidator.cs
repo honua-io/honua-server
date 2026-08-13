@@ -59,6 +59,15 @@ public interface IResourceValidator
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates a service while resolving same-name protocol services against the requested
+    /// protocol's canonical publication surface.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+        string serviceId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates that a service and layer exist in the canonical Metadata v2 graph.
     /// Returns the resolved (service, publication, resource) triple; publications carry
     /// the protocol-facing service-local LayerIndex so callers that need it have it.
@@ -71,11 +80,21 @@ public interface IResourceValidator
         string serviceId,
         int layerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates a service layer while preferring the publication type that is canonical for the
+    /// requested protocol when the same layer index is published through several surfaces.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+        string serviceId,
+        int layerId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
 /// Resolved (service, publication, resource) triple returned by
-/// <see cref="IResourceValidator.ValidateServiceLayerV2Async"/>.
+/// <see cref="IResourceValidator.ValidateServiceLayerV2Async(string, int, CancellationToken)"/>.
 /// </summary>
 public readonly record struct MetadataV2ServiceLayerTriple(
     MetadataV2Service Service,
