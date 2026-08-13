@@ -15,6 +15,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NetTopologySuite" />
+    <!-- Direct pin of Testcontainers' transitive SSH.NET to the patched release
+         (GHSA-q939-rpr3-3284). -->
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="Testcontainers.Oracle" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">

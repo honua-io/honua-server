@@ -623,6 +623,22 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Data and Sharing"
+# Capacity rebalance: Streaming executes only in the existing Data and Sharing
+# shard. Do not wake the Misc or Spec shards for a Streaming-only source diff.
+assert_exact_shards \
+  "streaming-source-exact-owner" \
+  "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
+  '["Server Features Data and Sharing"]'
+# Root Admin tests share the already-running Admin Operations shard after the
+# legacy Admin & Infrastructure runner exhausted its test budget.
+assert_exact_shards \
+  "root-admin-test-exact-owner" \
+  "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishingIntegrationTests.cs" \
+  '["Server Features Admin Operations"]'
+assert_exact_shards \
+  "root-admin-endpoint-test-exact-owner" \
+  "tests/dotnet/Honua.Server.Tests/AdminEndpointTests.cs" \
+  '["Server Features Admin Operations"]'
 assert_descriptor \
   "collaboration-source-retains-owner" \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
