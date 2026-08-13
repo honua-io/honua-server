@@ -128,11 +128,9 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             .Should().BeEquivalentTo("band_2", "band_3");
     }
 
-    [IntegrationTest(Skip = "Candidate product bug (#2983 depth recon): an unknown parameter-name " +
-        "silently falls back to band_1 data instead of rejecting the request, so a client asking " +
-        "for a parameter the collection does not offer receives band_1 values labeled band_1. " +
-        "EdrHandler.BuildParameters inserts a band_1 fallback whenever the requested names match " +
-        "nothing. Tracked by #3184; enable once the handler returns 400 for unknown names.")]
+    // Enabled once #3184 landed (#3189): EdrHandler validates parameter-name against the
+    // collection's enumerated names instead of falling back to band_1 data.
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_Position_UnknownParameterName_ReturnsBadRequest()
