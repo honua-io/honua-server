@@ -121,6 +121,20 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
+        // Snapshot servability is decided here, ahead of the transport handshake: it is the last
+        // point at which an unservable baseline can still be reported as a typed problem document
+        // rather than as a dead stream (honua-server#3181 REQ-002).
+        var snapshotError = await ValidateSnapshotServabilityAsync(
+            deps,
+            logger,
+            context,
+            filterResult.Mode,
+            filterResult.Filter).ConfigureAwait(false);
+        if (snapshotError is not null)
+        {
+            return snapshotError;
+        }
+
         if (isWebSocket)
         {
             await HandleWebSocketStream(
@@ -199,6 +213,7 @@ internal static partial class FeatureStreamEndpoints
             SubscriptionSequence = enabled,
             MaxSnapshotFeatures = options.MaxSnapshotFeatures,
             MaxSnapshotScanRows = options.MaxSnapshotScanRows,
+            MaxSnapshotBytes = options.MaxSnapshotBytes,
             // The mutable release version and the immutable deployment revision are separate
             // fields: evidence bound to a deployment must reference the revision (#3038).
             ServerVersion = deploymentIdentity.ReleaseVersion,

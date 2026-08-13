@@ -39,6 +39,40 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Writes a terminal <c>status: error</c> frame naming why the stream is ending. Best effort:
+    /// the client may already be gone, and the caller is closing the stream either way.
+    /// </summary>
+    private static async Task WriteSseTerminalErrorAsync(
+        HttpResponse response,
+        Guid sessionId,
+        string subscriptionId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WriteSseEventAsync(
+                response,
+                "status",
+                new FeatureStreamStatusFrame
+                {
+                    Status = "error",
+                    Message = message,
+                    SessionId = sessionId,
+                    SubscriptionId = subscriptionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                null,
+                cancellationToken).ConfigureAwait(false);
+            await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            // The client is already gone; the stream is ending regardless.
+        }
+    }
+
     private static async Task HandleSseStream(
         FeatureStreamDependencies deps,
         ILogger logger,
@@ -179,6 +213,18 @@ internal static partial class FeatureStreamEndpoints
                 // Last-Event-ID and takes a fresh snapshot (honua-server#3038 review).
                 if (!snapshotResult.Complete)
                 {
+                    // Name the bound that truncated the baseline before closing. A silent close
+                    // is indistinguishable from a dropped connection, which is precisely the
+                    // ambiguity that made an unservable snapshot look like an untyped failure
+                    // (honua-server#3181 REQ-002).
+                    await WriteSseTerminalErrorAsync(
+                        context.Response,
+                        session.SessionId,
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        snapshotResult.IncompleteReason is { } incompleteReason
+                            ? $"The baseline snapshot was incomplete: {incompleteReason}. Reconnect without a cursor to take a fresh snapshot."
+                            : "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
+                        linkedCts.Token).ConfigureAwait(false);
                     return;
                 }
 
@@ -194,6 +240,25 @@ internal static partial class FeatureStreamEndpoints
             }
             catch (ObjectDisposedException)
             {
+                return;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // The response is already committed, so no problem document can be produced here.
+                // End with a terminal error frame instead of letting the exception unwind into an
+                // aborted connection that the caller (or an intermediary) reports as an untyped
+                // 500 (honua-server#3181 REQ-002).
+                FeatureStreamLog.SnapshotEmitFailed(
+                    logger,
+                    session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    exception);
+                await WriteSseTerminalErrorAsync(
+                    context.Response,
+                    session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    "The baseline snapshot could not be completed. Reconnect to take a fresh snapshot.",
+                    linkedCts.Token).ConfigureAwait(false);
                 return;
             }
         }

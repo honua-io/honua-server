@@ -1,12 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Events;
@@ -618,6 +621,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             data.GetProperty("subscriptionSequence").GetBoolean().Should().BeTrue();
             data.GetProperty("maxSnapshotFeatures").GetInt32().Should().BeGreaterThan(0);
             data.GetProperty("maxSnapshotScanRows").GetInt32().Should().BeGreaterThan(0);
+            // The payload budget is a bound a client can observe — a large-geometry layer reaches
+            // it long before the feature cap — so capabilities must state it (#3181).
+            data.GetProperty("maxSnapshotBytes").GetInt32().Should().BeGreaterThan(0);
 
             data.GetProperty("serverVersion").GetString().Should().NotBeNullOrWhiteSpace();
             data.GetProperty("deploymentRevision").GetString().Should().Be(Revision);
@@ -1083,7 +1089,285 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    // ── #3181 REQ-001: every advertised layer is actually snapshot-servable ─────
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_EveryCanSubscribeLayerInTheCapabilityDocument_ReturnsABaseline()
+    {
+        // Driven off the capability document rather than a hardcoded layer: the contract is
+        // "every layer advertised as canSubscribe can be snapshotted", so a seed change that adds
+        // a layer the baseline path cannot serve must fail here instead of shipping (#3181).
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+
+        var layerIds = await ReadSubscribableLayerIdsAsync(_client, cts.Token);
+        layerIds.Should().NotBeEmpty("the capability document must advertise at least one subscribable layer");
+
+        foreach (var layerId in layerIds)
+        {
+            using var request = BuildSseRequest(
+                $"/api/v1/streaming/features?layers={layerId.ToString(CultureInfo.InvariantCulture)}&mode=snapshot");
+            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "layer {0} advertises canSubscribe: true", layerId);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            using var layerCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            layerCts.CancelAfter(TimeSpan.FromSeconds(45));
+
+            var baseline = await ReadBaselineAsync(reader, layerCts.Token);
+            baseline.Begin.ValueKind.Should().Be(JsonValueKind.Object,
+                "layer {0} must open a baseline rather than dropping the stream", layerId);
+            baseline.End.ValueKind.Should().Be(JsonValueKind.Object,
+                "layer {0} must terminate its baseline with snapshot-end", layerId);
+            baseline.End.GetProperty("featureCount").GetInt64().Should().Be(baseline.Features.Count);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotThenDeltaMode_EveryCanSubscribeLayerInTheCapabilityDocument_ReturnsABaseline()
+    {
+        // Same contract over the batched framing: the SDK conformance lane subscribes in
+        // snapshot-then-delta, so the batched baseline has to be servable for the same layers.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+
+        var layerIds = await ReadSubscribableLayerIdsAsync(_client, cts.Token);
+        layerIds.Should().NotBeEmpty();
+
+        foreach (var layerId in layerIds)
+        {
+            using var request = BuildSseRequest(
+                $"/api/v1/streaming/features?layers={layerId.ToString(CultureInfo.InvariantCulture)}&mode=snapshot-then-delta");
+            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "layer {0} advertises canSubscribe: true", layerId);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            using var layerCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            layerCts.CancelAfter(TimeSpan.FromSeconds(45));
+
+            var snapshot = await ReadUntilEventAsync(reader, "snapshot", layerCts.Token);
+            snapshot.Should().NotBeNull("layer {0} must emit a batched baseline", layerId);
+            snapshot!.Value.GetProperty("featureCount").GetInt64()
+                .Should().Be(snapshot.Value.GetProperty("features").GetArrayLength());
+        }
+    }
+
+    // ── #3181 REQ-001: the baseline is bounded by payload size, not only count ──
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_PayloadBudgetReached_TruncatesAndNamesTheCondition()
+    {
+        // MaxSnapshotFeatures bounds the feature COUNT, which says nothing about response size:
+        // a layer of large geometries produces a baseline orders of magnitude bigger than the
+        // same count of small ones. A response path that buffers (a serverless invoke response is
+        // typically capped at 6 MB) discards the over-large 200 and substitutes its own untyped
+        // 500, so the client never sees the baseline the server considered successful (#3181).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
+        {
+            ["FeatureStreaming:MaxSnapshotBytes"] = "64"
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var baseline = await ReadBaselineAsync(reader, cts.Token);
+
+            baseline.Features.Should().BeEmpty("no frame fits inside a 64-byte payload budget");
+            baseline.End.GetProperty("complete").GetBoolean().Should().BeFalse(
+                "a payload-bounded baseline is truncated, and truncation is never advertised as authoritative");
+            baseline.EventIds.Should().OnlyContain(id => id == null,
+                "no frame of an incomplete snapshot may publish a resumable SSE id");
+
+            var terminal = await ReadUntilEventAsync(reader, "status", cts.Token);
+            terminal.Should().NotBeNull(
+                "the stream must name why it is ending rather than closing silently");
+            terminal!.Value.GetProperty("status").GetString().Should().Be("error");
+            terminal.Value.GetProperty("message").GetString().Should().Contain("maxSnapshotBytes");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // ── #3181 REQ-002: an unservable snapshot is a typed problem, never a 500 ───
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_UnreadableLayer_ReturnsTypedProblemInsteadOfUntyped500()
+    {
+        // A baseline read that the backing store refuses used to escape after the SSE handshake,
+        // which leaves no way to answer with a problem document — the caller (or a buffering
+        // intermediary) reports an untyped 500 instead. Servability is now decided ahead of the
+        // handshake, where a typed RFC 7807 response is still possible (#3181 REQ-002).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateFixtureWithUnreadableFeatureReader();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            using var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+            var body = await response.Content.ReadAsStringAsync(cts.Token);
+            using var problem = JsonDocument.Parse(body);
+            problem.RootElement.TryGetProperty("type", out _).Should().BeTrue();
+            problem.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+            problem.RootElement.GetProperty("detail").GetString().Should()
+                .Contain("baseline snapshot cannot be served",
+                    "the problem document names the condition rather than reporting a bare failure");
+
+            body.Should().NotContain(UnreadableFeatureReader.FailureMessage,
+                "provider text must never reach the client");
+            body.Should().NotContain("Npgsql");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_DeltaMode_UnreadableLayer_IsUnaffectedByTheSnapshotPreflight()
+    {
+        // The pre-flight probe is scoped to snapshot subscriptions: delta delivery never reads
+        // stored state, so an unreadable backing store must not take the delta stream down.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateFixtureWithUnreadableFeatureReader();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=delta");
+            using var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────
+
+    private static async Task<IReadOnlyList<int>> ReadSubscribableLayerIdsAsync(
+        HttpClient client,
+        CancellationToken cancellationToken)
+    {
+        using var response = await client.GetAsync("/api/v1/streaming/features/capabilities", cancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return [.. document.RootElement
+            .GetProperty("data")
+            .GetProperty("layers")
+            .EnumerateArray()
+            .Where(layer => layer.GetProperty("canSubscribe").GetBoolean())
+            .Select(layer => layer.GetProperty("layerId").GetInt32())];
+    }
+
+    private static WebAppFixture CreateFixtureWithUnreadableFeatureReader()
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureServices(services =>
+            {
+                var original = services.Last(d => d.ServiceType == typeof(IFeatureReader));
+                services.Remove(original);
+                services.Add(ServiceDescriptor.Describe(
+                    typeof(IFeatureReader),
+                    sp => new UnreadableFeatureReader(CreateFeatureReader(sp, original)),
+                    original.Lifetime));
+            });
+
+    private static IFeatureReader CreateFeatureReader(
+        IServiceProvider serviceProvider,
+        ServiceDescriptor descriptor)
+        => descriptor.ImplementationInstance as IFeatureReader
+            ?? (descriptor.ImplementationFactory is { } factory
+                ? (IFeatureReader)factory(serviceProvider)
+                : (IFeatureReader)ActivatorUtilities.CreateInstance(
+                    serviceProvider,
+                    descriptor.ImplementationType!));
+
+    /// <summary>
+    /// Delegates every read except the two the baseline path uses, which fail the way a backing
+    /// store whose table has been dropped or whose grants were revoked fails.
+    /// </summary>
+    private sealed class UnreadableFeatureReader(IFeatureReader inner) : IFeatureReader
+    {
+        public const string FailureMessage = "42P01: relation \"honua_test.features\" does not exist";
+
+        public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
+            => inner.GetAsync(layerId, featureId, cancellationToken);
+
+        public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException(FailureMessage);
+
+        public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+            => inner.QueryFlatGeobufAsync(layerId, query, cancellationToken);
+
+        public Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException(FailureMessage);
+
+        public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+            => inner.CountAsync(layerId, query, cancellationToken);
+
+        public Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+            => inner.GetExtentAsync(layerId, query, cancellationToken);
+
+        public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+            int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+            => inner.QueryStatisticsAsync(layerId, query, cancellationToken);
+
+        public Task<TemporalExtentResult?> GetTemporalExtentAsync(
+            int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
+            => inner.GetTemporalExtentAsync(layerId, fieldName, propertyType, cancellationToken);
+
+        public Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
+            => inner.GetEstimatesAsync(layerId, cancellationToken);
+
+        public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
+            int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+            => inner.QueryTopFeaturesAsync(layerId, query, cancellationToken);
+
+        public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
+            int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
+            => inner.QueryDateBinsAsync(layerId, query, dateBin, cancellationToken);
+
+        public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
+            int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
+            => inner.QueryBinsAsync(layerId, query, binDefinition, cancellationToken);
+
+        public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
+            int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
+            => inner.QueryH3Async(layerId, query, h3Query, cancellationToken);
+    }
 
     private static WebAppFixture CreateFixtureWithDeploymentConfig(Dictionary<string, string?> settings)
         => new WebAppFixture()
