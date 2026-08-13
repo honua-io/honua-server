@@ -57,6 +57,14 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
                 MediaType = "image/tiff",
                 Checksum = new RasterChecksum("sha256", new string('a', 64)),
             },
+            Grid = new RasterOutputGridSummary
+            {
+                Width = 32,
+                Height = 16,
+                BandCount = 1,
+                BitsPerSample = 16,
+                PixelScale = new RasterSourcePixelScale(2.5, 3.5),
+            },
             ProducingEngine = RasterOutputContract.GdalWorkerEngine,
             Provider = Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.Local,
             StoreReference = "gp-outputs",
@@ -71,6 +79,8 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
         artifact.ContentType.Should().Be("image/tiff");
         artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Staged);
         artifact.Metadata[RasterOutputArtifactMetadata.ObjectKey].Should().Be(descriptor.ObjectKey);
+        artifact.Metadata[RasterOutputArtifactMetadata.GridPixelScaleX].Should().Be("2.5");
+        artifact.Metadata[RasterOutputArtifactMetadata.GridPixelScaleY].Should().Be("3.5");
         artifact.Metadata[RasterOutputArtifactMetadata.ContentRoute].Should().Be(
             "/api/geoprocessing/jobs/job-x/artifacts/0/content");
     }

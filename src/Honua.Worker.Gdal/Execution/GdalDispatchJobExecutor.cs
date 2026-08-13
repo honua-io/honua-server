@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Security.Cryptography;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -30,6 +32,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     private readonly ILogger<GdalDispatchJobExecutor> _logger;
     private readonly Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? _outputStore;
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>? _stagingOptions;
+    private readonly Microsoft.Extensions.Options.IOptionsMonitor<GdalWorkerOptions>? _workerOptions;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered GDAL-backed executors
@@ -47,7 +50,8 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         IEnumerable<IProcessExecutor> executors,
         ILogger<GdalDispatchJobExecutor> logger,
         Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null,
-        Microsoft.Extensions.Options.IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>? stagingOptions = null)
+        Microsoft.Extensions.Options.IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>? stagingOptions = null,
+        Microsoft.Extensions.Options.IOptionsMonitor<GdalWorkerOptions>? workerOptions = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
@@ -56,6 +60,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         _logger = logger;
         _outputStore = outputStore;
         _stagingOptions = stagingOptions;
+        _workerOptions = workerOptions;
     }
 
     /// <inheritdoc />
@@ -68,7 +73,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     public IReadOnlyCollection<string> SupportedProcessIds => _handlers.Keys;
 
     /// <inheritdoc />
-    public Task<JobExecutionResult> ExecuteAsync(
+    public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
         CancellationToken cancellationToken)
@@ -82,9 +87,9 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         {
             var supported = string.Join(", ", _handlers.Keys.OrderBy(id => id, StringComparer.Ordinal));
             Log.UnsupportedProcessId(_logger, job.OperationId, processId ?? "<none>");
-            return Task.FromResult(JobExecutionResult.Failed(
+            return JobExecutionResult.Failed(
                 $"Process id '{processId ?? "<none>"}' is not supported by the GDAL worker runtime. " +
-                $"Supported ids: {supported}."));
+                $"Supported ids: {supported}.");
         }
 
         var staging = _stagingOptions?.CurrentValue;
@@ -93,8 +98,198 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
             context = new GdalStagedOutputContext(context, job, _outputStore, staging);
         }
 
-        return handler.ExecuteAsync(job, context, cancellationToken);
+        var hydratedWorkspace = default(string);
+        try
+        {
+            var hydration = await TryHydrateStagedRasterSourcesAsync(job, cancellationToken).ConfigureAwait(false);
+            hydratedWorkspace = hydration.Workspace;
+            if (hydration.Failure is not null)
+            {
+                return JobExecutionResult.Failed(hydration.Failure);
+            }
+
+            job = hydration.Job;
+            return await handler.ExecuteAsync(job, context, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (hydratedWorkspace is not null)
+            {
+                GdalScratch.TryCleanup(hydratedWorkspace, _logger);
+            }
+        }
     }
+
+    private async Task<StagedRasterHydration> TryHydrateStagedRasterSourcesAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        List<(string ParameterKey, StagedArtifactRasterSourceDescriptor Descriptor)>? stagedSources = null;
+        foreach (var (key, value) in job.Spec.Parameters)
+        {
+            if (!key.StartsWith(GdalWorkerParameterKeys.StepRasterSourcePrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (RasterSourceJson.Deserialize(value) is StagedArtifactRasterSourceDescriptor staged)
+                {
+                    stagedSources ??= [];
+                    stagedSources.Add((key, staged));
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // The executor's canonical reader shapes invalid-descriptor errors.
+            }
+        }
+
+        if (stagedSources is null)
+        {
+            return new StagedRasterHydration(job, null, null);
+        }
+
+        var staging = _stagingOptions?.CurrentValue;
+        if (_outputStore is null || _workerOptions is null || staging is not { Enabled: true })
+        {
+            return new StagedRasterHydration(
+                job,
+                null,
+                "Staged raster inputs require enabled output staging and the matching output store on the GDAL worker.");
+        }
+
+        var options = _workerOptions.CurrentValue;
+        var workspace = GdalScratch.CreateWorkspace(options.ScratchRoot, job.OperationId + "-staged-inputs");
+        try
+        {
+            var parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal);
+            for (var index = 0; index < stagedSources.Count; index++)
+            {
+                var (parameterKey, staged) = stagedSources[index];
+                var validation = RasterSourceDescriptorValidator.Validate(
+                    staged,
+                    cancellationToken: cancellationToken);
+                if (!validation.IsValid)
+                {
+                    var failure = validation.Errors[0];
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input is invalid ({failure.Code}): {failure.Message}");
+                }
+
+                if (staged.Provider != _outputStore.Provider
+                    || !string.Equals(staged.StoreReference, _outputStore.StoreReference, StringComparison.Ordinal))
+                {
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input '{staged.ArtifactReference}' targets a different output store.");
+                }
+
+                if (staged.Content.SizeBytes > options.MaxStagedArtifactBytes)
+                {
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input '{staged.ArtifactReference}' size exceeds configured MaxStagedArtifactBytes={options.MaxStagedArtifactBytes}.");
+                }
+
+                if (!await _outputStore.TryAcquireReadLeaseAsync(
+                        staged.ObjectKey,
+                        staging.ReadLeaseDuration,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input '{staged.ArtifactReference}' is unavailable for a protected read.");
+                }
+
+                await using var source = await _outputStore.OpenReadAsync(staged.ObjectKey, cancellationToken)
+                    .ConfigureAwait(false);
+                if (source is null)
+                {
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input '{staged.ArtifactReference}' is unavailable in the configured output store.");
+                }
+
+                var fileName = $"source-{index}.tif";
+                var outputPath = Path.Join(workspace, fileName);
+                var copied = 0L;
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                await using (var output = new FileStream(
+                    outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+                {
+                    var buffer = new byte[81920];
+                    while (true)
+                    {
+                        var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        copied = checked(copied + read);
+                        if (copied > staged.Content.SizeBytes || copied > options.MaxStagedArtifactBytes)
+                        {
+                            return new StagedRasterHydration(
+                                job,
+                                workspace,
+                                $"Staged raster input '{staged.ArtifactReference}' exceeded its declared size while materializing.");
+                        }
+
+                        hash.AppendData(buffer, 0, read);
+                        await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                if (copied != staged.Content.SizeBytes)
+                {
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input '{staged.ArtifactReference}' did not match its declared size.");
+                }
+
+                var expected = staged.Content.Checksum;
+                if (expected is null
+                    || !string.Equals(expected.Algorithm, "sha256", StringComparison.Ordinal)
+                    || !string.Equals(
+                        expected.Value,
+                        Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
+                        StringComparison.Ordinal))
+                {
+                    return new StagedRasterHydration(
+                        job,
+                        workspace,
+                        $"Staged raster input '{staged.ArtifactReference}' failed content-integrity verification.");
+                }
+
+                var inputName = parameterKey[GdalWorkerParameterKeys.StepRasterSourcePrefix.Length..];
+                parameters[GdalWorkerParameterKeys.HydratedStagedSourcePrefix + inputName] = outputPath;
+            }
+
+            return new StagedRasterHydration(
+                job with { Spec = job.Spec with { Parameters = parameters } },
+                workspace,
+                null);
+        }
+        catch
+        {
+            GdalScratch.TryCleanup(workspace, _logger);
+            throw;
+        }
+    }
+
+    private sealed record StagedRasterHydration(
+        ExecutionJobRecord Job,
+        string? Workspace,
+        string? Failure);
 
     private static partial class Log
     {

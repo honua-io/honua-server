@@ -67,6 +67,12 @@ public static class RasterOutputArtifactMetadata
     /// <summary>Largest sample width across bands, in bits.</summary>
     public const string GridBitsPerSample = "raster.output.grid.bitsPerSample";
 
+    /// <summary>Output horizontal ground-unit pixel size.</summary>
+    public const string GridPixelScaleX = "raster.output.grid.pixelScaleX";
+
+    /// <summary>Output vertical ground-unit pixel size.</summary>
+    public const string GridPixelScaleY = "raster.output.grid.pixelScaleY";
+
     /// <summary>Coordinate reference system identifier when pinned by the producer.</summary>
     public const string GridCrs = "raster.output.grid.crs";
 

@@ -409,7 +409,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Refuse client-supplied durable raster descriptors before any further processing:
         // only execution-owned catalog resolution below may mint object-store references,
         // and bounded typed inline sources carry no ambient object-store authority (#3090).
-        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
+        var stagedAuthorizationReference = inheritsSubmitterSecurityContext
+            && protocolMetadata?.TryGetValue("orchestration.runId", out var workflowRunId) == true
+            && !string.IsNullOrWhiteSpace(workflowRunId)
+                ? $"workflow:{workflowRunId}:submitter"
+                : null;
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(
+            plan,
+            stagedAuthorizationReference);
 
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no

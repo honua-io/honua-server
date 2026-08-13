@@ -190,6 +190,18 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsafeLocator);
     }
 
+    [Fact]
+    public void Validate_StagedArtifactWithoutProducerDimensions_IsRejected()
+    {
+        var result = RasterSourceDescriptorValidator.Validate(
+            Staged() with { DeclaredDimensions = null });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.InvalidField
+            && error.Field == "declaredDimensions");
+    }
+
     [Theory]
     [InlineData("https://example.com/context")]
     [InlineData("context?access_key=secret")]
@@ -598,6 +610,10 @@ public sealed class RasterSourceContractTests
     {
         Version = "generation-3",
         ArtifactReference = "artifact-01JZZZZZZZZZZZZZZZZZZZZZZZ",
+        Provider = CloudStorageProvider.Local,
+        StoreReference = "gp-outputs",
+        ObjectKey = "gp/outputs/job-1/a1/output/result.tif",
+        DeclaredDimensions = new RasterSourceDimensions(64, 32, 1, 16),
         Content = Content(),
         SecurityContext = Security(),
     };

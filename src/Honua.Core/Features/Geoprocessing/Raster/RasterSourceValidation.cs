@@ -201,6 +201,27 @@ public static class RasterSourceDescriptorValidator
 
             case StagedArtifactRasterSourceDescriptor staged:
                 ValidateOpaqueReference(staged.ArtifactReference, "artifactReference", errors);
+                ValidateOpaqueReference(staged.StoreReference, "storeReference", errors);
+                ValidateObjectStoreKey(staged.ObjectKey, "objectKey", errors);
+                if (staged.DeclaredDimensions is not { } stagedDimensions
+                    || stagedDimensions.Width <= 0
+                    || stagedDimensions.Height <= 0
+                    || stagedDimensions.BandCount <= 0
+                    || stagedDimensions.BitsPerSample <= 0)
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "declaredDimensions",
+                        "Staged raster sources require positive producer-probed dimensions.");
+                }
+
+                if (staged.DeclaredPixelScale is { } stagedPixelScale
+                    && (!double.IsFinite(stagedPixelScale.X)
+                        || !double.IsFinite(stagedPixelScale.Y)
+                        || stagedPixelScale.X <= 0d
+                        || stagedPixelScale.Y <= 0d))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "declaredPixelScale",
+                        "Declared raster pixel scales must be positive finite numbers when supplied.");
+                }
                 break;
 
             case InlineRasterSourceDescriptor inline:

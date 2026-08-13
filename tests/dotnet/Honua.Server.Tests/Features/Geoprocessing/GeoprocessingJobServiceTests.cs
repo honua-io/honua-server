@@ -476,6 +476,50 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    public async Task SubmitJobWithSecurityContext_ExecutionOwnedStagedRaster_IsAccepted()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var staged = CreateStagedRasterSource("workflow:run-1:submitter");
+
+        var job = await _sut.SubmitJobWithSecurityContextAsync(
+            CreateTypedRasterPlan("source", staged),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
+            CreateSubmitterSecurityContext());
+
+        job.Status.Should().Be(ExecutionJobStatus.Queued);
+        job.Spec.Parameters.Values.Should().Contain(value =>
+            value.Contains("staged-artifact", StringComparison.Ordinal));
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitJobWithSecurityContext_CallerAuthoredStagedRaster_IsRejected()
+    {
+        var staged = CreateStagedRasterSource("workflow:different-run:submitter");
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobWithSecurityContextAsync(
+                CreateTypedRasterPlan("source", staged),
+                null,
+                CreatePrincipal(),
+                new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
+                CreateSubmitterSecurityContext()));
+
+        exception.Message.Should().Contain(
+            GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_TypedRasterBoundToNonRasterParameter_RejectsBeforePersistence()
@@ -4326,6 +4370,28 @@ public sealed class GeoprocessingJobServiceTests
             TenantId = "tenant-a",
             AuthorizationSnapshotReference = "untrusted-caller-hint",
         },
+    };
+
+    private static StagedArtifactRasterSourceDescriptor CreateStagedRasterSource(
+        string authorizationSnapshotReference) => new()
+    {
+        ArtifactReference = "job-1:artifact:1",
+        Provider = CloudStorageProvider.Local,
+        StoreReference = "gp-outputs",
+        ObjectKey = "gp/outputs/job-1/a1/output/result.tif",
+        Version = "sha256:" + new string('a', 64),
+        Content = new RasterContentIdentity
+        {
+            SizeBytes = 4096,
+            MediaType = "image/tiff",
+            Checksum = new RasterChecksum("sha256", new string('a', 64)),
+        },
+        SecurityContext = new RasterSecurityContextReference
+        {
+            TenantId = "tenant:a",
+            AuthorizationSnapshotReference = authorizationSnapshotReference,
+        },
+        DeclaredDimensions = new RasterSourceDimensions(32, 16, 1, 16),
     };
 
     private static string OpaqueTenantReference(string tenantId)

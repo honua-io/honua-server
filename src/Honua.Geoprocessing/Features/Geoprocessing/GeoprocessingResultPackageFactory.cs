@@ -222,6 +222,13 @@ internal static class GeoprocessingResultPackageFactory
                 grid.BandCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             metadata[RasterOutputArtifactMetadata.GridBitsPerSample] =
                 grid.BitsPerSample.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (grid.PixelScale is { } pixelScale)
+            {
+                metadata[RasterOutputArtifactMetadata.GridPixelScaleX] =
+                    pixelScale.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                metadata[RasterOutputArtifactMetadata.GridPixelScaleY] =
+                    pixelScale.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            }
             if (!string.IsNullOrWhiteSpace(grid.CoordinateReferenceSystem))
             {
                 metadata[RasterOutputArtifactMetadata.GridCrs] = grid.CoordinateReferenceSystem;

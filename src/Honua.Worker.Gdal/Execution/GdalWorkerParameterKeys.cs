@@ -28,6 +28,13 @@ internal static class GdalWorkerParameterKeys
     public const string StepRasterSourcePrefix = "honua.geoprocessing.raster_source.0.";
 
     /// <summary>
+    /// Worker-internal path prefix populated only after a staged descriptor has been
+    /// streamed from the execution-owned store into scratch. It never crosses the
+    /// durable server-to-worker contract.
+    /// </summary>
+    public const string HydratedStagedSourcePrefix = "honua.worker.gdal.staged_input.0.";
+
+    /// <summary>
     /// Parameter key carrying the canonical process id list. Matches
     /// <c>ExecutionJobParameterKeys.GeoprocessingProcessDefinitions</c>.
     /// </summary>
