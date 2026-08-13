@@ -89,6 +89,11 @@ internal static class JobSecurityContextCapture
         OperatorScopeCatalog.ScpClaimType,
         OperatorScopeCatalog.ScopeClaimUri,
 
+        // The validated issuer scopes the subject used for live role membership. Losing it
+        // could resolve a same-valued subject from another IdP, so it is authorization
+        // identity rather than a budgeted descriptive claim.
+        "iss",
+
         // The managed-membership marker is budget-exempt for the same "dropping it WIDENS
         // authority" reason as the scope-governance claims: if a pathological token pushed the
         // marker past the non-role claim budget, the durable snapshot would lose it and a later
@@ -297,7 +302,7 @@ internal static class JobSecurityContextCapture
         }
 
         var membership = await source
-            .ResolveMembershipAsync(principalId, cancellationToken)
+            .ResolveMembershipAsync(principalId, ResolveMembershipIssuer(context), cancellationToken)
             .ConfigureAwait(false);
         if (membership is null)
         {
@@ -366,6 +371,11 @@ internal static class JobSecurityContextCapture
         return string.IsNullOrWhiteSpace(context.PrincipalId) ? null : context.PrincipalId;
     }
 
+    private static string? ResolveMembershipIssuer(JobSecurityContext context)
+        => context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, "iss", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+
     /// <summary>
     /// Whether the snapshot was captured for a principal whose role membership is authoritatively
     /// owned by the live membership source (a managed SCIM/OIDC identity). Drives the fail-closed
@@ -401,7 +411,8 @@ internal static class JobSecurityContextCapture
 
         try
         {
-            return await source.ResolveMembershipAsync(principalId, cancellationToken).ConfigureAwait(false)
+            var issuer = principal.FindFirstValue("iss");
+            return await source.ResolveMembershipAsync(principalId, issuer, cancellationToken).ConfigureAwait(false)
                 is not null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

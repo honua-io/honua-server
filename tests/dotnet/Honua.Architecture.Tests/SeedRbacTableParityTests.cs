@@ -26,6 +26,11 @@ namespace Honua.Architecture.Tests;
 /// coverage test, OData paging assertions, etc.). This test fails fast and deterministically
 /// at build time if a durable authorization store references a <c>honua.*</c> table the seed
 /// has not mirrored, instead of surfacing later as a hard-to-attribute integration-shard flake.
+///
+/// The same contract covers the durable identity stores (<c>PostgresUserStore</c>,
+/// <c>PostgresScimGroupStore</c>, migration 106, #3141): they back the SCIM and admin
+/// user surfaces in the same migration-skipping host, so their <c>honua.*</c> tables must
+/// be mirrored by the seed too.
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed class SeedRbacTableParityTests
@@ -49,7 +54,7 @@ public sealed class SeedRbacTableParityTests
 
         var requiredTables = EnumerateAuthorizationStoreTables(projectRoot);
         requiredTables.Should().NotBeEmpty(
-            "the Postgres authorization stores must reference at least one honua.* table; " +
+            "the Postgres authorization/identity stores must reference at least one honua.* table; " +
             "an empty result means the source scan is broken, not that there is nothing to guard.");
 
         var seedTables = EnumerateSeedTables(projectRoot);
@@ -68,12 +73,22 @@ public sealed class SeedRbacTableParityTests
 
     private static HashSet<string> EnumerateAuthorizationStoreTables(string projectRoot)
     {
-        var authorizationDirectory = ArchitectureTestHelpers.CombinePath(
-            projectRoot, "src", "Honua.Db", "Postgres", "Features", "Authorization");
+        // Identity is scanned alongside Authorization (#3141): the durable managed-user /
+        // SCIM stores (PostgresUserStore, PostgresScimGroupStore) are registered in the
+        // same migration-skipping test host and read explicitly-qualified honua.* tables
+        // exactly like the RBAC stores, so they need the same seed mirror.
+        string[] storeDirectories =
+        [
+            ArchitectureTestHelpers.CombinePath(
+                projectRoot, "src", "Honua.Db", "Postgres", "Features", "Authorization"),
+            ArchitectureTestHelpers.CombinePath(
+                projectRoot, "src", "Honua.Db", "Postgres", "Features", "Identity"),
+        ];
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var source in Directory.EnumerateFiles(authorizationDirectory, "*.cs", SearchOption.AllDirectories)
+        foreach (var source in storeDirectories
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories))
             .Select(File.ReadAllText))
         {
             foreach (Match match in QualifyTableCall.Matches(source))
