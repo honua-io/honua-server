@@ -17,10 +17,12 @@ on:
       - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs'
       - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoParquetQueryFormatter.cs'
       - 'src/Honua.Core/Features/Infrastructure/Crs/GeoParquetProjJsonCatalog.cs'
+      - 'src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json'
       - 'src/Honua.Core/Features/Shared/Models/**'
       - 'src/Honua.Hosting/Honua.Hosting.csproj'
       - 'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs'
       - 'src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj'
+      - 'src/Honua.Protocols.GeoServices/GeoServicesObjectIdFieldResolver.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoArrowQueryFormatterTests.cs'
   workflow_dispatch:
