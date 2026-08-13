@@ -1155,8 +1155,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
             var snapshot = await ReadUntilEventAsync(reader, "snapshot", layerCts.Token);
             snapshot.Should().NotBeNull("layer {0} must emit a batched baseline", layerId);
-            snapshot!.Value.GetProperty("featureCount").GetInt64()
-                .Should().Be(snapshot.Value.GetProperty("features").GetArrayLength());
+            var snapshotValue = snapshot.GetValueOrDefault();
+            snapshotValue.GetProperty("featureCount").GetInt64()
+                .Should().Be(snapshotValue.GetProperty("features").GetArrayLength());
         }
     }
 
@@ -1202,8 +1203,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
             terminal.Should().NotBeNull(
                 "a mandatory envelope that cannot fit must stop before snapshot-begin rather than exceed the advertised budget");
-            terminal!.Value.GetProperty("status").GetString().Should().Be("error");
-            terminal.Value.GetProperty("message").GetString().Should().Contain("maxSnapshotBytes");
+            var terminalValue = terminal.GetValueOrDefault();
+            terminalValue.GetProperty("status").GetString().Should().Be("error");
+            terminalValue.GetProperty("message").GetString().Should().Contain("maxSnapshotBytes");
         }
         finally
         {

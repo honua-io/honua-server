@@ -263,9 +263,13 @@ internal static partial class FeatureStreamEndpoints
         public override int MeasureFixedBytes(
             FeatureStreamSnapshotBeginFrame begin,
             FeatureStreamSnapshotEndFrame end)
+            // The frame grows as features are appended and may cross either variable-length
+            // WebSocket header boundary. Reserve the maximum server-frame header up front;
+            // the remaining increments are then exactly the JSON growth.
             => JsonSerializer.SerializeToUtf8Bytes(
                 CreateEmptyMeasuredFrame(begin, end),
-                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame).Length;
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame).Length
+                + 10;
 
         protected override Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
             => SendWebSocketJsonAsync(
@@ -384,20 +388,23 @@ internal static partial class FeatureStreamEndpoints
         public override int MeasureFixedBytes(
             FeatureStreamSnapshotBeginFrame begin,
             FeatureStreamSnapshotEndFrame end)
-            => JsonSerializer.SerializeToUtf8Bytes(
-                begin,
-                FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame).Length
-                + JsonSerializer.SerializeToUtf8Bytes(
-                    end,
-                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame).Length;
+            => MeasureWebSocketMessageBytes(
+                JsonSerializer.SerializeToUtf8Bytes(
+                    begin,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame).Length)
+                + MeasureWebSocketMessageBytes(
+                    JsonSerializer.SerializeToUtf8Bytes(
+                        end,
+                        FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame).Length);
 
         public override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
         {
             var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
             var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
-            return JsonSerializer.SerializeToUtf8Bytes(
-                frame,
-                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame).Length
+            return MeasureWebSocketMessageBytes(
+                JsonSerializer.SerializeToUtf8Bytes(
+                    frame,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame).Length)
                 + currentDigits - previousDigits;
         }
 
@@ -421,6 +428,20 @@ internal static partial class FeatureStreamEndpoints
                 writeLock,
                 JsonSerializer.SerializeToUtf8Bytes(frame, FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame),
                 cancellationToken);
+    }
+
+    private static int MeasureWebSocketMessageBytes(int payloadBytes)
+    {
+        // Server-to-client frames are not masked. Each snapshot envelope item is sent as its
+        // own final text message, so charge its RFC 6455 header as well as the JSON payload.
+        var headerBytes = payloadBytes switch
+        {
+            <= 125 => 2,
+            <= ushort.MaxValue => 4,
+            _ => 10
+        };
+
+        return payloadBytes + headerBytes;
     }
 
     private static int MeasureSseEventBytes<T>(
