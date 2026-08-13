@@ -764,10 +764,18 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                     $"control title must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer."));
             }
 
+            if (control.SourceId is { Length: > StudioInteractionVocabulary.MaxControlSourceIdLength })
+            {
+                diagnostics.Add(Error(
+                    "studio.control.source.too-long",
+                    $"{path}/sourceId",
+                    $"control sourceId must be {StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer."));
+            }
+
             // ADR-0031: a control's sourceId resolution is a validation-gate responsibility,
             // as it is for layer references. An unresolvable source means the host cannot
             // populate the affordance's domain.
-            if (control.SourceId is not null
+            if (control.SourceId is { Length: <= StudioInteractionVocabulary.MaxControlSourceIdLength }
                 && !StudioInteractionVocabulary.IsDeclaredSourceId(composition, control.SourceId))
             {
                 diagnostics.Add(Error(
@@ -849,6 +857,19 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
 
             ValidateComponentRef(composition, interaction.On.Ref, $"{path}/on/ref", "studio.interaction.ref", diagnostics);
             ValidateComponentRef(composition, interaction.Do.Ref, $"{path}/do/ref", "studio.interaction.ref", diagnostics);
+
+            if (StudioInteractionVocabulary.IsEventName(interaction.On.Event)
+                && StudioInteractionVocabulary.ResolveRef(composition, interaction.On.Ref)
+                    == StudioComponentRefResolution.Resolved
+                && !StudioInteractionVocabulary.IsEventSupportedBySource(
+                    interaction.On.Ref,
+                    interaction.On.Event))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.event.source.unsupported",
+                    $"{path}/on/event",
+                    $"component '{interaction.On.Ref}' does not emit event '{interaction.On.Event}'."));
+            }
 
             var key = (interaction.On.Ref, interaction.On.Event);
             fanOut[key] = fanOut.TryGetValue(key, out var count) ? count + 1 : 1;

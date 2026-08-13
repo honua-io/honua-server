@@ -339,23 +339,20 @@ internal static class SavedMapOperationPayloadValidator
         StudioCompositionBody body,
         out string error)
     {
-        // Control source resolution runs here rather than in the wire-shape pass because it
-        // needs the deserialized layers to resolve against (ADR-0031: a control's sourceId
-        // resolves like a layer reference).
-        foreach (var control in (body.Controls ?? []).Where(control =>
-                     control.SourceId is not null
-                     && !StudioInteractionVocabulary.IsDeclaredSourceId(body, control.SourceId)))
-        {
-            error = $"The document-replace payload's control '{control.Id}' has sourceId '{control.SourceId}', "
-                + "which does not resolve to a layer or datasource declared in the payload.";
-            return false;
-        }
-
         foreach (var interaction in body.Interactions ?? [])
         {
             if (!TryValidateReplacementComponentRef(body, interaction.On.Ref, "interaction on.ref", out error)
                 || !TryValidateReplacementComponentRef(body, interaction.Do.Ref, "interaction do.ref", out error))
             {
+                return false;
+            }
+
+            if (!StudioInteractionVocabulary.IsEventSupportedBySource(
+                    interaction.On.Ref,
+                    interaction.On.Event))
+            {
+                error = $"The document-replace payload's component '{interaction.On.Ref}' does not emit "
+                    + $"event '{interaction.On.Event}'.";
                 return false;
             }
         }
@@ -471,6 +468,17 @@ internal static class SavedMapOperationPayloadValidator
             {
                 error = $"{subject}'s 'title' must be a string of "
                     + $"{StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.";
+                return false;
+            }
+
+            if (control.TryGetProperty("sourceId", out var sourceId)
+                && sourceId.ValueKind != JsonValueKind.Null
+                && (sourceId.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(sourceId.GetString())
+                    || sourceId.GetString()!.Length > StudioInteractionVocabulary.MaxControlSourceIdLength))
+            {
+                error = $"{subject}'s 'sourceId' must be a non-empty string of "
+                    + $"{StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer.";
                 return false;
             }
 

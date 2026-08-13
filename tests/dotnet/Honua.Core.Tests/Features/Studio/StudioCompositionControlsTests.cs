@@ -114,6 +114,24 @@ public sealed class StudioCompositionControlsTests
     }
 
     [UnitTest]
+    public void AddControl_WithOversizedSourceId_IsRejected()
+    {
+        var sourceId = new string('s', StudioInteractionVocabulary.MaxControlSourceIdLength + 1);
+        var body = ParcelComposition() with
+        {
+            Layers = [new StudioCompositionLayer { Id = sourceId }],
+        };
+
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.AddControl(
+                body,
+                new StudioCompositionControl { Id = "filter", Kind = "filterSelect", SourceId = sourceId }));
+
+        Assert.Contains("sourceId", error.Message, StringComparison.Ordinal);
+        Assert.Contains("characters or fewer", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void AddControl_WithAnUnresolvableSourceId_IsRejected()
     {
         // ADR-0031 makes source resolution a validation-gate responsibility. A misspelled
@@ -400,6 +418,7 @@ public sealed class StudioCompositionControlsTests
         Assert.DoesNotContain("draw", StudioInteractionVocabulary.ControlKinds);
         Assert.Equal(200, StudioInteractionVocabulary.MaxControlIdLength);
         Assert.Equal(200, StudioInteractionVocabulary.MaxControlTitleLength);
+        Assert.Equal(200, StudioInteractionVocabulary.MaxControlSourceIdLength);
         Assert.True(StudioInteractionVocabulary.IsControlRef("control:year-slider"));
         Assert.False(StudioInteractionVocabulary.IsControlRef("control:"));
         Assert.False(StudioInteractionVocabulary.IsControlRef("widget:area-chart"));

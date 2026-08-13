@@ -97,16 +97,13 @@ public static class StudioCompositionBodyEditor
             return sourceIds;
         }
 
-        foreach (var binding in bindings.EnumerateArray())
+        foreach (var binding in bindings.EnumerateArray().Where(static binding =>
+                     binding.ValueKind == JsonValueKind.Object
+                     && binding.TryGetProperty("sourceId", out var sourceId)
+                     && sourceId.ValueKind == JsonValueKind.String
+                     && !string.IsNullOrWhiteSpace(sourceId.GetString())))
         {
-            if (binding.ValueKind == JsonValueKind.Object
-                && binding.TryGetProperty("sourceId", out var sourceId)
-                && sourceId.ValueKind == JsonValueKind.String
-                && sourceId.GetString() is { } value
-                && !string.IsNullOrWhiteSpace(value))
-            {
-                sourceIds.Add(value);
-            }
+            sourceIds.Add(binding.GetProperty("sourceId").GetString()!);
         }
 
         return sourceIds;
@@ -507,6 +504,12 @@ public static class StudioCompositionBodyEditor
                 $"A control 'title' must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.");
         }
 
+        if (control.SourceId is { Length: > StudioInteractionVocabulary.MaxControlSourceIdLength })
+        {
+            throw new StudioCompositionConflictException(
+                $"A control 'sourceId' must be {StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer.");
+        }
+
         if (!StudioInteractionVocabulary.IsControlKind(control.Kind))
         {
             throw new StudioCompositionConflictException(
@@ -634,6 +637,12 @@ public static class StudioCompositionBodyEditor
 
         EnsureRefResolves(body, interaction.On.Ref, "on.ref");
         EnsureRefResolves(body, interaction.Do.Ref, "do.ref");
+        if (!StudioInteractionVocabulary.IsEventSupportedBySource(interaction.On.Ref, interaction.On.Event))
+        {
+            throw new StudioCompositionConflictException(
+                $"Component '{interaction.On.Ref}' does not emit event '{interaction.On.Event}'.");
+        }
+
         EnsureFanOutCap(body, interaction);
     }
 

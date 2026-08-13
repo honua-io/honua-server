@@ -122,6 +122,28 @@ public sealed class StudioCompositionInteractionsTests
     }
 
     [UnitTest]
+    public void BindInteraction_ControlRefWithNonChangeEvent_IsRejected()
+    {
+        var body = StudioCompositionBodyEditor.AddControl(
+            ParcelComposition(),
+            new StudioCompositionControl { Id = "year-slider", Kind = "timeSlider", SourceId = "parcels" });
+
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.BindInteraction(
+                body,
+                SelectParcelFiltersChart() with
+                {
+                    On = new StudioInteractionEvent
+                    {
+                        Ref = "control:year-slider",
+                        Event = "featureSelect",
+                    },
+                }));
+
+        Assert.Contains("does not emit", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void BindInteraction_WithUnknownControlRef_IsRejectedWithTheGenericUnresolvedMessage()
     {
         // A control ref that names no declared control is an ordinary unresolved reference
