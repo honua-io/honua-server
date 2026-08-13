@@ -327,6 +327,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     public async Task DeleteStyle_AfterCreate_Returns204ThenNotFound()
     {
         var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
 
         var styleId = $"del-{Guid.NewGuid():N}";
         using var content = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
@@ -334,11 +335,37 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         createRequest.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
         (await client.SendAsync(createRequest)).StatusCode.Should().Be(HttpStatusCode.Created);
 
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
+            await scope.ServiceProvider.GetRequiredService<IMetadataV2StyleGraphSync>()
+                .SyncLayerStylesAsync(WebAppFixture.TestLayerId);
+        }
+
+        var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
+        _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
+            .StyleResourceIds.Should().Contain(styleResourceId);
+
         var deleteResponse = await client.DeleteAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var getResponse = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
+            .StyleResourceIds.Should().NotContain(styleResourceId);
+        snapshot.Index.ResourcesById.Should().NotContainKey(styleResourceId);
+
+        // Layer default styles are canonical per-layer state. DELETE must not remove their
+        // catalog mirror and leave the styled layer inaccessible through OGC Styles.
+        var mirroredStyleId = $"style-layer-{WebAppFixture.TestLayerId}";
+        var mirroredDelete = await client.DeleteAsync($"/ogc/styles/{Uri.EscapeDataString(mirroredStyleId)}");
+        mirroredDelete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var mirroredGet = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(mirroredStyleId)}");
+        mirroredGet.Be200Ok();
     }
 
     [IntegrationTest]

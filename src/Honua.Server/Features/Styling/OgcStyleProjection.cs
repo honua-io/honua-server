@@ -408,18 +408,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         string styleId,
         CancellationToken cancellationToken)
     {
-        const string mirroredStylePrefix = "style-layer-";
         if (_independentStyleCatalog is null
-            || !styleId.StartsWith(mirroredStylePrefix, StringComparison.Ordinal)
-            || !int.TryParse(
-                styleId.AsSpan(mirroredStylePrefix.Length),
-                System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var storageLayerId)
-            || !string.Equals(
-                styleId,
-                mirroredStylePrefix + storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                StringComparison.Ordinal))
+            || !TryParseMirroredStyleId(styleId, out var storageLayerId))
         {
             return null;
         }
@@ -437,6 +427,22 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource) && resource is not null
             ? (resource, storageLayerId)
             : null;
+    }
+
+    private static bool TryParseMirroredStyleId(string styleId, out int storageLayerId)
+    {
+        const string mirroredStylePrefix = "style-layer-";
+        storageLayerId = 0;
+        return styleId.StartsWith(mirroredStylePrefix, StringComparison.Ordinal)
+            && int.TryParse(
+                styleId.AsSpan(mirroredStylePrefix.Length),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out storageLayerId)
+            && string.Equals(
+                styleId,
+                mirroredStylePrefix + storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
     }
 
     // Phase 2 write path: update a standalone catalog style from a MapLibre document.
@@ -733,10 +739,49 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 "Standalone style deletion requires the independent style catalog, which is not configured.");
         }
 
+        var associations = await _independentStyleCatalog.ListAssociationsAsync(cancellationToken).ConfigureAwait(false);
+        var associatedLayerIds = associations
+            .Where(association => string.Equals(association.StyleId, styleId, StringComparison.Ordinal))
+            .Select(association => association.LayerId)
+            .Distinct()
+            .ToArray();
+
+        if (TryParseMirroredStyleId(styleId, out var mirroredLayerId)
+            && associations.Any(association =>
+                association.LayerId == mirroredLayerId
+                && association.Ordinal == 0
+                && string.Equals(association.StyleId, styleId, StringComparison.Ordinal)))
+        {
+            return new OgcStyleDeleteResult(
+                OgcStyleDeleteStatus.Forbidden,
+                $"Style '{styleId}' is a layer's mirrored default style and cannot be deleted through this surface.");
+        }
+
         var deleted = await _independentStyleCatalog.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
-        return deleted
-            ? new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null)
-            : new OgcStyleDeleteResult(OgcStyleDeleteStatus.NotFound, $"Style '{styleId}' not found.");
+        if (!deleted)
+        {
+            return new OgcStyleDeleteResult(OgcStyleDeleteStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        if (_styleGraphSync is not null)
+        {
+            // The catalog delete has committed and cascaded its associations. Reconcile the
+            // layers captured before that cascade so their StyleResourceIds no longer expose
+            // the deleted record. As with updates, this post-commit mirror is best-effort.
+            foreach (var layerId in associatedLayerIds)
+            {
+                try
+                {
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                {
+                    LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, styleId, ex);
+                }
+            }
+        }
+
+        return new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null);
     }
 
     // Lightweight validation for a standalone (not-yet-layer-bound) MapLibre style.
