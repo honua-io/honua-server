@@ -373,6 +373,37 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetStylesheet_StandaloneStyle_MalformedLayerType_SkipsMalformedLayer()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = $"malformed-layer-{Guid.NewGuid():N}";
+        var style = JsonNode.Parse(BuildStyleJson(MetadataV2GeometryType.Polygon))!;
+        style["layers"]!.AsArray().Insert(0, new JsonObject
+        {
+            ["id"] = "malformed",
+            ["type"] = new JsonObject()
+        });
+        using (var content = new StringContent(style.ToJsonString(), Encoding.UTF8, MapboxStyleMediaType))
+        using (var createRequest = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content })
+        {
+            createRequest.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+            (await client.SendAsync(createRequest)).StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{styleId}");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(EsriDrawingInfoMediaType));
+
+        var response = await client.SendAsync(request);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
+            .GetString().Should().Be("esriSFS");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_UnsupportedAccept_Returns406ListingEveryEncoding()
     {
         var client = _fixture.CreateAdminClient();
@@ -497,7 +528,15 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
 
-        foreach (var payload in new[] { "null", "[]", "\"renderer\"", "42" })
+        foreach (var payload in new[]
+                 {
+                     "null",
+                     "[]",
+                     "\"renderer\"",
+                     "42",
+                     "{\"renderer\":{\"type\":{}}}",
+                     "{\"renderer\":{\"type\":\"uniqueValue\",\"uniqueValueInfos\":[null,{\"value\":\"a\",\"symbol\":{\"type\":\"esriSLS\"}}]}}"
+                 })
         {
             using var content = new StringContent(payload, Encoding.UTF8, EsriDrawingInfoMediaType);
             using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
@@ -553,12 +592,15 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         await SeedTestLayerStyleAsync(client);
         var styleId = $"style-layer-{WebAppFixture.TestLayerId}";
 
-        using var content = new StringContent("[]", Encoding.UTF8, EsriDrawingInfoMediaType);
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{styleId}") { Content = content };
+        foreach (var payload in new[] { "[]", "{\"renderer\":{\"type\":{}}}" })
+        {
+            using var content = new StringContent(payload, Encoding.UTF8, EsriDrawingInfoMediaType);
+            using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{styleId}") { Content = content };
 
-        var response = await client.SendAsync(request);
+            var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
     }
 
     [IntegrationTest]
@@ -599,6 +641,22 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         using var layerDocument = JsonDocument.Parse(await layerStyle.Content.ReadAsStringAsync());
         layerDocument.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
             .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("circle");
+
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
+        snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
+            .StyleResourceIds.Should().Contain(styleResourceId);
+        var graphStyle = snapshot.Index.ResourcesById[styleResourceId].Style!;
+        var mapboxEncoding = graphStyle.Encodings.Single(encoding => encoding.Encoding == "mapbox-style");
+        mapboxEncoding.Body.Should().NotBeNull();
+        using var graphMapboxDocument = JsonDocument.Parse(mapboxEncoding.Body!);
+        graphMapboxDocument.RootElement.GetProperty("layers")[0].GetProperty("type")
+            .GetString().Should().Be("line");
+        var esriEncoding = graphStyle.Encodings.Single(encoding => encoding.Encoding == "esri-drawing-info");
+        esriEncoding.Body.Should().NotBeNull();
+        using var graphEsriDocument = JsonDocument.Parse(esriEncoding.Body!);
+        graphEsriDocument.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
+            .GetString().Should().Be("esriSLS");
     }
 
     [IntegrationTest]

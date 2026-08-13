@@ -28,19 +28,22 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private readonly ILayerStyleCatalog _styleCatalog;
     private readonly IGeoServicesStyleConverter _geoServicesConverter;
     private readonly IStyleCatalog? _independentStyleCatalog;
+    private readonly IMetadataV2StyleGraphSync? _styleGraphSync;
 
     public OgcStyleProjection(
         IMetadataV2GraphProvider graphProvider,
         ILayerStyleService styleService,
         ILayerStyleCatalog styleCatalog,
         IGeoServicesStyleConverter geoServicesConverter,
-        IStyleCatalog? independentStyleCatalog = null)
+        IStyleCatalog? independentStyleCatalog = null,
+        IMetadataV2StyleGraphSync? styleGraphSync = null)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _styleService = styleService ?? throw new ArgumentNullException(nameof(styleService));
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _geoServicesConverter = geoServicesConverter ?? throw new ArgumentNullException(nameof(geoServicesConverter));
         _independentStyleCatalog = independentStyleCatalog;
+        _styleGraphSync = styleGraphSync;
     }
 
     /// <inheritdoc />
@@ -327,11 +330,11 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"drawingInfo is not valid JSON: {ex.Message}");
         }
 
-        if (drawingInfo.ValueKind != JsonValueKind.Object)
+        if (!TryValidateDrawingInfoShape(drawingInfo, out var shapeError))
         {
             return new OgcStyleUpdateResult(
                 OgcStyleUpdateStatus.Invalid,
-                "drawingInfo must be a JSON object.");
+                shapeError);
         }
 
         var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
@@ -473,13 +476,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
         }
 
-        if (drawingInfo.ValueKind != JsonValueKind.Object)
-        {
-            return new OgcStyleUpdateResult(
-                OgcStyleUpdateStatus.Invalid,
-                "drawingInfo must be a JSON object.");
-        }
-
         var existing = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (existing is null)
         {
@@ -534,18 +530,84 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         string mapLibreStyleJson,
         CancellationToken cancellationToken)
     {
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre(existing.StyleId, mapLibreStyleJson);
+        var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreStyleJson, descriptor);
         var updated = await _independentStyleCatalog!
             .UpdateStyleAsync(
                 existing.StyleId,
                 mapLibreStyleJson,
                 existing.Title,
                 existing.Description,
-                drawingInfoJson: null,
+                drawingInfoJson,
                 revisedBy: null,
                 changeSummary: null,
                 cancellationToken)
             .ConfigureAwait(false);
-        return updated is not null;
+        if (updated is null)
+        {
+            return false;
+        }
+
+        if (_styleGraphSync is not null)
+        {
+            var associations = await _independentStyleCatalog
+                .ListAssociationsAsync(cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var layerId in associations
+                         .Where(association => string.Equals(
+                             association.StyleId,
+                             existing.StyleId,
+                             StringComparison.Ordinal))
+                         .Select(association => association.LayerId)
+                         .Distinct())
+            {
+                await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
+    {
+        if (drawingInfo.ValueKind != JsonValueKind.Object)
+        {
+            error = "drawingInfo must be a JSON object.";
+            return false;
+        }
+
+        if (!drawingInfo.TryGetProperty("renderer", out var renderer)
+            || renderer.ValueKind != JsonValueKind.Object)
+        {
+            error = "drawingInfo.renderer must be a JSON object.";
+            return false;
+        }
+
+        if (!renderer.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(type.GetString()))
+        {
+            error = "drawingInfo.renderer.type must be a non-empty string.";
+            return false;
+        }
+
+        foreach (var propertyName in new[] { "uniqueValueInfos", "classBreakInfos" })
+        {
+            if (!renderer.TryGetProperty(propertyName, out var infos)
+                || infos.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            if (infos.EnumerateArray().Any(info => info.ValueKind != JsonValueKind.Object))
+            {
+                error = $"drawingInfo.renderer.{propertyName} entries must be JSON objects.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
     }
 
     /// <inheritdoc />

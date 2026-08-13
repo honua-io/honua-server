@@ -438,6 +438,7 @@ internal static class MapLibreToGeoServicesConverter
             }
 
             if (element.TryGetProperty("type", out var typeElement)
+                && typeElement.ValueKind == JsonValueKind.String
                 && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase))
             {
                 layer = element;
@@ -486,6 +487,7 @@ internal static class MapLibreToGeoServicesConverter
             }
 
             if (!element.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String
                 || !string.Equals(typeElement.GetString(), "line", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
