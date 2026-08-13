@@ -52,6 +52,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Validate lean-gate command contract
+      shell: bash
+      run: python3 scripts/ci/fixtures/validate-lean-gate.py
+
     - name: Documentation Command Policy
       shell: pwsh
       run: scripts/ci/check-markdown-command-policy.ps1
@@ -93,7 +97,10 @@ runs:
 
     - name: Format Check
       shell: bash
-      run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
+      # Restore already completed above, and the full build consumed the same
+      # assets. Re-evaluating restore here adds network/project work without
+      # increasing format coverage.
+      run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
     - name: Create Test Results Directory
       shell: bash

@@ -277,8 +277,11 @@ jobs:
           source scripts/ci/merge-train/select.sh
           if train_has_selectable_pr; then
             echo "Dispatching the next train run (continuous drain; concurrency-guarded, single-instance)."
+            # A continuation is a fresh deterministic run. Optional Bedrock
+            # judgment/autofix remains an operator choice for a one-off manual
+            # dispatch and must never be silently re-enabled by the drain loop.
             gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-              -f train_apply=true -f use_llm=true -f use_autofix=true -f max_batch=10
+              -f train_apply=true -f use_llm=false -f use_autofix=false -f max_batch=10
           else
             echo "No selectable PRs remain — chain stops; the */15 schedule remains as the backstop."
           fi
