@@ -213,6 +213,47 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
     }
 
     [UnitTest]
+    public async Task List_FromAnotherStoreInstance_DoesNotReclaimActivePendingWrite()
+    {
+        var options = Options.Create(new GeoprocessingOutputStagingOptions
+        {
+            Enabled = true,
+            LocalRootPath = _root,
+            SweepGrace = TimeSpan.Zero,
+        });
+        var writerStore = new FileSystemGeoprocessingOutputObjectStore(options);
+        var sweeperStore = new FileSystemGeoprocessingOutputObjectStore(options);
+        await using var content = new BlockingReadStream();
+        var objectKey = "gp/outputs/active/a1/output1/result.tif";
+
+        var write = writerStore.WriteAsync(objectKey, content, "image/tiff");
+        await content.WaitUntilBlockedAsync();
+
+        try
+        {
+            await foreach (var _ in sweeperStore.ListAsync("gp/outputs"))
+            {
+                // Enumeration drives pending-object reconciliation.
+            }
+
+            var activePendingPath = Path.Join(_root, objectKey.Replace('/', Path.DirectorySeparatorChar))
+                + FileSystemGeoprocessingOutputObjectStore.PendingSuffix;
+            File.Exists(activePendingPath).Should().BeTrue();
+        }
+        finally
+        {
+            content.Release();
+        }
+
+        var pendingPath = Path.Join(_root, objectKey.Replace('/', Path.DirectorySeparatorChar))
+            + FileSystemGeoprocessingOutputObjectStore.PendingSuffix;
+        await write;
+
+        File.Exists(pendingPath).Should().BeFalse();
+        File.Exists(Path.Join(_root, objectKey.Replace('/', Path.DirectorySeparatorChar))).Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task Delete_RemovesObjectAndLease()
     {
         await using (var content = new MemoryStream(new byte[] { 1 }))
@@ -227,5 +268,56 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         (await _store.GetInfoAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeNull();
         (await _store.OpenReadAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeNull();
         (await _store.DeleteAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeFalse();
+    }
+
+    private sealed class BlockingReadStream : Stream
+    {
+        private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _readCount;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public Task WaitUntilBlockedAsync() => _blocked.Task;
+
+        public void Release() => _release.TrySetResult();
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => throw new NotSupportedException();
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                buffer.Span[0] = 42;
+                return 1;
+            }
+
+            _blocked.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return 0;
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

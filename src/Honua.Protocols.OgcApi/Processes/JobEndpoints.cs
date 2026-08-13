@@ -910,14 +910,13 @@ internal static class JobEndpoints
             var artifact = resultPackage.Artifacts[index];
 
             // Staged output artifacts (#3089) link through the canonical authenticated
-            // content route; their durable Uri is deliberately null so no provider
-            // location or expiring URL leaks into result links. A link is only
+            // content route, so no provider location or expiring URL leaks into result
+            // links. A link is only
             // advertised when this host's registered output store can actually serve
             // it — a worker-enabled/server-disabled (or mismatched) staging topology
             // must surface as an explicit unavailable state, not a guaranteed 503.
             var href = artifact.Uri;
-            if (href is null
-                && artifact.Metadata.TryGetValue(
+            if (artifact.Metadata.TryGetValue(
                     Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var isStaged)
                 && string.Equals(isStaged, "true", StringComparison.OrdinalIgnoreCase))
             {
@@ -932,6 +931,7 @@ internal static class JobEndpoints
                 }
                 else
                 {
+                    href = null;
                     OgcProcessesLog.ArtifactStoreUnavailable(logger, jobId, index);
                 }
             }

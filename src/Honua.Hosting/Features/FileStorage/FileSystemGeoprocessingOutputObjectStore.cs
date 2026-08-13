@@ -82,18 +82,28 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         byte[] digest;
         try
         {
+            // Share only delete/rename access and keep this handle alive through the
+            // final move. A sweeper in another process probes the pending file and
+            // acquires the same byte-range lock before reclaiming it, so this handle
+            // is the durable cross-process proof that publication is still active.
             await using (var target = new FileStream(
-                pendingPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+                pendingPath, FileMode.Create, FileAccess.Write, FileShare.Delete, 81920, useAsync: true))
             using (var sha = SHA256.Create())
             {
+                if (!OperatingSystem.IsMacOS())
+                {
+                    target.Lock(0, 1);
+                }
                 await using var hashing = new CryptoStream(target, sha, CryptoStreamMode.Write, leaveOpen: true);
                 await content.CopyToAsync(hashing, cancellationToken).ConfigureAwait(false);
                 await hashing.FlushFinalBlockAsync(cancellationToken).ConfigureAwait(false);
                 size = target.Length;
                 digest = sha.Hash!;
-            }
 
-            File.Move(pendingPath, path, overwrite: false);
+                // FileShare.Delete permits the atomic rename while retaining the
+                // writer claim until the final object exists.
+                File.Move(pendingPath, path, overwrite: false);
+            }
         }
         catch
         {
@@ -192,8 +202,44 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
                 return;
             }
 
-            TryDeleteQuietly(pendingPath);
-            PruneEmptyDirectories(info.DirectoryName);
+            try
+            {
+                // FileStream byte-range locking is unavailable on macOS. Do not
+                // reclaim there when this process cannot prove the writer is gone.
+                if (OperatingSystem.IsMacOS())
+                {
+                    return;
+                }
+
+                // _activePendingWrites is process-local. The exclusive access probe
+                // and advisory byte-range lock also coordinate with writers in other
+                // server/worker processes on Windows and Linux.
+                // FileShare.Delete lets this process unlink the abandoned file while
+                // retaining the claim, closing the probe-to-delete race.
+                using var claim = new FileStream(
+                    pendingPath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.Delete);
+                claim.Lock(0, 1);
+                info.Refresh();
+                if (!info.Exists || DateTimeOffset.UtcNow - info.LastWriteTimeUtc < _pendingRetention)
+                {
+                    return;
+                }
+
+                File.Delete(pendingPath);
+                PruneEmptyDirectories(info.DirectoryName);
+            }
+            catch (IOException)
+            {
+                // A writer still owns the pending object, or it completed between
+                // enumeration and the claim. Either state is not reclaimable.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Treat an object that cannot be claimed as active/fail closed.
+            }
         }
     }
 

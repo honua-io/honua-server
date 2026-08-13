@@ -576,8 +576,8 @@ internal static class GPServerEndpoints
 
     /// <summary>
     /// Resolves the GP result value for an artifact. Staged output artifacts (#3089)
-    /// deliberately carry no durable Uri; their value is the canonical authenticated
-    /// content route so no provider location or expiring URL leaks to clients. When
+    /// carry the canonical authenticated content route, so no provider location or
+    /// expiring URL leaks to clients. When
     /// this host's output store cannot serve the artifact (split-host staging
     /// misconfiguration) the value degrades to the label rather than advertising a
     /// link that is guaranteed to fail.
@@ -589,23 +589,24 @@ internal static class GPServerEndpoints
         string baseUrl,
         Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore)
     {
+        if (artifact.Metadata.TryGetValue(
+                Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var staged)
+            && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.CanServe(
+                    outputStore,
+                    artifact.Metadata.GetValueOrDefault(
+                        Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreProvider),
+                    artifact.Metadata.GetValueOrDefault(
+                        Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreReference))
+                ? Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(
+                    baseUrl, jobId, artifactIndex)
+                : artifact.Label;
+        }
+
         if (artifact.Uri is { } uri)
         {
             return uri;
-        }
-
-        if (artifact.Metadata.TryGetValue(
-                Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var staged)
-            && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase)
-            && Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.CanServe(
-                outputStore,
-                artifact.Metadata.GetValueOrDefault(
-                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreProvider),
-                artifact.Metadata.GetValueOrDefault(
-                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreReference)))
-        {
-            return Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(
-                baseUrl, jobId, artifactIndex);
         }
 
         return artifact.Label;

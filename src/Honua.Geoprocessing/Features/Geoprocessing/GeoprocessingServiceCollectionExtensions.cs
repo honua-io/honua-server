@@ -143,6 +143,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         // tick dispatcher.
         services.AddGeoprocessingOutputStaging(configuration);
         services.TryAddSingleton<GeoprocessingRasterOutputRegistrar>();
+        // RedisExecutionJobStore is registered above before this check whenever
+        // IConnectionMultiplexer is present. AddJobOrchestration later composes the
+        // queue/log services around that existing store; it does not add the store.
         if (services.Any(d => d.ServiceType == typeof(IGeoprocessingOutputObjectStore))
             && services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
