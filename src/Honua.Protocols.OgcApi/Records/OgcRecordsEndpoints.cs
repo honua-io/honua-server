@@ -375,7 +375,7 @@ internal static class OgcRecordsEndpoints
             // Keep the feature dataset as the canonical layer:{id} catalog record.
             .ThenBy(item => item.Resource.Type == MetadataV2ResourceType.FeatureDataset ? 0 : 1)
             .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
-        var resourceRecordIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in resourceRecords)
         {
             // Pick the primary publication if any (prefer IsPrimary, else first).
