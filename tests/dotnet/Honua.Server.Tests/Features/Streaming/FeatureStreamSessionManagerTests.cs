@@ -684,7 +684,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         const string activeServiceId = "roads";
         const string shadowedIdentity = "Roads";
         const int storageLayerId = 45;
-        var graph = new TestMetadataV2GraphBuilder()
+        var activeGraph = new TestMetadataV2GraphBuilder()
             .AddResource("res-shadowed-stream", "Shadowed Stream", MetadataV2ResourceType.FeatureDataset)
             .AddStorageBinding(
                 "binding-shadowed-stream",
@@ -706,9 +706,9 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
                 layerIndex: 1,
                 storageBindingId: "binding-shadowed-stream")
             .Build();
-        graph = graph with
+        var graph = activeGraph with
         {
-            Publications = graph.Publications
+            Publications = activeGraph.Publications
                 .Select(publication => publication.Metadata.Id == "pub-retired-shadow"
                     ? publication with
                     {
@@ -761,6 +761,22 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             propertiesJson: null));
         Assert.False(aliasFilter.Matches(CreateEnvelope(
             cursor: 4,
+            layerId: storageLayerId,
+            serviceId: shadowedIdentity),
+            geometryEnvelope: null,
+            propertiesJson: null));
+
+        var bothRoutableSnapshot = await new TestMetadataV2GraphProvider(activeGraph).GetCurrentAsync();
+        guard.Update(guard.BeginRefresh(), bothRoutableSnapshot);
+        Assert.True(guard.IsRoutable(shadowedIdentity, storageLayerId));
+        Assert.True(aliasFilter.Matches(CreateEnvelope(
+            cursor: 5,
+            layerId: storageLayerId,
+            serviceId: "ROADS"),
+            geometryEnvelope: null,
+            propertiesJson: null));
+        Assert.False(aliasFilter.Matches(CreateEnvelope(
+            cursor: 6,
             layerId: storageLayerId,
             serviceId: shadowedIdentity),
             geometryEnvelope: null,

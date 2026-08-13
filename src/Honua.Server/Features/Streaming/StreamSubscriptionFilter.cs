@@ -149,16 +149,20 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         ref bool propertiesParsed)
     {
         if (_routabilityGuard is not null &&
-            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId))
+            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId))
         {
             return false;
         }
 
         // 1. Service filter — cheapest, short-circuits first.
-        if (_serviceId is not null &&
-            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison) &&
-            (_resolvedServiceId is null ||
-             !string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal)))
+        if (_resolvedServiceId is not null && _routabilityGuard is null &&
+            !string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (_resolvedServiceId is null && _serviceId is not null &&
+            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison))
         {
             return false;
         }
