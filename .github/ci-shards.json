@@ -272,16 +272,10 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.Infrastructure.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests",
-      "_comment": "The legacy root Admin/Infrastructure shard completed 816 tests and was still making steady progress when its old 20-minute inner cap terminated it (run 29106223369). Align its budget with the larger maintained shards while retaining a 10-minute upload/cleanup margin at the job level.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Infrastructure.",
+      "_comment": "The legacy root Admin/Infrastructure shard completed 816 tests and was still making steady progress when its old 20-minute inner cap terminated it (run 29106223369). Its root Admin.* and AdminEndpointTests slice later moved to the existing Server Features Admin Operations runner after this shard exhausted the raised 32-minute cap while Admin Operations used only 38% of its 35-minute cap. This runner now owns only root Infrastructure.* tests, retaining the same budget without adding another job.",
       "paths": [
-        "src/Honua.Core/Features/Admin/",
-        "src/Honua.Db/Postgres/Features/Admin/",
-        "src/Honua.Server/Features/Admin/",
-        "tests/dotnet/Honua.Server.Tests/Admin/",
-        "tests/dotnet/Honua.Server.Tests/AdminEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Infrastructure/",
-        "tests/dotnet/Honua.Server.Tests/Features/Admin/",
         "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
         "src/Honua.Core/Features/Validation/"
       ]
@@ -1229,8 +1223,8 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding (#2422 follow-up): operations and observability third of the former 38-minute Admin Operations shard. Tile/scene/PMTiles and layer-management classes are excluded into parallel sibling shards below. All three share the original paths, so per-PR routing is unchanged.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~Observability|FullyQualifiedName~Operate|FullyQualifiedName~Operations)&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer",
+      "_comment": "ADR-0037 finer-sharding (#2422 follow-up): operations and observability third of the former 38-minute Admin Operations shard. Tile/scene/PMTiles and layer-management classes are excluded into parallel sibling shards below. Root Admin.* and AdminEndpointTests were rebalanced here after the legacy Admin & Infrastructure runner exhausted its 32-minute cap while this runner completed in 13.4 of 35 minutes; reusing it preserves coverage without adding a checkout/build.",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~Observability|FullyQualifiedName~Operate|FullyQualifiedName~Operations)&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer)|FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests",
       "paths": [
         "src/Honua.Server/Features/Admin/",
         "src/Honua.Core/Features/Admin/",
@@ -1241,6 +1235,8 @@
         "src/Honua.Server/Features/Alerts/",
         "src/Honua.Core/Features/Alerts/",
         "src/Honua.Db/Postgres/Features/Alerts/",
+        "tests/dotnet/Honua.Server.Tests/Admin/",
+        "tests/dotnet/Honua.Server.Tests/AdminEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Features/Admin/",
         "tests/dotnet/Honua.Server.Tests/Features/Console/",
         "tests/dotnet/Honua.Server.Tests/Features/Alerts/",
