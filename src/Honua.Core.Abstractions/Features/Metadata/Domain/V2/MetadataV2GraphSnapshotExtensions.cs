@@ -11,6 +11,73 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public static class MetadataV2GraphSnapshotExtensions
 {
     /// <summary>
+    /// Returns whether a publication and its resolved canonical resource may be exposed
+    /// by a protocol adapter.
+    /// </summary>
+    public static bool IsRoutable(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+            !service.IsRoutable())
+        {
+            return false;
+        }
+
+        var resource = snapshot.ResolveResource(publication);
+        if (!publication.IsRoutable(resource))
+        {
+            return false;
+        }
+
+        var binding = snapshot.ResolveStorageBinding(publication);
+        return binding is null || binding.IsRoutable(resource);
+    }
+
+    /// <summary>
+    /// Returns whether a service may expose protocol routes, including service-only
+    /// surfaces that do not have a publication to anchor lifecycle evaluation.
+    /// </summary>
+    public static bool IsRoutable(this MetadataV2Service service)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        return IsServingLifecycle(service.Status.Lifecycle);
+    }
+
+    /// <summary>
+    /// Returns whether a publication and its canonical resource may be exposed by a
+    /// protocol adapter. Retired graph entries remain addressable for administration
+    /// and reconciliation, but must not be published on serving routes.
+    /// </summary>
+    public static bool IsRoutable(
+        this MetadataV2Publication publication,
+        MetadataV2Resource? resource)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        return IsServingLifecycle(publication.Status.Lifecycle) &&
+               resource is not null &&
+               IsServingLifecycle(resource.Status.Lifecycle);
+    }
+
+    /// <summary>
+    /// Returns whether a storage binding and its canonical resource may be exposed by
+    /// a binding-scoped protocol route.
+    /// </summary>
+    public static bool IsRoutable(
+        this MetadataV2StorageBinding binding,
+        MetadataV2Resource? resource)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return IsServingLifecycle(binding.Status.Lifecycle) &&
+               resource is not null &&
+               IsServingLifecycle(resource.Status.Lifecycle);
+    }
+
+    private static bool IsServingLifecycle(MetadataV2LifecycleStatus lifecycle)
+        => lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
+
+    /// <summary>
     /// Finds a service by case-insensitive name.
     /// </summary>
     public static MetadataV2Service? FindService(this MetadataV2GraphSnapshot snapshot, string serviceName)
@@ -126,7 +193,8 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
-    /// Returns publications on the given service whose route segment or service-local id matches the provided key.
+    /// Returns the first routable publication on the given service whose route segment
+    /// or service-local id matches the provided key.
     /// </summary>
     public static MetadataV2Publication? FindPublicationOnService(
         this MetadataV2GraphSnapshot snapshot,
@@ -139,10 +207,11 @@ public static class MetadataV2GraphSnapshotExtensions
             return null;
         }
         foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub =>
-            string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)))
+            snapshot.IsRoutable(pub) &&
+            (string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+             || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+             || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+             || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase))))
         {
             return pub;
         }
@@ -150,7 +219,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
-    /// Finds a publication on a service by its service-local layer index.
+    /// Finds the first routable publication on a service by its service-local layer index.
     /// </summary>
     public static MetadataV2Publication? FindPublicationByLayerIndex(
         this MetadataV2GraphSnapshot snapshot,
@@ -158,7 +227,8 @@ public static class MetadataV2GraphSnapshotExtensions
         int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub => pub.LayerIndex == layerIndex))
+        foreach (var pub in snapshot.Index.PublicationsByService[serviceId]
+                     .Where(pub => pub.LayerIndex == layerIndex && snapshot.IsRoutable(pub)))
         {
             return pub;
         }

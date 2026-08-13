@@ -273,7 +273,7 @@ internal sealed class CatalogRasterSourceResolver(
             && snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
         {
             var publicationLayerIds = snapshot.Index.PublicationsByResource[resource.Metadata.Id]
-                .Where(IsLive)
+                .Where(snapshot.IsRoutable)
                 .Select(publication => publication.LayerIndex)
                 .Where(layerIndex => layerIndex is not null)
                 .Select(layerIndex => layerIndex!.Value)
@@ -311,7 +311,7 @@ internal sealed class CatalogRasterSourceResolver(
     private static int? ResolveStorageLayerId(MetadataV2GraphSnapshot snapshot, int publicationLayerId)
     {
         var publications = snapshot.Graph.Publications
-            .Where(publication => publication.LayerIndex == publicationLayerId && IsLive(publication))
+            .Where(publication => publication.LayerIndex == publicationLayerId && snapshot.IsRoutable(publication))
             .ToArray();
         if (publications.Length == 0)
         {
@@ -325,9 +325,6 @@ internal sealed class CatalogRasterSourceResolver(
 
         return storageLayerIds.Length == 1 ? storageLayerIds[0] : null;
     }
-
-    private static bool IsLive(MetadataV2Publication publication)
-        => publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired;
 
     private sealed record ResolvedCogRegistration(CogRegistration Registration, int StorageLayerId);
 

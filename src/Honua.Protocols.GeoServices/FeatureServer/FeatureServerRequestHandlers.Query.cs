@@ -235,7 +235,7 @@ internal static partial class FeatureServerEndpoints
                 [layerDefsError ?? "Invalid layerDefs parameter."]);
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
         var layerResults = new List<ServiceQueryLayerResponse>(accessibleLayers.Length);
 
         foreach (var (publication, resource) in accessibleLayers)

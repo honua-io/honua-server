@@ -297,7 +297,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
         // Publish one event matching both subscriptions.
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var serviceId = $"multi-sub-{Guid.NewGuid():N}";
+        const string serviceId = "test";
         await publisher.PublishAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
@@ -372,7 +372,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         // unsubscribe and broadcast are not strongly ordered cross-thread),
         // the writer must drop any queued sub-fence frame as stale-generation.
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var serviceId = $"stale-fence-{Guid.NewGuid():N}";
+        const string serviceId = "test";
         await publisher.PublishAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
@@ -568,7 +568,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
 
         // Publish one event so the replay path advances the writer's replayCursor.
-        var serviceId = $"fence-cursor-{Guid.NewGuid():N}";
+        const string serviceId = "test";
         await publisher.PublishAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
@@ -720,7 +720,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             // Append directly to the durable store, bypassing FeatureStreamPublisher.
             // This simulates a peer node persisting an event without this node's
             // Broadcast / Redis pub/sub fan-out picking it up.
-            var crossNodeServiceId = $"cross-node-{Guid.NewGuid():N}";
+            const string crossNodeServiceId = "test";
             await eventStore.AppendAsync(new FeatureChangeEventRequest
             {
                 ServiceId = crossNodeServiceId,
@@ -799,7 +799,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             .Single(s => s.ClientLabel == "watermark-advance").SessionId;
 
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var serviceId = $"watermark-{Guid.NewGuid():N}";
+        const string serviceId = "test";
         const int eventCount = 4;
         for (var i = 0; i < eventCount; i++)
         {
@@ -956,7 +956,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             // It can only reach the subscription through the cross-node poll
             // path. Pre-fix, continuous outbound traffic would prevent the
             // poll from firing and this event would never arrive.
-            var crossNodeServiceId = $"cross-node-{Guid.NewGuid():N}";
+            const string crossNodeServiceId = "test";
             await eventStore.AppendAsync(new FeatureChangeEventRequest
             {
                 ServiceId = crossNodeServiceId,
@@ -1395,7 +1395,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
-        var serviceId = $"shape-{Guid.NewGuid():N}";
+        const string serviceId = "test";
 
         await publisher.PublishAsync(new FeatureChangeEventRequest
         {
@@ -1574,6 +1574,145 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
     }
 
+    // Regression for review finding "Service-only subscriptions remain
+    // effectively unfiltered". The admission path must persist the service's
+    // routable storage-layer ids in the session filter; service id alone is not
+    // sufficient because change envelopes are matched by storage layer.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithServiceIdOnly_ScopesSessionToRoutableStorageLayers()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/v1/streaming/features?serviceId={ServiceOnlyFilterStreamLayerCatalog.ServiceName}&clientLabel=service-only-scope");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var response = await fixture.CreateAdminClient().SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            await WaitForSessionAsync(sessionManager, "service-only-scope", cts.Token);
+
+            var session = sessionManager.GetSessions()
+                .Single(candidate => candidate.ClientLabel == "service-only-scope");
+            session.ServiceIdFilter.Should().Be(ServiceOnlyFilterStreamLayerCatalog.ServiceName);
+            session.LayerIdFilter.Should().Equal(ServiceOnlyFilterStreamLayerCatalog.RoutableStorageLayerId);
+            session.LayerIdFilter.Should().NotContain(ServiceOnlyFilterStreamLayerCatalog.RetiredStorageLayerId);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithServiceIdOnlyAndNoRoutableLayers_ReturnsBadRequest()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/v1/streaming/features?serviceId={ServiceOnlyFilterStreamLayerCatalog.EmptyServiceName}");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.CreateAdminClient().SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            body.Should().Contain("has no routable layers");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_UnfilteredSubscription_ExcludesRetiredRoutes()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?clientLabel=unfiltered-routability"),
+                cts.Token);
+            _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            await WaitForSessionAsync(
+                fixture.GetService<FeatureStreamSessionManager>(),
+                "unfiltered-routability",
+                cts.Token);
+
+            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = ServiceOnlyFilterStreamLayerCatalog.ServiceName,
+                LayerId = ServiceOnlyFilterStreamLayerCatalog.RetiredStorageLayerId,
+                ObjectId = 1,
+                Operation = "insert",
+                Protocol = "rest",
+                RequestId = "req-unfiltered-retired",
+            });
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = ServiceOnlyFilterStreamLayerCatalog.ServiceName,
+                LayerId = ServiceOnlyFilterStreamLayerCatalog.RoutableStorageLayerId,
+                ObjectId = 2,
+                Operation = "insert",
+                Protocol = "rest",
+                RequestId = "req-unfiltered-active",
+            });
+
+            while (true)
+            {
+                var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+                if (!IsFeatureChangeFrame(frame))
+                {
+                    continue;
+                }
+
+                frame.GetProperty("layerId").GetInt32()
+                    .Should().NotBe(ServiceOnlyFilterStreamLayerCatalog.RetiredStorageLayerId);
+                if (frame.GetProperty("layerId").GetInt32() == ServiceOnlyFilterStreamLayerCatalog.RoutableStorageLayerId)
+                {
+                    break;
+                }
+            }
+
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // Regression for review finding "Streaming capabilities expose
     // inaccessible layer metadata". The discovery endpoint must omit layers
     // the caller cannot read; otherwise restricted layer names, CRS, or
@@ -1678,7 +1817,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        var serviceId = $"fresh-{uniqueId}";
+        const string serviceId = "test";
 
         // Open SSE connection without a cursor (pure live stream).
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
@@ -1789,9 +1928,9 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        var serviceId = $"replay-{uniqueId}";
+        const string serviceId = "test";
 
-        // Publish 5 events with a unique service ID to isolate from other tests.
+        // Publish 5 events on the fixture's active metadata route.
         for (var i = 0; i < 5; i++)
         {
             await publisher.PublishAsync(new FeatureChangeEventRequest
@@ -1889,7 +2028,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        var serviceId = $"overlap-{uniqueId}";
+        const string serviceId = "test";
 
         // Publish 5 initial events.
         for (var i = 0; i < 5; i++)
@@ -2275,6 +2414,60 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 .AddPublication("pub-stream-restricted", "svc-stream-test", "res-stream-restricted", layerIndex: RestrictedLayerId, storageBindingId: "binding-stream-restricted")
                 .BuildProvider();
 
+    }
+
+    private static class ServiceOnlyFilterStreamLayerCatalog
+    {
+        public const string ServiceName = "service-only-filter";
+        public const string EmptyServiceName = "empty-service-only-filter";
+        public const int RoutableStorageLayerId = 41;
+        public const int RetiredStorageLayerId = 42;
+
+        public static TestMetadataV2GraphProvider BuildMetadataProvider()
+        {
+            var graph = new TestMetadataV2GraphBuilder()
+                .AddResource("res-service-only-active", "Active Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding(
+                    "binding-service-only-active",
+                    "res-service-only-active",
+                    "test.layers.service_only_active",
+                    storageLayerId: RoutableStorageLayerId)
+                .AddResource("res-service-only-retired", "Retired Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding(
+                    "binding-service-only-retired",
+                    "res-service-only-retired",
+                    "test.layers.service_only_retired",
+                    storageLayerId: RetiredStorageLayerId)
+                .AddService("svc-service-only-filter", ServiceName, protocols: MetadataV2ServiceProtocols.All)
+                .AddService("svc-empty-service-only-filter", EmptyServiceName, protocols: MetadataV2ServiceProtocols.All)
+                .AddPublication(
+                    "pub-service-only-active",
+                    "svc-service-only-filter",
+                    "res-service-only-active",
+                    layerIndex: 1,
+                    storageBindingId: "binding-service-only-active")
+                .AddPublication(
+                    "pub-service-only-retired",
+                    "svc-service-only-filter",
+                    "res-service-only-retired",
+                    layerIndex: 2,
+                    storageBindingId: "binding-service-only-retired")
+                .Build();
+
+            graph = graph with
+            {
+                Publications = graph.Publications
+                    .Select(publication => publication.Metadata.Id == "pub-service-only-retired"
+                        ? publication with
+                        {
+                            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                        }
+                        : publication)
+                    .ToArray()
+            };
+
+            return new TestMetadataV2GraphProvider(graph);
+        }
     }
 
     private static TestMetadataV2GraphProvider BuildStreamMetadataProvider(bool timeAware)

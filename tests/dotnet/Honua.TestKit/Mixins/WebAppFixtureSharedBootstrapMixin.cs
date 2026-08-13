@@ -59,8 +59,6 @@ internal static class WebAppFixtureSharedBootstrapMixin
         {
             if (!_sharedInitialized)
             {
-                Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", "true");
-
                 _sharedPostgres = new PostgresFixture();
                 await _sharedPostgres.InitializeAsync();
 

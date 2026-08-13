@@ -101,6 +101,37 @@ public sealed class GeoservicesCatalogServiceTypingTests
         services.Should().ContainSingle().Which.Should().Be("GPServer");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_LayerlessGpServiceRequiresServingLifecycle()
+    {
+        foreach (var lifecycle in new[]
+                 {
+                     MetadataV2LifecycleStatus.Draft,
+                     MetadataV2LifecycleStatus.Archived,
+                     MetadataV2LifecycleStatus.Retired,
+                 })
+        {
+            var rasterStore = BuildRasterStoreWithRasters();
+            var graph = BuildTypingGraph();
+            graph = graph with
+            {
+                Services = graph.Services
+                    .Select(service => service.Metadata.Id == "svc-typing-gp"
+                        ? service with { Status = new MetadataV2Status { Lifecycle = lifecycle } }
+                        : service)
+                    .ToArray(),
+            };
+
+            await using var fixture = await CreateFixtureAsync(rasterStore, graph);
+
+            var services = await GetServicesByNameAsync(fixture, GpServiceName);
+
+            services.Should().BeEmpty($"{lifecycle} services must not be advertised");
+        }
+    }
+
     private static async Task<string[]> GetServicesByNameAsync(WebAppFixture fixture, string serviceName)
     {
         var response = await fixture.Client.GetAsync("/rest/services?f=json");
@@ -139,9 +170,11 @@ public sealed class GeoservicesCatalogServiceTypingTests
         return rasterStore;
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore)
+    private static async Task<WebAppFixture> CreateFixtureAsync(
+        IRasterStore rasterStore,
+        MetadataV2Graph? graph = null)
     {
-        var provider = new TestMetadataV2GraphProvider(BuildTypingGraph());
+        var provider = new TestMetadataV2GraphProvider(graph ?? BuildTypingGraph());
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>

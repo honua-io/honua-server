@@ -67,6 +67,15 @@ internal static class StacConstants
     }
 
     /// <summary>
+    /// STAC collection provider roles.
+    /// </summary>
+    internal static class ProviderRoles
+    {
+        public const string Producer = "producer";
+        public const string Host = "host";
+    }
+
+    /// <summary>
     /// Allowed query parameters by endpoint.
     /// </summary>
     internal static class AllowedQueryParameters

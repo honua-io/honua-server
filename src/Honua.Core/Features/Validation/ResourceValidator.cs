@@ -55,23 +55,17 @@ public sealed class ResourceValidator : IResourceValidator
             // MetadataV2LifecycleStatus.Retired — skip them so disabled layers 404 on
             // every protocol surface that resolves layers by integer id (OGC
             // collections, Maps, OData), mirroring ValidateServiceLayerV2Async.
-            if (candidate.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
-            {
-                continue;
-            }
-
             var candidateResource = snapshot.ResolveResource(candidate);
-            if (candidateResource is null
-                || candidateResource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
+            if (!snapshot.IsRoutable(candidate))
             {
                 continue;
             }
 
-            firstResource ??= candidateResource;
+            firstResource ??= candidateResource!;
 
             if (snapshot.ResolveStorageLayerId(candidate).HasValue)
             {
-                return ResourceValidationResult.Success(candidateResource);
+                return ResourceValidationResult.Success(candidateResource!);
             }
         }
 
@@ -129,9 +123,25 @@ public sealed class ResourceValidator : IResourceValidator
     }
 
     /// <inheritdoc />
-    public async Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+    public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
         string serviceId,
         CancellationToken cancellationToken = default)
+        => ValidateServiceCoreAsync(serviceId, requiredProtocol: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+        string serviceId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requiredProtocol);
+        return ValidateServiceCoreAsync(serviceId, requiredProtocol, cancellationToken);
+    }
+
+    private async Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceCoreAsync(
+        string serviceId,
+        string? requiredProtocol,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(serviceId))
         {
@@ -140,40 +150,155 @@ public sealed class ResourceValidator : IResourceValidator
         }
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+        if (requiredProtocol is not null)
         {
-            return ResourceValidationResult.Success(byName);
+            var protocolService = ResolveServiceForProtocol(snapshot, serviceId, requiredProtocol);
+            return protocolService is not null
+                ? ResourceValidationResult.Success(protocolService)
+                : ResourceValidationResult.NotFound<MetadataV2Service>(
+                    ErrorMessages.NotFound.FormatService(serviceId));
         }
+
         if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
         {
-            return ResourceValidationResult.Success(byId);
+            return byId.IsRoutable()
+                ? ResourceValidationResult.Success(byId)
+                : ResourceValidationResult.NotFound<MetadataV2Service>(
+                    ErrorMessages.NotFound.FormatService(serviceId));
+        }
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) && byName.IsRoutable())
+        {
+            return ResourceValidationResult.Success(byName);
         }
         return ResourceValidationResult.NotFound<MetadataV2Service>(
             ErrorMessages.NotFound.FormatService(serviceId));
     }
 
+    private static MetadataV2Service? ResolveServiceForProtocol(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        string requiredProtocol)
+    {
+        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var exactId))
+        {
+            return exactId.IsRoutable() && ServiceProtocols.IsProtocolEnabled(exactId, requiredProtocol)
+                ? exactId
+                : null;
+        }
+
+        var matchingServices = snapshot.Graph.Services
+            .Where(service =>
+                service.IsRoutable() &&
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        var candidates = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            .ToArray();
+
+        if (string.Equals(requiredProtocol, ServiceProtocols.GPServer, StringComparison.OrdinalIgnoreCase))
+        {
+            var geoprocessingServices = candidates
+                .Where(IsDedicatedGpService)
+                .ToArray();
+            if (geoprocessingServices.Length == 1)
+            {
+                return geoprocessingServices[0];
+            }
+
+            if (geoprocessingServices.Length > 1)
+            {
+                candidates = geoprocessingServices;
+            }
+        }
+
+        var preferred = candidates
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    snapshot.IsRoutable(publication) &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType)))
+            .ToArray();
+        if (preferred.Length == 1)
+        {
+            return preferred[0];
+        }
+
+        var compatible = candidates
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    snapshot.IsRoutable(publication) &&
+                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType)))
+            .ToArray();
+        if (compatible.Length == 1)
+        {
+            return compatible[0];
+        }
+
+        return candidates.Length == 1 ? candidates[0] : null;
+    }
+
+    private static bool IsDedicatedGpService(MetadataV2Service service)
+        => service.Route?.TrimEnd('/').EndsWith("/GPServer", StringComparison.OrdinalIgnoreCase) == true;
+
     /// <inheritdoc />
-    public async Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+    public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
         string serviceId,
         int layerId,
         CancellationToken cancellationToken = default)
+        => ValidateServiceLayerCoreAsync(serviceId, layerId, requiredProtocol: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+        string serviceId,
+        int layerId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default)
     {
-        var serviceResult = await ValidateServiceV2Async(serviceId, cancellationToken).ConfigureAwait(false);
-        if (!serviceResult.IsValid)
+        ArgumentException.ThrowIfNullOrWhiteSpace(requiredProtocol);
+        return ValidateServiceLayerCoreAsync(serviceId, layerId, requiredProtocol, cancellationToken);
+    }
+
+    private async Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerCoreAsync(
+        string serviceId,
+        int layerId,
+        string? requiredProtocol,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId))
         {
-            var message = serviceResult.ErrorMessage ?? ErrorMessages.NotFound.FormatService(serviceId);
-            return serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? ResourceValidationResult.InvalidIdentifier<MetadataV2ServiceLayerTriple>(message)
-                : ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(message);
+            return ResourceValidationResult.InvalidIdentifier<MetadataV2ServiceLayerTriple>(
+                ErrorMessages.Validation.ServiceIdRequired);
         }
-        var service = serviceResult.Resource!;
+
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var serviceExists = snapshot.Index.ServicesById.TryGetValue(serviceId, out var exactService)
+            ? exactService.IsRoutable() &&
+              (requiredProtocol is null || ServiceProtocols.IsProtocolEnabled(exactService, requiredProtocol))
+            : snapshot.Graph.Services.Any(service =>
+                service.IsRoutable() &&
+                (requiredProtocol is null || ServiceProtocols.IsProtocolEnabled(service, requiredProtocol)) &&
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
+        if (!serviceExists)
+        {
+            return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
+                ErrorMessages.NotFound.FormatService(serviceId));
+        }
+
+        var service = ResolveServiceForLayer(snapshot, serviceId, layerId, requiredProtocol);
+        if (service is null)
+        {
+            return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
+                ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
+        }
+
         foreach (var candidate in snapshot.Index.PublicationsByService[service.Metadata.Id]
                      .Where(pub => pub.LayerIndex == layerId &&
-                                   pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+                                   (requiredProtocol is null ||
+                                    IsPublicationTypeCompatible(requiredProtocol, pub.PublicationType)))
+                     .OrderByDescending(pub => requiredProtocol is not null &&
+                         ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType))
                      .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-                     .Where(candidate =>
-                         candidate.Resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+                     .Where(candidate => snapshot.IsRoutable(candidate.Publication)))
         {
             // Disabled (admin-disabled) publications/resources are flipped to
             // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes
@@ -184,6 +309,79 @@ public sealed class ResourceValidator : IResourceValidator
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
             ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
     }
+
+    private static MetadataV2Service? ResolveServiceForLayer(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        int layerId,
+        string? requiredProtocol)
+    {
+        if (requiredProtocol is null)
+        {
+            if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
+            {
+                return byId.IsRoutable() ? byId : null;
+            }
+
+            return snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) && byName.IsRoutable()
+                ? byName
+                : null;
+        }
+
+        // Several protocol-specific services may intentionally share one public route name.
+        // Resolve against the publication surface requested by the route instead of the
+        // first-wins ServicesByName index, otherwise a preceding aggregate/OGC service can
+        // make a FeatureServer request serve the wrong resource.
+        var matchingServices = snapshot.Graph.Services
+            .Where(service =>
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
+            .ToArray();
+
+        // An exact graph identity has the same precedence as the service-root route. Select it
+        // before protocol and layer filtering so a disabled protocol or absent layer remains a 404
+        // on that service instead of falling through to a different service whose display name
+        // collides with the id.
+        var exactId = matchingServices.FirstOrDefault(service =>
+            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
+        if (exactId is not null)
+        {
+            return ServiceProtocols.IsProtocolEnabled(exactId, requiredProtocol) ? exactId : null;
+        }
+
+        var protocolServices = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            .ToArray();
+
+        var candidates = protocolServices
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    publication.LayerIndex == layerId &&
+                    snapshot.IsRoutable(publication) &&
+                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType)))
+            .ToArray();
+
+        // Prefer a service with the protocol's canonical publication type when one exists.
+        // MapServer also serves feature publications created by the standard admin publish path,
+        // but that compatibility fallback must not eclipse a dedicated map publication sharing the
+        // same public service name.
+        var preferred = candidates
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    publication.LayerIndex == layerId &&
+                    snapshot.IsRoutable(publication) &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType)))
+            .ToArray();
+        var scopedCandidates = preferred.Length > 0 ? preferred : candidates;
+        return scopedCandidates.Length == 1 ? scopedCandidates[0] : null;
+    }
+
+    private static bool IsPublicationTypeCompatible(
+        string protocol,
+        MetadataV2PublicationType publicationType)
+        => ServiceProtocols.IsPreferredPublicationType(protocol, publicationType) ||
+           (string.Equals(protocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase) &&
+            publicationType == MetadataV2PublicationType.EsriFeatureLayer);
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)
     {

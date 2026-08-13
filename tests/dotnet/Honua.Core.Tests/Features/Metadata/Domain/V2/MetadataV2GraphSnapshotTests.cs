@@ -68,6 +68,28 @@ public sealed class MetadataV2GraphSnapshotTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void Extensions_FindPublication_SkipsUnroutableDuplicate()
+    {
+        var graph = SampleGraph();
+        var active = graph.Publications.Single();
+        var draft = active with
+        {
+            Metadata = active.Metadata with { Id = "pub.parcels.draft" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft }
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            graph with { Publications = [draft, active] },
+            "\"duplicates\"",
+            DateTimeOffset.UtcNow);
+
+        snapshot.FindPublicationOnService("service.features", "parcels")
+            .Should().BeSameAs(active);
+        snapshot.FindPublicationByLayerIndex("service.features", 0)
+            .Should().BeSameAs(active);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void Extensions_ResolveStorageBinding_PrefersPublicationOverride()
     {
         var graph = SampleGraph() with { };
@@ -109,6 +131,167 @@ public sealed class MetadataV2GraphSnapshotTests
         missing.Should().BeEmpty();
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void IsRoutable_RequiresServingPublicationAndResourceLifecycle()
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var deprecated = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated };
+        var draft = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
+        var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
+        var publication = new MetadataV2Publication { Status = active };
+        var resource = new MetadataV2Resource { Status = active };
+
+        publication.IsRoutable(resource).Should().BeTrue();
+        (publication with { Status = deprecated }).IsRoutable(resource).Should().BeTrue();
+        publication.IsRoutable(resource with { Status = deprecated }).Should().BeTrue();
+        (publication with { Status = draft }).IsRoutable(resource).Should().BeFalse();
+        publication.IsRoutable(resource with { Status = draft }).Should().BeFalse();
+        (publication with { Status = retired }).IsRoutable(resource).Should().BeFalse();
+        publication.IsRoutable(resource with { Status = retired }).Should().BeFalse();
+        (publication with { Status = archived }).IsRoutable(resource).Should().BeFalse();
+        publication.IsRoutable(resource with { Status = archived }).Should().BeFalse();
+        publication.IsRoutable(resource: null).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void SnapshotIsRoutable_RequiresServingResolvedBindingLifecycle()
+    {
+        var graph = SampleGraph();
+        var publication = graph.Publications.Single();
+        var binding = graph.StorageBindings.Single();
+
+        var nonServingSnapshots = new[]
+            {
+                MetadataV2LifecycleStatus.Draft,
+                MetadataV2LifecycleStatus.Retired,
+                MetadataV2LifecycleStatus.Archived,
+            }
+            .Select(lifecycle => new MetadataV2GraphSnapshot(
+                graph with
+                {
+                    StorageBindings =
+                    [
+                        binding with { Status = new MetadataV2Status { Lifecycle = lifecycle } }
+                    ]
+                },
+                $"\"{lifecycle}\"",
+                DateTimeOffset.UtcNow));
+
+        nonServingSnapshots.Should().OnlyContain(snapshot => !snapshot.IsRoutable(publication));
+
+        var deprecatedSnapshot = new MetadataV2GraphSnapshot(
+            graph with
+            {
+                StorageBindings =
+                [
+                    binding with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated }
+                    }
+                ]
+            },
+            "\"deprecated\"",
+            DateTimeOffset.UtcNow);
+        deprecatedSnapshot.IsRoutable(publication).Should().BeTrue();
+
+        var resource = graph.Resources.Single();
+        var bindinglessPublication = publication with { StorageBindingId = null };
+        var bindinglessSnapshot = new MetadataV2GraphSnapshot(
+            graph with
+            {
+                Resources =
+                [
+                    resource with
+                    {
+                        Type = MetadataV2ResourceType.Document,
+                        StorageBindingIds = [],
+                        PrimaryStorageBindingId = null,
+                    }
+                ],
+                StorageBindings = [],
+                Publications = [bindinglessPublication],
+            },
+            "\"bindingless\"",
+            DateTimeOffset.UtcNow);
+        bindinglessSnapshot.IsRoutable(bindinglessPublication).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void SnapshotIsRoutable_RequiresServingResolvedServiceLifecycle()
+    {
+        var graph = SampleGraph();
+        var publication = graph.Publications.Single();
+        var service = graph.Services.Single();
+
+        var nonServingSnapshots = new[]
+            {
+                MetadataV2LifecycleStatus.Draft,
+                MetadataV2LifecycleStatus.Retired,
+                MetadataV2LifecycleStatus.Archived,
+            }
+            .Select(lifecycle => new MetadataV2GraphSnapshot(
+                graph with
+                {
+                    Services =
+                    [
+                        service with { Status = new MetadataV2Status { Lifecycle = lifecycle } }
+                    ]
+                },
+                $"\"{lifecycle}\"",
+                DateTimeOffset.UtcNow));
+
+        nonServingSnapshots.Should().OnlyContain(snapshot => !snapshot.IsRoutable(publication));
+
+        var deprecatedSnapshot = new MetadataV2GraphSnapshot(
+            graph with
+            {
+                Services =
+                [
+                    service with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated }
+                    }
+                ]
+            },
+            "\"deprecated-service\"",
+            DateTimeOffset.UtcNow);
+        deprecatedSnapshot.IsRoutable(publication).Should().BeTrue();
+
+        var missingServiceSnapshot = new MetadataV2GraphSnapshot(
+            graph with { Services = [] },
+            "\"missing-service\"",
+            DateTimeOffset.UtcNow);
+        missingServiceSnapshot.IsRoutable(publication).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void IsRoutable_RequiresServingBindingAndResourceLifecycle()
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var deprecated = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated };
+        var draft = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
+        var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
+        var binding = new MetadataV2StorageBinding { Status = active };
+        var resource = new MetadataV2Resource { Status = active };
+
+        binding.IsRoutable(resource).Should().BeTrue();
+        (binding with { Status = deprecated }).IsRoutable(resource).Should().BeTrue();
+        binding.IsRoutable(resource with { Status = deprecated }).Should().BeTrue();
+        (binding with { Status = draft }).IsRoutable(resource).Should().BeFalse();
+        binding.IsRoutable(resource with { Status = draft }).Should().BeFalse();
+        (binding with { Status = retired }).IsRoutable(resource).Should().BeFalse();
+        binding.IsRoutable(resource with { Status = retired }).Should().BeFalse();
+        (binding with { Status = archived }).IsRoutable(resource).Should().BeFalse();
+        binding.IsRoutable(resource with { Status = archived }).Should().BeFalse();
+        binding.IsRoutable(resource: null).Should().BeFalse();
+    }
+
     private static MetadataV2Graph SampleGraph()
     {
         return new MetadataV2Graph
@@ -131,6 +314,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     StorageBindingIds = ["storage.parcels.postgis"],
 
                     SchemaFields =
@@ -145,6 +329,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "storage.parcels.postgis", Name = "parcels-postgis" },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = "resource.parcels",
                     ConnectionId = "conn.postgres",
                     StorageType = MetadataV2StorageType.RelationalTable,
@@ -159,6 +344,7 @@ public sealed class MetadataV2GraphSnapshotTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
                     Protocols = [ServiceProtocols.OgcFeatures],
                     Route = "/ogc/features",
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 }
             ],
             Publications =
@@ -166,6 +352,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels.features", Name = "parcels" },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = "resource.parcels",
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",

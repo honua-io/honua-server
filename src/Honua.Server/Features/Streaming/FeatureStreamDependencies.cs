@@ -23,6 +23,7 @@ internal sealed class FeatureStreamDependencies
         IOptions<FeatureChangeEventOptions> eventOptions,
         IFilterExpressionService filterExpressionService,
         IMetadataV2GraphProvider metadataV2GraphProvider,
+        FeatureStreamRoutabilityGuard routabilityGuard,
         IGeometryOperationService geometryOperationService,
         IFeatureReader featureReader)
     {
@@ -32,6 +33,7 @@ internal sealed class FeatureStreamDependencies
         EventOptions = eventOptions ?? throw new ArgumentNullException(nameof(eventOptions));
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         MetadataV2GraphProvider = metadataV2GraphProvider ?? throw new ArgumentNullException(nameof(metadataV2GraphProvider));
+        RoutabilityGuard = routabilityGuard ?? throw new ArgumentNullException(nameof(routabilityGuard));
         GeometryOperationService = geometryOperationService ?? throw new ArgumentNullException(nameof(geometryOperationService));
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
     }
@@ -42,6 +44,7 @@ internal sealed class FeatureStreamDependencies
     public IOptions<FeatureChangeEventOptions> EventOptions { get; }
     public IFilterExpressionService FilterExpressionService { get; }
     public IMetadataV2GraphProvider MetadataV2GraphProvider { get; }
+    public FeatureStreamRoutabilityGuard RoutabilityGuard { get; }
     public IGeometryOperationService GeometryOperationService { get; }
 
     /// <summary>

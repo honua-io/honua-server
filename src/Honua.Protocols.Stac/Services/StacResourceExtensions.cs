@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Stac.Services;
@@ -27,16 +28,78 @@ internal static class StacResourceExtensions
     private const string StacExtensionKey = "stac";
 
     /// <summary>
-    /// Resolves the SPDX or STAC-recognized license identifier for a resource. Returns
-    /// <c>"proprietary"</c> when no license is declared (matches the v1 default).
+    /// Applies service governance defaults without inheriting service license metadata when
+    /// the resource declares its license through the STAC extension.
     /// </summary>
-    public static string ResolveLicense(this MetadataV2Resource resource)
+    public static MetadataV2ObjectMetadata WithStacServiceGovernanceFallbacks(
+        this MetadataV2Resource resource,
+        MetadataV2ObjectMetadata serviceMetadata)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        var declared = ReadString(resource, "license");
-        return string.IsNullOrWhiteSpace(declared)
-            ? "proprietary"
-            : declared.Trim();
+        ArgumentNullException.ThrowIfNull(serviceMetadata);
+
+        if (string.IsNullOrWhiteSpace(ReadString(resource, "license")))
+        {
+            return resource.Metadata.WithServiceGovernanceFallbacks(serviceMetadata);
+        }
+
+        var nonLicenseFallbacks = serviceMetadata with
+        {
+            License = null,
+            Links = serviceMetadata.Links
+                .Where(link => !string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase))
+                .ToArray(),
+        };
+        return resource.Metadata.WithServiceGovernanceFallbacks(nonLicenseFallbacks);
+    }
+
+    /// <summary>
+    /// Resolves the SPDX or STAC-recognized license identifier for a resource. Returns
+    /// <c>"various"</c> for link-only declarations and <c>"proprietary"</c> when no
+    /// license is declared (matches the v1 default).
+    /// </summary>
+    public static string ResolveLicense(
+        this MetadataV2Resource resource,
+        MetadataV2ObjectMetadata? fallbackMetadata = null)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var declared = !string.IsNullOrWhiteSpace(resource.Metadata.License)
+            ? resource.Metadata.License.Trim()
+            : ReadString(resource, "license")?.Trim();
+        if (string.IsNullOrWhiteSpace(declared))
+        {
+            if (resource.Metadata.Links.Any(link =>
+                string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(link.Href)))
+            {
+                return "various";
+            }
+
+            declared = fallbackMetadata?.License?.Trim();
+            if (string.IsNullOrWhiteSpace(declared))
+            {
+                return fallbackMetadata?.Links.Any(link =>
+                    string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(link.Href)) == true
+                    ? "various"
+                    : "proprietary";
+            }
+        }
+
+        return IsSingleStacLicenseToken(declared)
+            ? declared
+            : "various";
+    }
+
+    private static bool IsSingleStacLicenseToken(string license)
+    {
+        if (string.Equals(license, "proprietary", StringComparison.Ordinal) ||
+            string.Equals(license, "various", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return LayerSourceGovernance.IsSpdxLicenseIdentifier(license);
     }
 
     /// <summary>

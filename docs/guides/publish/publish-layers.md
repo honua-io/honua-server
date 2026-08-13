@@ -54,7 +54,28 @@ with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as 
     print(layer)
 ```
 
-The result includes the numeric layer ID and owning service name. Optional request fields include a description, geometry type, primary key, attribute allowlist, service name, and enabled state.
+The result includes the numeric layer ID and owning service name. Optional request fields include a description, geometry type, primary key, attribute allowlist, service name, enabled state, and source governance.
+
+For public data, submit only rights and provenance supplied by the data owner. Honua does not infer a license, attribution, publisher, or documentation URL:
+
+```json
+{
+  "schema": "public",
+  "table": "boundaries",
+  "layerName": "public-boundaries",
+  "geometryColumn": "geom",
+  "srid": 4326,
+  "license": "CC0-1.0",
+  "attribution": "Example boundary data contributors",
+  "publisher": "Example Data Office",
+  "licenseUrl": "https://data.example/licenses/cc0-1.0",
+  "sourceUrl": "https://data.example/datasets/boundaries"
+}
+```
+
+`license` is limited to 256 characters and must be a syntactically valid SPDX expression (or the literal `proprietary`). `attribution` is limited to 512 characters and `publisher` to 256. `licenseUrl` and `sourceUrl` are limited to 2,048 characters and must be absolute HTTP(S) URLs without embedded credentials. Control characters are rejected. Empty values publish as absent; omitted governance fields preserve legacy behavior.
+
+Attribution is served as GeoServices `copyrightText` and OGC collection `attribution`. GeoServices also returns the license identifier, publisher, and additive `links`; OGC collections return `rel=license` and `rel=describedby` links. For a standalone SPDX identifier such as `MIT`, Honua derives the canonical `https://spdx.org/licenses/MIT.html` license link when `licenseUrl` is omitted. An explicit `licenseUrl` overrides that derived URL. Compound SPDX expressions and `proprietary` do not have one canonical SPDX document, so submit `licenseUrl` explicitly when those values need a license link.
 
 Manage published layers through `list_layers`, `set_layer_enabled`, and `set_service_layers_enabled`:
 

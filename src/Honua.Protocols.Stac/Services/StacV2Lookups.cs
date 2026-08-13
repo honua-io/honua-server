@@ -84,6 +84,10 @@ internal static class StacV2Lookups
             {
                 continue;
             }
+            if (!snapshot.IsRoutable(pub))
+            {
+                continue;
+            }
 
             if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
             {
@@ -158,6 +162,10 @@ internal static class StacV2Lookups
 
             var resource = snapshot.ResolveResource(pub);
             if (resource is null)
+            {
+                continue;
+            }
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }

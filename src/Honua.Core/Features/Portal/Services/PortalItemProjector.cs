@@ -116,6 +116,11 @@ public sealed class PortalItemProjector : IPortalItemProjector
         ClaimsPrincipal principal,
         string baseUrl)
     {
+        if (!service.IsRoutable())
+        {
+            return null;
+        }
+
         if (!TryMapItemType(service.PrimaryProtocol, out var itemType, out var urlType, out var constructKey))
         {
             return null;
@@ -139,19 +144,28 @@ public sealed class PortalItemProjector : IPortalItemProjector
         // Not rewritten as a LINQ Select/Where pipeline: the loop body accumulates
         // three independent pieces of state (anyResource, anyVisible, and the first
         // visible resource) per iteration, so it is not a pure 1:1 filter/map.
-        foreach (var resource in (publications).Select(publication => snapshot.ResolveResource(publication)))
+        foreach (var publication in publications)
         {
-            if (resource is null)
+            var resource = snapshot.ResolveResource(publication);
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }
 
             anyResource = true;
-            if (IsAllowed(principal, resource.AccessPolicy, service.AccessPolicy))
+            if (IsAllowed(principal, resource!.AccessPolicy, service.AccessPolicy))
             {
                 anyVisible = true;
                 firstVisibleResource ??= resource;
             }
+        }
+
+        // A service whose graph still contains only retired or otherwise unroutable
+        // publications is not layerless; it has no serving surface and must disappear
+        // from Portal discovery. Truly layerless service constructs remain policy-gated.
+        if (publications.Count > 0 && !anyResource)
+        {
+            return null;
         }
 
         // A service with no resolvable publications is gated on the service policy

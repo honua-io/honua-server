@@ -3380,6 +3380,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         try
         {
             await _fixture.UpdateV2ResourceAttributeRulesAsync(TestLayerId, [rule]);
+            _fixture.GetCurrentV2GraphSnapshot().Graph.Resources
+                .Single(resource => resource.Metadata.Id == $"res-layer-{TestLayerId}")
+                .AttributeRules.Should().ContainSingle();
 
             var editsRequest = new ApplyEditsRequest
             {

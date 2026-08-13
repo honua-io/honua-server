@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.HealthCheck;
+using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
@@ -25,6 +27,26 @@ namespace Honua.Server.Tests.Startup;
 [Protocol(TestProtocols.Health)]
 public sealed class FeatureEventsAndStreamingRegistrationTests
 {
+    [UnitTest]
+    public void ResolveSessionManager_WithScopedMetadataProvider_DoesNotCaptureRootScope()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddScoped(_ => Substitute.For<IMetadataV2GraphProvider>());
+        services.AddHonuaFeatureEventsAndStreaming(
+            new ConfigurationBuilder().Build(),
+            requiresDurableDistributedEvents: false);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+        });
+
+        var manager = provider.GetRequiredService<FeatureStreamSessionManager>();
+
+        manager.Should().NotBeNull();
+    }
+
     [UnitTest]
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_DurableEnvironmentWithoutRedisConfigured_ReturnsReady()

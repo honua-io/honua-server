@@ -12,6 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.Models;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -81,6 +82,12 @@ internal static partial class FeatureServerEndpoints
         {
             ServiceName = service.Metadata.Name,
             ServiceDescription = service.Metadata.Description ?? string.Empty,
+            CopyrightText = string.IsNullOrWhiteSpace(service.Metadata.Attribution)
+                ? service.Metadata.License
+                : service.Metadata.Attribution,
+            License = service.Metadata.License,
+            Publisher = service.Metadata.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
             Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
             InitialExtent = serviceExtent,
@@ -158,12 +165,19 @@ internal static partial class FeatureServerEndpoints
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
         var extent = ResolveLayerExtentV2(resource, srid ?? SpatialReference.WGS84.Wkid);
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
 
         return new LayerResponse
         {
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
             Description = resource.Metadata.Description,
+            CopyrightText = string.IsNullOrWhiteSpace(governance.Attribution)
+                ? governance.License
+                : governance.Attribution,
+            License = governance.License,
+            Publisher = governance.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
             Type = "Feature Layer",
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = spatialReference,
@@ -418,6 +432,7 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(snapshot);
 
         var candidates = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(snapshot.IsRoutable)
             .Select(pub => snapshot.ResolveResource(pub))
             .Where(resource => resource is not null)
             .Select(resource => GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource!))
@@ -602,8 +617,11 @@ internal static partial class FeatureServerEndpoints
         // Materialize the full publication list once so we can both default-return and filter
         // against it with stable layer-id resolution.
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(pub => ServiceProtocols.IsPreferredPublicationType(
+                ServiceProtocols.FeatureServer,
+                pub.PublicationType))
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Resource is not null)
+            .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
@@ -668,16 +686,20 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
         HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         IEnumerable<(MetadataV2Publication Publication, MetadataV2Resource Resource)> layers)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(layers);
 
         return
         [
-            ..layers.Where(pair => AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+            ..layers.Where(pair =>
+                snapshot.IsRoutable(pair.Publication) &&
+                AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
         ];
     }
 
@@ -715,6 +737,7 @@ internal static partial class FeatureServerEndpoints
             var relatedLayerId = relatedResource is null
                 ? -1
                 : (snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
+                       .Where(snapshot.IsRoutable)
                        .Select(pub => (int?)pub.LayerIndex)
                        .FirstOrDefault(idx => idx is not null)
                    ?? snapshot.ResolveStorageLayerId(relatedResource)

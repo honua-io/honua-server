@@ -60,21 +60,21 @@ internal static class MapToolLayerResolver
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (resource is null)
+        if (!snapshot.IsRoutable(publication))
         {
             throw new GeoprocessingNotFoundException(
                 $"Layer {resolvedLayerId} on service '{service.Metadata.Name}' has no backing resource.");
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource);
+            ?? snapshot.ResolveStorageLayerId(resource!);
         if (storageLayerId is not { } resolvedStorageLayerId)
         {
             throw new GeoprocessingNotFoundException(
                 $"Layer {resolvedLayerId} on service '{service.Metadata.Name}' is not backed by queryable storage.");
         }
 
-        return new MapToolLayerContext(service, publication, resource, resolvedStorageLayerId);
+        return new MapToolLayerContext(service, publication, resource!, resolvedStorageLayerId);
     }
 
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)
