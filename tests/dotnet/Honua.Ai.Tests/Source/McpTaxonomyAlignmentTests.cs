@@ -18,6 +18,8 @@ using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
@@ -132,6 +134,34 @@ public sealed partial class McpTaxonomyAlignmentTests
             TaxonomyToolNames.OrderBy(n => n, StringComparer.Ordinal),
             "CapabilityRegistry MCP descriptors and McpTaxonomyAlignmentTests.TaxonomyToolNames "
             + "must be updated together when the static /mcp tool roster changes");
+    }
+
+    [UnitTest]
+    public void ToolRoster_MatchesFullMcpDependencyInjectionRegistrations()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IMcpOpsObservabilityReader>());
+        services.AddSingleton(Substitute.For<IMcpPlatformOpsReader>());
+        services.AddSingleton(Substitute.For<Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService>());
+        services.AddSingleton(Substitute.For<Honua.Core.Features.FileImport.Abstractions.IFileImportService>());
+        services.AddSingleton(Substitute.For<Honua.Routing.Features.Routing.Abstractions.IRoutingProvider>());
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
+        services.AddSingleton(Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader>());
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer>());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+
+        var registeredTypes = services
+            .Where(d => d.ServiceType == typeof(IMcpTool))
+            .Select(d => d.ImplementationType)
+            .Where(t => t is not null)
+            .Cast<Type>()
+            .ToArray();
+        var rosterTypes = BuildTools().Select(t => t.GetType()).ToArray();
+
+        registeredTypes.Should().BeEquivalentTo(
+            rosterTypes,
+            "BuildTools must enumerate every static IMcpTool registered by "
+            + "McpServiceCollectionExtensions.AddMcpDataAccessSurface with all capability gates enabled");
     }
 
     [UnitTest]

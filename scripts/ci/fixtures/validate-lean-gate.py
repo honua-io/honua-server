@@ -41,7 +41,9 @@ require(
     r"CapabilityRegistryConformanceTests\.LiveMcpTools_MatchRegistryToolDescriptors.*"
     r"CapabilityRegistryConformanceTests\.RegistryToolDescriptors_MirrorLiveWorkflowFamilies.*"
     r"McpTaxonomyAlignmentTests\.ToolNames_MatchTaxonomyRoster.*"
-    r"McpTaxonomyAlignmentTests\.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors",
+    r"McpTaxonomyAlignmentTests\.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors.*"
+    r"McpTaxonomyAlignmentTests\.ToolRoster_MatchesFullMcpDependencyInjectionRegistrations.*"
+    r"McpTaxonomyAlignmentTests\.ErrorEnvelopeRoster_CoversEveryStaticallyRegisteredTool",
     "gate registry names, workflow families, and the taxonomy roster together",
 )
 
