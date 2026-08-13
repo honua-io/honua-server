@@ -345,19 +345,37 @@ internal sealed class GeoprocessingJobArtifactService
                 continue;
             }
 
-            var uri = RasterOutputContentRoutes.CanServe(
+            var canServe = RasterOutputContentRoutes.CanServe(
                     outputStore,
                     artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreProvider),
-                    artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreReference))
-                ? RasterOutputContentRoutes.BuildRelative(jobId, index)
-                : null;
-            if (string.Equals(uri, artifact.Uri, StringComparison.Ordinal))
+                    artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreReference));
+            var uri = canServe ? RasterOutputContentRoutes.BuildRelative(jobId, index) : null;
+            var hasProjectedRoute = artifact.Metadata.TryGetValue(
+                RasterOutputArtifactMetadata.ContentRoute,
+                out var projectedRoute);
+            var metadataIsCurrent = canServe
+                ? hasProjectedRoute && string.Equals(projectedRoute, uri, StringComparison.Ordinal)
+                : !hasProjectedRoute;
+            if (string.Equals(uri, artifact.Uri, StringComparison.Ordinal) && metadataIsCurrent)
             {
                 continue;
             }
 
+            var metadata = artifact.Metadata.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal);
+            if (canServe)
+            {
+                metadata[RasterOutputArtifactMetadata.ContentRoute] = uri!;
+            }
+            else
+            {
+                metadata.Remove(RasterOutputArtifactMetadata.ContentRoute);
+            }
+
             projected ??= package.Artifacts.ToArray();
-            projected[index] = artifact with { Uri = uri };
+            projected[index] = artifact with { Uri = uri, Metadata = metadata };
         }
 
         return projected is null ? package : package with { Artifacts = projected };

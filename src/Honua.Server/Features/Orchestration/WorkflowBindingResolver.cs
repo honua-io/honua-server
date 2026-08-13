@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Orchestration.Domain;
 
 namespace Honua.Server.Features.Orchestration;
@@ -51,7 +52,21 @@ internal static class WorkflowBindingResolver
                 continue;
             }
 
-            resolved[binding.TargetInputKey] = artifact.Uri ?? artifact.ArtifactId;
+            if (artifact.Uri is not null)
+            {
+                resolved[binding.TargetInputKey] = artifact.Uri;
+                continue;
+            }
+
+            if (artifact.Metadata.TryGetValue(RasterOutputArtifactMetadata.Staged, out var staged)
+                && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add(
+                    $"Binding '{binding.TargetInputKey}' cannot use staged artifact '{artifact.ArtifactId}' from step '{binding.SourceStepId}' because its content is unavailable on this host.");
+                continue;
+            }
+
+            resolved[binding.TargetInputKey] = artifact.ArtifactId;
         }
 
         return new BindingResolution(resolved, failures);

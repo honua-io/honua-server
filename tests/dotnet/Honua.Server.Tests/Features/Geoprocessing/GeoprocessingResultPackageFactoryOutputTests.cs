@@ -86,9 +86,15 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
         var projected = GeoprocessingJobArtifactService.ProjectStagedArtifactAvailability(
             package, "job-x", store);
 
-        projected.Artifacts.Should().ContainSingle().Which.Uri.Should().BeNull();
-        package.Artifacts.Should().ContainSingle().Which.Uri.Should().NotBeNull(
+        var projectedArtifact = projected.Artifacts.Should().ContainSingle().Subject;
+        projectedArtifact.Uri.Should().BeNull();
+        projectedArtifact.Metadata.Should().NotContainKey(RasterOutputArtifactMetadata.ContentRoute);
+        projectedArtifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Staged);
+
+        var durableArtifact = package.Artifacts.Should().ContainSingle().Subject;
+        durableArtifact.Uri.Should().NotBeNull(
             "availability projection must not mutate the durable package");
+        durableArtifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.ContentRoute);
     }
 
     [UnitTest]
@@ -106,8 +112,9 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
         var projected = GeoprocessingJobArtifactService.ProjectStagedArtifactAvailability(
             package, "job-x", store);
 
-        projected.Artifacts.Should().ContainSingle().Which.Uri.Should().Be(
-            "/api/geoprocessing/jobs/job-x/artifacts/0/content");
+        var artifact = projected.Artifacts.Should().ContainSingle().Subject;
+        artifact.Uri.Should().Be("/api/geoprocessing/jobs/job-x/artifacts/0/content");
+        artifact.Metadata[RasterOutputArtifactMetadata.ContentRoute].Should().Be(artifact.Uri);
     }
 
     [UnitTest]
