@@ -5528,7 +5528,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_MissingBbox_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_MixedValidAndUnknownParameterNames_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_UnknownParameterName_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ValidParameterNameSubset_ReturnsOnlyRequestedParameters"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "implemented",
@@ -5543,7 +5546,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_InvalidCoords_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_MixedValidAndUnknownParameterNames_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_UnknownParameterName_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "implemented",
