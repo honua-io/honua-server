@@ -259,6 +259,42 @@ public sealed class SavedMapOperationPayloadValidatorTests
 
     [Trait("Category", "Unit")]
     [Fact]
+    public void TryValidate_ReplacementControlSourceId_MustResolveToADeclaredLayerOrDatasource()
+    {
+        // ADR-0031 makes control source resolution a validation-gate responsibility, so a
+        // misspelled sourceId is refused here rather than persisted as an affordance whose
+        // domain no host can populate.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"layers":[{"id":"parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"parcel"}]}"""),
+            out var error)
+            .Should().BeFalse();
+        error.Should().Contain("does not resolve");
+
+        // A layer id resolves...
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"layers":[{"id":"parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"parcels"}]}"""),
+            out var byLayerId)
+            .Should().BeTrue(because: byLayerId);
+
+        // ...and so does the datasource that layer binds.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"layers":[{"id":"parcels","sourceId":"ds-parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"ds-parcels"}]}"""),
+            out var bySourceId)
+            .Should().BeTrue(because: bySourceId);
+
+        // Presentation-only controls omit it entirely.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"controls":[{"id":"nav","kind":"navigation"}]}"""),
+            out var omitted)
+            .Should().BeTrue(because: omitted);
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
     public void TryValidate_ReplacementLayoutItemReferencingAControl_IsRejected()
     {
         // Controls are chrome, not grid items (ADR-0031) — resolving is not the same as
@@ -324,7 +360,7 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pitch":30,"crs":"EPSG:3857"}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":8},"items":[{"ref":"map","x":0,"y":0,"w":8,"h":4}]}}""")]
-    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"controls":[{"id":"year-slider","kind":"timeSlider","title":"Year","sourceId":"parcels","config":{"field":"yearBuilt"}}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"}],"controls":[{"id":"year-slider","kind":"timeSlider","title":"Year","sourceId":"parcels","config":{"field":"yearBuilt"}}]}""")]
     public void TryValidate_FullyMappedNestedMembers_AreAccepted(SavedMapOperationKind kind, string payload)
     {
         // The allowlists must cover every modelled member, or a legitimate client is refused.

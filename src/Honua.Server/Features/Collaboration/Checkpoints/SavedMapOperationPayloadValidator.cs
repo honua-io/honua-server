@@ -339,6 +339,19 @@ internal static class SavedMapOperationPayloadValidator
         StudioCompositionBody body,
         out string error)
     {
+        // Control source resolution runs here rather than in the wire-shape pass because it
+        // needs the deserialized layers to resolve against (ADR-0031: a control's sourceId
+        // resolves like a layer reference).
+        foreach (var control in body.Controls ?? [])
+        {
+            if (control.SourceId is not null && !StudioInteractionVocabulary.IsDeclaredSourceId(body, control.SourceId))
+            {
+                error = $"The document-replace payload's control '{control.Id}' has sourceId '{control.SourceId}', "
+                    + "which does not resolve to a layer or datasource declared in the payload.";
+                return false;
+            }
+        }
+
         foreach (var interaction in body.Interactions ?? [])
         {
             if (!TryValidateReplacementComponentRef(body, interaction.On.Ref, "interaction on.ref", out error)

@@ -364,6 +364,37 @@ public static class StudioInteractionVocabulary
         value is not null && HasNonEmptyId(value, ControlRefPrefix);
 
     /// <summary>
+    /// Resolves a <see cref="StudioCompositionControl.SourceId"/> against the layers and
+    /// datasources <paramref name="body"/> declares (geospatial-mcp ADR-0031: a control's
+    /// source identifier resolution is a validation-gate responsibility, "as for layer
+    /// references").
+    /// </summary>
+    /// <remarks>
+    /// A composition document declares its data surface through <see cref="StudioCompositionBody.Layers"/>
+    /// only — there is no separate datasources collection — so a control's source resolves
+    /// against either a layer's <see cref="StudioCompositionLayer.Id"/> (the layer itself)
+    /// or its <see cref="StudioCompositionLayer.SourceId"/> (the datasource that layer
+    /// binds). Both spellings are legitimate: a <c>filterSelect</c> populated from a
+    /// composed layer names the layer, while one reading a datasource the document already
+    /// binds names that source.
+    /// </remarks>
+    /// <param name="body">The composition document the source identifier must resolve within.</param>
+    /// <param name="sourceId">The source identifier to resolve.</param>
+    /// <returns><see langword="true"/> when the identifier names a declared layer or datasource.</returns>
+    public static bool IsDeclaredSourceId(StudioCompositionBody body, string? sourceId)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            return false;
+        }
+
+        return (body.Layers ?? []).Any(layer => layer is not null
+            && (string.Equals(layer.Id, sourceId, StringComparison.Ordinal)
+                || string.Equals(layer.SourceId, sourceId, StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// Returns true when <paramref name="value"/> matches the component-reference
     /// grammar <c>map | layer:{id} | widget:{id} | control:{id}</c> (grammar only —
     /// <see cref="ResolveRef"/> answers whether it resolves).

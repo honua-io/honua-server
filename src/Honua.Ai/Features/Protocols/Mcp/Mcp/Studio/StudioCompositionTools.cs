@@ -733,7 +733,8 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
             + "optimistic-generation checking. Controls are input affordances (chrome), not layout grid items, and "
             + "are what 'control:{id}' interaction references resolve against. Fails with invalid_argument when the "
             + "kind is outside the closed vocabulary ("
-            + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}) or the draft's family is not map/app.",
+            + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}), when a supplied sourceId does not "
+            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app.",
         InputSchema = StudioMcpSchemas.AddControlArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-adding the same id with the same body is idempotent; the tool never

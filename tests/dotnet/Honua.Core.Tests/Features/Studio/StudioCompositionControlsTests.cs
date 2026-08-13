@@ -99,6 +99,62 @@ public sealed class StudioCompositionControlsTests
     }
 
     [UnitTest]
+    public void AddControl_WithAnUnresolvableSourceId_IsRejected()
+    {
+        // ADR-0031 makes source resolution a validation-gate responsibility. A misspelled
+        // sourceId ('parcel' for layer 'parcels') would otherwise persist an affordance
+        // whose domain no host can populate, failing at render time instead of authoring
+        // time — and the vendored add_control schema advertises that we check it.
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.AddControl(
+                ParcelComposition(),
+                new StudioCompositionControl { Id = "f", Kind = "filterSelect", SourceId = "parcel" }));
+
+        Assert.Contains("does not resolve", error.Message, StringComparison.Ordinal);
+        Assert.Contains("parcel", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void AddControl_ResolvesSourceIdAgainstLayerIdsAndTheirDatasources()
+    {
+        // The document declares its data surface through layers only, so a control source
+        // legitimately names either the layer or the datasource that layer binds.
+        var body = StudioCompositionBody.Empty with
+        {
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "ds-parcels" }],
+        };
+
+        var byLayerId = StudioCompositionBodyEditor.AddControl(
+            body, new StudioCompositionControl { Id = "a", Kind = "filterSelect", SourceId = "parcels" });
+        Assert.Equal("parcels", Assert.Single(byLayerId.Controls!).SourceId);
+
+        var byDatasource = StudioCompositionBodyEditor.AddControl(
+            body, new StudioCompositionControl { Id = "b", Kind = "filterSelect", SourceId = "ds-parcels" });
+        Assert.Equal("ds-parcels", Assert.Single(byDatasource.Controls!).SourceId);
+    }
+
+    [UnitTest]
+    public void AddControl_WithoutASourceId_IsAcceptedForPresentationOnlyKinds()
+    {
+        // navigation/scale/fullscreen/attribution render no dataset, so omitting sourceId
+        // must stay legal — the resolution rule applies only when one is supplied.
+        var body = StudioCompositionBodyEditor.AddControl(ParcelComposition(), Control("nav", "navigation"));
+
+        Assert.Null(Assert.Single(body.Controls!).SourceId);
+    }
+
+    [UnitTest]
+    public void AddControl_WithABlankSourceId_IsRejected()
+    {
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.AddControl(
+                ParcelComposition(),
+                new StudioCompositionControl { Id = "f", Kind = "filterSelect", SourceId = "   " }));
+
+        Assert.Contains("does not resolve", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void RemoveControl_WithUnknownId_Throws_AndIsNotANoOp()
     {
         var body = StudioCompositionBodyEditor.AddControl(ParcelComposition(), YearSlider());

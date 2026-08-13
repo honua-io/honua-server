@@ -157,6 +157,44 @@ public sealed class StudioPackageValidatorControlsTests
     }
 
     [UnitTest]
+    public void Validate_ControlSourceIdThatResolvesToNothing_Fails()
+    {
+        // The second gate for ADR-0031 source resolution: a body authored wholesale through
+        // draft-update never passes the editor, so the document gate has to catch it too.
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "controls": [{ "id": "f", "kind": "filterSelect", "sourceId": "parcel" }]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.control.source.unresolved");
+        var diagnostic = Assert.Single(summary.Diagnostics, d => d.Code == "studio.control.source.unresolved");
+        Assert.Equal("/body/controls/0/sourceId", diagnostic.Path);
+    }
+
+    [UnitTest]
+    public void Validate_ControlSourceIdMatchingALayerIdOrItsDatasource_Passes()
+    {
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels", "sourceId": "ds-parcels" }],
+              "controls": [
+                { "id": "a", "kind": "filterSelect", "sourceId": "parcels" },
+                { "id": "b", "kind": "timeSlider", "sourceId": "ds-parcels" },
+                { "id": "nav", "kind": "navigation" }
+              ]
+            }
+            """);
+
+        Assert.Empty(ControlCodes(summary));
+    }
+
+    [UnitTest]
     public void Validate_LayoutItemReferencingAControl_Fails()
     {
         // Controls are chrome, not grid items (ADR-0031) — the control ref resolves, but the

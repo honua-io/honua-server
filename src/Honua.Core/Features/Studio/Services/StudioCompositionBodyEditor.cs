@@ -468,6 +468,16 @@ public static class StudioCompositionBodyEditor
                 + $"Got '{control.Kind}'.");
         }
 
+        // ADR-0031 makes source resolution a validation-gate responsibility: a control whose
+        // sourceId names nothing in the document renders an affordance whose domain no host
+        // can populate, and it fails silently at render time rather than at authoring time.
+        if (control.SourceId is not null && !StudioInteractionVocabulary.IsDeclaredSourceId(body, control.SourceId))
+        {
+            throw new StudioCompositionConflictException(
+                $"'control.sourceId': '{control.SourceId}' does not resolve to a layer or datasource declared in "
+                + "this composition document. Omit it for presentation-only controls, or add the layer first.");
+        }
+
         var controls = (body.Controls ?? []).ToList();
         var index = controls.FindIndex(existing => string.Equals(existing.Id, control.Id, StringComparison.Ordinal));
         if (index >= 0)

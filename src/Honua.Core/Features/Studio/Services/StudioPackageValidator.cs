@@ -763,6 +763,19 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                     $"{path}/title",
                     $"control title must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer."));
             }
+
+            // ADR-0031: a control's sourceId resolution is a validation-gate responsibility,
+            // as it is for layer references. An unresolvable source means the host cannot
+            // populate the affordance's domain.
+            if (control.SourceId is not null
+                && !StudioInteractionVocabulary.IsDeclaredSourceId(composition, control.SourceId))
+            {
+                diagnostics.Add(Error(
+                    "studio.control.source.unresolved",
+                    $"{path}/sourceId",
+                    $"control sourceId '{control.SourceId}' does not resolve to a layer or datasource declared "
+                    + "in this composition document."));
+            }
         }
     }
 

@@ -193,6 +193,29 @@ public sealed class StudioControlMcpToolTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_add_control")]
+    public async Task AddControl_WithAnUnresolvableSourceId_SurfacesInvalidArgument()
+    {
+        // ADR-0031 makes source resolution a validation-gate responsibility, and the
+        // advertised schema says so — an agent that misspells the layer must be told at
+        // authoring time, not ship a control whose domain no host can populate.
+        var harness = await StudioDraftHarness.CreateAsync();
+
+        var act = () => harness.AddAsync("""{"id":"f","kind":"filterSelect","sourceId":"parcel"}""");
+
+        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("does not resolve");
+
+        // The draft is unchanged: rejected at admission, not persisted.
+        var body = await harness.ReadCompositionAsync();
+        body.Controls.Should().BeNullOrEmpty();
+
+        // The correctly spelled layer is accepted.
+        (await harness.AddAsync("""{"id":"f","kind":"filterSelect","sourceId":"parcels"}""")).IsError.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_add_control")]
     public async Task AddControl_WithOversizedId_SurfacesInvalidArgument()
     {
         var harness = await StudioDraftHarness.CreateAsync();
