@@ -722,8 +722,28 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
 
         guard.Update(guard.BeginRefresh(), snapshot);
 
+        Assert.Equal(
+            shadowedIdentity,
+            FeatureStreamEndpoints.ResolveStreamService(snapshot, shadowedIdentity)?.Metadata.Id);
         Assert.True(guard.IsRoutable(activeServiceId, storageLayerId));
         Assert.False(guard.IsRoutable(shadowedIdentity, storageLayerId));
+
+        var exactFilter = new StreamSubscriptionFilter(
+            serviceId: activeServiceId,
+            serviceIdIsExact: true,
+            routabilityGuard: guard);
+        Assert.True(exactFilter.Matches(CreateEnvelope(
+            cursor: 1,
+            layerId: storageLayerId,
+            serviceId: activeServiceId),
+            geometryEnvelope: null,
+            propertiesJson: null));
+        Assert.False(exactFilter.Matches(CreateEnvelope(
+            cursor: 2,
+            layerId: storageLayerId,
+            serviceId: shadowedIdentity),
+            geometryEnvelope: null,
+            propertiesJson: null));
     }
 
     [UnitTest]

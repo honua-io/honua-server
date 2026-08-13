@@ -54,6 +54,7 @@ internal static partial class FeatureStreamEndpoints
         double[]? bbox = null;
         FilterExpression? attributeFilter = null;
         StreamTemporalFilter? temporalFilter = null;
+        bool serviceIdIsExact = false;
         bool hasAnyFilter = serviceId is not null;
 
         var snapshot = await deps.RoutabilityGuard.RefreshAsync(
@@ -63,7 +64,8 @@ internal static partial class FeatureStreamEndpoints
 
         if (serviceId is not null)
         {
-            service = ResolveStreamService(snapshot, serviceId);
+            serviceIdIsExact = snapshot.Index.ServicesById.TryGetValue(serviceId, out service);
+            service ??= ResolveStreamService(snapshot, serviceId);
             if (service is null)
             {
                 var msg = $"Service '{serviceId}' not found.";
@@ -71,7 +73,7 @@ internal static partial class FeatureStreamEndpoints
                 return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
-            serviceId = service.Metadata.Name;
+            serviceId = serviceIdIsExact ? service.Metadata.Id : service.Metadata.Name;
         }
 
         if (!string.IsNullOrWhiteSpace(polygonParam))
@@ -310,6 +312,7 @@ internal static partial class FeatureStreamEndpoints
 
         var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
+            serviceIdIsExact: serviceIdIsExact,
             layerIds: layerIds,
             bbox: bbox,
             attributeFilter: attributeFilter,
@@ -535,18 +538,18 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2GraphSnapshot snapshot,
         string serviceId)
     {
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
-        {
-            return byName;
-        }
-
         if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
         {
             return byId;
         }
 
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+        {
+            return byName;
+        }
+
         return snapshot.Graph.Services.FirstOrDefault(candidate =>
-            string.Equals(candidate.Metadata.Id, serviceId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Metadata.Id, serviceId, StringComparison.Ordinal) ||
             string.Equals(candidate.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
     }
 

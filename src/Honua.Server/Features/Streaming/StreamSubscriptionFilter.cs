@@ -18,6 +18,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         new Dictionary<string, JsonElement>(0, StringComparer.Ordinal);
 
     private readonly string? _serviceId;
+    private readonly StringComparison _serviceIdComparison;
     private readonly int[]? _layerIds;
     private readonly double[]? _bbox;
     private readonly FilterExpression? _attributeFilter;
@@ -28,6 +29,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// Creates a composite subscription filter.
     /// </summary>
     /// <param name="serviceId">Allowed service ID (null = all services).</param>
+    /// <param name="serviceIdIsExact">Whether <paramref name="serviceId"/> is an exact catalog identity.</param>
     /// <param name="layerIds">Allowed layer IDs (null = all layers).</param>
     /// <param name="bbox">Bounding box [MinX, MinY, MaxX, MaxY] (null = no spatial filter).</param>
     /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
@@ -35,6 +37,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// <param name="routabilityGuard">Live metadata-derived routing guard for open subscriptions.</param>
     public StreamSubscriptionFilter(
         string? serviceId = null,
+        bool serviceIdIsExact = false,
         int[]? layerIds = null,
         double[]? bbox = null,
         FilterExpression? attributeFilter = null,
@@ -42,6 +45,9 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         FeatureStreamRoutabilityGuard? routabilityGuard = null)
     {
         _serviceId = serviceId;
+        _serviceIdComparison = serviceIdIsExact
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
         _layerIds = layerIds;
         _bbox = bbox;
         _attributeFilter = attributeFilter;
@@ -132,7 +138,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 
         // 1. Service filter — cheapest, short-circuits first.
         if (_serviceId is not null &&
-            !string.Equals(envelope.ServiceId, _serviceId, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison))
         {
             return false;
         }

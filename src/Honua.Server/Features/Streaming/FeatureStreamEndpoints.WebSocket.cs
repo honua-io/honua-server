@@ -1136,15 +1136,17 @@ internal static partial class FeatureStreamEndpoints
             deps.MetadataV2GraphProvider,
             cancellationToken).ConfigureAwait(false);
         MetadataV2Service? service = null;
+        bool serviceIdIsExact = false;
         if (serviceId is not null)
         {
-            service = ResolveStreamService(snapshot, serviceId);
+            serviceIdIsExact = snapshot.Index.ServicesById.TryGetValue(serviceId, out service);
+            service ??= ResolveStreamService(snapshot, serviceId);
             if (service is null)
             {
                 return (null, $"Service '{serviceId}' not found.");
             }
 
-            serviceId = service.Metadata.Name;
+            serviceId = serviceIdIsExact ? service.Metadata.Id : service.Metadata.Name;
         }
 
         var layerIds = ResolveControlLayerIds(control);
@@ -1333,6 +1335,7 @@ internal static partial class FeatureStreamEndpoints
 
         return (new StreamSubscriptionFilter(
             serviceId,
+            serviceIdIsExact,
             layerIds,
             bbox,
             attributeFilter,
