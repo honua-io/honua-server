@@ -487,8 +487,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
         }
 
-        // Both converters are geometry-driven. Prefer the geometry the submitted renderer
-        // symbolizes; fall back to the geometry the stored canonical style already uses.
+        // Both converters are geometry-driven. Resolve geometry from the bound resource;
+        // trusting the submitted renderer could replace a point layer's canonical style
+        // with a polygon fill (or another incompatible symbolizer family).
         var descriptor = StandaloneStyleDescriptor.FromMapLibre(styleId, existing.MapLibreStyleJson);
         if (!descriptor.IsBoundToStorageLayer)
         {
@@ -499,26 +500,28 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (!snapshot.Index.StorageBindingsByStorageLayerId.ContainsKey(descriptor.Id)
-            || !snapshot.Index.ResourcesByStorageLayerId.ContainsKey(descriptor.Id))
+            || !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(descriptor.Id, out var resource))
         {
             return new OgcStyleUpdateResult(
                 OgcStyleUpdateStatus.Invalid,
                 "The stored style references a source that is not an existing Honua layer, so an Esri drawingInfo update cannot preserve its source. Submit a MapLibre style document instead.");
         }
 
-        var geometryType = StandaloneStyleDescriptor.InferGeometryType(drawingInfo);
+        var geometryType = resource.ReadGeometryType();
         if (geometryType == MetadataV2GeometryType.None)
         {
-            geometryType = descriptor.GeometryType;
-        }
-
-        if (geometryType == MetadataV2GeometryType.None)
-        {
-            // Converting with an unknown geometry would silently replace the canonical style
-            // with an empty default document; reject instead.
             return new OgcStyleUpdateResult(
                 OgcStyleUpdateStatus.Invalid,
-                "The geometry type the renderer symbolizes could not be determined. Use symbols of type esriSMS/esriPMS (point), esriSLS (line), or esriSFS (polygon).");
+                "The bound layer's geometry type could not be determined, so an Esri drawingInfo update cannot be converted safely.");
+        }
+
+        var rendererGeometryType = StandaloneStyleDescriptor.InferGeometryType(drawingInfo);
+        if (rendererGeometryType != MetadataV2GeometryType.None
+            && !UsesSameGeometryFamily(geometryType, rendererGeometryType))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                $"The renderer symbolizes {rendererGeometryType}, but the bound layer uses {geometryType}. Submit a renderer for the bound layer's geometry type.");
         }
 
         var conversion = _geoServicesConverter.Convert(drawingInfo, descriptor.Id, styleId, geometryType);
@@ -541,6 +544,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings)
             : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
     }
+
+    private static bool UsesSameGeometryFamily(
+        MetadataV2GeometryType resourceGeometryType,
+        MetadataV2GeometryType rendererGeometryType)
+        => resourceGeometryType switch
+        {
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint =>
+                rendererGeometryType is MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint,
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString =>
+                rendererGeometryType is MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString,
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon =>
+                rendererGeometryType is MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon,
+            _ => resourceGeometryType == rendererGeometryType
+        };
 
     // Replaces the canonical MapLibre document of an existing catalog style, keeping its
     // descriptive metadata and letting the store increment style_version. The cached

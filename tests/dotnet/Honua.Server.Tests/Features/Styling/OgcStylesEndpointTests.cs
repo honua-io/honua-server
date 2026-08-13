@@ -490,8 +490,27 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
 
-        var drawingInfo = JsonSerializer.Serialize(
+        // A drawingInfo renderer must not be allowed to change the geometry family of the
+        // layer-backed source referenced by the canonical style.
+        var mismatchedDrawingInfo = JsonSerializer.Serialize(
             StyleDefaults.BuildDefaultDrawingInfo(MetadataV2GeometryType.Polygon));
+        using var mismatchedContent = new StringContent(
+            mismatchedDrawingInfo,
+            Encoding.UTF8,
+            EsriDrawingInfoMediaType);
+        using var mismatchedRequest = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = mismatchedContent
+        };
+
+        var mismatchedResponse = await client.SendAsync(mismatchedRequest);
+
+        mismatchedResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var drawingInfo = JsonSerializer.Serialize(
+            StyleDefaults.BuildDefaultDrawingInfo(MetadataV2GeometryType.Point));
         using var content = new StringContent(drawingInfo, Encoding.UTF8, EsriDrawingInfoMediaType);
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
         {
@@ -508,7 +527,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         mapLibre.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
         using var mapLibreDocument = JsonDocument.Parse(await mapLibre.Content.ReadAsStringAsync());
         mapLibreDocument.RootElement.GetProperty("layers").EnumerateArray()
-            .Should().Contain(layer => layer.GetProperty("type").GetString() == "fill");
+            .Should().Contain(layer => layer.GetProperty("type").GetString() == "circle");
 
         // ...and reading the Esri encoding back derives the same symbolizer family.
         using var esriRequest = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
@@ -517,7 +536,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         esriResponse.Be200Ok();
         using var esriDocument = JsonDocument.Parse(await esriResponse.Content.ReadAsStringAsync());
         esriDocument.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
-            .GetString().Should().Be("esriSFS");
+            .GetString().Should().Be("esriSMS");
     }
 
     [IntegrationTest]
