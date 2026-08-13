@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 369,
-      "provingTestCount": 999,
+      "provingTestCount": 1004,
       "maturity": {
         "implemented": 369
       },
@@ -2375,7 +2375,7 @@
       "category": "Styling",
       "edition": "Community",
       "entryCount": 8,
-      "provingTestCount": 14,
+      "provingTestCount": 45,
       "maturity": {
         "implemented": 8
       },
