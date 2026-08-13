@@ -847,6 +847,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.DeleteStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.StylesList_ReflectsCreateAndDelete_ThroughOutputCacheEviction",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.DeleteStyle_AfterCreate_Returns204ThenNotFound",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.DeleteStyle_Unknown_Returns404"
       ],
@@ -5528,7 +5530,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_MissingBbox_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_MixedValidAndUnknownParameterNames_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_UnknownParameterName_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ValidParameterNameSubset_ReturnsOnlyRequestedParameters"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "implemented",
@@ -5543,7 +5548,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_InvalidCoords_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_MixedValidAndUnknownParameterNames_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_UnknownParameterName_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "implemented",
@@ -7101,6 +7109,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.GetStylesList_WithoutApiKey_RemainsPubliclyReadable",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesList_UnknownQueryParameter_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesList_AfterStyling_IncludesTheStyledCollection"
       ],
       "proof_ledger_surface": "ogc-api-styles",
@@ -7143,6 +7153,12 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesheet_AcceptApplicationJson_ReturnsMapLibreAlias",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesheet_AcceptEsriDrawingInfo_ReturnsBackGeneratedRenderer",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesheet_QualityOrdering_PicksHighestQualityStylesheetType",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesheet_StandaloneStyle_AcceptSld11_ReturnsDerivedSld",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesheet_UnacceptableMediaType_Returns406",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStylesheet_UnmatchedTypeWithWildcard_FallsBackToMapLibre",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_AcceptSld10_ReturnsDerivedSld",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_AcceptSld11_ReturnsDerivedSld11",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_DefaultAccept_ReturnsMapLibreStyle",
@@ -7160,6 +7176,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStyleMetadata_StandaloneStyle_ReturnsCatalogMetadata",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.GetStyleMetadata_UnknownQueryParameter_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStyleMetadata_ReturnsMetadataWithStylesheetSchemaAndPreviewLinks"
       ],
       "proof_ledger_surface": "ogc-api-styles",
@@ -14736,8 +14754,13 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_ClassCountBeyondMaximum_ClampsLegendToTwelveClasses",
         "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_ReturnsStyleSuggestion",
-        "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_WithInvalidLayerId_Returns404"
+        "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_SuggestedDocuments_HonorDualFormatContract",
+        "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_SuggestedMapLibre_IsAcceptedByTheStyleUpdatePipeline",
+        "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_UnknownPreferredMethodAndPalette_DegradesGracefully",
+        "Honua.Server.Tests.Features.Admin.StyleSuggestionEndpointsTests.SuggestStyle_WithInvalidLayerId_Returns404",
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.SuggestStyle_WithoutApiKey_Returns401"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -17205,6 +17228,15 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PostStyle_Authenticated_BodyOverUploadLimit_Returns413",
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PostStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_EmptyBody_Returns400",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_EsriDrawingInfoContentType_Returns415",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_MalformedJson_Returns400",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_MissingVersion_LenientCreates_StrictRejects",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_NonObjectRoot_Returns400",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_WithoutStyleIdHeader_AssignsServerGeneratedId",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.StylesList_ReflectsCreateAndDelete_ThroughOutputCacheEviction",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PostStyle_DuplicateId_Returns409Conflict",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PostStyle_WithValidMapLibre_Returns201AndIsRetrievable"
       ],
@@ -21322,6 +21354,16 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PutStyle_WithInvalidApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PutStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EmptyBody_Returns400",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_NonStrict_Returns204WithWarningHeader",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_Strict_Returns400WithDiagnostics",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_MalformedJson_Returns400",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_SimpleRenderer_RoundTripsThroughCanonicalMapLibre",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_MalformedJson_Returns400",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnknownStyleId_Returns404",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnsupportedContentType_Returns415",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithInvalidMapLibre_StrictHandling_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithValidMapLibre_Returns204"
       ],
