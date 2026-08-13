@@ -633,11 +633,14 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         await SeedTestLayerStyleAsync(client);
 
-        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+        var styleId = await CreateStandaloneStyleAsync(
+            client,
+            MetadataV2GeometryType.Point,
+            $"style-layer-0{WebAppFixture.TestLayerId}");
         using (var scope = _fixture.Services.CreateScope())
         {
             var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
-            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
+            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 0)).Should().BeTrue();
         }
 
         using var content = new StringContent(
@@ -758,9 +761,10 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     /// </summary>
     private static async Task<string> CreateStandaloneStyleAsync(
         HttpClient adminClient,
-        MetadataV2GeometryType geometryType)
+        MetadataV2GeometryType geometryType,
+        string? requestedStyleId = null)
     {
-        var styleId = $"standalone-{Guid.NewGuid():N}";
+        var styleId = requestedStyleId ?? $"standalone-{Guid.NewGuid():N}";
         using var content = new StringContent(BuildStyleJson(geometryType), Encoding.UTF8, MapboxStyleMediaType);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content };
         request.Headers.TryAddWithoutValidation("X-Style-Id", styleId);

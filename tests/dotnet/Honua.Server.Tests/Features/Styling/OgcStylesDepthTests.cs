@@ -345,13 +345,13 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             {
               "version": 8,
               "sources": {
-                "layer-123": {
+                "layer-0": {
                   "type": "vector",
                   "tiles": ["https://example.test/tiles/{z}/{x}/{y}.mvt"]
                 }
               },
               "layers": [
-                { "id": "external-points", "type": "circle", "source": "layer-123" }
+                { "id": "external-points", "type": "circle", "source": "layer-0" }
               ]
             }
             """;
@@ -371,15 +371,14 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", drawingInfo);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("not an existing Honua layer");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("not bound to a Honua layer");
 
         var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
         fetched.Be200Ok();
         using var document = JsonDocument.Parse(await fetched.Content.ReadAsStringAsync());
         var sources = document.RootElement.GetProperty("sources");
-        sources.TryGetProperty("layer-123", out var externalSource).Should().BeTrue();
+        sources.TryGetProperty("layer-0", out var externalSource).Should().BeTrue();
         externalSource.GetProperty("tiles")[0].GetString().Should().StartWith("https://example.test/");
-        document.RootElement.GetProperty("sources").TryGetProperty("layer-0", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

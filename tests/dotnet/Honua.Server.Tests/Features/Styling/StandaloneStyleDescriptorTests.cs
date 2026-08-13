@@ -49,8 +49,8 @@ public sealed class StandaloneStyleDescriptorTests
             {
               "version": 8,
               "sources": {
-                "layer-11": { "type": "vector", "tiles": ["https://example.test/11/{z}/{x}/{y}"] },
-                "layer-22": { "type": "vector", "tiles": ["https://example.test/22/{z}/{x}/{y}"] }
+                "layer-11": { "type": "vector", "tiles": ["/tiles/11/{z}/{x}/{y}.mvt"] },
+                "layer-22": { "type": "vector", "tiles": ["/tiles/22/{z}/{x}/{y}.mvt"] }
               },
               "layers": [
                 { "id": "labels", "type": "symbol", "source": "layer-11" },
@@ -73,7 +73,7 @@ public sealed class StandaloneStyleDescriptorTests
             """
             {
               "version": 8,
-              "sources": { "layer-7": { "type": "vector" } },
+              "sources": { "layer-7": { "type": "vector", "tiles": ["/tiles/7/{z}/{x}/{y}.mvt"] } },
               "layers": [ { "id": "roads", "type": "line" } ]
             }
             """;
@@ -94,8 +94,8 @@ public sealed class StandaloneStyleDescriptorTests
             {
               "version": 8,
               "sources": {
-                "layer-11": { "type": "vector" },
-                "layer-22": { "type": "vector" }
+                "layer-11": { "type": "vector", "tiles": ["/tiles/11/{z}/{x}/{y}.mvt"] },
+                "layer-22": { "type": "vector", "tiles": ["/tiles/22/{z}/{x}/{y}.mvt"] }
               },
               "layers": [ { "id": "roads", "type": "line" } ]
             }
@@ -115,7 +115,7 @@ public sealed class StandaloneStyleDescriptorTests
             """
             {
               "version": 8,
-              "sources": { "layer-0": { "type": "vector" } },
+              "sources": { "layer-0": { "type": "vector", "tiles": ["/tiles/0/{z}/{x}/{y}.mvt"] } },
               "layers": [ { "id": "parcels", "type": "fill", "source": "layer-0" } ]
             }
             """;

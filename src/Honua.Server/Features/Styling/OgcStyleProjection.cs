@@ -415,7 +415,11 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 styleId.AsSpan(mirroredStylePrefix.Length),
                 System.Globalization.NumberStyles.None,
                 System.Globalization.CultureInfo.InvariantCulture,
-                out var storageLayerId))
+                out var storageLayerId)
+            || !string.Equals(
+                styleId,
+                mirroredStylePrefix + storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
         {
             return null;
         }

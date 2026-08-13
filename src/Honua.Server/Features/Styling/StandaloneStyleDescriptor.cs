@@ -197,8 +197,8 @@ internal static class StandaloneStyleDescriptor
         // tile URL) at an unrelated data layer.
         if (!string.IsNullOrEmpty(sourceName))
         {
-            return sources.TryGetProperty(sourceName, out _)
-                && TryParseStorageLayerId(sourceName, out var boundLayerId)
+            return sources.TryGetProperty(sourceName, out var source)
+                && TryResolveHonuaSource(sourceName, source, out var boundLayerId)
                     ? boundLayerId
                     : null;
         }
@@ -209,9 +209,9 @@ internal static class StandaloneStyleDescriptor
         // rather than guessing, so the converters use their geometry-only default instead of
         // rebuilding the style against an arbitrary layer.
         int? resolved = null;
-        foreach (var name in sources.EnumerateObject().Select(source => source.Name))
+        foreach (var source in sources.EnumerateObject())
         {
-            if (!TryParseStorageLayerId(name, out var candidate))
+            if (!TryResolveHonuaSource(source.Name, source.Value, out var candidate))
             {
                 continue;
             }
@@ -233,8 +233,31 @@ internal static class StandaloneStyleDescriptor
         return sourceName.StartsWith("layer-", StringComparison.Ordinal)
             && int.TryParse(
                 sourceName.AsSpan("layer-".Length),
-                NumberStyles.Integer,
+                NumberStyles.None,
                 CultureInfo.InvariantCulture,
-                out layerId);
+                out layerId)
+            && string.Equals(sourceName, StyleDefaults.GetSourceId(layerId), StringComparison.Ordinal);
+    }
+
+    private static bool TryResolveHonuaSource(
+        string sourceName,
+        JsonElement source,
+        out int layerId)
+    {
+        if (!TryParseStorageLayerId(sourceName, out layerId)
+            || source.ValueKind != JsonValueKind.Object
+            || !source.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String
+            || !string.Equals(type.GetString(), "vector", StringComparison.Ordinal)
+            || !source.TryGetProperty("tiles", out var tiles)
+            || tiles.ValueKind != JsonValueKind.Array
+            || tiles.GetArrayLength() != 1)
+        {
+            return false;
+        }
+
+        var tile = tiles[0];
+        return tile.ValueKind == JsonValueKind.String
+            && string.Equals(tile.GetString(), StyleDefaults.GetTileUrl(layerId), StringComparison.Ordinal);
     }
 }
