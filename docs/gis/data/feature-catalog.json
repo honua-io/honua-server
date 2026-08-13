@@ -13047,7 +13047,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupWrites_OverlongPersistedFields_ReturnInvalidValue"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -20002,7 +20003,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupWrites_OverlongPersistedFields_ReturnInvalidValue"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -20017,7 +20019,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_DuplicateUserName_ReturnsConflict",
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_ValidRequest_ProvisionsUser"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_OverlongPersistedFields_ReturnInvalidValue",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_ValidRequest_ProvisionsUser",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_WithExternalId_RoundTripsAndResolvesByStableSubject",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_WithoutExternalId_ReturnsInvalidValue"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -21132,6 +21137,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.UserManagementEndpointsTests.UpdateUserRoles_NonExistentUser_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.UserManagementEndpointsTests.UpdateUserRoles_OverlongRole_ReturnsBadRequestWithoutChangingRoles",
         "Honua.Server.Tests.Features.Admin.UserManagementEndpointsTests.UpdateUserRoles_ValidRequest_ReturnsUpdatedUser"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -21379,7 +21385,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupWrites_OverlongPersistedFields_ReturnInvalidValue",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ReplaceGroup_DuplicateDisplayName_ReturnsConflict"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -21393,6 +21401,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ReplaceUser_OverlongExternalId_ReturnsInvalidValue",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ReplaceUser_SetActiveFalse_RevokesExistingRoles",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ReplaceUser_UpdatesAttributes"
       ],
       "proof_ledger_surface": "scim-provisioning",

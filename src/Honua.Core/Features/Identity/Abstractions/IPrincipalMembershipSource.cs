@@ -25,6 +25,19 @@ public interface IPrincipalMembershipSource
     Task<PrincipalMembership?> ResolveMembershipAsync(
         string principalId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves current account state for an issuer-scoped authentication subject.
+    /// </summary>
+    /// <param name="principalId">Case-sensitive subject captured from the token.</param>
+    /// <param name="issuer">Validated token issuer, or <see langword="null"/> for a
+    /// non-OIDC/legacy principal.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<PrincipalMembership?> ResolveMembershipAsync(
+        string principalId,
+        string? issuer,
+        CancellationToken cancellationToken = default)
+        => ResolveMembershipAsync(principalId, cancellationToken);
 }
 
 /// <summary>
