@@ -600,10 +600,25 @@ internal static partial class FeatureStreamEndpoints
 
             try
             {
-                await deps.FeatureReader.QueryObjectIdsAsync(
+                var probeIds = await deps.FeatureReader.QueryObjectIdsAsync(
                     descriptor.LayerId,
                     new FeatureQuery { Limit = 1 },
                     context.RequestAborted).ConfigureAwait(false);
+                if (!probeIds.IsDefaultOrEmpty)
+                {
+                    // The id sweep can succeed even when geometry/attribute projection or row
+                    // materialization cannot. Exercise the same bounded feature-read path the
+                    // baseline uses while the response can still become a typed problem.
+                    await deps.FeatureReader.QueryAsync(
+                        descriptor.LayerId,
+                        new FeatureQuery
+                        {
+                            ObjectIds = ImmutableArray.Create(probeIds[0]),
+                            IncludeNullGeometry = true,
+                            Limit = 1
+                        },
+                        context.RequestAborted).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
             {

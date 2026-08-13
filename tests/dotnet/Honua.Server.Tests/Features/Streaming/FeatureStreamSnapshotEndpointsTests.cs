@@ -1224,34 +1224,38 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // which leaves no way to answer with a problem document — the caller (or a buffering
         // intermediary) reports an untyped 500 instead. Servability is now decided ahead of the
         // handshake, where a typed RFC 7807 response is still possible (#3181 REQ-002).
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
-        var fixture = CreateFixtureWithUnreadableFeatureReader();
-        await fixture.InitializeAsync();
-        try
+        foreach (var allowObjectIdProbe in new[] { false, true })
         {
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
-            using var response = await fixture.CreateAdminClient()
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            // Cover both provider failure seams: the cheap id sweep and the full row
+            // materialization probe that follows it when ids are readable (#3206 review).
+            var fixture = CreateFixtureWithUnreadableFeatureReader(allowObjectIdProbe);
+            await fixture.InitializeAsync();
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+                using var response = await fixture.CreateAdminClient()
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+                response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
-            var body = await response.Content.ReadAsStringAsync(cts.Token);
-            using var problem = JsonDocument.Parse(body);
-            problem.RootElement.TryGetProperty("type", out _).Should().BeTrue();
-            problem.RootElement.GetProperty("status").GetInt32().Should().Be(503);
-            problem.RootElement.GetProperty("detail").GetString().Should()
-                .Contain("baseline snapshot cannot be served",
-                    "the problem document names the condition rather than reporting a bare failure");
+                var body = await response.Content.ReadAsStringAsync(cts.Token);
+                using var problem = JsonDocument.Parse(body);
+                problem.RootElement.TryGetProperty("type", out _).Should().BeTrue();
+                problem.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+                problem.RootElement.GetProperty("detail").GetString().Should()
+                    .Contain("baseline snapshot cannot be served",
+                        "the problem document names the condition rather than reporting a bare failure");
 
-            body.Should().NotContain(UnreadableFeatureReader.FailureMessage,
-                "provider text must never reach the client");
-            body.Should().NotContain("Npgsql");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
+                body.Should().NotContain(UnreadableFeatureReader.FailureMessage,
+                    "provider text must never reach the client");
+                body.Should().NotContain("Npgsql");
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
         }
     }
 
@@ -1387,7 +1391,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             .Select(layer => layer.GetProperty("layerId").GetInt32())];
     }
 
-    private static WebAppFixture CreateFixtureWithUnreadableFeatureReader()
+    private static WebAppFixture CreateFixtureWithUnreadableFeatureReader(bool allowObjectIdProbe = false)
         => new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ConfigureServices(services =>
@@ -1396,7 +1400,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 services.Remove(original);
                 services.Add(ServiceDescriptor.Describe(
                     typeof(IFeatureReader),
-                    sp => new UnreadableFeatureReader(CreateFeatureReader(sp, original)),
+                    sp => new UnreadableFeatureReader(CreateFeatureReader(sp, original), allowObjectIdProbe),
                     original.Lifetime));
             });
 
@@ -1423,7 +1427,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     /// Delegates every read except the two the baseline path uses, which fail the way a backing
     /// store whose table has been dropped or whose grants were revoked fails.
     /// </summary>
-    private sealed class UnreadableFeatureReader(IFeatureReader inner) : IFeatureReader
+    private sealed class UnreadableFeatureReader(IFeatureReader inner, bool allowObjectIdProbe) : IFeatureReader
     {
         public const string FailureMessage = "42P01: relation \"honua_test.features\" does not exist";
 
@@ -1437,7 +1441,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             => inner.QueryFlatGeobufAsync(layerId, query, cancellationToken);
 
         public Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException(FailureMessage);
+            => allowObjectIdProbe
+                ? inner.QueryObjectIdsAsync(layerId, query, cancellationToken)
+                : throw new InvalidOperationException(FailureMessage);
 
         public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
             => inner.CountAsync(layerId, query, cancellationToken);
