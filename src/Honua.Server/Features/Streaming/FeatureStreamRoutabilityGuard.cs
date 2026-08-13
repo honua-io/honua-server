@@ -56,8 +56,8 @@ internal sealed class FeatureStreamRoutabilityGuard
 
         var exactServiceIds = new HashSet<string>(
             snapshot.Graph.Services.Select(static service => service.Metadata.Id),
-            StringComparer.OrdinalIgnoreCase);
-        var exactRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            StringComparer.Ordinal);
+        var exactRoutes = new HashSet<string>(StringComparer.Ordinal);
         var nameRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var service in snapshot.Graph.Services)
         {
@@ -117,8 +117,8 @@ internal sealed class FeatureStreamRoutabilityGuard
 
             var invalid = new RoutabilityState(
                 refreshGeneration,
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                new HashSet<string>(StringComparer.Ordinal),
+                new HashSet<string>(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 IsValid: false);
             if (ReferenceEquals(Interlocked.CompareExchange(ref _state, invalid, current), current))
@@ -149,8 +149,8 @@ internal sealed class FeatureStreamRoutabilityGuard
     {
         public static RoutabilityState Empty { get; } = new(
             0,
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             IsValid: false);
     }

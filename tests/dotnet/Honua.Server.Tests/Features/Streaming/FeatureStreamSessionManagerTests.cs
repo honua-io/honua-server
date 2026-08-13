@@ -679,9 +679,10 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public async Task RoutabilityGuard_ExactServiceIdShadowsActiveNameAlias()
+    public async Task RoutabilityGuard_ExactServiceIdsRemainCaseSensitiveAndShadowNameAlias()
     {
-        const string shadowedIdentity = "shadowed-service";
+        const string activeServiceId = "roads";
+        const string shadowedIdentity = "Roads";
         const int storageLayerId = 45;
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("res-shadowed-stream", "Shadowed Stream", MetadataV2ResourceType.FeatureDataset)
@@ -690,11 +691,11 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
                 "res-shadowed-stream",
                 "test.layers.shadowed_stream",
                 storageLayerId: storageLayerId)
-            .AddService("svc-active-stream", shadowedIdentity)
+            .AddService(activeServiceId, shadowedIdentity)
             .AddService(shadowedIdentity, "retired-shadow")
             .AddPublication(
                 "pub-active-stream",
-                "svc-active-stream",
+                activeServiceId,
                 "res-shadowed-stream",
                 layerIndex: 1,
                 storageBindingId: "binding-shadowed-stream")
@@ -721,7 +722,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
 
         guard.Update(guard.BeginRefresh(), snapshot);
 
-        Assert.True(guard.IsRoutable("svc-active-stream", storageLayerId));
+        Assert.True(guard.IsRoutable(activeServiceId, storageLayerId));
         Assert.False(guard.IsRoutable(shadowedIdentity, storageLayerId));
     }
 
