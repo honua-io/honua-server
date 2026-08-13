@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -9,7 +10,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
+using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
@@ -49,6 +53,68 @@ public class ImageServerTileHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 99, 0, 0, 0, "png");
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_PublicationBindingChanged_ReturnsNotFoundBeforeRasterAccess()
+    {
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(
+            context,
+            2,
+            0,
+            0,
+            0,
+            "png",
+            publicationId: "publication-1",
+            cacheLayerId: 1);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await _rasterStore.DidNotReceive()
+            .QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task ResolveFirstAccessibleLayerAsync_NonNumericPublication_UsesStorageLayerFallback()
+    {
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-imagery", "imagery", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding(
+                "binding-imagery",
+                "resource-imagery",
+                "imagery.rasters",
+                storageLayerId: 42)
+            .AddService(
+                "service-imagery",
+                "imagery",
+                protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "publication-imagery",
+                "service-imagery",
+                "resource-imagery",
+                storageBindingId: "binding-imagery",
+                serviceLocalId: "primary",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var snapshot = await graphProvider.GetCurrentAsync();
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateServiceV2Async("imagery", Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(snapshot.Index.ServicesById["service-imagery"]));
+        var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider);
+        var context = CreateImageServerContext(services => services.AddValidationServices());
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
+
+        var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
+            "imagery",
+            context,
+            CancellationToken.None);
+
+        resolution.ErrorResult.Should().BeNull();
+        resolution.LayerId.Should().Be(42);
+        resolution.PublicationId.Should().Be("publication-imagery");
+        resolution.PublicationLayerIndex.Should().BeNull();
     }
 
     [UnitTest]
@@ -252,8 +318,25 @@ public class ImageServerTileHandlerTests
             services.AddSingleton(storage);
             services.AddSingleton<IOptions<CloudStorageOptions>>(options);
         });
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding("binding-1", "resource-1", "imagery.rasters", storageLayerId: 1)
+            .AddService("service-1", "image-svc-1", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "publication-1",
+                "service-1",
+                "resource-1",
+                layerIndex: 7,
+                storageBindingId: "binding-1",
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var handler = new ImageServerTileHandler(
+            graphProvider,
+            _rasterStore,
+            NullLogger<ImageServerTileHandler>.Instance);
 
-        var result = await _handler.GetImageTileAsync(
+        var result = await handler.GetImageTileAsync(
             context,
             1,
             0,

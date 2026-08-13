@@ -3385,7 +3385,7 @@ internal static class ImageServerEndpoints
 
         return await handler.GetImageTileAsync(
             context,
-            id,
+            resolution.LayerId,
             level,
             row,
             col,
@@ -3432,7 +3432,7 @@ internal static class ImageServerEndpoints
 
         return await handler.HandleAsync(
             context,
-            id,
+            resolution.LayerId,
             id.ToString(CultureInfo.InvariantCulture),
             cancellationToken: cancellationToken,
             publicationId: resolution.PublicationId,
@@ -3454,7 +3454,7 @@ internal static class ImageServerEndpoints
 
         return await handler.HandleAsync(
             context,
-            id,
+            resolution.LayerId,
             id.ToString(CultureInfo.InvariantCulture),
             restPath,
             resolution.PublicationId,

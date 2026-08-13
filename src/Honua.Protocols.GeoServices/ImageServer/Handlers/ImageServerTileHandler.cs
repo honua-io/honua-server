@@ -7,6 +7,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -112,7 +113,13 @@ internal sealed class ImageServerTileHandler
             }
 
             var resolvedLayer = resolved.Value;
-            var tileCacheLayerId = cacheLayerId ?? resolvedLayer.Publication.LayerIndex ?? layerId;
+            if (!HasExpectedPublicationBinding(snapshot, resolvedLayer.Publication, layerId, cacheLayerId, publicationId))
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            var tileCacheLayerId = resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
                 resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
@@ -329,7 +336,13 @@ internal sealed class ImageServerTileHandler
             }
 
             var resolvedLayer = resolved.Value;
-            var tileCacheLayerId = cacheLayerId ?? resolvedLayer.Publication.LayerIndex ?? layerId;
+            if (!HasExpectedPublicationBinding(snapshot, resolvedLayer.Publication, layerId, cacheLayerId, publicationId))
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            var tileCacheLayerId = resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
                 resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
@@ -458,6 +471,24 @@ internal sealed class ImageServerTileHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the image tile.");
         }
+    }
+
+    private static bool HasExpectedPublicationBinding(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        int expectedStorageLayerId,
+        int? expectedCacheLayerId,
+        string? expectedPublicationId)
+    {
+        if (expectedPublicationId is null)
+        {
+            return true;
+        }
+
+        var currentStorageLayerId = snapshot.ResolveStorageLayerId(publication);
+        var currentCacheLayerId = publication.LayerIndex ?? currentStorageLayerId;
+        return currentStorageLayerId == expectedStorageLayerId
+            && currentCacheLayerId == (expectedCacheLayerId ?? expectedStorageLayerId);
     }
 
     private static byte[] CreateTileEnvelope(int level, int row, int col)

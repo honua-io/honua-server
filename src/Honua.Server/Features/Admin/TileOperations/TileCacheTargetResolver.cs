@@ -13,7 +13,8 @@ internal readonly record struct TileCacheTargetResolution(
 
 /// <summary>
 /// Resolves protocol-facing tile-operation targets to the publication layer indices embedded in
-/// generated tile cache keys.
+/// generated tile cache keys, falling back to the authoritative storage layer ID for publications
+/// whose service-local identifier is not numeric.
 /// </summary>
 internal static class TileCacheTargetResolver
 {
@@ -44,19 +45,22 @@ internal static class TileCacheTargetResolver
         }
 
         var publications = snapshot.PublicationsForService(service.Metadata.Id)
+            .Select(publication => new
+            {
+                Publication = publication,
+                CacheLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication)
+            })
+            .Where(static publication => publication.CacheLayerId.HasValue)
             .Where(publication =>
-                !request.LayerId.HasValue || publication.LayerIndex == request.LayerId.Value)
-            .Where(static publication => publication.LayerIndex.HasValue)
+                !request.LayerId.HasValue || publication.CacheLayerId == request.LayerId.Value)
             .ToArray();
         var layerIds = publications
-            .Select(static publication => publication.LayerIndex)
-            .Where(static layerId => layerId.HasValue)
-            .Select(static layerId => layerId!.Value)
+            .Select(static publication => publication.CacheLayerId!.Value)
             .Distinct()
             .Order()
             .ToArray();
         var publicationIds = publications
-            .Select(static publication => publication.Metadata.Id)
+            .Select(static publication => publication.Publication.Metadata.Id)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();

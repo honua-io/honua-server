@@ -59,8 +59,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
                 snapshot.ResolveStorageLayerId(publication),
                 snapshot.ResolveResource(publication)))
             .Where(static publication =>
-                publication.PublicationLayerIndex.HasValue
-                && publication.StorageLayerId.HasValue
+                publication.StorageLayerId.HasValue
                 && publication.Resource is not null)
             .ToArray();
 
@@ -142,7 +141,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         }
 
         return new ImageServerLayerResolution(
-            layerId,
+            snapshot.ResolveStorageLayerId(candidate.Publication) ?? layerId,
             candidate.Publication.Metadata.Id,
             candidate.Publication.LayerIndex,
             null);

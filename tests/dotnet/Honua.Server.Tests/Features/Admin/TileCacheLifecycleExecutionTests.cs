@@ -826,6 +826,40 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_ServiceFilter_NonNumericPublicationUsesStorageLayerFallback()
+    {
+        var publicationScope = TileCachePublicationScope.Create("publication");
+        var serviceKey =
+            $"prefix/imageserver/tiles/v2/{publicationScope}/42/webmercatorquad/default/abc/2/1/1.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(serviceKey, 100);
+        var storage = CreateStorage();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var graphProvider = new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "resource")
+            .AddStorageBinding("binding", "resource", "features", storageLayerId: 42)
+            .AddService("service", "service")
+            .AddPublication(
+                "publication",
+                "service",
+                "resource",
+                storageBindingId: "binding",
+                serviceLocalId: "primary")
+            .Build());
+
+        var result = await ExecuteAsync(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            ServiceId = "service",
+            TileMatrixSetId = "WebMercatorQuad"
+        }, index, storage, graphProvider: graphProvider);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        index.Removed.Should().BeEquivalentTo([serviceKey]);
+        index.Remaining.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Delete_WhenConcurrentWriteReplacesSnapshot_LeavesFreshEntryTracked()
     {
         var index = new StatefulKeyIndex { RejectConditionalRemove = true };
