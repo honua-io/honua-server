@@ -36,7 +36,16 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
     private readonly string _environmentName;
 
-    public TestWebApplicationFactory(string environmentName = "Test")
+    /// <summary>
+    /// Creates the default Test-environment factory. This explicit parameterless constructor
+    /// is required by xUnit when the factory is used as an <c>IClassFixture&lt;T&gt;</c>.
+    /// </summary>
+    public TestWebApplicationFactory()
+        : this("Test")
+    {
+    }
+
+    public TestWebApplicationFactory(string environmentName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
         _environmentName = environmentName;

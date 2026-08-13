@@ -12,6 +12,13 @@ namespace Honua.Server.Tests.Infrastructure;
 public sealed class TestHostEnvironmentScopeTests
 {
     [Fact]
+    public void TestWebApplicationFactory_ExposesParameterlessClassFixtureConstructor()
+    {
+        typeof(TestWebApplicationFactory).GetConstructor(Type.EmptyTypes).Should().NotBeNull(
+            "xUnit must be able to construct IClassFixture<TestWebApplicationFactory> without resolving an environment-name fixture");
+    }
+
+    [Fact]
     public void WebAppFixture_TestEnvironmentSettings_AreScopedAndRestored()
     {
         const string dotnetKey = "DOTNET_ENVIRONMENT";
