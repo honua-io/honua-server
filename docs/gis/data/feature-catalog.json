@@ -21366,13 +21366,16 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_MalformedJson_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnknownStyleId_Returns404",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnsupportedContentType_Returns415",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_AssociatedCatalogStyle_UpdatesOnlyRequestedStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerBoundCatalogStyle_WritesThroughToLayerStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_MapLibreRoundTripsToDrawingInfo",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_NonObjectDrawingInfo_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_UpdatesCatalogStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_WithDrawingInfo_StoresCanonicalMapLibre",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_UnknownStyle_Returns404",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithInvalidMapLibre_StrictHandling_Returns400",
-        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithValidMapLibre_Returns204"
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithValidMapLibre_Returns204",
+        "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests.UpdateCatalogStyle_UpdatesOnlyAnExistingRecord"
       ],
       "proof_ledger_surface": "ogc-api-styles",
       "maturity": "implemented",
