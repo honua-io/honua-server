@@ -339,6 +339,30 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Expire_WhenBudgetReservationCannotBePersisted_DoesNotMarkEntryExpired()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var request = new TileOperationStartRequest
+        {
+            Operation = "expire",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            GenerationId = "gen-expire-checkpoint-unavailable"
+        };
+
+        var act = async () => await ExecuteAsync(
+            request,
+            index,
+            CreateStorage(),
+            new FailingCheckpointStore());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("checkpoint unavailable");
+        index.Expired.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Delete_WhenCheckpointCannotBeRead_DoesNotMutateStorage()
     {
         var index = new StatefulKeyIndex();
@@ -363,6 +387,30 @@ public sealed class TileCacheLifecycleExecutionTests
             .WithMessage("checkpoint read unavailable");
         await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
+    public async Task Expire_WhenCheckpointCannotBeRead_DoesNotMarkEntryExpired()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var request = new TileOperationStartRequest
+        {
+            Operation = "expire",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            GenerationId = "gen-expire-checkpoint-read-unavailable"
+        };
+
+        var act = async () => await ExecuteAsync(
+            request,
+            index,
+            CreateStorage(),
+            new FailingLoadCheckpointStore());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("checkpoint read unavailable");
+        index.Expired.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -651,15 +699,18 @@ public sealed class TileCacheLifecycleExecutionTests
     {
         const string key1 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
         const string key2 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        const string outsideOriginalCap = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/2.png";
         var index = new StatefulKeyIndex { FailingExpirationKey = key2 };
         index.Seed(key1, 100);
         index.Seed(key2, 100);
+        index.Seed(outsideOriginalCap, 100);
         var checkpointStore = new InMemoryTileCacheGenerationCheckpointStore();
         var request = new TileOperationStartRequest
         {
             Operation = "expire",
             LayerId = 1,
             TileMatrixSetId = "WebMercatorQuad",
+            MaxTiles = 2,
             GenerationId = "gen-expire-resume"
         };
 
@@ -677,6 +728,7 @@ public sealed class TileCacheLifecycleExecutionTests
         second.SuccessfulTiles.Should().Be(1);
         second.FailedTiles.Should().Be(0);
         index.Expired.Should().BeEquivalentTo([key1, key2]);
+        index.Expired.Should().NotContain(outsideOriginalCap);
     }
 
     [Theory]

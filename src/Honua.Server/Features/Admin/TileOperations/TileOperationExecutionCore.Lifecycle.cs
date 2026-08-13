@@ -95,9 +95,7 @@ internal sealed partial class TileOperationExecutionCore
             : window.BuildCheckpointId(generationId, request.Operation, maxTiles);
         var checkpointEnabled = _checkpointStore is not null && checkpointId is not null;
         var checkpoint = checkpointEnabled
-            ? deleteBytes
-                ? await _checkpointStore!.LoadAsync(checkpointId!, cancellationToken).ConfigureAwait(false)
-                : await LoadCheckpointBestEffortAsync(checkpointId!, cancellationToken).ConfigureAwait(false)
+            ? await _checkpointStore!.LoadAsync(checkpointId!, cancellationToken).ConfigureAwait(false)
             : null;
         var attempt = (checkpoint?.Attempt ?? 0) + 1;
         if (checkpoint is not null)
@@ -105,19 +103,15 @@ internal sealed partial class TileOperationExecutionCore
             TileOperationLog.GenerationResumed(_logger, generationId!, checkpoint.CompletedMetatileBlocks, checkpoint.FailedUnits.Count, attempt);
         }
 
-        // Delete reservations, including a key whose prior mutation failed, consume the original
-        // generation safety budget. FailedUnits is also the durable set of reserved keys that a
-        // retry may process without consuming a second slot. This selection admits those pending
-        // keys first and only then fills the still-unreserved portion of MaxTiles.
-        var deleteReservations = deleteBytes
-            ? Math.Min(maxTiles, checkpoint?.CompletedUnitCount ?? 0L)
-            : 0L;
-        var pendingDeleteUnits = deleteBytes && checkpoint is { FailedUnits.Count: > 0 }
+        // Lifecycle reservations, including a key whose prior mutation failed, consume the
+        // original generation safety budget. FailedUnits is also the durable set of reserved keys
+        // that a retry may process without consuming a second slot. This selection admits those
+        // pending keys first and only then fills the still-unreserved portion of MaxTiles.
+        var lifecycleReservations = Math.Min(maxTiles, checkpoint?.CompletedUnitCount ?? 0L);
+        var pendingLifecycleUnits = checkpoint is { FailedUnits.Count: > 0 }
             ? new HashSet<string>(checkpoint.FailedUnits, StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
-        var remainingDeleteBudget = deleteBytes
-            ? (int)Math.Max(0L, maxTiles - deleteReservations)
-            : maxTiles;
+        var remainingLifecycleBudget = (int)Math.Max(0L, maxTiles - lifecycleReservations);
         var entryComparer = Comparer<TileCacheEntry>.Create(
             static (left, right) => string.CompareOrdinal(left.Key, right.Key));
         var pendingCandidates = new SortedSet<TileCacheEntry>(entryComparer);
@@ -154,17 +148,17 @@ internal sealed partial class TileOperationExecutionCore
                 }
 
                 matchedCount++;
-                if (deleteBytes && pendingDeleteUnits.Contains(TruncateUnit(entry.Key)))
+                if (pendingLifecycleUnits.Contains(TruncateUnit(entry.Key)))
                 {
                     _ = pendingCandidates.Add(entry);
                     continue;
                 }
 
-                AddBoundedLifecycleCandidate(freshCandidates, entry, remainingDeleteBudget);
+                AddBoundedLifecycleCandidate(freshCandidates, entry, remainingLifecycleBudget);
             }
         }
 
-        pendingDeleteUnits.IntersectWith(
+        pendingLifecycleUnits.IntersectWith(
             pendingCandidates.Select(static entry => TruncateUnit(entry.Key)));
         var matched = pendingCandidates
             .Concat(freshCandidates)
@@ -174,25 +168,22 @@ internal sealed partial class TileOperationExecutionCore
             matchedCount,
             matched.Count,
             maxTiles,
-            deleteBytes,
-            deleteReservations,
-            remainingDeleteBudget);
+            lifecycleReservations,
+            remainingLifecycleBudget);
 
         var phase = deleteBytes ? "Deleting tiles" : "Expiring tiles";
         var total = (long)matched.Count;
         // The snapshot is the complete accounting window for this attempt. Delete retries no
         // longer contain successfully removed keys, and expire retries exclude entries whose
-        // markers were present in the snapshot; carrying the prior checkpoint count into either
-        // snapshot would make the reported and metered success count exceed TotalTiles.
+        // markers were present in the snapshot. Reservations remain cumulative only in the
+        // checkpoint so attempt-local progress and metrics cannot exceed TotalTiles.
         var affected = 0L;
         var processed = 0L;
         var failed = 0L;
         var bytesReleased = 0L;
         var mutations = 0L;
         var excluded = 0L;
-        var newFailedUnits = deleteBytes
-            ? new HashSet<string>(pendingDeleteUnits, StringComparer.Ordinal)
-            : new HashSet<string>(StringComparer.Ordinal);
+        var newFailedUnits = new HashSet<string>(pendingLifecycleUnits, StringComparer.Ordinal);
 
         var current = progress with
         {
@@ -209,24 +200,24 @@ internal sealed partial class TileOperationExecutionCore
             var entry = matched[i];
             var unit = TruncateUnit(entry.Key);
 
-            if (deleteBytes && checkpointEnabled && !newFailedUnits.Contains(unit))
+            if (checkpointEnabled && !newFailedUnits.Contains(unit))
             {
                 if (newFailedUnits.Count >= TileCacheGenerationCheckpointBounds.MaxFailedUnits)
                 {
                     throw new InvalidOperationException(
-                        "The lifecycle delete checkpoint cannot reserve another key without exceeding its durable bound.");
+                        "The lifecycle checkpoint cannot reserve another key without exceeding its durable bound.");
                 }
 
-                // Reserve the safety-cap slot before the irreversible storage delete. SaveAsync is
+                // Reserve the safety-cap slot before the lifecycle mutation. SaveAsync is
                 // intentionally not best-effort here: if durable accounting is unavailable, no
-                // bytes for this key may be changed.
+                // bytes or expiration state for this key may be changed.
                 newFailedUnits.Add(unit);
-                deleteReservations++;
-                await PersistLifecycleDeleteCheckpointAsync(
+                lifecycleReservations++;
+                await PersistLifecycleCheckpointAsync(
                     checkpointId!,
                     request.Operation,
                     i,
-                    deleteReservations,
+                    lifecycleReservations,
                     newFailedUnits.Count,
                     newFailedUnits,
                     attempt).ConfigureAwait(false);
@@ -307,9 +298,9 @@ internal sealed partial class TileOperationExecutionCore
                 {
                     bytesReleased += entry.SizeBytes;
                     mutations++;
-                    newFailedUnits.Remove(unit);
                 }
 
+                newFailedUnits.Remove(unit);
                 affected++;
             }
 
@@ -333,8 +324,8 @@ internal sealed partial class TileOperationExecutionCore
                         checkpointId!,
                         request.Operation,
                         i + 1,
-                        deleteBytes ? deleteReservations : affected,
-                        deleteBytes ? newFailedUnits.Count : failed,
+                        lifecycleReservations,
+                        newFailedUnits.Count,
                         newFailedUnits,
                         attempt,
                         cancellationToken).ConfigureAwait(false);
@@ -390,7 +381,7 @@ internal sealed partial class TileOperationExecutionCore
         };
     }
 
-    private async Task PersistLifecycleDeleteCheckpointAsync(
+    private async Task PersistLifecycleCheckpointAsync(
         string generationId,
         string operation,
         int completedUnits,
@@ -456,9 +447,8 @@ internal sealed partial class TileOperationExecutionCore
         long matchedCount,
         int selectedCount,
         int maxTiles,
-        bool deleteBytes,
-        long deleteReservations,
-        int remainingDeleteBudget)
+        long lifecycleReservations,
+        int remainingLifecycleBudget)
     {
         var warnings = new List<string>(2);
         if (matchedCount > maxTiles)
@@ -467,10 +457,10 @@ internal sealed partial class TileOperationExecutionCore
                 $"The cache lifecycle window matched {matchedCount} tiles and was truncated to the {maxTiles}-tile safety cap.");
         }
 
-        if (deleteBytes && selectedCount < matchedCount && deleteReservations > 0)
+        if (selectedCount < matchedCount && lifecycleReservations > 0)
         {
             warnings.Add(
-                $"The retry was limited to the {remainingDeleteBudget}-tile budget remaining under the original {maxTiles}-tile safety cap.");
+                $"The retry was limited to the {remainingLifecycleBudget}-tile budget remaining under the original {maxTiles}-tile safety cap.");
         }
 
         return warnings.ToArray();

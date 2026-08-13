@@ -41,7 +41,7 @@ public sealed record TileCacheGenerationCheckpoint
 
     /// <summary>
     /// Cumulative number of units that have rendered successfully across all attempts. For a
-    /// destructive lifecycle delete, this is instead the cumulative number of mutation slots
+    /// bounded lifecycle operation, this is instead the cumulative number of mutation slots
     /// durably reserved under the generation's safety cap.
     /// </summary>
     public long CompletedUnitCount { get; init; }
@@ -51,7 +51,7 @@ public sealed record TileCacheGenerationCheckpoint
 
     /// <summary>
     /// Bounded set of failed unit keys (<c>layerId/z/x/y</c>) that a retry must regenerate. During
-    /// a lifecycle delete it also carries the keys with a reserved but not-yet-completed mutation.
+    /// a lifecycle operation it also carries the keys with a reserved but not-yet-completed mutation.
     /// The checkpoint store truncates this to a deterministic upper bound on write.
     /// </summary>
     public required IReadOnlyList<string> FailedUnits { get; init; }
