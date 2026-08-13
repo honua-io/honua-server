@@ -110,7 +110,11 @@ train_regenerate_derived_artifacts() {
     train_err "feature-catalog generation failed for ${batch}"
     return 1
   fi
-  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" 1>&2; then
+  # Both emitters execute the same Architecture test project at the same batch
+  # checkout. The feature-catalog invocation above owns restore + build; reuse
+  # that exact output for parity instead of paying for a second project
+  # evaluation before the batch branch can even be pushed to smart CI.
+  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" --no-build --no-restore 1>&2; then
     train_err "GeoServices parity generation failed for ${batch}"
     return 1
   fi
