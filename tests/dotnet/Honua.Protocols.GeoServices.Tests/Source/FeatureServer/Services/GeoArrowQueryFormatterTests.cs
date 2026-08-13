@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Ipc;
@@ -19,6 +20,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class GeoArrowQueryFormatterTests
 {
+    private const string FixtureFileName = "honua-server-geoarrow-02-point.arrow";
+
     [Fact]
     public async Task FormatAsGeoArrowAsync_WithFeatures_WritesReadableArrowStreamWithGeoMetadata()
     {
@@ -300,16 +303,17 @@ public sealed class GeoArrowQueryFormatterTests
         var extensionMetadata = geometryField.Metadata["ARROW:extension:metadata"];
 
         // Golden assertion: the exact extension metadata is the authoritative EPSG:4326
-        // PROJJSON as the sole metadata key; the object value identifies its CRS type.
+        // PROJJSON paired with its declared representation, and nothing else.
         extensionMetadata.Should().Be(ExpectedWgs84ExtensionMetadata());
 
         using var doc = JsonDocument.Parse(extensionMetadata);
 
-        // No implementation-specific keys are emitted alongside the required CRS.
+        // GeoArrow 0.2 permits crs, crs_type, and edges extension metadata keys.
         doc.RootElement.EnumerateObject().Select(p => p.Name)
-            .Should().Equal("crs");
+            .Should().Equal("crs", "crs_type");
 
         // The output CRS is declared as PROJJSON resolving to EPSG:4326.
+        doc.RootElement.GetProperty("crs_type").GetString().Should().Be("projjson");
         var crs = doc.RootElement.GetProperty("crs");
         crs.ValueKind.Should().Be(JsonValueKind.Object, "GeoArrow producers should write PROJJSON");
         crs.GetProperty("id").GetProperty("authority").GetString().Should().Be("EPSG");
@@ -431,7 +435,7 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsGeoArrowAsync_EmptyResult_KeepsEmptyGeometryTypesAndMatchingCrsMetadata()
+    public async Task FormatAsGeoArrowAsync_EmptyResult_PreservesKnownGeometryTypeAndCrsMetadata()
     {
         var layer = CreateLayer(
             new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
@@ -452,14 +456,99 @@ public sealed class GeoArrowQueryFormatterTests
         var geometryField = reader.Schema.GetFieldByName("geometry");
         geometryField.Metadata["ARROW:extension:metadata"].Should().Be(ExpectedWgs84ExtensionMetadata());
 
-        // GeoParquet requires an empty geometry_types array when no values were observed.
+        // The resource schema is authoritative even when no values were observed.
         using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
         var geoColumn = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
-        geoColumn.GetProperty("geometry_types").GetArrayLength().Should().Be(0);
+        geoColumn.GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point");
 
         using var extensionDoc = JsonDocument.Parse(geometryField.Metadata["ARROW:extension:metadata"]);
         geoColumn.GetProperty("crs").GetRawText()
             .Should().Be(extensionDoc.RootElement.GetProperty("crs").GetRawText());
+    }
+
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_ContractFixture_IsDeterministicAndEmitsGovernedArtifact()
+    {
+        var layer = CreateLayer(
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new MetadataV2Field { Name = "created", Type = MetadataV2FieldType.DateTime });
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(-157.8583, 21.3069),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Honolulu Harbor",
+                ["created"] = new DateTimeOffset(2024, 01, 02, 03, 04, 05, TimeSpan.Zero)
+            }.ToImmutableDictionary());
+
+        var (payload, contentType) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        var (secondPayload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+        secondPayload.Should().Equal(payload, "identical formatter inputs must produce exact repeatable IPC bytes");
+
+        var outputDirectory = Environment.GetEnvironmentVariable("HONUA_GEOARROW_FIXTURE_OUTPUT_DIR");
+        if (string.IsNullOrWhiteSpace(outputDirectory))
+        {
+            outputDirectory = Path.GetFullPath(Path.Combine("tests", "TestResults", "geoarrow-interop"));
+        }
+
+        Directory.CreateDirectory(outputDirectory);
+        var fixturePath = Path.Combine(outputDirectory, FixtureFileName);
+        var sha256 = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        await File.WriteAllBytesAsync(fixturePath, payload);
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, $"{FixtureFileName}.sha256"),
+            $"{sha256}  {FixtureFileName}{Environment.NewLine}");
+
+        var receipt = new
+        {
+            schemaVersion = "honua-geoarrow-interop-fixture-v1",
+            producer = new
+            {
+                repository = "https://github.com/honua-io/honua-server",
+                commit = Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "local-uncommitted",
+                formatter = "src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs",
+                test = $"{typeof(GeoArrowQueryFormatterTests).FullName}.{nameof(FormatAsGeoArrowAsync_ContractFixture_IsDeterministicAndEmitsGovernedArtifact)}"
+            },
+            artifact = new
+            {
+                file = FixtureFileName,
+                mediaType = contentType,
+                bytes = payload.Length,
+                sha256
+            },
+            contract = new
+            {
+                version = "GeoArrow 0.2",
+                geometryExtension = "geoarrow.wkb",
+                extensionMetadataKeys = new[] { "crs", "crs_type" },
+                crsType = "projjson",
+                planarEdgesByOmission = true,
+                geoParquetGeometryTypes = new[] { "Point" },
+                rows = 1
+            }
+        };
+        var receiptJson = JsonSerializer.Serialize(receipt, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, $"{FixtureFileName}.provenance.json"),
+            $"{receiptJson}{Environment.NewLine}");
     }
 
     [Fact]
@@ -510,14 +599,14 @@ public sealed class GeoArrowQueryFormatterTests
 
     /// <summary>
     /// The exact GeoArrow 0.2 extension metadata the formatter must emit for EPSG:4326
-    /// output: the authoritative catalog PROJJSON, with planar edges declared by omitting
-    /// <c>edges</c> and no GeoParquet-only keys.
+    /// output: the authoritative catalog PROJJSON plus <c>crs_type</c>, with planar edges
+    /// declared by omitting <c>edges</c> and no GeoParquet-only keys.
     /// </summary>
     private static string ExpectedWgs84ExtensionMetadata()
     {
         GeoParquetProjJsonCatalog.TryGetProjJson(4326, out var projJson).Should().BeTrue(
             "the embedded PROJJSON catalog must contain EPSG:4326");
-        return $@"{{""crs"":{projJson}}}";
+        return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)

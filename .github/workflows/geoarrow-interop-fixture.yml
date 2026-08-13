@@ -1,0 +1,59 @@
+name: GeoArrow Interop Fixture
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - '.github/workflows/geoarrow-interop-fixture.yml'
+      - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs'
+      - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoParquetQueryFormatter.cs'
+      - 'src/Honua.Core/Features/Infrastructure/Crs/GeoParquetProjJsonCatalog.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoArrowQueryFormatterTests.cs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geoarrow-interop-fixture-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_GEOARROW_FIXTURE_OUTPUT_DIR: ${{ github.workspace }}/tests/TestResults/geoarrow-interop
+
+jobs:
+  produce:
+    name: Produce GeoArrow 0.2 fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Test formatter and produce exact fixture
+        env:
+          NuGetAudit: false
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+            --configuration Release \
+            --filter 'FullyQualifiedName~GeoArrowQueryFormatterTests' \
+            --logger 'console;verbosity=minimal' \
+            --results-directory ./tests/TestResults
+
+      - name: Retain exact fixture, digest, and provenance
+        uses: actions/upload-artifact@v7
+        with:
+          name: honua-server-geoarrow-02-${{ github.sha }}
+          path: |
+            tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow
+            tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow.sha256
+            tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow.provenance.json
+          if-no-files-found: error
+          retention-days: 30
