@@ -156,6 +156,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
+                ETag = uploadId,
                 Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };
@@ -282,6 +283,15 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             return false;
         }
 
+        return await DeleteRemovedFileAsync(fileId, cloudFile, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> DeleteRemovedFileAsync(
+        string fileId,
+        CloudFile cloudFile,
+        CancellationToken cancellationToken)
+    {
+
         var fullPath = GetSafeFullPath(cloudFile.StoragePath);
         var metadataFile = GetMetadataFilePath(fileId);
 
@@ -320,9 +330,28 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         {
             FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
             // Re-add to index since deletion failed
-            _fileIndex[fileId] = cloudFile;
+            _ = _fileIndex.TryAdd(fileId, cloudFile);
             return false;
         }
+    }
+
+    public override async Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+
+        if (!_fileIndex.TryGetValue(fileId, out var current)
+            || !string.Equals(current.ETag, expectedETag, StringComparison.Ordinal)
+            || !((ICollection<KeyValuePair<string, CloudFile>>)_fileIndex)
+                .Remove(new KeyValuePair<string, CloudFile>(fileId, current)))
+        {
+            return false;
+        }
+
+        return await DeleteRemovedFileAsync(fileId, current, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

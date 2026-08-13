@@ -83,6 +83,21 @@ public interface ICloudFileStorage
     /// <returns>True if file was deleted, false if file was not found</returns>
     Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes a file only when its current provider ETag matches <paramref name="expectedETag"/>.
+    /// This generation-conditional operation prevents stale compensating writes from deleting a
+    /// newer object stored at the same deterministic key.
+    /// </summary>
+    /// <param name="fileId">Unique file identifier.</param>
+    /// <param name="expectedETag">Opaque ETag returned by the upload that owns the bytes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><c>true</c> only when the matching generation was deleted.</returns>
+    Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
     // Batch operations
 
     /// <summary>

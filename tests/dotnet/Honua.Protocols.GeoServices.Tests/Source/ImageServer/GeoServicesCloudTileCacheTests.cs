@@ -50,6 +50,7 @@ public sealed class GeoServicesCloudTileCacheTests
                 SizeBytes = 3,
                 UploadedAt = DateTimeOffset.UtcNow,
                 ExpiresAt = storedExpiresAt,
+                ETag = "etag-1",
                 Provider = CloudStorageProvider.Local
             }));
         var keyIndex = Substitute.For<ITileCacheKeyIndex>();
@@ -118,6 +119,7 @@ public sealed class GeoServicesCloudTileCacheTests
                 SizeBytes = 3,
                 UploadedAt = DateTimeOffset.UtcNow,
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ETag = "etag-1",
                 Provider = CloudStorageProvider.Local
             }));
 
@@ -140,7 +142,7 @@ public sealed class GeoServicesCloudTileCacheTests
                 Arg.Any<CancellationToken>())
             .Returns(callInfo => ExecuteUnderFenceAsync(
                 callInfo.ArgAt<Func<TileCacheMutationContext, Task>>(1)));
-        storage.DeleteAsync(ObjectKey, Arg.Any<CancellationToken>())
+        storage.DeleteIfMatchAsync(ObjectKey, "etag-1", Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 fenceHeld.Should().BeTrue();
@@ -159,7 +161,7 @@ public sealed class GeoServicesCloudTileCacheTests
             keyIndex,
             tenantScope: "tenant_a");
 
-        await storage.Received(1).DeleteAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await storage.Received(1).DeleteIfMatchAsync(ObjectKey, "etag-1", Arg.Any<CancellationToken>());
         indexRemoved.Should().BeTrue();
         await keyIndex.DidNotReceive().RemoveAsync(ObjectKey, Arg.Any<CancellationToken>());
 
@@ -200,6 +202,7 @@ public sealed class GeoServicesCloudTileCacheTests
                 SizeBytes = 3,
                 UploadedAt = DateTimeOffset.UtcNow,
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ETag = "etag-1",
                 Provider = CloudStorageProvider.Local
             }));
 
@@ -227,11 +230,11 @@ public sealed class GeoServicesCloudTileCacheTests
             .Returns(callInfo => ExecuteUnderFenceAsync(
                 callInfo.ArgAt<Func<TileCacheMutationContext, Task>>(1),
                 callInfo.ArgAt<CancellationToken>(2)));
-        storage.DeleteAsync(ObjectKey, Arg.Any<CancellationToken>())
+        storage.DeleteIfMatchAsync(ObjectKey, "etag-1", Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 fenceHeld.Should().BeTrue();
-                callInfo.ArgAt<CancellationToken>(1).IsCancellationRequested.Should().BeFalse();
+                callInfo.ArgAt<CancellationToken>(2).IsCancellationRequested.Should().BeFalse();
                 return Task.FromResult(true);
             });
 
@@ -248,7 +251,7 @@ public sealed class GeoServicesCloudTileCacheTests
             tenantScope: "tenant_a");
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        await storage.Received(1).DeleteAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await storage.Received(1).DeleteIfMatchAsync(ObjectKey, "etag-1", Arg.Any<CancellationToken>());
         indexRemoved.Should().BeTrue();
         await keyIndex.DidNotReceive().RemoveAsync(ObjectKey, Arg.Any<CancellationToken>());
 
@@ -292,6 +295,7 @@ public sealed class GeoServicesCloudTileCacheTests
                 SizeBytes = 3,
                 UploadedAt = DateTimeOffset.UtcNow,
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ETag = "etag-1",
                 Provider = CloudStorageProvider.Local
             }));
 
@@ -329,7 +333,7 @@ public sealed class GeoServicesCloudTileCacheTests
             keyIndex,
             tenantScope: "tenant_a");
 
-        await storage.DidNotReceive().DeleteAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await storage.DidNotReceive().DeleteIfMatchAsync(ObjectKey, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await keyIndex.DidNotReceive().RemoveAsync(ObjectKey, Arg.Any<CancellationToken>());
     }
 
@@ -347,9 +351,10 @@ public sealed class GeoServicesCloudTileCacheTests
                 SizeBytes = 3,
                 UploadedAt = DateTimeOffset.UtcNow,
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ETag = "etag-1",
                 Provider = CloudStorageProvider.Local
             }));
-        storage.DeleteAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns(true);
+        storage.DeleteIfMatchAsync(ObjectKey, "etag-1", Arg.Any<CancellationToken>()).Returns(true);
 
         var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
         keyIndex.IsEnabled.Returns(true);
@@ -389,8 +394,140 @@ public sealed class GeoServicesCloudTileCacheTests
             keyIndex,
             tenantScope: "tenant_a");
 
-        await storage.Received(1).DeleteAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await storage.Received(1).DeleteIfMatchAsync(ObjectKey, "etag-1", Arg.Any<CancellationToken>());
         ownershipChecked.Should().BeTrue();
         await keyIndex.DidNotReceive().RemoveAsync(ObjectKey, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task TryWriteAsync_StaleRollback_DoesNotDeleteOrUnindexNewerStorageGeneration()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = ObjectKey,
+                FileName = "1.png",
+                StoragePath = ObjectKey,
+                ContentType = "image/png",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ETag = "etag-stale",
+                Provider = CloudStorageProvider.Local
+            }));
+        storage.DeleteIfMatchAsync(ObjectKey, "etag-stale", Arg.Any<CancellationToken>()).Returns(false);
+        storage.GetMetadataAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns(
+            (CloudFile?)null,
+            new CloudFile
+            {
+                FileId = ObjectKey,
+                FileName = "1.png",
+                StoragePath = ObjectKey,
+                ContentType = "image/png",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ETag = "etag-new-owner",
+                Provider = CloudStorageProvider.Local
+            });
+
+        var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
+        keyIndex.IsEnabled.Returns(true);
+        keyIndex.RecordWriteAsync(
+                Arg.Any<string>(),
+                Arg.Any<long>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("Redis commit failed.")));
+
+        var indexRemovalAttempted = false;
+        var mutationCoordinator = (ITileCacheMutationCoordinator)keyIndex;
+        mutationCoordinator.ExecuteSerializedAsync(
+                ObjectKey,
+                Arg.Any<Func<TileCacheMutationContext, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.ArgAt<Func<TileCacheMutationContext, Task>>(1)(
+                new TileCacheMutationContext(
+                    CancellationToken.None,
+                    CancellationToken.None,
+                    _ =>
+                    {
+                        indexRemovalAttempted = true;
+                        return Task.FromResult(true);
+                    })));
+
+        await GeoServicesCloudTileCache.TryWriteAsync(
+            storage,
+            new CloudStorageOptions { Enabled = true },
+            ObjectKey,
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            "1.png",
+            ImmutableDictionary<string, string>.Empty,
+            CancellationToken.None,
+            keyIndex);
+
+        await storage.Received(1).DeleteIfMatchAsync(
+            ObjectKey,
+            "etag-stale",
+            Arg.Any<CancellationToken>());
+        indexRemovalAttempted.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task TryWriteAsync_WaiterRechecksFreshObjectInsideFenceAndSkipsDuplicateUpload()
+    {
+        var freshFile = new CloudFile
+        {
+            FileId = ObjectKey,
+            FileName = "1.png",
+            StoragePath = ObjectKey,
+            ContentType = "image/png",
+            SizeBytes = 3,
+            UploadedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            ETag = "etag-first-writer",
+            Provider = CloudStorageProvider.Local
+        };
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns((CloudFile?)null, freshFile);
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(freshFile));
+
+        var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
+        keyIndex.IsEnabled.Returns(true);
+        var mutationCoordinator = (ITileCacheMutationCoordinator)keyIndex;
+        mutationCoordinator.ExecuteSerializedAsync(
+                ObjectKey,
+                Arg.Any<Func<TileCacheMutationContext, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.ArgAt<Func<TileCacheMutationContext, Task>>(1)(
+                new TileCacheMutationContext(CancellationToken.None, CancellationToken.None)));
+
+        for (var request = 0; request < 2; request++)
+        {
+            await GeoServicesCloudTileCache.TryWriteAsync(
+                storage,
+                new CloudStorageOptions { Enabled = true },
+                ObjectKey,
+                new byte[] { 1, 2, 3 },
+                "image/png",
+                "1.png",
+                ImmutableDictionary<string, string>.Empty,
+                CancellationToken.None,
+                keyIndex);
+        }
+
+        await storage.Received(1).UploadAsync(
+            Arg.Any<FileUploadRequest>(),
+            Arg.Any<CancellationToken>());
+        await keyIndex.Received(1).RecordWriteAsync(
+            ObjectKey,
+            3,
+            freshFile.ExpiresAt!.Value,
+            null,
+            Arg.Any<CancellationToken>());
     }
 }

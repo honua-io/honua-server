@@ -140,7 +140,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 putRequest.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
             }
 
-            await _client.PutObjectAsync(putRequest, linkedCancellationSource.Token);
+            var putResponse = await _client.PutObjectAsync(putRequest, linkedCancellationSource.Token);
 
             var sizeBytes = await ResolveSizeAsync(objectKey, request, cancellationToken);
             var cloudFile = new CloudFile
@@ -153,6 +153,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = null,
+                ETag = putResponse.ETag,
                 Metadata = request.Metadata,
                 Provider = CloudStorageProvider.AwsS3
             };
@@ -283,6 +284,31 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return deleted;
     }
 
+    public override async Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+
+        try
+        {
+            await _client.DeleteObjectAsync(new DeleteObjectRequest
+            {
+                BucketName = _options.BucketName,
+                Key = fileId,
+                IfMatch = expectedETag
+            }, cancellationToken);
+            FileStorageLog.FileDeleted(Logger, fileId);
+            return true;
+        }
+        catch (AmazonS3Exception ex) when (IsNotFound(ex) || ex.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
     public override async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -305,6 +331,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 UploadedAt = new DateTimeOffset(lastModified),
                 ExpiresAt = expiresAt,
                 ContentHash = null,
+                ETag = response.ETag,
                 Metadata = CloudStorageMetadata.ExtractUserMetadata(metadata),
                 Provider = CloudStorageProvider.AwsS3
             };

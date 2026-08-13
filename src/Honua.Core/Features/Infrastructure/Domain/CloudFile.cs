@@ -51,6 +51,11 @@ public sealed record CloudFile
     public string? ContentHash { get; init; }
 
     /// <summary>
+    /// Opaque provider generation validator for conditional reads and deletes.
+    /// </summary>
+    public string? ETag { get; init; }
+
+    /// <summary>
     /// Custom metadata associated with the file
     /// </summary>
     public ImmutableDictionary<string, string> Metadata { get; init; } = ImmutableDictionary<string, string>.Empty;
@@ -60,4 +65,3 @@ public sealed record CloudFile
     /// </summary>
     public required CloudStorageProvider Provider { get; init; }
 }
-

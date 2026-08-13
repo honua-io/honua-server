@@ -126,6 +126,18 @@ internal static class GeoServicesCloudTileCache
             async Task UploadAndRecordAsync(TileCacheMutationContext mutationContext)
             {
                 var mutationToken = mutationContext.CancellationToken;
+                if (await IsFreshAsync(
+                        storage,
+                        keyIndex,
+                        objectKey,
+                        mutationToken).ConfigureAwait(false))
+                {
+                    // Another waiter committed the same cold tile while this request waited for
+                    // the mutation fence. Reuse that generation instead of serializing another
+                    // upload behind it.
+                    return;
+                }
+
                 var ttl = ResolveTileCacheTtl(storageOptions);
                 var expiresAt = DateTimeOffset.UtcNow.Add(ttl);
                 using var stream = new MemoryStream(data, writable: false);
@@ -145,6 +157,8 @@ internal static class GeoServicesCloudTileCache
                 {
                     return;
                 }
+
+                var uploadedETag = upload.File?.ETag;
 
                 // Providers stamp the authoritative expiration after the upload completes (for
                 // example, local storage does so after copying the content). Prefer that value so
@@ -179,16 +193,32 @@ internal static class GeoServicesCloudTileCache
                             // Caller cancellation must not interrupt compensation. Lease loss
                             // must: at that point deleting this key could remove a newer owner's
                             // generation. Renewal continues until this bounded cleanup returns.
-                            storageRolledBack = await storage.DeleteAsync(
-                                    objectKey,
-                                    mutationContext.LeaseLostToken)
-                                .ConfigureAwait(false);
+                            if (string.IsNullOrWhiteSpace(uploadedETag))
+                            {
+                                throw new InvalidOperationException(
+                                    $"The uploaded tile '{objectKey}' has no provider ETag for generation-safe rollback.");
+                            }
+
+                            storageRolledBack = await storage.DeleteIfMatchAsync(
+                                objectKey,
+                                uploadedETag,
+                                mutationContext.LeaseLostToken).ConfigureAwait(false);
                             if (!storageRolledBack)
                             {
-                                storageRolledBack = await storage.GetMetadataAsync(
+                                var current = await storage.GetMetadataAsync(
                                         objectKey,
                                         mutationContext.LeaseLostToken)
-                                    .ConfigureAwait(false) is null;
+                                    .ConfigureAwait(false);
+                                storageRolledBack = current is null;
+
+                                // A different ETag proves a newer owner replaced these bytes.
+                                // Its generation is healthy and must neither be deleted nor have
+                                // its lifecycle state removed by this stale compensation path.
+                                if (current is not null
+                                    && !string.Equals(current.ETag, uploadedETag, StringComparison.Ordinal))
+                                {
+                                    return;
+                                }
                             }
 
                             if (!storageRolledBack)
@@ -239,6 +269,23 @@ internal static class GeoServicesCloudTileCache
             // telemetry rather than silently disappearing.
             HonuaTelemetry.RecordException(Activity.Current, ex);
         }
+    }
+
+    private static async Task<bool> IsFreshAsync(
+        ICloudFileStorage storage,
+        ITileCacheKeyIndex? keyIndex,
+        string objectKey,
+        CancellationToken cancellationToken)
+    {
+        if (keyIndex is { IsEnabled: true }
+            && await keyIndex.IsExpiredAsync(objectKey, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var current = await storage.GetMetadataAsync(objectKey, cancellationToken).ConfigureAwait(false);
+        return current is not null
+            && (!current.ExpiresAt.HasValue || current.ExpiresAt.Value > DateTimeOffset.UtcNow);
     }
 
     internal static string BuildObjectKey(CloudStorageOptions? storageOptions, params string[] segments)
