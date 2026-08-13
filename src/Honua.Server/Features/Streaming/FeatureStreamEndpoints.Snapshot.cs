@@ -35,10 +35,10 @@ namespace Honua.Server.Features.Streaming;
 /// is therefore in the baseline if and only if a delta describing it would be admitted,
 /// which is what makes the subscription-local sequence meaningful across the boundary.</para>
 /// <para><b>Bounds.</b> Snapshots require an explicit layer scope and are bounded by
-    /// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/>,
-    /// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>, and
-    /// <see cref="FeatureStreamOptions.MaxSnapshotBytes"/>. Hitting any bound ends the snapshot
-    /// with <c>complete: false</c> rather than silently truncating.</para>
+/// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/>,
+/// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>, and
+/// <see cref="FeatureStreamOptions.MaxSnapshotBytes"/>. Hitting any bound ends the snapshot
+/// with <c>complete: false</c> rather than silently truncating.</para>
 /// </remarks>
 internal static partial class FeatureStreamEndpoints
 {
