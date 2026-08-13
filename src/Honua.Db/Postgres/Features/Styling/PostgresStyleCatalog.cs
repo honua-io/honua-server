@@ -272,22 +272,60 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
     }
 
     /// <inheritdoc />
-    public async Task<bool> DeleteStyleAsync(string styleId, CancellationToken cancellationToken = default)
+    public async Task<StyleCatalogDeleteResult> DeleteStyleAsync(
+        string styleId,
+        int? protectedLayerId = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
 
-        // layer_style_refs cascades on delete (FK ON DELETE CASCADE).
-        var sql = $"""
-            DELETE FROM {_stylesTable}
-            WHERE style_id = @styleId
-            """;
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        _ = command.Parameters.AddWithValue("@styleId", styleId);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return affected > 0;
+        // Lock the style row before inspecting associations. Association INSERTs take a
+        // foreign-key key-share lock on this row, so this serializes concurrent association
+        // changes with the guarded delete and closes the snapshot/delete race.
+        var lockSql = $"SELECT 1 FROM {_stylesTable} WHERE style_id = @styleId FOR UPDATE";
+        await using (var lockCommand = new NpgsqlCommand(lockSql, connection, transaction))
+        {
+            _ = lockCommand.Parameters.AddWithValue("@styleId", styleId);
+            if (await lockCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new StyleCatalogDeleteResult(StyleCatalogDeleteStatus.NotFound, []);
+            }
+        }
+
+        var associatedLayerIds = new List<int>();
+        var associationsSql = $"SELECT layer_id FROM {_refsTable} WHERE style_id = @styleId ORDER BY layer_id";
+        await using (var associationsCommand = new NpgsqlCommand(associationsSql, connection, transaction))
+        {
+            _ = associationsCommand.Parameters.AddWithValue("@styleId", styleId);
+            await using var reader = await associationsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                associatedLayerIds.Add(reader.GetInt32(0));
+            }
+        }
+
+        if (protectedLayerId.HasValue)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new StyleCatalogDeleteResult(StyleCatalogDeleteStatus.Protected, associatedLayerIds);
+        }
+
+        // layer_style_refs cascades on delete (FK ON DELETE CASCADE).
+        var deleteSql = $"DELETE FROM {_stylesTable} WHERE style_id = @styleId";
+        await using (var deleteCommand = new NpgsqlCommand(deleteSql, connection, transaction))
+        {
+            _ = deleteCommand.Parameters.AddWithValue("@styleId", styleId);
+            _ = await deleteCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return new StyleCatalogDeleteResult(
+            StyleCatalogDeleteStatus.Deleted,
+            associatedLayerIds.Distinct().ToArray());
     }
 
     /// <inheritdoc />

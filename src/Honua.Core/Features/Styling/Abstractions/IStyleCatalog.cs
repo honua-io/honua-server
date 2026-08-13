@@ -118,12 +118,17 @@ public interface IStyleCatalog
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a catalog style and all of its layer associations.
+    /// Atomically locks a catalog style, captures its layer associations, applies the
+    /// protected-layer guard, and deletes the style plus its associations.
     /// </summary>
     /// <param name="styleId">Stable style identifier.</param>
+    /// <param name="protectedLayerId">Layer id whose canonical mirror must not be deleted, or <c>null</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><c>true</c> when a style was deleted; <c>false</c> when none existed.</returns>
-    Task<bool> DeleteStyleAsync(string styleId, CancellationToken cancellationToken = default);
+    /// <returns>The atomic deletion outcome and associations captured before cascade.</returns>
+    Task<StyleCatalogDeleteResult> DeleteStyleAsync(
+        string styleId,
+        int? protectedLayerId = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Associates a style with a layer at the given ordinal (idempotent upsert of the

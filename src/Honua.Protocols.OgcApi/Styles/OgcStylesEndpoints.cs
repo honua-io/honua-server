@@ -123,6 +123,7 @@ public static class OgcStylesEndpoints
             .WithSummary("Delete a style (manage-styles)")
             .WithDescription("Deletes a standalone style from the independent style catalog (ADR-0048 Phase 2).")
             .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .RequireAdminAuthorization();
     }

@@ -79,6 +79,12 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         document.RootElement.TryGetProperty("openapi", out _).Should().BeTrue();
+        document.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/styles/{styleId}")
+            .GetProperty("delete")
+            .GetProperty("responses")
+            .TryGetProperty("403", out _)
+            .Should().BeTrue();
     }
 
     [IntegrationTest]

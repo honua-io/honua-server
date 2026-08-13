@@ -739,26 +739,27 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 "Standalone style deletion requires the independent style catalog, which is not configured.");
         }
 
-        var associations = await _independentStyleCatalog.ListAssociationsAsync(cancellationToken).ConfigureAwait(false);
-        var associatedLayerIds = associations
-            .Where(association => string.Equals(association.StyleId, styleId, StringComparison.Ordinal))
-            .Select(association => association.LayerId)
-            .Distinct()
-            .ToArray();
+        int? protectedLayerId = null;
+        if (TryParseMirroredStyleId(styleId, out var mirroredLayerId))
+        {
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot.Index.ResourcesByStorageLayerId.ContainsKey(mirroredLayerId))
+            {
+                protectedLayerId = mirroredLayerId;
+            }
+        }
 
-        if (TryParseMirroredStyleId(styleId, out var mirroredLayerId)
-            && associations.Any(association =>
-                association.LayerId == mirroredLayerId
-                && association.Ordinal == 0
-                && string.Equals(association.StyleId, styleId, StringComparison.Ordinal)))
+        var deleteResult = await _independentStyleCatalog
+            .DeleteStyleAsync(styleId, protectedLayerId, cancellationToken)
+            .ConfigureAwait(false);
+        if (deleteResult.Status == StyleCatalogDeleteStatus.Protected)
         {
             return new OgcStyleDeleteResult(
                 OgcStyleDeleteStatus.Forbidden,
                 $"Style '{styleId}' is a layer's mirrored default style and cannot be deleted through this surface.");
         }
 
-        var deleted = await _independentStyleCatalog.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
-        if (!deleted)
+        if (deleteResult.Status == StyleCatalogDeleteStatus.NotFound)
         {
             return new OgcStyleDeleteResult(OgcStyleDeleteStatus.NotFound, $"Style '{styleId}' not found.");
         }
@@ -768,7 +769,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             // The catalog delete has committed and cascaded its associations. Reconcile the
             // layers captured before that cascade so their StyleResourceIds no longer expose
             // the deleted record. As with updates, this post-commit mirror is best-effort.
-            foreach (var layerId in associatedLayerIds)
+            foreach (var layerId in deleteResult.AssociatedLayerIds)
             {
                 try
                 {
