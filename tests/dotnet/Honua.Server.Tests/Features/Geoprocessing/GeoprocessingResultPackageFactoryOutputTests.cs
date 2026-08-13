@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 
 /// <summary>
 /// Result-package projection of typed raster output descriptors (#3089): staged
-/// descriptors surface as metadata-rich artifacts with no payload/provider value,
+/// descriptors surface as metadata-rich artifacts through an authenticated route,
 /// and — per the review — a descriptor-shaped reference this release cannot
 /// interpret (for example a future contract version) must surface as an
 /// unavailable artifact, never leaking the raw descriptor JSON (store reference,
@@ -43,7 +43,7 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
     }
 
     [UnitTest]
-    public void Create_SupportedStagedDescriptor_KeepsUriNullWithStagedMetadata()
+    public void Create_SupportedStagedDescriptor_UsesAuthenticatedContentRouteAsUri()
     {
         var descriptor = new StagedObjectRasterOutputDescriptor
         {
@@ -66,7 +66,7 @@ public sealed class GeoprocessingResultPackageFactoryOutputTests
             CreateSucceededJob(RasterOutputJson.Serialize(descriptor)), Substitute.For<IProcessCatalog>());
 
         var artifact = package.Artifacts.Should().ContainSingle().Subject;
-        artifact.Uri.Should().BeNull();
+        artifact.Uri.Should().Be("/api/geoprocessing/jobs/job-x/artifacts/0/content");
         artifact.ContentType.Should().Be("image/tiff");
         artifact.Metadata.Should().ContainKey(RasterOutputArtifactMetadata.Staged);
         artifact.Metadata[RasterOutputArtifactMetadata.ObjectKey].Should().Be(descriptor.ObjectKey);

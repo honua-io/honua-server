@@ -49,7 +49,11 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
                     || string.Equals(
                         options.Provider, GeoprocessingOutputStagingOptions.LocalProvider, StringComparison.OrdinalIgnoreCase),
                 "Geoprocessing:OutputStaging:Provider must be 'local'; remote staging providers for AWS Batch "
-                + "placement are configured on the worker image and are not implemented by this host yet (#3089).")
+                    + "placement are configured on the worker image and are not implemented by this host yet (#3089).")
+            .Validate(
+                options => options.SweepInterval > TimeSpan.Zero
+                    && options.SweepInterval <= TimeSpan.FromDays(1),
+                "Geoprocessing:OutputStaging:SweepInterval must be greater than zero and no more than one day.")
             .ValidateOnStart();
 
         if (section.GetValue<bool>(nameof(GeoprocessingOutputStagingOptions.Enabled)))

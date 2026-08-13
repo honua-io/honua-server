@@ -149,8 +149,8 @@ internal static class GeoprocessingResultPackageFactory
 
                 if (descriptor is StagedObjectRasterOutputDescriptor)
                 {
-                    metadata[RasterOutputArtifactMetadata.ContentRoute] =
-                        RasterOutputContentRoutes.BuildRelative(job.OperationId, index);
+                    uri = RasterOutputContentRoutes.BuildRelative(job.OperationId, index);
+                    metadata[RasterOutputArtifactMetadata.ContentRoute] = uri;
                 }
             }
             else if (RasterOutputJson.LooksLikeDescriptor(reference))
