@@ -15,8 +15,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NetTopologySuite" />
-    <!-- This test project consumes Testcontainers without Honua.TestKit, so it
-         carries the same direct patched SSH.NET pin. -->
+    <!-- Direct pin of Testcontainers' transitive SSH.NET to the patched release
+         (GHSA-q939-rpr3-3284). -->
     <PackageReference Include="SSH.NET" />
     <PackageReference Include="Testcontainers.Oracle" />
     <PackageReference Include="xunit" />

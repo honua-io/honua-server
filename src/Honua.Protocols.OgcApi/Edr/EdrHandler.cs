@@ -158,7 +158,11 @@ internal sealed class EdrHandler
         }
 
         var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
-        var requestedParameters = ParseParameterNames(context.Request.Query["parameter-name"].ToString());
+        var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
+        if (parameterError is not null)
+        {
+            return parameterError;
+        }
 
         var pixel = await _rasterStore
             .IdentifyAsync(resolution.StorageLayerId, raster.Id, lon, lat, srid: 4326, rendering: null, cancellationToken)
@@ -216,7 +220,12 @@ internal sealed class EdrHandler
         var resolutionCount = ResolveCubeSampleCount(context.Request.Query["resolution-x"].ToString());
         var raster = resolution.Raster;
         var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
-        var requestedParameters = ParseParameterNames(context.Request.Query["parameter-name"].ToString());
+        var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
+        if (parameterError is not null)
+        {
+            return parameterError;
+        }
+
         var parameters = BuildParameters(raster, requestedParameters);
 
         // Sample a bounded regular grid of cell centres inside the bbox using the canonical
@@ -396,10 +405,10 @@ internal sealed class EdrHandler
     private static ImmutableDictionary<string, EdrParameter> BuildParameters(RasterInfo raster, IReadOnlyCollection<string>? requested)
     {
         var builder = ImmutableDictionary.CreateBuilder<string, EdrParameter>();
-        var bandCount = Math.Max(1, raster.BandCount);
-        for (var band = 1; band <= bandCount; band++)
+        var available = AvailableParameterNames(raster);
+        for (var index = 0; index < available.Length; index++)
         {
-            var name = $"band_{band.ToString(CultureInfo.InvariantCulture)}";
+            var name = available[index];
             if (requested is { Count: > 0 } && !requested.Contains(name, StringComparer.OrdinalIgnoreCase))
             {
                 continue;
@@ -407,21 +416,70 @@ internal sealed class EdrHandler
 
             builder[name] = new EdrParameter
             {
-                Description = $"Coverage band {band.ToString(CultureInfo.InvariantCulture)}",
+                Description = $"Coverage band {(index + 1).ToString(CultureInfo.InvariantCulture)}",
                 ObservedProperty = new EdrObservedProperty { Label = name }
             };
         }
 
-        if (builder.Count == 0)
+        // No empty-result fallback: query paths validate 'parameter-name' against
+        // AvailableParameterNames first (see ValidateRequestedParameters), so a
+        // surviving request always selects at least one offered parameter. Substituting
+        // band_1 for an unmatched selection would return a different physical quantity
+        // than the client asked for (#3184).
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// The enumerated <c>parameter-name</c> options this collection offers, matching the
+    /// <c>parameter_names</c> keys advertised in the collection metadata response.
+    /// </summary>
+    private static ImmutableArray<string> AvailableParameterNames(RasterInfo raster)
+    {
+        var bandCount = Math.Max(1, raster.BandCount);
+        var names = ImmutableArray.CreateBuilder<string>(bandCount);
+        for (var band = 1; band <= bandCount; band++)
         {
-            builder["band_1"] = new EdrParameter
-            {
-                Description = "Coverage band 1",
-                ObservedProperty = new EdrObservedProperty { Label = "band_1" }
-            };
+            names.Add($"band_{band.ToString(CultureInfo.InvariantCulture)}");
         }
 
-        return builder.ToImmutable();
+        return names.MoveToImmutable();
+    }
+
+    /// <summary>
+    /// Validates the EDR <c>parameter-name</c> query parameter for the position and cube
+    /// query paths and yields the requested names when they are all offered by the collection.
+    /// </summary>
+    /// <remarks>
+    /// OGC API - EDR <c>/req/edr/parameter-name-response</c> requires (A) that only the listed
+    /// parameters be returned and (B) that the value be drawn from the enumerated option list in
+    /// the collection metadata. A name outside that list is therefore an invalid query-parameter
+    /// value, which OGC API - Common Part 1 (8.1.3) maps to <c>400</c>. Honua rejects strictly:
+    /// a request carrying any unknown name fails even when other names in the same list are
+    /// valid, so a client can never receive a silently narrowed selection that is
+    /// indistinguishable from a full result (#3184).
+    /// </remarks>
+    private static IResult? ValidateRequestedParameters(HttpContext context, RasterInfo raster, out string[] requested)
+    {
+        requested = ParseParameterNames(context.Request.Query["parameter-name"].ToString());
+        if (requested.Length == 0)
+        {
+            return null;
+        }
+
+        var available = AvailableParameterNames(raster);
+        var unknown = requested
+            .Where(name => !available.Contains(name, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (unknown.Length == 0)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateBadRequest(
+            context,
+            $"Query parameter 'parameter-name' requests parameters this collection does not offer: {string.Join(", ", unknown)}.",
+            [$"Available parameter names: {string.Join(", ", available)}."]);
     }
 
     private static ImmutableArray<CoverageJsonReferencing> BuildReferencing() =>
