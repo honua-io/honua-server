@@ -342,8 +342,8 @@ internal static class OgcRecordsEndpoints
 
             var representative = services[0] with
             {
-                Protocols = services
-                    .SelectMany(service => service.Protocols)
+                Protocols = visiblePublications
+                    .SelectMany(tuple => tuple.Service.Protocols)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray()
             };
