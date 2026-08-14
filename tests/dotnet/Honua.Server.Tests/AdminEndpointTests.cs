@@ -162,7 +162,8 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     public async Task GetConfiguration_FeatureStreamingSection_ContainsAllOptionsKnobs()
     {
         // Regression: the FeatureStreaming options class exposes safety knobs
-        // (MaxControlFrameBytes, MaxSubscriptionsPerSession, MaxSubscriptionIdLength)
+        // (MaxControlFrameBytes, MaxSubscriptionsPerSession, MaxSubscriptionIdLength,
+        // MaxSnapshotBytes)
         // alongside the original interval settings. The admin configuration doc
         // must enumerate all of them so operators can see the full surface they
         // can tune.
@@ -183,6 +184,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         propertyPaths.Should().Contain("FeatureStreaming:MaxControlFrameBytes");
         propertyPaths.Should().Contain("FeatureStreaming:MaxSubscriptionsPerSession");
         propertyPaths.Should().Contain("FeatureStreaming:MaxSubscriptionIdLength");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxSnapshotBytes");
     }
 
     [IntegrationTest]
