@@ -80,6 +80,7 @@ jq -e '
 scripts/ci/validate-server-test-binary-artifacts.sh
 scripts/ci/validate-server-test-transfer-benchmark.sh
 scripts/ci/validate-server-test-shard-cache.sh
+scripts/ci/validate-server-test-reuse-benchmark.sh
 
 # #3054: the OUTER GitHub job cap must clear the INNER dotnet-test cap by enough
 # room for the non-test part of the job (checkout, setup-dotnet, restore or
