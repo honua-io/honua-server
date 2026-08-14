@@ -8,7 +8,7 @@
     "estimated_rounded_linux_minutes": "ceil each observed job with a linux/ubuntu label to one minute; estimate, not invoice usage",
     "percentiles": "nearest-rank over observations with valid timestamps",
     "queue": "created_at to earliest non-skipped job start across all attempts",
-    "runner_time": "sum of completed_at - started_at for non-skipped jobs"
+    "runner_time": "sum of completed_at - started_at for non-skipped jobs across every sampled run, including completed jobs in active workflows"
   },
   "repository": "honua-io/honua-server",
   "sample_limit_per_workflow": 30,
@@ -27,14 +27,14 @@
         "p50": 3098.0,
         "p90": 5314.0
       },
-      "estimated_rounded_job_minutes": 30792,
-      "estimated_rounded_linux_minutes": 30792,
+      "estimated_rounded_job_minutes": 31896,
+      "estimated_rounded_linux_minutes": 31896,
       "name": "CI",
       "queue_seconds": {
         "p50": 5.0,
         "p90": 5.0
       },
-      "runner_minutes": 29680.68,
+      "runner_minutes": 30744.63,
       "runs": [
         {
           "attempts": 1,

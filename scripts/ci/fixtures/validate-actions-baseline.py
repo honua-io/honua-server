@@ -55,8 +55,8 @@ def main() -> int:
     require(workflow["critical_path_seconds"] == {"p50": 540.0, "p90": 1020.0}, "critical-path percentiles drifted")
     require(workflow["successful_critical_path_seconds"] == {"p50": 540.0, "p90": 540.0}, "successful critical path drifted")
     require(workflow["time_to_first_failure_seconds"] == {"p50": 720.0, "p90": 720.0}, "first failure timing drifted")
-    require(workflow["runner_minutes"] == 28.67, "all-attempt runner sum drifted")
-    require(workflow["estimated_rounded_linux_minutes"] == 30, "rounded Linux estimate drifted")
+    require(workflow["runner_minutes"] == 30.67, "active-run/all-attempt runner sum drifted")
+    require(workflow["estimated_rounded_linux_minutes"] == 32, "rounded Linux estimate drifted")
     require(workflow["cancelled_runner_minutes"] == 3.67, "cancelled consumed time drifted")
     cancelled = next(run for run in workflow["runs"] if run["conclusion"] == "cancelled")
     require(cancelled["jobs"]["missing_timestamps"] == 1, "missing timestamp was not surfaced")
@@ -71,6 +71,21 @@ def main() -> int:
     require(spec is not None and spec.loader is not None, "collector module could not be loaded")
     collector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(collector)
+
+    page_calls: list[str] = []
+
+    def full_page(endpoint: str) -> dict:
+        page_calls.append(endpoint)
+        return {"workflow_runs": [{"id": index} for index in range(100)]}
+
+    bounded_pages = collector.bounded_workflow_run_pages(
+        "repos/honua-io/honua-server/actions/workflows/ci.yml/runs?per_page=100",
+        30,
+        fetch_page=full_page,
+    )
+    require(len(bounded_pages) == 1, "run pagination fetched beyond the requested limit")
+    require(len(page_calls) == 1 and page_calls[0].endswith("&page=1"), "bounded page request drifted")
+
     terminal_failure_markdown = collector.render_markdown({
         "repository": "honua-io/honua-server",
         "created_after": None,

@@ -202,8 +202,12 @@ def summarize_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
     def success_samples(field: str) -> list[float]:
         return [float(run[field]) for run in successful_runs if run.get(field) is not None]
 
-    runner_seconds = sum(float(run["runner_seconds"]) for run in completed_runs)
-    cancelled_runner_seconds = sum(float(run["cancelled_runner_seconds"]) for run in completed_runs)
+    # Runner usage is observed job evidence, not a terminal-run percentile.
+    # Completed jobs in an active workflow have already consumed real minutes
+    # and must remain in the cost baseline even though that run is excluded
+    # from terminal latency samples.
+    runner_seconds = sum(float(run["runner_seconds"]) for run in runs)
+    cancelled_runner_seconds = sum(float(run["cancelled_runner_seconds"]) for run in runs)
     return {
         "workflow": workflow.get("workflow"),
         "name": workflow.get("name") or workflow.get("workflow"),
@@ -218,10 +222,10 @@ def summarize_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
         "runner_minutes": rounded(runner_seconds / 60.0),
         "cancelled_runner_minutes": rounded(cancelled_runner_seconds / 60.0),
         "estimated_rounded_job_minutes": sum(
-            int(run["estimated_rounded_job_minutes"]) for run in completed_runs
+            int(run["estimated_rounded_job_minutes"]) for run in runs
         ),
         "estimated_rounded_linux_minutes": sum(
-            int(run["estimated_rounded_linux_minutes"]) for run in completed_runs
+            int(run["estimated_rounded_linux_minutes"]) for run in runs
         ),
         "runs": runs,
     }
@@ -242,7 +246,10 @@ def summarize(dataset: dict[str, Any], generated_at: str) -> dict[str, Any]:
             "attempts": "all job attempts returned by the Actions jobs API",
             "critical_path": "earliest non-skipped job start to latest job completion across all attempts",
             "queue": "created_at to earliest non-skipped job start across all attempts",
-            "runner_time": "sum of completed_at - started_at for non-skipped jobs",
+            "runner_time": (
+                "sum of completed_at - started_at for non-skipped jobs across every sampled run, "
+                "including completed jobs in active workflows"
+            ),
             "estimated_rounded_job_minutes": "ceil each observed non-skipped job duration to one minute",
             "estimated_rounded_linux_minutes": (
                 "ceil each observed job with a linux/ubuntu label to one minute; estimate, not invoice usage"
@@ -297,6 +304,45 @@ def gh_pages(endpoint: str) -> list[dict[str, Any]]:
     return payload
 
 
+def gh_json(endpoint: str) -> dict[str, Any]:
+    process = subprocess.run(
+        ["gh", "api", endpoint],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if process.returncode != 0:
+        raise RuntimeError(f"gh api failed for {endpoint}: {process.stderr.strip()}")
+    payload = json.loads(process.stdout)
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"gh api returned a non-object payload for {endpoint}")
+    return payload
+
+
+def bounded_workflow_run_pages(
+    endpoint: str,
+    limit: int,
+    fetch_page: Any = gh_json,
+) -> list[dict[str, Any]]:
+    """Fetch only enough newest workflow-run pages to satisfy ``limit``."""
+    pages: list[dict[str, Any]] = []
+    observed = 0
+    page_number = 1
+    while observed < limit:
+        separator = "&" if "?" in endpoint else "?"
+        page = fetch_page(f"{endpoint}{separator}page={page_number}")
+        runs = page.get("workflow_runs", [])
+        if not isinstance(runs, list):
+            raise RuntimeError("workflow run page has no workflow_runs list")
+        pages.append(page)
+        observed += len(runs)
+        if len(runs) < 100:
+            break
+        page_number += 1
+    return pages
+
+
 def collect_live(
     repo: str,
     workflows: list[str],
@@ -314,7 +360,7 @@ def collect_live(
         endpoint = (
             f"repos/{repo}/actions/workflows/{quote(workflow, safe='')}/runs?{urlencode(query)}"
         )
-        pages = gh_pages(endpoint)
+        pages = bounded_workflow_run_pages(endpoint, limit)
         runs = [run for page in pages for run in page.get("workflow_runs", [])]
         runs.sort(key=lambda run: str(run.get("created_at") or ""), reverse=True)
 

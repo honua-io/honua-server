@@ -5,7 +5,7 @@ This is the pre-change measurement for ADR-0074 and #3213. It was collected at
 for each declared workflow. The machine-readable summary is
 [`evidence/actions-baseline-2026-08-13.json`](evidence/actions-baseline-2026-08-13.json)
 (canonical Git blob SHA-256
-`d2578c8235b03990b577e19f018f94e362bc809f3b7abbfc704bda174c42bf57`).
+`8452667dceba5b71a98d41c9af564506a0d92b4e24863cd6df6e1341e8241ab4`).
 The digest is over the committed LF-normalized blob, not a checkout transformed
 by platform line-ending settings.
 
@@ -41,7 +41,7 @@ does not call GitHub.
 
 | Workflow | Runs | Success | Failure | Cancelled | Queue p90 | Successful critical p90 | First failure p50 | Raw runner min | Rounded Linux min | Cancelled runner min |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CI | 30 | 12 | 12 | 5 | 0.1m | 88.6m | 19.1m | 29,680.68 | 30,792 | 5,390.32 |
+| CI | 30 | 12 | 12 | 5 | 0.1m | 88.6m | 19.1m | 30,744.63 | 31,896 | 5,390.32 |
 | CodeQL | 30 | 10 | 0 | 20 | 0.2m | 22.4m | - | 192.90 | 213 | 28.87 |
 | Merge Train | 30 | 19 | 3 | 7 | 0.2m | 54.9m | 60.8m | 316.70 | 328 | 19.05 |
 | PR Gate | 30 | 6 | 2 | 22 | 0.3m | 25.4m | 23.7m | 212.55 | 228 | 64.13 |
@@ -49,12 +49,14 @@ does not call GitHub.
 | GDAL Worker Image | 30 | 1 | 0 | 29 | 0.1m | 14.9m | - | 33.05 | 49 | 18.17 |
 
 Counts can sum to fewer than 30 terminal outcomes when a sampled run was still
-in progress at collection time. A later post-change comparison must use the
-same terminal/outcome rules or explicitly refresh both samples.
+in progress at collection time. Completed job durations from those active runs
+are included in runner totals because that usage has already occurred. A later
+post-change comparison must use the same terminal/outcome and observed-usage
+rules or explicitly refresh both samples.
 
 ## Findings
 
-1. **Batch CI dominates cost.** Thirty sampled CI runs consumed 29,680.68 raw
+1. **Batch CI dominates cost.** Thirty sampled CI runs consumed 30,744.63 raw
    runner-minutes across all attempts. Five canceled runs alone consumed
    5,390.32 runner-minutes.
 2. **Failure feedback arrives long before the workflow stops.** The median
@@ -80,7 +82,8 @@ same terminal/outcome rules or explicitly refresh both samples.
 - Critical path is the earliest non-skipped job start to the latest job
   completion across all attempts.
 - Runner time is the sum of each non-skipped job's observed
-  `completed_at - started_at` duration. Parallel jobs intentionally add runner
+  `completed_at - started_at` duration, including completed jobs in a workflow
+  that was still active at collection time. Parallel jobs intentionally add runner
   time while sharing wall time.
 - Percentiles use nearest rank. Successful critical-path percentiles include
   only successful runs; failure latency uses the earliest failed/timed-out job.
