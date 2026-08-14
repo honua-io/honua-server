@@ -6,6 +6,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled, closed]
   issue_comment:
     types: [created, edited, deleted]
+  # Trusted operator/automation recovery after resolving a review thread. Unlike
+  # workflow_dispatch, repository_dispatch always uses default-branch workflow
+  # code and cannot select a PR-authored ref.
+  repository_dispatch:
+    types: [review-gate-reattest]
   workflow_run:
     # Review events execute PR merge-branch workflow code, so the unprivileged
     # bridge converts them into a trusted default-branch workflow_run event.
@@ -43,7 +48,8 @@ jobs:
             let prNumber = Number(
               context.payload.pull_request?.number ||
               context.payload.issue?.number ||
-              context.payload.workflow_run?.pull_requests?.[0]?.number
+              context.payload.workflow_run?.pull_requests?.[0]?.number ||
+              context.payload.client_payload?.pr
             );
             if (!prNumber && context.payload.workflow_run) {
               const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({

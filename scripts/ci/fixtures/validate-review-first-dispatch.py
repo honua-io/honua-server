@@ -14,6 +14,8 @@ REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
+TRAIN_SELECT = ROOT / "scripts/ci/merge-train/select.sh"
+TRAIN_LAND = ROOT / "scripts/ci/merge-train/land.sh"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -32,6 +34,8 @@ def main() -> None:
     pr_gate = PR_GATE.read_text(encoding="utf-8")
     review_gate = REVIEW_GATE.read_text(encoding="utf-8")
     review_bridge = REVIEW_BRIDGE.read_text(encoding="utf-8")
+    train_select = TRAIN_SELECT.read_text(encoding="utf-8")
+    train_land = TRAIN_LAND.read_text(encoding="utf-8")
 
     pr_mode = mode(pr_gate, PR_GATE)
     review_mode = mode(review_gate, REVIEW_GATE)
@@ -123,6 +127,16 @@ def main() -> None:
             raise AssertionError("status-writing review workflow must not run PR-authored workflow code")
     if re.search(r"^  workflow_dispatch:", review_gate, re.MULTILINE):
         raise AssertionError("privileged review workflow must not be dispatchable from a PR ref")
+    require(
+        review_gate,
+        "  repository_dispatch:\n    types: [review-gate-reattest]",
+        "thread resolution needs a trusted default-branch re-attestation path",
+    )
+    require(
+        review_gate,
+        "context.payload.client_payload?.pr",
+        "trusted re-attestation must resolve its requested PR",
+    )
 
     require(review_bridge, "  pull_request_review:\n", "review bridge must observe review changes")
     require(
@@ -134,6 +148,22 @@ def main() -> None:
     for forbidden in ("actions: write", "statuses: write", "pull-requests: write", "actions/checkout"):
         if forbidden in review_bridge:
             raise AssertionError(f"review bridge must remain inert: found {forbidden}")
+    require(
+        review_bridge,
+        "completion is only a latency hint",
+        "PR-controlled bridge must not be described as an invalidation authority",
+    )
+
+    require(
+        train_select,
+        'train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}"',
+        "live train selection must independently refresh mutable review evidence",
+    )
+    require(
+        train_land,
+        'train_pr_admission "${admission_pr}" "${admission_sha}"',
+        "pre-land must independently re-attest mutable review evidence",
+    )
 
     require(
         pr_gate,

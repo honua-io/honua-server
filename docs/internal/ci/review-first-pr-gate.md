@@ -14,9 +14,9 @@ Review-first makes `PR Gate` and `Review Gate` separate required contexts and
 separates cheap admission from expensive verification:
 
 1. A `pull_request` run creates the `PR Gate` check and performs admission.
-2. Review events wake a credential-free `Review Event Bridge`. Its completion
-   causes `Review Gate Attestation` to re-read exact-head Codex evidence using
-   only the default branch's policy code.
+2. Review events may wake a credential-free `Review Event Bridge`. Its
+   completion is a latency hint that causes `Review Gate Attestation` to re-read
+   exact-head Codex evidence using only the default branch's policy code.
 3. The trusted workflow selects one completed PR Gate run for the current PR
    head. In enforce mode, it releases that run with `rerun-failed-jobs`.
 4. Attempt 2 performs the existing build, format, fast/architecture tests, and
@@ -49,7 +49,8 @@ runner-minute target from #3213.
   write credential.
 - `pull_request_review` events execute merge-branch workflow code. They therefore
   enter only `Review Event Bridge`, which has a read-only token, performs no
-  checkout, and emits no status or mutation.
+  checkout, and emits no status or mutation. The bridge is not a trust boundary:
+  PR code can delay or suppress it.
 - `Review Gate Attestation` wakes from the bridge's `workflow_run`, PR Gate
   completion, `pull_request_target`, or default-branch `issue_comment`. It has
   `actions: write`, but checks out only the default branch, persists no checkout
@@ -64,6 +65,18 @@ runner-minute target from #3213.
 - A final PR/head/label read occurs immediately before the Actions mutation.
   Normal PR Gate concurrency cancels the residual race if the head moves after
   that read.
+- Live merge-train selection and pre-land validation independently fetch current
+  reviews, threads, labels, and head identity from GitHub. They refresh
+  `Review Gate` and fail closed on negative/truncated evidence, so a stale status
+  or suppressed bridge can never authorize landing.
+- Resolving a thread has no GitHub Actions event. The live train repairs that
+  stale failure during selection; an operator can re-attest sooner with trusted
+  default-branch code using:
+
+  ```bash
+  gh api --method POST repos/honua-io/honua-server/dispatches \
+    -f event_type=review-gate-reattest -F client_payload[pr]=<PR>
+  ```
 
 ## Idempotency and failures
 
@@ -74,6 +87,10 @@ Once GitHub accepts the rerun,
 the workflow's `run_attempt` becomes greater than one and every later event is a
 no-op. A duplicate API rejection is ignored only after a fresh run read proves
 that the rerun was already accepted; all other API errors fail visibly.
+
+Bridge delivery is intentionally best-effort. It improves status freshness but
+is never used as proof that review evidence is still valid. The merge train is
+the sole merge authority and re-attests from source evidence twice.
 
 Closing and reopening a PR can create multiple runs for an unchanged head. The
 dispatcher deterministically selects the newest canonical run by GitHub

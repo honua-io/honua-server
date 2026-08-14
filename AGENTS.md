@@ -160,11 +160,13 @@ There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A P
 
 ### Normal landing path
 
-Keep a ready PR non-draft and allow `PR Gate` to complete. `pr-merge-train.yml` automatically squash-merges the oldest PR GitHub reports as `clean` and freshens green-but-behind PRs. Use a draft or the `hold` label to exclude a PR from this automatic lander.
+Keep a ready PR non-draft and allow required `PR Gate` and `Review Gate` to
+complete. The sole merge authority is `.github/workflows/merge-train.yml`; no
+automatic serial lander exists. Its schedule is observation-only, so an operator
+must explicitly dispatch `train_apply=true` to land. Use `hold`, `train:hold`, or
+`train:escalated` to exclude a PR.
 
-Do not use `train:hold` as the only exclusion for the automatic lander: `train:hold` is understood by the manual batch train, while `pr-merge-train.yml` honors `hold`.
-
-### Manual batch train
+### Live batch train
 
 Use the optimistic batch train when you intentionally want cumulative batch CI and batch landing:
 

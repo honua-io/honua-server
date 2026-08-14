@@ -142,8 +142,9 @@ records a review-pending outcome. Branch protection requires both `PR Gate` and
 `Review Gate`, so PR-authored verification code cannot substitute for trusted
 exact-head admission.
 
-Review events first pass through a read-only, no-checkout bridge because GitHub
-executes those events from the PR merge branch. Its completion wakes
+Review events may pass through a read-only, no-checkout bridge because GitHub
+executes those events from the PR merge branch. Its completion is a best-effort
+latency hint that wakes
 `review-gate.yml`; trusted default-branch logic then publishes clean evidence,
 finds the unique admission run for that head, and reruns it exactly once. The
 resumed PR workflow remains an
@@ -155,6 +156,10 @@ and a single transition receipt. Repeated review events cannot start another
 verification. A newer head cancels an older head's work through a per-PR
 concurrency group keyed only by the resolved PR number. No privileged event
 checks out or executes the PR, and there is no PR-ref manual dispatch path.
+The bridge is not an authority because PR code can suppress it: live train
+selection and pre-land both independently fetch current review evidence, refresh
+the status, and fail closed. A trusted `repository_dispatch` provides explicit
+default-branch re-attestation after a thread is resolved without an event.
 
 The same transition receipt gates optional exact-head CodeQL, native-image, and
 SDK browser work. Workflows do not need an operator to cancel every review-fix
