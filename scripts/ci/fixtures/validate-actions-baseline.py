@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import json
 import subprocess
@@ -123,6 +124,32 @@ def main() -> int:
         require(json.loads(json_path.read_text(encoding="utf-8")) == report, "written JSON differs from stdout")
         require(markdown_path.read_text(encoding="utf-8") == markdown_run.stdout, "written Markdown differs from stdout")
         require(json.loads(input_path.read_text(encoding="utf-8"))["schema"] == "honua.actions-baseline.input/v1", "raw input was not preserved")
+
+        gzip_path = Path(directory) / "input.json.gz"
+        gzip_repeat_path = Path(directory) / "input-repeat.json.gz"
+        gzip_run = run("--input-out", str(gzip_path))
+        gzip_repeat_run = run("--input-out", str(gzip_repeat_path))
+        require(gzip_run.returncode == 0, gzip_run.stderr)
+        require(gzip_repeat_run.returncode == 0, gzip_repeat_run.stderr)
+        require(gzip_path.read_bytes() == gzip_repeat_path.read_bytes(), "gzip input is not deterministic")
+        with gzip.open(gzip_path, "rt", encoding="utf-8") as handle:
+            require(json.load(handle)["schema"] == "honua.actions-baseline.input/v1", "gzip input was not preserved")
+        compressed_fixture_run = subprocess.run(
+            [
+                sys.executable,
+                str(COLLECTOR),
+                "--fixture",
+                str(gzip_path),
+                "--generated-at",
+                GENERATED_AT,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        require(compressed_fixture_run.returncode == 0, compressed_fixture_run.stderr)
+        require(json.loads(compressed_fixture_run.stdout) == report, "gzip fixture changed the report")
 
     bad_fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     bad_fixture["schema"] = "unsafe/unknown"

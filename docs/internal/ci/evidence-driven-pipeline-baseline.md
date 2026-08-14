@@ -26,16 +26,20 @@ python scripts/ci/measure-actions-baseline.py `
   --created-after 2026-07-14 `
   --limit 30 `
   --api-workers 8 `
-  --input-out actions-baseline-input.json `
+  --input-out actions-baseline-input.json.gz `
   --json-out actions-baseline.json `
   --markdown-out actions-baseline.md `
   --format markdown
 ```
 
-The compact normalized input is intentionally not committed because run and
-job identifiers remain available through the summary and GitHub API, while the
-input page is over 1 MiB. Re-running from a captured input uses `--fixture` and
-does not call GitHub.
+The exact compact normalized input is committed as
+[`evidence/actions-baseline-input-2026-08-13.json.gz`](evidence/actions-baseline-input-2026-08-13.json.gz).
+This preserves job timestamps and runner labels observed while three workflows
+were still active; those historical observations cannot be recreated by
+querying the mutable runs later. Gzip output omits filename/time metadata and is
+byte-deterministic (68,751 bytes; SHA-256
+`e0036fc96ccbdc253be190481de1f4a7eb8dcb9d453f8530660ebfddb4e5493e`).
+Re-running with that file as `--fixture` does not call GitHub.
 
 ## Results
 

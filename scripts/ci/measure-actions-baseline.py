@@ -22,6 +22,7 @@ wall duration up to a minute. Raw summed job time is always reported beside it.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 import subprocess
@@ -288,6 +289,25 @@ def compact_dataset(dataset: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def read_json_path(path: Path) -> dict[str, Any]:
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return json.load(handle)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_text_path(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == ".gz":
+        # Omit filename and wall-clock metadata so the same normalized input
+        # has byte-identical compressed evidence on every platform/run.
+        with path.open("wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+                compressed.write(text.encode("utf-8"))
+        return
+    path.write_text(text, encoding="utf-8")
+
+
 def gh_pages(endpoint: str) -> list[dict[str, Any]]:
     process = subprocess.run(
         ["gh", "api", "--paginate", "--slurp", endpoint],
@@ -460,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.api_workers < 1 or args.api_workers > 16:
         parser.error("--api-workers must be between 1 and 16")
     if args.fixture:
-        dataset = json.loads(args.fixture.read_text(encoding="utf-8"))
+        dataset = read_json_path(args.fixture)
     else:
         if not args.workflow:
             parser.error("live mode requires at least one --workflow")
@@ -473,8 +493,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
     if args.input_out:
-        args.input_out.parent.mkdir(parents=True, exist_ok=True)
-        args.input_out.write_text(json.dumps(dataset, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        write_text_path(args.input_out, json.dumps(dataset, indent=2, sort_keys=True) + "\n")
     json_text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     markdown_text = render_markdown(report) + "\n"
     if args.json_out:
