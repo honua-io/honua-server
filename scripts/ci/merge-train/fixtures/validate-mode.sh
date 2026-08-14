@@ -89,3 +89,16 @@ if grep -Eq -- '-f use_(llm|autofix)=true' <<<"${self_chain_step}"; then
   exit 1
 fi
 printf 'PASS: self-chain preserves deterministic LLM/autofix defaults\n'
+
+# Batch size is an operator safety bound for the whole continuous drain, not a
+# one-run hint. A bounded recovery/landing must not silently widen on the first
+# continuation.
+grep -Fq 'CHAIN_MAX_BATCH: ${{ steps.mode.outputs.max_batch }}' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not inherit the resolved batch bound\n' >&2; exit 1; }
+grep -Fq -- '-f max_batch="${CHAIN_MAX_BATCH}"' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain dispatch does not use the inherited batch bound\n' >&2; exit 1; }
+if grep -Eq -- '-f max_batch=[0-9]+' <<<"${self_chain_step}"; then
+  printf 'FAIL: self-chain hardcodes and may widen the operator batch bound\n' >&2
+  exit 1
+fi
+printf 'PASS: self-chain preserves the operator batch bound\n'

@@ -275,6 +275,7 @@ jobs:
           # would silently never start. MERGE_TRAIN_TOKEN is a repo-admin PAT.
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           HAS_PAT: ${{ secrets.MERGE_TRAIN_TOKEN != '' }}
+          CHAIN_MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
         run: |
           if [[ "${HAS_PAT}" != "true" ]]; then
             echo "::warning::MERGE_TRAIN_TOKEN not set; a GITHUB_TOKEN dispatch won't trigger the next run. Self-chain skipped (schedule remains)."
@@ -290,8 +291,11 @@ jobs:
             # A continuation is a fresh deterministic run. Optional Bedrock
             # judgment/autofix remains an operator choice for a one-off manual
             # dispatch and must never be silently re-enabled by the drain loop.
+            # Preserve the operator's batch bound across the whole drain chain;
+            # widening a max_batch=1 recovery to ten would admit PRs the
+            # operator did not include in the bounded action.
             gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-              -f train_apply=true -f use_llm=false -f use_autofix=false -f max_batch=10
+              -f train_apply=true -f use_llm=false -f use_autofix=false -f max_batch="${CHAIN_MAX_BATCH}"
           else
             echo "No selectable PRs remain — chain stops; the */15 schedule remains as the backstop."
           fi
