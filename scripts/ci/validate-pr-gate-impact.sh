@@ -12,13 +12,11 @@ observer_workflow=.github/workflows/pr-gate-impact-observe.yml
 
 "${python_bin}" scripts/ci/classify-pr-gate-impact.test.py
 "${python_bin}" -m py_compile scripts/ci/classify-pr-gate-impact.py
+node --test scripts/ci/trusted-pr-workflow-run.test.js
 
 grep -Fq 'PR_GATE_IMPACT_MODE: observe' "${observer_workflow}"
 grep -Fq 'workflow_run:' "${observer_workflow}"
 grep -Fq 'workflows: [PR Gate]' "${observer_workflow}"
-grep -Fq "gateRun.path !== '.github/workflows/pr-gate.yml'" "${observer_workflow}"
-grep -Fq "gateRun.event !== 'pull_request'" "${observer_workflow}"
-grep -Fq "gateRun.status !== 'completed'" "${observer_workflow}"
 grep -Fq 'context.ref !== trustedRef' "${observer_workflow}"
 grep -Fq 'SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}' "${observer_workflow}"
 grep -Fq "process.env.SOURCE_RUN_ID" "${observer_workflow}"
@@ -26,12 +24,18 @@ if grep -Fq "String('\${{ inputs.run_id }}')" "${observer_workflow}"; then
   echo '::error::Manual run id must not be interpolated into trusted JavaScript.' >&2
   exit 1
 fi
-grep -Fq 'gateHead !== gateRun.head_sha' "${observer_workflow}"
-grep -Fq 'github.rest.repos.listPullRequestsAssociatedWithCommit' "${observer_workflow}"
-grep -Fq "candidate.head?.sha === gateRun.head_sha" "${observer_workflow}"
-grep -Fq 'openExact.length === 1' "${observer_workflow}"
-grep -Fq "pr.state !== 'open' || pr.base?.ref !== repository.default_branch" "${observer_workflow}"
-grep -Fq 'pr.base?.sha !== expectedBase || pr.head?.sha !== expectedHead' "${observer_workflow}"
+grep -Fq "require('./policy/scripts/ci/trusted-pr-workflow-run')" "${observer_workflow}"
+grep -Fq 'repositoryId: repository.id' "${observer_workflow}"
+grep -Fq 'github.rest.actions.listJobsForWorkflowRun' scripts/ci/trusted-pr-workflow-run.js
+grep -Fq 'github.rest.checks.get' scripts/ci/trusted-pr-workflow-run.js
+grep -Fq 'checkRun.pull_requests' scripts/ci/trusted-pr-workflow-run.js
+grep -Fq "associated.base?.ref !== defaultBranch" scripts/ci/trusted-pr-workflow-run.js
+grep -Fq 'associated.base?.repo?.id !== repositoryId' scripts/ci/trusted-pr-workflow-run.js
+grep -Fq "pullRequest.base?.sha !== associatedBase" scripts/ci/trusted-pr-workflow-run.js
+if grep -Fq 'listPullRequestsAssociatedWithCommit' scripts/ci/trusted-pr-workflow-run.js; then
+  echo '::error::Gate-time base identity must not be reconstructed from mutable commit association.' >&2
+  exit 1
+fi
 grep -Fq 'currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead' "${observer_workflow}"
 grep -Fq 'github.rest.repos.getContent' "${observer_workflow}"
 grep -Fq 'ref: context.sha' "${observer_workflow}"
