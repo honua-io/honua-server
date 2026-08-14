@@ -265,7 +265,7 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
 
         if (StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(envelope.Family))
         {
-            ValidateCompositionInteractionsAndLayout(envelope, diagnostics);
+            ValidateCompositionBlocks(envelope, diagnostics);
         }
 
         try
@@ -315,28 +315,30 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
     }
 
     /// <summary>
-    /// Gates the standard-owned <c>interactions</c>/<c>layout</c> blocks of a map/app
-    /// composition body (geospatial-mcp ADR-0030). Both blocks are OPTIONAL: a body that
-    /// declares neither produces no diagnostics. When present they must satisfy the
-    /// closed event/verb sets, the component-reference grammar, in-document reference
-    /// resolution, id uniqueness, the per-<c>(on.ref, on.event)</c> fan-out cap, and the
-    /// layout grid/placement bounds.
+    /// Gates the standard-owned <c>interactions</c>/<c>layout</c> (geospatial-mcp ADR-0030)
+    /// and <c>controls</c> (ADR-0031) blocks of a map/app composition body. All three
+    /// blocks are OPTIONAL: a body that declares none produces no diagnostics. When present
+    /// they must satisfy the closed event/verb/control-kind sets, the component-reference
+    /// grammar, in-document reference resolution, id uniqueness, the
+    /// per-<c>(on.ref, on.event)</c> fan-out cap, and the layout grid/placement bounds.
     /// </summary>
     /// <remarks>
     /// The rules are enforced HERE as well as at the composition-tool admission gate
-    /// (<see cref="StudioCompositionBodyEditor.BindInteraction"/>) because a body can be
+    /// (<see cref="StudioCompositionBodyEditor.BindInteraction"/>,
+    /// <see cref="StudioCompositionBodyEditor.AddControl"/>) because a body can be
     /// authored wholesale through the draft-update surface, which never passes through the
     /// editor. Both call the shared <see cref="StudioInteractionVocabulary"/> checks, so
     /// the two gates cannot drift.
     /// </remarks>
-    private static void ValidateCompositionInteractionsAndLayout(
+    private static void ValidateCompositionBlocks(
         StudioPackageEnvelope envelope,
         List<StudioValidationDiagnostic> diagnostics)
     {
         var body = envelope.Body!.Value;
         var hasInteractions = body.TryGetProperty("interactions", out var rawInteractions);
         var hasLayout = body.TryGetProperty("layout", out var rawLayout);
-        if (!hasInteractions && !hasLayout)
+        var hasControls = body.TryGetProperty("controls", out var rawControls);
+        if (!hasInteractions && !hasLayout && !hasControls)
         {
             return;
         }
@@ -346,6 +348,8 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                 rawInteractions,
                 hasLayout,
                 rawLayout,
+                hasControls,
+                rawControls,
                 diagnostics))
         {
             return;
@@ -365,6 +369,10 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             return;
         }
 
+        // Controls first: interaction and layout reference resolution reads the controls
+        // collection, so a diagnostic about a malformed control should not be crowded out
+        // by the unresolved-reference diagnostics it causes.
+        ValidateControls(composition, diagnostics);
         ValidateInteractions(composition, diagnostics);
         ValidateLayout(composition, diagnostics);
     }
@@ -374,6 +382,8 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         JsonElement rawInteractions,
         bool hasLayout,
         JsonElement rawLayout,
+        bool hasControls,
+        JsonElement rawControls,
         List<StudioValidationDiagnostic> diagnostics)
     {
         var canDeserialize = true;
@@ -567,6 +577,54 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             }
         }
 
+        if (hasControls)
+        {
+            if (rawControls.ValueKind != JsonValueKind.Array)
+            {
+                diagnostics.Add(Error("studio.controls.array", "/body/controls", "controls must be an array."));
+                canDeserialize = false;
+            }
+            else
+            {
+                var index = 0;
+                foreach (var control in rawControls.EnumerateArray())
+                {
+                    var path = $"/body/controls/{index}";
+                    if (!ValidateClosedObject(
+                            control,
+                            ["id", "kind", "title", "sourceId", "config"],
+                            path,
+                            "studio.control.object",
+                            "studio.control.member.unknown",
+                            diagnostics))
+                    {
+                        canDeserialize = false;
+                        index++;
+                        continue;
+                    }
+
+                    canDeserialize &= ValidateRequiredString(
+                        control, "id", path, "studio.control.id.required", diagnostics);
+                    canDeserialize &= ValidateRequiredString(
+                        control, "kind", path, "studio.control.kind.required", diagnostics);
+
+                    canDeserialize &= ValidateOptionalString(
+                        control, "title", path, "studio.control.title.string", diagnostics);
+                    canDeserialize &= ValidateOptionalString(
+                        control, "sourceId", path, "studio.control.sourceId.string", diagnostics);
+
+                    if (control.TryGetProperty("config", out var config) && config.ValueKind != JsonValueKind.Object)
+                    {
+                        diagnostics.Add(Error(
+                            "studio.control.config.object", $"{path}/config", "control config must be a JSON object."));
+                        canDeserialize = false;
+                    }
+
+                    index++;
+                }
+            }
+        }
+
         return canDeserialize;
     }
 
@@ -594,7 +652,8 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             diagnostics.Add(Error(
                 unknownMemberCode,
                 $"{path}/{EscapeJsonPointerSegment(member.Name)}",
-                $"member '{member.Name}' is not defined by the ADR-0030 composition schema."));
+                $"member '{member.Name}' is not defined by the standard composition schema "
+                + "(geospatial-mcp ADR-0030/ADR-0031)."));
         }
 
         return true;
@@ -613,6 +672,25 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         }
 
         diagnostics.Add(Error(code, $"{path}/{memberName}", $"{memberName} must be a string."));
+        return false;
+    }
+
+    private static bool ValidateOptionalString(
+        JsonElement value,
+        string memberName,
+        string path,
+        string code,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        // An absent member is legal; a present one must be a string. `null` is rejected
+        // explicitly so a stored document cannot disagree with the published schema,
+        // which allows only strings when the property is present.
+        if (!value.TryGetProperty(memberName, out var member) || member.ValueKind == JsonValueKind.String)
+        {
+            return true;
+        }
+
+        diagnostics.Add(Error(code, $"{path}/{memberName}", $"{memberName} must be a string when present."));
         return false;
     }
 
@@ -645,6 +723,93 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
 
     private static string EscapeJsonPointerSegment(string value)
         => value.Replace("~", "~0", StringComparison.Ordinal).Replace("/", "~1", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Gates the <c>controls</c> collection (geospatial-mcp ADR-0031): id present, bounded
+    /// and unique within the block, and a kind drawn from the closed vocabulary. The same
+    /// rules are enforced at the tool-admission gate by
+    /// <see cref="StudioCompositionBodyEditor.AddControl"/>.
+    /// </summary>
+    private static void ValidateControls(
+        StudioCompositionBody composition,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var controls = composition.Controls;
+        if (controls is null)
+        {
+            return;
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < controls.Count; i++)
+        {
+            var control = controls[i];
+            var path = $"/body/controls/{i}";
+            // The wire model cannot express non-null: an explicit JSON null deserializes
+            // into these `required` members regardless of their annotation.
+            if (control is null)
+            {
+                diagnostics.Add(Error("studio.control.required", path, "control must declare 'id' and 'kind'."));
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(control.Id))
+            {
+                diagnostics.Add(Error("studio.control.id.required", $"{path}/id", "control id is required."));
+            }
+            else if (control.Id.Length > StudioInteractionVocabulary.MaxControlIdLength)
+            {
+                diagnostics.Add(Error(
+                    "studio.control.id.too-long",
+                    $"{path}/id",
+                    $"control id must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer."));
+            }
+            else if (!ids.Add(control.Id))
+            {
+                diagnostics.Add(Error(
+                    "studio.control.id.duplicate",
+                    $"{path}/id",
+                    $"control id '{control.Id}' must be unique within the controls block."));
+            }
+
+            if (!StudioInteractionVocabulary.IsControlKind(control.Kind))
+            {
+                diagnostics.Add(Error(
+                    "studio.control.kind.unsupported",
+                    $"{path}/kind",
+                    $"control kind must be one of: {string.Join(", ", StudioInteractionVocabulary.ControlKinds)}."));
+            }
+
+            if (control.Title is { Length: > StudioInteractionVocabulary.MaxControlTitleLength })
+            {
+                diagnostics.Add(Error(
+                    "studio.control.title.too-long",
+                    $"{path}/title",
+                    $"control title must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer."));
+            }
+
+            if (control.SourceId is { Length: > StudioInteractionVocabulary.MaxControlSourceIdLength })
+            {
+                diagnostics.Add(Error(
+                    "studio.control.source.too-long",
+                    $"{path}/sourceId",
+                    $"control sourceId must be {StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer."));
+            }
+
+            // ADR-0031: a control's sourceId resolution is a validation-gate responsibility,
+            // as it is for layer references. An unresolvable source means the host cannot
+            // populate the affordance's domain.
+            if (control.SourceId is { Length: <= StudioInteractionVocabulary.MaxControlSourceIdLength }
+                && !StudioInteractionVocabulary.IsDeclaredSourceId(composition, control.SourceId))
+            {
+                diagnostics.Add(Error(
+                    "studio.control.source.unresolved",
+                    $"{path}/sourceId",
+                    $"control sourceId '{control.SourceId}' does not resolve to a layer or datasource declared "
+                    + "in this composition document."));
+            }
+        }
+    }
 
     private static void ValidateInteractions(
         StudioCompositionBody composition,
@@ -717,6 +882,19 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             ValidateComponentRef(composition, interaction.On.Ref, $"{path}/on/ref", "studio.interaction.ref", diagnostics);
             ValidateComponentRef(composition, interaction.Do.Ref, $"{path}/do/ref", "studio.interaction.ref", diagnostics);
 
+            if (StudioInteractionVocabulary.IsEventName(interaction.On.Event)
+                && StudioInteractionVocabulary.ResolveRef(composition, interaction.On.Ref)
+                    == StudioComponentRefResolution.Resolved
+                && !StudioInteractionVocabulary.IsEventSupportedBySource(
+                    interaction.On.Ref,
+                    interaction.On.Event))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.event.source.unsupported",
+                    $"{path}/on/event",
+                    $"component '{interaction.On.Ref}' does not emit event '{interaction.On.Event}'."));
+            }
+
             var key = (interaction.On.Ref, interaction.On.Event);
             fanOut[key] = fanOut.TryGetValue(key, out var count) ? count + 1 : 1;
         }
@@ -768,7 +946,21 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                 continue;
             }
 
-            ValidateComponentRef(composition, item.Ref, $"{path}/ref", "studio.layout.item.ref", diagnostics);
+            // Controls are chrome (docked to a map corner, a toolbar, a filter rail), not
+            // grid items — ADR-0031 keeps them out of the layout reference space even
+            // though a control:{id} ref now resolves for interactions.
+            if (StudioInteractionVocabulary.IsControlRef(item.Ref))
+            {
+                diagnostics.Add(Error(
+                    "studio.layout.item.ref.control",
+                    $"{path}/ref",
+                    $"layout items place the map and widgets; control reference '{item.Ref}' is not a grid item "
+                    + "(controls are chrome, geospatial-mcp ADR-0031)."));
+            }
+            else
+            {
+                ValidateComponentRef(composition, item.Ref, $"{path}/ref", "studio.layout.item.ref", diagnostics);
+            }
 
             if (item.X < 0 || item.Y < 0)
             {
@@ -800,7 +992,6 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         var suffix = resolution switch
         {
             StudioComponentRefResolution.Malformed => "invalid",
-            StudioComponentRefResolution.ControlsUnsupported => "control-unsupported",
             _ => "unresolved",
         };
 

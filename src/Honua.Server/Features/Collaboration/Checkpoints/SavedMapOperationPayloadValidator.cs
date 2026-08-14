@@ -113,7 +113,7 @@ internal static class SavedMapOperationPayloadValidator
     /// silently discarded property.
     /// </summary>
     private static readonly HashSet<string> ReplacementMembers =
-        new(StringComparer.Ordinal) { "layers", "view", "widgets", "interactions", "layout" };
+        new(StringComparer.Ordinal) { "layers", "view", "widgets", "interactions", "layout", "controls" };
 
     /// <summary>Members of <c>StudioCompositionLayer</c>, by <c>JsonPropertyName</c>.</summary>
     private static readonly HashSet<string> LayerMembers =
@@ -146,6 +146,10 @@ internal static class SavedMapOperationPayloadValidator
 
     private static readonly HashSet<string> LayoutItemMembers =
         new(StringComparer.Ordinal) { "ref", "x", "y", "w", "h" };
+
+    /// <summary>Members of the ADR-0031 control wire object.</summary>
+    private static readonly HashSet<string> ControlMembers =
+        new(StringComparer.Ordinal) { "id", "kind", "title", "sourceId", "config" };
 
     /// <summary>Members of a style patch payload; unknown casing is a caller typo, not a clear.</summary>
     private static readonly HashSet<string> StylePatchMembers =
@@ -234,6 +238,7 @@ internal static class SavedMapOperationPayloadValidator
         if (!TryRejectUnmappedMembers(payload, ReplacementMembers, "The document-replace payload", out error)
             || !TryRejectUnmappedArrayMembers(payload, "layers", LayerMembers, "A layer in the document-replace payload", out error)
             || !TryRejectUnmappedArrayMembers(payload, "widgets", WidgetMembers, "A widget in the document-replace payload", out error)
+            || !TryValidateReplacementControls(payload, out error)
             || !TryValidateReplacementInteractions(payload, out error)
             || !TryValidateReplacementLayout(payload, out error))
         {
@@ -257,7 +262,8 @@ internal static class SavedMapOperationPayloadValidator
         catch (JsonException)
         {
             error = "The document-replace payload is not a valid Studio composition body; " +
-                "expected an object with optional 'layers', 'view', 'widgets', 'interactions' and 'layout' members.";
+                "expected an object with optional 'layers', 'view', 'widgets', 'interactions', 'layout' " +
+                "and 'controls' members.";
             return false;
         }
 
@@ -340,10 +346,28 @@ internal static class SavedMapOperationPayloadValidator
             {
                 return false;
             }
+
+            if (!StudioInteractionVocabulary.IsEventSupportedBySource(
+                    interaction.On.Ref,
+                    interaction.On.Event))
+            {
+                error = $"The document-replace payload's component '{interaction.On.Ref}' does not emit "
+                    + $"event '{interaction.On.Event}'.";
+                return false;
+            }
         }
 
         foreach (var item in body.Layout?.Items ?? [])
         {
+            // Controls are chrome, not grid items (ADR-0031), so they stay out of the
+            // layout reference space even though control:{id} now resolves elsewhere.
+            if (StudioInteractionVocabulary.IsControlRef(item.Ref))
+            {
+                error = $"The document-replace payload's layout item ref '{item.Ref}' is invalid: layout items "
+                    + "place the map and widgets; controls are chrome and are not grid items.";
+                return false;
+            }
+
             if (!TryValidateReplacementComponentRef(body, item.Ref, "layout item ref", out error))
             {
                 return false;
@@ -382,6 +406,98 @@ internal static class SavedMapOperationPayloadValidator
         error = $"The document-replace payload's {subject} is invalid: "
             + StudioInteractionVocabulary.DescribeResolution(reference, resolution);
         return false;
+    }
+
+    /// <summary>
+    /// Admits the ADR-0031 <c>controls</c> collection on a document-replace payload with
+    /// the same rules the Studio composition gates enforce: closed wire members, a
+    /// non-empty bounded id unique within the block, and a kind from the closed
+    /// vocabulary. Controls have to be admitted here as well as by the composition tools,
+    /// because an interaction bound to <c>control:{id}</c> only resolves when the same
+    /// replacement carries the control.
+    /// </summary>
+    private static bool TryValidateReplacementControls(JsonElement payload, out string error)
+    {
+        if (!payload.TryGetProperty("controls", out var controls))
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        if (controls.ValueKind != JsonValueKind.Array)
+        {
+            error = "The document-replace payload's 'controls' must be an array.";
+            return false;
+        }
+
+        var controlIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var control in controls.EnumerateArray())
+        {
+            const string subject = "A control in the document-replace payload";
+            if (control.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject} must be an object.";
+                return false;
+            }
+
+            if (!TryRejectUnmappedMembers(control, ControlMembers, subject, out error)
+                || !TryValidateRequiredString(control, "id", out error)
+                || !TryValidateRequiredString(control, "kind", out error))
+            {
+                return false;
+            }
+
+            var controlId = control.GetProperty("id").GetString()!;
+            if (controlId.Length > StudioInteractionVocabulary.MaxControlIdLength)
+            {
+                error = $"{subject}'s 'id' must be "
+                    + $"{StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.";
+                return false;
+            }
+
+            if (!controlIds.Add(controlId))
+            {
+                error = $"The document-replace payload repeats control id '{controlId}'; control ids must be unique.";
+                return false;
+            }
+
+            if (control.TryGetProperty("title", out var title)
+                && title.ValueKind != JsonValueKind.Null
+                && (title.ValueKind != JsonValueKind.String
+                    || title.GetString()!.Length > StudioInteractionVocabulary.MaxControlTitleLength))
+            {
+                error = $"{subject}'s 'title' must be a string of "
+                    + $"{StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.";
+                return false;
+            }
+
+            if (control.TryGetProperty("sourceId", out var sourceId)
+                && sourceId.ValueKind != JsonValueKind.Null
+                && (sourceId.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(sourceId.GetString())
+                    || sourceId.GetString()!.Length > StudioInteractionVocabulary.MaxControlSourceIdLength))
+            {
+                error = $"{subject}'s 'sourceId' must be a non-empty string of "
+                    + $"{StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer.";
+                return false;
+            }
+
+            if (!StudioInteractionVocabulary.IsControlKind(control.GetProperty("kind").GetString()))
+            {
+                error = $"{subject}'s 'kind' must be one of: "
+                    + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}.";
+                return false;
+            }
+
+            if (control.TryGetProperty("config", out var config) && config.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject}'s 'config' must be an object.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
     }
 
     private static bool TryValidateReplacementInteractions(JsonElement payload, out string error)

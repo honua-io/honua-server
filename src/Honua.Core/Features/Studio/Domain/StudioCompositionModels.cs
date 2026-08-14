@@ -58,6 +58,66 @@ public sealed record StudioCompositionBody
     /// </summary>
     [JsonPropertyName("layout")]
     public StudioLayout? Layout { get; init; }
+
+    /// <summary>
+    /// Input affordances declared by this composition document — the collection a
+    /// <c>control:{id}</c> reference resolves against (geospatial-mcp ADR-0031,
+    /// <c>common/controls.schema.json</c>). Null when the document declares no controls;
+    /// see the <see cref="Interactions"/> remarks for why the member is nullable rather
+    /// than empty-by-default.
+    /// </summary>
+    [JsonPropertyName("controls")]
+    public IReadOnlyList<StudioCompositionControl>? Controls { get; init; }
+
+    /// <summary>
+    /// Canonical map-package source binding identifiers projected from the stored
+    /// <c>sourceBindings</c> block. This validation-only projection is not serialized;
+    /// <c>StudioCompositionBodyEditor</c> preserves the original block verbatim.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlySet<string> SourceBindingIds { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// One control entry in a composition document's <c>controls</c> collection
+/// (geospatial-mcp ADR-0031, <c>common/controls.schema.json#/$defs/control</c>).
+/// A control is an INPUT affordance: it renders no dataset, emits the closed
+/// vocabulary's <c>change</c> event when the user operates it, and is chrome
+/// rather than a <see cref="StudioLayout"/> grid item. The entry shape deliberately
+/// mirrors <see cref="StudioCompositionWidget"/> so agents author both collections
+/// the same way.
+/// </summary>
+public sealed record StudioCompositionControl
+{
+    /// <summary>Stable control identifier, unique within the composition's controls block.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Control kind from the closed ADR-0031 vocabulary
+    /// (<see cref="StudioInteractionVocabulary.ControlKinds"/>).
+    /// </summary>
+    [JsonPropertyName("kind")]
+    public required string Kind { get; init; }
+
+    /// <summary>Host-rendered label. Hosts fall back to a per-kind default when omitted.</summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    /// <summary>
+    /// Identifier of the layer or datasource the control reads its domain from.
+    /// Data-binding kinds normally set it; presentation-only kinds omit it.
+    /// </summary>
+    [JsonPropertyName("sourceId")]
+    public string? SourceId { get; init; }
+
+    /// <summary>
+    /// Per-kind, host-interpreted configuration. Data, never code: it carries no
+    /// expression language and grants no capability the composition surface does not
+    /// already have.
+    /// </summary>
+    [JsonPropertyName("config")]
+    public JsonElement? Config { get; init; }
 }
 
 /// <summary>
@@ -192,13 +252,6 @@ public enum StudioComponentRefResolution
 
     /// <summary>The reference is well-formed but names no component in the document.</summary>
     Unresolved = 2,
-
-    /// <summary>
-    /// The reference is a well-formed <c>control:{id}</c> reference. Studio composition
-    /// documents declare no controls collection, so a control reference can never resolve
-    /// here and is reported distinctly from an ordinary unresolved reference.
-    /// </summary>
-    ControlsUnsupported = 3,
 }
 
 /// <summary>
@@ -238,6 +291,15 @@ public static class StudioInteractionVocabulary
     /// <summary>Largest accepted interaction identifier length.</summary>
     public const int MaxInteractionIdLength = 200;
 
+    /// <summary>Largest accepted control identifier length (ADR-0031 <c>control.id</c>).</summary>
+    public const int MaxControlIdLength = 200;
+
+    /// <summary>Largest accepted control title length (ADR-0031 <c>control.title</c>).</summary>
+    public const int MaxControlTitleLength = 200;
+
+    /// <summary>Largest accepted control source identifier length (ADR-0031 <c>control.sourceId</c>).</summary>
+    public const int MaxControlSourceIdLength = 200;
+
     /// <summary>Smallest accepted <see cref="StudioLayoutGrid.Columns"/>.</summary>
     public const int MinGridColumns = 1;
 
@@ -266,9 +328,102 @@ public static class StudioInteractionVocabulary
     public static bool IsEventName(string? value) =>
         value is not null && EventNames.Contains(value, StringComparer.Ordinal);
 
+    /// <summary>
+    /// Returns whether an event belongs to the component type named by its source reference.
+    /// Maps emit <c>viewportChange</c>, layers emit feature selection/hover, widgets emit
+    /// <c>selection</c>, and controls emit <c>change</c>.
+    /// </summary>
+    public static bool IsEventSupportedBySource(string? reference, string? eventName)
+        => reference switch
+        {
+            MapRef => string.Equals(eventName, "viewportChange", StringComparison.Ordinal),
+            not null when reference.StartsWith(LayerRefPrefix, StringComparison.Ordinal) =>
+                string.Equals(eventName, "featureSelect", StringComparison.Ordinal)
+                || string.Equals(eventName, "featureHover", StringComparison.Ordinal),
+            not null when reference.StartsWith(WidgetRefPrefix, StringComparison.Ordinal) =>
+                string.Equals(eventName, "selection", StringComparison.Ordinal),
+            not null when reference.StartsWith(ControlRefPrefix, StringComparison.Ordinal) =>
+                string.Equals(eventName, "change", StringComparison.Ordinal),
+            _ => false,
+        };
+
+    /// <summary>
+    /// The closed control-kind set (geospatial-mcp ADR-0031,
+    /// <c>common/controls.schema.json#/$defs/controlKind</c>). Map affordances:
+    /// <c>navigation</c>, <c>scale</c>, <c>fullscreen</c>, <c>geolocate</c>, <c>search</c>,
+    /// <c>measure</c>, <c>attribution</c>, <c>basemapSwitcher</c>, <c>bookmarks</c>;
+    /// data-binding affordances that emit <c>change</c>: <c>timeSlider</c>,
+    /// <c>filterSelect</c>, <c>filterSlider</c>, <c>filterDateRange</c>, <c>opacity</c>.
+    /// There is deliberately NO feature-editing draw kind — autonomous agent mutation of
+    /// source records stays behind the governed <c>edit_features</c> surface (ADR-0028).
+    /// Extending the set requires a standard ADR.
+    /// </summary>
+    public static IReadOnlyList<string> ControlKinds { get; } =
+    [
+        "navigation",
+        "scale",
+        "fullscreen",
+        "geolocate",
+        "search",
+        "measure",
+        "timeSlider",
+        "filterSelect",
+        "filterSlider",
+        "filterDateRange",
+        "bookmarks",
+        "opacity",
+        "attribution",
+        "basemapSwitcher",
+    ];
+
     /// <summary>Returns true when <paramref name="value"/> is a member of the closed verb set.</summary>
     public static bool IsActionVerb(string? value) =>
         value is not null && ActionVerbs.Contains(value, StringComparer.Ordinal);
+
+    /// <summary>Returns true when <paramref name="value"/> is a member of the closed control-kind set.</summary>
+    public static bool IsControlKind(string? value) =>
+        value is not null && ControlKinds.Contains(value, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Returns true when <paramref name="value"/> is a well-formed <c>control:{id}</c>
+    /// reference (grammar only). Controls are chrome rather than layout grid items, so the
+    /// layout gate uses this to keep them out of the <c>layout.items</c> reference space
+    /// even though they now resolve for interactions.
+    /// </summary>
+    public static bool IsControlRef(string? value) =>
+        value is not null && HasNonEmptyId(value, ControlRefPrefix);
+
+    /// <summary>
+    /// Resolves a <see cref="StudioCompositionControl.SourceId"/> against the layers and
+    /// datasources <paramref name="body"/> declares (geospatial-mcp ADR-0031: a control's
+    /// source identifier resolution is a validation-gate responsibility, "as for layer
+    /// references").
+    /// </summary>
+    /// <remarks>
+    /// A composition document declares its data surface through <see cref="StudioCompositionBody.Layers"/>
+    /// only — there is no separate datasources collection — so a control's source resolves
+    /// against either a layer's <see cref="StudioCompositionLayer.Id"/> (the layer itself)
+    /// or its <see cref="StudioCompositionLayer.SourceId"/> (the datasource that layer
+    /// binds). Both spellings are legitimate: a <c>filterSelect</c> populated from a
+    /// composed layer names the layer, while one reading a datasource the document already
+    /// binds names that source.
+    /// </remarks>
+    /// <param name="body">The composition document the source identifier must resolve within.</param>
+    /// <param name="sourceId">The source identifier to resolve.</param>
+    /// <returns><see langword="true"/> when the identifier names a declared layer or datasource.</returns>
+    public static bool IsDeclaredSourceId(StudioCompositionBody body, string? sourceId)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            return false;
+        }
+
+        return body.SourceBindingIds.Contains(sourceId)
+            || (body.Layers ?? []).Any(layer => layer is not null
+            && (string.Equals(layer.Id, sourceId, StringComparison.Ordinal)
+                || string.Equals(layer.SourceId, sourceId, StringComparison.Ordinal)));
+    }
 
     /// <summary>
     /// Returns true when <paramref name="value"/> matches the component-reference
@@ -285,8 +440,9 @@ public static class StudioInteractionVocabulary
     /// <summary>
     /// Resolves a component reference against <paramref name="body"/>: <c>map</c> always
     /// resolves, <c>layer:{id}</c> resolves against the document's layers,
-    /// <c>widget:{id}</c> against its widgets, and <c>control:{id}</c> never resolves
-    /// (Studio composition documents declare no controls collection).
+    /// <c>widget:{id}</c> against its widgets, and <c>control:{id}</c> against its
+    /// controls (geospatial-mcp ADR-0031 — before the controls collection existed a
+    /// control reference could never resolve).
     /// </summary>
     /// <param name="body">The composition document the reference must resolve within.</param>
     /// <param name="value">The reference to resolve.</param>
@@ -306,7 +462,11 @@ public static class StudioInteractionVocabulary
 
         if (value!.StartsWith(ControlRefPrefix, StringComparison.Ordinal))
         {
-            return StudioComponentRefResolution.ControlsUnsupported;
+            var controlId = value[ControlRefPrefix.Length..];
+            return (body.Controls ?? []).Any(control => control is not null
+                    && string.Equals(control.Id, controlId, StringComparison.Ordinal))
+                ? StudioComponentRefResolution.Resolved
+                : StudioComponentRefResolution.Unresolved;
         }
 
         if (value.StartsWith(LayerRefPrefix, StringComparison.Ordinal))
@@ -338,9 +498,6 @@ public static class StudioInteractionVocabulary
         StudioComponentRefResolution.Resolved => string.Empty,
         StudioComponentRefResolution.Malformed =>
             $"Component reference '{value}' is not a valid reference; use 'map', 'layer:{{id}}', 'widget:{{id}}' or 'control:{{id}}'.",
-        StudioComponentRefResolution.ControlsUnsupported =>
-            $"Component reference '{value}' cannot resolve: Studio composition documents declare no controls collection, "
-            + "so control references are not supported. Bind the interaction to 'map', a 'layer:{id}' or a 'widget:{id}' instead.",
         _ => $"Component reference '{value}' does not resolve to a component declared in this composition document.",
     };
 

@@ -108,6 +108,11 @@ public sealed partial class McpTaxonomyAlignmentTests
             // their live required set is a superset of the standard's.
             ["honua_studio_bind_interaction"] = "bind_interaction",
             ["honua_studio_remove_interaction"] = "remove_interaction",
+            // Composition controls (geospatial-mcp ADR-0031, same opt-in 'composition'
+            // profile): Honua is the reference implementation of add_control/remove_control,
+            // so these map onto published standard schemas too.
+            ["honua_studio_add_control"] = "add_control",
+            ["honua_studio_remove_control"] = "remove_control",
         };
 
     /// <summary>
@@ -127,6 +132,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             ["honua_studio_bind_interaction"] = ["draftId", "generation"],
             ["honua_studio_remove_interaction"] = ["draftId", "generation"],
+            ["honua_studio_add_control"] = ["draftId", "generation"],
+            ["honua_studio_remove_control"] = ["draftId", "generation"],
         };
 
     /// <summary>
@@ -433,6 +440,83 @@ public sealed partial class McpTaxonomyAlignmentTests
             .Should().BeEquivalentTo(standardEvents);
         EnumStrings(liveInteraction.GetProperty("do").GetProperty("properties").GetProperty("verb"))
             .Should().BeEquivalentTo(standardVerbs);
+    }
+
+    [UnitTest]
+    public void CompositionControls_ClosedKindVocabulary_MatchesTheStandard()
+    {
+        // ADR-0031 pins the control-kind set CLOSED — extending it requires a standard ADR,
+        // and the exclusion of a feature-editing draw kind is a deliberate ADR-0028 boundary,
+        // so a live set that merely SUBSETS the standard's would silently drop kinds while a
+        // superset would smuggle one in. Assert equality of the domain vocabulary (what the
+        // editor and validator enforce) and of the advertised schema enum.
+        using var doc = JsonDocument.Parse(
+            File.ReadAllText(Path.Join(SchemaRoot, "common", "controls.schema.json")));
+        var standardKinds = EnumStrings(doc.RootElement.GetProperty("$defs").GetProperty("controlKind"));
+
+        StudioInteractionVocabulary.ControlKinds.Should().BeEquivalentTo(standardKinds,
+            "the live control-kind set is closed and must equal the standard's");
+        standardKinds.Should().NotContain("draw",
+            "ADR-0031 deliberately admits no feature-editing draw control (ADR-0028)");
+
+        EnumStrings(StudioMcpSchemas.AddControlArgumentSchema
+                .GetProperty("properties").GetProperty("control").GetProperty("properties").GetProperty("kind"))
+            .Should().BeEquivalentTo(standardKinds);
+    }
+
+    [UnitTest]
+    public void CompositionControlIdSchemas_RejectWhitespaceLikeTheHandlers()
+    {
+        var addInput = JObject.Parse("""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "control": { "id": " ", "kind": "filterSelect" }
+            }
+            """);
+        var removeInput = JObject.Parse("""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "controlId": " "
+            }
+            """);
+
+        var liveAdd = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.AddControlArgumentSchema));
+        var liveRemove = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.RemoveControlArgumentSchema));
+        // The standard schemas are asserted alongside the live ones so a published
+        // conformance contract can never accept an id the handler rejects — the same
+        // pairing the interaction ids get below.
+        var standardAdd = LoadSchema(Path.Join(SchemaRoot, "tools", "add_control.schema.json"));
+        var standardRemove = LoadSchema(Path.Join(SchemaRoot, "tools", "remove_control.schema.json"));
+
+        addInput.IsValid(liveAdd).Should().BeFalse();
+        addInput.IsValid(standardAdd).Should().BeFalse();
+        removeInput.IsValid(liveRemove).Should().BeFalse();
+        removeInput.IsValid(standardRemove).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void CompositionControlSourceIdSchemas_MatchTheRuntimeLengthLimit()
+    {
+        var oversizedSourceId = new string('s', 201);
+        var input = JObject.Parse(
+            $$"""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "control": {
+                "id": "filter",
+                "kind": "filterSelect",
+                "sourceId": "{{oversizedSourceId}}"
+              }
+            }
+            """);
+        var live = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.AddControlArgumentSchema));
+        var standard = LoadSchema(Path.Join(SchemaRoot, "tools", "add_control.schema.json"));
+
+        input.IsValid(live).Should().BeFalse();
+        input.IsValid(standard).Should().BeFalse();
     }
 
     [UnitTest]
