@@ -108,6 +108,8 @@ def bind_metrics(metrics: list[dict], jobs: list[dict], *, attempt: int) -> dict
         interval = intervals.get(key)
         if interval is None:
             raise ValueError(f"missing hosted interval for {key}")
+        if interval["conclusion"] != "success":
+            raise ValueError(f"hosted interval was not successful for {key}")
         value = dict(metric)
         value["job_start_epoch_ms"] = interval["start_ms"]
         value["job_elapsed_ms"] = interval["elapsed_ms"]
@@ -184,7 +186,6 @@ def summarize(
         item
         for item in producer_jobs
         if item["attempt"] == producer_attempt
-        and item["conclusion"] == "success"
         and (
             item["name"] == "Plan bounded exact-head prebuild"
             or item["name"].startswith("Prebuild repeated project / ")
@@ -193,12 +194,22 @@ def summarize(
     if not external_jobs:
         raise ValueError("producer hosted timing evidence is missing")
     expected_projects = set(plan.get("reused_projects", []))
-    observed_projects = {
-        item.get("project")
+    plan_jobs = [item for item in external_jobs if item["name"] == "Plan bounded exact-head prebuild"]
+    project_jobs = [item for item in external_jobs if item["name"].startswith("Prebuild repeated project / ")]
+    if len(plan_jobs) != 1 or len(project_jobs) != len(expected_projects):
+        raise ValueError("producer hosted interval set is incomplete or duplicated")
+    unsuccessful_producer_jobs = [item["name"] for item in external_jobs if item["conclusion"] != "success"]
+    if unsuccessful_producer_jobs:
+        raise ValueError(f"producer hosted interval was not successful: {unsuccessful_producer_jobs}")
+    matching_producer_metrics = [
+        item
         for item in producer_metrics
         if item.get("head_sha") == head_sha and item.get("run_attempt") == producer_attempt
-    }
-    producer_evidence_ok = expected_projects <= observed_projects
+    ]
+    observed_projects = [item.get("project") for item in matching_producer_metrics]
+    if len(observed_projects) != len(set(observed_projects)):
+        raise ValueError("producer metric project evidence is duplicated")
+    producer_evidence_ok = set(observed_projects) == expected_projects
     producer_ready_before_candidate = max(item["end_ms"] for item in external_jobs) <= min(
         item["job_start_epoch_ms"] for item in candidate
     )

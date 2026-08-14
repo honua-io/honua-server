@@ -112,4 +112,30 @@ values[5][1]["elapsed_ms"] = 600_001
 values[5][1]["end_ms"] = values[5][1]["start_ms"] + 600_001
 assert not summarize(values)["rounded_runner_minutes_ok"]
 
+for interval in (0, 2):
+    values = inputs()
+    values[4][interval]["conclusion"] = "failure"
+    try:
+        summarize(values)
+        raise AssertionError("failed benchmark interval was accepted")
+    except ValueError as error:
+        assert "hosted interval was not successful" in str(error)
+
+for interval in (0, 1):
+    values = inputs()
+    values[5][interval]["conclusion"] = "failure"
+    try:
+        summarize(values)
+        raise AssertionError("failed producer interval was accepted")
+    except ValueError as error:
+        assert "producer hosted interval was not successful" in str(error)
+
+values = inputs()
+values[5].append(job("Prebuild repeated project / duplicate", 2_000, 30_000))
+try:
+    summarize(values)
+    raise AssertionError("duplicate producer interval was accepted")
+except ValueError as error:
+    assert "interval set is incomplete or duplicated" in str(error)
+
 print("server-test-prebuild-benchmark-summary=ok")
