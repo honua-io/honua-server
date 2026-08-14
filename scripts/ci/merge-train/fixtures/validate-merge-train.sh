@@ -1523,6 +1523,7 @@ git checkout -q origin/trunk 2>/dev/null || true
 echo
 echo "== Single merge authority static guard =="
 node --test \
+  "${REAL_ROOT}/scripts/ci/review-first-dispatch.test.js" \
   "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
   "${REAL_ROOT}/scripts/ci/review-gate-snapshot.test.js" \
   && ok "review gate: evidence and pagination fixtures" \
