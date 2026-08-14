@@ -366,9 +366,10 @@ def render_markdown(summary: dict[str, Any]) -> str:
     ]
     for workflow in summary["workflows"]:
         counts = workflow["counts"]
+        failure_count = sum(counts.get(conclusion, 0) for conclusion in FAILURE_CONCLUSIONS)
         lines.append(
             f"| {workflow['name']} | {workflow['sampled_runs']} | {counts.get('success', 0)} | "
-            f"{counts.get('failure', 0) + counts.get('timed_out', 0)} | {counts.get('cancelled', 0)} | "
+            f"{failure_count} | {counts.get('cancelled', 0)} | "
             f"{fmt_seconds(workflow['queue_seconds']['p90'])} | "
             f"{fmt_seconds(workflow['successful_critical_path_seconds']['p90'])} | "
             f"{fmt_seconds(workflow['time_to_first_failure_seconds']['p50'])} | "

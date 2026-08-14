@@ -4,7 +4,10 @@ This is the pre-change measurement for ADR-0074 and #3213. It was collected at
 2026-08-14T02:23:39Z from the most recent 30 runs created on or after 2026-07-14
 for each declared workflow. The machine-readable summary is
 [`evidence/actions-baseline-2026-08-13.json`](evidence/actions-baseline-2026-08-13.json)
-(SHA-256 `2d9891aef42b7214baf103e361566da61e0eb8bc74b06ada3ee7d5d0a7cf79a0`).
+(canonical Git blob SHA-256
+`d2578c8235b03990b577e19f018f94e362bc809f3b7abbfc704bda174c42bf57`).
+The digest is over the committed LF-normalized blob, not a checkout transformed
+by platform line-ending settings.
 
 ## Reproduce
 

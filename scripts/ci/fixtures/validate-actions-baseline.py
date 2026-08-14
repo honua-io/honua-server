@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -65,6 +66,31 @@ def main() -> int:
     require(markdown_run.returncode == 0, markdown_run.stderr)
     require("| PR Gate | 4 | 1 | 1 | 1 |" in markdown_run.stdout, "Markdown summary counts drifted")
     require("not GitHub invoice data" in markdown_run.stdout, "estimate disclaimer is missing")
+
+    spec = importlib.util.spec_from_file_location("measure_actions_baseline", COLLECTOR)
+    require(spec is not None and spec.loader is not None, "collector module could not be loaded")
+    collector = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(collector)
+    terminal_failure_markdown = collector.render_markdown({
+        "repository": "honua-io/honua-server",
+        "created_after": None,
+        "sample_limit_per_workflow": 2,
+        "workflows": [{
+            "name": "Terminal failures",
+            "sampled_runs": 2,
+            "counts": {"action_required": 1, "startup_failure": 1},
+            "queue_seconds": {"p90": None},
+            "successful_critical_path_seconds": {"p90": None},
+            "time_to_first_failure_seconds": {"p50": None},
+            "runner_minutes": 0.0,
+            "estimated_rounded_linux_minutes": 0,
+            "cancelled_runner_minutes": 0.0,
+        }],
+    })
+    require(
+        "| Terminal failures | 2 | 0 | 2 | 0 |" in terminal_failure_markdown,
+        "Markdown omitted recognized terminal failure conclusions",
+    )
 
     with tempfile.TemporaryDirectory() as directory:
         json_path = Path(directory) / "report.json"
