@@ -26,6 +26,11 @@ if grep -Fq "String('\${{ inputs.run_id }}')" "${observer_workflow}"; then
 fi
 grep -Fq "require('./policy/scripts/ci/trusted-pr-workflow-run')" "${observer_workflow}"
 grep -Fq 'repositoryId: repository.id' "${observer_workflow}"
+grep -Fq '  checks: read' "${observer_workflow}"
+if grep -Eq '^  [a-z-]+: write$' "${observer_workflow}"; then
+  echo '::error::Observe-only workflow gained write permission.' >&2
+  exit 1
+fi
 grep -Fq 'github.rest.actions.listJobsForWorkflowRun' scripts/ci/trusted-pr-workflow-run.js
 grep -Fq 'github.rest.checks.get' scripts/ci/trusted-pr-workflow-run.js
 grep -Fq 'checkRun.pull_requests' scripts/ci/trusted-pr-workflow-run.js
