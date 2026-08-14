@@ -1,0 +1,82 @@
+name: Derived Artifact Normalization
+
+# Untrusted producer. It may execute pull-request code, but can only read the
+# repository/packages and upload a bounded data artifact. The default-branch
+# consumer validates that artifact without executing anything from this head.
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/generate-feature-catalog.sh'
+      - 'scripts/generate-geoservices-parity.sh'
+      - 'scripts/ci/capability-impact.py'
+      - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/normalization-envelope.py'
+      - 'docs/cite-status.md'
+      - 'docs/gis/**'
+      - '*.sln'
+      - '**/*.props'
+      - '**/*.targets'
+      - 'global.json'
+      - 'NuGet.config'
+      - '.github/actions/setup-dotnet-ci/**'
+      - '.github/workflows/normalize-derived-artifacts.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: normalization-producer-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  produce:
+    name: Produce data-only normalization envelope
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Regenerate governed projections
+        run: |
+          bash scripts/generate-feature-catalog.sh --configuration Release -m:1
+          bash scripts/generate-geoservices-parity.sh --configuration Release -m:1 --no-build --no-restore
+          python3 scripts/ci/generate-capability-matrix.py
+
+      - name: Build bounded normalization envelope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 scripts/ci/normalization-envelope.py build \
+            --repo-root . \
+            --repository "${GITHUB_REPOSITORY}" \
+            --pull-request "${PR_NUMBER}" \
+            --source-sha "${HEAD_SHA}" \
+            --base-sha "${BASE_SHA}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --output "${RUNNER_TEMP}/normalization-envelope.json"
+
+      - name: Upload data-only normalization envelope
+        uses: actions/upload-artifact@v7
+        with:
+          name: normalization-envelope-${{ github.run_id }}
+          path: ${{ runner.temp }}/normalization-envelope.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9

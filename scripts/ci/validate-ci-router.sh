@@ -34,6 +34,9 @@ source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 echo "Validating review-first PR Gate transition..."
 scripts/ci/validate-review-first-dispatch.sh
 
+echo "Validating data-only derived-artifact normalization..."
+scripts/ci/validate-normalization-contract.sh
+
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
