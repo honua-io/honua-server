@@ -75,6 +75,21 @@ that, production routing remains guarded and reversible until 30 post-enforcemen
 observations confirm the latency and minute reductions. The current independent
 restore/build path remains the rollback authority throughout.
 
+Automatic producer observations are availability evidence, not parity. After a
+successful exact-head PR Gate, the read-only
+`Server Test Prebuild Parity Observation` workflow may make one lookup for the
+already-completed observer artifact. For each bounded repeated project it runs
+the registered proof selection once from an independent restore/build and once
+from the validated prebuild, then compares stable filter, test identity, count,
+and outcome digests. It also records complete hosted producer, baseline, and
+candidate intervals. A missing or rejected artifact falls back locally and is
+reported as non-countable; the workflow never polls, publishes a status,
+dispatches another workflow, or changes the authoritative PR Gate result.
+
+The 20-run promotion input counts only distinct representative exact heads whose
+parity artifact says `countable: true`. Producer-only, skipped, fallback,
+incomplete, duplicate, or contradictory observations do not advance the count.
+
 ## Hosted procedure
 
 After these workflows reach the default branch, leave
