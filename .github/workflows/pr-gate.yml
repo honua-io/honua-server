@@ -19,6 +19,7 @@ on:
 permissions:
   contents: read
   packages: read
+  pull-requests: read
   statuses: read
 
 concurrency:
@@ -33,6 +34,9 @@ env:
   # Keep synchronized with review-gate.yml; the admission validator fails on
   # drift. Rollback is the inverse one-line change back to `observe`.
   REVIEW_FIRST_MODE: observe
+  # Observation only. `full` remains authoritative until #3235's shadow and
+  # hosted promotion thresholds pass; this value changes no step decision.
+  PR_GATE_IMPACT_MODE: observe
 
 jobs:
   pr-gate:
@@ -43,6 +47,78 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
+
+      - id: impact-input
+        name: Collect exact PR change metadata for impact observation
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const number = context.payload.pull_request?.number;
+              const expectedBase = context.payload.pull_request?.base?.sha;
+              const expectedHead = context.payload.pull_request?.head?.sha;
+              if (!number || !expectedBase || !expectedHead) {
+                throw new Error('pull request identity is incomplete');
+              }
+              const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+              if (pr.base.sha !== expectedBase || pr.head.sha !== expectedHead) {
+                throw new Error('pull request moved while collecting changed files');
+              }
+              const files = await github.paginate(
+                github.rest.pulls.listFiles,
+                { ...context.repo, pull_number: number, per_page: 100 },
+              );
+              fs.writeFileSync('pr-gate-impact-input.json', JSON.stringify({
+                repository: `${context.repo.owner}/${context.repo.repo}`,
+                pull_request: number,
+                base_sha: expectedBase,
+                head_sha: expectedHead,
+                changed_files: pr.changed_files,
+                files: files.map((item) => ({
+                  filename: item.filename,
+                  previous_filename: item.previous_filename,
+                  status: item.status,
+                })),
+              }));
+            } catch (error) {
+              core.warning(`PR Gate impact observation unavailable: ${error.message}`);
+              fs.writeFileSync('pr-gate-impact-input.json', JSON.stringify({
+                unavailable_reason: 'change-metadata-unavailable',
+                files: [],
+              }));
+            }
+
+      - name: Record non-authoritative PR Gate impact observation
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/classify-pr-gate-impact.py \
+            --input pr-gate-impact-input.json \
+            --output pr-gate-impact-observation.json
+          mode="$(jq -r '.mode' pr-gate-impact-observation.json)"
+          reason="$(jq -r '.reason' pr-gate-impact-observation.json)"
+          files="$(jq -r '.changed_file_count' pr-gate-impact-observation.json)"
+          {
+            echo '### PR Gate impact observation'
+            echo "- Rollout: \`${PR_GATE_IMPACT_MODE}\`"
+            echo "- Would route: \`${mode}\`"
+            echo "- Reason: \`${reason}\`"
+            echo "- Changed files: \`${files}\`"
+            echo '- Authoritative path: `full` (unchanged)'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload PR Gate impact observation
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-impact-observation-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: pr-gate-impact-observation.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
