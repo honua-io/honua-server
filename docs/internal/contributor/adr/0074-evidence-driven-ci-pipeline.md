@@ -265,9 +265,9 @@ branch protection during an incident.
 ### Hosted shadow checkpoint (2026-08-14)
 
 The first opportunistic prebuild candidate passed its bounded hosted A/B and is
-enabled only as a read-only shadow observer. It is not verification authority
-and it does not change branch protection, shard filters, test results, or the
-independent shard-local build fallback.
+enabled only as a read-only producer-availability observer. It is not
+verification authority and it does not change branch protection, shard
+filters, test results, or the independent shard-local build fallback.
 
 The observed evidence is:
 
@@ -295,8 +295,14 @@ improvement was only two rounded runner-minutes in each profile (about 14.3
 percent and 6.3 percent), however, so this evidence is **not** sufficient for
 enforcement. In particular it does not satisfy the ADR's 60 percent promotion
 threshold. Repository variable `HONUA_SERVER_TEST_PREBUILD_SHADOW=true` starts
-the required 20-head parity observation; independent shard builds remain the
-authority until all promotion criteria pass.
+automatic exact-head producer-availability observations. Those plan, build,
+package, and timing results do **not** count toward the required 20 parity
+observations because the observer does not consume the artifact or compare test
+outcomes. Twenty distinct representative exact heads must also pass either the
+manual benchmark consumer or a separately reviewed read-only parity consumer
+that executes the same selection through both paths and compares stable result
+identities. Independent shard builds remain the authority until that consumer
+exists and every promotion criterion passes.
 
 The control-plane prerequisites were also exercised on hosted infrastructure:
 
