@@ -39,6 +39,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/select.sh"
 # shellcheck source=assemble.sh
 . "${TRAIN_DIR}/assemble.sh"
+# shellcheck source=early-failure-observe.sh
+. "${TRAIN_DIR}/early-failure-observe.sh"
 # shellcheck source=smart-ci.sh
 . "${TRAIN_DIR}/smart-ci.sh"
 # shellcheck source=forward-fix.sh
@@ -70,6 +72,7 @@ trap 'rm -rf "${TRAIN_WORK}"' EXIT
 export TRAIN_INCLUDED_FILE="${TRAIN_WORK}/included.tsv"
 export TRAIN_SKIPPED_FILE="${TRAIN_WORK}/skipped.tsv"
 export TRAIN_RUN_ID_FILE="${TRAIN_WORK}/run_id"
+export TRAIN_EARLY_FAILURE_FILE="${TRAIN_WORK}/early-failure.json"
 # Instrumentation sinks (additive observability — no decision logic reads these).
 export TRAIN_TIMINGS_FILE="${TRAIN_WORK}/timings.kv"
 export TRAIN_METRICS_KV="${TRAIN_WORK}/metrics.kv"
