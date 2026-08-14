@@ -174,11 +174,9 @@ internal sealed class GeoprocessingJobArtifactService
     /// Authenticated catalog selectors are resolved to descriptors later in the submit pipeline;
     /// bounded typed inline sources contain no ambient object-store authority and remain valid.
     /// </summary>
-    public static void EnsureTypedRasterExecutionSupported(
-        AnalysisPlan plan,
-        string? executionOwnedStagedAuthorizationReference = null)
+    public static void EnsureTypedRasterExecutionSupported(AnalysisPlan plan)
     {
-        var violation = GetTypedRasterExecutionViolation(plan, executionOwnedStagedAuthorizationReference);
+        var violation = GetTypedRasterExecutionViolation(plan);
         if (violation is not null)
         {
             throw new GeoprocessingValidationException($"{violation.Code}: {violation.Message}");
@@ -186,22 +184,13 @@ internal sealed class GeoprocessingJobArtifactService
     }
 
     /// <summary>Returns a structured violation for a client-supplied durable raster descriptor.</summary>
-    public static GeoprocessingValidationFailure? GetTypedRasterExecutionViolation(
-        AnalysisPlan plan,
-        string? executionOwnedStagedAuthorizationReference = null)
+    public static GeoprocessingValidationFailure? GetTypedRasterExecutionViolation(AnalysisPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
         foreach (var step in plan.Steps)
         {
-            if (step.RasterSources?.Any(source =>
-                    source.Value is not InlineRasterSourceDescriptor
-                    && (source.Value is not StagedArtifactRasterSourceDescriptor staged
-                        || executionOwnedStagedAuthorizationReference is null
-                        || !string.Equals(
-                            staged.SecurityContext.AuthorizationSnapshotReference,
-                            executionOwnedStagedAuthorizationReference,
-                            StringComparison.Ordinal))) == true)
+            if (step.RasterSources?.Any(source => source.Value is not InlineRasterSourceDescriptor) == true)
             {
                 return new GeoprocessingValidationFailure
                 {

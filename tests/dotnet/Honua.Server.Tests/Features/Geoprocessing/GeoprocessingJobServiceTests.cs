@@ -476,22 +476,46 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
-    public async Task SubmitJobWithSecurityContext_ExecutionOwnedStagedRaster_IsAccepted()
+    public async Task SubmitJob_DirectStagedRasterWithForgedWorkflowMetadata_RejectsBeforePersistence()
+    {
+        var staged = CreateStagedRasterSource("workflow:run-1:submitter");
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(
+                CreateTypedRasterPlan("source", staged),
+                null,
+                CreatePrincipal(),
+                new Dictionary<string, string> { ["orchestration.runId"] = "run-1" }));
+
+        exception.Message.Should().Contain(
+            GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+        await _jobStore.DidNotReceive().GetAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitJobWithSecurityContext_WorkflowBoundStagedRasterWithDurableLineage_IsAccepted()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
         var staged = CreateStagedRasterSource("workflow:run-1:submitter");
+        var submitterSecurityContext = CreateSubmitterSecurityContext();
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(CreateWorkflowUpstreamJob(staged, "run-1", submitterSecurityContext));
 
         var job = await _sut.SubmitJobWithSecurityContextAsync(
             CreateTypedRasterPlan("source", staged),
             null,
             CreatePrincipal(),
             new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
-            CreateSubmitterSecurityContext());
+            submitterSecurityContext);
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Parameters.Values.Should().Contain(value =>
             value.Contains("staged-artifact", StringComparison.Ordinal));
+        await _jobStore.Received(1).GetAsync("job-1", Arg.Any<CancellationToken>());
         await _jobStore.Received(1).TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
@@ -499,9 +523,18 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
-    public async Task SubmitJobWithSecurityContext_CallerAuthoredStagedRaster_IsRejected()
+    public async Task SubmitJobWithSecurityContext_ForgedStagedRasterAndRunMetadata_IsRejected()
     {
-        var staged = CreateStagedRasterSource("workflow:different-run:submitter");
+        // Matching the public correlation string is deliberately insufficient: without the
+        // exact succeeded upstream output descriptor, no store authority is granted.
+        var staged = CreateStagedRasterSource("workflow:run-1:submitter");
+        var submitterSecurityContext = CreateSubmitterSecurityContext();
+        var actualUpstreamOutput = staged with
+        {
+            ObjectKey = "gp/outputs/job-1/a1/output/actual.tif",
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(CreateWorkflowUpstreamJob(actualUpstreamOutput, "run-1", submitterSecurityContext));
 
         var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
             _sut.SubmitJobWithSecurityContextAsync(
@@ -509,7 +542,7 @@ public sealed class GeoprocessingJobServiceTests
                 null,
                 CreatePrincipal(),
                 new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
-                CreateSubmitterSecurityContext()));
+                submitterSecurityContext));
 
         exception.Message.Should().Contain(
             GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
@@ -4388,11 +4421,51 @@ public sealed class GeoprocessingJobServiceTests
         },
         SecurityContext = new RasterSecurityContextReference
         {
-            TenantId = "tenant:a",
+            TenantId = GeoprocessingJobArtifactService.CreateOpaqueTenantReference(null),
             AuthorizationSnapshotReference = authorizationSnapshotReference,
         },
         DeclaredDimensions = new RasterSourceDimensions(32, 16, 1, 16),
     };
+
+    private static ExecutionJobRecord CreateWorkflowUpstreamJob(
+        StagedArtifactRasterSourceDescriptor source,
+        string workflowRunId,
+        JobSecurityContext submitterSecurityContext)
+    {
+        var output = new StagedObjectRasterOutputDescriptor
+        {
+            JobId = "job-1",
+            AttemptNumber = 1,
+            OutputName = "result",
+            Content = source.Content,
+            Grid = new RasterOutputGridSummary
+            {
+                Width = source.DeclaredDimensions!.Width,
+                Height = source.DeclaredDimensions.Height,
+                BandCount = source.DeclaredDimensions.BandCount,
+                BitsPerSample = source.DeclaredDimensions.BitsPerSample,
+                PixelScale = source.DeclaredPixelScale,
+            },
+            ProducingEngine = RasterOutputContract.GdalWorkerEngine,
+            Provider = source.Provider!.Value,
+            StoreReference = source.StoreReference!,
+            ObjectKey = source.ObjectKey!,
+        };
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded);
+        return record with
+        {
+            AttemptCount = 1,
+            Audit = record.Audit with { SubmitterSecurityContext = submitterSecurityContext },
+            Spec = record.Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    ["orchestration.runId"] = workflowRunId,
+                },
+            },
+            ArtifactReferences = [RasterOutputJson.Serialize(output)],
+        };
+    }
 
     private static string OpaqueTenantReference(string tenantId)
     {

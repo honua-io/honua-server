@@ -201,6 +201,11 @@ public static class RasterSourceDescriptorValidator
 
             case StagedArtifactRasterSourceDescriptor staged:
                 ValidateOpaqueReference(staged.ArtifactReference, "artifactReference", errors);
+                if (staged.Provider is null)
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "provider",
+                        "Staged raster sources require an execution-owned storage provider.");
+                }
                 ValidateOpaqueReference(staged.StoreReference, "storeReference", errors);
                 ValidateObjectStoreKey(staged.ObjectKey, "objectKey", errors);
                 if (staged.DeclaredDimensions is not { } stagedDimensions
@@ -399,7 +404,7 @@ public static class RasterSourceDescriptorValidator
     }
 
     private static void ValidateOpaqueReference(
-        string value,
+        string? value,
         string field,
         List<RasterSourceValidationError> errors)
     {
@@ -411,7 +416,7 @@ public static class RasterSourceDescriptorValidator
     }
 
     private static void ValidateRelativeLocator(
-        string value,
+        string? value,
         string field,
         List<RasterSourceValidationError> errors)
     {
@@ -423,7 +428,7 @@ public static class RasterSourceDescriptorValidator
     }
 
     private static void ValidateObjectStoreKey(
-        string value,
+        string? value,
         string field,
         List<RasterSourceValidationError> errors)
     {

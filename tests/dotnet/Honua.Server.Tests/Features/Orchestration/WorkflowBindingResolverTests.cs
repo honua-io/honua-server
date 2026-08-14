@@ -19,7 +19,7 @@ public sealed class WorkflowBindingResolverTests
     };
 
     [UnitTest]
-    public void Resolve_UnavailableStagedArtifact_FailsBeforeSubmittingDependentStep()
+    public void Resolve_StagedArtifactWithoutDurableIdentity_FailsBeforeSubmittingDependentStep()
     {
         var step = new WorkflowStepDefinition
         {
@@ -67,11 +67,11 @@ public sealed class WorkflowBindingResolverTests
         result.ResolvedValues.Should().BeEmpty();
         result.ResolvedRasterSources.Should().BeEmpty();
         result.Failures.Should().ContainSingle()
-            .Which.Should().Contain("content is unavailable on this host");
+            .Which.Should().Contain("content identity is incomplete");
     }
 
     [UnitTest]
-    public void Resolve_AvailableStagedRaster_BindsTypedWorkerSourceInsteadOfHttpRoute()
+    public void Resolve_StagedRasterWithoutServingHostRoute_BindsTypedWorkerSource()
     {
         var step = BoundStep();
         var metadata = new Dictionary<string, string>
@@ -95,7 +95,7 @@ public sealed class WorkflowBindingResolverTests
             ArtifactId = "job-1:artifact:1",
             Kind = ArtifactKind.Raster,
             Label = "output1",
-            Uri = "/api/geoprocessing/jobs/job-1/results/artifacts/0/content",
+            Uri = null,
             ContentType = "image/tiff",
             Metadata = metadata,
         });

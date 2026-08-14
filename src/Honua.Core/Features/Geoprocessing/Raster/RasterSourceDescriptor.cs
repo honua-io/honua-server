@@ -156,14 +156,23 @@ public sealed record StagedArtifactRasterSourceDescriptor : RasterSourceDescript
     /// <summary>Opaque staging artifact identifier, without a filesystem path or URI.</summary>
     public required string ArtifactReference { get; init; }
 
-    /// <summary>Storage provider of the execution-owned staging store.</summary>
-    public required CloudStorageProvider Provider { get; init; }
+    /// <summary>
+    /// Storage provider of the execution-owned staging store. Absent only on version-one
+    /// descriptors persisted before staged artifacts became executable.
+    /// </summary>
+    public CloudStorageProvider? Provider { get; init; }
 
-    /// <summary>Logical staging-store identity, never a path, URI, or credential.</summary>
-    public required string StoreReference { get; init; }
+    /// <summary>
+    /// Logical staging-store identity, never a path, URI, or credential. Absent only on
+    /// legacy version-one descriptors, which remain readable but are not executable.
+    /// </summary>
+    public string? StoreReference { get; init; }
 
-    /// <summary>Immutable object key within the staging store.</summary>
-    public required string ObjectKey { get; init; }
+    /// <summary>
+    /// Immutable object key within the staging store. Absent only on legacy version-one
+    /// descriptors, which remain readable but are not executable.
+    /// </summary>
+    public string? ObjectKey { get; init; }
 
     /// <summary>Producer-probed dimensions required for bounded native execution.</summary>
     public RasterSourceDimensions? DeclaredDimensions { get; init; }

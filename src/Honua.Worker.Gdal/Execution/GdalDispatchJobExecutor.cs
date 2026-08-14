@@ -161,7 +161,10 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         }
 
         var options = _workerOptions.CurrentValue;
-        var workspace = GdalScratch.CreateWorkspace(options.ScratchRoot, job.OperationId + "-staged-inputs");
+        // Process executors use this same operation-scoped workspace. Keeping hydrated inputs
+        // inside it makes them visible to DockerGdalCommandRunner, which bind-mounts precisely
+        // this directory at the identical absolute path.
+        var workspace = GdalScratch.CreateWorkspace(options.ScratchRoot, job.OperationId);
         try
         {
             var parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal);
@@ -180,8 +183,11 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
                         $"Staged raster input is invalid ({failure.Code}): {failure.Message}");
                 }
 
-                if (staged.Provider != _outputStore.Provider
-                    || !string.Equals(staged.StoreReference, _outputStore.StoreReference, StringComparison.Ordinal))
+                if (staged.Provider is not { } provider
+                    || staged.StoreReference is not { } storeReference
+                    || staged.ObjectKey is not { } objectKey
+                    || provider != _outputStore.Provider
+                    || !string.Equals(storeReference, _outputStore.StoreReference, StringComparison.Ordinal))
                 {
                     return new StagedRasterHydration(
                         job,
@@ -198,7 +204,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
                 }
 
                 if (!await _outputStore.TryAcquireReadLeaseAsync(
-                        staged.ObjectKey,
+                        objectKey,
                         staging.ReadLeaseDuration,
                         cancellationToken).ConfigureAwait(false))
                 {
@@ -208,7 +214,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
                         $"Staged raster input '{staged.ArtifactReference}' is unavailable for a protected read.");
                 }
 
-                await using var source = await _outputStore.OpenReadAsync(staged.ObjectKey, cancellationToken)
+                await using var source = await _outputStore.OpenReadAsync(objectKey, cancellationToken)
                     .ConfigureAwait(false);
                 if (source is null)
                 {
@@ -262,7 +268,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
                     || !string.Equals(
                         expected.Value,
                         Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
-                        StringComparison.Ordinal))
+                        StringComparison.OrdinalIgnoreCase))
                 {
                     return new StagedRasterHydration(
                         job,

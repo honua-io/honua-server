@@ -60,13 +60,6 @@ internal static class WorkflowBindingResolver
 
             if (IsStaged(artifact))
             {
-                if (artifact.Uri is null)
-                {
-                    failures.Add(
-                        $"Binding '{binding.TargetInputKey}' cannot use staged artifact '{artifact.ArtifactId}' from step '{binding.SourceStepId}' because its content is unavailable on this host.");
-                    continue;
-                }
-
                 if (!TryCreateStagedRasterSource(artifact, rasterSecurityContext, out var source, out var reason))
                 {
                     failures.Add(

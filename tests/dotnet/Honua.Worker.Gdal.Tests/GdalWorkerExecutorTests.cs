@@ -115,6 +115,17 @@ public sealed class GdalWorkerExecutorTests
             GdalJobFactory.StagingOptions(),
             workerOptions: GdalJobFactory.Options(scratch));
         var descriptor = StagedSource(objectKey, bytes);
+        var checksum = descriptor.Content.Checksum!;
+        descriptor = descriptor with
+        {
+            Content = descriptor.Content with
+            {
+                Checksum = checksum with
+                {
+                    Value = checksum.Value.ToUpperInvariant(),
+                },
+            },
+        };
         var original = GdalJobFactory.Job("test.staged-input");
         var parameters = original.Spec.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value);
         parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] = RasterSourceJson.Serialize(descriptor);
@@ -136,6 +147,9 @@ public sealed class GdalWorkerExecutorTests
                 .Should().BeOfType<StagedArtifactRasterSourceDescriptor>().Subject;
             hydrated.Provider.Should().Be(CloudStorageProvider.Local);
             hydrated.DeclaredDimensions.Should().Be(descriptor.DeclaredDimensions);
+            handler.HydrationWorkspace.Should().Be(
+                Path.GetFullPath(Path.Join(scratch, job.OperationId)),
+                "container execution bind-mounts the operation-scoped workspace");
             Directory.Exists(handler.HydrationWorkspace).Should().BeFalse("hydration scratch is deleted after execution");
         }
         finally
