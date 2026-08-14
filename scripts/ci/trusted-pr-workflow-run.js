@@ -12,6 +12,10 @@ const TERMINAL_CONCLUSIONS = new Set([
   'stale',
   'startup_failure',
 ]);
+const WORKFLOW_SHA_ROLES = new Set([
+  'pull-request-head',
+  'pull-request-target-associated',
+]);
 
 function parsePositiveSafeInteger(value, label) {
   const text = String(value ?? '');
@@ -34,11 +38,19 @@ async function resolveTrustedPullRequestWorkflowRun({
   runConclusion,
   workflowPath,
   workflowName,
+  workflowEvent = 'pull_request',
+  workflowShaRole = 'pull-request-head',
+  jobName = workflowName,
+  jobConclusion = runConclusion,
   defaultBranch,
   repositoryId,
 }) {
   if (!github || !owner || !repo || !workflowPath || !workflowName ||
-      !defaultBranch || !Number.isInteger(repositoryId)) {
+      !workflowEvent || !WORKFLOW_SHA_ROLES.has(workflowShaRole) ||
+      (workflowEvent === 'pull_request_target') !==
+        (workflowShaRole === 'pull-request-target-associated') ||
+      !jobName || !defaultBranch ||
+      !Number.isSafeInteger(repositoryId) || repositoryId <= 0) {
     throw new Error('trusted workflow-run resolver input is incomplete');
   }
   const repository = `${owner}/${repo}`;
@@ -46,6 +58,9 @@ async function resolveTrustedPullRequestWorkflowRun({
   const expectedAttempt = parsePositiveSafeInteger(runAttempt, 'workflow run attempt');
   if (typeof runConclusion !== 'string' || !TERMINAL_CONCLUSIONS.has(runConclusion)) {
     throw new Error('invalid workflow run conclusion');
+  }
+  if (typeof jobConclusion !== 'string' || !TERMINAL_CONCLUSIONS.has(jobConclusion)) {
+    throw new Error('invalid workflow job conclusion');
   }
   const { data: run } = await github.rest.actions.getWorkflowRun({
     owner,
@@ -56,11 +71,13 @@ async function resolveTrustedPullRequestWorkflowRun({
     run?.id !== id ||
     run.path !== workflowPath ||
     run.name !== workflowName ||
-    run.event !== 'pull_request' ||
+    run.event !== workflowEvent ||
     run.status !== 'completed' ||
     !TERMINAL_CONCLUSIONS.has(run.conclusion) ||
     run.repository?.full_name !== repository ||
+    run.repository?.id !== repositoryId ||
     run.head_repository?.full_name !== repository ||
+    run.head_repository?.id !== repositoryId ||
     !SHA.test(run.head_sha || '') ||
     run.run_attempt !== expectedAttempt ||
     run.conclusion !== runConclusion
@@ -79,16 +96,19 @@ async function resolveTrustedPullRequestWorkflowRun({
     job.run_id === id &&
     job.run_attempt === run.run_attempt &&
     job.workflow_name === workflowName &&
-    job.name === workflowName &&
+    job.name === jobName &&
     job.head_sha === run.head_sha &&
     job.status === 'completed' &&
-    job.conclusion === run.conclusion,
+    job.conclusion === jobConclusion,
   );
   if (canonicalJobs.length !== 1) {
     throw new Error('source run does not identify exactly one canonical workflow job');
   }
 
   const job = canonicalJobs[0];
+  if (!Number.isSafeInteger(job.id) || job.id <= 0) {
+    throw new Error('canonical workflow job identity is invalid');
+  }
   const { data: checkRun } = await github.rest.checks.get({
     owner,
     repo,
@@ -96,27 +116,41 @@ async function resolveTrustedPullRequestWorkflowRun({
   });
   if (
     checkRun?.id !== job.id ||
-    checkRun.name !== workflowName ||
+    checkRun.name !== jobName ||
     checkRun.status !== 'completed' ||
-    checkRun.conclusion !== run.conclusion ||
+    checkRun.conclusion !== job.conclusion ||
     checkRun.head_sha !== run.head_sha
   ) {
     throw new Error('canonical workflow job check identity is inconsistent');
   }
 
   const associations = checkRun.pull_requests || [];
-  if (associations.length !== 1 || !Number.isInteger(associations[0]?.number)) {
+  if (associations.length !== 1 ||
+      !Number.isSafeInteger(associations[0]?.number) || associations[0].number <= 0) {
     throw new Error('canonical workflow check does not identify exactly one pull request');
   }
   const associated = associations[0];
   const associatedBase = associated.base?.sha;
   const associatedHead = associated.head?.sha;
+  // Never infer the candidate from run.head_sha. GitHub currently reports the
+  // associated head for pull_request_target checks, but it has also exposed
+  // the event-time base commit in this position. Both representations are
+  // authenticated by the unique GitHub-managed PR association; the candidate
+  // always comes from associated.head.sha below.
+  const resolvedWorkflowShaRole = run.head_sha === associatedHead
+    ? 'association-head'
+    : run.head_sha === associatedBase
+      ? 'association-base'
+      : null;
   if (
     associated.base?.ref !== defaultBranch ||
     associated.base?.repo?.id !== repositoryId ||
     associated.head?.repo?.id !== repositoryId ||
     !SHA.test(associatedBase || '') ||
-    associatedHead !== run.head_sha
+    !SHA.test(associatedHead || '') ||
+    (workflowShaRole === 'pull-request-head'
+      ? run.head_sha !== associatedHead
+      : resolvedWorkflowShaRole === null)
   ) {
     throw new Error('canonical workflow check pull-request identity is inconsistent');
   }
@@ -127,12 +161,15 @@ async function resolveTrustedPullRequestWorkflowRun({
     pull_number: associated.number,
   });
   if (
+    pullRequest?.number !== associated.number ||
     pullRequest?.state !== 'open' ||
     pullRequest.base?.ref !== defaultBranch ||
     pullRequest.base?.repo?.full_name !== repository ||
+    pullRequest.base?.repo?.id !== repositoryId ||
     pullRequest.base?.sha !== associatedBase ||
     pullRequest.head?.sha !== associatedHead ||
-    pullRequest.head?.repo?.full_name !== repository
+    pullRequest.head?.repo?.full_name !== repository ||
+    pullRequest.head?.repo?.id !== repositoryId
   ) {
     throw new Error('pull request moved after the canonical workflow run');
   }
@@ -145,11 +182,16 @@ async function resolveTrustedPullRequestWorkflowRun({
     pullRequestNumber: associated.number,
     baseSha: associatedBase,
     headSha: associatedHead,
+    workflowSha: run.head_sha,
+    workflowShaRole: workflowShaRole === 'pull-request-head'
+      ? 'association-head'
+      : resolvedWorkflowShaRole,
   };
 }
 
 module.exports = {
   TERMINAL_CONCLUSIONS,
+  WORKFLOW_SHA_ROLES,
   parseRunId,
   resolveTrustedPullRequestWorkflowRun,
 };
