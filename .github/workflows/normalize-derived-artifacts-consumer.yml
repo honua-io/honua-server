@@ -81,6 +81,13 @@ jobs:
             if (artifactPage.artifacts.length !== 1 || artifacts.length !== 1 || artifacts[0].expired) {
               throw new Error(`Expected one non-expired ${expectedName} artifact.`);
             }
+            const maxArchiveBytes = 10 * 1024 * 1024;
+            if (!Number.isSafeInteger(artifacts[0].size_in_bytes) ||
+                artifacts[0].size_in_bytes <= 0 ||
+                artifacts[0].size_in_bytes > maxArchiveBytes) {
+              throw new Error(
+                `Artifact metadata size ${artifacts[0].size_in_bytes} is outside the 10 MiB bound.`);
+            }
             const download = await github.rest.actions.downloadArtifact({
               ...context.repo, artifact_id: artifacts[0].id, archive_format: 'zip',
             });

@@ -32,7 +32,11 @@ PYTHON_BIN="$(honua_resolve_python || true)"
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
 echo "Validating data-only derived-artifact normalization..."
-scripts/ci/validate-normalization-contract.sh
+if [[ -n "${PYTHON_BIN}" ]]; then
+  HONUA_NORMALIZATION_PYTHON="${PYTHON_BIN}" scripts/ci/validate-normalization-contract.sh
+else
+  echo "⚠️  Skipping data-only normalization validation (no working Python 3)."
+fi
 
 echo "Validating ci-shards.json structure..."
 jq -e '
