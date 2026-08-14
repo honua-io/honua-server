@@ -4,7 +4,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="${HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT:-${DEFAULT_REPO_ROOT}}"
+REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
 REGISTRY="${REPO_ROOT}/.github/server-test-artifact-projects.json"
 CONFIGURATION="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
 
@@ -18,7 +20,7 @@ test_filter=""
 job_start_epoch_ms="0"
 
 usage() {
-  echo "Usage: $0 <producer|baseline|consumer-artifact|consumer-cache> --project <relative.csproj> --source-sha <sha> --metrics <file> --identity <name> [--payload <directory>] [--filter <dotnet-filter>] [--job-start-epoch-ms <epoch>]" >&2
+  echo "Usage: $0 <producer|baseline|consumer-artifact|consumer-cache|consumer-ready> --project <relative.csproj> --source-sha <sha> --metrics <file> --identity <name> [--payload <directory>] [--filter <dotnet-filter>] [--job-start-epoch-ms <epoch>]" >&2
 }
 
 if [[ $# -gt 0 ]]; then
@@ -38,7 +40,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! "${mode}" =~ ^(producer|baseline|consumer-artifact|consumer-cache)$ ]] ||
+if [[ ! "${mode}" =~ ^(producer|baseline|consumer-artifact|consumer-cache|consumer-ready)$ ]] ||
    [[ -z "${project}" || -z "${source_sha}" || -z "${metrics}" || -z "${identity}" ]]; then
   usage
   exit 2
@@ -51,8 +53,8 @@ if [[ ! "${identity}" =~ ^[a-z0-9-]+$ ]] || [[ ! "${job_start_epoch_ms}" =~ ^[0-
   echo "::error::Benchmark identity or job-start timestamp is invalid." >&2
   exit 2
 fi
-if [[ "${mode}" != "baseline" && -z "${payload_dir}" ]]; then
-  echo "::error::Producer and consumer modes require --payload." >&2
+if [[ "${mode}" =~ ^(producer|consumer-artifact|consumer-cache)$ && -z "${payload_dir}" ]]; then
+  echo "::error::Producer and artifact/cache consumer modes require --payload." >&2
   exit 2
 fi
 for command in date dotnet jq python3 sha256sum; do
@@ -110,7 +112,7 @@ if [[ "${mode}" == "producer" ]]; then
   archive_bytes="$(jq -r '.archive_bytes' "${payload_dir}/server-test-binaries-${artifact_suffix}.manifest.json")"
 fi
 
-if [[ "${mode}" == consumer-* ]]; then
+if [[ "${mode}" =~ ^consumer-(artifact|cache)$ ]]; then
   restore_timing="$(dirname "${metrics}")/restore-${identity}.json"
   phase_ns="$(date +%s%N)"
   HONUA_SERVER_TEST_ARTIFACT_TIMING_FILE="${restore_timing}" \

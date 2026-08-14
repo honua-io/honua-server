@@ -188,6 +188,16 @@ returns to optimization rather than becoming policy by assertion.
 This is one build per repeated project fingerprint, not one oversized solution
 artifact and not one build per logical shard.
 
+The first shadow candidate is opportunistic rather than a producer dependency.
+A trusted, read-only observer may prepare a bounded repeated-project payload
+while review is pending, but a consumer never polls or waits for it. After its
+own checkout and toolchain setup, the consumer makes one exact artifact attempt
+and immediately falls back to the independent restore/build path on absence or
+any validation failure. The manual A/B charges the complete observer plan and
+producer cost, not only the consumer download. The contract and promotion
+procedure are documented in
+`docs/internal/ci/server-test-prebuild-shadow.md` (honua-server#3226).
+
 ### 6. Fail fast without manufacturing success
 
 For a single-PR train batch, the first deterministic gating failure cancels

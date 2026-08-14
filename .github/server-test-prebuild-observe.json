@@ -1,0 +1,7 @@
+{
+  "automatic_enable_variable": "HONUA_SERVER_TEST_PREBUILD_SHADOW",
+  "contract_version": 1,
+  "max_projects_per_head": 2,
+  "max_selected_shards": 100,
+  "receipt_ttl_seconds": 86400
+}

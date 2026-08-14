@@ -1,0 +1,264 @@
+name: Server Test Prebuild Observation
+
+# Trusted-default-branch, read-only shadow producer for #3226. It never
+# publishes a required status and no authoritative consumer depends on it.
+on:
+  pull_request_target:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Same-repository pull request to observe
+        required: true
+        type: string
+
+run-name: Server prebuild observation for PR #${{ github.event.pull_request.number || inputs.pr }}
+
+concurrency:
+  group: server-test-prebuild-pr-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  pull-requests: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+
+jobs:
+  plan:
+    name: Plan bounded exact-head prebuild
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.HONUA_SERVER_TEST_PREBUILD_SHADOW == 'true' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    outputs:
+      base_sha: ${{ steps.target.outputs.base_sha }}
+      head_sha: ${{ steps.target.outputs.head_sha }}
+      policy_sha: ${{ steps.policy.outputs.sha }}
+      pr: ${{ steps.target.outputs.pr }}
+      has_producers: ${{ steps.plan.outputs.has_producers }}
+      producers: ${{ steps.plan.outputs.producers }}
+    steps:
+      - id: target
+        name: Resolve current same-repository PR head
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const number = Number(context.payload.pull_request?.number || '${{ inputs.pr }}');
+            if (!Number.isInteger(number) || number < 1) {
+              core.setFailed('A positive pull request number is required.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+            if (pr.state !== 'open' || pr.draft) {
+              core.setFailed('Prebuild observation requires an open, ready pull request.');
+              return;
+            }
+            if (pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Prebuild observation is restricted to same-repository heads.');
+              return;
+            }
+            core.setOutput('pr', String(number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_sha', pr.base.sha);
+
+      - name: Checkout trusted policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 1
+
+      - id: policy
+        name: Bind trusted policy commit
+        run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout raw pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ steps.target.outputs.head_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: plan
+        name: Select only repeated registered projects
+        env:
+          BASE_SHA: ${{ steps.target.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.target.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "${HEAD_SHA}"
+          if ! git -C source cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git -C source fetch --no-tags --filter=blob:none \
+              "https://github.com/${GITHUB_REPOSITORY}.git" "${BASE_SHA}"
+          fi
+          git -C source merge-base "${BASE_SHA}" "${HEAD_SHA}" >/dev/null
+          git -C source diff --name-only "${BASE_SHA}...${HEAD_SHA}" \
+            | policy/scripts/ci/honua-server-targeted-tests.sh --stdin \
+                --config source/.github/ci-shards.json > descriptor.json
+          python3 policy/scripts/ci/plan-server-test-prebuild.py \
+            --config policy/.github/server-test-prebuild-observe.json \
+            --shards source/.github/ci-shards.json \
+            --registry source/.github/server-test-artifact-projects.json \
+            --descriptor descriptor.json \
+            --output prebuild-plan.json \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Bind plan to trusted workflow provenance
+        run: |
+          jq \
+            --arg repository '${{ github.repository }}' \
+            --argjson pull_request '${{ steps.target.outputs.pr }}' \
+            --arg source_sha '${{ steps.target.outputs.head_sha }}' \
+            --arg policy_sha '${{ steps.policy.outputs.sha }}' \
+            --argjson run_id '${{ github.run_id }}' \
+            --argjson run_attempt '${{ github.run_attempt }}' \
+            '. + {observation:{repository:$repository,pull_request:$pull_request,
+              source_sha:$source_sha,policy_sha:$policy_sha,
+              run_id:$run_id,run_attempt:$run_attempt}}' \
+            prebuild-plan.json > prebuild-plan.bound.json
+          mv prebuild-plan.bound.json prebuild-plan.json
+
+      - name: Retain immutable shadow plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-plan-${{ steps.target.outputs.pr }}-${{ steps.target.outputs.head_sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            descriptor.json
+            prebuild-plan.json
+          if-no-files-found: error
+          retention-days: 7
+
+  producer:
+    name: Prebuild repeated project / ${{ matrix.identity }}
+    needs: plan
+    if: needs.plan.outputs.has_producers == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.producers) }}
+    steps:
+      - id: timing
+        name: Start producer timer
+        run: echo "job_start_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout trusted policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.policy_sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout raw pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ needs.plan.outputs.head_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: ./policy/.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - id: toolchain
+        name: Bind exact toolchain and runner image
+        run: |
+          echo "sdk=$(dotnet --version)" >> "${GITHUB_OUTPUT}"
+          echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "${GITHUB_OUTPUT}"
+
+      - name: Authenticate read-only package inputs
+        working-directory: source
+        run: |
+          dotnet nuget update source github-honua \
+            --username '${{ github.actor }}' \
+            --password '${{ github.token }}' \
+            --store-password-in-clear-text
+
+      - name: Restore and build repeated project
+        working-directory: source
+        run: |
+          scripts/ci/dotnet-restore-retry.sh '${{ matrix.project }}'
+          dotnet build '${{ matrix.project }}' --no-restore --configuration Release \
+            /p:TreatWarningsAsErrors=true
+
+      - name: Package bounded build output with trusted policy
+        env:
+          HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT: ${{ github.workspace }}/source
+          HONUA_SERVER_TEST_ARTIFACT_REGISTRY: ${{ github.workspace }}/source/.github/server-test-artifact-projects.json
+          HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK: ${{ steps.toolchain.outputs.sdk }}
+        run: |
+          mkdir -p payload
+          policy/scripts/ci/package-server-test-binaries.sh \
+            --project '${{ matrix.project }}' \
+            --output payload \
+            --source-sha '${{ needs.plan.outputs.head_sha }}'
+
+      - name: Bind cross-workflow receipt
+        run: |
+          suffix='${{ matrix.project_suffix }}'
+          python3 policy/scripts/ci/server-test-prebuild-receipt.py build \
+            --source-root source \
+            --policy-root policy \
+            --repository '${{ github.repository }}' \
+            --pull-request '${{ needs.plan.outputs.pr }}' \
+            --source-sha '${{ needs.plan.outputs.head_sha }}' \
+            --policy-sha '${{ needs.plan.outputs.policy_sha }}' \
+            --project '${{ matrix.project }}' \
+            --dotnet-sdk '${{ steps.toolchain.outputs.sdk }}' \
+            --runner-os '${{ runner.os }}' \
+            --runner-arch '${{ runner.arch }}' \
+            --runner-image '${{ steps.toolchain.outputs.image }}' \
+            --producer-run-id '${{ github.run_id }}' \
+            --producer-run-attempt '${{ github.run_attempt }}' \
+            --manifest "payload/server-test-binaries-${suffix}.manifest.json" \
+            --archive "payload/server-test-binaries-${suffix}.tar.gz" \
+            --receipt "payload/server-test-prebuild-${suffix}.receipt.json"
+
+      - name: Upload immutable exact-head prebuild
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-${{ matrix.project_suffix }}-attempt-${{ github.run_attempt }}
+          path: payload/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Retain producer timing
+        run: |
+          mkdir -p metrics
+          jq -n \
+            --arg contract 'honua.server-test-prebuild-metric/v1' \
+            --arg project '${{ matrix.project }}' \
+            --arg head '${{ needs.plan.outputs.head_sha }}' \
+            --arg policy_sha '${{ needs.plan.outputs.policy_sha }}' \
+            --argjson run_id '${{ github.run_id }}' \
+            --argjson run_attempt '${{ github.run_attempt }}' \
+            --argjson selected_shards '${{ matrix.selected_shard_count }}' \
+            --argjson elapsed_ms "$(( $(date +%s%3N) - ${{ steps.timing.outputs.job_start_ms }} ))" \
+            '{contract:$contract, project:$project, head_sha:$head, policy_sha:$policy_sha,
+              run_id:$run_id, run_attempt:$run_attempt,
+              selected_shards:$selected_shards, elapsed_ms:$elapsed_ms}' \
+            > metrics/producer-${{ matrix.project_suffix }}.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-metrics-${{ needs.plan.outputs.pr }}-${{ matrix.project_suffix }}-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 14
