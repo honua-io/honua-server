@@ -47,7 +47,7 @@ runner-minute target from #3213.
 - `Review Gate Attestation` has `actions: write`, but checks out only the default
   branch, persists no checkout credential, and executes no PR-authored code.
 - Exact-head review, unresolved threads, draft/hold/escalation state, pagination,
-  workflow identity, event type, head SHA, PR association, run count, run
+  workflow identity, event type, head SHA, PR association, run identity, run
   attempt, admission receipt, wait receipt, and skipped expensive steps all fail
   closed before an enforced rerun.
 - Fork runs with an empty `pull_requests` payload are accepted only when the
@@ -64,8 +64,11 @@ the workflow's `run_attempt` becomes greater than one and every later event is a
 no-op. A duplicate API rejection is ignored only after a fresh run read proves
 that the rerun was already accepted; all other API errors fail visibly.
 
-An admission policy failure never emits a successful `Admission receipt`, so it
-cannot be promoted. An ambiguous or malformed run leaves `PR Gate` red and
+Closing and reopening a PR can create multiple runs for an unchanged head. The
+dispatcher deterministically selects the newest canonical run by GitHub
+creation time and run ID; older runs remain historical evidence. An admission
+policy failure never emits a successful `Admission receipt`, so it cannot be
+promoted. A malformed run or ambiguous PR association leaves `PR Gate` red and
 fails the trusted transition workflow with a precise reason.
 
 ## Rollback

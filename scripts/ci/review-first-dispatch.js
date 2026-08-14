@@ -23,6 +23,10 @@ function runPath(run) {
   return run.path ?? '';
 }
 
+function runCreatedAt(run) {
+  return run.created_at ?? run.createdAt ?? '';
+}
+
 function runPullNumbers(run) {
   return (run.pull_requests ?? run.pullRequests ?? [])
     .map(pull => Number(pull.number))
@@ -36,9 +40,11 @@ function uniqueNumbers(values) {
 function selectExactAdmissionRun({ runs, prNumber, head, associatedPullNumbers = [] }) {
   const pr = Number(prNumber);
   const associated = uniqueNumbers(associatedPullNumbers);
-  const candidates = (runs ?? []).filter(run => {
+  const exactHeadRuns = (runs ?? []).filter(run => {
     if (run.name !== 'PR Gate' || run.event !== 'pull_request') return false;
-    if (runHead(run) !== head || runPath(run) !== PR_GATE_WORKFLOW) return false;
+    return runHead(run) === head && runPath(run) === PR_GATE_WORKFLOW;
+  });
+  const candidates = exactHeadRuns.filter(run => {
 
     const pullNumbers = runPullNumbers(run);
     if (pullNumbers.length > 0) return pullNumbers.includes(pr);
@@ -50,15 +56,30 @@ function selectExactAdmissionRun({ runs, prNumber, head, associatedPullNumbers =
   });
 
   if (candidates.length === 0) {
+    if (exactHeadRuns.length > 0) {
+      return {
+        action: 'block',
+        reason: 'exact-head PR Gate run has no unique association with this open PR',
+      };
+    }
     return { action: 'wait', reason: 'no exact-head pull_request PR Gate run is visible yet' };
   }
-  if (candidates.length !== 1) {
-    return {
-      action: 'block',
-      reason: `expected one exact-head pull_request PR Gate run; found ${candidates.length}`,
-    };
+
+  const uniqueCandidates = [...new Map(candidates.map(run => [Number(run.id), run])).values()];
+  for (const candidate of uniqueCandidates) {
+    if (!Number.isInteger(Number(candidate.id)) || Number.isNaN(Date.parse(runCreatedAt(candidate)))) {
+      return { action: 'block', reason: 'exact-head PR Gate run identity/timestamp is malformed' };
+    }
   }
-  return { action: 'selected', run: candidates[0] };
+  uniqueCandidates.sort((left, right) => {
+    const timeDifference = Date.parse(runCreatedAt(right)) - Date.parse(runCreatedAt(left));
+    return timeDifference || Number(right.id) - Number(left.id);
+  });
+
+  // Closing and reopening a PR creates a second run for the unchanged head.
+  // The newest canonical run is the current admission subject; older same-head
+  // runs are historical evidence and must not strand the PR.
+  return { action: 'selected', run: uniqueCandidates[0] };
 }
 
 function stepByName(job, name) {

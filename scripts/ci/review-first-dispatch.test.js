@@ -17,6 +17,7 @@ function run(overrides = {}) {
     status: 'completed',
     conclusion: 'failure',
     run_attempt: 1,
+    created_at: '2026-08-14T00:00:00Z',
     pull_requests: [{ number: prNumber }],
     ...overrides,
   };
@@ -81,8 +82,15 @@ test('expensive attempt-one work fails closed', () => {
   assert.equal(evaluate({ jobs: [badJob] }).action, 'block');
 });
 
-test('ambiguous exact-head runs fail closed', () => {
-  assert.equal(evaluate({ runs: [run(), run({ id: 101 })] }).action, 'block');
+test('a reopened PR selects the newest canonical run for the unchanged head', () => {
+  const decision = evaluate({
+    runs: [
+      run({ id: 100, run_attempt: 2, conclusion: 'success' }),
+      run({ id: 101, created_at: '2026-08-14T01:00:00Z' }),
+    ],
+  });
+  assert.equal(decision.action, 'rerun');
+  assert.equal(decision.runId, 101);
 });
 
 test('a moved head cannot release old admission evidence', () => {
@@ -96,7 +104,11 @@ test('fork run is accepted only with one independently-associated PR', () => {
   }).action, 'rerun');
   assert.equal(evaluate({
     runs: [forkRun], associatedPullNumbers: [prNumber, 4000],
-  }).action, 'wait');
+  }).action, 'block');
+});
+
+test('malformed same-head run metadata fails closed', () => {
+  assert.equal(evaluate({ runs: [run({ created_at: null })] }).action, 'block');
 });
 
 test('truncated review evidence cannot release verification', () => {
