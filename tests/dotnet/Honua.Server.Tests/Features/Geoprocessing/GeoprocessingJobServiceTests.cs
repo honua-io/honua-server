@@ -4407,25 +4407,25 @@ public sealed class GeoprocessingJobServiceTests
 
     private static StagedArtifactRasterSourceDescriptor CreateStagedRasterSource(
         string authorizationSnapshotReference) => new()
-    {
-        ArtifactReference = "job-1:artifact:1",
-        Provider = CloudStorageProvider.Local,
-        StoreReference = "gp-outputs",
-        ObjectKey = "gp/outputs/job-1/a1/output/result.tif",
-        Version = "sha256:" + new string('a', 64),
-        Content = new RasterContentIdentity
         {
-            SizeBytes = 4096,
-            MediaType = "image/tiff",
-            Checksum = new RasterChecksum("sha256", new string('a', 64)),
-        },
-        SecurityContext = new RasterSecurityContextReference
-        {
-            TenantId = GeoprocessingJobArtifactService.CreateOpaqueTenantReference(null),
-            AuthorizationSnapshotReference = authorizationSnapshotReference,
-        },
-        DeclaredDimensions = new RasterSourceDimensions(32, 16, 1, 16),
-    };
+            ArtifactReference = "job-1:artifact:1",
+            Provider = CloudStorageProvider.Local,
+            StoreReference = "gp-outputs",
+            ObjectKey = "gp/outputs/job-1/a1/output/result.tif",
+            Version = "sha256:" + new string('a', 64),
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 4096,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = GeoprocessingJobArtifactService.CreateOpaqueTenantReference(null),
+                AuthorizationSnapshotReference = authorizationSnapshotReference,
+            },
+            DeclaredDimensions = new RasterSourceDimensions(32, 16, 1, 16),
+        };
 
     private static ExecutionJobRecord CreateWorkflowUpstreamJob(
         StagedArtifactRasterSourceDescriptor source,
