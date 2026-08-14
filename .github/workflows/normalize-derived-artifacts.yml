@@ -5,7 +5,7 @@ name: Derived Artifact Normalization
 # consumer validates that artifact without executing anything from this head.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     branches: [trunk]
     paths:
       - 'src/**'
@@ -41,6 +41,7 @@ env:
 jobs:
   generate:
     name: Generate bounded normalization projections
+    if: github.event.action != 'edited' || github.event.changes.base.ref.from != null
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -64,14 +65,34 @@ jobs:
           bash scripts/generate-geoservices-parity.sh --configuration Release -m:1 --no-build --no-restore
           python3 scripts/ci/generate-capability-matrix.py
 
-      - name: Stage only bounded generated projections
+      - name: Replay generators and stage only reproducible bounded projections
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          first_root="${RUNNER_TEMP}/first-normalized-projections"
           projection_root="${RUNNER_TEMP}/normalized-projections"
           projections=(
             'docs/gis/data/feature-catalog.json:4194304'
             'docs/gis/data/geoservices-rest-parity.json:1048576'
             'docs/gis/data/capability-matrix.v1.json:1048576'
           )
+          for item in "${projections[@]}"; do
+            projection="${item%%:*}"
+            install -d "${first_root}/$(dirname "${projection}")"
+            install -m 0600 "${projection}" "${first_root}/${projection}"
+          done
+
+          # Recompute from the exact committed output baseline with the already
+          # built assemblies. Only a byte-identical replay becomes candidate
+          # data; a nondeterministic or post-generation mutation fails closed.
+          git restore --source="${HEAD_SHA}" --worktree -- \
+            docs/gis/data/feature-catalog.json \
+            docs/gis/data/geoservices-rest-parity.json \
+            docs/gis/data/capability-matrix.v1.json
+          bash scripts/generate-feature-catalog.sh --configuration Release -m:1 --no-build --no-restore
+          bash scripts/generate-geoservices-parity.sh --configuration Release -m:1 --no-build --no-restore
+          python3 scripts/ci/generate-capability-matrix.py
+
           total=0
           for item in "${projections[@]}"; do
             projection="${item%%:*}"
@@ -81,6 +102,7 @@ jobs:
               echo "${projection} size ${size} is outside bound 1..${limit}" >&2
               exit 1
             fi
+            cmp -- "${first_root}/${projection}" "${projection}"
             total=$((total + size))
             install -d "${projection_root}/$(dirname "${projection}")"
             install -m 0600 "${projection}" "${projection_root}/${projection}"

@@ -28,8 +28,8 @@ def main() -> None:
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
     require(
         producer,
-        "    types: [opened, synchronize, reopened, ready_for_review]",
-        "producer must observe a draft head when it becomes ready",
+        "    types: [opened, synchronize, reopened, ready_for_review, edited]",
+        "producer must observe ready and retargeted heads",
     )
     require(producer, "  contents: read", "producer contents permission must be read-only")
     require(producer, "  packages: read", "producer package permission must be read-only")
@@ -53,10 +53,21 @@ def main() -> None:
     require(producer, "persist-credentials: false", "untrusted checkout must not persist credentials")
     require(producer, "  generate:\n", "untrusted generation must have an isolated job")
     require(producer, "  produce:\n", "envelope packaging must have an isolated job")
+    require(
+        producer,
+        "if: github.event.action != 'edited' || github.event.changes.base.ref.from != null",
+        "edited events must run only when the PR base changes",
+    )
     generate_block = producer.split("  generate:\n", 1)[1].split("  produce:\n", 1)[0]
     produce_block = producer.split("  produce:\n", 1)[1]
     require(generate_block, "uses: ./.github/actions/setup-dotnet-ci", "generation must configure .NET")
     require(generate_block, "bash scripts/generate-feature-catalog.sh", "generation must run the catalog emitter")
+    if generate_block.count("bash scripts/generate-feature-catalog.sh") != 2:
+        raise AssertionError("generation must replay the feature catalog exactly once")
+    if generate_block.count("bash scripts/generate-geoservices-parity.sh") != 2:
+        raise AssertionError("generation must replay GeoServices parity exactly once")
+    require(generate_block, 'cmp -- "${first_root}/${projection}" "${projection}"',
+            "only byte-identical replayed projections may be staged")
     if "uses: ./.github/actions/setup-dotnet-ci" in produce_block or "bash scripts/generate-" in produce_block:
         raise AssertionError("isolated packaging must not execute setup or generators")
     if "packages:" in produce_block:
@@ -87,7 +98,8 @@ def main() -> None:
     require(consumer, "  NORMALIZATION_MODE: observe", "normalization must remain in observe mode")
     require(consumer, "  actions: read", "consumer needs bounded artifact read permission")
     require(consumer, "  contents: read", "observe consumer must not have contents: write")
-    require(consumer, "  statuses: write", "consumer must publish the observation status")
+    if "statuses: write" in consumer or "createCommitStatus" in consumer:
+        raise AssertionError("candidate consumer must publish no authoritative status")
     require(consumer, "ref: ${{ github.event.repository.default_branch }}", "consumer must check out default policy")
     require(consumer, "persist-credentials: false", "trusted checkout must not persist credentials")
     require(consumer, "scripts/ci/normalization-envelope.py validate-archive", "consumer must use trusted validation")
@@ -152,6 +164,11 @@ def main() -> None:
         raise AssertionError("trusted consumer must inspect the zip before any extraction")
     if "secrets." in consumer or "contents: write" in consumer:
         raise AssertionError("observe consumer must have no write secret or contents mutation permission")
+    require(
+        consumer,
+        "candidate only; independent PR Gate required",
+        "candidate output must remain excluded from the accuracy audit without PR Gate corroboration",
+    )
     if "github.event.pull_request.head" in consumer or "github.head_ref" in consumer:
         raise AssertionError("workflow_run consumer must not check out the PR head")
     if "git push" in consumer or "git apply" in consumer:

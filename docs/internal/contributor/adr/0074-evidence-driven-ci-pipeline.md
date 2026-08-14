@@ -111,8 +111,9 @@ publish authoritative reusable evidence.
 Normalization uses two workflows:
 
 1. An unprivileged `pull_request` workflow checks out and executes the pull
-   request. A generation job runs only declared generators and uploads three
-   bounded JSON projections. A separate fresh runner packages those data files
+   request. A generation job runs each declared generator twice from the same
+   committed-output baseline and uploads only byte-identical, bounded JSON
+   projections. A separate fresh runner packages those data files
    against a clean exact-head checkout, so generator/setup mutations cannot
    alter provenance inputs or the envelope builder. The envelope contains the
    source SHA and Git tree, contract version, allowlisted derived path names,
@@ -131,6 +132,12 @@ formats, and any output not named by the default-branch allowlist. It compares
 the resulting tree before pushing; an empty result succeeds without a commit.
 The commit includes a loop-prevention marker, while idempotent tree comparison
 is the primary loop guard.
+
+In observe mode the consumer publishes no status or branch mutation. Its output
+is explicitly a candidate and is excluded from accuracy evidence until an
+independent exact-head PR Gate corroborates a no-op, or authoritative drift
+checks pass on the subsequent normalized head. Reproducibility and provenance
+are necessary admission signals, not mutation authority.
 
 Review is requested only after normalization reaches a stable head. Generated
 drift remains independently checked in `verify` and `train`; early

@@ -11,7 +11,6 @@ permissions:
   actions: read
   contents: read
   pull-requests: read
-  statuses: write
 
 concurrency:
   group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
@@ -226,19 +225,10 @@ jobs:
             }
 
             const fork = process.env.SAME_REPOSITORY !== 'true';
-            const description = changes.length === 0
-              ? 'Generated projections already normalized'
-              : `Observe: would normalize ${changes.length} generated file(s)${fork ? '; fork is read-only' : ''}`;
-            await github.rest.repos.createCommitStatus({
-              ...context.repo,
-              sha: process.env.HEAD_SHA,
-              state: 'success',
-              context: 'Normalization Observation',
-              description: description.slice(0, 140),
-              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-            });
             await core.summary
-              .addHeading('Derived artifact normalization observation')
+              .addHeading('Untrusted derived-artifact normalization candidate')
+              .addRaw('This validated candidate is not canonical evidence and publishes no commit status. ' +
+                'Count it only after independent exact-head PR Gate corroboration.\n\n')
               .addTable([
                 [{ data: 'Field', header: true }, { data: 'Value', header: true }],
                 ['Mode', process.env.NORMALIZATION_MODE],
@@ -247,5 +237,6 @@ jobs:
                 ['Would update', String(changes.length)],
                 ['Paths', changes.map(change => change.path).join(', ') || 'none'],
                 ['Envelope bytes', String(plan.total_output_bytes)],
+                ['Audit authority', 'candidate only; independent PR Gate required'],
               ])
               .write();
