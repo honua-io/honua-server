@@ -29,7 +29,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     IGeoprocessingResultPackageStore? resultPackageStore,
     IServiceScopeFactory serviceScopeFactory,
     ILogger<GeoprocessingJobTerminalCallback> logger,
-    IScopedJobTokenIssuer? scopedJobTokenIssuer = null) : IJobTerminalCallback
+    IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
+    GeoprocessingRasterOutputRegistrar? outputRegistrar = null) : IJobTerminalCallback
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
@@ -61,6 +62,40 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             if (resultPackageStore != null || hasAnalysisContentSource)
             {
                 package = GeoprocessingResultPackageFactory.Create(job, processCatalog);
+            }
+
+            // Optional post-success raster output registration (#3089). Registration is
+            // idempotent (unique catalog identity per immutable staged object), so a
+            // failure here only skips the package persist: the result read path replays
+            // registration and never exposes a Completed package without it.
+            if (package != null
+                && job.Status == ExecutionJobStatus.Succeeded
+                && GeoprocessingRasterOutputRegistrar.HasRegistrationIntents(job))
+            {
+                if (outputRegistrar is null)
+                {
+                    Log.OutputRegistrationFailed(
+                        logger, job.OperationId,
+                        new InvalidOperationException("No raster output registrar is configured."));
+                    package = null;
+                }
+                else
+                {
+                    try
+                    {
+                        package = await outputRegistrar
+                            .EnsureRegisteredAsync(job, package, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        // Intentionally broad: the terminal callback must never throw.
+                        // Skipping the persist keeps registration atomic with result
+                        // visibility; the idempotent read-path replay completes it.
+                        Log.OutputRegistrationFailed(logger, job.OperationId, ex);
+                        package = null;
+                    }
+                }
             }
 
             // Persist the artifacts to the content store BEFORE writing the result package,
@@ -315,5 +350,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8023, LogLevel.Warning, "Failed to revoke custom-code scoped job token for terminal job {OperationId}; it will expire at its absolute TTL")]
         public static partial void CustomCodeTokenRevokeFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8032, LogLevel.Warning, "Raster output registration failed for terminal job {OperationId}; the result package persist was skipped and the read path will replay registration idempotently")]
+        public static partial void OutputRegistrationFailed(ILogger logger, string operationId, Exception exception);
     }
 }

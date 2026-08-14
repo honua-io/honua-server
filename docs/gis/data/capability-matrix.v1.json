@@ -1223,10 +1223,10 @@
       "displayName": "Geoprocessing Task Execution",
       "category": "Process",
       "edition": "Community",
-      "entryCount": 13,
-      "provingTestCount": 77,
+      "entryCount": 14,
+      "provingTestCount": 86,
       "maturity": {
-        "implemented": 13
+        "implemented": 14
       },
       "noSurface": null,
       "cite": [],
@@ -1249,7 +1249,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 129,
+      "provingTestCount": 131,
       "maturity": {
         "implemented": 10
       },
