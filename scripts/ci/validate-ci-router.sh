@@ -31,6 +31,9 @@ PYTHON_BIN="$(honua_resolve_python || true)"
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
+echo "Validating data-only derived-artifact normalization..."
+scripts/ci/validate-normalization-contract.sh
+
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
