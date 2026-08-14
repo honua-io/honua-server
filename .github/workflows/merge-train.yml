@@ -296,6 +296,20 @@ jobs:
             echo "::error::Durable merge-train state is unreadable; refusing to dispatch or stop silently."
             exit 1
           fi
+          # Only the controller that performed the successful trunk CAS may
+          # spawn the one immediate reconciliation continuation. If that
+          # continuation still cannot finalize GitHub's PR projection, fail it
+          # visibly and retain the durable journal rather than creating an
+          # unbounded successful self-chain loop.
+          landed_this_run=0
+          if [[ -s "${GITHUB_WORKSPACE}/merge-train-metrics.json" ]] \
+            && jq -e '.outcome == "landed"' "${GITHUB_WORKSPACE}/merge-train-metrics.json" >/dev/null; then
+            landed_this_run=1
+          fi
+          if [[ "${recovery_rc}" == "0" && "${landed_this_run}" != "1" ]]; then
+            echo "::error::Durable land intent remains after its bounded reconciliation controller; retaining state and stopping the chain."
+            exit 1
+          fi
           if [[ "${recovery_rc}" == "0" ]] || train_has_selectable_pr; then
             if [[ "${recovery_rc}" == "0" ]]; then
               echo "Dispatching the next train run to reconcile durable land intent."

@@ -107,6 +107,10 @@ grep -Fq 'source scripts/ci/merge-train/state.sh' <<<"${self_chain_step}" \
   || { printf 'FAIL: self-chain cannot inspect durable land intent\n' >&2; exit 1; }
 grep -Fq 'train_state_requires_live_reconciliation' <<<"${self_chain_step}" \
   || { printf 'FAIL: self-chain ignores durable land intent\n' >&2; exit 1; }
+grep -Fq '.outcome == "landed"' <<<"${self_chain_step}" \
+  || { printf 'FAIL: post-land recovery continuation is not bound to the landing controller\n' >&2; exit 1; }
+grep -Fq 'Durable land intent remains after its bounded reconciliation controller' <<<"${self_chain_step}" \
+  || { printf 'FAIL: repeated post-land recovery can self-chain without a bound\n' >&2; exit 1; }
 
 # A successful trunk CAS can briefly precede GitHub's merged-PR projection. The
 # controller must chain once for all land-family phases even with an empty PR
