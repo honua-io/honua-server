@@ -144,6 +144,14 @@ class EnvelopeTests(unittest.TestCase):
             MODULE.validate_envelope(raw(value), **expected())
 
     def test_generator_allowlist_is_exact(self) -> None:
+        required_implementations = {
+            "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
+            "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityEmitter.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+        }
+        self.assertTrue(required_implementations.issubset(MODULE.GENERATOR_INPUTS))
+
         value = envelope()
         value["generators"][0]["path"] = "scripts/unsafe.sh"
         with self.assertRaisesRegex(MODULE.EnvelopeError, "allowlist/order"):

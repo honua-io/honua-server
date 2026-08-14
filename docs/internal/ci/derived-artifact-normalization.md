@@ -43,6 +43,12 @@ Before publishing even an observation status, the trusted consumer fetches
 every allowlisted generator as a Git blob from the exact PR commit and compares
 its SHA-256 digest with the envelope. Generator evidence authored by PR code is
 therefore never trusted on its own.
+The allowlist includes both shell/Python entry points and the executable C#
+feature-catalog and GeoServices emitter/generator implementations, their direct
+helper and authored-JSON inputs, and the .NET project/toolchain policy. The
+exact source commit and tree bind the broader transitive endpoint/test surface;
+the explicit implementation digests prevent a changed generator from hiding
+behind an unchanged wrapper script.
 It also requires the producer workflow, the local .NET setup action, and the
 envelope builder at the PR head to be byte-identical to the checked-out
 default-branch recipe. A pull request that changes this security boundary must

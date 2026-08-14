@@ -31,11 +31,26 @@ MAX_ENVELOPE_BYTES = 9 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 10 * 1024 * 1024
 
 GENERATOR_INPUTS = (
+    "Directory.Build.props",
+    "Directory.Packages.props",
+    "NuGet.config",
     "scripts/generate-feature-catalog.sh",
     "scripts/generate-geoservices-parity.sh",
     "scripts/ci/capability-impact.py",
     "scripts/ci/generate-capability-matrix.py",
+    "tests/dotnet/Honua.Architecture.Tests/ArchitectureTestHelpers.cs",
     "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj",
+    "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CapabilityRouteMapper.cs",
+    "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
+    "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
+    "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/ProofLedgerProjection.cs",
+    "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityEmitter.cs",
+    "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+    "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityModels.cs",
+    "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+    "docs/gis/data/capability-route-mapping.v1.json",
+    "docs/gis/data/geoservices-parity-judgment.json",
+    "docs/gis/data/public-interface-proof.json",
 )
 
 
