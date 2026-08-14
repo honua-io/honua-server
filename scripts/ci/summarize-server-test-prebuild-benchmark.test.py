@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import tempfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("summarize-server-test-prebuild-benchmark.py")
@@ -137,5 +139,43 @@ try:
     raise AssertionError("duplicate producer interval was accepted")
 except ValueError as error:
     assert "interval set is incomplete or duplicated" in str(error)
+
+values = inputs()
+values[3].append(
+    {
+        "contract": MODULE.PRODUCER_METRIC_CONTRACT,
+        "project": "unused-project",
+        "head_sha": HEAD,
+        "run_attempt": 1,
+    }
+)
+values[5].append(job("Prebuild repeated project / unused", 2_000, 60_000))
+extra_result = summarize(values)
+assert extra_result["decision"] == "eligible-for-20-head-shadow"
+assert extra_result["candidate"]["rounded_runner_minutes_including_prebuild"] == 7
+
+with tempfile.TemporaryDirectory() as directory:
+    payload = {
+        "jobs": [
+            {
+                "name": "Prebuild A/B evidence summary",
+                "run_attempt": 1,
+                "started_at": "2026-08-14T00:00:00Z",
+                "completed_at": None,
+                "conclusion": None,
+            },
+            {
+                "name": "Independent prebuild baseline / server-a",
+                "run_attempt": 1,
+                "started_at": "2026-08-14T00:00:00Z",
+                "completed_at": "2026-08-14T00:01:00Z",
+                "conclusion": "success",
+            },
+        ]
+    }
+    jobs_file = Path(directory) / "jobs.json"
+    jobs_file.write_text(json.dumps(payload), encoding="utf-8")
+    loaded = MODULE.load_hosted_jobs(Path(directory))
+    assert [item["name"] for item in loaded] == ["Independent prebuild baseline / server-a"]
 
 print("server-test-prebuild-benchmark-summary=ok")

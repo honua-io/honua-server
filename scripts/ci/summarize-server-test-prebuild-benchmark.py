@@ -13,6 +13,12 @@ METRIC_CONTRACT = "honua.server-test-transfer-benchmark.v1"
 PRODUCER_METRIC_CONTRACT = "honua.server-test-prebuild-metric/v1"
 PLAN_CONTRACT = "honua.server-test-prebuild-benchmark-plan/v1"
 SUMMARY_CONTRACT = "honua.server-test-prebuild-benchmark-summary/v1"
+HOSTED_JOB_PREFIXES = (
+    "Independent prebuild baseline / ",
+    "Opportunistic prebuild candidate / ",
+    "Prebuild repeated project / ",
+)
+HOSTED_JOB_NAMES = {"Plan bounded exact-head prebuild"}
 
 
 def load_json(path: Path) -> object:
@@ -50,6 +56,8 @@ def load_hosted_jobs(root: Path) -> list[dict]:
                 completed = job.get("completed_at")
                 conclusion = job.get("conclusion")
                 if not isinstance(name, str) or conclusion == "skipped":
+                    continue
+                if name not in HOSTED_JOB_NAMES and not name.startswith(HOSTED_JOB_PREFIXES):
                     continue
                 if not isinstance(attempt, int) or not isinstance(started, str) or not isinstance(completed, str):
                     raise ValueError(f"hosted job interval is incomplete: {name}")
@@ -196,8 +204,6 @@ def summarize(
     expected_projects = set(plan.get("reused_projects", []))
     plan_jobs = [item for item in external_jobs if item["name"] == "Plan bounded exact-head prebuild"]
     project_jobs = [item for item in external_jobs if item["name"].startswith("Prebuild repeated project / ")]
-    if len(plan_jobs) != 1 or len(project_jobs) != len(expected_projects):
-        raise ValueError("producer hosted interval set is incomplete or duplicated")
     unsuccessful_producer_jobs = [item["name"] for item in external_jobs if item["conclusion"] != "success"]
     if unsuccessful_producer_jobs:
         raise ValueError(f"producer hosted interval was not successful: {unsuccessful_producer_jobs}")
@@ -209,7 +215,14 @@ def summarize(
     observed_projects = [item.get("project") for item in matching_producer_metrics]
     if len(observed_projects) != len(set(observed_projects)):
         raise ValueError("producer metric project evidence is duplicated")
-    producer_evidence_ok = set(observed_projects) == expected_projects
+    project_job_names = [item["name"] for item in project_jobs]
+    if (
+        len(plan_jobs) != 1
+        or len(project_jobs) != len(observed_projects)
+        or len(project_job_names) != len(set(project_job_names))
+    ):
+        raise ValueError("producer hosted interval set is incomplete or duplicated")
+    producer_evidence_ok = expected_projects <= set(observed_projects)
     producer_ready_before_candidate = max(item["end_ms"] for item in external_jobs) <= min(
         item["job_start_epoch_ms"] for item in candidate
     )
