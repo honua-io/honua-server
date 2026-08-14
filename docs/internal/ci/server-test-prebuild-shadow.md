@@ -28,7 +28,9 @@ benchmark is manual and rejects any producer unless all of these are true:
 - the current PR is open, ready, and still points to the receipt's full head
   SHA in the same repository;
 - the producer is a completed successful run of the trusted-default
-  `.github/workflows/server-test-prebuild-observe.yml` workflow;
+  `.github/workflows/server-test-prebuild-observe.yml` workflow, and its policy
+  checkout is pinned to the immutable `github.workflow_sha` that GitHub
+  executed rather than a moving branch name;
 - the trusted observer's plan artifact binds repository, PR, source head,
   producer run/attempt, and its actual policy SHA; that policy SHA is an
   ancestor of current trusted trunk, and every execution-relevant policy input

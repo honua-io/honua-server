@@ -74,7 +74,9 @@ jobs:
       - name: Checkout trusted policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          # Bind policy to the immutable commit whose trusted workflow GitHub
+          # is executing, not to a branch name that may advance mid-run.
+          ref: ${{ github.workflow_sha }}
           path: policy
           persist-credentials: false
           fetch-depth: 1
