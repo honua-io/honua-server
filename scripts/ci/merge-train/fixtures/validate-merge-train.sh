@@ -648,6 +648,9 @@ assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all
 assert_contains "derived artifacts: shell generators do not require executable bits" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
   'bash "${repo_root}/scripts/generate-geoservices-parity.sh"'
+assert_contains "derived artifacts: parity reuses the feature-catalog build" \
+  "$(cat "${TRAIN_DIR}/train.sh")" \
+  'generate-geoservices-parity.sh" --no-build --no-restore'
 
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
