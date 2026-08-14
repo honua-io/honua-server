@@ -3,7 +3,8 @@ name: PR Gate Impact Observation
 # This observer is intentionally separate from the required pull-request
 # workflow. workflow_run executes the default-branch copy, so a candidate cannot
 # change the collector, its input, or the produced evidence. The full PR Gate
-# remains authoritative throughout the shadow period in #3235.
+# remains authoritative throughout the shadow period in #3235. Fork heads are
+# explicitly outside the observation denominator and always retain the full gate.
 on:
   workflow_run:
     workflows: [PR Gate]
@@ -30,7 +31,10 @@ env:
 
 jobs:
   observe:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'pull_request'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
