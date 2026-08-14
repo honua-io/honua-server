@@ -31,6 +31,7 @@ jq -e '
   scripts/ci/summarize-server-test-prebuild-benchmark.py
 
 bash -n scripts/ci/benchmark-server-test-transfer.sh
+bash scripts/ci/fixtures/validate-benchmark-repo-root.sh
 bash -n scripts/ci/try-server-test-prebuild.sh
 bash -n scripts/ci/fixtures/validate-try-server-test-prebuild.sh
 bash scripts/ci/fixtures/validate-try-server-test-prebuild.sh
