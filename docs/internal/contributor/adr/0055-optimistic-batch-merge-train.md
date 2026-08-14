@@ -54,6 +54,11 @@ dry-run.
    read the **CI Gate** job conclusion. The batch is a BRANCH, so its CI keys on
    `ci-<ref>` — a DISTINCT concurrency group from each member's `ci-<pr#>`, so
    the batch run can never cancel-in-progress a member's PR run. Polling allows 110 minutes for the observed 42-55 minute shards, queueing, and one failed-job retry while remaining inside the controller's 120-minute cap.
+   Before dispatch, deterministic feature-catalog and GeoServices-parity emitters
+   run in their required order. They share one Architecture test-project build:
+   the parity emitter uses `--no-build --no-restore` after the feature-catalog
+   emitter succeeds. This removes a redundant project evaluation from the
+   otherwise invisible pre-dispatch portion of every live batch.
 4. **forward-fix** — ONLY when the sole failure is the format-verify step:
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
