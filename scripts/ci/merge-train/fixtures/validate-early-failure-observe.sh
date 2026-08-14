@@ -79,6 +79,24 @@ unselected_snapshot='{
 train_early_failure_observe_snapshot 56 "${unselected_snapshot}"
 [[ ! -e "${TRAIN_EARLY_FAILURE_FILE}" ]]
 
+# A transient log-read failure remains unobserved so a later poll can classify
+# the same authoritative failed job once its logs are available.
+transient_log() {
+  [[ -e "${fixture}/log-ready" ]] || return 1
+  printf 'Failed! Expected: 200 Actual: 500\n'
+}
+export TRAIN_EARLY_FAILURE_LOG_READER=transient_log
+train_early_failure_observe_snapshot 55 "${active_snapshot}"
+[[ ! -e "${TRAIN_EARLY_FAILURE_FILE}" ]]
+touch "${fixture}/log-ready"
+train_early_failure_observe_snapshot 55 "${active_snapshot}"
+jq -e '
+  .run_id == 55 and
+  .first_blocking_failure.job_id == 101 and
+  .first_blocking_failure.category == "deterministic-candidate"
+' "${TRAIN_EARLY_FAILURE_FILE}" >/dev/null
+export TRAIN_EARLY_FAILURE_LOG_READER=fake_log
+
 # A failed optional jobs snapshot cannot hide an authoritative terminal status.
 gh() {
   if [[ "$*" == *"--json status --jq .status"* ]]; then
