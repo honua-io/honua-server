@@ -87,9 +87,11 @@ train_early_failure_observe_snapshot() {
 }
 
 train_early_failure_finalize_snapshot() {
-  local snapshot="$1"
+  local run_id="$1" snapshot="$2"
   [[ -n "${TRAIN_EARLY_FAILURE_FILE:-}" && -s "${TRAIN_EARLY_FAILURE_FILE}" ]] || return 0
-  local completed_at first_epoch completed_epoch wait_seconds updated
+  local observed_run_id completed_at first_epoch completed_epoch wait_seconds updated
+  observed_run_id="$(jq -r '.run_id | tostring' "${TRAIN_EARLY_FAILURE_FILE}" 2>/dev/null || echo '')"
+  [[ "${observed_run_id}" == "${run_id}" ]] || return 0
   completed_at="$(jq -r '.updatedAt // empty' <<<"${snapshot}" 2>/dev/null)"
   [[ -n "${completed_at}" ]] || return 0
   first_epoch="$(jq -r '.first_blocking_failure.completed_at | fromdateiso8601' "${TRAIN_EARLY_FAILURE_FILE}" 2>/dev/null || echo '')"

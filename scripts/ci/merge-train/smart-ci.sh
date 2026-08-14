@@ -169,17 +169,18 @@ train_wait_for_run_completion() {
   while :; do
     now="$(train_now)"
     snapshot=""
+    # This status read is authoritative and is never replaced by observation.
+    # Failure of the optional richer jobs request must not change whether the
+    # controller sees the workflow reach its terminal state.
+    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
     if (( observe_enabled == 1 )) && [[ ! -s "${TRAIN_EARLY_FAILURE_FILE}" ]] &&
        (( last_observation_epoch == 0 || now - last_observation_epoch >= observation_interval )); then
-      # Replace this iteration's ordinary status request with a richer snapshot.
       # The exact job completion timestamp makes the measurement independent of
-      # polling delay, so a 120s default avoids doubling API work every 30s.
+      # polling delay. The optional jobs page is bounded to once per 120s by
+      # default and can never substitute for the authoritative status read.
       snapshot="$(gh run view "${run_id}" --json status,updatedAt,jobs 2>/dev/null || echo '{}')"
-      status="$(jq -r '.status // empty' <<<"${snapshot}" 2>/dev/null || echo "")"
       train_early_failure_observe_snapshot "${run_id}" "${snapshot}" || true
       last_observation_epoch="${now}"
-    else
-      status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
     fi
     if [[ "${status}" == "completed" ]]; then
       if (( observe_enabled == 1 )); then
@@ -187,7 +188,7 @@ train_wait_for_run_completion() {
           snapshot="$(gh run view "${run_id}" --json status,updatedAt,jobs 2>/dev/null || echo '{}')"
           train_early_failure_observe_snapshot "${run_id}" "${snapshot}" || true
         fi
-        train_early_failure_finalize_snapshot "${snapshot}" || true
+        train_early_failure_finalize_snapshot "${run_id}" "${snapshot}" || true
       fi
       return 0
     fi

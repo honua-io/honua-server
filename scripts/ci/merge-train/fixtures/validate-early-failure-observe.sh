@@ -8,6 +8,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${TRAIN_DIR}/early-failure-observe.sh"
 # shellcheck source=../classify-timeout.sh
 . "${TRAIN_DIR}/classify-timeout.sh"
+# shellcheck source=../smart-ci.sh
+. "${TRAIN_DIR}/smart-ci.sh"
 
 fixture="$(mktemp -d "${RUNNER_TEMP:-/tmp}/honua-early-failure.XXXXXX")"
 trap 'rm -rf "${fixture}"' EXIT
@@ -50,7 +52,9 @@ terminal_snapshot='{
     {"databaseId":103,"name":"Server Tests (Infra and Security)","status":"completed","conclusion":"success","completedAt":"2026-08-14T00:10:50Z"}
   ]
 }'
-train_early_failure_finalize_snapshot "${terminal_snapshot}"
+train_early_failure_finalize_snapshot 56 "${terminal_snapshot}"
+jq -e 'has("run_completed_at") | not' "${TRAIN_EARLY_FAILURE_FILE}" >/dev/null
+train_early_failure_finalize_snapshot 55 "${terminal_snapshot}"
 jq -e '.avoidable_wait_seconds == 600 and .run_completed_at == "2026-08-14T00:11:00Z"' \
   "${TRAIN_EARLY_FAILURE_FILE}" >/dev/null
 export TRAIN_METRICS_KV="${fixture}/metrics.kv"
@@ -75,6 +79,20 @@ unselected_snapshot='{
 train_early_failure_observe_snapshot 56 "${unselected_snapshot}"
 [[ ! -e "${TRAIN_EARLY_FAILURE_FILE}" ]]
 
+# A failed optional jobs snapshot cannot hide an authoritative terminal status.
+gh() {
+  if [[ "$*" == *"--json status --jq .status"* ]]; then
+    printf 'completed\n'
+    return 0
+  fi
+  return 1
+}
+export TRAIN_EARLY_FAILURE_SHARD_DESCRIPTOR='{"shards":["Core"]}'
+if ! train_wait_for_run_completion 57 30 1; then
+  echo "optional observation read changed authoritative completion" >&2
+  exit 1
+fi
+
 mutation_pattern='gh[[:space:]]+run[[:space:]]+cancel|train_side_'
 mutation_pattern+='effect'
 if grep -Eq "${mutation_pattern}" \
@@ -85,6 +103,8 @@ fi
 grep -Fq 'TRAIN_EARLY_FAILURE_POLL_SECONDS: "120"' \
   "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
 grep -Fq 'now - last_observation_epoch >= observation_interval' \
+  "${TRAIN_DIR}/smart-ci.sh"
+grep -Fq 'status="$(gh run view "${run_id}" --json status --jq' \
   "${TRAIN_DIR}/smart-ci.sh"
 
 echo "early-failure-observe=ok mode=observe"
