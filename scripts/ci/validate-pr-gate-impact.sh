@@ -27,6 +27,10 @@ if grep -Fq "String('\${{ inputs.run_id }}')" "${observer_workflow}"; then
   exit 1
 fi
 grep -Fq 'gateHead !== gateRun.head_sha' "${observer_workflow}"
+grep -Fq 'github.rest.repos.listPullRequestsAssociatedWithCommit' "${observer_workflow}"
+grep -Fq "candidate.head?.sha === gateRun.head_sha" "${observer_workflow}"
+grep -Fq 'openExact.length === 1' "${observer_workflow}"
+grep -Fq "pr.state !== 'open' || pr.base?.ref !== repository.default_branch" "${observer_workflow}"
 grep -Fq 'pr.base?.sha !== expectedBase || pr.head?.sha !== expectedHead' "${observer_workflow}"
 grep -Fq 'currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead' "${observer_workflow}"
 grep -Fq 'github.rest.repos.getContent' "${observer_workflow}"

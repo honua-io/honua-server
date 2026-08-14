@@ -72,14 +72,31 @@ jobs:
                 !/^[0-9a-f]{40}$/.test(gateRun.head_sha || '')) {
               throw new Error('source run is not a completed canonical PR Gate run');
             }
+            let associatedPr = null;
             const pullRequests = gateRun.pull_requests || [];
-            if (pullRequests.length !== 1 || !pullRequests[0]?.number) {
-              throw new Error('canonical PR Gate run does not identify exactly one pull request');
+            if (pullRequests.length === 1) {
+              associatedPr = pullRequests[0];
+            } else if (pullRequests.length === 0) {
+              // GitHub leaves workflow_run.pull_requests empty for fork PRs.
+              // Resolve the exact head through the trusted repository API and
+              // require one unique open association; ambiguity fails closed.
+              const associated = await github.paginate(
+                github.rest.repos.listPullRequestsAssociatedWithCommit,
+                { ...context.repo, commit_sha: gateRun.head_sha, per_page: 100 },
+              );
+              const openExact = associated.filter((candidate) =>
+                candidate.state === 'open' &&
+                candidate.head?.sha === gateRun.head_sha &&
+                candidate.base?.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`);
+              if (openExact.length === 1) associatedPr = openExact[0];
+            }
+            if (!associatedPr?.number) {
+              throw new Error('canonical PR Gate run does not identify exactly one open pull request');
             }
 
-            const number = pullRequests[0].number;
-            const gateBase = pullRequests[0].base?.sha;
-            const gateHead = pullRequests[0].head?.sha;
+            const number = associatedPr.number;
+            const gateBase = associatedPr.base?.sha;
+            const gateHead = associatedPr.head?.sha;
             if (!/^[0-9a-f]{40}$/.test(gateBase || '') || gateHead !== gateRun.head_sha) {
               throw new Error('canonical PR Gate run has inconsistent pull-request identity');
             }
@@ -89,7 +106,8 @@ jobs:
             });
             const expectedBase = gateBase;
             const expectedHead = gateHead;
-            if (pr.base?.sha !== expectedBase || pr.head?.sha !== expectedHead) {
+            if (pr.state !== 'open' || pr.base?.ref !== repository.default_branch ||
+                pr.base?.sha !== expectedBase || pr.head?.sha !== expectedHead) {
               throw new Error('pull request moved after the canonical PR Gate run');
             }
 
