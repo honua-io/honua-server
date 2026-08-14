@@ -26,6 +26,11 @@ def main() -> None:
 
     require(producer, "name: Derived Artifact Normalization", "producer identity changed")
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
+    require(
+        producer,
+        "    types: [opened, synchronize, reopened, ready_for_review]",
+        "producer must observe a draft head when it becomes ready",
+    )
     require(producer, "  contents: read", "producer contents permission must be read-only")
     require(producer, "  packages: read", "producer package permission must be read-only")
     require(producer, "scripts/ci/normalization-envelope.py build", "producer must build the envelope")
