@@ -153,7 +153,8 @@ jobs:
             --password "${NUGET_AUTH_TOKEN}" \
             --store-password-in-clear-text
 
-      - name: Run train
+      - id: run-train
+        name: Run train
         env:
           MERGE_TRAIN_TOKEN_PRESENT: ${{ secrets.MERGE_TRAIN_TOKEN != '' }}
           # MERGE_TRAIN_TOKEN is preferred: a PAT can re-trigger downstream
@@ -275,23 +276,55 @@ jobs:
           # would silently never start. MERGE_TRAIN_TOKEN is a repo-admin PAT.
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           HAS_PAT: ${{ secrets.MERGE_TRAIN_TOKEN != '' }}
+          CHAIN_MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+          LANDED_THIS_RUN: ${{ steps.run-train.outputs.landed_this_run }}
         run: |
           if [[ "${HAS_PAT}" != "true" ]]; then
             echo "::warning::MERGE_TRAIN_TOKEN not set; a GITHUB_TOKEN dispatch won't trigger the next run. Self-chain skipped (schedule remains)."
             exit 0
           fi
           # Use the exact selector predicate, including live Codex re-attestation,
-          # so an all-inadmissible queue cannot spin the live self-chain.
+          # so an all-inadmissible queue cannot spin the live self-chain. Durable
+          # land intent is an independent continuation reason: GitHub can report
+          # the PR as OPEN for a few seconds after the trunk CAS, and cleanup must
+          # not depend on some unrelated future PR becoming selectable.
           export TRAIN_APPLY=1 MAX_BATCH=1 TRAIN_REPO_ROOT="${GITHUB_WORKSPACE}"
           source scripts/ci/merge-train/lib.sh
+          source scripts/ci/merge-train/state.sh
           source scripts/ci/merge-train/select.sh
-          if train_has_selectable_pr; then
-            echo "Dispatching the next train run (continuous drain; concurrency-guarded, single-instance)."
+          recovery_rc=1
+          if train_state_requires_live_reconciliation; then recovery_rc=0; else recovery_rc=$?; fi
+          if [[ "${recovery_rc}" == "2" ]]; then
+            echo "::error::Durable merge-train state is unreadable; refusing to dispatch or stop silently."
+            exit 1
+          fi
+          # Only the controller that performed the successful trunk CAS may
+          # spawn the one immediate reconciliation continuation. If that
+          # continuation still cannot finalize GitHub's PR projection, fail it
+          # visibly and retain the durable journal rather than creating an
+          # unbounded successful self-chain loop.
+          # The Run train step publishes this output only after the exact
+          # fast-forward CAS is observed and the corresponding durable state is
+          # written. Metrics are deliberately not consulted: they are
+          # best-effort observability and may be absent after a successful land.
+          if [[ "${recovery_rc}" == "0" && "${LANDED_THIS_RUN:-}" != "true" ]]; then
+            echo "::error::Durable land intent remains after its bounded reconciliation controller; retaining state and stopping the chain."
+            exit 1
+          fi
+          if [[ "${recovery_rc}" == "0" ]] || train_has_selectable_pr; then
+            if [[ "${recovery_rc}" == "0" ]]; then
+              echo "Dispatching the next train run to reconcile durable land intent."
+            else
+              echo "Dispatching the next train run (continuous drain; concurrency-guarded, single-instance)."
+            fi
             # A continuation is a fresh deterministic run. Optional Bedrock
             # judgment/autofix remains an operator choice for a one-off manual
             # dispatch and must never be silently re-enabled by the drain loop.
+            # Preserve the operator's batch bound across the whole drain chain;
+            # widening a max_batch=1 recovery to ten would admit PRs the
+            # operator did not include in the bounded action.
             gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-              -f train_apply=true -f use_llm=false -f use_autofix=false -f max_batch=10
+              -f train_apply=true -f use_llm=false -f use_autofix=false -f max_batch="${CHAIN_MAX_BATCH}"
           else
-            echo "No selectable PRs remain — chain stops; the */15 schedule remains as the backstop."
+            echo "No recovery or selectable PRs remain — chain stops; the */15 schedule remains as the backstop."
           fi
