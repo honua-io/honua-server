@@ -109,16 +109,17 @@ jobs:
                   workflow_id: prGateWorkflowResponse.data.id,
                   event: 'pull_request',
                   head_sha: pr.head.sha,
-                  status: 'completed',
                   per_page: 100,
                 },
               );
-              const prGate = prGateRunsResponse.data.workflow_runs.find((run) =>
-                run.path === '.github/workflows/pr-gate.yml'
-                && run.event === 'pull_request'
-                && run.head_sha === pr.head.sha
-                && run.conclusion === 'success');
-              if (!prGate) {
+              const canonicalPrGateRuns = prGateRunsResponse.data.workflow_runs
+                .filter((run) => run.path === '.github/workflows/pr-gate.yml'
+                  && run.event === 'pull_request'
+                  && run.head_sha === pr.head.sha)
+                .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
+                  || right.id - left.id);
+              const prGate = canonicalPrGateRuns[0];
+              if (prGate?.status !== 'completed' || prGate.conclusion !== 'success') {
                 unavailable('exact-head-pr-gate-is-not-successful');
                 return;
               }
