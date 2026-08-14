@@ -535,6 +535,13 @@ internal sealed record FeatureStreamCapabilitiesResponse
     public required int MaxSnapshotScanRows { get; init; }
 
     /// <summary>
+    /// Maximum serialized payload, in bytes, one baseline snapshot may emit before it is
+    /// truncated with <c>complete: false</c>. Advertised because it is a bound a client can
+    /// observe: a large-geometry layer reaches it long before the feature cap.
+    /// </summary>
+    public required int MaxSnapshotBytes { get; init; }
+
+    /// <summary>
     /// Mutable server release version. Changes on releases and is NOT a deployment identity.
     /// </summary>
     public required string ServerVersion { get; init; }
