@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 METRIC_CONTRACT = "honua.server-test-transfer-benchmark.v1"
@@ -23,6 +24,65 @@ def load_metrics(root: Path) -> list[dict]:
         if isinstance(value, dict) and value.get("contract") == METRIC_CONTRACT:
             metrics.append(value)
     return metrics
+
+
+def epoch_ms(value: str) -> int:
+    return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
+
+
+def load_hosted_jobs(root: Path) -> dict[tuple[int, str, str], dict[str, int]]:
+    prefixes = {
+        "producer": "Reuse payload producer / ",
+        "baseline": "Independent baseline shard / ",
+        "consumer-artifact": "Overlapped reuse shard / ",
+    }
+    intervals: dict[tuple[int, str, str], dict[str, int]] = {}
+    for path in root.rglob("*.json"):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        pages = value if isinstance(value, list) else [value]
+        for page in pages:
+            if not isinstance(page, dict) or not isinstance(page.get("jobs"), list):
+                raise ValueError(f"hosted jobs payload is invalid: {path}")
+            for job in page["jobs"]:
+                name = job.get("name")
+                attempt = job.get("run_attempt")
+                started_at = job.get("started_at")
+                completed_at = job.get("completed_at")
+                if not isinstance(name, str):
+                    continue
+                matched = next(
+                    ((mode, name[len(prefix) :]) for mode, prefix in prefixes.items() if name.startswith(prefix)),
+                    None,
+                )
+                if matched is None:
+                    continue
+                if not isinstance(attempt, int) or not isinstance(started_at, str) or not isinstance(completed_at, str):
+                    raise ValueError(f"hosted benchmark job interval is incomplete: {name}")
+                start = epoch_ms(started_at)
+                end = epoch_ms(completed_at)
+                if end <= start:
+                    raise ValueError(f"hosted benchmark job interval is invalid: {name}")
+                mode, identity = matched
+                key = (attempt, mode, identity)
+                if key in intervals:
+                    raise ValueError(f"duplicate hosted benchmark job interval: {name} attempt {attempt}")
+                intervals[key] = {"job_start_epoch_ms": start, "job_elapsed_ms": end - start}
+    return intervals
+
+
+def bind_hosted_intervals(
+    metrics: list[dict], hosted_jobs: dict[tuple[int, str, str], dict[str, int]]
+) -> list[dict]:
+    bound: list[dict] = []
+    for metric in metrics:
+        key = (metric.get("run_attempt"), metric.get("mode"), metric.get("identity"))
+        interval = hosted_jobs.get(key)
+        if interval is None:
+            raise ValueError(f"missing hosted job interval for metric {key}")
+        item = dict(metric)
+        item.update(interval)
+        bound.append(item)
+    return bound
 
 
 def nearest_rank(values: list[int], percentile: float) -> int:
@@ -66,7 +126,12 @@ def valid_metric(item: dict | None, *, test: bool) -> bool:
     return True
 
 
-def summarize(plan: dict, config: dict, metrics: list[dict]) -> dict:
+def summarize(
+    plan: dict,
+    config: dict,
+    metrics: list[dict],
+    hosted_jobs: dict[tuple[int, str, str], dict[str, int]],
+) -> dict:
     if plan.get("contract") != "honua.server-test-reuse-plan/v1":
         raise ValueError("benchmark plan contract is invalid")
     thresholds = config.get("decision_thresholds", {})
@@ -74,6 +139,7 @@ def summarize(plan: dict, config: dict, metrics: list[dict]) -> dict:
     if not isinstance(max_wall_regression, (int, float)) or not 0 <= max_wall_regression <= 20:
         raise ValueError("wall-clock threshold is invalid")
 
+    metrics = bind_hosted_intervals(metrics, hosted_jobs)
     attempt_one = [item for item in metrics if item.get("run_attempt") == 1]
     baseline_by_id = {
         item["identity"]: item for item in attempt_one if item.get("mode") == "baseline"
@@ -234,6 +300,7 @@ def main() -> int:
     parser.add_argument("--metrics", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--hosted-jobs", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
@@ -241,6 +308,7 @@ def main() -> int:
         json.loads(args.plan.read_text(encoding="utf-8")),
         json.loads(args.config.read_text(encoding="utf-8")),
         load_metrics(args.metrics),
+        load_hosted_jobs(args.hosted_jobs),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

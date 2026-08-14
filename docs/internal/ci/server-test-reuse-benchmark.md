@@ -23,7 +23,7 @@ This benchmark tests a narrower hybrid using the current bounded payload:
   evidence that excludes duration/order but includes every test identity and
   outcome.
 
-The workflow is branch-scoped/manual, read-only, non-required, and outside PR,
+The workflow is manual, read-only, non-required, and outside PR,
 nightly, release, and merge-train orchestration. Its default `core` mode runs
 the predeclared two-same-project, two-mixed-project, and five-project profiles.
 The deliberately expensive `observed-full` mode is manual only and derives the
@@ -37,7 +37,8 @@ For every profile with repeated projects, hybrid reuse must have:
 
 1. exact filter/result/outcome parity;
 2. lower p90 test-command start time;
-3. fewer rounded Linux runner minutes; and
+3. fewer rounded Linux runner minutes, computed from GitHub's complete hosted
+   job intervals rather than partial in-job timers; and
 4. no more than 5% wall-clock regression.
 
 A no-reuse profile must remain exactly on the baseline projection. A tie in a
@@ -48,8 +49,11 @@ rollback authority throughout observation.
 
 ## Hosted procedure
 
-Pushes to `ci/compact-server-test-reuse-benchmark` run the bounded core profile.
-Use `workflow_dispatch` for `observed-full`. To prove failed-only reuse without
+Use `workflow_dispatch` for both `core` and `observed-full`; no push or PR event
+runs this intentionally expensive evidence workflow. The first core run,
+31768277005, proved exact parity and receipt safety but rejected same-run
+fan-out because it increased both test-start latency and rounded runner minutes.
+To prove failed-only reuse without
 making every benchmark intentionally red, dispatch `core` with
 `prove_failed_rerun=true`, wait for the post-evidence `server-b` failure, then
 rerun failed jobs only. The producer and all green jobs must retain attempt-one

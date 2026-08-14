@@ -49,7 +49,7 @@ jq -e '
   ([.producers[].identity] | sort) == ["geoservices", "odata", "ogc-api", "ogc-classic", "server"]
 ' "${fixture}/full.json" >/dev/null
 
-grep -Fq 'ci/compact-server-test-reuse-benchmark' "${workflow}"
+grep -Fq '  workflow_dispatch:' "${workflow}"
 grep -Fq 'options: [core, observed-full]' "${workflow}"
 grep -Fq 'Deliberately do not depend on producer' "${workflow}"
 grep -Fq 'scripts/ci/wait-for-run-artifact.sh' "${workflow}"
@@ -57,8 +57,8 @@ grep -Fq 'scripts/ci/server-test-reuse-receipt.py validate' "${workflow}"
 grep -Fq 'permissions:' "${workflow}"
 grep -Fq '  actions: read' "${workflow}"
 grep -Fq '  contents: read' "${workflow}"
-if grep -Eq '^  (pull_request|schedule|pull_request_target):' "${workflow}"; then
-  echo "::error::Reuse benchmark must remain branch-scoped/manual and non-authoritative." >&2
+if grep -Eq '^  (push|pull_request|schedule|pull_request_target):' "${workflow}"; then
+  echo "::error::Reuse benchmark must remain manual and non-authoritative." >&2
   exit 1
 fi
 if grep -Eq '^  (actions|contents|pull-requests|statuses): write' "${workflow}"; then

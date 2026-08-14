@@ -61,8 +61,19 @@ class SummaryTests(unittest.TestCase):
             metric("consumer-artifact", "b", "server", 1_000, 111_000, 140_000),
         ]
 
+    def hosted_jobs(self, metrics: list[dict] | None = None) -> dict:
+        source = metrics or self.green_metrics()
+        return {
+            (item["run_attempt"], item["mode"], item["identity"]): {
+                "job_start_epoch_ms": item["job_start_epoch_ms"],
+                "job_elapsed_ms": item["job_elapsed_ms"],
+            }
+            for item in source
+        }
+
     def test_hybrid_can_pass_without_serializing_unique_projects(self) -> None:
-        result = MODULE.summarize(self.plan(), self.config(), self.green_metrics())
+        metrics = self.green_metrics()
+        result = MODULE.summarize(self.plan(), self.config(), metrics, self.hosted_jobs(metrics))
         self.assertEqual("eligible-for-20-head-shadow", result["decision"])
         self.assertTrue(result["profiles"][0]["eligible"])
         self.assertTrue(result["profiles"][1]["eligible"])
@@ -70,7 +81,7 @@ class SummaryTests(unittest.TestCase):
     def test_parity_mismatch_fails_closed(self) -> None:
         metrics = self.green_metrics()
         metrics[-1]["result_sha256"] = "b" * 64
-        result = MODULE.summarize(self.plan(), self.config(), metrics)
+        result = MODULE.summarize(self.plan(), self.config(), metrics, self.hosted_jobs(metrics))
         self.assertEqual("keep-shard-local-authoritative", result["decision"])
         self.assertEqual(["b"], result["profiles"][0]["parity_failures"])
 
@@ -80,8 +91,19 @@ class SummaryTests(unittest.TestCase):
             if item["mode"] == "consumer-artifact":
                 item["test_started_epoch_ms"] += 100_000
                 item["job_elapsed_ms"] += 100_000
-        result = MODULE.summarize(self.plan(), self.config(), metrics)
+        result = MODULE.summarize(self.plan(), self.config(), metrics, self.hosted_jobs(metrics))
         self.assertEqual("keep-shard-local-authoritative", result["decision"])
+
+    def test_billing_uses_complete_hosted_intervals(self) -> None:
+        metrics = self.green_metrics()
+        hosted = self.hosted_jobs(metrics)
+        hosted[(1, "producer", "server")]["job_elapsed_ms"] = 120_001
+        hosted[(1, "consumer-artifact", "a")]["job_elapsed_ms"] = 180_001
+        hosted[(1, "consumer-artifact", "b")]["job_elapsed_ms"] = 180_001
+        result = MODULE.summarize(self.plan(), self.config(), metrics, hosted)
+        shared = result["profiles"][0]
+        self.assertEqual(11, shared["hybrid"]["rounded_runner_minutes"])
+        self.assertFalse(shared["rounded_runner_minutes_ok"])
 
 
 if __name__ == "__main__":
