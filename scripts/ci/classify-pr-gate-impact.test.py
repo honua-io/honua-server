@@ -15,6 +15,7 @@ SPEC.loader.exec_module(MODULE)
 BASE = "a" * 40
 HEAD = "b" * 40
 POLICY_BLOB = "c" * 40
+POLICY = "d" * 40
 
 
 def payload(files: list[dict], **overrides: object) -> dict:
@@ -23,8 +24,14 @@ def payload(files: list[dict], **overrides: object) -> dict:
         "pull_request": 3231,
         "base_sha": BASE,
         "head_sha": HEAD,
-        "policy_sha": BASE,
+        "policy_sha": POLICY,
         "policy_blob_sha": POLICY_BLOB,
+        "trusted_execution": "default-branch-workflow-run/v1",
+        "gate_workflow_path": ".github/workflows/pr-gate.yml",
+        "gate_run_id": 123456,
+        "gate_run_attempt": 2,
+        "gate_run_head_sha": HEAD,
+        "gate_run_conclusion": "success",
         "changed_files": len(files),
         "files": files,
     }
@@ -46,8 +53,14 @@ assert result["repository"] == "honua-io/honua-server"
 assert result["pull_request"] == 3231
 assert result["base_sha"] == BASE
 assert result["head_sha"] == HEAD
-assert result["policy_sha"] == BASE
+assert result["policy_sha"] == POLICY
 assert result["policy_blob_sha"] == POLICY_BLOB
+assert result["trusted_execution"] == "default-branch-workflow-run/v1"
+assert result["gate_workflow_path"] == ".github/workflows/pr-gate.yml"
+assert result["gate_run_id"] == 123456
+assert result["gate_run_attempt"] == 2
+assert result["gate_run_head_sha"] == HEAD
+assert result["gate_run_conclusion"] == "success"
 assert len(result["files_sha256"]) == 64
 assert result["files_sha256"] == MODULE.classify(payload(list(reversed(docs))))["files_sha256"]
 
@@ -69,8 +82,15 @@ full_cases = [
     payload([docs[0]], base_sha="g" * 40),
     payload([docs[0]], repository="other/repository"),
     payload([docs[0]], pull_request=0),
-    payload([docs[0]], policy_sha=HEAD),
+    payload([docs[0]], policy_sha="short"),
     payload([docs[0]], policy_blob_sha="short"),
+    payload([docs[0]], trusted_execution="candidate-workflow"),
+    payload([docs[0]], gate_workflow_path=".github/workflows/lookalike.yml"),
+    payload([docs[0]], gate_run_id=0),
+    payload([docs[0]], gate_run_attempt=0),
+    payload([docs[0]], gate_run_head_sha=BASE),
+    payload([docs[0]], gate_run_conclusion=None),
+    payload([docs[0]], gate_run_conclusion="in_progress"),
 ]
 for case in full_cases:
     classified = MODULE.classify(case)

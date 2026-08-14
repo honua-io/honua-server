@@ -11,10 +11,21 @@ from pathlib import PurePosixPath
 from typing import Any
 
 
-CONTRACT = "honua.pr-gate-impact-observation/v1"
+CONTRACT = "honua.pr-gate-impact-observation/v2"
 MAX_FILES = 3_000
 DOCS_PREFIX = "docs/internal/"
 EXPECTED_REPOSITORY = "honua-io/honua-server"
+ALLOWED_GATE_CONCLUSIONS = {
+    "success",
+    "failure",
+    "cancelled",
+    "timed_out",
+    "action_required",
+    "neutral",
+    "skipped",
+    "stale",
+    "startup_failure",
+}
 
 
 def _full(
@@ -31,6 +42,12 @@ def _full(
         "head_sha": None,
         "policy_sha": None,
         "policy_blob_sha": None,
+        "trusted_execution": None,
+        "gate_workflow_path": None,
+        "gate_run_id": None,
+        "gate_run_attempt": None,
+        "gate_run_head_sha": None,
+        "gate_run_conclusion": None,
     }
     return {
         "contract": CONTRACT,
@@ -69,6 +86,12 @@ def classify(payload: object) -> dict[str, Any]:
     head_sha = payload.get("head_sha")
     policy_sha = payload.get("policy_sha")
     policy_blob_sha = payload.get("policy_blob_sha")
+    trusted_execution = payload.get("trusted_execution")
+    gate_workflow_path = payload.get("gate_workflow_path")
+    gate_run_id = payload.get("gate_run_id")
+    gate_run_attempt = payload.get("gate_run_attempt")
+    gate_run_head_sha = payload.get("gate_run_head_sha")
+    gate_run_conclusion = payload.get("gate_run_conclusion")
     if (
         repository != EXPECTED_REPOSITORY
         or not isinstance(pull_request, int)
@@ -81,9 +104,20 @@ def classify(payload: object) -> dict[str, Any]:
         or not isinstance(head_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", base_sha) is None
         or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None
-        or policy_sha != base_sha
+        or not isinstance(policy_sha, str)
+        or re.fullmatch(r"[0-9a-f]{40}", policy_sha) is None
         or not isinstance(policy_blob_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", policy_blob_sha) is None
+        or trusted_execution != "default-branch-workflow-run/v1"
+        or gate_workflow_path != ".github/workflows/pr-gate.yml"
+        or not isinstance(gate_run_id, int)
+        or isinstance(gate_run_id, bool)
+        or gate_run_id < 1
+        or not isinstance(gate_run_attempt, int)
+        or isinstance(gate_run_attempt, bool)
+        or gate_run_attempt < 1
+        or gate_run_head_sha != head_sha
+        or gate_run_conclusion not in ALLOWED_GATE_CONCLUSIONS
     ):
         return _full("invalid-diff-identity")
     identity = {
@@ -93,6 +127,12 @@ def classify(payload: object) -> dict[str, Any]:
         "head_sha": head_sha,
         "policy_sha": policy_sha,
         "policy_blob_sha": policy_blob_sha,
+        "trusted_execution": trusted_execution,
+        "gate_workflow_path": gate_workflow_path,
+        "gate_run_id": gate_run_id,
+        "gate_run_attempt": gate_run_attempt,
+        "gate_run_head_sha": gate_run_head_sha,
+        "gate_run_conclusion": gate_run_conclusion,
     }
     def full(reason: str, count: int = 0, digest: str = "") -> dict[str, Any]:
         return _full(reason, count=count, digest=digest, identity=identity)

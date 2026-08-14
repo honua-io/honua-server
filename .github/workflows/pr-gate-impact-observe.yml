@@ -1,0 +1,169 @@
+name: PR Gate Impact Observation
+
+# This observer is intentionally separate from the required pull-request
+# workflow. workflow_run executes the default-branch copy, so a candidate cannot
+# change the collector, its input, or the produced evidence. The full PR Gate
+# remains authoritative throughout the shadow period in #3235.
+on:
+  workflow_run:
+    workflows: [PR Gate]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed canonical PR Gate run to observe
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-gate-impact-${{ github.event.workflow_run.id || inputs.run_id }}
+  cancel-in-progress: false
+
+env:
+  PR_GATE_IMPACT_MODE: observe
+
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - id: collect
+        name: Collect exact change metadata from trusted policy
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const runnerTemp = process.env.RUNNER_TEMP;
+            if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
+
+            const { data: repository } = await github.rest.repos.get(context.repo);
+            const trustedRef = `refs/heads/${repository.default_branch}`;
+            if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
+              throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
+            }
+
+            // Treat dispatch input strictly as data. Do not interpolate it into
+            // this trusted JavaScript program.
+            const rawRunId = String(process.env.SOURCE_RUN_ID || '');
+            if (!/^[1-9][0-9]*$/.test(rawRunId)) throw new Error('invalid PR Gate run id');
+            const runId = Number(rawRunId);
+            if (!Number.isSafeInteger(runId)) throw new Error('unsafe PR Gate run id');
+
+            const { data: gateRun } = await github.rest.actions.getWorkflowRun({
+              ...context.repo,
+              run_id: runId,
+            });
+            if (gateRun.path !== '.github/workflows/pr-gate.yml' ||
+                gateRun.name !== 'PR Gate' ||
+                gateRun.event !== 'pull_request' ||
+                gateRun.status !== 'completed' ||
+                !['success', 'failure', 'cancelled', 'timed_out', 'action_required',
+                  'neutral', 'skipped', 'stale', 'startup_failure'].includes(gateRun.conclusion) ||
+                gateRun.repository?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
+                !/^[0-9a-f]{40}$/.test(gateRun.head_sha || '')) {
+              throw new Error('source run is not a completed canonical PR Gate run');
+            }
+            const pullRequests = gateRun.pull_requests || [];
+            if (pullRequests.length !== 1 || !pullRequests[0]?.number) {
+              throw new Error('canonical PR Gate run does not identify exactly one pull request');
+            }
+
+            const number = pullRequests[0].number;
+            const gateBase = pullRequests[0].base?.sha;
+            const gateHead = pullRequests[0].head?.sha;
+            if (!/^[0-9a-f]{40}$/.test(gateBase || '') || gateHead !== gateRun.head_sha) {
+              throw new Error('canonical PR Gate run has inconsistent pull-request identity');
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: number,
+            });
+            const expectedBase = gateBase;
+            const expectedHead = gateHead;
+            if (pr.base?.sha !== expectedBase || pr.head?.sha !== expectedHead) {
+              throw new Error('pull request moved after the canonical PR Gate run');
+            }
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              { ...context.repo, pull_number: number, per_page: 100 },
+            );
+            const { data: currentPr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: number,
+            });
+            if (currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead) {
+              throw new Error('pull request moved while paginating changed files');
+            }
+
+            const { data: policy } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: 'scripts/ci/classify-pr-gate-impact.py',
+              ref: context.sha,
+            });
+            if (Array.isArray(policy) || policy.type !== 'file' || policy.encoding !== 'base64' ||
+                !policy.content || !/^[0-9a-f]{40}$/.test(policy.sha || '')) {
+              throw new Error('trusted classifier is unavailable or malformed');
+            }
+
+            const classifierPath = path.join(runnerTemp, 'trusted-classify-pr-gate-impact.py');
+            const inputPath = path.join(runnerTemp, 'pr-gate-impact-input.json');
+            fs.writeFileSync(classifierPath, Buffer.from(policy.content, 'base64'));
+            fs.writeFileSync(inputPath, JSON.stringify({
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              pull_request: number,
+              base_sha: expectedBase,
+              head_sha: expectedHead,
+              policy_sha: context.sha,
+              policy_blob_sha: policy.sha,
+              trusted_execution: 'default-branch-workflow-run/v1',
+              gate_workflow_path: gateRun.path,
+              gate_run_id: gateRun.id,
+              gate_run_attempt: gateRun.run_attempt,
+              gate_run_head_sha: gateRun.head_sha,
+              gate_run_conclusion: gateRun.conclusion,
+              changed_files: pr.changed_files,
+              files: files.map((item) => ({
+                filename: item.filename,
+                previous_filename: item.previous_filename,
+                status: item.status,
+              })),
+            }));
+            core.setOutput('pr', String(number));
+            core.setOutput('head', expectedHead);
+            core.setOutput('run_id', String(gateRun.id));
+
+      - name: Classify non-authoritative PR Gate impact
+        run: |
+          python3 "${RUNNER_TEMP}/trusted-classify-pr-gate-impact.py" \
+            --input "${RUNNER_TEMP}/pr-gate-impact-input.json" \
+            --output "${RUNNER_TEMP}/pr-gate-impact-observation.json"
+          mode="$(jq -r '.mode' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          reason="$(jq -r '.reason' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          files="$(jq -r '.changed_file_count' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          {
+            echo '### Trusted PR Gate impact observation'
+            echo "- Rollout: \`${PR_GATE_IMPACT_MODE}\`"
+            echo "- Would route: \`${mode}\`"
+            echo "- Reason: \`${reason}\`"
+            echo "- Changed files: \`${files}\`"
+            echo "- Canonical PR Gate run: \`${{ steps.collect.outputs.run_id }}\`"
+            echo '- Authoritative path: `full` (unchanged)'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload trusted PR Gate impact observation
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-impact-observation-${{ steps.collect.outputs.pr }}-${{ steps.collect.outputs.head }}
+          path: ${{ runner.temp }}/pr-gate-impact-observation.json
+          if-no-files-found: error
+          retention-days: 30
