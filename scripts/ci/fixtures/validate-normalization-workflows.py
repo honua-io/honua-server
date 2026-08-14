@@ -85,6 +85,16 @@ def main() -> None:
         "fork validation must omit only the unavailable base comparison",
     )
     require(consumer, "github.rest.git.getBlob", "consumer must compare Git blobs without PR checkout")
+    require(
+        consumer,
+        "for (const generator of plan.generators)",
+        "trusted consumer must compare every generator with the exact PR tree",
+    )
+    require(
+        consumer,
+        "generator digest does not match the exact PR head",
+        "trusted consumer must reject fabricated generator evidence",
+    )
     require(consumer, "const maxArchiveBytes = 10 * 1024 * 1024", "consumer must bound artifact metadata")
     size_guard = consumer.index("artifacts[0].size_in_bytes > maxArchiveBytes")
     download = consumer.index("github.rest.actions.downloadArtifact")

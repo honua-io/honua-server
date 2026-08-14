@@ -158,20 +158,35 @@ jobs:
             });
             if (tree.truncated) throw new Error('PR tree query was truncated.');
             const entries = new Map(tree.tree.map(entry => [entry.path, entry]));
+            const readBlobDigest = async (path, required) => {
+              const entry = entries.get(path);
+              if (!entry) {
+                if (required) throw new Error(`${path} is absent from the exact PR tree.`);
+                return null;
+              }
+              if (entry.type !== 'blob' || !entry.sha) {
+                throw new Error(`${path} is not a regular Git blob.`);
+              }
+              const { data: blob } = await github.rest.git.getBlob({
+                ...context.repo, file_sha: entry.sha,
+              });
+              if (blob.encoding !== 'base64') {
+                throw new Error(`${path} Git blob has unexpected encoding ${blob.encoding}.`);
+              }
+              const content = Buffer.from(blob.content.replace(/\n/g, ''), 'base64');
+              return crypto.createHash('sha256').update(content).digest('hex');
+            };
+
+            for (const generator of plan.generators) {
+              const exactDigest = await readBlobDigest(generator.path, true);
+              if (exactDigest !== generator.sha256) {
+                throw new Error(`${generator.path} generator digest does not match the exact PR head.`);
+              }
+            }
+
             const changes = [];
             for (const output of plan.outputs) {
-              const entry = entries.get(output.path);
-              let currentDigest = null;
-              if (entry) {
-                if (entry.type !== 'blob' || !entry.sha) {
-                  throw new Error(`${output.path} is not a regular Git blob.`);
-                }
-                const { data: blob } = await github.rest.git.getBlob({
-                  ...context.repo, file_sha: entry.sha,
-                });
-                const current = Buffer.from(blob.content.replace(/\n/g, ''), blob.encoding);
-                currentDigest = crypto.createHash('sha256').update(current).digest('hex');
-              }
+              const currentDigest = await readBlobDigest(output.path, false);
               if (currentDigest !== output.sha256) {
                 changes.push({ path: output.path, before: currentDigest, after: output.sha256 });
               }

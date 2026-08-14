@@ -39,6 +39,10 @@ length, SHA-256 digest, and base64 content. Validation rejects extra members or
 fields, paths outside the allowlist, duplicates, traversal, symlinks,
 non-regular modes, encryption, invalid UTF-8/JSON, duplicate JSON keys,
 non-finite numbers, bad base64/digests, and bounded-size violations.
+Before publishing even an observation status, the trusted consumer fetches
+every allowlisted generator as a Git blob from the exact PR commit and compares
+its SHA-256 digest with the envelope. Generator evidence authored by PR code is
+therefore never trusted on its own.
 
 ## Observe mode
 
