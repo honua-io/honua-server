@@ -813,7 +813,15 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             run.RunId,
             state.StepId,
             stepDefinition.InputBindings.Count);
-        var bindingResolution = WorkflowBindingResolver.Resolve(stepDefinition, allStates);
+        var bindingResolution = WorkflowBindingResolver.Resolve(
+            stepDefinition,
+            allStates,
+            new Honua.Core.Features.Geoprocessing.Raster.RasterSecurityContextReference
+            {
+                TenantId = Honua.Geoprocessing.GeoprocessingJobArtifactService.CreateOpaqueTenantReference(
+                    run.Audit.SubmitterSecurityContext?.TenantId),
+                AuthorizationSnapshotReference = $"workflow:{run.RunId}:submitter",
+            });
         bindingActivity?.Dispose();
 
         if (bindingResolution.Failures.Count > 0)
@@ -851,7 +859,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // between authorization and dispatch fails this step rather than being re-authorized
         // under the orchestrator identity below.
         var basePlan = state.AuthorizedPlan ?? stepDefinition.Plan;
-        var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution.ResolvedValues);
+        var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
         var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);

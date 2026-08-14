@@ -341,6 +341,156 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             submitterSecurityContext, inheritsSubmitterSecurityContext: true, cancellationToken);
 
     /// <summary>
+    /// Allows a staged raster source only when its full object identity can be traced to a
+    /// succeeded upstream job in the same workflow run and under the same submitter identity.
+    /// The descriptor's public security-context strings remain correlation metadata; they are
+    /// never sufficient authorization on their own.
+    /// </summary>
+    private async Task EnsureTypedRasterExecutionSupportedAsync(
+        AnalysisPlan plan,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        JobSecurityContext? submitterSecurityContext,
+        bool inheritsSubmitterSecurityContext,
+        CancellationToken cancellationToken)
+    {
+        var durableSources = plan.Steps
+            .SelectMany(step => step.RasterSources.Values)
+            .Where(source => source is not InlineRasterSourceDescriptor)
+            .ToArray();
+        if (durableSources.Length == 0)
+        {
+            return;
+        }
+
+        if (!inheritsSubmitterSecurityContext
+            || submitterSecurityContext is null
+            || _jobStore is null
+            || protocolMetadata?.TryGetValue("orchestration.runId", out var workflowRunId) != true
+            || string.IsNullOrWhiteSpace(workflowRunId)
+            || durableSources.Any(source => source is not StagedArtifactRasterSourceDescriptor))
+        {
+            GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
+            return;
+        }
+
+        foreach (var staged in durableSources.Cast<StagedArtifactRasterSourceDescriptor>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await HasTrustedWorkflowArtifactLineageAsync(
+                    staged,
+                    workflowRunId,
+                    submitterSecurityContext,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
+                return;
+            }
+        }
+    }
+
+    private async Task<bool> HasTrustedWorkflowArtifactLineageAsync(
+        StagedArtifactRasterSourceDescriptor source,
+        string workflowRunId,
+        JobSecurityContext submitterSecurityContext,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseWorkflowArtifactReference(source.ArtifactReference, out var upstreamJobId, out var artifactIndex)
+            || source.Provider is null
+            || source.StoreReference is null
+            || source.ObjectKey is null
+            || source.DeclaredDimensions is null
+            || source.Content.Checksum is null
+            || !string.Equals(
+                source.SecurityContext.TenantId,
+                GeoprocessingJobArtifactService.CreateOpaqueTenantReference(submitterSecurityContext.TenantId),
+                StringComparison.Ordinal)
+            || !string.Equals(
+                source.SecurityContext.AuthorizationSnapshotReference,
+                $"workflow:{workflowRunId}:submitter",
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var upstreamJob = await _jobStore!.GetAsync(upstreamJobId, cancellationToken).ConfigureAwait(false);
+        if (upstreamJob is null
+            || upstreamJob.Status != ExecutionJobStatus.Succeeded
+            || artifactIndex < 0
+            || artifactIndex >= upstreamJob.ArtifactReferences.Count
+            || !upstreamJob.Spec.Parameters.TryGetValue("orchestration.runId", out var upstreamRunId)
+            || !string.Equals(upstreamRunId, workflowRunId, StringComparison.Ordinal)
+            || !SecurityIdentitiesMatch(upstreamJob.Audit.SubmitterSecurityContext, submitterSecurityContext)
+            || !RasterOutputJson.TryDeserialize(upstreamJob.ArtifactReferences[artifactIndex], out var output)
+            || output is not StagedObjectRasterOutputDescriptor stagedOutput
+            || !RasterOutputDescriptorValidator.Validate(stagedOutput).IsValid
+            || !string.Equals(stagedOutput.JobId, upstreamJob.OperationId, StringComparison.Ordinal)
+            || stagedOutput.AttemptNumber != upstreamJob.AttemptCount)
+        {
+            return false;
+        }
+
+        return StagedSourceMatchesOutput(source, stagedOutput);
+    }
+
+    private static bool TryParseWorkflowArtifactReference(
+        string artifactReference,
+        out string jobId,
+        out int artifactIndex)
+    {
+        const string marker = ":artifact:";
+        jobId = string.Empty;
+        artifactIndex = -1;
+        var markerIndex = artifactReference.LastIndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex <= 0
+            || !int.TryParse(
+                artifactReference.AsSpan(markerIndex + marker.Length),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var oneBasedIndex)
+            || oneBasedIndex <= 0)
+        {
+            return false;
+        }
+
+        jobId = artifactReference[..markerIndex];
+        artifactIndex = oneBasedIndex - 1;
+        return true;
+    }
+
+    private static bool SecurityIdentitiesMatch(JobSecurityContext? left, JobSecurityContext right)
+        => left is not null
+            && !string.IsNullOrWhiteSpace(right.PrincipalId)
+            && string.Equals(left.PrincipalId, right.PrincipalId, StringComparison.Ordinal)
+            && string.Equals(left.TenantId, right.TenantId, StringComparison.Ordinal);
+
+    private static bool StagedSourceMatchesOutput(
+        StagedArtifactRasterSourceDescriptor source,
+        StagedObjectRasterOutputDescriptor output)
+    {
+        var sourceChecksum = source.Content.Checksum!;
+        var outputChecksum = output.Content.Checksum!;
+        var dimensions = source.DeclaredDimensions!;
+        var grid = output.Grid;
+        return source.Provider == output.Provider
+            && string.Equals(source.StoreReference, output.StoreReference, StringComparison.Ordinal)
+            && string.Equals(source.ObjectKey, output.ObjectKey, StringComparison.Ordinal)
+            && source.Content.SizeBytes == output.Content.SizeBytes
+            && string.Equals(source.Content.MediaType, output.Content.MediaType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(sourceChecksum.Algorithm, outputChecksum.Algorithm, StringComparison.Ordinal)
+            && string.Equals(sourceChecksum.Value, outputChecksum.Value, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                source.Version,
+                $"{outputChecksum.Algorithm}:{outputChecksum.Value}",
+                StringComparison.OrdinalIgnoreCase)
+            && grid is not null
+            && dimensions.Width == grid.Width
+            && dimensions.Height == grid.Height
+            && dimensions.BandCount == grid.BandCount
+            && dimensions.BitsPerSample == grid.BitsPerSample
+            && source.DeclaredPixelScale == grid.PixelScale;
+    }
+
+    /// <summary>
     /// Shared submit pipeline for both the caller-initiated submit path and the
     /// approval-resume path. When <paramref name="resumingApproved"/> is true the
     /// caller is the operation gateway replaying a proposal that already cleared the
@@ -406,10 +556,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         EnsurePlanExecutable(plan);
         _artifacts.ValidateRasterSources(plan, cancellationToken);
 
-        // Refuse client-supplied durable raster descriptors before any further processing:
-        // only execution-owned catalog resolution below may mint object-store references,
-        // and bounded typed inline sources carry no ambient object-store authority (#3090).
-        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
+        // Refuse client-supplied durable raster descriptors before any further processing.
+        // Workflow bindings are admitted only after server-side durable-lineage verification;
+        // catalog resolution below and bounded inline sources remain the other trusted paths.
+        await EnsureTypedRasterExecutionSupportedAsync(
+            plan,
+            protocolMetadata,
+            resolvedSecurityContext,
+            inheritsSubmitterSecurityContext,
+            cancellationToken).ConfigureAwait(false);
 
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no

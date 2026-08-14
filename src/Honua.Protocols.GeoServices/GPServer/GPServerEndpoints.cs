@@ -483,7 +483,11 @@ internal static class GPServerEndpoints
             }
 
             return await BuildExecuteSuccessResponseAsync(
-                jobService, terminal, context.User, envControls, workingSrid, ct);
+                jobService, terminal, context.User, envControls, workingSrid,
+                BaseUrlResolver.GetBaseUrl(context),
+                context.RequestServices
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
+                ct);
         }
         catch (TimeoutException)
         {
@@ -570,6 +574,44 @@ internal static class GPServerEndpoints
         }
     }
 
+    /// <summary>
+    /// Resolves the GP result value for an artifact. Staged output artifacts (#3089)
+    /// carry the canonical authenticated content route, so no provider location or
+    /// expiring URL leaks to clients. When
+    /// this host's output store cannot serve the artifact (split-host staging
+    /// misconfiguration) the value degrades to the label rather than advertising a
+    /// link that is guaranteed to fail.
+    /// </summary>
+    private static string ResolveArtifactValue(
+        ArtifactRef artifact,
+        string jobId,
+        int artifactIndex,
+        string baseUrl,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore)
+    {
+        if (artifact.Metadata.TryGetValue(
+                Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var staged)
+            && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.CanServe(
+                    outputStore,
+                    artifact.Metadata.GetValueOrDefault(
+                        Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreProvider),
+                    artifact.Metadata.GetValueOrDefault(
+                        Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreReference))
+                ? Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(
+                    baseUrl, jobId, artifactIndex)
+                : artifact.Label;
+        }
+
+        if (artifact.Uri is { } uri)
+        {
+            return uri;
+        }
+
+        return artifact.Label;
+    }
+
     private static IResult BuildExecuteFailureResponse(ExecutionJobRecord job, string esriStatus)
     {
         var messages = new List<GPJobMessage>();
@@ -600,6 +642,8 @@ internal static class GPServerEndpoints
         System.Security.Claims.ClaimsPrincipal user,
         EnvControls envControls,
         int workingSrid,
+        string baseUrl,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore,
         CancellationToken ct)
     {
         var results = new List<GPResultResponse>();
@@ -634,7 +678,7 @@ internal static class GPServerEndpoints
                 var artifact = resultPackage.Artifacts[index];
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
                 var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
-                var value = artifact.Uri ?? artifact.Label;
+                var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl, outputStore);
 
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
@@ -1005,7 +1049,20 @@ internal static class GPServerEndpoints
                     $"Output parameter '{paramName}' not found");
             }
 
-            var value = artifact.Uri ?? artifact.Label;
+            var artifactIndex = 0;
+            for (var index = 0; index < results.Artifacts.Count; index++)
+            {
+                if (ReferenceEquals(results.Artifacts[index], artifact))
+                {
+                    artifactIndex = index;
+                    break;
+                }
+            }
+
+            var value = ResolveArtifactValue(
+                artifact, job.OperationId, artifactIndex, BaseUrlResolver.GetBaseUrl(context),
+                context.RequestServices
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>());
 
             // Honor env:outSR on the async path: when the job was submitted with
             // env:outSR, apply the same reprojection the synchronous execute path

@@ -34,23 +34,29 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly IProcessCatalog _processCatalog;
     private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
     private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
+    private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
+    private readonly IGeoprocessingOutputObjectStore? _outputStore;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
-    /// and the optional raster-source resolver.
+    /// the optional raster-source resolver, and the optional output registrar (#3089).
     /// </summary>
     public GeoprocessingJobArtifactService(
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IProcessCatalog processCatalog,
         IGeoprocessingResultPackageStore? resultPackageStore = null,
-        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
+        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
+        GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
+        IGeoprocessingOutputObjectStore? outputStore = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
         _processCatalog = processCatalog;
         _resultPackageStore = resultPackageStore;
         _rasterSourceResolver = rasterSourceResolver;
+        _outputRegistrar = outputRegistrar;
+        _outputStore = outputStore;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -268,7 +274,7 @@ internal sealed class GeoprocessingJobArtifactService
                         StringComparison.Ordinal))
                 {
                     GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
-                    return storedPackage;
+                    return ProjectStagedArtifactAvailability(storedPackage, jobId, _outputStore);
                 }
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -278,6 +284,24 @@ internal sealed class GeoprocessingJobArtifactService
         }
 
         var synthesizedPackage = GeoprocessingResultPackageFactory.Create(job, _processCatalog);
+
+        // Registration is atomic with result visibility (#3089, ADR-0071): a job with
+        // registration intents never yields a Completed package until every intent is
+        // durably registered. The registrar is idempotent, so a crash between the
+        // terminal transition and this read is healed by replaying it here.
+        if (GeoprocessingRasterOutputRegistrar.HasRegistrationIntents(job))
+        {
+            if (_outputRegistrar is null)
+            {
+                throw new InvalidOperationException(
+                    $"Job '{jobId}' declares raster output registration intents, but no output registrar "
+                    + "is configured in this deployment.");
+            }
+
+            synthesizedPackage = await _outputRegistrar
+                .EnsureRegisteredAsync(job, synthesizedPackage, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (_resultPackageStore != null)
         {
@@ -294,6 +318,66 @@ internal sealed class GeoprocessingJobArtifactService
         }
 
         GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
-        return synthesizedPackage;
+        return ProjectStagedArtifactAvailability(synthesizedPackage, jobId, _outputStore);
+    }
+
+    /// <summary>
+    /// Projects canonical staged-content routes only when this serving host has the
+    /// matching output store. Every protocol consumes this package, so performing the
+    /// availability check here prevents gRPC, MCP, and workflow consumers from
+    /// advertising a route that is guaranteed to return 503 in a split-host topology.
+    /// </summary>
+    internal static AnalysisResultPackage ProjectStagedArtifactAvailability(
+        AnalysisResultPackage package,
+        string jobId,
+        IGeoprocessingOutputObjectStore? outputStore)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+
+        ArtifactRef[]? projected = null;
+        for (var index = 0; index < package.Artifacts.Count; index++)
+        {
+            var artifact = package.Artifacts[index];
+            if (!artifact.Metadata.TryGetValue(RasterOutputArtifactMetadata.Staged, out var staged)
+                || !string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var canServe = RasterOutputContentRoutes.CanServe(
+                    outputStore,
+                    artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreProvider),
+                    artifact.Metadata.GetValueOrDefault(RasterOutputArtifactMetadata.StoreReference));
+            var uri = canServe ? RasterOutputContentRoutes.BuildRelative(jobId, index) : null;
+            var hasProjectedRoute = artifact.Metadata.TryGetValue(
+                RasterOutputArtifactMetadata.ContentRoute,
+                out var projectedRoute);
+            var metadataIsCurrent = canServe
+                ? hasProjectedRoute && string.Equals(projectedRoute, uri, StringComparison.Ordinal)
+                : !hasProjectedRoute;
+            if (string.Equals(uri, artifact.Uri, StringComparison.Ordinal) && metadataIsCurrent)
+            {
+                continue;
+            }
+
+            var metadata = artifact.Metadata.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal);
+            if (canServe)
+            {
+                metadata[RasterOutputArtifactMetadata.ContentRoute] = uri!;
+            }
+            else
+            {
+                metadata.Remove(RasterOutputArtifactMetadata.ContentRoute);
+            }
+
+            projected ??= package.Artifacts.ToArray();
+            projected[index] = artifact with { Uri = uri, Metadata = metadata };
+        }
+
+        return projected is null ? package : package with { Artifacts = projected };
     }
 }

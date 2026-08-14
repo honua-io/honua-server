@@ -3150,6 +3150,48 @@
       ]
     },
     {
+      "surfaceId": "geoprocessing-output-artifacts",
+      "displayName": "Geoprocessing Output Artifacts",
+      "surfaceKind": "http-route-family",
+      "protocol": "Geoprocessing Output Artifacts",
+      "canonicalIdentifier": "/api/geoprocessing/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/geoprocessing"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Geoprocessing.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#3089",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Authenticated staged-artifact integration tests cover validation, authorization, ETag, store mismatch, and terminal job state.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/OgcProcessesStagedArtifactContentTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#3089",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "gpserver-adapter",
       "displayName": "GeoServices REST GPServer Adapter",
       "surfaceKind": "http-route-family",
