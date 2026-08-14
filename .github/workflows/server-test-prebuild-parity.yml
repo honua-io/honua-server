@@ -94,12 +94,31 @@ jobs:
               return;
             }
             if (manual) {
-              const checksResponse = await github.request(
-                'GET /repos/{owner}/{repo}/commits/{ref}/check-runs',
-                { ...context.repo, ref: pr.head.sha, filter: 'latest', per_page: 100 },
+              const prGateWorkflowResponse = await github.request(
+                'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}',
+                { ...context.repo, workflow_id: 'pr-gate.yml' },
               );
-              const prGate = checksResponse.data.check_runs.find((item) => item.name === 'PR Gate');
-              if (prGate?.conclusion !== 'success') {
+              if (prGateWorkflowResponse.data.path !== '.github/workflows/pr-gate.yml') {
+                unavailable('pr-gate-workflow-identity-mismatch');
+                return;
+              }
+              const prGateRunsResponse = await github.request(
+                'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
+                {
+                  ...context.repo,
+                  workflow_id: prGateWorkflowResponse.data.id,
+                  event: 'pull_request',
+                  head_sha: pr.head.sha,
+                  status: 'completed',
+                  per_page: 100,
+                },
+              );
+              const prGate = prGateRunsResponse.data.workflow_runs.find((run) =>
+                run.path === '.github/workflows/pr-gate.yml'
+                && run.event === 'pull_request'
+                && run.head_sha === pr.head.sha
+                && run.conclusion === 'success');
+              if (!prGate) {
                 unavailable('exact-head-pr-gate-is-not-successful');
                 return;
               }
