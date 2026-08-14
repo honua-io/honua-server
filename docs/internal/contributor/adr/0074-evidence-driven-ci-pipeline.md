@@ -111,11 +111,14 @@ publish authoritative reusable evidence.
 Normalization uses two workflows:
 
 1. An unprivileged `pull_request` workflow checks out and executes the pull
-   request. It runs only declared generators and uploads a data-only
-   normalization envelope. The envelope contains the source SHA, contract
-   version, allowlisted derived path names, exact output blobs/digests, and
-   generator evidence. It contains no executable path, symlink, submodule,
-   workflow, or arbitrary archive layout.
+   request. A generation job runs each declared generator twice from the same
+   committed-output baseline and uploads only byte-identical, bounded JSON
+   projections. A separate fresh runner packages those data files
+   against a clean exact-head checkout, so generator/setup mutations cannot
+   alter provenance inputs or the envelope builder. The envelope contains the
+   source SHA and Git tree, contract version, allowlisted derived path names,
+   exact output blobs/digests, and generator evidence. It contains no executable
+   path, symlink, submodule, workflow, or arbitrary archive layout.
 2. A trusted default-branch `workflow_run` consumer does not execute pull-request
    scripts. It validates the completed producer identity, repository, event,
    current PR head, envelope schema, path allowlist, size bounds, and every
@@ -129,6 +132,12 @@ formats, and any output not named by the default-branch allowlist. It compares
 the resulting tree before pushing; an empty result succeeds without a commit.
 The commit includes a loop-prevention marker, while idempotent tree comparison
 is the primary loop guard.
+
+In observe mode the consumer publishes no status or branch mutation. Its output
+is explicitly a candidate and is excluded from accuracy evidence until an
+independent exact-head PR Gate corroborates a no-op, or authoritative drift
+checks pass on the subsequent normalized head. Reproducibility and provenance
+are necessary admission signals, not mutation authority.
 
 Review is requested only after normalization reaches a stable head. Generated
 drift remains independently checked in `verify` and `train`; early
