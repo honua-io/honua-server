@@ -156,7 +156,7 @@ Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci
 
 There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events run the cheap **`PR Gate`** (`.github/workflows/pr-gate.yml` — build + format + Fast unit + architecture smoke, one runner), CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The heavy ~45-job matrix runs only on the train's **batch CI** and the nightly schedule.
 
-**The required branch-protection check is `PR Gate`** (app id `15368`). The protection flip closed #2865 on 2026-07-17. `CI Gate` remains the batch-CI aggregator and is intentionally not a required per-PR context.
+**The required branch-protection checks are `PR Gate` and `Review Gate`.** `PR Gate` (app id `15368`) is the unprivileged verification context; `Review Gate` is the trusted, exact-head admission context published only by default-branch policy. Both are unfiltered and required. `CI Gate` remains the batch-CI aggregator and is intentionally not a required per-PR context.
 
 ### Normal landing path
 

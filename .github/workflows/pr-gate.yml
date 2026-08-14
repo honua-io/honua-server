@@ -1,7 +1,9 @@
 name: PR Gate
 
-# This workflow is the sole required branch-protection context. In observe mode
-# it records the review-first admission receipt while preserving eager behavior.
+# This workflow is the required verification context. The trusted `Review Gate`
+# status is a separate required admission context, so PR-authored workflow code
+# cannot satisfy branch protection before exact-head review. In observe mode
+# this workflow records the review-first receipt while preserving eager behavior.
 # After the measured shadow period in #3216, changing REVIEW_FIRST_MODE to
 # `enforce` makes pull_request attempt 1 admission-only and fail-closed. The
 # trusted default-branch Review Gate workflow releases the same run exactly once
@@ -34,7 +36,7 @@ env:
 
 jobs:
   pr-gate:
-    # This exact string is the branch-protection required context. Changing it
+    # This exact string is the branch-protection verification context. Changing it
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate
     runs-on: ubuntu-latest
@@ -75,7 +77,7 @@ jobs:
 
       # Review evidence is mutable after the trusted dispatcher accepts the
       # rerun. Check its SHA-bound status before spending runners and again
-      # immediately before the sole required context can become green. A
+      # immediately before the required verification context can become green. A
       # dismissal, deleted clean result, or new unresolved thread therefore
       # fails attempt 2 closed instead of relying only on its run number.
       - name: Revalidate exact-head review before verification

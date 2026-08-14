@@ -4,21 +4,13 @@ on:
   pull_request_target:
     branches: [trunk]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled, closed]
-  pull_request_review:
-    types: [submitted, dismissed, edited]
-  pull_request_review_comment:
-    types: [created, edited, deleted]
   issue_comment:
     types: [created, edited, deleted]
   workflow_run:
-    workflows: ["PR Gate"]
+    # Review events execute PR merge-branch workflow code, so the unprivileged
+    # bridge converts them into a trusted default-branch workflow_run event.
+    workflows: ["PR Gate", "Review Event Bridge"]
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: Pull request number to re-attest
-        required: true
-        type: string
 
 permissions:
   actions: write
@@ -26,31 +18,64 @@ permissions:
   pull-requests: read
   statuses: write
 
-concurrency:
-  group: review-gate-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.event.inputs.pr || github.run_id }}
-  # Never interrupt this trusted workflow between accepting a rerun and
-  # recording the result. A later event serializes, observes attempt 2, and
-  # becomes a deterministic no-op.
-  cancel-in-progress: false
-
 env:
   # Keep synchronized with pr-gate.yml. Observe mode records the exact decision
   # but performs no Actions mutation; #3216 owns the measured flip to enforce.
   REVIEW_FIRST_MODE: observe
 
 jobs:
-  attest:
+  resolve:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    name: Resolve pull request identity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.target.outputs.result }}
+    steps:
+      - name: Resolve every event to one pull request
+        id: target
+        uses: actions/github-script@v9
+        with:
+          result-encoding: string
+          script: |
+            let prNumber = Number(
+              context.payload.pull_request?.number ||
+              context.payload.issue?.number ||
+              context.payload.workflow_run?.pull_requests?.[0]?.number
+            );
+            if (!prNumber && context.payload.workflow_run) {
+              const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...context.repo, commit_sha: context.payload.workflow_run.head_sha,
+              });
+              const openPrs = assocPrs.filter(candidate => candidate.state === 'open');
+              if (openPrs.length === 1) prNumber = openPrs[0].number;
+            }
+            if (!prNumber) {
+              core.setFailed('Event does not identify exactly one open pull request.');
+              return '';
+            }
+            return String(prNumber);
+
+  attest:
+    needs: resolve
+    if: needs.resolve.outputs.pr != ''
     name: Publish SHA-bound Codex review attestation
     runs-on: ubuntu-latest
+    concurrency:
+      # Resolve first so fork workflow_run events (whose pull_requests array is
+      # empty) serialize with review/comment events under the same PR identity.
+      group: review-gate-${{ needs.resolve.outputs.pr }}
+      # Never interrupt this trusted workflow between accepting a rerun and
+      # recording the result. The next event observes the serialized result.
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
-          # Untrusted PR events always evaluate the default-branch policy. A manual
-          # workflow_dispatch may intentionally validate a reviewed policy fix at
-          # its selected ref, which provides the bootstrap path when the default
-          # policy itself cannot recognize the connector's clean-result shape.
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}
+          # This privileged workflow always evaluates default-branch policy.
+          # Review events reach it only through the read-only bridge completion.
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
       - name: Attest current PR head
@@ -63,27 +88,7 @@ jobs:
               evaluateReviewFirstDispatch,
               selectExactAdmissionRun,
             } = require('./scripts/ci/review-first-dispatch');
-            // workflow_run only carries pull_requests for same-repo PRs; GitHub
-            // leaves it empty for fork PRs. Fall back to a head-SHA search (same
-            // pattern as ci-failure-triage.yml) so fork PRs still get re-attested
-            // when PR Gate completes, instead of failing before publishing status.
-            let prNumber = Number(
-              context.payload.pull_request?.number ||
-              context.payload.issue?.number ||
-              context.payload.workflow_run?.pull_requests?.[0]?.number ||
-              '${{ github.event.inputs.pr }}'
-            );
-            if (!prNumber && context.payload.workflow_run) {
-              const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                ...context.repo, commit_sha: context.payload.workflow_run.head_sha,
-              });
-              const openPr = assocPrs.find(p => p.state === 'open');
-              if (openPr) prNumber = openPr.number;
-            }
-            if (!prNumber) {
-              core.setFailed('Event does not identify a pull request.');
-              return;
-            }
+            const prNumber = Number('${{ needs.resolve.outputs.pr }}');
 
             const pr = await fetchPullRequestSnapshot(
               github, context.repo.owner, context.repo.repo, prNumber);

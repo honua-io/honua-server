@@ -10,6 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PR_GATE = ROOT / ".github/workflows/pr-gate.yml"
 REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
+REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
+AGENTS = ROOT / "AGENTS.md"
+GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
+WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -27,6 +31,7 @@ def mode(source: str, path: Path) -> str:
 def main() -> None:
     pr_gate = PR_GATE.read_text(encoding="utf-8")
     review_gate = REVIEW_GATE.read_text(encoding="utf-8")
+    review_bridge = REVIEW_BRIDGE.read_text(encoding="utf-8")
 
     pr_mode = mode(pr_gate, PR_GATE)
     review_mode = mode(review_gate, REVIEW_GATE)
@@ -79,11 +84,23 @@ def main() -> None:
         raise AssertionError("review evidence must bracket every expensive verification step")
 
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
-    require(review_gate, 'workflows: ["PR Gate"]', "PR Gate completion must re-evaluate review")
+    require(
+        review_gate,
+        'workflows: ["PR Gate", "Review Event Bridge"]',
+        "PR Gate and review-event completion must re-evaluate trusted review",
+    )
     require(review_gate, "cancel-in-progress: false", "trusted dispatch must not be interrupted")
     require(
         review_gate,
-        "ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}",
+        "group: review-gate-${{ needs.resolve.outputs.pr }}",
+        "every trusted mutation must serialize on a resolved PR number",
+    )
+    require(review_gate, "needs: resolve", "attestation must wait for PR identity resolution")
+    if "github.event.workflow_run.head_sha ||" in review_gate:
+        raise AssertionError("fork workflow events must not use a different concurrency identity")
+    require(
+        review_gate,
+        "ref: ${{ github.event.repository.default_branch }}",
         "review workflow must check out default-branch policy",
     )
     require(review_gate, "persist-credentials: false", "trusted checkout must not persist credentials")
@@ -101,6 +118,35 @@ def main() -> None:
         raise AssertionError("pull_request_target workflow must never check out the PR head")
     if "secrets." in review_gate:
         raise AssertionError("review-first transition must use its bounded GITHUB_TOKEN permissions")
+    for untrusted_trigger in ("pull_request_review:", "pull_request_review_comment:"):
+        if re.search(rf"^  {untrusted_trigger}$", review_gate, re.MULTILINE):
+            raise AssertionError("status-writing review workflow must not run PR-authored workflow code")
+    if re.search(r"^  workflow_dispatch:", review_gate, re.MULTILINE):
+        raise AssertionError("privileged review workflow must not be dispatchable from a PR ref")
+
+    require(review_bridge, "  pull_request_review:\n", "review bridge must observe review changes")
+    require(
+        review_bridge,
+        "  pull_request_review_comment:\n",
+        "review bridge must observe inline thread changes",
+    )
+    require(review_bridge, "  contents: read", "review bridge must have a read-only token")
+    for forbidden in ("actions: write", "statuses: write", "pull-requests: write", "actions/checkout"):
+        if forbidden in review_bridge:
+            raise AssertionError(f"review bridge must remain inert: found {forbidden}")
+
+    require(
+        pr_gate,
+        "The trusted `Review Gate`\n# status is a separate required admission context",
+        "PR-controlled verification must not be documented as the admission authority",
+    )
+
+    for policy_file in (AGENTS, GATE_MODEL, WORKFLOW_INVENTORY):
+        policy = policy_file.read_text(encoding="utf-8")
+        if "`PR Gate` and `Review Gate`" not in policy:
+            raise AssertionError(
+                f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
+            )
 
     print(f"review-first-dispatch=ok mode={pr_mode}")
 
