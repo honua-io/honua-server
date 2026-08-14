@@ -6,7 +6,7 @@ cd "${repo_root}"
 
 # shellcheck source=scripts/ci/lib/python-resolve.sh
 . scripts/ci/lib/python-resolve.sh
-python_bin="$(honua_resolve_python)"
+python_bin="${HONUA_PR_GATE_IMPACT_PYTHON:-$(honua_resolve_python)}"
 workflow=.github/workflows/pr-gate.yml
 
 "${python_bin}" scripts/ci/classify-pr-gate-impact.test.py
@@ -15,6 +15,11 @@ workflow=.github/workflows/pr-gate.yml
 grep -Fq 'PR_GATE_IMPACT_MODE: observe' "${workflow}"
 grep -Fq 'github.rest.pulls.listFiles' "${workflow}"
 grep -Fq 'pr.base.sha !== expectedBase || pr.head.sha !== expectedHead' "${workflow}"
+grep -Fq 'currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead' "${workflow}"
+grep -Fq 'github.rest.repos.getContent' "${workflow}"
+grep -Fq "ref: expectedBase" "${workflow}"
+grep -Fq 'trusted-classify-pr-gate-impact.py' "${workflow}"
+grep -Fq 'policy_blob_sha' scripts/ci/classify-pr-gate-impact.py
 grep -Fq '"authoritative_gate": "full"' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'Authoritative path: `full` (unchanged)' "${workflow}"
 grep -Fq 'name: pr-gate-impact-observation-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}' "${workflow}"

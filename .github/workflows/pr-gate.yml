@@ -56,7 +56,12 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const path = require('path');
+            const runnerTemp = process.env.RUNNER_TEMP;
+            const inputPath = runnerTemp && path.join(runnerTemp, 'pr-gate-impact-input.json');
+            const classifierPath = runnerTemp && path.join(runnerTemp, 'trusted-classify-pr-gate-impact.py');
             try {
+              if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
               const number = context.payload.pull_request?.number;
               const expectedBase = context.payload.pull_request?.base?.sha;
               const expectedHead = context.payload.pull_request?.head?.sha;
@@ -71,11 +76,36 @@ jobs:
                 github.rest.pulls.listFiles,
                 { ...context.repo, pull_number: number, per_page: 100 },
               );
-              fs.writeFileSync('pr-gate-impact-input.json', JSON.stringify({
+              // Close the identity/listFiles race. A push during pagination can
+              // otherwise bind the moved head's file list to the event's old
+              // SHA and corrupt the zero-miss shadow sample.
+              const { data: currentPr } = await github.rest.pulls.get({
+                ...context.repo, pull_number: number,
+              });
+              if (currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead) {
+                throw new Error('pull request moved while paginating changed files');
+              }
+
+              // The checked-out merge ref is PR-authored. Promotion evidence
+              // must be computed by policy from the immutable trusted base,
+              // never by the classifier in the candidate checkout.
+              const { data: policy } = await github.rest.repos.getContent({
+                ...context.repo,
+                path: 'scripts/ci/classify-pr-gate-impact.py',
+                ref: expectedBase,
+              });
+              if (Array.isArray(policy) || policy.type !== 'file' || policy.encoding !== 'base64' ||
+                  !policy.content || !/^[0-9a-f]{40}$/.test(policy.sha || '')) {
+                throw new Error('trusted base classifier is unavailable or malformed');
+              }
+              fs.writeFileSync(classifierPath, Buffer.from(policy.content, 'base64'));
+              fs.writeFileSync(inputPath, JSON.stringify({
                 repository: `${context.repo.owner}/${context.repo.repo}`,
                 pull_request: number,
                 base_sha: expectedBase,
                 head_sha: expectedHead,
+                policy_sha: expectedBase,
+                policy_blob_sha: policy.sha,
                 changed_files: pr.changed_files,
                 files: files.map((item) => ({
                   filename: item.filename,
@@ -85,22 +115,24 @@ jobs:
               }));
             } catch (error) {
               core.warning(`PR Gate impact observation unavailable: ${error.message}`);
-              fs.writeFileSync('pr-gate-impact-input.json', JSON.stringify({
-                unavailable_reason: 'change-metadata-unavailable',
-                files: [],
-              }));
+              if (inputPath) {
+                fs.writeFileSync(inputPath, JSON.stringify({
+                  unavailable_reason: 'change-metadata-unavailable',
+                  files: [],
+                }));
+              }
             }
 
       - name: Record non-authoritative PR Gate impact observation
         if: github.event_name == 'pull_request'
         continue-on-error: true
         run: |
-          python3 scripts/ci/classify-pr-gate-impact.py \
-            --input pr-gate-impact-input.json \
-            --output pr-gate-impact-observation.json
-          mode="$(jq -r '.mode' pr-gate-impact-observation.json)"
-          reason="$(jq -r '.reason' pr-gate-impact-observation.json)"
-          files="$(jq -r '.changed_file_count' pr-gate-impact-observation.json)"
+          python3 "${RUNNER_TEMP}/trusted-classify-pr-gate-impact.py" \
+            --input "${RUNNER_TEMP}/pr-gate-impact-input.json" \
+            --output "${RUNNER_TEMP}/pr-gate-impact-observation.json"
+          mode="$(jq -r '.mode' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          reason="$(jq -r '.reason' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          files="$(jq -r '.changed_file_count' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
           {
             echo '### PR Gate impact observation'
             echo "- Rollout: \`${PR_GATE_IMPACT_MODE}\`"
@@ -116,7 +148,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pr-gate-impact-observation-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-          path: pr-gate-impact-observation.json
+          path: ${{ runner.temp }}/pr-gate-impact-observation.json
           if-no-files-found: error
           retention-days: 30
 

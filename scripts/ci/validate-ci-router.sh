@@ -35,7 +35,11 @@ echo "Validating review-first PR Gate transition..."
 scripts/ci/validate-review-first-dispatch.sh
 
 echo "Validating PR Gate impact observation..."
-scripts/ci/validate-pr-gate-impact.sh
+if [[ -n "${PYTHON_BIN}" ]]; then
+  HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
+else
+  echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
+fi
 
 echo "Validating data-only derived-artifact normalization..."
 if [[ -n "${PYTHON_BIN}" ]]; then

@@ -29,6 +29,8 @@ def _full(
         "pull_request": None,
         "base_sha": None,
         "head_sha": None,
+        "policy_sha": None,
+        "policy_blob_sha": None,
     }
     return {
         "contract": CONTRACT,
@@ -65,6 +67,8 @@ def classify(payload: object) -> dict[str, Any]:
     pull_request = payload.get("pull_request")
     base_sha = payload.get("base_sha")
     head_sha = payload.get("head_sha")
+    policy_sha = payload.get("policy_sha")
+    policy_blob_sha = payload.get("policy_blob_sha")
     if (
         repository != EXPECTED_REPOSITORY
         or not isinstance(pull_request, int)
@@ -77,6 +81,9 @@ def classify(payload: object) -> dict[str, Any]:
         or not isinstance(head_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", base_sha) is None
         or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None
+        or policy_sha != base_sha
+        or not isinstance(policy_blob_sha, str)
+        or re.fullmatch(r"[0-9a-f]{40}", policy_blob_sha) is None
     ):
         return _full("invalid-diff-identity")
     identity = {
@@ -84,6 +91,8 @@ def classify(payload: object) -> dict[str, Any]:
         "pull_request": pull_request,
         "base_sha": base_sha,
         "head_sha": head_sha,
+        "policy_sha": policy_sha,
+        "policy_blob_sha": policy_blob_sha,
     }
     def full(reason: str, count: int = 0, digest: str = "") -> dict[str, Any]:
         return _full(reason, count=count, digest=digest, identity=identity)
