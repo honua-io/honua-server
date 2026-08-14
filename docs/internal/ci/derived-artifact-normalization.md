@@ -43,6 +43,12 @@ Before publishing even an observation status, the trusted consumer fetches
 every allowlisted generator as a Git blob from the exact PR commit and compares
 its SHA-256 digest with the envelope. Generator evidence authored by PR code is
 therefore never trusted on its own.
+It also requires the producer workflow, the local .NET setup action, and the
+envelope builder at the PR head to be byte-identical to the checked-out
+default-branch recipe. A pull request that changes this security boundary must
+land that contract independently before later heads can produce admissible
+normalization evidence; an unprivileged PR workflow cannot silently skip or
+replace the declared generation steps.
 
 ## Observe mode
 

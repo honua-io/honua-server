@@ -95,6 +95,22 @@ def main() -> None:
         "generator digest does not match the exact PR head",
         "trusted consumer must reject fabricated generator evidence",
     )
+    require(
+        consumer,
+        "const trustedRecipePaths = [",
+        "consumer must authenticate the unprivileged producer recipe",
+    )
+    for recipe in (
+        ".github/workflows/normalize-derived-artifacts.yml",
+        ".github/actions/setup-dotnet-ci/action.yml",
+        "scripts/ci/normalization-envelope.py",
+    ):
+        require(consumer, f"'{recipe}'", f"trusted recipe is missing {recipe}")
+    require(
+        consumer,
+        "does not match the trusted generation recipe",
+        "consumer must reject a PR-authored recipe mismatch",
+    )
     require(consumer, "const maxArchiveBytes = 10 * 1024 * 1024", "consumer must bound artifact metadata")
     size_guard = consumer.index("artifacts[0].size_in_bytes > maxArchiveBytes")
     download = consumer.index("github.rest.actions.downloadArtifact")

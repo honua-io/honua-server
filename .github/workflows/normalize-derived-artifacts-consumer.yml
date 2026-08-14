@@ -177,6 +177,29 @@ jobs:
               return crypto.createHash('sha256').update(content).digest('hex');
             };
 
+            // The pull_request workflow is intentionally unprivileged, but its
+            // recipe is still PR-authored. Authenticate every executable
+            // orchestration component against the checked-out default-branch
+            // policy before accepting output provenance. Generator scripts are
+            // allowed PR inputs and are bound separately below.
+            const trustedRecipePaths = [
+              '.github/workflows/normalize-derived-artifacts.yml',
+              '.github/actions/setup-dotnet-ci/action.yml',
+              'scripts/ci/normalization-envelope.py',
+            ];
+            for (const recipePath of trustedRecipePaths) {
+              const stat = fs.lstatSync(recipePath);
+              if (!stat.isFile()) {
+                throw new Error(`${recipePath} trusted recipe is not a regular file.`);
+              }
+              const trustedDigest = crypto.createHash('sha256')
+                .update(fs.readFileSync(recipePath)).digest('hex');
+              const exactDigest = await readBlobDigest(recipePath, true);
+              if (exactDigest !== trustedDigest) {
+                throw new Error(`${recipePath} does not match the trusted generation recipe.`);
+              }
+            }
+
             for (const generator of plan.generators) {
               const exactDigest = await readBlobDigest(generator.path, true);
               if (exactDigest !== generator.sha256) {
