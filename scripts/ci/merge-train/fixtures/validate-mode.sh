@@ -107,8 +107,14 @@ grep -Fq 'source scripts/ci/merge-train/state.sh' <<<"${self_chain_step}" \
   || { printf 'FAIL: self-chain cannot inspect durable land intent\n' >&2; exit 1; }
 grep -Fq 'train_state_requires_live_reconciliation' <<<"${self_chain_step}" \
   || { printf 'FAIL: self-chain ignores durable land intent\n' >&2; exit 1; }
-grep -Fq '.outcome == "landed"' <<<"${self_chain_step}" \
-  || { printf 'FAIL: post-land recovery continuation is not bound to the landing controller\n' >&2; exit 1; }
+grep -Fq 'LANDED_THIS_RUN: ${{ steps.run-train.outputs.landed_this_run }}' <<<"${self_chain_step}" \
+  || { printf 'FAIL: post-land recovery continuation is not bound to the authoritative landing step output\n' >&2; exit 1; }
+grep -Fq '${LANDED_THIS_RUN:-}' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not consume the authoritative landing step output\n' >&2; exit 1; }
+if grep -Fq 'merge-train-metrics.json' <<<"${self_chain_step}"; then
+  printf 'FAIL: post-land recovery is incorrectly gated by best-effort metrics\n' >&2
+  exit 1
+fi
 grep -Fq 'Durable land intent remains after its bounded reconciliation controller' <<<"${self_chain_step}" \
   || { printf 'FAIL: repeated post-land recovery can self-chain without a bound\n' >&2; exit 1; }
 
@@ -148,3 +154,19 @@ train_state_requires_live_reconciliation || malformed_rc=$?
   || { printf 'FAIL: unreadable state did not fail closed\n' >&2; exit 1; }
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 printf 'PASS: self-chain reconciles durable land intent and fails closed on unreadable state\n'
+
+# The landing proof is a required GitHub step output, independent of the
+# best-effort metrics renderer. Exercise the writer directly so a future rename
+# or formatting edit cannot silently disconnect the workflow control path.
+landing_output="${SCRATCH}/landing-step.out"
+GITHUB_OUTPUT="${landing_output}" train_publish_landing_step_output "${state_sha}"
+[[ "$(sed -n 's/^landed_this_run=//p' "${landing_output}")" == "true" ]] \
+  || { printf 'FAIL: landing step output did not publish landed_this_run=true\n' >&2; exit 1; }
+[[ "$(sed -n 's/^landed_batch_sha=//p' "${landing_output}")" == "${state_sha}" ]] \
+  || { printf 'FAIL: landing step output did not bind the exact landed SHA\n' >&2; exit 1; }
+malformed_output_rc=0
+GITHUB_OUTPUT="${landing_output}" train_publish_landing_step_output "not-a-sha" >/dev/null 2>&1 || malformed_output_rc=$?
+[[ "${malformed_output_rc}" == "1" ]] \
+  || { printf 'FAIL: landing step output accepted a malformed SHA\n' >&2; exit 1; }
+unset GITHUB_OUTPUT
+printf 'PASS: authoritative landing step output is exact and fail-closed\n'
