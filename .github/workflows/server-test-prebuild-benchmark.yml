@@ -153,6 +153,9 @@ jobs:
              .observation.source_workflow.path == ".github/workflows/review-gate.yml" and
              .observation.source_workflow.name == "Review Gate Attestation" and
              .observation.source_workflow.event == "pull_request_target" and
+             (.observation.source_workflow.run_head_sha | type == "string" and test("^[0-9a-f]{40}$")) and
+             (.observation.source_workflow.run_sha_role == "association-head" or
+              .observation.source_workflow.run_sha_role == "association-base") and
              .observation.source_workflow.job_name == "Resolve pull request identity" and
              .observation.source_workflow.job_conclusion == "success" and
              (.observation.source_workflow.run_id | type == "number") and

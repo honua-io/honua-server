@@ -201,7 +201,11 @@ The first shadow candidate is opportunistic rather than a producer dependency.
 A trusted, read-only default-branch `workflow_run` observer may prepare a
 bounded repeated-project payload while review is pending. It resolves the
 completed Review Gate identity job through GitHub's immutable check-run/PR
-association, then executes the still-current same-repository raw head with no
+association. The resolver accepts the `pull_request_target` run SHA only when it
+matches the association's head or event-time base, records which representation
+GitHub supplied, and independently takes candidate identity from the associated
+PR head. It never treats the workflow-run SHA itself as candidate authority.
+The observer then executes the still-current same-repository raw head with no
 write permission or secret. Candidate code never executes in
 `pull_request_target`. A consumer never polls or waits for the payload. After its
 own checkout and toolchain setup, the consumer makes one exact artifact attempt

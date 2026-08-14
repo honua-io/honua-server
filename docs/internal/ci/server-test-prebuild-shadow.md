@@ -26,9 +26,13 @@ contents, package, and pull-request permissions; they publish no commit status,
 are not required checks, and cannot dispatch or join the merge train. The
 observer executes from the default-branch `workflow_run` definition, resolves
 the source Review Gate through its unique GitHub-managed identity-job check,
-and rejects forks, moved heads/bases, and draft/closed PRs before executing the
-raw head. Candidate code never executes in `pull_request_target`; the raw head
-runs only with the observer's exact read-only permission allowlist. The
+and treats the run SHA only as an associated event identity, never as the
+candidate source of truth. GitHub may represent that SHA as the associated head
+or event-time base; in either case the candidate comes exclusively from the
+check association. The observer rejects forks, moved heads/bases, and
+draft/closed PRs before executing the raw head. Candidate code never executes
+in `pull_request_target`; the raw head runs only with the observer's exact
+read-only permission allowlist. The
 benchmark is manual and rejects any producer unless all of these are true:
 
 - the current PR is open, ready, and still points to the receipt's full head
@@ -38,7 +42,8 @@ benchmark is manual and rejects any producer unless all of these are true:
   checkout is pinned to the immutable default-branch `github.sha` that GitHub
   executed rather than a moving branch name;
 - the plan binds the exact source Review Gate path, event, run/attempt,
-  conclusion, successful identity job, and GitHub-managed check association;
+  conclusion, associated run SHA and its head/base role, successful identity
+  job, and GitHub-managed check association;
 - the trusted observer's plan artifact binds repository, PR, event-time base,
   source head,
   producer run/attempt, and its actual policy SHA; that policy SHA is an

@@ -12,6 +12,10 @@ const TERMINAL_CONCLUSIONS = new Set([
   'stale',
   'startup_failure',
 ]);
+const WORKFLOW_SHA_ROLES = new Set([
+  'pull-request-head',
+  'pull-request-target-associated',
+]);
 
 function parsePositiveSafeInteger(value, label) {
   const text = String(value ?? '');
@@ -35,13 +39,17 @@ async function resolveTrustedPullRequestWorkflowRun({
   workflowPath,
   workflowName,
   workflowEvent = 'pull_request',
+  workflowShaRole = 'pull-request-head',
   jobName = workflowName,
   jobConclusion = runConclusion,
   defaultBranch,
   repositoryId,
 }) {
   if (!github || !owner || !repo || !workflowPath || !workflowName ||
-      !workflowEvent || !jobName || !defaultBranch ||
+      !workflowEvent || !WORKFLOW_SHA_ROLES.has(workflowShaRole) ||
+      (workflowEvent === 'pull_request_target') !==
+        (workflowShaRole === 'pull-request-target-associated') ||
+      !jobName || !defaultBranch ||
       !Number.isSafeInteger(repositoryId) || repositoryId <= 0) {
     throw new Error('trusted workflow-run resolver input is incomplete');
   }
@@ -124,12 +132,25 @@ async function resolveTrustedPullRequestWorkflowRun({
   const associated = associations[0];
   const associatedBase = associated.base?.sha;
   const associatedHead = associated.head?.sha;
+  // Never infer the candidate from run.head_sha. GitHub currently reports the
+  // associated head for pull_request_target checks, but it has also exposed
+  // the event-time base commit in this position. Both representations are
+  // authenticated by the unique GitHub-managed PR association; the candidate
+  // always comes from associated.head.sha below.
+  const resolvedWorkflowShaRole = run.head_sha === associatedHead
+    ? 'association-head'
+    : run.head_sha === associatedBase
+      ? 'association-base'
+      : null;
   if (
     associated.base?.ref !== defaultBranch ||
     associated.base?.repo?.id !== repositoryId ||
     associated.head?.repo?.id !== repositoryId ||
     !SHA.test(associatedBase || '') ||
-    associatedHead !== run.head_sha
+    !SHA.test(associatedHead || '') ||
+    (workflowShaRole === 'pull-request-head'
+      ? run.head_sha !== associatedHead
+      : resolvedWorkflowShaRole === null)
   ) {
     throw new Error('canonical workflow check pull-request identity is inconsistent');
   }
@@ -161,11 +182,16 @@ async function resolveTrustedPullRequestWorkflowRun({
     pullRequestNumber: associated.number,
     baseSha: associatedBase,
     headSha: associatedHead,
+    workflowSha: run.head_sha,
+    workflowShaRole: workflowShaRole === 'pull-request-head'
+      ? 'association-head'
+      : resolvedWorkflowShaRole,
   };
 }
 
 module.exports = {
   TERMINAL_CONCLUSIONS,
+  WORKFLOW_SHA_ROLES,
   parseRunId,
   resolveTrustedPullRequestWorkflowRun,
 };

@@ -94,6 +94,7 @@ jobs:
               workflowPath: '.github/workflows/review-gate.yml',
               workflowName: 'Review Gate Attestation',
               workflowEvent: 'pull_request_target',
+              workflowShaRole: 'pull-request-target-associated',
               jobName: 'Resolve pull request identity',
               jobConclusion: 'success',
               defaultBranch: repository.default_branch,
@@ -109,6 +110,8 @@ jobs:
             core.setOutput('source_run_attempt', String(resolved.run.run_attempt));
             core.setOutput('source_run_conclusion', resolved.run.conclusion);
             core.setOutput('source_job_id', String(resolved.job.id));
+            core.setOutput('source_run_head_sha', resolved.workflowSha);
+            core.setOutput('source_run_sha_role', resolved.workflowShaRole);
 
       - id: policy
         name: Bind trusted policy commit
@@ -161,11 +164,14 @@ jobs:
             --argjson source_run_attempt '${{ steps.target.outputs.source_run_attempt }}' \
             --arg source_run_conclusion '${{ steps.target.outputs.source_run_conclusion }}' \
             --argjson source_job_id '${{ steps.target.outputs.source_job_id }}' \
+            --arg source_run_head_sha '${{ steps.target.outputs.source_run_head_sha }}' \
+            --arg source_run_sha_role '${{ steps.target.outputs.source_run_sha_role }}' \
             '. + {observation:{repository:$repository,pull_request:$pull_request,
               source_sha:$source_sha,base_sha:$base_sha,policy_sha:$policy_sha,
               run_id:$run_id,run_attempt:$run_attempt,
               source_workflow:{path:".github/workflows/review-gate.yml",
                 name:"Review Gate Attestation",event:"pull_request_target",
+                run_head_sha:$source_run_head_sha,run_sha_role:$source_run_sha_role,
                 run_id:$source_run_id,run_attempt:$source_run_attempt,
                 conclusion:$source_run_conclusion,job_id:$source_job_id,
                 job_name:"Resolve pull request identity",job_conclusion:"success"}}}' \
