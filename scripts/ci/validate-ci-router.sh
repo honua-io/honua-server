@@ -103,6 +103,13 @@ fi
 echo "Validating shard headroom instrumentation..."
 scripts/ci/fixtures/validate-shard-headroom.sh
 
+if [[ -n "${PYTHON_BIN}" ]]; then
+  echo "Validating GitHub Actions baseline measurement contract..."
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
+else
+  echo "⚠️  Skipping Actions baseline fixture (no working Python 3: tried python3/python/py)"
+fi
+
 echo "Validating targeted_override_prefixes reference real shards..."
 jq -e '
   ([.shards[].name]) as $names
