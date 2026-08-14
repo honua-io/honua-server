@@ -9,10 +9,13 @@ before classification, but that wait can spend tens of runner-minutes on a
 batch that cannot land.
 
 `early-failure-observe.sh` measures this interval without changing authority.
-Every two minutes it replaces one ordinary status request with a hosted job
-snapshot, selects only router-declared server shards, and records the first
+The controller retains its authoritative workflow-status read every 30 seconds.
+Every two minutes it also reads a hosted job snapshot, selects only
+router-declared server shards, and records the first
 completed failure. The recorded hosted completion timestamp—not detection
 time—anchors the interval, so throttling does not distort the measurement. Its
+one additional request per 120 seconds is a 25% increase over the four ordinary
+status requests in the same interval; observation never replaces authority.
 conservative categories are `deterministic-candidate`,
 `known-flake`, `timeout`, `capacity`, and `unknown`. When the run becomes
 terminal it records the interval from that failure to workflow completion.

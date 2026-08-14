@@ -180,9 +180,9 @@ jobs:
           # classify, drop, or land; #3224 requires 20 live observations before
           # a separate enforcement proposal is even eligible for review.
           TRAIN_EARLY_FAILURE_MODE: observe
-          # Job completion timestamps are authoritative, so polling the larger
-          # jobs page every two minutes preserves timing accuracy without
-          # doubling API work on the controller's 30-second status cadence.
+          # The authoritative status read remains every 30s. One additional
+          # jobs-page read every 120s adds 25% to that request rate, while exact
+          # job completion timestamps keep the observation timing accurate.
           TRAIN_EARLY_FAILURE_POLL_SECONDS: "120"
           # OPTIONAL gated LLM layer. TRAIN_LLM=0 here on every default path; the
           # gates are inert and make zero Bedrock calls unless this is 1.
