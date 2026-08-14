@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Proto = Geospatial.V1;
@@ -206,6 +207,59 @@ public sealed class GeoprocessingConversionHelpersTests
 
         proto.State.Should().Be(Proto.JobState.Failed);
         proto.Progress.UpdatedAt.Should().Be(now.ToUnixTimeMilliseconds());
+    }
+
+    [UnitTest]
+    public void ToProtoGetJobResult_AvailableStagedArtifact_UsesProjectedContentRoute()
+    {
+        const string contentRoute = "/api/geoprocessing/jobs/job-1/artifacts/0/content";
+        var package = AnalysisResultPackage.CreateCompleted(
+            "job-1:v1",
+            new ResultSummary { Title = "Result" },
+            [new ArtifactRef
+            {
+                ArtifactId = "job-1:artifact:1",
+                Kind = ArtifactKind.Raster,
+                Label = "outputRaster",
+                Uri = contentRoute,
+                Metadata = new Dictionary<string, string>
+                {
+                    [RasterOutputArtifactMetadata.ContentRoute] = contentRoute,
+                },
+            }],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+        var proto = GeoprocessingConversionHelpers.ToProtoGetJobResultResponse("job-1", package);
+
+        proto.Result.Artifacts.Should().ContainSingle()
+            .Which.ProducerRef.Should().Be(contentRoute);
+    }
+
+    [UnitTest]
+    public void ToProtoGetJobResult_UnavailableStagedArtifact_DoesNotUseMetadataRoute()
+    {
+        const string contentRoute = "/api/geoprocessing/jobs/job-1/artifacts/0/content";
+        var package = AnalysisResultPackage.CreateCompleted(
+            "job-1:v1",
+            new ResultSummary { Title = "Result" },
+            [new ArtifactRef
+            {
+                ArtifactId = "job-1:artifact:1",
+                Kind = ArtifactKind.Raster,
+                Label = "outputRaster",
+                Metadata = new Dictionary<string, string>
+                {
+                    [RasterOutputArtifactMetadata.ContentRoute] = contentRoute,
+                },
+            }],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+        var proto = GeoprocessingConversionHelpers.ToProtoGetJobResultResponse("job-1", package);
+
+        proto.Result.Artifacts.Should().ContainSingle()
+            .Which.ProducerRef.Should().Be("outputRaster");
     }
 
     // -----------------------------------------------------------------------

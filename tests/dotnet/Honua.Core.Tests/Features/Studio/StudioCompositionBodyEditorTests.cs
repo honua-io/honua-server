@@ -222,6 +222,47 @@ public sealed class StudioCompositionBodyEditorTests
             () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
     }
 
+    [Theory]
+    [InlineData("roads")]
+    [InlineData("roads-source")]
+    public void RemoveLayer_WhenControlUsesItsLayerOrSourceId_ThrowsConflict(string controlSourceId)
+    {
+        var body = StudioCompositionBodyEditor.AddLayer(
+            StudioCompositionBody.Empty,
+            new StudioCompositionLayer { Id = "roads", SourceId = "roads-source" });
+        body = StudioCompositionBodyEditor.AddControl(
+            body,
+            new StudioCompositionControl { Id = "road-filter", Kind = "filterSelect", SourceId = controlSourceId });
+
+        var error = Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
+
+        Assert.Contains("road-filter", error.Message, StringComparison.Ordinal);
+        Assert.Contains(controlSourceId, error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void RemoveLayer_WhenAnotherLayerDeclaresTheControlSource_RemovesOnlyRequestedLayer()
+    {
+        var body = StudioCompositionBody.Empty with
+        {
+            Layers =
+            [
+                new StudioCompositionLayer { Id = "roads", SourceId = "shared-source" },
+                new StudioCompositionLayer { Id = "roads-labels", SourceId = "shared-source" },
+            ],
+            Controls =
+            [
+                new StudioCompositionControl { Id = "road-filter", Kind = "filterSelect", SourceId = "shared-source" },
+            ],
+        };
+
+        body = StudioCompositionBodyEditor.RemoveLayer(body, "roads");
+
+        Assert.Equal(["roads-labels"], body.Layers.Select(layer => layer.Id));
+        Assert.Equal("shared-source", Assert.Single(body.Controls!).SourceId);
+    }
+
     [UnitTest]
     public void SetLayerStyleRef_WithMissingId_ThrowsNotFound()
         => Assert.Throws<StudioCompositionNotFoundException>(

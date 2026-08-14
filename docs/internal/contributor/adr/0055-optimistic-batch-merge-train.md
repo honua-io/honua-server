@@ -54,6 +54,11 @@ dry-run.
    read the **CI Gate** job conclusion. The batch is a BRANCH, so its CI keys on
    `ci-<ref>` — a DISTINCT concurrency group from each member's `ci-<pr#>`, so
    the batch run can never cancel-in-progress a member's PR run. Polling allows 110 minutes for the observed 42-55 minute shards, queueing, and one failed-job retry while remaining inside the controller's 120-minute cap.
+   Before dispatch, deterministic feature-catalog and GeoServices-parity emitters
+   run in their required order. They share one Architecture test-project build:
+   the parity emitter uses `--no-build --no-restore` after the feature-catalog
+   emitter succeeds. This removes a redundant project evaluation from the
+   otherwise invisible pre-dispatch portion of every live batch.
 4. **forward-fix** — ONLY when the sole failure is the format-verify step:
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
@@ -205,6 +210,9 @@ deterministic train. The deterministic train is the product of record; the LLM
 only breaks ties in ambiguous cases. It is **off by default** (`TRAIN_LLM=0`) on
 every trigger; the gates are never even consulted unless an operator dispatches
 with `use_llm=true` AND the dedicated Bedrock access-key secrets are configured.
+Continuous-drain self-chains explicitly dispatch `use_llm=false` and
+`use_autofix=false`, so an operator's one-run opt-in cannot silently become the
+default for every later batch in the queue.
 
 **Provider choice — reuse honua-devops's Bedrock posture.** honua-devops bills
 Bedrock to the founder's AWS account (no Anthropic API key). We mirror that:

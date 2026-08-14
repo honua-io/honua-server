@@ -39,6 +39,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/select.sh"
 # shellcheck source=assemble.sh
 . "${TRAIN_DIR}/assemble.sh"
+# shellcheck source=early-failure-observe.sh
+. "${TRAIN_DIR}/early-failure-observe.sh"
 # shellcheck source=smart-ci.sh
 . "${TRAIN_DIR}/smart-ci.sh"
 # shellcheck source=forward-fix.sh
@@ -59,6 +61,7 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/land.sh"
 # shellcheck source=state.sh
 . "${TRAIN_DIR}/state.sh"
+
 # shellcheck source=resume-retry.sh
 . "${TRAIN_DIR}/resume-retry.sh"
 
@@ -70,6 +73,7 @@ trap 'rm -rf "${TRAIN_WORK}"' EXIT
 export TRAIN_INCLUDED_FILE="${TRAIN_WORK}/included.tsv"
 export TRAIN_SKIPPED_FILE="${TRAIN_WORK}/skipped.tsv"
 export TRAIN_RUN_ID_FILE="${TRAIN_WORK}/run_id"
+export TRAIN_EARLY_FAILURE_FILE="${TRAIN_WORK}/early-failure.json"
 # Instrumentation sinks (additive observability — no decision logic reads these).
 export TRAIN_TIMINGS_FILE="${TRAIN_WORK}/timings.kv"
 export TRAIN_METRICS_KV="${TRAIN_WORK}/metrics.kv"
@@ -110,7 +114,11 @@ train_regenerate_derived_artifacts() {
     train_err "feature-catalog generation failed for ${batch}"
     return 1
   fi
-  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" 1>&2; then
+  # Both emitters execute the same Architecture test project at the same batch
+  # checkout. The feature-catalog invocation above owns restore + build; reuse
+  # that exact output for parity instead of paying for a second project
+  # evaluation before the batch branch can even be pushed to smart CI.
+  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" --no-build --no-restore 1>&2; then
     train_err "GeoServices parity generation failed for ${batch}"
     return 1
   fi
@@ -1090,6 +1098,16 @@ main() {
   else
     _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
   fi
+  # This is the control-plane proof consumed by the workflow's bounded
+  # self-chain. Publish it only after (1) train_land observed the exact CAS and
+  # (2) the durable state journal recorded either done or post-land-finalize.
+  # Unlike metrics, failure to publish this output is fatal: a later scheduled
+  # controller can reconcile the durable journal, but the current run must not
+  # silently claim that it armed the immediate cleanup continuation.
+  train_publish_landing_step_output "${new_trunk}" || {
+    train_err "exact batch landed but authoritative landing step output could not be published"
+    return 1
+  }
   train_notice "LANDED batch ${batch} ($(tr ',' ' ' <<<"${included}")); trunk now ${new_trunk:0:7}"
   train_step_end land >/dev/null
   train_endgroup

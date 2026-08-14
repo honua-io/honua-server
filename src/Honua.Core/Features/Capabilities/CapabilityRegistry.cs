@@ -150,6 +150,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // remove_interaction schemas, and Honua is their reference implementation.
             ("honua_studio_bind_interaction", "bind_interaction", "execution"),
             ("honua_studio_remove_interaction", "remove_interaction", "execution"),
+            // Composition controls (geospatial-mcp ADR-0031, same opt-in `composition`
+            // profile). Bare standard names for the same reason: the standard publishes
+            // add_control / remove_control schemas and Honua is their reference
+            // implementation.
+            ("honua_studio_add_control", "add_control", "execution"),
+            ("honua_studio_remove_control", "remove_control", "execution"),
             // No publish/share/embed execution tool: honua_studio_propose_publication
             // only records intent on the draft (REQ-003/REQ-009).
             ("honua_studio_propose_publication", "studio_propose_publication", "lifecycle"),

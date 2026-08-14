@@ -136,6 +136,27 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public async Task RevalidateRoleMembership_PassesCapturedIssuerWithSubject()
+    {
+        var context = new JobSecurityContext(
+            "SharedSubject",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "SharedSubject"),
+                new JobSecurityClaim("iss", "https://issuer-a.example.com"),
+                new JobSecurityClaim(ClaimTypes.Role, "viewer"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
+
+        source.ResolvedPrincipalId.Should().Be("SharedSubject");
+        source.ResolvedIssuer.Should().Be("https://issuer-a.example.com");
+    }
+
+    [UnitTest]
     public async Task RevalidateRoleMembership_LegacyCustomRoleClaim_NormalizesCurrentRoleForRestore()
     {
         const string configuredRoleClaimType = "roles";
@@ -275,12 +296,15 @@ public sealed class JobSecurityContextCaptureTests
         {
             claims.Add(($"filler-{i}", i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
+        claims.Add(("iss", "https://issuer.example.com"));
 
         var captured = JobSecurityContextCapture.Capture(BuildPrincipal(claims.ToArray()), new RbacOptions());
 
         captured.Claims.Should().Contain(claim =>
             claim.Type == JobSecurityContextClaimTypes.ManagedMembershipMarker
             && claim.Value == JobSecurityContextClaimTypes.ManagedMembershipMarkerValue);
+        captured.Claims.Should().Contain(claim =>
+            claim.Type == "iss" && claim.Value == "https://issuer.example.com");
 
         // End to end: the captured marker makes an unresolved revalidation fail closed.
         var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
@@ -291,11 +315,15 @@ public sealed class JobSecurityContextCaptureTests
     [UnitTest]
     public async Task IsManagedMembership_ResolvableManagedIdentity_ReturnsTrue()
     {
-        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "managed-user-1"));
+        var principal = BuildPrincipal(
+            (ClaimTypes.NameIdentifier, "managed-user-1"),
+            ("iss", "https://issuer.example.com"));
+        var source = new FixedMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
         var managed = await JobSecurityContextCapture.IsManagedMembershipAsync(
             principal,
-            new FixedMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"])));
+            source);
         managed.Should().BeTrue();
+        source.ResolvedIssuer.Should().Be("https://issuer.example.com");
     }
 
     [UnitTest]
@@ -617,11 +645,23 @@ public sealed class JobSecurityContextCaptureTests
     {
         public string? ResolvedPrincipalId { get; private set; }
 
+        public string? ResolvedIssuer { get; private set; }
+
         public Task<PrincipalMembership?> ResolveMembershipAsync(
             string principalId,
             CancellationToken cancellationToken = default)
         {
             ResolvedPrincipalId = principalId;
+            return Task.FromResult(membership);
+        }
+
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            string? issuer,
+            CancellationToken cancellationToken = default)
+        {
+            ResolvedPrincipalId = principalId;
+            ResolvedIssuer = issuer;
             return Task.FromResult(membership);
         }
     }

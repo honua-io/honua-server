@@ -31,6 +31,23 @@ PYTHON_BIN="$(honua_resolve_python || true)"
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
+echo "Validating review-first PR Gate transition..."
+scripts/ci/validate-review-first-dispatch.sh
+
+echo "Validating PR Gate impact observation..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
+else
+  echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
+fi
+
+echo "Validating data-only derived-artifact normalization..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  HONUA_NORMALIZATION_PYTHON="${PYTHON_BIN}" scripts/ci/validate-normalization-contract.sh
+else
+  echo "⚠️  Skipping data-only normalization validation (no working Python 3)."
+fi
+
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
@@ -80,6 +97,8 @@ jq -e '
 scripts/ci/validate-server-test-binary-artifacts.sh
 scripts/ci/validate-server-test-transfer-benchmark.sh
 scripts/ci/validate-server-test-shard-cache.sh
+scripts/ci/validate-server-test-reuse-benchmark.sh
+scripts/ci/validate-server-test-prebuild.sh
 
 # #3054: the OUTER GitHub job cap must clear the INNER dotnet-test cap by enough
 # room for the non-test part of the job (checkout, setup-dotnet, restore or
@@ -102,6 +121,21 @@ fi
 
 echo "Validating shard headroom instrumentation..."
 scripts/ci/fixtures/validate-shard-headroom.sh
+
+if [[ -n "${PYTHON_BIN}" ]]; then
+  echo "Validating GitHub Actions baseline measurement contract..."
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
+
+  echo "Validating native-image impact observation contract..."
+  node --test scripts/ci/trusted-pr-workflow-run.test.js
+  "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
+  "${PYTHON_BIN}" -m unittest discover \
+    -s tests/python/unit \
+    -p 'test_native_image_impact.py' \
+    -v
+else
+  echo "⚠️  Skipping Actions baseline fixture (no working Python 3: tried python3/python/py)"
+fi
 
 echo "Validating targeted_override_prefixes reference real shards..."
 jq -e '

@@ -648,6 +648,9 @@ assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all
 assert_contains "derived artifacts: shell generators do not require executable bits" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
   'bash "${repo_root}/scripts/generate-geoservices-parity.sh"'
+assert_contains "derived artifacts: parity reuses the feature-catalog build" \
+  "$(cat "${TRAIN_DIR}/train.sh")" \
+  'generate-geoservices-parity.sh" --no-build --no-restore'
 
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
@@ -712,6 +715,10 @@ gh() {
       return 0
     fi
     if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
+    return 0
+  fi
+  if [[ "$1 $2" == "run view" && "$*" == *"--json status,updatedAt,jobs"* ]]; then
+    printf '{"status":"completed","updatedAt":"2026-08-14T00:00:00Z","jobs":[]}\n'
     return 0
   fi
   if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then
@@ -1523,6 +1530,7 @@ git checkout -q origin/trunk 2>/dev/null || true
 echo
 echo "== Single merge authority static guard =="
 node --test \
+  "${REAL_ROOT}/scripts/ci/review-first-dispatch.test.js" \
   "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
   "${REAL_ROOT}/scripts/ci/review-gate-snapshot.test.js" \
   && ok "review gate: evidence and pagination fixtures" \

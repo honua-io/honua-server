@@ -52,13 +52,19 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Validate lean-gate command contract
+      shell: bash
+      run: python3 scripts/ci/fixtures/validate-lean-gate.py
+
     - name: Documentation Command Policy
       shell: pwsh
       run: scripts/ci/check-markdown-command-policy.ps1
 
     - name: Validate merge-train timeout policy
       shell: bash
-      run: scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+      run: |
+        scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+        scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
 
     # Cheap, service-free governance step (~1s): every OpenAPI document Honua
     # advertises must agree with EndpointRegistry, and every deliberate omission
@@ -93,7 +99,10 @@ runs:
 
     - name: Format Check
       shell: bash
-      run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
+      # Restore already completed above, and the full build consumed the same
+      # assets. Re-evaluating restore here adds network/project work without
+      # increasing format coverage.
+      run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
     - name: Create Test Results Directory
       shell: bash

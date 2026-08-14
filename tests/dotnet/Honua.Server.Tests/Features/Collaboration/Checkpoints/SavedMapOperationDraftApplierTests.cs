@@ -60,6 +60,42 @@ public sealed class SavedMapOperationDraftApplierTests
     }
 
     [UnitTest]
+    public void Apply_ReplaceDocument_ResolvesControlAgainstPreservedSourceBinding()
+    {
+        var envelope = BuildEnvelope("""
+            {
+              "mapPackageId": "map-1",
+              "sourceBindings": [{ "sourceId": "ds-parcels", "layerId": 7 }],
+              "layers": []
+            }
+            """);
+
+        var applied = SavedMapOperationDraftApplier.Apply(
+            envelope,
+            [BuildOperation(
+                SavedMapOperationKind.ReplaceWebMapDocument,
+                """{"controls":[{"id":"filter","kind":"filterSelect","sourceId":"ds-parcels"}]}""")]);
+
+        applied.Body.Should().NotBeNull();
+        var body = applied.Body!.Value;
+        body.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
+        body.GetProperty("controls")[0].GetProperty("sourceId").GetString().Should().Be("ds-parcels");
+    }
+
+    [UnitTest]
+    public void Apply_ReplaceDocument_UnresolvedControlSourceIsAStateConflict()
+    {
+        var act = () => SavedMapOperationDraftApplier.Apply(
+            BuildEnvelope(CanonicalMapBody),
+            [BuildOperation(
+                SavedMapOperationKind.ReplaceWebMapDocument,
+                """{"controls":[{"id":"filter","kind":"filterSelect","sourceId":"missing"}]}""")]);
+
+        act.Should().Throw<SavedMapCheckpointStateConflictException>()
+            .WithMessage("*does not resolve*");
+    }
+
+    [UnitTest]
     public void Apply_ReplaceDocumentWithEmptyObject_ClearsCompositionAndKeepsPackageMetadata()
     {
         var envelope = BuildEnvelope(CanonicalMapBody);

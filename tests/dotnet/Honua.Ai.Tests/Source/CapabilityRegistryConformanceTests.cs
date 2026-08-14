@@ -330,6 +330,8 @@ public sealed class CapabilityRegistryConformanceTests
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
             new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
             new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
+            new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
+            new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
             new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
         ];
     }

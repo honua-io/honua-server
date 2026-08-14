@@ -113,6 +113,23 @@ TRAIN_TARGETED_SCRIPT="${TRAIN_TARGETED_SCRIPT:-${TRAIN_REPO_ROOT}/scripts/ci/ho
 train_log()  { _train_emit INFO "$*"; }
 train_warn() { _train_emit WARN "$*"; }
 train_err()  { _train_emit ERROR "$*"; }
+
+# Publish the one authoritative cross-step proof that this controller observed
+# its exact batch on trunk and persisted the matching post-land journal. The
+# workflow consumes this output to permit at most one immediate reconciliation
+# continuation. Metrics are intentionally excluded from this control path.
+train_publish_landing_step_output() {
+  local landed_sha="${1:?landed SHA is required}"
+  [[ "${landed_sha}" =~ ^[0-9a-f]{40,64}$ ]] || {
+    train_err "refusing to publish malformed landed SHA: ${landed_sha}"
+    return 1
+  }
+  [[ -n "${GITHUB_OUTPUT:-}" ]] || return 0
+  {
+    printf 'landed_this_run=true\n'
+    printf 'landed_batch_sha=%s\n' "${landed_sha}"
+  } >>"${GITHUB_OUTPUT}"
+}
 # train_decision: a first-class DECISION line — the thing the founder grep's for.
 train_decision() { _train_emit DECISION "$*"; }
 
@@ -318,7 +335,7 @@ train_timings_json() {
 #   Emit the full merge-train-metrics.json document on stdout.
 train_metrics_render() {
   local ts="$1" mode="$2" trunk_sha="$3" last_landed="$4" outcome="$5" shard_desc="${6:-}"
-  local shard_count run_all
+  local shard_count run_all early_failure
   shard_count="$(train_metric_get smartci_shard_count 0)"
   run_all="false"
   if [[ -n "${shard_desc}" ]] && jq -e . >/dev/null 2>&1 <<<"${shard_desc}"; then
@@ -326,6 +343,10 @@ train_metrics_render() {
   fi
   [[ "${run_all}" != "true" && "${run_all}" != "false" ]] && run_all="false"
   local last_json="null"; [[ -n "${last_landed}" && "${last_landed}" != "null" ]] && last_json="\"${last_landed}\""
+  early_failure="null"
+  if [[ -n "${TRAIN_EARLY_FAILURE_FILE:-}" && -s "${TRAIN_EARLY_FAILURE_FILE}" ]]; then
+    early_failure="$(jq -c . "${TRAIN_EARLY_FAILURE_FILE}" 2>/dev/null || echo null)"
+  fi
 
   jq -n \
     --arg ts "${ts}" \
@@ -349,6 +370,7 @@ train_metrics_render() {
     --argjson attribution_drops "$(train_metric_get attribution_drops 0)" \
     --argjson shard_count "${shard_count:-0}" \
     --argjson run_all "${run_all:-false}" \
+    --argjson early_failure "${early_failure}" \
     --argjson durations "$(train_timings_json)" \
     '{
       schema: "honua.merge-train.metrics/v1",
@@ -373,6 +395,7 @@ train_metrics_render() {
         attribution_drops: $attribution_drops
       },
       smart_ci: { shard_count: $shard_count, run_all: $run_all },
+      early_failure_observation: $early_failure,
       phase_durations_seconds: $durations
     }'
 }

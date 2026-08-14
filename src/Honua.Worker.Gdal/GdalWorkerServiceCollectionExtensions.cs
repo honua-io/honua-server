@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.FileStorage;
 using Honua.Infrastructure.Helpers;
 using Honua.ControlPlane;
 using Honua.Worker.Gdal.Execution;
@@ -78,6 +79,11 @@ public static class GdalWorkerServiceCollectionExtensions
         // is the SAME JobExecutionService / JobReconciliationService the substrate
         // ships; the worker does not introduce its own BackgroundService.
         services.AddGdalWorkerExecutionLoop();
+
+        // Opt-in staged output publication (#3089): when Geoprocessing:OutputStaging
+        // is enabled, large outputs stream to the shared object store and only typed
+        // references enter the durable job record.
+        services.AddGeoprocessingOutputStaging(configuration);
 
         // GDAL executor options, CLI runner, and the native-profile executor set.
         // The per-process executors implement IProcessExecutor and self-declare their

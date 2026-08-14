@@ -307,13 +307,27 @@ internal static class SavedMapOperationDraftApplier
         // ReplaceComposition, not WriteBody: the projection serializes with WhenWritingNull, so a
         // replacement omitting "view" would leave the STORED viewport in place and the wholesale
         // replacement would not be wholesale (honua-server#2999 review).
-        return StudioCompositionBodyEditor.ReplaceComposition(
-            envelope,
-            replacement with
-            {
-                Layers = replacement.Layers ?? [],
-                Widgets = replacement.Widgets ?? [],
-            });
+        var normalizedReplacement = replacement with
+        {
+            Layers = replacement.Layers ?? [],
+            Widgets = replacement.Widgets ?? [],
+            // sourceBindings is a canonical, unmodelled package member that replacement
+            // operations preserve. Project its ids into the replacement for checkpoint-time
+            // source validation even though the original JSON block remains untouched.
+            SourceBindingIds = StudioCompositionBodyEditor.ReadBody(envelope).SourceBindingIds,
+        };
+
+        var unresolvedControl = (normalizedReplacement.Controls ?? []).FirstOrDefault(control =>
+            control.SourceId is not null
+            && !StudioInteractionVocabulary.IsDeclaredSourceId(normalizedReplacement, control.SourceId));
+        if (unresolvedControl is not null)
+        {
+            throw new StudioCompositionNotFoundException(
+                $"Control '{unresolvedControl.Id}' sourceId '{unresolvedControl.SourceId}' does not resolve to a "
+                + "preserved source binding, replacement layer, or datasource.");
+        }
+
+        return StudioCompositionBodyEditor.ReplaceComposition(envelope, normalizedReplacement);
     }
 
     /// <summary>

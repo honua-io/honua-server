@@ -72,3 +72,101 @@ self_chain_if="$(awk '
 grep -Fq "steps.mode.outputs.train_reset_state == '0'" <<<"${self_chain_if}" \
   || { printf 'FAIL: self-chain condition does not exclude reset-only runs: %s\n' "${self_chain_if}" >&2; exit 1; }
 printf 'PASS: self-chain excludes reset-only runs\n'
+
+# A live operator may opt into Bedrock judgment or autofix for one dispatch,
+# but continuous draining must return to the deterministic defaults. Otherwise
+# one opt-in run permanently turns the optional/costly path on for the queue.
+self_chain_step="$(awk '
+  /^      - name: Self-chain next run while PRs remain$/ { found=1 }
+  found { print }
+' "${WORKFLOW}")"
+grep -Fq -- '-f use_llm=false' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not explicitly disable optional LLM judgment\n' >&2; exit 1; }
+grep -Fq -- '-f use_autofix=false' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not explicitly disable optional autofix\n' >&2; exit 1; }
+if grep -Eq -- '-f use_(llm|autofix)=true' <<<"${self_chain_step}"; then
+  printf 'FAIL: self-chain silently enables an optional Bedrock path\n' >&2
+  exit 1
+fi
+printf 'PASS: self-chain preserves deterministic LLM/autofix defaults\n'
+
+# Batch size is an operator safety bound for the whole continuous drain, not a
+# one-run hint. A bounded recovery/landing must not silently widen on the first
+# continuation.
+grep -Fq 'CHAIN_MAX_BATCH: ${{ steps.mode.outputs.max_batch }}' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not inherit the resolved batch bound\n' >&2; exit 1; }
+grep -Fq -- '-f max_batch="${CHAIN_MAX_BATCH}"' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain dispatch does not use the inherited batch bound\n' >&2; exit 1; }
+if grep -Eq -- '-f max_batch=[0-9]+' <<<"${self_chain_step}"; then
+  printf 'FAIL: self-chain hardcodes and may widen the operator batch bound\n' >&2
+  exit 1
+fi
+printf 'PASS: self-chain preserves the operator batch bound\n'
+
+grep -Fq 'source scripts/ci/merge-train/state.sh' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain cannot inspect durable land intent\n' >&2; exit 1; }
+grep -Fq 'train_state_requires_live_reconciliation' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain ignores durable land intent\n' >&2; exit 1; }
+grep -Fq 'LANDED_THIS_RUN: ${{ steps.run-train.outputs.landed_this_run }}' <<<"${self_chain_step}" \
+  || { printf 'FAIL: post-land recovery continuation is not bound to the authoritative landing step output\n' >&2; exit 1; }
+grep -Fq '${LANDED_THIS_RUN:-}' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain does not consume the authoritative landing step output\n' >&2; exit 1; }
+if grep -Fq 'merge-train-metrics.json' <<<"${self_chain_step}"; then
+  printf 'FAIL: post-land recovery is incorrectly gated by best-effort metrics\n' >&2
+  exit 1
+fi
+grep -Fq 'Durable land intent remains after its bounded reconciliation controller' <<<"${self_chain_step}" \
+  || { printf 'FAIL: repeated post-land recovery can self-chain without a bound\n' >&2; exit 1; }
+
+# A successful trunk CAS can briefly precede GitHub's merged-PR projection. The
+# controller must chain once for all land-family phases even with an empty PR
+# queue, then stop after reconciliation reaches done.
+REPO_ROOT="$(cd "${FIXTURE_DIR}/../../../.." && pwd)"
+# shellcheck source=scripts/ci/merge-train/lib.sh
+source "${REPO_ROOT}/scripts/ci/merge-train/lib.sh"
+# shellcheck source=scripts/ci/merge-train/state.sh
+source "${REPO_ROOT}/scripts/ci/merge-train/state.sh"
+state_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+state_heads='[{"number":123,"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'
+assert_reconciliation_phase() {
+  local phase="$1" expected="$2" body rc=0
+  if [[ "${phase}" == "done" ]]; then
+    body="$(train_state_render "" "${state_sha}" "" "done" "" 0 0 "${state_sha}")"
+  else
+    body="$(train_state_render "train/batch/test/1" "${state_sha}" "123" "${phase}" "" 0 0 "${state_sha}" \
+      "${state_heads}" "${state_sha}")"
+  fi
+  export TRAIN_STATE_ISSUE_OVERRIDE=2044 TRAIN_STATE_BODY_OVERRIDE="${body}"
+  train_state_requires_live_reconciliation || rc=$?
+  [[ "${rc}" == "${expected}" ]] \
+    || { printf 'FAIL: reconciliation phase %s returned %s, expected %s\n' "${phase}" "${rc}" "${expected}" >&2; exit 1; }
+}
+assert_reconciliation_phase land 0
+assert_reconciliation_phase pre-land-cleanup 0
+assert_reconciliation_phase post-land-finalize 0
+assert_reconciliation_phase done 1
+export TRAIN_STATE_BODY_OVERRIDE='```json
+not-json
+```'
+malformed_rc=0
+train_state_requires_live_reconciliation || malformed_rc=$?
+[[ "${malformed_rc}" == "2" ]] \
+  || { printf 'FAIL: unreadable state did not fail closed\n' >&2; exit 1; }
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
+printf 'PASS: self-chain reconciles durable land intent and fails closed on unreadable state\n'
+
+# The landing proof is a required GitHub step output, independent of the
+# best-effort metrics renderer. Exercise the writer directly so a future rename
+# or formatting edit cannot silently disconnect the workflow control path.
+landing_output="${SCRATCH}/landing-step.out"
+GITHUB_OUTPUT="${landing_output}" train_publish_landing_step_output "${state_sha}"
+[[ "$(sed -n 's/^landed_this_run=//p' "${landing_output}")" == "true" ]] \
+  || { printf 'FAIL: landing step output did not publish landed_this_run=true\n' >&2; exit 1; }
+[[ "$(sed -n 's/^landed_batch_sha=//p' "${landing_output}")" == "${state_sha}" ]] \
+  || { printf 'FAIL: landing step output did not bind the exact landed SHA\n' >&2; exit 1; }
+malformed_output_rc=0
+GITHUB_OUTPUT="${landing_output}" train_publish_landing_step_output "not-a-sha" >/dev/null 2>&1 || malformed_output_rc=$?
+[[ "${malformed_output_rc}" == "1" ]] \
+  || { printf 'FAIL: landing step output accepted a malformed SHA\n' >&2; exit 1; }
+unset GITHUB_OUTPUT
+printf 'PASS: authoritative landing step output is exact and fail-closed\n'

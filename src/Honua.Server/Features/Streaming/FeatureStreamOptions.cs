@@ -76,6 +76,23 @@ public sealed class FeatureStreamOptions
     public int MaxSnapshotScanRows { get; set; } = 20000;
 
     /// <summary>
+    /// Maximum serialized payload, in bytes, that one baseline snapshot may emit before it is
+    /// truncated with <c>complete: false</c>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MaxSnapshotFeatures"/> bounds the feature COUNT, which says nothing about the
+    /// response size: on the demo seed the same 5000-feature cap yields a ~6.6 MB baseline for
+    /// parcel multipolygons but ~3.3 MB for building footprints, so geometry complexity alone
+    /// moves the payload by a factor of two. Deployments that buffer the whole response before returning it
+    /// (API gateways and serverless function URLs typically cap an invoke response at 6 MB)
+    /// discard an over-large 200 and substitute their own untyped 500, so a baseline the server
+    /// considered successful never reaches the client (honua-server#3181). Bounding the payload
+    /// keeps every advertised layer servable and moves the truncation into the protocol's own
+    /// fail-closed <c>complete: false</c> contract, where the client can see it.
+    /// </remarks>
+    public int MaxSnapshotBytes { get; set; } = 4 * 1024 * 1024;
+
+    /// <summary>
     /// Number of features read per page while building a baseline snapshot.
     /// </summary>
     public int SnapshotPageSize { get; set; } = 500;
@@ -140,6 +157,11 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.MaxSnapshotScanRows < options.MaxSnapshotFeatures)
         {
             failures.Add("FeatureStreaming:MaxSnapshotScanRows must be greater than or equal to MaxSnapshotFeatures.");
+        }
+
+        if (options.MaxSnapshotBytes <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxSnapshotBytes must be a positive integer.");
         }
 
         if (options.SnapshotPageSize <= 0)

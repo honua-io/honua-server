@@ -477,6 +477,24 @@
       "implementationStatus": "implemented",
       "profile": "composition",
       "notes": "Removes one declarative binding, by id, from a composition document; member of the opt-in composition conformance profile. Removing an unknown id is an error, not a no-op. Advertised by the reference implementation as honua_studio_remove_interaction."
+    },
+    {
+      "standardName": "add_control",
+      "referenceToolName": "honua_studio_add_control",
+      "family": "Composition controls",
+      "schema": "tools/add_control.schema.json",
+      "implementationStatus": "implemented",
+      "profile": "composition",
+      "notes": "Adds or replaces (by id) one control in a composition document's controls collection; member of the opt-in composition conformance profile (geospatial-mcp docs/adr/0031-composition-controls.md). The control kind vocabulary is closed and excludes a feature-editing draw control (ADR-0028). Controls are what control:{id} interaction references resolve against. Honua is the reference implementation: the tool is advertised as honua_studio_add_control over the draft-lifecycle target (draftId + generation, admitted upstream as x-honua-reference-shape)."
+    },
+    {
+      "standardName": "remove_control",
+      "referenceToolName": "honua_studio_remove_control",
+      "family": "Composition controls",
+      "schema": "tools/remove_control.schema.json",
+      "implementationStatus": "implemented",
+      "profile": "composition",
+      "notes": "Removes one control, by id, from a composition document; member of the opt-in composition conformance profile. Interactions bound to the removed control must be removed with it or the call rejected — no dangling control: references. Advertised by the reference implementation as honua_studio_remove_control, whose cascadeInteractions flag selects between the two conformant outcomes."
     }
   ],
   "resources": [
@@ -602,6 +620,11 @@
       "name": "CompositionInteractions",
       "schema": "common/interactions.schema.json",
       "role": "Standard-owned interactions and layout blocks for composition documents (MapPackage/AppPackage); referenced by both resource schemas and by bind_interaction. See geospatial-mcp docs/adr/0030-declarative-interactions-and-layout.md."
+    },
+    {
+      "name": "CompositionControls",
+      "schema": "common/controls.schema.json",
+      "role": "Standard-owned controls collection for composition documents (MapPackage/AppPackage) — the closed input-affordance vocabulary that control:{id} references resolve against; referenced by both resource schemas and by add_control. See geospatial-mcp docs/adr/0031-composition-controls.md."
     }
   ],
   "conformance": [
