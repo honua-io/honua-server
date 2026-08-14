@@ -113,6 +113,23 @@ TRAIN_TARGETED_SCRIPT="${TRAIN_TARGETED_SCRIPT:-${TRAIN_REPO_ROOT}/scripts/ci/ho
 train_log()  { _train_emit INFO "$*"; }
 train_warn() { _train_emit WARN "$*"; }
 train_err()  { _train_emit ERROR "$*"; }
+
+# Publish the one authoritative cross-step proof that this controller observed
+# its exact batch on trunk and persisted the matching post-land journal. The
+# workflow consumes this output to permit at most one immediate reconciliation
+# continuation. Metrics are intentionally excluded from this control path.
+train_publish_landing_step_output() {
+  local landed_sha="${1:?landed SHA is required}"
+  [[ "${landed_sha}" =~ ^[0-9a-f]{40,64}$ ]] || {
+    train_err "refusing to publish malformed landed SHA: ${landed_sha}"
+    return 1
+  }
+  [[ -n "${GITHUB_OUTPUT:-}" ]] || return 0
+  {
+    printf 'landed_this_run=true\n'
+    printf 'landed_batch_sha=%s\n' "${landed_sha}"
+  } >>"${GITHUB_OUTPUT}"
+}
 # train_decision: a first-class DECISION line — the thing the founder grep's for.
 train_decision() { _train_emit DECISION "$*"; }
 

@@ -61,6 +61,7 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/land.sh"
 # shellcheck source=state.sh
 . "${TRAIN_DIR}/state.sh"
+
 # shellcheck source=resume-retry.sh
 . "${TRAIN_DIR}/resume-retry.sh"
 
@@ -1097,6 +1098,16 @@ main() {
   else
     _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
   fi
+  # This is the control-plane proof consumed by the workflow's bounded
+  # self-chain. Publish it only after (1) train_land observed the exact CAS and
+  # (2) the durable state journal recorded either done or post-land-finalize.
+  # Unlike metrics, failure to publish this output is fatal: a later scheduled
+  # controller can reconcile the durable journal, but the current run must not
+  # silently claim that it armed the immediate cleanup continuation.
+  train_publish_landing_step_output "${new_trunk}" || {
+    train_err "exact batch landed but authoritative landing step output could not be published"
+    return 1
+  }
   train_notice "LANDED batch ${batch} ($(tr ',' ' ' <<<"${included}")); trunk now ${new_trunk:0:7}"
   train_step_end land >/dev/null
   train_endgroup
