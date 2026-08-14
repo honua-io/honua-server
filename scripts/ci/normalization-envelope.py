@@ -166,7 +166,7 @@ def validate_envelope(
     repository: str,
     pull_request: int,
     source_sha: str,
-    base_sha: str,
+    base_sha: str | None,
     run_id: int,
     run_attempt: int,
 ) -> dict[str, Any]:
@@ -186,12 +186,13 @@ def validate_envelope(
         "source",
     )
     expected_source = {
-        "base_sha": base_sha,
         "pull_request": pull_request,
         "repository": repository,
         "sha": source_sha,
     }
-    if source != expected_source:
+    if {key: source[key] for key in expected_source} != expected_source or (
+        base_sha is not None and source["base_sha"] != base_sha
+    ):
         raise EnvelopeError("source identity does not match the workflow event")
     require_commit(source["sha"], "source.sha")
     require_commit(source["base_sha"], "source.base_sha")
@@ -324,7 +325,7 @@ def parser() -> argparse.ArgumentParser:
     validate.add_argument("--repository", required=True)
     validate.add_argument("--pull-request", type=int, required=True)
     validate.add_argument("--source-sha", required=True)
-    validate.add_argument("--base-sha", required=True)
+    validate.add_argument("--base-sha")
     validate.add_argument("--run-id", type=int, required=True)
     validate.add_argument("--run-attempt", type=int, required=True)
     validate.add_argument("--plan", type=Path, required=True)

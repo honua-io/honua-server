@@ -85,6 +85,18 @@ class EnvelopeTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.EnvelopeError, "source identity"):
             MODULE.validate_envelope(raw(value), **expected())
 
+    def test_fork_validation_may_omit_only_unverifiable_base_identity(self) -> None:
+        value = envelope()
+        value["source"]["base_sha"] = "d" * 40
+        fork_expected = expected()
+        fork_expected["base_sha"] = None
+        plan = MODULE.validate_envelope(raw(value), **fork_expected)
+        self.assertEqual("d" * 40, plan["source"]["base_sha"])
+
+        value["source"]["sha"] = "e" * 40
+        with self.assertRaisesRegex(MODULE.EnvelopeError, "source identity"):
+            MODULE.validate_envelope(raw(value), **fork_expected)
+
     def test_extra_envelope_key_is_rejected(self) -> None:
         value = envelope()
         value["command"] = "echo unsafe"

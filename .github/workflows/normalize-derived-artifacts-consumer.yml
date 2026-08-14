@@ -52,7 +52,8 @@ jobs:
               throw new Error('Producer repository does not match this repository.');
             }
 
-            let associated = run.pull_requests || [];
+            const eventAssociated = run.pull_requests || [];
+            let associated = eventAssociated;
             if (associated.length === 0) {
               const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
                 ...context.repo, commit_sha: run.head_sha,
@@ -68,6 +69,11 @@ jobs:
             });
             if (pr.state !== 'open' || pr.draft || pr.head.sha !== run.head_sha) {
               throw new Error('PR closed, draft, or moved after normalization production.');
+            }
+            const sameRepository = pr.head.repo.full_name === pr.base.repo.full_name;
+            const eventBaseSha = eventAssociated[0]?.base?.sha || '';
+            if (sameRepository && !eventBaseSha) {
+              throw new Error('Same-repository producer lacks event-time base identity.');
             }
 
             const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
@@ -95,12 +101,12 @@ jobs:
             fs.writeFileSync(archive, Buffer.from(download.data));
 
             core.setOutput('archive', archive);
-            core.setOutput('base_sha', associated[0].base?.sha || pr.base.sha);
+            core.setOutput('base_sha', sameRepository ? eventBaseSha : '');
             core.setOutput('head_sha', run.head_sha);
             core.setOutput('pr_number', String(prNumber));
             core.setOutput('run_attempt', String(run.run_attempt));
             core.setOutput('run_id', String(run.id));
-            core.setOutput('same_repository', String(pr.head.repo.full_name === pr.base.repo.full_name));
+            core.setOutput('same_repository', String(sameRepository));
 
       - name: Validate archive and data envelope with trusted policy
         env:
@@ -111,12 +117,16 @@ jobs:
           PRODUCER_ATTEMPT: ${{ steps.artifact.outputs.run_attempt }}
           PRODUCER_RUN_ID: ${{ steps.artifact.outputs.run_id }}
         run: |
+          base_args=()
+          if [[ -n "${BASE_SHA}" ]]; then
+            base_args=(--base-sha "${BASE_SHA}")
+          fi
           python3 scripts/ci/normalization-envelope.py validate-archive \
             --archive "${ARCHIVE}" \
             --repository "${GITHUB_REPOSITORY}" \
             --pull-request "${PR_NUMBER}" \
             --source-sha "${HEAD_SHA}" \
-            --base-sha "${BASE_SHA}" \
+            "${base_args[@]}" \
             --run-id "${PRODUCER_RUN_ID}" \
             --run-attempt "${PRODUCER_ATTEMPT}" \
             --plan "${RUNNER_TEMP}/normalization-plan.json"

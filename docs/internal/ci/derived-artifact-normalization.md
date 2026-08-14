@@ -27,6 +27,11 @@ extracted), and validates the envelope with default-branch policy.
 Artifact identity includes both the immutable workflow run and attempt, so a
 failed-job rerun produces a fresh envelope without colliding with or reusing an
 earlier attempt.
+Same-repository observations also require the event-time base SHA from the
+workflow-run association. GitHub omits that association for fork runs; those
+read-only observations still bind repository, PR, exact source head, run, and
+attempt, but treat the envelope's well-formed base SHA as informational because
+forks can never receive branch-mutation authority.
 
 The v1 envelope binds the source/base commit, PR/repository, workflow/run/
 attempt, generator input digests, and each allowlisted output's path, byte

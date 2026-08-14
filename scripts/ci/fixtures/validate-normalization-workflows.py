@@ -74,6 +74,16 @@ def main() -> None:
         "if (artifacts.length !== 1 || artifacts[0].expired)",
         "consumer must require one exact-attempt artifact",
     )
+    require(
+        consumer,
+        "if (sameRepository && !eventBaseSha)",
+        "same-repository normalization must require event-time base identity",
+    )
+    require(
+        consumer,
+        "base_args=(--base-sha \"${BASE_SHA}\")",
+        "fork validation must omit only the unavailable base comparison",
+    )
     require(consumer, "github.rest.git.getBlob", "consumer must compare Git blobs without PR checkout")
     require(consumer, "const maxArchiveBytes = 10 * 1024 * 1024", "consumer must bound artifact metadata")
     size_guard = consumer.index("artifacts[0].size_in_bytes > maxArchiveBytes")
