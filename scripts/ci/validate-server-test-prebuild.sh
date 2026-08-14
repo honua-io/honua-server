@@ -66,7 +66,7 @@ for workflow in "${observer}" "${benchmark}"; do
     echo "::error::Shadow prebuild workflow gained a write permission: ${workflow}" >&2
     exit 1
   fi
-  if grep -Eq 'statuses: write|github\.rest\.repos\.createCommitStatus|merge-train\.yml|gh pr merge' "${workflow}"; then
+  if grep -Eq 'statuses: write|github\.rest\.repos\.createCommitStatus|merge-train\.yml|gh[[:space:]]+pr[[:space:]]+merge' "${workflow}"; then
     echo "::error::Shadow prebuild workflow gained status or merge authority: ${workflow}" >&2
     exit 1
   fi
