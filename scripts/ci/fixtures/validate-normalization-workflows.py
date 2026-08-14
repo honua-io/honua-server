@@ -37,6 +37,11 @@ def main() -> None:
     require(producer, "actions/upload-artifact@v7", "producer must upload one data artifact")
     require(
         producer,
+        "name: normalization-envelope-${{ github.run_id }}-attempt-${{ github.run_attempt }}",
+        "producer artifact must bind the immutable workflow attempt",
+    )
+    require(
+        producer,
         "repository: ${{ github.event.pull_request.head.repo.full_name }}",
         "producer must fetch from the exact PR-head repository",
     )
@@ -59,6 +64,16 @@ def main() -> None:
     require(consumer, "ref: ${{ github.event.repository.default_branch }}", "consumer must check out default policy")
     require(consumer, "persist-credentials: false", "trusted checkout must not persist credentials")
     require(consumer, "scripts/ci/normalization-envelope.py validate-archive", "consumer must use trusted validation")
+    require(
+        consumer,
+        "const expectedName = `normalization-envelope-${run.id}-attempt-${run.run_attempt}`;",
+        "consumer must select only the completed producer attempt",
+    )
+    require(
+        consumer,
+        "if (artifacts.length !== 1 || artifacts[0].expired)",
+        "consumer must require one exact-attempt artifact",
+    )
     require(consumer, "github.rest.git.getBlob", "consumer must compare Git blobs without PR checkout")
     require(consumer, "const maxArchiveBytes = 10 * 1024 * 1024", "consumer must bound artifact metadata")
     size_guard = consumer.index("artifacts[0].size_in_bytes > maxArchiveBytes")

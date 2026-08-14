@@ -76,9 +76,9 @@ jobs:
             if (artifactPage.total_count > artifactPage.artifacts.length) {
               throw new Error('Artifact query exceeded its bounded page.');
             }
-            const expectedName = `normalization-envelope-${run.id}`;
+            const expectedName = `normalization-envelope-${run.id}-attempt-${run.run_attempt}`;
             const artifacts = artifactPage.artifacts.filter(artifact => artifact.name === expectedName);
-            if (artifactPage.artifacts.length !== 1 || artifacts.length !== 1 || artifacts[0].expired) {
+            if (artifacts.length !== 1 || artifacts[0].expired) {
               throw new Error(`Expected one non-expired ${expectedName} artifact.`);
             }
             const maxArchiveBytes = 10 * 1024 * 1024;

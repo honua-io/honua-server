@@ -24,6 +24,9 @@ permissions and uploads one envelope. It receives no write credential.
 the producer completes. It never checks out the PR. It downloads the artifact
 archive as bytes, verifies the zip before extraction (the archive is never
 extracted), and validates the envelope with default-branch policy.
+Artifact identity includes both the immutable workflow run and attempt, so a
+failed-job rerun produces a fresh envelope without colliding with or reusing an
+earlier attempt.
 
 The v1 envelope binds the source/base commit, PR/repository, workflow/run/
 attempt, generator input digests, and each allowlisted output's path, byte
