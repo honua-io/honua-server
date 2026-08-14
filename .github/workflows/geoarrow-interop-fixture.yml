@@ -19,7 +19,7 @@ on:
       - 'src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json'
       - 'src/Honua.Core/Features/Shared/Models/**'
       - 'src/Honua.Hosting/Honua.Hosting.csproj'
-      - 'src/Honua.Hosting/Features/Services/**'
+      - 'src/Honua.Hosting/Features/**'
       - 'src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj'
       - 'src/Honua.Protocols.GeoServices/GeoServicesObjectIdFieldResolver.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
