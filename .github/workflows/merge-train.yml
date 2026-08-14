@@ -176,6 +176,14 @@ jobs:
           # train ALSO appends its dashboard to $GITHUB_STEP_SUMMARY directly, so
           # the Summary tab is populated even when the train selects nothing.
           TRAIN_METRICS_OUT: ${{ github.workspace }}/merge-train-metrics.json
+          # Observation only. No code path reads this evidence to cancel,
+          # classify, drop, or land; #3224 requires 20 live observations before
+          # a separate enforcement proposal is even eligible for review.
+          TRAIN_EARLY_FAILURE_MODE: observe
+          # Job completion timestamps are authoritative, so polling the larger
+          # jobs page every two minutes preserves timing accuracy without
+          # doubling API work on the controller's 30-second status cadence.
+          TRAIN_EARLY_FAILURE_POLL_SECONDS: "120"
           # OPTIONAL gated LLM layer. TRAIN_LLM=0 here on every default path; the
           # gates are inert and make zero Bedrock calls unless this is 1.
           TRAIN_LLM: ${{ steps.mode.outputs.train_llm }}

@@ -717,6 +717,10 @@ gh() {
     if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
     return 0
   fi
+  if [[ "$1 $2" == "run view" && "$*" == *"--json status,updatedAt,jobs"* ]]; then
+    printf '{"status":"completed","updatedAt":"2026-08-14T00:00:00Z","jobs":[]}\n'
+    return 0
+  fi
   if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then
     echo "completed"
     return 0
