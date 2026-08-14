@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[3]
 PR_GATE = ROOT / ".github/workflows/pr-gate.yml"
 REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
 REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
+AUTO_RERUN = ROOT / ".github/workflows/auto-rerun-flaky.yml"
+FAILURE_TRIAGE = ROOT / ".github/workflows/ci-failure-triage.yml"
+PREBUILD_BENCHMARK = ROOT / ".github/workflows/server-test-prebuild-benchmark.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
@@ -34,6 +37,12 @@ def main() -> None:
     pr_gate = PR_GATE.read_text(encoding="utf-8")
     review_gate = REVIEW_GATE.read_text(encoding="utf-8")
     review_bridge = REVIEW_BRIDGE.read_text(encoding="utf-8")
+    action_workflows = {
+        REVIEW_GATE: review_gate,
+        AUTO_RERUN: AUTO_RERUN.read_text(encoding="utf-8"),
+        FAILURE_TRIAGE: FAILURE_TRIAGE.read_text(encoding="utf-8"),
+        PREBUILD_BENCHMARK: PREBUILD_BENCHMARK.read_text(encoding="utf-8"),
+    }
     train_select = TRAIN_SELECT.read_text(encoding="utf-8")
     train_land = TRAIN_LAND.read_text(encoding="utf-8")
 
@@ -115,9 +124,14 @@ def main() -> None:
     )
     require(
         review_gate,
-        "github.rest.actions.reRunWorkflowFailedJobs",
+        "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
         "review workflow must release the existing run, not dispatch a new check identity",
     )
+    for path, workflow in action_workflows.items():
+        if "github.rest.actions." in workflow:
+            raise AssertionError(
+                f"{path}: actions/github-script@v9 calls must use stable github.request routes"
+            )
     if "github.event.pull_request.head" in review_gate or "github.head_ref" in review_gate:
         raise AssertionError("pull_request_target workflow must never check out the PR head")
     if "secrets." in review_gate:
