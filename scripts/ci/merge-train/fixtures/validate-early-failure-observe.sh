@@ -102,6 +102,10 @@ if grep -Eq "${mutation_pattern}" \
 fi
 grep -Fq 'TRAIN_EARLY_FAILURE_POLL_SECONDS: "120"' \
   "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
+grep -Fq 'one bounded exception per' \
+  "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
+grep -Fq 'adds at most one request per run' \
+  "${TRAIN_DIR}/../../../docs/internal/ci/merge-train-early-failure-observe.md"
 grep -Fq 'now - last_observation_epoch >= observation_interval' \
   "${TRAIN_DIR}/smart-ci.sh"
 grep -Fq 'status="$(gh run view "${run_id}" --json status --jq' \

@@ -180,9 +180,11 @@ jobs:
           # classify, drop, or land; #3224 requires 20 live observations before
           # a separate enforcement proposal is even eligible for review.
           TRAIN_EARLY_FAILURE_MODE: observe
-          # The authoritative status read remains every 30s. One additional
-          # jobs-page read every 120s adds 25% to that request rate, while exact
-          # job completion timestamps keep the observation timing accurate.
+          # The authoritative status read remains every 30s. While active, one
+          # jobs-page read every 120s adds 25% to that request rate. Completion
+          # may add one final jobs read inside the interval so the observation
+          # records GitHub's exact terminal timestamp (one bounded exception per
+          # run, material only for very short runs).
           TRAIN_EARLY_FAILURE_POLL_SECONDS: "120"
           # OPTIONAL gated LLM layer. TRAIN_LLM=0 here on every default path; the
           # gates are inert and make zero Bedrock calls unless this is 1.

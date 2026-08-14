@@ -14,9 +14,12 @@ Every two minutes it also reads a hosted job snapshot, selects only
 router-declared server shards, and records the first
 completed failure. The recorded hosted completion timestamp—not detection
 time—anchors the interval, so throttling does not distort the measurement. Its
-one additional request per 120 seconds is a 25% increase over the four ordinary
-status requests in the same interval; observation never replaces authority.
-conservative categories are `deterministic-candidate`,
+active-run request per 120 seconds is a 25% increase over the four ordinary
+status requests in the same interval. When the workflow becomes terminal before
+the next interval, the observer makes one bounded final jobs request so it can
+record GitHub's exact terminal timestamp. That exception can make a very short
+run's observed overhead exceed 25%, but adds at most one request per run;
+observation never replaces authority. Conservative categories are `deterministic-candidate`,
 `known-flake`, `timeout`, `capacity`, and `unknown`. When the run becomes
 terminal it records the interval from that failure to workflow completion.
 
