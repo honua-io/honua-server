@@ -110,6 +110,13 @@ scripts/ci/fixtures/validate-shard-headroom.sh
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating GitHub Actions baseline measurement contract..."
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
+
+  echo "Validating native-image impact observation contract..."
+  "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
+  "${PYTHON_BIN}" -m unittest discover \
+    -s tests/python/unit \
+    -p 'test_native_image_impact.py' \
+    -v
 else
   echo "⚠️  Skipping Actions baseline fixture (no working Python 3: tried python3/python/py)"
 fi
