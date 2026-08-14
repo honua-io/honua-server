@@ -291,7 +291,7 @@ internal static class OgcRecordsEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
         var record = records.FirstOrDefault(candidate =>
-            string.Equals(candidate.Feature.Id, recordId, StringComparison.Ordinal));
+            RecordIdEquals(candidate.Feature.Id, recordId));
         if (record is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Record '{recordId}' not found.");
@@ -535,7 +535,7 @@ internal static class OgcRecordsEndpoints
 
         foreach (var record in records)
         {
-            if (idSet.Count > 0 && !idSet.Contains(record.Feature.Id))
+            if (idSet.Count > 0 && !idSet.Any(id => RecordIdEquals(record.Feature.Id, id)))
             {
                 continue;
             }
@@ -796,6 +796,11 @@ internal static class OgcRecordsEndpoints
             ? new HashSet<string>(comparer)
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToHashSet(comparer);
+
+    private static bool RecordIdEquals(string canonicalId, string requestedId)
+        => canonicalId.StartsWith("service:", StringComparison.Ordinal)
+            ? string.Equals(canonicalId, requestedId, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(canonicalId, requestedId, StringComparison.Ordinal);
 
     private static bool IsCatalogCollection(string collectionId)
         => string.Equals(collectionId, CatalogCollectionId, StringComparison.OrdinalIgnoreCase);

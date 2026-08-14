@@ -245,6 +245,35 @@ public sealed class FeatureServerServiceRbacTests
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithMultipleProtocolPublicationsForLayer_UsesFeaturePublication()
+    {
+        // RbacTestLayerCatalog exposes each layer through OData and Esri FeatureServer
+        // publications with the same public ID. Replication must choose one canonical
+        // FeatureServer layer instead of constructing a duplicate-key lookup.
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "multi-publication",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            content);
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithAnonymousClient_AndMalformedBody_ReturnsUnauthorizedBeforeBodyValidation()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory();
