@@ -19,8 +19,8 @@ function fixtures(overrides = {}) {
     event: 'pull_request',
     status: 'completed',
     conclusion: 'success',
-    repository: { full_name: 'honua-io/honua-server' },
-    head_repository: { full_name: 'honua-io/honua-server' },
+    repository: { id: 1, full_name: 'honua-io/honua-server' },
+    head_repository: { id: 1, full_name: 'honua-io/honua-server' },
     head_sha: HEAD,
     run_attempt: 2,
     pull_requests: [],
@@ -57,11 +57,11 @@ function fixtures(overrides = {}) {
     base: {
       ref: 'trunk',
       sha: BASE,
-      repo: { full_name: 'honua-io/honua-server' },
+      repo: { id: 1, full_name: 'honua-io/honua-server' },
     },
     head: {
       sha: HEAD,
-      repo: { full_name: 'honua-io/honua-server' },
+      repo: { id: 1, full_name: 'honua-io/honua-server' },
     },
     ...overrides.pullRequest,
   };
@@ -109,6 +109,24 @@ function resolve(github, { runAttempt = '2', runConclusion = 'success' } = {}) {
   });
 }
 
+function resolveReviewGate(github) {
+  return resolveTrustedPullRequestWorkflowRun({
+    github,
+    owner: 'honua-io',
+    repo: 'honua-server',
+    runId: '123',
+    runAttempt: '2',
+    runConclusion: 'failure',
+    workflowPath: '.github/workflows/review-gate.yml',
+    workflowName: 'Review Gate Attestation',
+    workflowEvent: 'pull_request_target',
+    jobName: 'Resolve pull request identity',
+    jobConclusion: 'success',
+    defaultBranch: 'trunk',
+    repositoryId: 1,
+  });
+}
+
 test('uses the immutable check-run association when workflow_run PRs are empty', async () => {
   const { github } = fixtures();
   const result = await resolve(github);
@@ -118,9 +136,29 @@ test('uses the immutable check-run association when workflow_run PRs are empty',
   assert.equal(result.pullRequest.head.repo.full_name, 'honua-io/honua-server');
 });
 
+test('binds a failed multi-job review workflow to its successful identity job', async () => {
+  const { github } = fixtures({
+    run: {
+      path: '.github/workflows/review-gate.yml',
+      name: 'Review Gate Attestation',
+      event: 'pull_request_target',
+      conclusion: 'failure',
+    },
+    job: {
+      workflow_name: 'Review Gate Attestation',
+      name: 'Resolve pull request identity',
+    },
+    checkRun: { name: 'Resolve pull request identity' },
+  });
+  const result = await resolveReviewGate(github);
+  assert.equal(result.run.conclusion, 'failure');
+  assert.equal(result.job.conclusion, 'success');
+  assert.equal(result.pullRequestNumber, 42);
+});
+
 test('explicitly excludes fork workflow runs from the evidence denominator', async () => {
   const { github } = fixtures({
-    run: { head_repository: { full_name: 'contributor/honua-server' } },
+    run: { head_repository: { id: 2, full_name: 'contributor/honua-server' } },
   });
   await assert.rejects(resolve(github), /completed canonical/);
 });
@@ -149,7 +187,7 @@ test('rejects a current PR whose base advanced after the gate run', async () => 
       base: {
         ref: 'trunk',
         sha: 'c'.repeat(40),
-        repo: { full_name: 'honua-io/honua-server' },
+        repo: { id: 1, full_name: 'honua-io/honua-server' },
       },
     },
   });

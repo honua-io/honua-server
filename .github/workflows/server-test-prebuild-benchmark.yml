@@ -74,10 +74,8 @@ jobs:
               'GET /repos/{owner}/{repo}/actions/runs/{run_id}',
               { ...context.repo, run_id: producerRunId });
             const expectedPath = '.github/workflows/server-test-prebuild-observe.yml';
-            const targetPullRequest = run.pull_requests?.some(item =>
-              item.number === number && item.base?.ref === repository.default_branch && item.head?.sha === pr.head.sha);
             const trustedEvent =
-              (run.event === 'pull_request_target' && targetPullRequest) ||
+              (run.event === 'workflow_run' && run.head_branch === repository.default_branch) ||
               (run.event === 'workflow_dispatch' && run.head_branch === repository.default_branch);
             if (run.repository?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
                 run.path !== expectedPath ||
@@ -115,9 +113,11 @@ jobs:
             }
             core.setOutput('pr', String(number));
             core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_sha', pr.base.sha);
             core.setOutput('policy_sha', branch.commit.sha);
             core.setOutput('producer_run_id', String(producerRunId));
             core.setOutput('producer_attempt', String(run.run_attempt));
+            core.setOutput('producer_workflow_sha', run.head_sha);
 
       - name: Checkout exact trusted policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -139,11 +139,26 @@ jobs:
             --arg repository '${{ github.repository }}' \
             --argjson pull_request '${{ steps.target.outputs.pr }}' \
             --arg source_sha '${{ steps.target.outputs.head_sha }}' \
+            --arg base_sha '${{ steps.target.outputs.base_sha }}' \
             --argjson run_id '${{ steps.target.outputs.producer_run_id }}' \
             --argjson run_attempt '${{ steps.target.outputs.producer_attempt }}' \
-            '.observation == {repository:$repository,pull_request:$pull_request,
-              source_sha:$source_sha,policy_sha:.observation.policy_sha,
-              run_id:$run_id,run_attempt:$run_attempt} and
+            --arg workflow_sha '${{ steps.target.outputs.producer_workflow_sha }}' \
+            '.observation.repository == $repository and
+             .observation.pull_request == $pull_request and
+             .observation.source_sha == $source_sha and
+             .observation.base_sha == $base_sha and
+             .observation.policy_sha == $workflow_sha and
+             .observation.run_id == $run_id and
+             .observation.run_attempt == $run_attempt and
+             .observation.source_workflow.path == ".github/workflows/review-gate.yml" and
+             .observation.source_workflow.name == "Review Gate Attestation" and
+             .observation.source_workflow.event == "pull_request_target" and
+             .observation.source_workflow.job_name == "Resolve pull request identity" and
+             .observation.source_workflow.job_conclusion == "success" and
+             (.observation.source_workflow.run_id | type == "number") and
+             (.observation.source_workflow.run_attempt | type == "number") and
+             (.observation.source_workflow.conclusion | type == "string") and
+             (.observation.source_workflow.job_id | type == "number") and
              (.observation.policy_sha | type == "string" and test("^[0-9a-f]{40}$"))' \
             producer-plan/prebuild-plan.json >/dev/null
           producer_policy_sha="$(jq -er '.observation.policy_sha' producer-plan/prebuild-plan.json)"

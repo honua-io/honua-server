@@ -198,8 +198,12 @@ This is one build per repeated project fingerprint, not one oversized solution
 artifact and not one build per logical shard.
 
 The first shadow candidate is opportunistic rather than a producer dependency.
-A trusted, read-only observer may prepare a bounded repeated-project payload
-while review is pending, but a consumer never polls or waits for it. After its
+A trusted, read-only default-branch `workflow_run` observer may prepare a
+bounded repeated-project payload while review is pending. It resolves the
+completed Review Gate identity job through GitHub's immutable check-run/PR
+association, then executes the still-current same-repository raw head with no
+write permission or secret. Candidate code never executes in
+`pull_request_target`. A consumer never polls or waits for the payload. After its
 own checkout and toolchain setup, the consumer makes one exact artifact attempt
 and immediately falls back to the independent restore/build path on absence or
 any validation failure. The manual A/B charges the complete observer plan and

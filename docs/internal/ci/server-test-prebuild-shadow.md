@@ -8,8 +8,10 @@ independent and authoritative.
 
 This experiment changes the timing, not the trust model. A read-only observer
 may restore and build at most two projects while an exact PR head is already
-waiting for review. Automatic PR observation ships disabled: manual dispatch is
-the initial A/B path, and only a successful A/B authorizes setting the repository
+waiting for review. A completed trusted `Review Gate Attestation` identity run
+wakes the observer; manual backfill accepts that run's exact id, attempt, and
+conclusion. Automatic production ships disabled: the initial A/B remains the
+first authorization step, and only a successful A/B authorizes setting the repository
 variable `HONUA_SERVER_TEST_PREBUILD_SHADOW=true` for the 20-head shadow. A later
 manual verifier makes one artifact download attempt
 and never polls. A missing, late, expired, duplicate, stale-policy, wrong-runner,
@@ -22,16 +24,23 @@ the verifier immediately performs the existing local restore/build.
 The observer and benchmark are shadow workflows. They have read-only Actions,
 contents, package, and pull-request permissions; they publish no commit status,
 are not required checks, and cannot dispatch or join the merge train. The
-observer rejects forks and draft/closed PRs before executing the raw head. The
+observer executes from the default-branch `workflow_run` definition, resolves
+the source Review Gate through its unique GitHub-managed identity-job check,
+and rejects forks, moved heads/bases, and draft/closed PRs before executing the
+raw head. Candidate code never executes in `pull_request_target`; the raw head
+runs only with the observer's exact read-only permission allowlist. The
 benchmark is manual and rejects any producer unless all of these are true:
 
 - the current PR is open, ready, and still points to the receipt's full head
   SHA in the same repository;
 - the producer is a completed successful run of the trusted-default
   `.github/workflows/server-test-prebuild-observe.yml` workflow, and its policy
-  checkout is pinned to the immutable `github.workflow_sha` that GitHub
+  checkout is pinned to the immutable default-branch `github.sha` that GitHub
   executed rather than a moving branch name;
-- the trusted observer's plan artifact binds repository, PR, source head,
+- the plan binds the exact source Review Gate path, event, run/attempt,
+  conclusion, successful identity job, and GitHub-managed check association;
+- the trusted observer's plan artifact binds repository, PR, event-time base,
+  source head,
   producer run/attempt, and its actual policy SHA; that policy SHA is an
   ancestor of current trusted trunk, and every execution-relevant policy input
   has the same digest at both commits;
@@ -97,8 +106,9 @@ After these workflows reach the default branch, leave
 
 1. choose an open same-repository PR whose targeted descriptor selects at least
    two shards for a registered project;
-2. manually dispatch `Server Test Prebuild Observation` for that PR and use its
-   completed run ID;
+2. manually dispatch `Server Test Prebuild Observation` with the exact completed
+   `Review Gate Attestation` run id, attempt, and conclusion for that head, then
+   use the completed observer run ID;
 3. dispatch `Server Test Prebuild Benchmark` once for `two-same-project` and
    once for `five-hybrid-project` before the receipt expires or policy moves;
 4. retain the plan, raw transfer/consumer/producer metrics, complete hosted job

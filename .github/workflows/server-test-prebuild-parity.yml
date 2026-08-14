@@ -10,19 +10,28 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
-      pr:
-        description: Same-repository pull request to observe
+      run_id:
+        description: Completed canonical PR Gate run to observe
+        required: true
+        type: string
+      run_attempt:
+        description: Exact completed attempt of the PR Gate run
+        required: true
+        type: string
+      run_conclusion:
+        description: Exact terminal conclusion of the PR Gate run
         required: true
         type: string
 
-run-name: Prebuild parity for PR #${{ github.event.workflow_run.pull_requests[0].number || inputs.pr || 'unresolved' }}
+run-name: Prebuild parity from PR Gate run ${{ github.event.workflow_run.id || inputs.run_id }}
 
 concurrency:
-  group: server-test-prebuild-parity-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr || github.run_id }}
+  group: server-test-prebuild-parity-${{ github.event.workflow_run.id || inputs.run_id }}
   cancel-in-progress: true
 
 permissions:
   actions: read
+  checks: read
   contents: read
   packages: read
   pull-requests: read
@@ -46,6 +55,7 @@ jobs:
     outputs:
       pr: ${{ steps.resolve.outputs.pr }}
       head_sha: ${{ steps.resolve.outputs.head_sha }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
       producer_run_id: ${{ steps.resolve.outputs.producer_run_id }}
       producer_attempt: ${{ steps.resolve.outputs.producer_attempt }}
       producer_policy_sha: ${{ steps.validate.outputs.producer_policy_sha }}
@@ -54,40 +64,67 @@ jobs:
       baseline: ${{ steps.parity.outputs.baseline }}
       candidates: ${{ steps.parity.outputs.candidates }}
     steps:
+      - name: Checkout trusted verifier policy with producer history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: policy
+        name: Bind trusted verifier policy
+        run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
       - id: resolve
         name: Resolve current exact head and completed observer
         uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
         with:
           script: |
-            const trigger = context.payload.workflow_run;
-            const manual = context.eventName === 'workflow_dispatch';
-            const number = Number(manual
-              ? '${{ inputs.pr }}'
-              : trigger?.pull_requests?.[0]?.number);
             const unavailable = (reason) => {
               core.info(`prebuild parity unavailable: ${reason}`);
               core.setOutput('eligible', 'false');
               core.setOutput('reason', reason);
             };
-            if (!Number.isInteger(number) || number < 1) {
-              unavailable('no-unique-pull-request');
-              return;
-            }
-            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
-            if (pr.state !== 'open' || pr.draft || pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
-              unavailable('pull-request-not-open-ready-same-repository');
-              return;
-            }
             const repositoryResponse = await github.rest.repos.get({ ...context.repo });
+            const repository = repositoryResponse.data;
             const defaultBranch = repositoryResponse.data.default_branch;
-            if (manual && context.ref !== `refs/heads/${defaultBranch}`) {
-              unavailable('manual-dispatch-is-not-default-branch-policy');
+            if (context.ref !== `refs/heads/${defaultBranch}` ||
+                !/^[0-9a-f]{40}$/.test(context.sha || '')) {
+              unavailable('observer-is-not-default-branch-policy');
               return;
             }
-            if (!manual && (trigger.name !== 'PR Gate'
-              || trigger.path !== '.github/workflows/pr-gate.yml'
-              || trigger.head_sha !== pr.head.sha)) {
-              unavailable('trigger-is-not-current-exact-pr-gate');
+
+            let resolved;
+            try {
+              const {
+                resolveTrustedPullRequestWorkflowRun,
+              } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+              resolved = await resolveTrustedPullRequestWorkflowRun({
+                github,
+                ...context.repo,
+                runId: process.env.SOURCE_RUN_ID,
+                runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+                runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+                workflowPath: '.github/workflows/pr-gate.yml',
+                workflowName: 'PR Gate',
+                jobName: 'PR Gate',
+                jobConclusion: 'success',
+                defaultBranch,
+                repositoryId: repository.id,
+              });
+            } catch (error) {
+              unavailable(`untrusted-or-moved-pr-gate:${error.message}`);
+              return;
+            }
+            const pr = resolved.pullRequest;
+            const number = resolved.pullRequestNumber;
+            if (pr.draft) {
+              unavailable('pull-request-is-draft');
               return;
             }
             const statusResponse = await github.request(
@@ -98,37 +135,6 @@ jobs:
             if (reviewStatuses[0]?.state !== 'success') {
               unavailable('exact-head-review-gate-is-not-successful');
               return;
-            }
-            if (manual) {
-              const prGateWorkflowResponse = await github.request(
-                'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}',
-                { ...context.repo, workflow_id: 'pr-gate.yml' },
-              );
-              if (prGateWorkflowResponse.data.path !== '.github/workflows/pr-gate.yml') {
-                unavailable('pr-gate-workflow-identity-mismatch');
-                return;
-              }
-              const prGateRunsResponse = await github.request(
-                'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
-                {
-                  ...context.repo,
-                  workflow_id: prGateWorkflowResponse.data.id,
-                  event: 'pull_request',
-                  head_sha: pr.head.sha,
-                  per_page: 100,
-                },
-              );
-              const canonicalPrGateRuns = prGateRunsResponse.data.workflow_runs
-                .filter((run) => run.path === '.github/workflows/pr-gate.yml'
-                  && run.event === 'pull_request'
-                  && run.head_sha === pr.head.sha)
-                .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
-                  || right.id - left.id);
-              const prGate = canonicalPrGateRuns[0];
-              if (prGate?.status !== 'completed' || prGate.conclusion !== 'success') {
-                unavailable('exact-head-pr-gate-is-not-successful');
-                return;
-              }
             }
             const workflowResponse = await github.request(
               'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}',
@@ -142,11 +148,10 @@ jobs:
               'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
               { ...context.repo, workflow_id: workflowResponse.data.id, status: 'completed', per_page: 100 },
             );
-            const title = `Server prebuild observation for PR #${number}`;
             const candidates = runsResponse.data.workflow_runs
               .filter((run) => run.path === '.github/workflows/server-test-prebuild-observe.yml'
-                && run.display_title === title && run.conclusion === 'success'
-                && (run.event === 'pull_request_target'
+                && run.conclusion === 'success'
+                && ((run.event === 'workflow_run' && run.head_branch === defaultBranch)
                   || (run.event === 'workflow_dispatch' && run.head_branch === defaultBranch)))
               .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
             let selected = null;
@@ -174,8 +179,10 @@ jobs:
             core.setOutput('reason', 'exact-observer-found');
             core.setOutput('pr', String(number));
             core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_sha', resolved.baseSha);
             core.setOutput('producer_run_id', String(selected.id));
             core.setOutput('producer_attempt', String(selected.run_attempt));
+            core.setOutput('producer_workflow_sha', selected.head_sha);
             core.setOutput('plan_artifact', artifactName);
 
       - name: Record an unavailable one-shot observation
@@ -195,20 +202,6 @@ jobs:
             --repo '${{ github.repository }}' \
             --name '${{ steps.resolve.outputs.plan_artifact }}' \
             --dir evidence/producer-plan
-
-      - name: Checkout trusted verifier policy
-        if: steps.resolve.outputs.eligible == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: policy
-          persist-credentials: false
-          fetch-depth: 0
-
-      - id: policy
-        name: Bind trusted verifier policy
-        if: steps.resolve.outputs.eligible == 'true'
-        run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout raw exact pull-request head
         if: steps.resolve.outputs.eligible == 'true'
@@ -231,14 +224,27 @@ jobs:
             --arg repository '${{ github.repository }}' \
             --argjson pr '${{ steps.resolve.outputs.pr }}' \
             --arg head '${{ steps.resolve.outputs.head_sha }}' \
+            --arg base '${{ steps.resolve.outputs.base_sha }}' \
             --argjson run_id '${{ steps.resolve.outputs.producer_run_id }}' \
             --argjson attempt '${{ steps.resolve.outputs.producer_attempt }}' \
+            --arg workflow_sha '${{ steps.resolve.outputs.producer_workflow_sha }}' \
             '.contract == "honua.server-test-prebuild-plan/v1" and
              .observation.repository == $repository and
              .observation.pull_request == $pr and
              .observation.source_sha == $head and
+             .observation.base_sha == $base and
+             .observation.policy_sha == $workflow_sha and
              .observation.run_id == $run_id and
              .observation.run_attempt == $attempt and
+             .observation.source_workflow.path == ".github/workflows/review-gate.yml" and
+             .observation.source_workflow.name == "Review Gate Attestation" and
+             .observation.source_workflow.event == "pull_request_target" and
+             .observation.source_workflow.job_name == "Resolve pull request identity" and
+             .observation.source_workflow.job_conclusion == "success" and
+             (.observation.source_workflow.run_id | type == "number") and
+             (.observation.source_workflow.run_attempt | type == "number") and
+             (.observation.source_workflow.conclusion | type == "string") and
+             (.observation.source_workflow.job_id | type == "number") and
              (.observation.policy_sha | type == "string" and test("^[0-9a-f]{40}$"))' \
             "${plan}"
           echo "producer_policy_sha=$(jq -r '.observation.policy_sha' "${plan}")" >> "${GITHUB_OUTPUT}"

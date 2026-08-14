@@ -26,6 +26,7 @@ jq -e '
 "${python_bin}" scripts/ci/plan-server-test-prebuild-parity.test.py
 "${python_bin}" scripts/ci/server-test-prebuild-receipt.test.py
 "${python_bin}" scripts/ci/summarize-server-test-prebuild-benchmark.test.py
+node --test scripts/ci/trusted-pr-workflow-run.test.js
 "${python_bin}" -m py_compile \
   scripts/ci/plan-server-test-prebuild.py \
   scripts/ci/plan-server-test-prebuild-benchmark.py \
@@ -39,35 +40,40 @@ bash -n scripts/ci/try-server-test-prebuild.sh
 bash -n scripts/ci/fixtures/validate-try-server-test-prebuild.sh
 bash scripts/ci/fixtures/validate-try-server-test-prebuild.sh
 
-grep -Fq '  pull_request_target:' "${observer}"
+grep -Fq '  workflow_run:' "${observer}"
+grep -Fq 'workflows: [Review Gate Attestation]' "${observer}"
 grep -Fq "vars.HONUA_SERVER_TEST_PREBUILD_SHADOW == 'true'" "${observer}"
-grep -Fq "github.event.pull_request.head.repo.full_name == github.repository" "${observer}"
-grep -Fq "github.event.pull_request.draft == false" "${observer}"
+grep -Fq "github.event.workflow_run.event == 'pull_request_target'" "${observer}"
+grep -Fq "workflowEvent: 'pull_request_target'" "${observer}"
+grep -Fq "jobName: 'Resolve pull request identity'" "${observer}"
+grep -Fq 'SOURCE_RUN_ATTEMPT:' "${observer}"
+grep -Fq 'checks: read' "${observer}"
 grep -Fq 'persist-credentials: false' "${observer}"
 grep -Fq 'server-test-prebuild-receipt.py build' "${observer}"
 grep -Fq '  workflow_dispatch:' "${benchmark}"
 grep -Fq "run.path !== expectedPath" "${benchmark}"
-grep -Fq "run.event === 'pull_request_target' && targetPullRequest" "${benchmark}"
+grep -Fq "run.event === 'workflow_run' && run.head_branch === repository.default_branch" "${benchmark}"
 grep -Fq "run.event === 'workflow_dispatch' && run.head_branch === repository.default_branch" "${benchmark}"
 grep -Fq 'Bind plan to trusted workflow provenance' "${observer}"
-grep -Fq 'ref: ${{ github.workflow_sha }}' "${observer}"
+grep -Fq 'source_sha:$source_sha,base_sha:$base_sha' "${observer}"
+grep -Fq 'ref: ${{ github.sha }}' "${observer}"
 grep -Fq 'Verify trusted producer provenance without polling' "${benchmark}"
+grep -Fq '.observation.base_sha == $base_sha' "${benchmark}"
 grep -Fq 'merge-base --is-ancestor' "${benchmark}"
 grep -Fq 'Make one non-blocking exact-artifact download attempt' "${benchmark}"
 grep -Fq 'try-server-test-prebuild.sh' "${benchmark}"
 grep -Fq 'rounded_runner_minutes_including_prebuild' scripts/ci/summarize-server-test-prebuild-benchmark.py
 grep -Fq '  workflow_run:' "${parity}"
 grep -Fq 'workflows: [PR Gate]' "${parity}"
+grep -Fq 'SOURCE_RUN_ATTEMPT:' "${parity}"
+grep -Fq 'checks: read' "${parity}"
+grep -Fq "jobName: 'PR Gate'" "${parity}"
 grep -Fq "item.context === 'Review Gate'" "${parity}"
-grep -Fq 'context.ref !== `refs/heads/${defaultBranch}`' "${parity}"
-grep -Fq 'manual-dispatch-is-not-default-branch-policy' "${parity}"
-grep -Fq "workflow_id: 'pr-gate.yml'" "${parity}"
-grep -Fq "prGateWorkflowResponse.data.path !== '.github/workflows/pr-gate.yml'" "${parity}"
-grep -Fq "run.event === 'pull_request'" "${parity}"
-grep -Fq 'run.head_sha === pr.head.sha' "${parity}"
-grep -Fq 'const prGate = canonicalPrGateRuns[0]' "${parity}"
-grep -Fq "prGate?.status !== 'completed' || prGate.conclusion !== 'success'" "${parity}"
+grep -Fq 'observer-is-not-default-branch-policy' "${parity}"
+grep -Fq "workflowPath: '.github/workflows/pr-gate.yml'" "${parity}"
+grep -Fq 'resolveTrustedPullRequestWorkflowRun' "${parity}"
 grep -Fq 'no-completed-exact-head-observer-artifact' "${parity}"
+grep -Fq '.observation.base_sha == $base' "${parity}"
 grep -Fq "run.event === 'workflow_dispatch' && run.head_branch === defaultBranch" "${parity}"
 grep -Fq 'git -C policy merge-base --is-ancestor' "${parity}"
 grep -Fq 'Checkout trusted verifier policy with producer history' "${parity}"
@@ -99,5 +105,9 @@ for workflow in "${observer}" "${benchmark}" "${parity}"; do
     exit 1
   fi
 done
+if grep -Fq '  pull_request_target:' "${observer}"; then
+  echo '::error::Prebuild observer must not execute candidate code in pull_request_target.' >&2
+  exit 1
+fi
 
 echo 'server-test-prebuild=ok mode=read-only-shadow single-attempt-fallback'

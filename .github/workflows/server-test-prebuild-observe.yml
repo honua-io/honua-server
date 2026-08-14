@@ -1,26 +1,38 @@
 name: Server Test Prebuild Observation
 
-# Trusted-default-branch, read-only shadow producer for #3226. It never
-# publishes a required status and no authoritative consumer depends on it.
+# Trusted-default-branch, read-only shadow producer for #3226. A completed
+# default-branch Review Gate identity run wakes this workflow before review
+# settles. The observer then resolves the immutable GitHub-managed check-run
+# association and only builds a still-current same-repository head. No
+# pull_request_target job executes candidate code.
 on:
-  pull_request_target:
-    branches: [trunk]
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows: [Review Gate Attestation]
+    types: [completed]
   workflow_dispatch:
     inputs:
-      pr:
-        description: Same-repository pull request to observe
+      run_id:
+        description: Completed canonical Review Gate Attestation run
+        required: true
+        type: string
+      run_attempt:
+        description: Exact completed attempt of the Review Gate run
+        required: true
+        type: string
+      run_conclusion:
+        description: Exact terminal conclusion of the Review Gate run
         required: true
         type: string
 
-run-name: Server prebuild observation for PR #${{ github.event.pull_request.number || inputs.pr }}
+run-name: Server prebuild observation from review run ${{ github.event.workflow_run.id || inputs.run_id }}
 
 concurrency:
-  group: server-test-prebuild-pr-${{ github.event.pull_request.number || inputs.pr }}
-  cancel-in-progress: true
+  group: server-test-prebuild-source-${{ github.event.workflow_run.id || inputs.run_id }}
+  cancel-in-progress: false
 
 permissions:
   actions: read
+  checks: read
   contents: read
   packages: read
   pull-requests: read
@@ -37,8 +49,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (vars.HONUA_SERVER_TEST_PREBUILD_SHADOW == 'true' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.draft == false)
+       github.event.workflow_run.event == 'pull_request_target')
     runs-on: ubuntu-latest
     outputs:
       base_sha: ${{ steps.target.outputs.base_sha }}
@@ -48,38 +59,56 @@ jobs:
       has_producers: ${{ steps.plan.outputs.has_producers }}
       producers: ${{ steps.plan.outputs.producers }}
     steps:
-      - id: target
-        name: Resolve current same-repository PR head
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const number = Number(context.payload.pull_request?.number || '${{ inputs.pr }}');
-            if (!Number.isInteger(number) || number < 1) {
-              core.setFailed('A positive pull request number is required.');
-              return;
-            }
-            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
-            if (pr.state !== 'open' || pr.draft) {
-              core.setFailed('Prebuild observation requires an open, ready pull request.');
-              return;
-            }
-            if (pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
-              core.setFailed('Prebuild observation is restricted to same-repository heads.');
-              return;
-            }
-            core.setOutput('pr', String(number));
-            core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('base_sha', pr.base.sha);
-
-      - name: Checkout trusted policy
+      - name: Checkout trusted observer policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Bind policy to the immutable commit whose trusted workflow GitHub
-          # is executing, not to a branch name that may advance mid-run.
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ github.sha }}
           path: policy
           persist-credentials: false
           fetch-depth: 1
+
+      - id: target
+        name: Resolve exact current PR from the trusted source run
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
+        with:
+          script: |
+            const { data: repository } = await github.rest.repos.get(context.repo);
+            const trustedRef = `refs/heads/${repository.default_branch}`;
+            if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
+              throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
+            }
+
+            const {
+              resolveTrustedPullRequestWorkflowRun,
+            } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            const resolved = await resolveTrustedPullRequestWorkflowRun({
+              github,
+              ...context.repo,
+              runId: process.env.SOURCE_RUN_ID,
+              runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+              runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+              workflowPath: '.github/workflows/review-gate.yml',
+              workflowName: 'Review Gate Attestation',
+              workflowEvent: 'pull_request_target',
+              jobName: 'Resolve pull request identity',
+              jobConclusion: 'success',
+              defaultBranch: repository.default_branch,
+              repositoryId: repository.id,
+            });
+            if (resolved.pullRequest.draft) {
+              throw new Error('Prebuild observation requires a ready pull request.');
+            }
+            core.setOutput('pr', String(resolved.pullRequestNumber));
+            core.setOutput('head_sha', resolved.headSha);
+            core.setOutput('base_sha', resolved.baseSha);
+            core.setOutput('source_run_id', String(resolved.run.id));
+            core.setOutput('source_run_attempt', String(resolved.run.run_attempt));
+            core.setOutput('source_run_conclusion', resolved.run.conclusion);
+            core.setOutput('source_job_id', String(resolved.job.id));
 
       - id: policy
         name: Bind trusted policy commit
@@ -124,12 +153,22 @@ jobs:
             --arg repository '${{ github.repository }}' \
             --argjson pull_request '${{ steps.target.outputs.pr }}' \
             --arg source_sha '${{ steps.target.outputs.head_sha }}' \
+            --arg base_sha '${{ steps.target.outputs.base_sha }}' \
             --arg policy_sha '${{ steps.policy.outputs.sha }}' \
             --argjson run_id '${{ github.run_id }}' \
             --argjson run_attempt '${{ github.run_attempt }}' \
+            --argjson source_run_id '${{ steps.target.outputs.source_run_id }}' \
+            --argjson source_run_attempt '${{ steps.target.outputs.source_run_attempt }}' \
+            --arg source_run_conclusion '${{ steps.target.outputs.source_run_conclusion }}' \
+            --argjson source_job_id '${{ steps.target.outputs.source_job_id }}' \
             '. + {observation:{repository:$repository,pull_request:$pull_request,
-              source_sha:$source_sha,policy_sha:$policy_sha,
-              run_id:$run_id,run_attempt:$run_attempt}}' \
+              source_sha:$source_sha,base_sha:$base_sha,policy_sha:$policy_sha,
+              run_id:$run_id,run_attempt:$run_attempt,
+              source_workflow:{path:".github/workflows/review-gate.yml",
+                name:"Review Gate Attestation",event:"pull_request_target",
+                run_id:$source_run_id,run_attempt:$source_run_attempt,
+                conclusion:$source_run_conclusion,job_id:$source_job_id,
+                job_name:"Resolve pull request identity",job_conclusion:"success"}}}' \
             prebuild-plan.json > prebuild-plan.bound.json
           mv prebuild-plan.bound.json prebuild-plan.json
 
@@ -149,6 +188,9 @@ jobs:
     if: needs.plan.outputs.has_producers == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: server-test-prebuild-pr-${{ needs.plan.outputs.pr }}-${{ matrix.identity }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.producers) }}
