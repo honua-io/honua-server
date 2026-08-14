@@ -103,7 +103,11 @@ def project_inputs(repo: Path, project: str) -> tuple[frozenset[str], frozenset[
             continue
         if name == "ProjectReference":
             references.add(resolved)
-        elif name in {"AdditionalFiles", "Content", "EmbeddedResource", "None"}:
+        # `None` items are deliberately excluded: several library projects pack
+        # the repository README into NuGet packages, but dotnet publish does not
+        # copy it into either serving image. Content/embedded/analyzer inputs can
+        # affect compilation or the published rootfs and remain conservative.
+        elif name in {"AdditionalFiles", "Content", "EmbeddedResource"}:
             project_dir = normalize_path(project_path.parent.relative_to(repo))
             if not (resolved == project_dir or resolved.startswith(f"{project_dir}/")):
                 external_inputs.add(resolved)

@@ -82,6 +82,16 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
         self.assertTrue(all(result["candidate"]["serving_variants"].values()))
 
+    def test_exact_embedded_ai_fixture_is_not_confused_with_fixture_directory(self) -> None:
+        embedded = report("tests/fixtures/ai-builder/spatial-query-contract-v1.json")
+        unrelated = report("tests/fixtures/ai-builder/new-test-only-fixture.json")
+        self.assertTrue(embedded["candidate"]["risk_classes"]["server_aot_compile"])
+        self.assertTrue(unrelated["comparison"]["serving_legacy_only"])
+
+    def test_pack_only_readme_does_not_select_runtime_images(self) -> None:
+        result = report("README.md")
+        self.assertFalse(any(result["candidate"]["risk_classes"].values()))
+
     def test_unrelated_documentation_selects_no_image(self) -> None:
         result = report("docs/internal/ci/unrelated.md")
         self.assertFalse(any(result["candidate"]["risk_classes"].values()))
