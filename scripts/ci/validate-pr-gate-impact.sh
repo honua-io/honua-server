@@ -19,7 +19,11 @@ grep -Fq 'workflow_run:' "${observer_workflow}"
 grep -Fq 'workflows: [PR Gate]' "${observer_workflow}"
 grep -Fq 'context.ref !== trustedRef' "${observer_workflow}"
 grep -Fq 'SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}' "${observer_workflow}"
+grep -Fq 'SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}' "${observer_workflow}"
+grep -Fq 'SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}' "${observer_workflow}"
 grep -Fq "process.env.SOURCE_RUN_ID" "${observer_workflow}"
+grep -Fq "runAttempt: process.env.SOURCE_RUN_ATTEMPT" "${observer_workflow}"
+grep -Fq "runConclusion: process.env.SOURCE_RUN_CONCLUSION" "${observer_workflow}"
 if grep -Fq "String('\${{ inputs.run_id }}')" "${observer_workflow}"; then
   echo '::error::Manual run id must not be interpolated into trusted JavaScript.' >&2
   exit 1

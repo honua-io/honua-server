@@ -13,12 +13,16 @@ const TERMINAL_CONCLUSIONS = new Set([
   'startup_failure',
 ]);
 
-function parseRunId(value) {
+function parsePositiveSafeInteger(value, label) {
   const text = String(value ?? '');
-  if (!/^[1-9][0-9]*$/.test(text)) throw new Error('invalid workflow run id');
+  if (!/^[1-9][0-9]*$/.test(text)) throw new Error(`invalid ${label}`);
   const number = Number(text);
-  if (!Number.isSafeInteger(number)) throw new Error('unsafe workflow run id');
+  if (!Number.isSafeInteger(number)) throw new Error(`unsafe ${label}`);
   return number;
+}
+
+function parseRunId(value) {
+  return parsePositiveSafeInteger(value, 'workflow run id');
 }
 
 async function resolveTrustedPullRequestWorkflowRun({
@@ -26,6 +30,8 @@ async function resolveTrustedPullRequestWorkflowRun({
   owner,
   repo,
   runId,
+  runAttempt,
+  runConclusion,
   workflowPath,
   workflowName,
   defaultBranch,
@@ -37,6 +43,10 @@ async function resolveTrustedPullRequestWorkflowRun({
   }
   const repository = `${owner}/${repo}`;
   const id = parseRunId(runId);
+  const expectedAttempt = parsePositiveSafeInteger(runAttempt, 'workflow run attempt');
+  if (typeof runConclusion !== 'string' || !TERMINAL_CONCLUSIONS.has(runConclusion)) {
+    throw new Error('invalid workflow run conclusion');
+  }
   const { data: run } = await github.rest.actions.getWorkflowRun({
     owner,
     repo,
@@ -52,8 +62,8 @@ async function resolveTrustedPullRequestWorkflowRun({
     run.repository?.full_name !== repository ||
     run.head_repository?.full_name !== repository ||
     !SHA.test(run.head_sha || '') ||
-    !Number.isInteger(run.run_attempt) ||
-    run.run_attempt < 1
+    run.run_attempt !== expectedAttempt ||
+    run.conclusion !== runConclusion
   ) {
     throw new Error('source run is not a completed canonical pull-request workflow');
   }
