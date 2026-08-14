@@ -26,8 +26,9 @@ the observer policy SHA, and emits a
 decision with the current workflow triggers. The resolver obtains the immutable
 gate-time PR base/head association from the exact GitHub Actions job's
 GitHub-managed check run; it never reconstructs the base from the mutable
-current PR. Missing or ambiguous associations, including fork cases that GitHub
-cannot bind, fail closed and do not count toward promotion. The artifact binds
+current PR. Fork heads are explicitly excluded from the observation denominator
+and retain the full authoritative image workflows. Missing or ambiguous
+same-repository associations fail closed and do not count. The artifact binds
 the canonical gate run, trusted policy commit, individual Git blob IDs for the
 selector, routing policy, resolver, and observer workflow, a digest over that
 fixed input manifest, base/head SHAs, exact project lists, graph fingerprints,

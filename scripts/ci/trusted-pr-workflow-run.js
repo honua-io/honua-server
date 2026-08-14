@@ -50,6 +50,7 @@ async function resolveTrustedPullRequestWorkflowRun({
     run.status !== 'completed' ||
     !TERMINAL_CONCLUSIONS.has(run.conclusion) ||
     run.repository?.full_name !== repository ||
+    run.head_repository?.full_name !== repository ||
     !SHA.test(run.head_sha || '') ||
     !Number.isInteger(run.run_attempt) ||
     run.run_attempt < 1
@@ -103,6 +104,7 @@ async function resolveTrustedPullRequestWorkflowRun({
   if (
     associated.base?.ref !== defaultBranch ||
     associated.base?.repo?.id !== repositoryId ||
+    associated.head?.repo?.id !== repositoryId ||
     !SHA.test(associatedBase || '') ||
     associatedHead !== run.head_sha
   ) {
@@ -120,7 +122,7 @@ async function resolveTrustedPullRequestWorkflowRun({
     pullRequest.base?.repo?.full_name !== repository ||
     pullRequest.base?.sha !== associatedBase ||
     pullRequest.head?.sha !== associatedHead ||
-    typeof pullRequest.head?.repo?.full_name !== 'string'
+    pullRequest.head?.repo?.full_name !== repository
   ) {
     throw new Error('pull request moved after the canonical workflow run');
   }

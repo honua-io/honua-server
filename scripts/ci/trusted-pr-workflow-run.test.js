@@ -20,6 +20,7 @@ function fixtures(overrides = {}) {
     status: 'completed',
     conclusion: 'success',
     repository: { full_name: 'honua-io/honua-server' },
+    head_repository: { full_name: 'honua-io/honua-server' },
     head_sha: HEAD,
     run_attempt: 2,
     pull_requests: [],
@@ -39,7 +40,7 @@ function fixtures(overrides = {}) {
   const associated = {
     number: 42,
     base: { ref: 'trunk', sha: BASE, repo: { id: 1 } },
-    head: { sha: HEAD, repo: { id: 2 } },
+    head: { sha: HEAD, repo: { id: 1 } },
   };
   const checkRun = {
     id: 456,
@@ -60,7 +61,7 @@ function fixtures(overrides = {}) {
     },
     head: {
       sha: HEAD,
-      repo: { full_name: 'contributor/honua-server' },
+      repo: { full_name: 'honua-io/honua-server' },
     },
     ...overrides.pullRequest,
   };
@@ -112,7 +113,14 @@ test('uses the immutable check-run association when workflow_run PRs are empty',
   assert.equal(result.pullRequestNumber, 42);
   assert.equal(result.baseSha, BASE);
   assert.equal(result.headSha, HEAD);
-  assert.equal(result.pullRequest.head.repo.full_name, 'contributor/honua-server');
+  assert.equal(result.pullRequest.head.repo.full_name, 'honua-io/honua-server');
+});
+
+test('explicitly excludes fork workflow runs from the evidence denominator', async () => {
+  const { github } = fixtures({
+    run: { head_repository: { full_name: 'contributor/honua-server' } },
+  });
+  await assert.rejects(resolve(github), /completed canonical/);
 });
 
 test('fails closed on missing or ambiguous check-run associations', async () => {
@@ -184,6 +192,7 @@ test('rejects inconsistent check-run and event-time association identities', asy
     { head_sha: 'c'.repeat(40) },
     { pull_requests: [{ number: 42, base: { ref: 'other', sha: BASE, repo: { id: 1 } }, head: { sha: HEAD } }] },
     { pull_requests: [{ number: 42, base: { ref: 'trunk', sha: BASE, repo: { id: 99 } }, head: { sha: HEAD } }] },
+    { pull_requests: [{ number: 42, base: { ref: 'trunk', sha: BASE, repo: { id: 1 } }, head: { sha: HEAD, repo: { id: 99 } } }] },
     { pull_requests: [{ number: 42, base: { ref: 'trunk', sha: 'short', repo: { id: 1 } }, head: { sha: HEAD } }] },
     { pull_requests: [{ number: 42, base: { ref: 'trunk', sha: BASE, repo: { id: 1 } }, head: { sha: 'c'.repeat(40) } }] },
   ];

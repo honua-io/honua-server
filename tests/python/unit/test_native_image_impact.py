@@ -122,6 +122,30 @@ class NativeImageImpactTests(unittest.TestCase):
     def test_checked_in_policy_matches_authoritative_workflow_triggers(self) -> None:
         MODULE.validate_policy(ROOT, POLICY)
 
+    def test_observer_permissions_reject_semantic_write_variants(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "native-image-impact-observe.yml"
+        ).read_text(encoding="utf-8")
+        MODULE.validate_observer_permissions(workflow)
+        canonical = """permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+"""
+        unsafe = (
+            workflow.replace("  actions: read", '  actions: "write" # required', 1),
+            workflow.replace(canonical, "permissions: write-all\n", 1),
+            workflow.replace(
+                "  observe:\n    name:",
+                "  observe:\n    permissions:\n      contents: write\n    name:",
+                1,
+            ),
+        )
+        for source in unsafe:
+            with self.subTest(source=source[:100]), self.assertRaises(MODULE.PolicyError):
+                MODULE.validate_observer_permissions(source)
+
     def test_report_is_explicitly_non_mutating(self) -> None:
         result = report("src/Honua.Core/Models/Resource.cs")
         encoded = json.dumps(result)

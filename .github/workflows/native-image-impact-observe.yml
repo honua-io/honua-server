@@ -4,7 +4,8 @@ name: Native Image Impact Observation
 # executes this default-branch policy after every canonical PR Gate completion.
 # It parses candidate repository data but never executes candidate code. Existing
 # serving/worker workflows remain authoritative until the documented evidence
-# and rollout thresholds pass.
+# and rollout thresholds pass. Fork heads are excluded from observation and keep
+# the full authoritative image workflows.
 on:
   workflow_run:
     workflows: [PR Gate]
@@ -29,7 +30,10 @@ concurrency:
 jobs:
   observe:
     name: Compare native-image impact routing
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'pull_request'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -277,19 +277,50 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
         "persist-credentials: false",
         "default-branch-workflow-run/v1",
         "repositoryId: repository.id",
+        "head_repository.full_name == github.repository",
         "policy_inputs_sha256",
         "observer_workflow_blob_sha",
         "Recheck exact PR identity before retaining evidence",
     )
     if any(token not in observer for token in required_trust_markers):
         raise PolicyError("observer lost its trusted execution boundary")
-    if re.search(r"(?m)^\s+[a-z-]+: write\s*$", observer):
-        raise PolicyError("observe-only workflow gained write permission")
-    if "  checks: read" not in observer:
-        raise PolicyError("observer cannot read the canonical job check association")
+    validate_observer_permissions(observer)
     forbidden = ("docker build", "docker/build-push-action", "gh run cancel", "cancelWorkflowRun")
     if any(token in observer for token in forbidden):
         raise PolicyError("observe-only workflow gained build or cancellation authority")
+
+
+def validate_observer_permissions(source: str) -> None:
+    expected = {
+        "actions": "read",
+        "checks": "read",
+        "contents": "read",
+        "pull-requests": "read",
+    }
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        canonical = """permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+"""
+        if canonical not in source or source.count("permissions:") != 1:
+            raise PolicyError("observer permissions are not the canonical read-only block")
+        return
+
+    try:
+        document = yaml.safe_load(source)
+    except yaml.YAMLError as error:
+        raise PolicyError("observer workflow YAML is invalid") from error
+    if not isinstance(document, dict) or document.get("permissions") != expected:
+        raise PolicyError("observer workflow permissions are not the exact read-only allowlist")
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict) or any(
+        isinstance(job, dict) and "permissions" in job for job in jobs.values()
+    ):
+        raise PolicyError("observer jobs must not override workflow permissions")
 
 
 def evaluate(
