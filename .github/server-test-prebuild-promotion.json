@@ -1,0 +1,9 @@
+{
+  "contract": "honua.server-test-prebuild-promotion-policy/v1",
+  "minimum_countable_heads": 20,
+  "minimum_cost_heads": 30,
+  "minimum_distinct_profiles": 2,
+  "minimum_runner_minute_savings_percent": 60,
+  "require_p90_test_start_improvement": true,
+  "max_wall_clock_regression_percent": 5
+}

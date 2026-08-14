@@ -526,6 +526,13 @@ jobs:
           echo '' >> "${GITHUB_STEP_SUMMARY}"
           echo "Countable parity observation: \`$(jq -r '.countable' evidence/parity-observation.json)\`" \
             >> "${GITHUB_STEP_SUMMARY}"
+      - name: Retain the immutable promotion receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: server-test-prebuild-parity-receipt-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
+          path: evidence/parity-observation.json
+          retention-days: 30
+          if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: server-test-prebuild-parity-evidence-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
