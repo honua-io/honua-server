@@ -102,3 +102,45 @@ if grep -Eq -- '-f max_batch=[0-9]+' <<<"${self_chain_step}"; then
   exit 1
 fi
 printf 'PASS: self-chain preserves the operator batch bound\n'
+
+grep -Fq 'source scripts/ci/merge-train/state.sh' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain cannot inspect durable land intent\n' >&2; exit 1; }
+grep -Fq 'train_state_requires_live_reconciliation' <<<"${self_chain_step}" \
+  || { printf 'FAIL: self-chain ignores durable land intent\n' >&2; exit 1; }
+
+# A successful trunk CAS can briefly precede GitHub's merged-PR projection. The
+# controller must chain once for all land-family phases even with an empty PR
+# queue, then stop after reconciliation reaches done.
+REPO_ROOT="$(cd "${FIXTURE_DIR}/../../../.." && pwd)"
+# shellcheck source=scripts/ci/merge-train/lib.sh
+source "${REPO_ROOT}/scripts/ci/merge-train/lib.sh"
+# shellcheck source=scripts/ci/merge-train/state.sh
+source "${REPO_ROOT}/scripts/ci/merge-train/state.sh"
+state_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+state_heads='[{"number":123,"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'
+assert_reconciliation_phase() {
+  local phase="$1" expected="$2" body rc=0
+  if [[ "${phase}" == "done" ]]; then
+    body="$(train_state_render "" "${state_sha}" "" "done" "" 0 0 "${state_sha}")"
+  else
+    body="$(train_state_render "train/batch/test/1" "${state_sha}" "123" "${phase}" "" 0 0 "${state_sha}" \
+      "${state_heads}" "${state_sha}")"
+  fi
+  export TRAIN_STATE_ISSUE_OVERRIDE=2044 TRAIN_STATE_BODY_OVERRIDE="${body}"
+  train_state_requires_live_reconciliation || rc=$?
+  [[ "${rc}" == "${expected}" ]] \
+    || { printf 'FAIL: reconciliation phase %s returned %s, expected %s\n' "${phase}" "${rc}" "${expected}" >&2; exit 1; }
+}
+assert_reconciliation_phase land 0
+assert_reconciliation_phase pre-land-cleanup 0
+assert_reconciliation_phase post-land-finalize 0
+assert_reconciliation_phase done 1
+export TRAIN_STATE_BODY_OVERRIDE='```json
+not-json
+```'
+malformed_rc=0
+train_state_requires_live_reconciliation || malformed_rc=$?
+[[ "${malformed_rc}" == "2" ]] \
+  || { printf 'FAIL: unreadable state did not fail closed\n' >&2; exit 1; }
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
+printf 'PASS: self-chain reconciles durable land intent and fails closed on unreadable state\n'
