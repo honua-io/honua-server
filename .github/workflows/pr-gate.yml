@@ -17,6 +17,7 @@ on:
 permissions:
   contents: read
   packages: read
+  statuses: read
 
 concurrency:
   group: pr-gate-${{ github.event.pull_request.number || github.ref }}
@@ -72,6 +73,30 @@ jobs:
           echo "Admission passed; exact-head review has not released verification yet."
           exit 1
 
+      # Review evidence is mutable after the trusted dispatcher accepts the
+      # rerun. Check its SHA-bound status before spending runners and again
+      # immediately before the sole required context can become green. A
+      # dismissal, deleted clean result, or new unresolved thread therefore
+      # fails attempt 2 closed instead of relying only on its run number.
+      - name: Revalidate exact-head review before verification
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const head = context.payload.pull_request?.head?.sha;
+            if (!head || head !== '${{ github.event.pull_request.head.sha }}') {
+              core.setFailed('Attempt 2 has no trustworthy pull-request head.');
+              return;
+            }
+            const statuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              { ...context.repo, ref: head, per_page: 100 },
+            );
+            const reviewGate = statuses.find(status => status.context === 'Review Gate');
+            if (reviewGate?.state !== 'success') {
+              core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
+            }
+
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
       - name: Free disk space
@@ -103,3 +128,22 @@ jobs:
         run: |
           python3 scripts/ci/fixtures/validate-serving-image-boundary.py
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
+
+      - name: Revalidate exact-head review before success
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const head = context.payload.pull_request?.head?.sha;
+            if (!head || head !== '${{ github.event.pull_request.head.sha }}') {
+              core.setFailed('Attempt 2 has no trustworthy pull-request head.');
+              return;
+            }
+            const statuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              { ...context.repo, ref: head, per_page: 100 },
+            );
+            const reviewGate = statuses.find(status => status.context === 'Review Gate');
+            if (reviewGate?.state !== 'success') {
+              core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
+            }

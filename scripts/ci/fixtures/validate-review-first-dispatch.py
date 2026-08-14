@@ -63,6 +63,21 @@ def main() -> None:
     if pr_gate.count(full_condition) != 4:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
 
+    revalidation_condition = (
+        "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
+        "'pull_request' && github.run_attempt > 1"
+    )
+    if pr_gate.count(revalidation_condition) != 2:
+        raise AssertionError("attempt 2 must revalidate review evidence before and after verification")
+    require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
+    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 2:
+        raise AssertionError("both attempt-2 review checks must read exact-head status")
+    before = pr_gate.index("- name: Revalidate exact-head review before verification")
+    expensive = pr_gate.index("- name: Free disk space")
+    after = pr_gate.index("- name: Revalidate exact-head review before success")
+    if not before < expensive < after:
+        raise AssertionError("review evidence must bracket every expensive verification step")
+
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(review_gate, 'workflows: ["PR Gate"]', "PR Gate completion must re-evaluate review")
     require(review_gate, "cancel-in-progress: false", "trusted dispatch must not be interrupted")
