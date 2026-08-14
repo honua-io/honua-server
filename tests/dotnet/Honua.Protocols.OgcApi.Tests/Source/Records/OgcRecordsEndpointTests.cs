@@ -156,7 +156,12 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
             service => service.Metadata.Id == sourcePublication.ServiceId);
         var activeService = sourceService with
         {
-            Metadata = sourceService.Metadata with { Id = activeServiceId, Name = serviceName },
+            Metadata = sourceService.Metadata with
+            {
+                Id = activeServiceId,
+                Name = serviceName,
+                Title = "Active Records Service"
+            },
             ServiceType = MetadataV2ServiceType.EsriFeatureService,
             PublicationIds = [activePublicationId],
             Protocols = [ServiceProtocols.FeatureServer],
@@ -164,7 +169,11 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         };
         var retiredService = activeService with
         {
-            Metadata = activeService.Metadata with { Id = retiredServiceId },
+            Metadata = activeService.Metadata with
+            {
+                Id = retiredServiceId,
+                Title = "Retired Records Service"
+            },
             ServiceType = MetadataV2ServiceType.EsriMapService,
             PublicationIds = [retiredPublicationId],
             Protocols = [ServiceProtocols.MapServer],
@@ -185,7 +194,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         var mutatedGraph = snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
-            Services = [.. snapshot.Graph.Services, activeService, retiredService],
+            Services = [.. snapshot.Graph.Services, retiredService, activeService],
             Publications = [.. snapshot.Graph.Publications, activePublication, retiredPublication]
         };
 
@@ -199,6 +208,8 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
 
             await AssertOkAsync(response);
             using var json = await ReadJsonAsync(response);
+            json.RootElement.GetProperty("properties").GetProperty("title").GetString()
+                .Should().Be("Active Records Service");
             var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
             links.Should().Contain(link => HrefEndsWith(link, $"/rest/services/{serviceName}/FeatureServer"));
             links.Should().NotContain(link => HrefEndsWith(link, $"/rest/services/{serviceName}/MapServer"));

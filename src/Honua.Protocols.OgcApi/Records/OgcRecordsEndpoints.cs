@@ -340,7 +340,7 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            var representative = services[0] with
+            var representative = visiblePublications[0].Service with
             {
                 Protocols = visiblePublications
                     .SelectMany(tuple => tuple.Service.Protocols)
