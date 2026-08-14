@@ -278,6 +278,8 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
         "default-branch-workflow-run/v1",
         "repositoryId: repository.id",
         "head_repository.full_name == github.repository",
+        "SOURCE_RUN_ATTEMPT",
+        "SOURCE_RUN_CONCLUSION",
         "policy_inputs_sha256",
         "observer_workflow_blob_sha",
         "Recheck exact PR identity before retaining evidence",

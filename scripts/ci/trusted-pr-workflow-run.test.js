@@ -94,12 +94,14 @@ function fixtures(overrides = {}) {
   return { github };
 }
 
-function resolve(github) {
+function resolve(github, { runAttempt = '2', runConclusion = 'success' } = {}) {
   return resolveTrustedPullRequestWorkflowRun({
     github,
     owner: 'honua-io',
     repo: 'honua-server',
     runId: '123',
+    runAttempt,
+    runConclusion,
     workflowPath: '.github/workflows/pr-gate.yml',
     workflowName: 'PR Gate',
     defaultBranch: 'trunk',
@@ -121,6 +123,14 @@ test('explicitly excludes fork workflow runs from the evidence denominator', asy
     run: { head_repository: { full_name: 'contributor/honua-server' } },
   });
   await assert.rejects(resolve(github), /completed canonical/);
+});
+
+test('binds resolution to the triggering run attempt and conclusion', async () => {
+  const { github } = fixtures();
+  await assert.rejects(resolve(github, { runAttempt: '1' }), /completed canonical/);
+  await assert.rejects(resolve(github, { runConclusion: 'failure' }), /completed canonical/);
+  await assert.rejects(resolve(github, { runAttempt: '0' }), /workflow run attempt/);
+  await assert.rejects(resolve(github, { runConclusion: 'in_progress' }), /workflow run conclusion/);
 });
 
 test('fails closed on missing or ambiguous check-run associations', async () => {

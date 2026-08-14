@@ -16,6 +16,14 @@ on:
         description: Completed canonical PR Gate run to observe
         required: true
         type: string
+      run_attempt:
+        description: Exact completed attempt of the canonical PR Gate run
+        required: true
+        type: string
+      run_conclusion:
+        description: Exact terminal conclusion of that PR Gate attempt
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -50,6 +58,8 @@ jobs:
         uses: actions/github-script@v9
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
         with:
           script: |
             const crypto = require('crypto');
@@ -65,6 +75,8 @@ jobs:
               github,
               ...context.repo,
               runId: process.env.SOURCE_RUN_ID,
+              runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+              runConclusion: process.env.SOURCE_RUN_CONCLUSION,
               workflowPath: '.github/workflows/pr-gate.yml',
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
@@ -165,6 +177,8 @@ jobs:
         uses: actions/github-script@v9
         env:
           SOURCE_RUN_ID: ${{ steps.collect.outputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.collect.outputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ steps.collect.outputs.run_conclusion }}
           EXPECTED_PR: ${{ steps.collect.outputs.pr }}
           EXPECTED_BASE: ${{ steps.collect.outputs.base_sha }}
           EXPECTED_HEAD: ${{ steps.collect.outputs.head_sha }}
@@ -178,6 +192,8 @@ jobs:
               github,
               ...context.repo,
               runId: process.env.SOURCE_RUN_ID,
+              runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+              runConclusion: process.env.SOURCE_RUN_CONCLUSION,
               workflowPath: '.github/workflows/pr-gate.yml',
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
