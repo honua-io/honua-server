@@ -65,6 +65,32 @@ Two honest consequences, recorded here rather than papered over:
 - Files are copied to the test output directory (`CopyToOutputDirectory`) and
   loaded at test time.
 
+### ADR-0031 composition-control schemas (PRE-MERGE pin)
+
+Three more files are pinned to an **unmerged** upstream branch:
+
+- `geospatial-mcp/tools/add_control.schema.json`
+- `geospatial-mcp/tools/remove_control.schema.json`
+- `geospatial-mcp/common/controls.schema.json`
+
+They are byte-identical to `spec/schemas/` on geospatial-mcp branch
+`feat/adr-0031-controls` (commit `589c8bf`, "feat(spec): controls collection and
+add_control/remove_control (composition profile)"), proposed in **geospatial-mcp
+PR #69** and **not yet merged to that repo's trunk**. Honua ships the
+server-side reference implementation of ADR-0031
+(`honua_studio_add_control` / `honua_studio_remove_control`, honua-server#3193),
+so the schemas are vendored ahead of the upstream merge for the same reason the
+ADR-0030 pair is.
+
+The same two consequences apply verbatim: the upstream `index.json` marks both
+tools `implementationStatus: "known-gap"` with `referenceToolName: null`, while
+the vendored copy marks them `implemented` with the live reference tool names —
+**re-vendor rather than hand-edit once PR #69 merges** — and the vendored
+fixtures under `fixtures/tools/{add,remove}_control/` are the
+`draftId` + `generation` reference-shape variants of the upstream
+`mapPackageId` instances, which is exactly what the conformance suite asserts
+against both schemas.
+
 The conformance tests validate representative valid argument/payload instances
 against both Honua's live schema and the vendored standard schema, and assert
 structural alignment (required fields, enum values) for the tools Honua

@@ -503,7 +503,8 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
             + "composition, with optimistic-generation checking. Bindings are data, not code: arguments are static "
             + "JSON plus '$event.' path substitution, and actions never emit events, so bindings cannot cascade. "
             + "Fails with invalid_argument when the event/verb is outside the closed sets, when on.ref/do.ref does "
-            + "not resolve to a component declared in the same document (control: references never resolve), or when "
+            + "not resolve to a component declared in the same document (a 'control:{id}' ref resolves against the "
+            + "document's controls collection — add it with honua_studio_add_control first), or when "
             + "the binding would push a single (on.ref, on.event) source past "
             + $"{StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions.",
         InputSchema = StudioMcpSchemas.BindInteractionArgumentSchema,
@@ -686,6 +687,222 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
             draftId,
             generation,
             body => StudioCompositionBodyEditor.RemoveInteraction(body, argument.InteractionId!),
+            cancellationToken).ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+    }
+}
+
+/// <summary>
+/// MCP tool that adds or replaces one control in a map/app-family Studio draft's
+/// composition — the reference implementation of the geospatial-mcp standard's
+/// <c>add_control</c> (ADR-0031, <c>composition</c> profile). Controls are a peer
+/// collection to layers and widgets, not a widget kind: a control is an input
+/// affordance that emits <c>change</c> and is the target a <c>control:{id}</c>
+/// interaction reference resolves against. The standard-level target is a composition
+/// document (<c>mapPackageId</c>/<c>appPackageId</c>); Honua authors compositions
+/// through the draft lifecycle, and that <c>draftId</c> + <c>generation</c> spelling is
+/// admitted upstream as <c>x-honua-reference-shape</c>.
+/// </summary>
+internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
+{
+    /// <summary>The tool name published in <c>tools/list</c>.</summary>
+    public const string ToolName = "honua_studio_add_control";
+
+    private readonly ILogger<AddStudioControlTool> _typedLogger;
+
+    public AddStudioControlTool(IGeoprocessingJobService jobService, ILogger<AddStudioControlTool> logger)
+        : base(jobService, logger)
+    {
+        _typedLogger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Name => ToolName;
+
+    /// <inheritdoc />
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
+
+    /// <inheritdoc />
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = ToolName,
+        Title = "Add Studio control",
+        Description =
+            "Add or replace (by id) one control in a map/app-family Studio draft's composition, with "
+            + "optimistic-generation checking. Controls are input affordances (chrome), not layout grid items, and "
+            + "are what 'control:{id}' interaction references resolve against. Fails with invalid_argument when the "
+            + "kind is outside the closed vocabulary ("
+            + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}), when a supplied sourceId does not "
+            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app.",
+        InputSchema = StudioMcpSchemas.AddControlArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        // Re-adding the same id with the same body is idempotent; the tool never
+        // removes composed state, so it is not destructive.
+        Annotations = McpToolAnnotationSets.Write("Add Studio control", destructive: false, idempotent: true)
+    };
+
+    /// <inheritdoc />
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("StudioAddControl");
+        McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
+
+        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+            .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+
+        var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioAddControlArgument);
+        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
+        var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
+        var control = BuildControl(argument.Control);
+
+        var updated = await MutateCompositionAsync(
+            principal,
+            ToolName,
+            lifecycleService,
+            draftId,
+            generation,
+            body => StudioCompositionBodyEditor.AddControl(body, control),
+            cancellationToken).ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+    }
+
+    /// <summary>
+    /// Maps the wire input onto the domain <see cref="StudioCompositionControl"/>, enforcing
+    /// the required members and the closed kind vocabulary in the HANDLER. The advertised
+    /// <c>inputSchema</c> states the same contract, but MCP dispatch does not evaluate it,
+    /// so the schema is documentation and this is the gate.
+    /// </summary>
+    private static StudioCompositionControl BuildControl(McpStudioControlInput? input)
+    {
+        var control = input ?? throw new GeoprocessingValidationException("'control' is required.");
+        if (string.IsNullOrWhiteSpace(control.Id))
+        {
+            throw new GeoprocessingValidationException("'control.id' is required.");
+        }
+
+        if (control.Id.Length > StudioInteractionVocabulary.MaxControlIdLength)
+        {
+            throw new GeoprocessingValidationException(
+                $"'control.id' must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.");
+        }
+
+        if (control.Title is { Length: > StudioInteractionVocabulary.MaxControlTitleLength })
+        {
+            throw new GeoprocessingValidationException(
+                $"'control.title' must be {StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer.");
+        }
+
+        if (control.SourceId is { Length: > StudioInteractionVocabulary.MaxControlSourceIdLength })
+        {
+            throw new GeoprocessingValidationException(
+                $"'control.sourceId' must be {StudioInteractionVocabulary.MaxControlSourceIdLength} characters or fewer.");
+        }
+
+        if (!StudioInteractionVocabulary.IsControlKind(control.Kind))
+        {
+            throw new GeoprocessingValidationException(
+                $"'control.kind' must be one of: {string.Join(", ", StudioInteractionVocabulary.ControlKinds)}. "
+                + $"Got '{control.Kind}'.");
+        }
+
+        if (control.Config.ValueKind is not (JsonValueKind.Object or JsonValueKind.Undefined))
+        {
+            throw new GeoprocessingValidationException("'control.config' must be a JSON object.");
+        }
+
+        return new StudioCompositionControl
+        {
+            Id = control.Id!,
+            Kind = control.Kind!,
+            Title = control.Title,
+            SourceId = control.SourceId,
+            Config = control.Config.ValueKind == JsonValueKind.Undefined ? null : control.Config,
+        };
+    }
+}
+
+/// <summary>
+/// MCP tool that removes one control, by id, from a map/app-family Studio draft's
+/// composition — the reference implementation of the geospatial-mcp standard's
+/// <c>remove_control</c> (ADR-0031, <c>composition</c> profile). Removing an unknown id
+/// is an error, not a no-op, and removing a control an interaction still references
+/// either fails (default) or removes those bindings with it
+/// (<c>cascadeInteractions</c>): a document never silently retains a dangling
+/// <c>control:{id}</c> binding.
+/// </summary>
+internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpTool
+{
+    /// <summary>The tool name published in <c>tools/list</c>.</summary>
+    public const string ToolName = "honua_studio_remove_control";
+
+    private readonly ILogger<RemoveStudioControlTool> _typedLogger;
+
+    public RemoveStudioControlTool(IGeoprocessingJobService jobService, ILogger<RemoveStudioControlTool> logger)
+        : base(jobService, logger)
+    {
+        _typedLogger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Name => ToolName;
+
+    /// <inheritdoc />
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
+
+    /// <inheritdoc />
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = ToolName,
+        Title = "Remove Studio control",
+        Description =
+            "Remove one control from a map/app-family Studio draft's composition by id, with "
+            + "optimistic-generation checking. Fails with not_found if no control with that id exists, and with "
+            + "invalid_argument when an interaction still references 'control:{id}' unless cascadeInteractions is "
+            + "true, in which case those bindings are removed with the control.",
+        InputSchema = StudioMcpSchemas.RemoveControlArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        // Destructive: it removes composed state (and, when cascading, its bindings).
+        // Undo is a fresh honua_studio_add_control call, not this tool.
+        Annotations = McpToolAnnotationSets.Write("Remove Studio control", destructive: true, idempotent: false)
+    };
+
+    /// <inheritdoc />
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("StudioRemoveControl");
+        McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
+
+        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+            .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+
+        var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveControlArgument);
+        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
+        var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
+        if (string.IsNullOrWhiteSpace(argument.ControlId))
+        {
+            throw new GeoprocessingValidationException("'controlId' is required.");
+        }
+
+        if (argument.ControlId.Length > StudioInteractionVocabulary.MaxControlIdLength)
+        {
+            throw new GeoprocessingValidationException(
+                $"'controlId' must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.");
+        }
+
+        var cascade = argument.CascadeInteractions ?? false;
+        var updated = await MutateCompositionAsync(
+            principal,
+            ToolName,
+            lifecycleService,
+            draftId,
+            generation,
+            body => StudioCompositionBodyEditor.RemoveControl(body, argument.ControlId!, cascade),
             cancellationToken).ConfigureAwait(false);
 
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
