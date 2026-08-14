@@ -168,7 +168,8 @@ jobs:
             // transition authority. It never checks out the PR head and never
             // executes PR-authored code. It merely releases the already-created,
             // read-only pull_request workflow run for this immutable head.
-            const { data: runPage } = await github.rest.actions.listWorkflowRunsForWorkflow({
+            const { data: runPage } = await github.request(
+              'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
               ...context.repo,
               workflow_id: 'pr-gate.yml',
               event: 'pull_request',
@@ -197,7 +198,8 @@ jobs:
             if (selection.action === 'selected' &&
                 selection.run.status === 'completed' &&
                 Number(selection.run.run_attempt) === 1) {
-              const { data: jobPage } = await github.rest.actions.listJobsForWorkflowRun({
+              const { data: jobPage } = await github.request(
+                'GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
                 ...context.repo,
                 run_id: selection.run.id,
                 filter: 'latest',
@@ -255,7 +257,8 @@ jobs:
             }
 
             try {
-              await github.rest.actions.reRunWorkflowFailedJobs({
+              await github.request(
+                'POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs', {
                 ...context.repo, run_id: decision.runId,
               });
               core.notice(`Released PR Gate run ${decision.runId} as attempt 2.`);
@@ -263,7 +266,8 @@ jobs:
               // A burst of review/comment events may serialize immediately
               // behind the accepted request. Re-read before deciding whether
               // this was an idempotent duplicate or a real dispatch failure.
-              const { data: refreshed } = await github.rest.actions.getWorkflowRun({
+              const { data: refreshed } = await github.request(
+                'GET /repos/{owner}/{repo}/actions/runs/{run_id}', {
                 ...context.repo, run_id: decision.runId,
               });
               if (Number(refreshed.run_attempt) > 1 || refreshed.status !== 'completed') {

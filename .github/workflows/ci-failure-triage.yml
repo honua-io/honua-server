@@ -108,7 +108,8 @@ jobs:
             }
 
             // 2) Deterministic classify (shared logic) on the LATEST attempt's jobs.
-            const { data: jobsResp } = await github.rest.actions.listJobsForWorkflowRun({
+            const { data: jobsResp } = await github.request(
+              'GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
               owner, repo, run_id: run.id, per_page: 100, filter: 'latest',
             });
             const failedJobs = jobsResp.jobs.filter(j => j.conclusion === 'failure');
@@ -131,7 +132,9 @@ jobs:
                 return;
               }
               try {
-                await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.id });
+                await github.request(
+                  'POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs',
+                  { owner, repo, run_id: run.id });
                 core.info(`Backstop rerun of failed flaky jobs: ${flakyFailed.join(', ')}`);
               } catch (e) {
                 // auto-rerun likely already triggered it (GitHub rejects a second

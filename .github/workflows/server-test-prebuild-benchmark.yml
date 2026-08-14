@@ -70,7 +70,9 @@ jobs:
               return;
             }
             const { data: repository } = await github.rest.repos.get({ ...context.repo });
-            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: producerRunId });
+            const { data: run } = await github.request(
+              'GET /repos/{owner}/{repo}/actions/runs/{run_id}',
+              { ...context.repo, run_id: producerRunId });
             const expectedPath = '.github/workflows/server-test-prebuild-observe.yml';
             const targetPullRequest = run.pull_requests?.some(item =>
               item.number === number && item.base?.ref === repository.default_branch && item.head?.sha === pr.head.sha);
@@ -88,7 +90,8 @@ jobs:
               ...context.repo,
               branch: repository.default_branch,
             });
-            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+            const artifacts = await github.paginate(
+              'GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts', {
               ...context.repo,
               run_id: producerRunId,
               per_page: 100,
