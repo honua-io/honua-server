@@ -262,6 +262,59 @@ The old path remains selectable through a documented rollback input for the
 first enforcement period. Rollback changes routing only; it does not edit
 branch protection during an incident.
 
+### Hosted shadow checkpoint (2026-08-14)
+
+The first opportunistic prebuild candidate passed its bounded hosted A/B and is
+enabled only as a read-only shadow observer. It is not verification authority
+and it does not change branch protection, shard filters, test results, or the
+independent shard-local build fallback.
+
+The observed evidence is:
+
+- [Current-head producer observation 31798013710](https://github.com/honua-io/honua-server/actions/runs/31798013710)
+  built one exact `Honua.Server.Tests` payload for head
+  `4e2fb806983d42e2ceb6b19cd396c272ad21a3de`. The immutable artifact was
+  173,196,743 bytes and carried the expected plan and receipt.
+- [Two-shard A/B 31798575655](https://github.com/honua-io/honua-server/actions/runs/31798575655)
+  had no parity or reuse failures. Baseline versus opportunistic measurements
+  were 14 versus 12 rounded runner-minutes, 380,204 versus 80,446 ms to first
+  test, 383,382 versus 108,622 ms p90 to first test, and 394,000 versus 120,000
+  ms wall time. Producer cost is included in the opportunistic totals.
+- [Five-project hybrid A/B 31799159098](https://github.com/honua-io/honua-server/actions/runs/31799159098)
+  had no parity or reuse failures. Baseline versus opportunistic measurements
+  were 32 versus 30 rounded runner-minutes, 320,199 versus 82,270 ms to first
+  test, 387,773 versus 344,429 ms p90 to first test, and 397,000 versus 353,000
+  ms wall time. Producer cost is included in the opportunistic totals.
+- Two negative observations also failed closed as designed: a profile with no
+  repeated project skipped the producer, and an older source head missing a
+  required fingerprint input could not publish trusted reusable evidence.
+
+Both representative profiles met the predeclared A/B requirement that runner
+time and p90 time-to-first-test improve without parity loss. The billed-minute
+improvement was only two rounded runner-minutes in each profile (about 14.3
+percent and 6.3 percent), however, so this evidence is **not** sufficient for
+enforcement. In particular it does not satisfy the ADR's 60 percent promotion
+threshold. Repository variable `HONUA_SERVER_TEST_PREBUILD_SHADOW=true` starts
+the required 20-head parity observation; independent shard builds remain the
+authority until all promotion criteria pass.
+
+The control-plane prerequisites were also exercised on hosted infrastructure:
+
+- [Review Gate re-attestation 31799859173](https://github.com/honua-io/honua-server/actions/runs/31799859173)
+  successfully published an exact-head attestation using default-branch code.
+- PR #3221 then landed through a one-member synthetic train. Its
+  [exact merge-tree CI 31800619798](https://github.com/honua-io/honua-server/actions/runs/31800619798)
+  passed with no failing job, and controller
+  [31800106923](https://github.com/honua-io/honua-server/actions/runs/31800106923)
+  compare-and-swapped the covered tree to trunk.
+- That live train spent about 6.5 minutes regenerating deterministic derived
+  artifacts before the synthetic CI run became visible. This is recorded as a
+  separate normalization-latency target; it must not be hidden inside test
+  savings or treated as reusable evidence without its own fingerprint.
+
+The complete checkpoint and decision are also recorded on
+[honua-server#3226](https://github.com/honua-io/honua-server/issues/3226#issuecomment-5293201747).
+
 ## Implementation sequence
 
 1. Merge and measure the bounded #3209 / PR #3210 emitter reuse.
