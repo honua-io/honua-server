@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-SCHEMA = "honua.normalization-envelope/v1"
+SCHEMA = "honua.normalization-envelope/v2"
 WORKFLOW_PATH = ".github/workflows/normalize-derived-artifacts.yml"
 ARCHIVE_MEMBER = "normalization-envelope.json"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -32,6 +32,7 @@ MAX_ARCHIVE_BYTES = 10 * 1024 * 1024
 
 GENERATOR_INPUTS = (
     "Directory.Build.props",
+    "Directory.Build.targets",
     "Directory.Packages.props",
     "NuGet.config",
     "scripts/generate-feature-catalog.sh",
@@ -113,16 +114,29 @@ def require_positive_int(value: Any, label: str) -> int:
     return value
 
 
+def read_regular_bytes(path: Path, label: str) -> bytes:
+    try:
+        mode = path.lstat().st_mode
+    except OSError as error:
+        raise EnvelopeError(f"{label} is unavailable") from error
+    if not stat.S_ISREG(mode):
+        raise EnvelopeError(f"{label} must be one regular file")
+    return path.read_bytes()
+
+
 def build_envelope(
     repo_root: Path,
+    output_root: Path,
     repository: str,
     pull_request: int,
     source_sha: str,
+    source_tree_sha: str,
     base_sha: str,
     run_id: int,
     run_attempt: int,
 ) -> dict[str, Any]:
     require_commit(source_sha, "source_sha")
+    require_commit(source_tree_sha, "source_tree_sha")
     require_commit(base_sha, "base_sha")
     require_positive_int(pull_request, "pull_request")
     require_positive_int(run_id, "run_id")
@@ -133,7 +147,7 @@ def build_envelope(
     outputs: list[dict[str, Any]] = []
     total = 0
     for relative_path, limit in OUTPUT_LIMITS.items():
-        content = (repo_root / relative_path).read_bytes()
+        content = read_regular_bytes(output_root / relative_path, relative_path)
         parsed = strict_json_bytes(content, relative_path)
         if not isinstance(parsed, dict):
             raise EnvelopeError(f"{relative_path} must contain a JSON object")
@@ -153,7 +167,7 @@ def build_envelope(
 
     generators = []
     for relative_path in GENERATOR_INPUTS:
-        content = (repo_root / relative_path).read_bytes()
+        content = read_regular_bytes(repo_root / relative_path, relative_path)
         generators.append({"path": relative_path, "sha256": sha256_bytes(content)})
 
     return {
@@ -171,6 +185,7 @@ def build_envelope(
             "pull_request": pull_request,
             "repository": repository,
             "sha": source_sha,
+            "tree_sha": source_tree_sha,
         },
     }
 
@@ -181,6 +196,7 @@ def validate_envelope(
     repository: str,
     pull_request: int,
     source_sha: str,
+    source_tree_sha: str,
     base_sha: str | None,
     run_id: int,
     run_attempt: int,
@@ -197,19 +213,21 @@ def validate_envelope(
 
     source = exact_keys(
         envelope["source"],
-        {"base_sha", "pull_request", "repository", "sha"},
+        {"base_sha", "pull_request", "repository", "sha", "tree_sha"},
         "source",
     )
     expected_source = {
         "pull_request": pull_request,
         "repository": repository,
         "sha": source_sha,
+        "tree_sha": source_tree_sha,
     }
     if {key: source[key] for key in expected_source} != expected_source or (
         base_sha is not None and source["base_sha"] != base_sha
     ):
         raise EnvelopeError("source identity does not match the workflow event")
     require_commit(source["sha"], "source.sha")
+    require_commit(source["tree_sha"], "source.tree_sha")
     require_commit(source["base_sha"], "source.base_sha")
 
     producer = exact_keys(
@@ -327,9 +345,11 @@ def parser() -> argparse.ArgumentParser:
 
     build = subparsers.add_parser("build")
     build.add_argument("--repo-root", type=Path, default=Path.cwd())
+    build.add_argument("--output-root", type=Path, default=Path.cwd())
     build.add_argument("--repository", required=True)
     build.add_argument("--pull-request", type=int, required=True)
     build.add_argument("--source-sha", required=True)
+    build.add_argument("--source-tree-sha", required=True)
     build.add_argument("--base-sha", required=True)
     build.add_argument("--run-id", type=int, required=True)
     build.add_argument("--run-attempt", type=int, required=True)
@@ -340,6 +360,7 @@ def parser() -> argparse.ArgumentParser:
     validate.add_argument("--repository", required=True)
     validate.add_argument("--pull-request", type=int, required=True)
     validate.add_argument("--source-sha", required=True)
+    validate.add_argument("--source-tree-sha", required=True)
     validate.add_argument("--base-sha")
     validate.add_argument("--run-id", type=int, required=True)
     validate.add_argument("--run-attempt", type=int, required=True)
@@ -353,9 +374,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "build":
             envelope = build_envelope(
                 args.repo_root.resolve(),
+                args.output_root.resolve(),
                 args.repository,
                 args.pull_request,
                 args.source_sha,
+                args.source_tree_sha,
                 args.base_sha,
                 args.run_id,
                 args.run_attempt,
@@ -371,6 +394,7 @@ def main(argv: list[str] | None = None) -> int:
                 repository=args.repository,
                 pull_request=args.pull_request,
                 source_sha=args.source_sha,
+                source_tree_sha=args.source_tree_sha,
                 base_sha=args.base_sha,
                 run_id=args.run_id,
                 run_attempt=args.run_attempt,

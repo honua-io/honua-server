@@ -33,8 +33,9 @@ read-only observations still bind repository, PR, exact source head, run, and
 attempt, but treat the envelope's well-formed base SHA as informational because
 forks can never receive branch-mutation authority.
 
-The v1 envelope binds the source/base commit, PR/repository, workflow/run/
-attempt, generator input digests, and each allowlisted output's path, byte
+The v2 envelope binds the source/base commit, the exact source Git tree,
+PR/repository, workflow/run/attempt, generator input digests, and each
+allowlisted output's path, byte
 length, SHA-256 digest, and base64 content. Validation rejects extra members or
 fields, paths outside the allowlist, duplicates, traversal, symlinks,
 non-regular modes, encryption, invalid UTF-8/JSON, duplicate JSON keys,
@@ -46,9 +47,17 @@ therefore never trusted on its own.
 The allowlist includes both shell/Python entry points and the executable C#
 feature-catalog and GeoServices emitter/generator implementations, their direct
 helper and authored-JSON inputs, and the .NET project/toolchain policy. The
-exact source commit and tree bind the broader transitive endpoint/test surface;
-the explicit implementation digests prevent a changed generator from hiding
-behind an unchanged wrapper script.
+trusted consumer independently resolves and verifies the exact Git tree, which
+exhaustively binds the broader transitive endpoint/test surface and imported
+build policy. Generation and packaging use separate hosted runners. The first
+may execute PR code but can publish only the three size-bounded JSON projections;
+the second starts from a fresh exact-head checkout, downloads that data, and
+builds the envelope without running setup or generators. Package credential
+setup, generator-side worktree mutations, background processes, and environment
+changes therefore cannot contaminate the provenance checkout. The explicit
+implementation digests keep the highest-risk entry points legible in the
+envelope and prevent a changed generator from hiding behind an unchanged
+wrapper script.
 It also requires the producer workflow, the local .NET setup action, and the
 envelope builder at the PR head to be byte-identical to the checked-out
 default-branch recipe. A pull request that changes this security boundary must

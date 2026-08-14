@@ -111,11 +111,13 @@ publish authoritative reusable evidence.
 Normalization uses two workflows:
 
 1. An unprivileged `pull_request` workflow checks out and executes the pull
-   request. It runs only declared generators and uploads a data-only
-   normalization envelope. The envelope contains the source SHA, contract
-   version, allowlisted derived path names, exact output blobs/digests, and
-   generator evidence. It contains no executable path, symlink, submodule,
-   workflow, or arbitrary archive layout.
+   request. A generation job runs only declared generators and uploads three
+   bounded JSON projections. A separate fresh runner packages those data files
+   against a clean exact-head checkout, so generator/setup mutations cannot
+   alter provenance inputs or the envelope builder. The envelope contains the
+   source SHA and Git tree, contract version, allowlisted derived path names,
+   exact output blobs/digests, and generator evidence. It contains no executable
+   path, symlink, submodule, workflow, or arbitrary archive layout.
 2. A trusted default-branch `workflow_run` consumer does not execute pull-request
    scripts. It validates the completed producer identity, repository, event,
    current PR head, envelope schema, path allowlist, size bounds, and every

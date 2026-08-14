@@ -100,6 +100,10 @@ jobs:
             const archive = path.join(process.env.RUNNER_TEMP, 'normalization-envelope.zip');
             fs.writeFileSync(archive, Buffer.from(download.data));
 
+            const { data: commit } = await github.rest.git.getCommit({
+              ...context.repo, commit_sha: run.head_sha,
+            });
+
             core.setOutput('archive', archive);
             core.setOutput('base_sha', sameRepository ? eventBaseSha : '');
             core.setOutput('head_sha', run.head_sha);
@@ -107,12 +111,14 @@ jobs:
             core.setOutput('run_attempt', String(run.run_attempt));
             core.setOutput('run_id', String(run.id));
             core.setOutput('same_repository', String(sameRepository));
+            core.setOutput('tree_sha', commit.tree.sha);
 
       - name: Validate archive and data envelope with trusted policy
         env:
           ARCHIVE: ${{ steps.artifact.outputs.archive }}
           BASE_SHA: ${{ steps.artifact.outputs.base_sha }}
           HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
+          TREE_SHA: ${{ steps.artifact.outputs.tree_sha }}
           PR_NUMBER: ${{ steps.artifact.outputs.pr_number }}
           PRODUCER_ATTEMPT: ${{ steps.artifact.outputs.run_attempt }}
           PRODUCER_RUN_ID: ${{ steps.artifact.outputs.run_id }}
@@ -126,6 +132,7 @@ jobs:
             --repository "${GITHUB_REPOSITORY}" \
             --pull-request "${PR_NUMBER}" \
             --source-sha "${HEAD_SHA}" \
+            --source-tree-sha "${TREE_SHA}" \
             "${base_args[@]}" \
             --run-id "${PRODUCER_RUN_ID}" \
             --run-attempt "${PRODUCER_ATTEMPT}" \
@@ -153,6 +160,9 @@ jobs:
             const { data: commit } = await github.rest.git.getCommit({
               ...context.repo, commit_sha: process.env.HEAD_SHA,
             });
+            if (plan.source.tree_sha !== commit.tree.sha) {
+              throw new Error('Envelope source tree does not match the exact PR head.');
+            }
             const { data: tree } = await github.rest.git.getTree({
               ...context.repo, tree_sha: commit.tree.sha, recursive: 'true',
             });

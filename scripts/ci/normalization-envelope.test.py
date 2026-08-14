@@ -21,6 +21,7 @@ SPEC.loader.exec_module(MODULE)
 REPOSITORY = "honua-io/honua-server"
 PR = 3219
 HEAD = "a" * 40
+TREE = "e" * 40
 BASE = "b" * 40
 RUN_ID = 12345
 ATTEMPT = 1
@@ -54,6 +55,7 @@ def envelope() -> dict:
             "pull_request": PR,
             "repository": REPOSITORY,
             "sha": HEAD,
+            "tree_sha": TREE,
         },
     }
 
@@ -67,6 +69,7 @@ def expected() -> dict:
         "repository": REPOSITORY,
         "pull_request": PR,
         "source_sha": HEAD,
+        "source_tree_sha": TREE,
         "base_sha": BASE,
         "run_id": RUN_ID,
         "run_attempt": ATTEMPT,
@@ -81,6 +84,11 @@ class EnvelopeTests(unittest.TestCase):
     def test_source_and_producer_identity_are_exact(self) -> None:
         value = envelope()
         value["source"]["sha"] = "d" * 40
+        with self.assertRaisesRegex(MODULE.EnvelopeError, "source identity"):
+            MODULE.validate_envelope(raw(value), **expected())
+
+        value = envelope()
+        value["source"]["tree_sha"] = "f" * 40
         with self.assertRaisesRegex(MODULE.EnvelopeError, "source identity"):
             MODULE.validate_envelope(raw(value), **expected())
 
@@ -145,6 +153,7 @@ class EnvelopeTests(unittest.TestCase):
 
     def test_generator_allowlist_is_exact(self) -> None:
         required_implementations = {
+            "Directory.Build.targets",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityEmitter.cs",
@@ -156,6 +165,12 @@ class EnvelopeTests(unittest.TestCase):
         value["generators"][0]["path"] = "scripts/unsafe.sh"
         with self.assertRaisesRegex(MODULE.EnvelopeError, "allowlist/order"):
             MODULE.validate_envelope(raw(value), **expected())
+
+    def test_packager_rejects_non_regular_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            with self.assertRaisesRegex(MODULE.EnvelopeError, "regular file"):
+                MODULE.read_regular_bytes(path, "projection")
 
     def test_archive_requires_one_regular_named_member(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -194,7 +209,9 @@ class EnvelopeTests(unittest.TestCase):
                 target = root / path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("{}\n" if path.endswith(".json") else "input\n", encoding="utf-8")
-            built = MODULE.build_envelope(root, REPOSITORY, PR, HEAD, BASE, RUN_ID, ATTEMPT)
+            built = MODULE.build_envelope(
+                root, root, REPOSITORY, PR, HEAD, TREE, BASE, RUN_ID, ATTEMPT
+            )
             validated = MODULE.validate_envelope(raw(built), **expected())
             self.assertEqual(3, len(validated["outputs"]))
 

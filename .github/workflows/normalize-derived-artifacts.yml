@@ -39,8 +39,8 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
-  produce:
-    name: Produce data-only normalization envelope
+  generate:
+    name: Generate bounded normalization projections
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -64,17 +64,78 @@ jobs:
           bash scripts/generate-geoservices-parity.sh --configuration Release -m:1 --no-build --no-restore
           python3 scripts/ci/generate-capability-matrix.py
 
+      - name: Stage only bounded generated projections
+        run: |
+          projection_root="${RUNNER_TEMP}/normalized-projections"
+          projections=(
+            'docs/gis/data/feature-catalog.json:4194304'
+            'docs/gis/data/geoservices-rest-parity.json:1048576'
+            'docs/gis/data/capability-matrix.v1.json:1048576'
+          )
+          total=0
+          for item in "${projections[@]}"; do
+            projection="${item%%:*}"
+            limit="${item##*:}"
+            size="$(stat -c '%s' "${projection}")"
+            if (( size < 1 || size > limit )); then
+              echo "${projection} size ${size} is outside bound 1..${limit}" >&2
+              exit 1
+            fi
+            total=$((total + size))
+            install -d "${projection_root}/$(dirname "${projection}")"
+            install -m 0600 "${projection}" "${projection_root}/${projection}"
+          done
+          if (( total > 6291456 )); then
+            echo "normalization projections exceed the 6 MiB aggregate bound" >&2
+            exit 1
+          fi
+
+      - name: Upload bounded projection data
+        uses: actions/upload-artifact@v7
+        with:
+          name: normalization-projections-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/normalized-projections
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+
+  produce:
+    name: Produce data-only normalization envelope
+    needs: generate
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Packaging is deliberately isolated from the runner that executed PR
+      # code. setup-dotnet-ci and generators cannot mutate this checkout,
+      # environment, or the envelope builder before provenance is recorded.
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Download bounded projection data
+        uses: actions/download-artifact@v8
+        with:
+          name: normalization-projections-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/normalized-projections
+
       - name: Build bounded normalization envelope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          TREE_SHA="$(git rev-parse "${HEAD_SHA}^{tree}")"
           python3 scripts/ci/normalization-envelope.py build \
             --repo-root . \
+            --output-root "${RUNNER_TEMP}/normalized-projections" \
             --repository "${GITHUB_REPOSITORY}" \
             --pull-request "${PR_NUMBER}" \
             --source-sha "${HEAD_SHA}" \
+            --source-tree-sha "${TREE_SHA}" \
             --base-sha "${BASE_SHA}" \
             --run-id "${GITHUB_RUN_ID}" \
             --run-attempt "${GITHUB_RUN_ATTEMPT}" \
