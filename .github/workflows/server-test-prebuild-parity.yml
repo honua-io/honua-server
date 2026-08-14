@@ -78,6 +78,12 @@ jobs:
               unavailable('pull-request-not-open-ready-same-repository');
               return;
             }
+            const repositoryResponse = await github.rest.repos.get({ ...context.repo });
+            const defaultBranch = repositoryResponse.data.default_branch;
+            if (manual && context.ref !== `refs/heads/${defaultBranch}`) {
+              unavailable('manual-dispatch-is-not-default-branch-policy');
+              return;
+            }
             if (!manual && (trigger.name !== 'PR Gate'
               || trigger.path !== '.github/workflows/pr-gate.yml'
               || trigger.head_sha !== pr.head.sha)) {
@@ -132,8 +138,6 @@ jobs:
               unavailable('observer-workflow-identity-mismatch');
               return;
             }
-            const repositoryResponse = await github.rest.repos.get({ ...context.repo });
-            const defaultBranch = repositoryResponse.data.default_branch;
             const runsResponse = await github.request(
               'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
               { ...context.repo, workflow_id: workflowResponse.data.id, status: 'completed', per_page: 100 },

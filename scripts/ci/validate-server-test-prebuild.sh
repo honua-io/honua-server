@@ -59,6 +59,8 @@ grep -Fq 'rounded_runner_minutes_including_prebuild' scripts/ci/summarize-server
 grep -Fq '  workflow_run:' "${parity}"
 grep -Fq 'workflows: [PR Gate]' "${parity}"
 grep -Fq "item.context === 'Review Gate'" "${parity}"
+grep -Fq 'context.ref !== `refs/heads/${defaultBranch}`' "${parity}"
+grep -Fq 'manual-dispatch-is-not-default-branch-policy' "${parity}"
 grep -Fq "workflow_id: 'pr-gate.yml'" "${parity}"
 grep -Fq "prGateWorkflowResponse.data.path !== '.github/workflows/pr-gate.yml'" "${parity}"
 grep -Fq "run.event === 'pull_request'" "${parity}"
