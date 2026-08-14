@@ -5,6 +5,7 @@ name: Derived Artifact Normalization
 # consumer validates that artifact without executing anything from this head.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [trunk]
     paths:
       - 'src/**'
