@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Options;
 
@@ -70,6 +71,12 @@ internal static class GdalJobFactory
             MaxZoneVertices = maxZoneVertices ?? defaults.MaxZoneVertices,
         });
     }
+
+    public static IOptionsMonitor<GeoprocessingOutputStagingOptions> StagingOptions()
+        => new StaticOptionsMonitor<GeoprocessingOutputStagingOptions>(new GeoprocessingOutputStagingOptions
+        {
+            Enabled = true,
+        });
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

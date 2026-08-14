@@ -28,10 +28,44 @@ internal static class GdalWorkerParameterKeys
     public const string StepRasterSourcePrefix = "honua.geoprocessing.raster_source.0.";
 
     /// <summary>
+    /// Worker-internal path prefix populated only after a staged descriptor has been
+    /// streamed from the execution-owned store into scratch. It never crosses the
+    /// durable server-to-worker contract.
+    /// </summary>
+    public const string HydratedStagedSourcePrefix = "honua.worker.gdal.staged_input.0.";
+
+    /// <summary>
     /// Parameter key carrying the canonical process id list. Matches
     /// <c>ExecutionJobParameterKeys.GeoprocessingProcessDefinitions</c>.
     /// </summary>
     public const string ProcessDefinitions = "honua.geoprocessing.process_definitions";
+
+    /// <summary>
+    /// Stable analysis plan identifier recorded by the submit path
+    /// (mirrors <c>ExecutionJobParameterKeys.GeoprocessingPlanId</c>).
+    /// </summary>
+    public const string PlanId = "honua.geoprocessing.plan_id";
+
+    /// <summary>
+    /// Prefix of the per-slot output names recorded by the OGC Processes submit path
+    /// (mirrors <c>GeoprocessingProtocolMetadataKeys.OutputNamePrefix</c>).
+    /// </summary>
+    public const string OutputNamePrefix = "process.output.";
+
+    /// <summary>
+    /// Prefix of the per-slot output names recorded by the GPServer submit path
+    /// (mirrors <c>GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix</c>).
+    /// </summary>
+    public const string GPServerOutputNamePrefix = "gpserver.output.";
+
+    /// <summary>
+    /// Prefix of the optional post-success output registration intents (#3089;
+    /// mirrors <c>ExecutionJobParameterKeys.GeoprocessingOutputRegistrationPrefix</c>).
+    /// An output carrying an intent must be published as a staged object — the
+    /// registrar can only register staged artifacts, so publishing it inline would
+    /// permanently wedge the job's results path.
+    /// </summary>
+    public const string OutputRegistrationPrefix = "honua.geoprocessing.output_registration.";
 
     /// <summary>
     /// Separator for the ordered process-definitions list.

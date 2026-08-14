@@ -120,4 +120,13 @@ internal static class ExecutionJobParameterKeys
     /// except for the explicitly bounded inline source kind.
     /// </summary>
     public const string GeoprocessingStepRasterSourcePrefix = "honua.geoprocessing.raster_source.";
+
+    /// <summary>
+    /// Prefix for optional post-success raster output registration intents (#3089).
+    /// The key suffix is the logical output name; the value is a registration target
+    /// of the form <c>cog-catalog:{layerId}</c>. Registration is performed by the
+    /// serving host after the job succeeds and is idempotent across retries and
+    /// reconciler replay.
+    /// </summary>
+    public const string GeoprocessingOutputRegistrationPrefix = "honua.geoprocessing.output_registration.";
 }

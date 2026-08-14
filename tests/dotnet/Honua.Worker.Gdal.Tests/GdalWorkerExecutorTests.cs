@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -95,6 +97,170 @@ public sealed class GdalWorkerExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("not supported by the GDAL worker runtime");
+    }
+
+    [UnitTest]
+    public async Task Dispatcher_StagedRasterSource_MaterializesVerifiedWorkerReadableReference()
+    {
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var store = new GdalArtifactPublisherTests.InMemoryOutputObjectStore();
+        var bytes = Encoding.UTF8.GetBytes("staged-tiff-test-payload");
+        const string objectKey = "gp/outputs/job-1/a1/output/result.tif";
+        store.Objects[objectKey] = bytes;
+        var handler = new CapturingProcessExecutor("test.staged-input");
+        var dispatcher = new GdalDispatchJobExecutor(
+            [handler],
+            NullLogger<GdalDispatchJobExecutor>.Instance,
+            store,
+            GdalJobFactory.StagingOptions(),
+            workerOptions: GdalJobFactory.Options(scratch));
+        var descriptor = StagedSource(objectKey, bytes);
+        var checksum = descriptor.Content.Checksum!;
+        descriptor = descriptor with
+        {
+            Content = descriptor.Content with
+            {
+                Checksum = checksum with
+                {
+                    Value = checksum.Value.ToUpperInvariant(),
+                },
+            },
+        };
+        var original = GdalJobFactory.Job("test.staged-input");
+        var parameters = original.Spec.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value);
+        parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] = RasterSourceJson.Serialize(descriptor);
+        var job = original with { Spec = original.Spec with { Parameters = parameters } };
+
+        try
+        {
+            var result = await dispatcher.ExecuteAsync(
+                job,
+                new RecordingJobExecutionContext(job.OperationId),
+                default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            handler.Calls.Should().Be(1);
+            handler.MaterializedBytes.Should().Equal(bytes);
+            store.ReadLeases.Should().Contain(objectKey);
+            var hydrated = RasterSourceJson.Deserialize(
+                    handler.CapturedJob!.Spec.Parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"])
+                .Should().BeOfType<StagedArtifactRasterSourceDescriptor>().Subject;
+            hydrated.Provider.Should().Be(CloudStorageProvider.Local);
+            hydrated.DeclaredDimensions.Should().Be(descriptor.DeclaredDimensions);
+            handler.HydrationWorkspace.Should().Be(
+                Path.GetFullPath(Path.Join(scratch, job.OperationId)),
+                "container execution bind-mounts the operation-scoped workspace");
+            Directory.Exists(handler.HydrationWorkspace).Should().BeFalse("hydration scratch is deleted after execution");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Dispatcher_StagedRasterSourceChecksumMismatch_FailsBeforeHandler()
+    {
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var store = new GdalArtifactPublisherTests.InMemoryOutputObjectStore();
+        var bytes = Encoding.UTF8.GetBytes("staged-tiff-test-payload");
+        const string objectKey = "gp/outputs/job-1/a1/output/result.tif";
+        store.Objects[objectKey] = bytes;
+        var handler = new CapturingProcessExecutor("test.staged-input");
+        var dispatcher = new GdalDispatchJobExecutor(
+            [handler],
+            NullLogger<GdalDispatchJobExecutor>.Instance,
+            store,
+            GdalJobFactory.StagingOptions(),
+            workerOptions: GdalJobFactory.Options(scratch));
+        var descriptor = StagedSource(objectKey, bytes) with
+        {
+            Content = StagedSource(objectKey, bytes).Content with
+            {
+                Checksum = new RasterChecksum("sha256", new string('0', 64))
+            }
+        };
+        var original = GdalJobFactory.Job("test.staged-input");
+        var parameters = original.Spec.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value);
+        parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] = RasterSourceJson.Serialize(descriptor);
+        var job = original with { Spec = original.Spec with { Parameters = parameters } };
+
+        try
+        {
+            var result = await dispatcher.ExecuteAsync(
+                job,
+                new RecordingJobExecutionContext(job.OperationId),
+                default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("content-integrity verification");
+            handler.Calls.Should().Be(0);
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    private static StagedArtifactRasterSourceDescriptor StagedSource(string objectKey, byte[] bytes)
+    {
+        var checksum = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return new StagedArtifactRasterSourceDescriptor
+        {
+            ArtifactReference = "job-1:artifact:1",
+            Provider = CloudStorageProvider.Local,
+            StoreReference = "gp-outputs",
+            ObjectKey = objectKey,
+            Version = "sha256:" + checksum,
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = bytes.Length,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum("sha256", checksum),
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant:test",
+                AuthorizationSnapshotReference = "workflow:test:submitter",
+            },
+            DeclaredDimensions = new RasterSourceDimensions(16, 16, 1, 8),
+        };
+    }
+
+    private sealed class CapturingProcessExecutor(string processId) : IProcessExecutor
+    {
+        public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
+        public IReadOnlySet<string> AcceptedRuntimeProfiles { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
+        public IReadOnlySet<string> ProcessIds { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { processId };
+        public int Calls { get; private set; }
+        public ExecutionJobRecord? CapturedJob { get; private set; }
+        public byte[]? MaterializedBytes { get; private set; }
+
+        public async Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job,
+            IJobExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            CapturedJob = job;
+            GdalJobInputReader.TryGetRasterInput(
+                    job.Spec.Parameters,
+                    "source",
+                    long.MaxValue,
+                    out var input,
+                    out var error)
+                .Should().BeTrue(error);
+            input.TryAdmit(new GdalWorkerOptions(), out var admissionError)
+                .Should().BeTrue(admissionError);
+            input.ReferencedPath.Should().NotBeNull();
+            HydrationWorkspace = Path.GetDirectoryName(input.ReferencedPath!);
+            MaterializedBytes = await File.ReadAllBytesAsync(input.ReferencedPath!, cancellationToken);
+            return JobExecutionResult.Succeeded();
+        }
+
+        public string? HydrationWorkspace { get; private set; }
     }
 
     private static GdalDispatchJobExecutor NewDispatcher()

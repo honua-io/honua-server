@@ -117,6 +117,10 @@
       "capability": "process.geoprocessing"
     },
     {
+      "family": "Geoprocessing Output Artifacts",
+      "capability": "process.geoprocessing"
+    },
+    {
       "family": "GeoServices REST VersionManagementServer",
       "capability": "editing.branch-versioning"
     },

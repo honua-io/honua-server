@@ -24,6 +24,15 @@ internal sealed class GdalWorkerOptions
     public long MaxArtifactBytes { get; set; } = 50L * 1024L * 1024L;
 
     /// <summary>
+    /// Maximum size, in bytes, of a single produced artifact streamed to the staged
+    /// output object store (#3089). Applies only when output staging is enabled;
+    /// the inline publication path keeps <see cref="MaxArtifactBytes"/>.
+    /// </summary>
+    [Range(1024L * 1024L, 1024L * 1024L * 1024L * 1024L,
+        ErrorMessage = "MaxStagedArtifactBytes must be between 1 MiB and 1 TiB")]
+    public long MaxStagedArtifactBytes { get; set; } = 10L * 1024L * 1024L * 1024L;
+
+    /// <summary>
     /// Root directory under which per-job scratch workspaces are created. Each
     /// job gets an isolated subdirectory that is deleted after execution.
     /// Defaults to the OS temp directory.
