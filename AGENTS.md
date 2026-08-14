@@ -178,9 +178,10 @@ gh workflow run merge-train.yml -f train_apply=true
 - **`train_apply` defaults to `false` — a bare `gh workflow run merge-train.yml` is a DRY RUN** that reports decisions and merges nothing. Scheduled invocations also remain dry-run-only.
 - The train lands the whole **batch**, not just the PR you are looking at. It excludes drafts and PRs labeled `train:hold`, `hold`, or `train:escalated`.
 - **`merge-train.yml` ("Merge Train")** assembles eligible PRs oldest-first on a `train/batch/<trunk-sha>/<id>` branch, selects the cumulative smart-CI shard subset, dispatches `ci.yml`, attributes failures, and lands a successful batch only during an explicit live dispatch.
-- **`pr-merge-train.yml` ("PR merge train")** is the active unattended serial lander for ordinary clean PRs.
 
-Do not admin-merge around either train. For a routine PR, let the automatic lander work; use the manual batch train only when cumulative batch validation or coordinated batch landing is intended.
+Do not admin-merge around the train. For an isolated routine PR, dispatch with
+`train_apply=true` and `max_batch=1`; use a larger batch only when cumulative
+batch validation and coordinated landing are intended.
 
 - **Batch failure ⇒ `train:escalated`.** When a batch fails, the train attributes the failure and labels the batch members `train:escalated`, which excludes them from future batches. If a later rerun of that same `train/batch/*` CI run turns green, `merge-train-rerun-recovery.yml` clears stale escalation labels and stamps `CI Gate` on member PR heads. If the failure is real, fix the root cause, remove the label, and re-dispatch with `train_apply=true`.
 - **Batch CI is stricter than local builds.** The Linux batch lane has analyzer rules that may not fire locally on Windows (e.g. `CA1873` on log-argument evaluation). A locally-clean warnings-as-errors build does not guarantee the batch build passes; read the batch log (`gh run view <id> --log-failed`) and fix on the PR branch.

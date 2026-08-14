@@ -177,6 +177,8 @@ def main() -> None:
             raise AssertionError(
                 f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
             )
+    if "pr-merge-train.yml" in AGENTS.read_text(encoding="utf-8"):
+        raise AssertionError("AGENTS.md must not instruct operators to wait for the deleted lander")
 
     print(f"review-first-dispatch=ok mode={pr_mode}")
 
