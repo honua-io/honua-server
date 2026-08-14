@@ -82,14 +82,25 @@ train_early_failure_observe_snapshot 56 "${unselected_snapshot}"
 # A transient log-read failure remains unobserved so a later poll can classify
 # the same authoritative failed job once its logs are available.
 transient_log() {
-  [[ -e "${fixture}/log-ready" ]] || return 1
+  if [[ "$1" == "101" && ! -e "${fixture}/log-ready" ]]; then
+    return 1
+  fi
   printf 'Failed! Expected: 200 Actual: 500\n'
 }
 export TRAIN_EARLY_FAILURE_LOG_READER=transient_log
-train_early_failure_observe_snapshot 55 "${active_snapshot}"
+multiple_failed_snapshot='{
+  "status":"in_progress",
+  "updatedAt":"2026-08-14T00:03:00Z",
+  "jobs":[
+    {"databaseId":101,"name":"Server Tests (Core)","status":"completed","conclusion":"failure","completedAt":"2026-08-14T00:01:00Z"},
+    {"databaseId":102,"name":"Server Tests (Infra and Security)","status":"completed","conclusion":"failure","completedAt":"2026-08-14T00:02:00Z"}
+  ]
+}'
+export TRAIN_EARLY_FAILURE_SHARD_DESCRIPTOR='{"shards":["Core","Infra and Security"]}'
+train_early_failure_observe_snapshot 55 "${multiple_failed_snapshot}"
 [[ ! -e "${TRAIN_EARLY_FAILURE_FILE}" ]]
 touch "${fixture}/log-ready"
-train_early_failure_observe_snapshot 55 "${active_snapshot}"
+train_early_failure_observe_snapshot 55 "${multiple_failed_snapshot}"
 jq -e '
   .run_id == 55 and
   .first_blocking_failure.job_id == 101 and

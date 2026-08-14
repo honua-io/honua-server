@@ -57,7 +57,7 @@ train_early_failure_observe_snapshot() {
     grep -Fxq -- "${job_name}" <<<"${selected}" || continue
     if ! log="$(train_early_failure_log "${job_id}")"; then
       train_log "early-failure observe: log unavailable for ${job_name}; retrying on a later snapshot"
-      continue
+      return 0
     fi
     category="$(train_early_failure_classify_log "${log}")"
     observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
