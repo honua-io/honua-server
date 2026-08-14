@@ -120,6 +120,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
 
   echo "Validating native-image impact observation contract..."
+  node --test scripts/ci/trusted-pr-workflow-run.test.js
   "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
   "${PYTHON_BIN}" -m unittest discover \
     -s tests/python/unit \

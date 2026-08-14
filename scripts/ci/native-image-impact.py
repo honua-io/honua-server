@@ -25,7 +25,20 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY = ROOT / ".github" / "native-image-impact.json"
-SCHEMA = "honua.ci.native-image-impact-observation/v1"
+SCHEMA = "honua.ci.native-image-impact-observation/v2"
+TRUSTED_EXECUTION = "default-branch-workflow-run/v1"
+SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
+TERMINAL_CONCLUSIONS = {
+    "success",
+    "failure",
+    "cancelled",
+    "timed_out",
+    "action_required",
+    "neutral",
+    "skipped",
+    "stale",
+    "startup_failure",
+}
 RISK_CLASSES = (
     "server_aot_compile",
     "generic_final_rootfs",
@@ -251,8 +264,29 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
     observer = (repo / ".github/workflows/native-image-impact-observe.yml").read_text(
         encoding="utf-8"
     )
+    if "  workflow_run:" not in observer or "    workflows: [PR Gate]" not in observer:
+        raise PolicyError("observer must execute after the canonical PR Gate")
+    if re.search(r"(?m)^  pull_request:\s*$", observer):
+        raise PolicyError("candidate-controlled pull_request observer is forbidden")
     if re.search(r"(?m)^\s{4}paths(?:-ignore)?:", observer):
         raise PolicyError("observer must run on every pull request without path filters")
+    required_trust_markers = (
+        "trusted-pr-workflow-run",
+        "context.ref !== trustedRef",
+        "Checkout candidate tree as inert data",
+        "persist-credentials: false",
+        "default-branch-workflow-run/v1",
+        "repositoryId: repository.id",
+        "policy_inputs_sha256",
+        "observer_workflow_blob_sha",
+        "Recheck exact PR identity before retaining evidence",
+    )
+    if any(token not in observer for token in required_trust_markers):
+        raise PolicyError("observer lost its trusted execution boundary")
+    if re.search(r"(?m)^\s+[a-z-]+: write\s*$", observer):
+        raise PolicyError("observe-only workflow gained write permission")
+    if "  checks: read" not in observer:
+        raise PolicyError("observer cannot read the canonical job check association")
     forbidden = ("docker build", "docker/build-push-action", "gh run cancel", "cancelWorkflowRun")
     if any(token in observer for token in forbidden):
         raise PolicyError("observe-only workflow gained build or cancellation authority")
@@ -267,6 +301,17 @@ def evaluate(
     head_sha: str = "",
     repository: str = "",
     pull_request: int = 0,
+    policy_sha: str = "",
+    policy_blob_sha: str = "",
+    routing_policy_blob_sha: str = "",
+    resolver_blob_sha: str = "",
+    observer_workflow_blob_sha: str = "",
+    policy_inputs_sha256: str = "",
+    trusted_execution: str = "",
+    gate_workflow_path: str = "",
+    gate_run_id: int = 0,
+    gate_run_attempt: int = 0,
+    gate_run_conclusion: str = "",
 ) -> dict[str, Any]:
     paths = sorted({normalize_path(path) for path in changed_paths if normalize_path(path)})
     serving_projects, serving_external = project_closure(
@@ -332,6 +377,21 @@ def evaluate(
         "base_sha": base_sha,
         "head_sha": head_sha,
         "changed_paths": paths,
+        "changed_paths_sha256": hashlib.sha256(
+            json.dumps(paths, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest(),
+        "policy_sha": policy_sha,
+        "policy_blob_sha": policy_blob_sha,
+        "routing_policy_blob_sha": routing_policy_blob_sha,
+        "resolver_blob_sha": resolver_blob_sha,
+        "observer_workflow_blob_sha": observer_workflow_blob_sha,
+        "policy_inputs_sha256": policy_inputs_sha256,
+        "trusted_execution": trusted_execution,
+        "gate_workflow_path": gate_workflow_path,
+        "gate_run_id": gate_run_id,
+        "gate_run_attempt": gate_run_attempt,
+        "gate_run_head_sha": head_sha,
+        "gate_run_conclusion": gate_run_conclusion,
         "graphs": {
             "serving": {
                 "root": policy["roots"]["serving"],
@@ -365,18 +425,91 @@ def evaluate(
     }
 
 
+def parse_changed_path_output(raw: bytes) -> list[str]:
+    if not raw:
+        return []
+    if not raw.endswith(b"\0"):
+        raise PolicyError("git diff emitted a truncated path record")
+    paths: list[str] = []
+    seen: set[str] = set()
+    for encoded in raw[:-1].split(b"\0"):
+        try:
+            path = encoded.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise PolicyError("git diff emitted a non-UTF-8 path") from error
+        if (
+            not path
+            or "\\" in path
+            or any(ord(character) < 32 or ord(character) == 127 for character in path)
+            or PurePosixPath(path).is_absolute()
+            or ".." in PurePosixPath(path).parts
+            or PurePosixPath(path).as_posix() != path
+            or path in seen
+        ):
+            raise PolicyError(f"git diff emitted an unsafe path: {path!r}")
+        seen.add(path)
+        paths.append(path)
+    return paths
+
+
 def changed_paths(repo: Path, base_ref: str, head_ref: str) -> list[str]:
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACDMRTUXB", f"{base_ref}...{head_ref}"],
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "-z",
+            "--diff-filter=ACDMRTUXB",
+            f"{base_ref}...{head_ref}",
+        ],
         cwd=repo,
         check=False,
-        text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     if result.returncode != 0:
-        raise PolicyError(f"git diff failed: {result.stderr.strip()}")
-    return [line for line in result.stdout.splitlines() if line]
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise PolicyError(f"git diff failed: {detail}")
+    return parse_changed_path_output(result.stdout)
+
+
+def observation_identity(args: argparse.Namespace) -> dict[str, Any]:
+    values = {
+        "base_sha": args.base,
+        "head_sha": args.head,
+        "policy_sha": args.policy_sha,
+        "policy_blob_sha": args.policy_blob_sha,
+        "routing_policy_blob_sha": args.routing_policy_blob_sha,
+        "resolver_blob_sha": args.resolver_blob_sha,
+        "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
+    }
+    if any(SHA_PATTERN.fullmatch(value or "") is None for value in values.values()):
+        raise PolicyError("observation identity contains an invalid SHA")
+    if args.repository != "honua-io/honua-server" or args.pr < 1:
+        raise PolicyError("observation repository or pull request is invalid")
+    if args.trusted_execution != TRUSTED_EXECUTION:
+        raise PolicyError("observation did not run through trusted default-branch policy")
+    if args.gate_workflow_path != ".github/workflows/pr-gate.yml":
+        raise PolicyError("observation source is not the canonical PR Gate")
+    if args.gate_run_id < 1 or args.gate_run_attempt < 1:
+        raise PolicyError("observation source run identity is invalid")
+    if args.gate_run_conclusion not in TERMINAL_CONCLUSIONS:
+        raise PolicyError("observation source run conclusion is invalid")
+    if re.fullmatch(r"[0-9a-f]{64}", args.policy_inputs_sha256 or "") is None:
+        raise PolicyError("observation policy input digest is invalid")
+    return {
+        "policy_sha": args.policy_sha,
+        "policy_blob_sha": args.policy_blob_sha,
+        "routing_policy_blob_sha": args.routing_policy_blob_sha,
+        "resolver_blob_sha": args.resolver_blob_sha,
+        "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
+        "policy_inputs_sha256": args.policy_inputs_sha256,
+        "trusted_execution": args.trusted_execution,
+        "gate_workflow_path": args.gate_workflow_path,
+        "gate_run_id": args.gate_run_id,
+        "gate_run_attempt": args.gate_run_attempt,
+        "gate_run_conclusion": args.gate_run_conclusion,
+    }
 
 
 def markdown(report: dict[str, Any]) -> str:
@@ -417,35 +550,55 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate")
     observe = subparsers.add_parser("observe")
+    observe.add_argument("--repo-root", type=Path, default=ROOT)
     observe.add_argument("--base", required=True)
     observe.add_argument("--head", required=True)
     observe.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     observe.add_argument("--pr", type=int, default=0)
     observe.add_argument("--output", type=Path, required=True)
     observe.add_argument("--markdown", type=Path, required=True)
+    observe.add_argument("--policy-sha", required=True)
+    observe.add_argument("--policy-blob-sha", required=True)
+    observe.add_argument("--routing-policy-blob-sha", required=True)
+    observe.add_argument("--resolver-blob-sha", required=True)
+    observe.add_argument("--observer-workflow-blob-sha", required=True)
+    observe.add_argument("--policy-inputs-sha256", required=True)
+    observe.add_argument("--trusted-execution", required=True)
+    observe.add_argument("--gate-workflow-path", required=True)
+    observe.add_argument("--gate-run-id", type=int, required=True)
+    observe.add_argument("--gate-run-attempt", type=int, required=True)
+    observe.add_argument("--gate-run-conclusion", required=True)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     policy = load_policy(args.policy)
-    validate_policy(ROOT, policy)
+    policy_root = args.policy.resolve().parent.parent
+    validate_policy(policy_root, policy)
     if args.command == "validate":
-        serving, _ = project_closure(ROOT, policy["roots"]["serving"], policy["global_projects"])
-        worker, _ = project_closure(ROOT, policy["roots"]["worker"], policy["global_projects"])
+        serving, _ = project_closure(
+            policy_root, policy["roots"]["serving"], policy["global_projects"]
+        )
+        worker, _ = project_closure(
+            policy_root, policy["roots"]["worker"], policy["global_projects"]
+        )
         print(
             f"native-image-impact=ok mode=observe serving_projects={len(serving)} "
             f"worker_projects={len(worker)}"
         )
         return 0
+    repo_root = args.repo_root.resolve()
+    identity = observation_identity(args)
     report = evaluate(
-        ROOT,
+        repo_root,
         policy,
-        changed_paths(ROOT, args.base, args.head),
+        changed_paths(repo_root, args.base, args.head),
         base_sha=args.base,
         head_sha=args.head,
         repository=args.repository,
         pull_request=args.pr,
+        **identity,
     )
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     args.markdown.write_text(markdown(report), encoding="utf-8")
