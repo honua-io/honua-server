@@ -6,6 +6,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
 
 
@@ -121,12 +122,116 @@ class NativeImageImpactTests(unittest.TestCase):
     def test_checked_in_policy_matches_authoritative_workflow_triggers(self) -> None:
         MODULE.validate_policy(ROOT, POLICY)
 
+    def test_observer_permissions_reject_semantic_write_variants(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "native-image-impact-observe.yml"
+        ).read_text(encoding="utf-8")
+        MODULE.validate_observer_permissions(workflow)
+        canonical = """permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+"""
+        unsafe = (
+            workflow.replace("  actions: read", '  actions: "write" # required', 1),
+            workflow.replace(canonical, "permissions: write-all\n", 1),
+            workflow.replace(
+                "  observe:\n    name:",
+                "  observe:\n    permissions:\n      contents: write\n    name:",
+                1,
+            ),
+        )
+        for source in unsafe:
+            with self.subTest(source=source[:100]), self.assertRaises(MODULE.PolicyError):
+                MODULE.validate_observer_permissions(source)
+
     def test_report_is_explicitly_non_mutating(self) -> None:
         result = report("src/Honua.Core/Models/Resource.cs")
         encoded = json.dumps(result)
         self.assertEqual(result["mode"], "observe")
         self.assertEqual(result["mutation"], "none")
         self.assertNotIn("cancel", encoded)
+
+    def test_changed_path_parser_is_nul_delimited_and_fail_closed(self) -> None:
+        self.assertEqual(
+            MODULE.parse_changed_path_output(b"docs/a.md\0src/App.cs\0"),
+            ["docs/a.md", "src/App.cs"],
+        )
+        unsafe = [
+            b"unterminated",
+            b"line\nbreak\0",
+            b"back\\slash\0",
+            b"../escape\0",
+            b"/absolute\0",
+            b"duplicate\0duplicate\0",
+            b"invalid-\xff\0",
+        ]
+        for raw in unsafe:
+            with self.subTest(raw=raw), self.assertRaises(MODULE.PolicyError):
+                MODULE.parse_changed_path_output(raw)
+
+    def test_trusted_identity_is_bound_to_v2_report(self) -> None:
+        result = MODULE.evaluate(
+            ROOT,
+            POLICY,
+            ["docs/internal/ci/observer.md"],
+            base_sha="a" * 40,
+            head_sha="b" * 40,
+            repository="honua-io/honua-server",
+            pull_request=3204,
+            policy_sha="c" * 40,
+            policy_blob_sha="d" * 40,
+            routing_policy_blob_sha="e" * 40,
+            resolver_blob_sha="f" * 40,
+            observer_workflow_blob_sha="1" * 40,
+            policy_inputs_sha256="2" * 64,
+            trusted_execution=MODULE.TRUSTED_EXECUTION,
+            gate_workflow_path=".github/workflows/pr-gate.yml",
+            gate_run_id=123,
+            gate_run_attempt=2,
+            gate_run_conclusion="success",
+        )
+        self.assertEqual(result["schema"], "honua.ci.native-image-impact-observation/v2")
+        self.assertEqual(result["gate_run_head_sha"], "b" * 40)
+        self.assertEqual(result["policy_sha"], "c" * 40)
+        self.assertEqual(result["routing_policy_blob_sha"], "e" * 40)
+        self.assertEqual(result["policy_inputs_sha256"], "2" * 64)
+        self.assertEqual(len(result["changed_paths_sha256"]), 64)
+
+    def test_observation_identity_requires_complete_content_addressing(self) -> None:
+        args = Namespace(
+            base="a" * 40,
+            head="b" * 40,
+            repository="honua-io/honua-server",
+            pr=3204,
+            policy_sha="c" * 40,
+            policy_blob_sha="d" * 40,
+            routing_policy_blob_sha="e" * 40,
+            resolver_blob_sha="f" * 40,
+            observer_workflow_blob_sha="1" * 40,
+            policy_inputs_sha256="2" * 64,
+            trusted_execution=MODULE.TRUSTED_EXECUTION,
+            gate_workflow_path=".github/workflows/pr-gate.yml",
+            gate_run_id=123,
+            gate_run_attempt=2,
+            gate_run_conclusion="success",
+        )
+        identity = MODULE.observation_identity(args)
+        self.assertEqual(identity["observer_workflow_blob_sha"], "1" * 40)
+        self.assertEqual(identity["policy_inputs_sha256"], "2" * 64)
+
+        for attribute, invalid in (
+            ("routing_policy_blob_sha", "short"),
+            ("policy_inputs_sha256", "short"),
+            ("trusted_execution", "candidate-controlled"),
+            ("gate_run_conclusion", "in_progress"),
+        ):
+            original = getattr(args, attribute)
+            setattr(args, attribute, invalid)
+            with self.subTest(attribute=attribute), self.assertRaises(MODULE.PolicyError):
+                MODULE.observation_identity(args)
+            setattr(args, attribute, original)
 
 
 if __name__ == "__main__":

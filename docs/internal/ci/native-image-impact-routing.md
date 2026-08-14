@@ -19,11 +19,21 @@ verification policy, and these independently measured risk classes:
 - worker managed graph and native root filesystem;
 - worker vulnerability policy.
 
-Every PR receives a small `honua.ci.native-image-impact-observation/v1`
-artifact comparing the candidate decision with the current workflow triggers.
-The artifact is bound to base/head SHAs and includes the exact project lists,
-graph fingerprints, changed paths, matched reasons, and `mutation: none`.
-Neither expensive image workflow reads it.
+Every completed canonical PR Gate triggers a trusted default-branch observer.
+It checks out the exact PR tree only as inert data, executes selector code from
+the observer policy SHA, and emits a
+`honua.ci.native-image-impact-observation/v2` artifact comparing the candidate
+decision with the current workflow triggers. The resolver obtains the immutable
+gate-time PR base/head association from the exact GitHub Actions job's
+GitHub-managed check run; it never reconstructs the base from the mutable
+current PR. Fork heads are explicitly excluded from the observation denominator
+and retain the full authoritative image workflows. Missing or ambiguous
+same-repository associations fail closed and do not count. The artifact binds
+the canonical gate run, trusted policy commit, individual Git blob IDs for the
+selector, routing policy, resolver, and observer workflow, a digest over that
+fixed input manifest, base/head SHAs, exact project lists, graph fingerprints,
+normalized changed-path digest, matched reasons, and `mutation: none`. Neither
+expensive image workflow reads it.
 
 ## Promotion and rollback
 
