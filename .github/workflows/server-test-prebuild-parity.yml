@@ -112,6 +112,8 @@ jobs:
               unavailable('observer-workflow-identity-mismatch');
               return;
             }
+            const repositoryResponse = await github.rest.repos.get({ ...context.repo });
+            const defaultBranch = repositoryResponse.data.default_branch;
             const runsResponse = await github.request(
               'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
               { ...context.repo, workflow_id: workflowResponse.data.id, status: 'completed', per_page: 100 },
@@ -120,7 +122,8 @@ jobs:
             const candidates = runsResponse.data.workflow_runs
               .filter((run) => run.path === '.github/workflows/server-test-prebuild-observe.yml'
                 && run.display_title === title && run.conclusion === 'success'
-                && ['pull_request_target', 'workflow_dispatch'].includes(run.event))
+                && (run.event === 'pull_request_target'
+                  || (run.event === 'workflow_dispatch' && run.head_branch === defaultBranch)))
               .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
             let selected = null;
             let artifactName = '';
@@ -176,7 +179,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: policy
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - id: policy
         name: Bind trusted verifier policy
@@ -215,6 +218,10 @@ jobs:
              (.observation.policy_sha | type == "string" and test("^[0-9a-f]{40}$"))' \
             "${plan}"
           echo "producer_policy_sha=$(jq -r '.observation.policy_sha' "${plan}")" >> "${GITHUB_OUTPUT}"
+          producer_policy_sha="$(jq -r '.observation.policy_sha' "${plan}")"
+          git -C policy cat-file -e "${producer_policy_sha}^{commit}"
+          git -C policy merge-base --is-ancestor \
+            "${producer_policy_sha}" '${{ steps.policy.outputs.sha }}'
 
       - id: parity
         name: Plan bounded independent and candidate selections
@@ -261,13 +268,15 @@ jobs:
     steps:
       - id: timing
         run: echo "job_start_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout trusted verifier policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.plan.outputs.verifier_policy_sha }}
           path: policy
           persist-credentials: false
           fetch-depth: 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout raw exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.repository }}
           ref: ${{ needs.plan.outputs.head_sha }}
@@ -326,13 +335,15 @@ jobs:
     steps:
       - id: timing
         run: echo "job_start_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout trusted verifier policy with producer history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.plan.outputs.verifier_policy_sha }}
           path: policy
           persist-credentials: false
-          fetch-depth: 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+          fetch-depth: 0
+      - name: Checkout raw exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.repository }}
           ref: ${{ needs.plan.outputs.head_sha }}
@@ -419,7 +430,8 @@ jobs:
       needs.plan.outputs.has_candidates == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout trusted verifier policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.plan.outputs.verifier_policy_sha }}
           path: policy
