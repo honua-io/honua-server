@@ -68,11 +68,14 @@ cohort is representative rather than accepting a burst of updates to one PR.
 Workflow-run discovery divides the rolling window into 24-hour ranges, combines
 and deduplicates their results, and fails closed if any partition reaches 1,000
 runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
-`created` filter. Artifact discovery reads one paginated repository artifact
-catalog and joins artifacts to those trusted run IDs locally; it never makes one
-artifact-list request per run. The promotion policy caps the worst case at 300
-run-query pages, 200 repository-artifact pages, and 300 receipt downloads: 800
-requests with 200 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
+`created` filter. Every observation uses the stable exact artifact name
+`review-first-observation-v1`, so artifact discovery can ask GitHub for only that
+name rather than scanning the repository's unrelated artifacts. It reads one
+paginated repository artifact catalog and joins artifacts to trusted run IDs
+locally; it never makes one artifact-list request per run. The promotion policy
+caps the worst case at 300 run-query pages, three repository-artifact pages, and
+300 receipt downloads: 603 requests under a 650-request policy ceiling, with at
+least 350 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
 repository per hour. Every page must report the same total, IDs must be unique,
 the complete count must fit the page bound, and the selected receipt count must
 fit the download bound. Any inconsistency or exhausted bound fails closed.
@@ -100,10 +103,11 @@ the singular combined-status response is not historical evidence.
   no checkout credential, and executes no PR-authored code. That SHA identifies
   the trusted default-branch workflow policy for the event. It has no manual
   dispatch path that can select a PR ref.
-- Observation artifacts are evidence, not authority. Their producer workflow,
-  run, attempt, event, artifact name, PR/head identity, policy digest, bounded
-  snapshot, and replayed decision must all agree. Malformed or contradictory
-  evidence fails the ledger's integrity gate and can never recommend promotion.
+- Observation artifacts are evidence, not authority. Their stable artifact name,
+  producer workflow, run, attempt, event, producer policy SHA, receipt PR/head
+  identity, policy digest, bounded snapshot, and replayed decision must all
+  agree. Malformed or contradictory evidence fails the ledger's integrity gate
+  and can never recommend promotion.
 - Exact-head review, unresolved threads, draft/hold/escalation state, pagination,
   workflow identity, event type, head SHA, PR association, run identity, run
   attempt, admission receipt, wait receipt, and skipped expensive steps all fail

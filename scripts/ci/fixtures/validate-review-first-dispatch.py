@@ -158,6 +158,11 @@ def main() -> None:
     )
     require(
         review_gate,
+        "name: review-first-observation-v1",
+        "trusted observations need one server-filterable artifact name",
+    )
+    require(
+        review_gate,
         "retention-days: 30",
         "review observation retention must match the promotion policy window",
     )
@@ -286,6 +291,11 @@ def main() -> None:
     )
     require(
         evidence_ledger,
+        "-f name=review-first-observation-v1",
+        "repository artifact discovery must filter at the server",
+    )
+    require(
+        evidence_ledger,
         "maximum_artifact_catalog_pages",
         "artifact discovery must enforce its catalog-page budget",
     )
@@ -346,7 +356,7 @@ def main() -> None:
     )
     require(
         promotion_policy,
-        '"maximum_artifact_catalog_pages": 200',
+        '"maximum_artifact_catalog_pages": 3',
         "repository artifact discovery must remain bounded",
     )
     require(
@@ -356,7 +366,7 @@ def main() -> None:
     )
     require(
         promotion_policy,
-        '"maximum_github_api_requests": 800',
+        '"maximum_github_api_requests": 650',
         "ledger API use must preserve GITHUB_TOKEN headroom",
     )
     require(

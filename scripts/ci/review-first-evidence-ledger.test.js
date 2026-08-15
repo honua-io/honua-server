@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const {
   INDEX_CONTRACT,
+  OBSERVATION_ARTIFACT_NAME,
   POLICY_CONTRACT,
   QUERY_PARTITIONS_CONTRACT,
   REVIEW_GATE_WORKFLOW,
@@ -32,9 +33,9 @@ function policy(overrides = {}) {
     receipt_retention_days: 30,
     query_partition_hours: 24,
     maximum_runs_per_partition: 999,
-    maximum_artifact_catalog_pages: 200,
+    maximum_artifact_catalog_pages: 3,
     maximum_receipt_downloads: 300,
-    maximum_github_api_requests: 800,
+    maximum_github_api_requests: 650,
     minimum_countable_heads: 2,
     require_zero_integrity_failures: true,
     ...overrides,
@@ -106,15 +107,13 @@ function observation(overrides = {}) {
 function indexEntry(receipt, artifactId = 400) {
   return {
     artifact_id: artifactId,
-    artifact_name: `review-first-observation-${receipt.pull_request}-${receipt.head_sha}` +
-      `-review-run-${receipt.producer.run_id}-attempt-${receipt.producer.run_attempt}`,
+    artifact_name: OBSERVATION_ARTIFACT_NAME,
     artifact_created_at: receipt.observed_at,
     artifact_size_bytes: 1024,
-    pull_request: receipt.pull_request,
-    head_sha: receipt.head_sha,
     producer_run_id: receipt.producer.run_id,
     producer_run_attempt: receipt.producer.run_attempt,
     producer_event: receipt.producer.event,
+    producer_head_sha: receipt.policy_sha,
     producer_created_at: '2026-08-14T08:10:30Z',
     producer_completed_at: '2026-08-14T08:12:00Z',
     producer_url: `https://github.example/actions/runs/${receipt.producer.run_id}`,
@@ -134,13 +133,13 @@ function index(entries) {
 test('retention starts at observer rollout until the rolling window overtakes it', () => {
   const initial = retentionWindow(policy(), new Date('2026-08-15T00:00:00Z'));
   assert.equal(initial.receiptRetentionDays, 30);
-  assert.equal(initial.maximumArtifactCatalogPages, 200);
+  assert.equal(initial.maximumArtifactCatalogPages, 3);
   assert.equal(initial.maximumReceiptDownloads, 300);
-  assert.equal(initial.maximumGithubApiRequests, 800);
+  assert.equal(initial.maximumGithubApiRequests, 650);
   assert.deepEqual(initial.queryPartitions.api_budget, {
-    maximum_artifact_catalog_pages: 200,
+    maximum_artifact_catalog_pages: 3,
     maximum_receipt_downloads: 300,
-    maximum_github_api_requests: 800,
+    maximum_github_api_requests: 650,
   });
   assert.equal(initial.runCreatedAfter, '2026-08-14T07:45:26Z');
   assert.equal(initial.runCreatedFilter, '>=2026-08-14T07:45:26Z');
@@ -164,7 +163,7 @@ test('invalid policy bounds fail closed', () => {
     /search cap/);
   assert.throws(() => loadPolicy(policy({ maximum_github_api_requests: 801 })),
     /token headroom/);
-  assert.throws(() => loadPolicy(policy({ maximum_receipt_downloads: 301 })),
+  assert.throws(() => loadPolicy(policy({ maximum_receipt_downloads: 348 })),
     /request budget/);
 });
 
@@ -217,6 +216,19 @@ test('trusted observation replays the production observe decision', () => {
   assert.equal(receipt.mutation, 'none');
   assert.equal(receipt.review.final_review_state_revalidated, true);
   assert.equal(receipt.admission.final_state_revalidated, true);
+});
+
+test('receipt policy identity must match its trusted producer workflow head', () => {
+  const receipt = observation();
+  const entry = { ...indexEntry(receipt), producer_head_sha: 'e'.repeat(40) };
+  const ledger = summarizeReceipts({
+    index: index([entry]),
+    receiptsByArtifact: new Map([[entry.artifact_id, receipt]]),
+    policy: policy(),
+    currentPolicyDigest: policyDigest,
+  });
+  assert.equal(ledger.gates.integrity_clean, false);
+  assert.match(ledger.integrity_failures[0].reason, /producer workflow head/);
 });
 
 test('observation requires final review and admission revalidation', () => {
@@ -348,7 +360,7 @@ test('discovery proves pagination and selects one exact receipt artifact', () =>
   };
   const receiptArtifact = {
     id: 400,
-    name: `review-first-observation-${prNumber}-${head}-review-run-300-attempt-1`,
+    name: OBSERVATION_ARTIFACT_NAME,
     expired: false,
     size_in_bytes: 1024,
     created_at: '2026-08-14T08:11:30Z',
@@ -356,7 +368,7 @@ test('discovery proves pagination and selects one exact receipt artifact', () =>
   };
   const unrelatedArtifact = {
     id: 401,
-    name: 'unrelated-artifact',
+    name: OBSERVATION_ARTIFACT_NAME,
     expired: false,
     size_in_bytes: 1024,
     created_at: '2026-08-14T08:11:30Z',

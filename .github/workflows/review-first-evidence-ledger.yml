@@ -115,6 +115,7 @@ jobs:
           while (( page <= maximum_pages )); do
             page_file="$(printf 'evidence/artifact-query-pages/%03d.json' "${page}")"
             gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+              -f name=review-first-observation-v1 \
               -F per_page=100 \
               -F page="${page}" \
               > "${page_file}"

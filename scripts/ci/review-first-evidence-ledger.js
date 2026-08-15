@@ -9,7 +9,7 @@ const {
   evaluateReviewFirstDispatch,
 } = require('./review-first-dispatch');
 
-const ARTIFACT_PATTERN = /^review-first-observation-(?<pr>[1-9][0-9]*)-(?<head>[0-9a-f]{40})-review-run-(?<run>[1-9][0-9]*)-attempt-(?<attempt>[1-9][0-9]*)$/;
+const OBSERVATION_ARTIFACT_NAME = 'review-first-observation-v1';
 const INDEX_CONTRACT = 'honua.review-first-evidence-index/v1';
 const LEDGER_CONTRACT = 'honua.review-first-evidence-ledger/v1';
 const OBSERVATION_CONTRACT = 'honua.review-first-observation/v1';
@@ -460,12 +460,8 @@ function discover(runsPayload, catalogPayload, cutoff) {
       integrityFailures.push({ producer_run_id: runId, reason: 'producer workflow run is invalid' });
       continue;
     }
-    const matches = (artifactsByRun.get(runId) ?? []).filter(artifact => {
-      if (!artifact || artifact.expired !== false || typeof artifact.name !== 'string') return false;
-      const match = ARTIFACT_PATTERN.exec(artifact.name);
-      return match && Number(match.groups.run) === runId &&
-        Number(match.groups.attempt) === Number(rawRun.run_attempt);
-    });
+    const matches = (artifactsByRun.get(runId) ?? []).filter(artifact =>
+      artifact?.expired === false && artifact.name === OBSERVATION_ARTIFACT_NAME);
     if (matches.length === 0) {
       exclusions.push({ producer_run_id: runId, reason: 'observation-receipt-not-emitted' });
       continue;
@@ -475,7 +471,6 @@ function discover(runsPayload, catalogPayload, cutoff) {
       continue;
     }
     const artifact = matches[0];
-    const match = ARTIFACT_PATTERN.exec(artifact.name);
     try {
       positiveInteger(Number(artifact.id), 'artifact id');
       if (!Number.isInteger(artifact.size_in_bytes) || artifact.size_in_bytes <= 0 ||
@@ -503,11 +498,10 @@ function discover(runsPayload, catalogPayload, cutoff) {
       artifact_name: artifact.name,
       artifact_created_at: artifact.created_at,
       artifact_size_bytes: artifact.size_in_bytes,
-      pull_request: Number(match.groups.pr),
-      head_sha: match.groups.head,
       producer_run_id: runId,
       producer_run_attempt: Number(rawRun.run_attempt),
       producer_event: rawRun.event,
+      producer_head_sha: rawRun.head_sha,
       producer_created_at: rawRun.created_at,
       producer_completed_at: rawRun.updated_at,
       producer_url: rawRun.html_url,
@@ -538,14 +532,13 @@ function validateIndex(indexValue) {
       const producerRunAttempt = positiveInteger(
         Number(value.producer_run_attempt),
         `evidence index artifact ${itemIndex} producer attempt`);
-      const match = ARTIFACT_PATTERN.exec(String(value.artifact_name ?? ''));
-      if (!match || Number(match.groups.run) !== producerRunId ||
-          Number(match.groups.attempt) !== producerRunAttempt) {
-        throw new Error(`evidence index artifact ${itemIndex} name is invalid`);
-      }
-      if (Number(match.groups.pr) !== Number(value.pull_request) ||
-          match.groups.head !== value.head_sha) {
-        throw new Error(`evidence index artifact ${itemIndex} identity is inconsistent`);
+      exactString(value.artifact_name, OBSERVATION_ARTIFACT_NAME,
+        `evidence index artifact ${itemIndex} name`);
+      const artifactCreatedAt = timestamp(
+        value.artifact_created_at, `evidence index artifact ${itemIndex} creation time`);
+      if (!Number.isSafeInteger(value.artifact_size_bytes) ||
+          value.artifact_size_bytes <= 0 || value.artifact_size_bytes > MAX_ARCHIVE_BYTES) {
+        throw new Error(`evidence index artifact ${itemIndex} size is invalid`);
       }
       if (!ALLOWED_REVIEW_GATE_EVENTS.has(value.producer_event)) {
         throw new Error(`evidence index artifact ${itemIndex} event is invalid`);
@@ -557,11 +550,11 @@ function validateIndex(indexValue) {
       return {
         ...value,
         artifact_id: artifactId,
+        artifact_created_at: artifactCreatedAt,
         producer_run_id: producerRunId,
         producer_run_attempt: producerRunAttempt,
-        pull_request: positiveInteger(
-          Number(value.pull_request), `evidence index artifact ${itemIndex} pull request`),
-        head_sha: sha(value.head_sha, `evidence index artifact ${itemIndex} head`),
+        producer_head_sha: sha(
+          value.producer_head_sha, `evidence index artifact ${itemIndex} producer head`),
       };
     });
   if (new Set(index.artifacts.map(entry => entry.artifact_id)).size !== index.artifacts.length) {
@@ -634,8 +627,11 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
   timestamp(receipt.observed_at, 'observation time');
   positiveInteger(receipt.pull_request, 'observation pull request');
   sha(receipt.head_sha, 'observation head');
-  if (receipt.pull_request !== entry.pull_request || receipt.head_sha !== entry.head_sha) {
-    throw new Error('observation identity does not match artifact name');
+  if (receipt.policy_sha !== entry.producer_head_sha) {
+    throw new Error('observation policy does not match producer workflow head');
+  }
+  if (Date.parse(receipt.observed_at) > Date.parse(entry.artifact_created_at)) {
+    throw new Error('observation was recorded after its artifact was created');
   }
   const producer = requireObject(receipt.producer, 'observation producer');
   exactString(producer.workflow_name, REVIEW_GATE_WORKFLOW_NAME, 'producer workflow name');
@@ -935,7 +931,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  ARTIFACT_PATTERN,
+  OBSERVATION_ARTIFACT_NAME,
   INDEX_CONTRACT,
   LEDGER_CONTRACT,
   OBSERVATION_CONTRACT,

@@ -351,10 +351,6 @@ jobs:
                 `${JSON.stringify(observation, null, 2)}\n`,
                 'utf8');
               core.setOutput('receipt_present', 'true');
-              core.setOutput(
-                'receipt_name',
-                `review-first-observation-${prNumber}-${head}` +
-                  `-review-run-${producerRunId}-attempt-${producerRunAttempt}`);
               return;
             }
 
@@ -383,7 +379,7 @@ jobs:
         if: always() && steps.attest.outputs.receipt_present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ steps.attest.outputs.receipt_name }}
+          name: review-first-observation-v1
           path: review-first-evidence/review-first-observation.json
           retention-days: 30
           if-no-files-found: error
