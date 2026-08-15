@@ -46,7 +46,8 @@ Ledger selects only the producer's current attempt and rejects missing or
 ambiguous artifacts, policy-input drift, duplicate
 head identities, and missing receipts. It queries the authoritative Serving
 Image Boundary and GDAL Worker Image histories and counts an impacted or narrowed
-head only when every required exact-head image run completed successfully.
+head only when every required image run for the receipt's exact PR, base SHA,
+and head SHA completed successfully.
 Successful observer shells are never evidence by themselves.
 
 The ledger also requires positive impacted cohorts and actual narrowed/avoided

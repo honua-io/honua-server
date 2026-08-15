@@ -535,7 +535,7 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         raise ValueError("native-image policy manifest digest is not current")
     pull_request = positive_int(value.get("pull_request"), "native-image pull request")
     head = exact_sha(value.get("head_sha"), "native-image head")
-    exact_sha(value.get("base_sha"), "native-image base")
+    base = exact_sha(value.get("base_sha"), "native-image base")
     paths = value.get("changed_paths")
     if not isinstance(paths, list) or not paths or not all(isinstance(item, str) for item in paths):
         raise ValueError("native-image changed paths are invalid")
@@ -597,6 +597,7 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     return {
         "stream": NATIVE_STREAM,
         "pull_request": pull_request,
+        "base_sha": base,
         "head_sha": head,
         "gate_conclusion": value["gate_run_conclusion"],
         "legacy_serving": legacy_serving,
@@ -612,18 +613,40 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     }
 
 
-def _image_outcome(runs: list[dict[str, Any]], head: str, workflow: str) -> dict[str, Any]:
-    matches = [
+def _image_outcome(
+    runs: list[dict[str, Any]], observation: dict[str, Any], workflow: str
+) -> dict[str, Any]:
+    same_head = [
         run for run in runs
-        if run.get("head_sha") == head
+        if run.get("head_sha") == observation["head_sha"]
         and run.get("path") == workflow
         and run.get("event") == "pull_request"
     ]
+    matches = []
+    rejected_ids = []
+    for run in same_head:
+        pulls = run.get("pull_requests")
+        associations = pulls if isinstance(pulls, list) else []
+        identity_matches = [
+            pull
+            for pull in associations
+            if isinstance(pull, dict)
+            and pull.get("number") == observation["pull_request"]
+            and isinstance(pull.get("base"), dict)
+            and pull["base"].get("sha") == observation["base_sha"]
+            and isinstance(pull.get("head"), dict)
+            and pull["head"].get("sha") == observation["head_sha"]
+        ]
+        if len(associations) == 1 and len(identity_matches) == 1:
+            matches.append(run)
+        elif isinstance(run.get("id"), int):
+            rejected_ids.append(run["id"])
     success = [run for run in matches if run.get("status") == "completed" and run.get("conclusion") == "success"]
     return {
         "success": bool(success),
         "run_ids": sorted(run.get("id") for run in matches if isinstance(run.get("id"), int)),
         "conclusions": sorted({str(run.get("conclusion")) for run in matches}),
+        "identity_mismatch_run_ids": sorted(rejected_ids),
     }
 
 
@@ -691,8 +714,8 @@ def summarize(
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
-        serving = _image_outcome(serving_catalog, item["head_sha"], SERVING_WORKFLOW)
-        worker = _image_outcome(worker_catalog, item["head_sha"], WORKER_WORKFLOW)
+        serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW)
+        worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW)
         serving_required = item["legacy_serving"] or item["candidate_serving"]
         worker_required = item["legacy_worker"] or item["candidate_worker"]
         missing: list[str] = []

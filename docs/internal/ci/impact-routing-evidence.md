@@ -35,7 +35,10 @@ established under superseded trust logic. Native receipts additionally bind the
 authoritative Serving Image Boundary workflow and record its replayed
 per-variant decision. Serving narrowing is the strict difference between that
 legacy variant count and the candidate variant count; reproducing an existing
-Lambda-only, Functions-only, or generic-only selection does not count.
+Lambda-only, Functions-only, or generic-only selection does not count. An image
+outcome is authoritative only when its GitHub-managed workflow association
+matches the receipt's PR number, base SHA, and head SHA; an earlier run for a
+reopened same-head PR cannot satisfy a later-base observation.
 
 Observer receipts use a seven-day rolling retention window. At current activity
 that keeps per-run catalog discovery and downloads below the repository token's

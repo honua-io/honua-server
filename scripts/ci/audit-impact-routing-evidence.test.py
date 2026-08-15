@@ -218,7 +218,14 @@ def archive(root: Path, artifact_id: int, stream: str, receipt: dict, *, unsafe:
             value.writestr(MODULE.NATIVE_SUMMARY, "# observation\n")
 
 
-def image_run(run_id: int, workflow: str, head: str, conclusion: str = "success") -> dict:
+def image_run(
+    run_id: int,
+    workflow: str,
+    head: str,
+    pr: int,
+    conclusion: str = "success",
+    base: str = BASE,
+) -> dict:
     return {
         "id": run_id,
         "run_attempt": 1,
@@ -229,6 +236,13 @@ def image_run(run_id: int, workflow: str, head: str, conclusion: str = "success"
         "head_sha": head,
         "created_at": "2026-08-16T00:00:00Z",
         "updated_at": "2026-08-16T00:02:00Z",
+        "pull_requests": [
+            {
+                "number": pr,
+                "base": {"sha": base},
+                "head": {"sha": head},
+            }
+        ],
     }
 
 
@@ -358,13 +372,13 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             ),
         )
         serving = [
-            image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B),
-            image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C),
-            image_run(205, MODULE.SERVING_WORKFLOW, HEAD_D),
+            image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11),
+            image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 12),
+            image_run(205, MODULE.SERVING_WORKFLOW, HEAD_D, 13),
         ]
         worker = [
-            image_run(203, MODULE.WORKER_WORKFLOW, HEAD_B),
-            image_run(204, MODULE.WORKER_WORKFLOW, HEAD_C),
+            image_run(203, MODULE.WORKER_WORKFLOW, HEAD_B, 11),
+            image_run(204, MODULE.WORKER_WORKFLOW, HEAD_C, 12),
         ]
         pages(root / "serving", "workflow_runs", serving)
         pages(root / "worker", "workflow_runs", worker)
@@ -392,6 +406,28 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert ledger["counts"]["worker_avoided_heads"] == 1
         assert all(ledger["gates"].values())
 
+        stale_serving = [
+            image_run(207, MODULE.SERVING_WORKFLOW, HEAD_B, 11, base="f" * 40),
+            image_run(208, MODULE.SERVING_WORKFLOW, HEAD_B, 99),
+            serving[1],
+            serving[2],
+        ]
+        pages(root / "serving", "workflow_runs", stale_serving)
+        stale = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert stale["recommendation"] == "observe-more"
+        assert stale["counts"]["authoritative_image_outcome_failures"] == 1
+        assert stale["image_outcome_failures"][0]["serving"][
+            "identity_mismatch_run_ids"
+        ] == [207, 208]
+
+        pages(root / "serving", "workflow_runs", serving)
         pages(root / "worker", "workflow_runs", [worker[0]])
         missing = MODULE.summarize(
             index,
