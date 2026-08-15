@@ -8,23 +8,28 @@ policy, or without retaining a uniquely discoverable receipt. The Impact Routing
 Evidence Ledger makes the denominator explicit for the docs-only PR Gate and
 native-image routing experiments.
 
-## Stable receipt boundary
+## Attempt-bound receipt boundary
 
-The trusted default-branch observers publish one constant artifact name per run:
+The trusted default-branch observers publish one attempt-qualified artifact per
+run:
 
-- `pr-gate-impact-docs-only-v3` for the countable candidate cohort and
-  `pr-gate-impact-full-v3` for noncandidate diagnostics;
-- `native-image-impact-observation-v2`.
+- `pr-gate-impact-docs-only-v3-attempt-<n>` for the countable candidate cohort
+  and `pr-gate-impact-full-v3-attempt-<n>` for noncandidate diagnostics;
+- `native-image-impact-observation-v2-attempt-<n>`.
 
-Identity belongs inside the validated receipt, not in an artifact-name prefix.
-This allows GitHub's exact artifact-name filter to bound discovery even though
-the repository has tens of thousands of retained artifacts. The ledger rejects
-missing, duplicate, expired, oversized, unsafe-archive, wrong-workflow,
-wrong-policy, and cross-head evidence. It deduplicates retries by full head SHA
-and never counts a head associated with more than one pull request.
+The ledger first discovers a bounded set of trusted producer runs, then reads
+each run's artifact catalog and selects only the name whose attempt equals the
+run's current `run_attempt`. Retained artifacts from earlier rerun attempts can
+therefore neither poison nor satisfy the cohort. The catalog count shares the
+same hard budget as receipt downloads, keeping the workflow below the
+repository token limit even though the repository has tens of thousands of
+artifacts. The ledger rejects missing, duplicate, expired, oversized,
+unsafe-archive, wrong-workflow, wrong-policy, and cross-head evidence. It
+deduplicates successful observations by full head SHA and never counts a head
+associated with more than one pull request.
 
 Observer receipts use a seven-day rolling retention window. At current activity
-that keeps exact-name discovery and downloads below the repository token's
+that keeps per-run catalog discovery and downloads below the repository token's
 bounded request budget while requiring the positive/narrowed cohorts to reflect
 the current workload rather than stale historical examples.
 

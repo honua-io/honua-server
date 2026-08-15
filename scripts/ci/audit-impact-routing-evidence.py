@@ -28,8 +28,12 @@ PR_GATE_WORKFLOW = ".github/workflows/pr-gate-impact-observe.yml"
 NATIVE_WORKFLOW = ".github/workflows/native-image-impact-observe.yml"
 SERVING_WORKFLOW = ".github/workflows/serving-image-boundary.yml"
 WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
-PR_GATE_ARTIFACT = "pr-gate-impact-docs-only-v3"
-NATIVE_ARTIFACT = "native-image-impact-observation-v2"
+PR_GATE_ARTIFACT = re.compile(
+    r"^pr-gate-impact-docs-only-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
+NATIVE_ARTIFACT = re.compile(
+    r"^native-image-impact-observation-v2-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
 PR_GATE_RECEIPT = "pr-gate-impact-observation.json"
 NATIVE_RECEIPT = "native-image-impact-observation.json"
 NATIVE_SUMMARY = "native-image-impact-summary.md"
@@ -222,12 +226,52 @@ def _valid_observer_run(run: dict[str, Any], workflow: str, cutoff: datetime) ->
     )
 
 
+def flatten_artifact_catalogs(root: Path) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    identifiers: set[int] = set()
+    for path in sorted(root.glob("*.json")):
+        if not path.stem.isdigit() or int(path.stem) <= 0:
+            raise ValueError("artifact catalog filename is invalid")
+        run_id = int(path.stem)
+        page = load_json(path)
+        if not isinstance(page, dict):
+            raise ValueError("artifact catalog is invalid")
+        values = page.get("artifacts")
+        total = page.get("total_count")
+        if (
+            isinstance(total, bool)
+            or not isinstance(total, int)
+            or total < 0
+            or not isinstance(values, list)
+            or len(values) != total
+            or total > 100
+        ):
+            raise ValueError("artifact catalog is truncated")
+        for artifact in values:
+            if not isinstance(artifact, dict):
+                raise ValueError("artifact catalog item is invalid")
+            producer = artifact.get("workflow_run")
+            if not isinstance(producer, dict) or producer.get("id") != run_id:
+                raise ValueError("artifact catalog producer identity is invalid")
+            artifact_id = artifact.get("id")
+            if (
+                isinstance(artifact_id, bool)
+                or not isinstance(artifact_id, int)
+                or artifact_id <= 0
+                or artifact_id in identifiers
+            ):
+                raise ValueError("artifact catalog identity is invalid")
+            identifiers.add(artifact_id)
+            items.append(artifact)
+    return items
+
+
 def _discover_stream(
     stream: str,
     runs: list[dict[str, Any]],
     artifacts: list[dict[str, Any]],
     workflow: str,
-    artifact_name: str,
+    artifact_pattern: re.Pattern[str],
     cutoff: datetime,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     entries: list[dict[str, Any]] = []
@@ -258,12 +302,16 @@ def _discover_stream(
                 "reason": f"observer-run-{run['conclusion']}",
             })
             continue
-        matches = [
-            artifact for artifact in by_run.get(run_id, [])
-            if artifact.get("name") == artifact_name
-            and artifact.get("expired") is False
-            and parse_time(artifact.get("created_at"), "artifact creation") >= cutoff
-        ]
+        matches = []
+        for artifact in by_run.get(run_id, []):
+            match = artifact_pattern.fullmatch(str(artifact.get("name", "")))
+            if (
+                match
+                and int(match.group("attempt")) == run["run_attempt"]
+                and artifact.get("expired") is False
+                and parse_time(artifact.get("created_at"), "artifact creation") >= cutoff
+            ):
+                matches.append(artifact)
         if not matches:
             exclusions.append({
                 "stream": stream,
@@ -297,7 +345,7 @@ def _discover_stream(
         entries.append({
             "stream": stream,
             "artifact_id": artifact_id,
-            "artifact_name": artifact_name,
+            "artifact_name": artifact["name"],
             "artifact_created_at": artifact["created_at"],
             "artifact_size_bytes": size,
             "producer_run_id": run_id,
@@ -310,7 +358,7 @@ def _discover_stream(
         })
     for run_id, values in by_run.items():
         if run_id not in seen_runs and any(
-            item.get("name") == artifact_name
+            artifact_pattern.fullmatch(str(item.get("name", "")))
             and parse_time(item.get("created_at"), "artifact creation") >= cutoff
             for item in values
         ):
@@ -339,13 +387,13 @@ def discover(
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    for stream, runs_root, artifacts_root, workflow, artifact_name in streams:
+    for stream, runs_root, artifacts_root, workflow, artifact_pattern in streams:
         found, omitted, invalid = _discover_stream(
             stream,
             flatten_pages(runs_root, "workflow_runs"),
-            flatten_pages(artifacts_root, "artifacts"),
+            flatten_artifact_catalogs(artifacts_root),
             workflow,
-            artifact_name,
+            artifact_pattern,
             cutoff,
         )
         entries.extend(found)
@@ -407,7 +455,11 @@ def _entry_identity(entry: dict[str, Any], expected_stream: str) -> None:
         raise ValueError("receipt stream differs from index")
     positive_int(entry.get("artifact_id"), "index artifact id")
     positive_int(entry.get("producer_run_id"), "producer run id")
-    positive_int(entry.get("producer_run_attempt"), "producer run attempt")
+    attempt = positive_int(entry.get("producer_run_attempt"), "producer run attempt")
+    pattern = PR_GATE_ARTIFACT if expected_stream == PR_GATE_STREAM else NATIVE_ARTIFACT
+    artifact_match = pattern.fullmatch(str(entry.get("artifact_name", "")))
+    if not artifact_match or int(artifact_match.group("attempt")) != attempt:
+        raise ValueError("index artifact name differs from producer attempt")
     exact_sha(entry.get("producer_head_sha"), "producer head")
     parse_time(entry.get("artifact_created_at"), "artifact creation")
 

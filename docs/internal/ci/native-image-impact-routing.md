@@ -22,8 +22,8 @@ verification policy, and these independently measured risk classes:
 Every completed canonical PR Gate triggers a trusted default-branch observer.
 It checks out the exact PR tree only as inert data, executes selector code from
 the observer policy SHA, and emits a
-`honua.ci.native-image-impact-observation/v2` receipt under the stable artifact
-name `native-image-impact-observation-v2`, comparing the candidate
+`honua.ci.native-image-impact-observation/v2` receipt under the attempt-bound
+artifact name `native-image-impact-observation-v2-attempt-<n>`, comparing the candidate
 decision with the current workflow triggers. The resolver obtains the immutable
 gate-time PR base/head association from the exact GitHub Actions job's
 GitHub-managed check run; it never reconstructs the base from the mutable
@@ -41,7 +41,8 @@ expensive image workflow reads it.
 Routing authority stays with the existing workflows until at least 20 distinct
 PR observations satisfy the machine-readable cohort policy in
 `.github/impact-routing-promotion.json`. The report-only Impact Routing Evidence
-Ledger rejects dynamic or ambiguous artifacts, policy-input drift, duplicate
+Ledger selects only the producer's current attempt and rejects missing or
+ambiguous artifacts, policy-input drift, duplicate
 head identities, and missing receipts. It queries the authoritative Serving
 Image Boundary and GDAL Worker Image histories and counts an impacted or narrowed
 head only when every required exact-head image run completed successfully.

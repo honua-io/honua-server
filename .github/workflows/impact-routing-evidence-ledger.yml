@@ -47,6 +47,7 @@ jobs:
           PRODUCER_RUN_CUTOFF: ${{ steps.policy.outputs.producer_run_cutoff }}
           IMAGE_RUN_CUTOFF: ${{ steps.policy.outputs.image_run_cutoff }}
           MAXIMUM_PAGES: ${{ steps.policy.outputs.maximum_pages_per_query }}
+          MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
         run: |
           set -euo pipefail
           mkdir -p evidence/runs/{pr-gate,native,serving,worker} \
@@ -102,14 +103,30 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/workflows/native-image-impact-observe.yml/runs" \
             workflow_runs evidence/runs/native \
             -f status=completed -f "created=${created_filter}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
-            artifacts evidence/artifacts/pr-gate \
-            -f name=pr-gate-impact-docs-only-v3
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
-            artifacts evidence/artifacts/native \
-            -f name=native-image-impact-observation-v2
+
+          {
+            jq -r '.workflow_runs[].id' evidence/runs/pr-gate/*.json
+            jq -r '.workflow_runs[].id' evidence/runs/native/*.json
+          } | sort -nu > evidence/producer-run-ids.txt
+          producer_count="$(wc -l < evidence/producer-run-ids.txt | tr -d '[:space:]')"
+          [[ "${producer_count}" =~ ^[0-9]+$ && "${MAXIMUM_CATALOGS}" =~ ^[1-9][0-9]*$ ]] || exit 1
+          if (( producer_count > MAXIMUM_CATALOGS )); then
+            echo "observer runs exceeded the bounded artifact-catalog budget" >&2
+            exit 1
+          fi
+
+          collect_run_artifacts() {
+            local run_root="$1"
+            local output_root="$2"
+            jq -r '.workflow_runs[].id' "${run_root}"/*.json | sort -nu \
+              | while read -r run_id; do
+                  [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
+                  gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                    > "${output_root}/${run_id}.json"
+                done
+          }
+          collect_run_artifacts evidence/runs/pr-gate evidence/artifacts/pr-gate
+          collect_run_artifacts evidence/runs/native evidence/artifacts/native
           image_created_filter=">=${IMAGE_RUN_CUTOFF}"
           collect_pages \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/serving-image-boundary.yml/runs" \
@@ -121,7 +138,7 @@ jobs:
             -f event=pull_request -f "created=${image_created_filter}"
 
       - id: discover
-        name: Select exact stable-name observation receipts
+        name: Select exact current-attempt observation receipts
         continue-on-error: true
         run: |
           python3 scripts/ci/audit-impact-routing-evidence.py discover \

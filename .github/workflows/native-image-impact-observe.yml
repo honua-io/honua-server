@@ -208,7 +208,7 @@ jobs:
       - name: Retain trusted observation evidence
         uses: actions/upload-artifact@v7
         with:
-          name: native-image-impact-observation-v2
+          name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}
           path: |
             native-image-impact-observation.json
             native-image-impact-summary.md

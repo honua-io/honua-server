@@ -45,10 +45,16 @@ def policy(**overrides: object) -> dict:
     return value
 
 
-def run(run_id: int, workflow: str, head: str = BASE, conclusion: str = "success") -> dict:
+def run(
+    run_id: int,
+    workflow: str,
+    head: str = BASE,
+    conclusion: str = "success",
+    attempt: int = 1,
+) -> dict:
     return {
         "id": run_id,
-        "run_attempt": 1,
+        "run_attempt": attempt,
         "event": "workflow_run",
         "status": "completed",
         "conclusion": conclusion,
@@ -71,6 +77,12 @@ def artifact(artifact_id: int, run_value: dict, name: str) -> dict:
     }
 
 
+def artifact_name(stream: str, attempt: int = 1) -> str:
+    if stream == MODULE.PR_GATE_STREAM:
+        return f"pr-gate-impact-docs-only-v3-attempt-{attempt}"
+    return f"native-image-impact-observation-v2-attempt-{attempt}"
+
+
 def pages(root: Path, collection: str, values: list[dict]) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "001.json").write_text(
@@ -79,14 +91,19 @@ def pages(root: Path, collection: str, values: list[dict]) -> None:
     )
 
 
+def artifact_catalog(root: Path, run_value: dict, values: list[dict]) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / f"{run_value['id']}.json").write_text(
+        json.dumps({"total_count": len(values), "artifacts": values}),
+        encoding="utf-8",
+    )
+
+
 def entry(stream: str, artifact_id: int, producer_id: int) -> dict:
     return {
         "stream": stream,
         "artifact_id": artifact_id,
-        "artifact_name": (
-            MODULE.PR_GATE_ARTIFACT if stream == MODULE.PR_GATE_STREAM
-            else MODULE.NATIVE_ARTIFACT
-        ),
+        "artifact_name": artifact_name(stream),
         "artifact_created_at": "2026-08-16T00:00:30Z",
         "artifact_size_bytes": 1024,
         "producer_run_id": producer_id,
@@ -220,8 +237,12 @@ def test_policy_and_discovery() -> None:
         native_run = run(2, MODULE.NATIVE_WORKFLOW)
         pages(root / "pr-runs", "workflow_runs", [pr_run])
         pages(root / "native-runs", "workflow_runs", [native_run])
-        pages(root / "pr-artifacts", "artifacts", [artifact(11, pr_run, MODULE.PR_GATE_ARTIFACT)])
-        pages(root / "native-artifacts", "artifacts", [artifact(12, native_run, MODULE.NATIVE_ARTIFACT)])
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, artifact_name(MODULE.PR_GATE_STREAM))
+        ])
+        artifact_catalog(root / "native-artifacts", native_run, [
+            artifact(12, native_run, artifact_name(MODULE.NATIVE_STREAM))
+        ])
         result = MODULE.discover(
             root / "pr-runs",
             root / "native-runs",
@@ -233,7 +254,7 @@ def test_policy_and_discovery() -> None:
         assert [item["artifact_id"] for item in result["artifacts"]] == [12, 11]
         assert result["integrity_failures"] == []
 
-        pages(root / "pr-artifacts", "artifacts", [
+        artifact_catalog(root / "pr-artifacts", pr_run, [
             artifact(11, pr_run, "pr-gate-impact-observation-10-old-dynamic-name")
         ])
         old_name = MODULE.discover(
@@ -250,9 +271,9 @@ def test_policy_and_discovery() -> None:
             for item in old_name["exclusions"]
         )
 
-        pages(root / "pr-artifacts", "artifacts", [
-            artifact(11, pr_run, MODULE.PR_GATE_ARTIFACT),
-            artifact(13, pr_run, MODULE.PR_GATE_ARTIFACT),
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, artifact_name(MODULE.PR_GATE_STREAM)),
+            artifact(13, pr_run, artifact_name(MODULE.PR_GATE_STREAM)),
         ])
         ambiguous = MODULE.discover(
             root / "pr-runs",
@@ -266,6 +287,26 @@ def test_policy_and_discovery() -> None:
             item["reason"] == "observation-artifact-ambiguous"
             for item in ambiguous["integrity_failures"]
         )
+
+        rerun = run(1, MODULE.PR_GATE_WORKFLOW, attempt=2)
+        pages(root / "pr-runs", "workflow_runs", [rerun])
+        artifact_catalog(root / "pr-artifacts", rerun, [
+            artifact(11, rerun, artifact_name(MODULE.PR_GATE_STREAM, attempt=1)),
+            artifact(13, rerun, artifact_name(MODULE.PR_GATE_STREAM, attempt=2)),
+        ])
+        current_attempt = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, tzinfo=timezone.utc),
+        )
+        assert [
+            item["artifact_id"] for item in current_attempt["artifacts"]
+            if item["stream"] == MODULE.PR_GATE_STREAM
+        ] == [13]
+        assert current_attempt["integrity_failures"] == []
 
 
 def test_summary_requires_real_candidate_and_image_evidence() -> None:
@@ -371,7 +412,7 @@ def test_integrity_failures_do_not_count() -> None:
         assert "member set" in unsafe["integrity_failures"][0]["reason"]
 
 
-def test_workflows_are_read_only_and_exact_name_discoverable() -> None:
+def test_workflows_are_read_only_and_attempt_bound() -> None:
     ledger = (REPOSITORY_ROOT / ".github/workflows/impact-routing-evidence-ledger.yml").read_text(
         encoding="utf-8"
     )
@@ -380,19 +421,25 @@ def test_workflows_are_read_only_and_exact_name_discoverable() -> None:
     assert "permissions:\n  actions: read\n  contents: read\n" in ledger
     assert ledger.count("permissions:") == 1
     assert "ref: ${{ github.workflow_sha }}" in ledger
-    assert "-f name=pr-gate-impact-docs-only-v3" in ledger
-    assert "-f name=native-image-impact-observation-v2" in ledger
+    assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
+    assert "producer_count > MAXIMUM_CATALOGS" in ledger
     assert "serving-image-boundary.yml/runs" in ledger
     assert "worker-gdal-image.yml/runs" in ledger
     assert "actions: write" not in ledger
     assert "contents: write" not in ledger
     assert "pull_request_target" not in ledger
-    assert "name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3" in pr_gate
-    assert "name: native-image-impact-observation-v2" in native
+    assert (
+        "name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-"
+        "${{ github.run_attempt }}" in pr_gate
+    )
+    assert (
+        "name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}"
+        in native
+    )
 
 
 test_policy_and_discovery()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
-test_workflows_are_read_only_and_exact_name_discoverable()
+test_workflows_are_read_only_and_attempt_bound()
 print("impact-routing-evidence-ledger=ok mode=report-only")
