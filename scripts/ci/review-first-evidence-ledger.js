@@ -627,12 +627,6 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
   timestamp(receipt.observed_at, 'observation time');
   positiveInteger(receipt.pull_request, 'observation pull request');
   sha(receipt.head_sha, 'observation head');
-  if (receipt.policy_sha !== entry.producer_head_sha) {
-    throw new Error('observation policy does not match producer workflow head');
-  }
-  if (Date.parse(receipt.observed_at) > Date.parse(entry.artifact_created_at)) {
-    throw new Error('observation was recorded after its artifact was created');
-  }
   const producer = requireObject(receipt.producer, 'observation producer');
   exactString(producer.workflow_name, REVIEW_GATE_WORKFLOW_NAME, 'producer workflow name');
   exactString(producer.workflow_path, REVIEW_GATE_WORKFLOW, 'producer workflow path');
@@ -640,6 +634,23 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
       producer.run_id !== entry.producer_run_id ||
       producer.run_attempt !== entry.producer_run_attempt) {
     throw new Error('observation producer does not match workflow run');
+  }
+  // GitHub reports a pull_request_target run's head_sha as the pull-request
+  // head even though github.workflow_sha (and the executed workflow code) is
+  // bound to the trusted base branch. Other trusted Review Gate events report
+  // the workflow policy commit as their run head. Preserve both identities
+  // instead of falsely treating a valid pull_request_target receipt as corrupt.
+  if (producer.event === 'pull_request_target') {
+    if (receipt.head_sha !== entry.producer_head_sha) {
+      throw new Error('observation head does not match pull request target run head');
+    }
+  } else if (receipt.policy_sha !== entry.producer_head_sha) {
+    throw new Error('observation policy does not match producer workflow head');
+  }
+  // Artifact catalog timestamps are serialized to whole seconds while the
+  // receipt retains milliseconds. Permit only that lost subsecond precision.
+  if (Date.parse(receipt.observed_at) >= Date.parse(entry.artifact_created_at) + 1_000) {
+    throw new Error('observation was recorded after its artifact was created');
   }
   const review = requireObject(receipt.review, 'review evidence');
   if (review.ready !== true || review.snapshot_truncated !== false ||

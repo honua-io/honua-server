@@ -87,7 +87,7 @@ function observation(overrides = {}) {
     policySha,
     producerRunId: overrides.producerRunId ?? 300,
     producerRunAttempt: 1,
-    producerEvent: 'workflow_run',
+    producerEvent: overrides.producerEvent ?? 'workflow_run',
     observedAt: overrides.observedAt ?? '2026-08-14T08:11:00Z',
     prNumber: observedPr,
     head: observedHead,
@@ -229,6 +229,48 @@ test('receipt policy identity must match its trusted producer workflow head', ()
   });
   assert.equal(ledger.gates.integrity_clean, false);
   assert.match(ledger.integrity_failures[0].reason, /producer workflow head/);
+});
+
+test('pull request target receipt binds the observed head separately from policy', () => {
+  const receipt = observation({
+    producerEvent: 'pull_request_target',
+    observedAt: '2026-08-14T08:11:00.021Z',
+  });
+  const entry = {
+    ...indexEntry(receipt),
+    artifact_created_at: '2026-08-14T08:11:00Z',
+    producer_head_sha: receipt.head_sha,
+  };
+  const accepted = summarizeReceipts({
+    index: index([entry]),
+    receiptsByArtifact: new Map([[entry.artifact_id, receipt]]),
+    policy: policy({ minimum_countable_heads: 1 }),
+    currentPolicyDigest: policyDigest,
+  });
+  assert.equal(accepted.gates.integrity_clean, true);
+  assert.equal(accepted.counts.distinct_countable_heads, 1);
+
+  const mismatched = summarizeReceipts({
+    index: index([{ ...entry, producer_head_sha: 'e'.repeat(40) }]),
+    receiptsByArtifact: new Map([[entry.artifact_id, receipt]]),
+    policy: policy({ minimum_countable_heads: 1 }),
+    currentPolicyDigest: policyDigest,
+  });
+  assert.equal(mismatched.gates.integrity_clean, false);
+  assert.match(mismatched.integrity_failures[0].reason, /pull request target run head/);
+
+  const lateReceipt = observation({
+    producerEvent: 'pull_request_target',
+    observedAt: '2026-08-14T08:11:01Z',
+  });
+  const late = summarizeReceipts({
+    index: index([entry]),
+    receiptsByArtifact: new Map([[entry.artifact_id, lateReceipt]]),
+    policy: policy({ minimum_countable_heads: 1 }),
+    currentPolicyDigest: policyDigest,
+  });
+  assert.equal(late.gates.integrity_clean, false);
+  assert.match(late.integrity_failures[0].reason, /after its artifact was created/);
 });
 
 test('observation requires final review and admission revalidation', () => {
