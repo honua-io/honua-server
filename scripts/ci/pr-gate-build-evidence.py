@@ -492,7 +492,7 @@ def validate_for_consumer(args: argparse.Namespace) -> dict:
     )
     require_exact_keys(policy, {"inputs", "sha", "tree_sha"}, "receipt policy")
     require_exact_keys(observer, {"run_attempt", "run_id", "workflow_path"}, "receipt observer")
-    source_base = require_sha(source.get("base_sha"), "receipt source base SHA")
+    require_sha(source.get("base_sha"), "receipt source base SHA")
     source_head = require_sha(source.get("head_sha"), "receipt source head SHA")
     source_merge = require_sha(source.get("merge_sha"), "receipt source merge SHA")
     source_tree = require_sha(source.get("merge_tree_sha"), "receipt source merge tree SHA")
