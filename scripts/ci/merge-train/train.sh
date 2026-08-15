@@ -156,6 +156,10 @@ train_regenerate_derived_artifacts() {
 train_run_batch_ci() {
   local batch="$1"
   local run_discovered_callback="${2:-}"
+  # `selected` and `included` are dynamically scoped caller locals in the
+  # controller. The helper exports reuse identity only for an exact one-member
+  # batch; every other path clears it and falls back independently.
+  train_configure_pr_gate_build_reuse "${selected:-[]}" "${included:-}"
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     local regeneration_rc=0
     train_regenerate_derived_artifacts "${batch}" || regeneration_rc=$?

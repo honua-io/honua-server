@@ -197,22 +197,29 @@ returns to optimization rather than becoming policy by assertion.
 This is one build per repeated project fingerprint, not one oversized solution
 artifact and not one build per logical shard.
 
-The first shadow candidate is opportunistic rather than a producer dependency.
-A trusted, read-only default-branch `workflow_run` observer may prepare a
-bounded repeated-project payload while review is pending. It resolves the
-completed Review Gate identity job through GitHub's immutable check-run/PR
-association. The resolver accepts the `pull_request_target` run SHA only when it
-matches the association's head or event-time base, records which representation
-GitHub supplied, and independently takes candidate identity from the associated
-PR head. It never treats the workflow-run SHA itself as candidate authority.
-The observer then executes the still-current same-repository raw head with no
-write permission or secret. Candidate code never executes in
-`pull_request_target`. A consumer never polls or waits for the payload. After its
-own checkout and toolchain setup, the consumer makes one exact artifact attempt
-and immediately falls back to the independent restore/build path on absence or
-any validation failure. The manual A/B charges the complete observer plan and
-producer cost, not only the consumer download. The contract and promotion
-procedure are documented in
+The current shadow candidate reuses a sunk build rather than adding a producer
+dependency. The required `PR Gate` already performs the full Release solution
+build after exact-head review. Once that gate is green, a best-effort step may
+package at most two registered projects that are each consumed by two or more
+trusted selected shards. Packaging and upload failure are cache misses and
+cannot change the required gate result.
+
+A read-only default-branch `workflow_run` observer validates only the small
+metadata artifact. It re-resolves the canonical PR Gate run/check/attempt and
+current PR identity, recomputes the merge tree and repeated-project plan, binds
+every execution policy blob, and confirms the large payload's GitHub artifact
+id, name, size, and digest before issuing a small trusted receipt. It never
+executes the payload.
+
+The merge train carries that source identity only for an exact one-member
+batch. Smart CI accepts it only when the complete consumer Git tree equals the
+producer merge tree, then validates and safely extracts the bounded payload and
+runs registered proof filters with `--no-build --no-restore`. This is report-only:
+the authoritative shards still restore and build independently, `CI Gate` does
+not depend on the shadow, and multi-PR/different-tree/missing/invalid evidence
+falls back without waiting. `HONUA_PR_GATE_BUILD_REUSE_SHADOW=false` or absence
+removes producer, lookup, handoff, and consumer work in one rollback. The exact
+contract and promotion procedure are documented in
 `docs/internal/ci/server-test-prebuild-shadow.md` (honua-server#3226).
 
 The retained ledger partitions observations by the complete measurement-policy
@@ -290,7 +297,21 @@ The old path remains selectable through a documented rollback input for the
 first enforcement period. Rollback changes routing only; it does not edit
 branch protection during an incident.
 
-### Hosted shadow checkpoint (2026-08-14)
+### PR Gate reuse shadow checkpoint (2026-08-15)
+
+The standalone opportunistic producer described by the following historical
+checkpoint did not meet the 60% runner-minute threshold and is not being
+promoted. The next candidate packages build outputs that the required PR Gate
+already produced, validates them through a default-branch receipt, and proves
+tree-equivalent reuse in one-member Smart CI without influencing any gate.
+
+The implementation remains disabled until it is reviewed and merged. After
+merge, enabling `HONUA_PR_GATE_BUILD_REUSE_SHADOW=true` authorizes only the
+report-only observation. It does not authorize shard build removal. Hosted
+results from this policy cohort must be recorded here before any enforcement
+proposal.
+
+### Historical hosted shadow checkpoint (2026-08-14)
 
 The first opportunistic prebuild candidate passed its bounded hosted A/B and is
 enabled only as a read-only producer-availability observer. It is not
@@ -351,14 +372,20 @@ The complete checkpoint and decision are also recorded on
 
 ## Implementation sequence
 
-1. Merge and measure the bounded #3209 / PR #3210 emitter reuse.
-2. Add review-first transition receipts and trusted dispatch fixtures.
-3. Add the data-only normalization envelope and trusted allowlist validator.
-4. Re-benchmark compact per-project producer reuse in shadow mode.
-5. Add deterministic-failure cancellation and focused attribution continuation.
-6. Implement native-image routing/evidence reuse under #3204.
+1. Completed: merge and measure bounded #3209 / PR #3210 emitter reuse.
+2. Completed in observe mode: review-first transition receipts and trusted
+   dispatch fixtures (#3216).
+3. Completed in observe mode: data-only normalization envelope and trusted
+   allowlist validator (#3219).
+4. Rejected the standalone producer for insufficient savings; shadow the sunk-
+   cost PR Gate build-evidence topology under #3226.
+5. Promote deterministic-failure cancellation and focused attribution only
+   after #3224's retained observations pass.
+6. Promote native-image routing/evidence reuse under #3204 after its impact
+   ledger passes.
 7. Implement SDK build/browser separation under honua-sdk-js#1286.
-8. Promote only after the declared parity, latency, cost, and security gates.
+8. Promote each slice only after its declared parity, latency, cost, and
+   security gates; keep one independent rollback per slice.
 
 Each implementation slice has its own issue and PR. The umbrella PR does not
 combine workflow rewrites.

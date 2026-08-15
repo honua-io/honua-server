@@ -47,7 +47,7 @@ query(
               contexts(first: 100, after: $checksCursor) {
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion }
+                  ... on CheckRun { name status conclusion detailsUrl }
                   ... on StatusContext { context state }
                 }
                 pageInfo { hasNextPage endCursor }
