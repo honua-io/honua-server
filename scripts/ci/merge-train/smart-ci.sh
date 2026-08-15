@@ -55,7 +55,9 @@ train_discover_dispatched_run() {
   done
 }
 
-# train_smart_ci_run <batch-branch>: live-mode push + dispatch + poll. In
+# train_smart_ci_run <batch-branch> [run-discovered-callback]: live-mode push +
+# dispatch + poll. The optional callback receives the exact batch branch and
+# Actions run id after discovery and before the first long poll. In
 # dry-run, logs the would-run actions and returns the shard descriptor only.
 # Emits the CI Gate conclusion on stdout in live mode (SUCCESS/FAILURE/...),
 # or "DRYRUN" in dry-run.
@@ -64,6 +66,7 @@ train_discover_dispatched_run() {
 # prints the CI Gate conclusion (so the poll loop is testable offline).
 train_smart_ci_run() {
   local batch="$1"
+  local run_discovered_callback="${2:-}"
   local descriptor
   # train/batch/* is the real batch namespace; train/attribute-probe/* is the
   # disposable bisection namespace train_attribute_probe_gate mints (via
@@ -132,6 +135,12 @@ train_smart_ci_run() {
   fi
   train_log "smart-ci run id: ${run_id}"
   echo "${run_id}" >"${TRAIN_RUN_ID_FILE:-/dev/null}"
+  if [[ -n "${run_discovered_callback}" ]] \
+    && ! "${run_discovered_callback}" "${batch}" "${run_id}" 1>&2; then
+    train_err "could not durably journal smart-CI run ${run_id} for ${batch}; refusing to enter the long poll"
+    echo "JOURNAL_FAILURE"
+    return 0
+  fi
 
   # Poll until the CI Gate job completes. The 110-minute default accommodates
   # the observed 42-55 minute shards plus runner queueing and one failed-job

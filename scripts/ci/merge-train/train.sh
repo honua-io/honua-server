@@ -149,12 +149,13 @@ train_regenerate_derived_artifacts() {
   train_decision "DERIVED ARTIFACTS refreshed on ${batch}"
 }
 
-# train_run_batch_ci <batch>:
+# train_run_batch_ci <batch> [run-discovered-callback]:
 # Before running CI for a batch branch, refresh deterministic derived artifacts and
 # then dispatch + poll smart-CI. If refresh fails, we return FAILURE for a
 # fail-closed path.
 train_run_batch_ci() {
   local batch="$1"
+  local run_discovered_callback="${2:-}"
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     local regeneration_rc=0
     train_regenerate_derived_artifacts "${batch}" || regeneration_rc=$?
@@ -165,7 +166,7 @@ train_run_batch_ci() {
     fi
   fi
 
-  train_smart_ci_run "${batch}"
+  train_smart_ci_run "${batch}" "${run_discovered_callback}"
 }
 
 # Restore the branch and scratch paths after an attribution probe.
@@ -196,6 +197,20 @@ train_reset_rerun_state_for_fresh_run() {
 # Actions run id. An empty/non-numeric id can never fall back to a previous run.
 train_failure_has_current_run_id() {
   [[ "$1" != "FAILURE" || "$2" =~ ^[0-9]+$ ]]
+}
+
+# Persist the exact Actions identity before smart-CI enters its long poll. The
+# callback is passed only for the primary batch (never attribution probes), so
+# a controller crash can resume or diagnose the one dispatched run without
+# redispatching or guessing from branch history.
+_persist_smart_ci_run_id() {
+  local discovered_batch="$1" discovered_run_id="$2"
+  [[ "${discovered_batch}" == "${batch}" && "${discovered_run_id}" =~ ^[0-9]+$ ]] || {
+    train_err "refusing mismatched smart-CI journal identity ${discovered_batch}/${discovered_run_id}"
+    return 1
+  }
+  _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" \
+    "${discovered_run_id}" "${fwdfix}" "${flake_reruns}"
 }
 
 # train_attribute_probe_gate <comma-separated-prs> <trunk-sha7> <anchor-batch>:
@@ -557,7 +572,7 @@ main() {
   train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
-  local resume_state="" resume_rc=1 resumed=0 rejected_rc=1
+  local resume_state="" resume_rc=1 smart_resume_rc=1 resumed=0 rejected_rc=1
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     # Operator escape hatch. Deliberately terminal: a reset is one auditable
     # action, and the operator dispatches an ordinary live run afterwards.
@@ -593,24 +608,38 @@ main() {
       return 1
     fi
 
-    train_recover_terminal_batch || rejected_rc=$?
-    if [[ "${rejected_rc}" == "2" ]]; then
-      train_err "active merge-train state is unknown, malformed, or incompletely recovered; failing closed before selection"
+    if resume_state="$(train_restore_smart_ci_intent)"; then smart_resume_rc=0; else smart_resume_rc=$?; fi
+    if [[ "${smart_resume_rc}" == "0" ]]; then
+      resumed=1
+      train_notice "restoring interrupted initial smart-CI run before selection; no new batch will be dispatched"
+    elif [[ "${smart_resume_rc}" == "2" ]]; then
+      train_err "persisted smart-CI intent does not match its Actions run/batch; failing closed"
+      return 1
+    elif [[ "${smart_resume_rc}" == "3" ]]; then
+      train_warn "initial smart-CI run is still pending at the controller deadline; preserving its exact run id for the next controller"
       return 1
     fi
-    if resume_state="$(train_restore_retry_intent)"; then resume_rc=0; else resume_rc=$?; fi
-    if [[ "${resume_rc}" == "0" ]]; then
-      resumed=1
-      train_notice "restoring interrupted failed-job rerun before selection; no new batch or rerun will be dispatched"
-    elif [[ "${resume_rc}" == "2" ]]; then
-      train_err "persisted retry intent does not match its Actions run/batch; failing closed"
-      return 1
-    elif [[ "${resume_rc}" == "3" ]]; then
-      train_warn "accepted failed-job rerun is still pending at the controller deadline; preserving retry intent for the next controller"
-      return 1
-    elif [[ "${resume_rc}" == "4" ]]; then
-      train_warn "failed-job rerun remains in recoverable requesting state; preserving it for the next controller"
-      return 1
+
+    if [[ "${resumed}" != "1" ]]; then
+      train_recover_terminal_batch || rejected_rc=$?
+      if [[ "${rejected_rc}" == "2" ]]; then
+        train_err "active merge-train state is unknown, malformed, or incompletely recovered; failing closed before selection"
+        return 1
+      fi
+      if resume_state="$(train_restore_retry_intent)"; then resume_rc=0; else resume_rc=$?; fi
+      if [[ "${resume_rc}" == "0" ]]; then
+        resumed=1
+        train_notice "restoring interrupted failed-job rerun before selection; no new batch or rerun will be dispatched"
+      elif [[ "${resume_rc}" == "2" ]]; then
+        train_err "persisted retry intent does not match its Actions run/batch; failing closed"
+        return 1
+      elif [[ "${resume_rc}" == "3" ]]; then
+        train_warn "accepted failed-job rerun is still pending at the controller deadline; preserving retry intent for the next controller"
+        return 1
+      elif [[ "${resume_rc}" == "4" ]]; then
+        train_warn "failed-job rerun remains in recoverable requesting state; preserving it for the next controller"
+        return 1
+      fi
     fi
   fi
 
@@ -705,14 +734,14 @@ main() {
   train_decision "smart-CI shard subset: ${shard_descriptor}"
   train_reset_rerun_state_for_fresh_run
   _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
-  gate="$(train_run_batch_ci "${batch}")"
+  gate="$(train_run_batch_ci "${batch}" _persist_smart_ci_run_id)"
   train_step_end smart-ci >/dev/null
   train_endgroup
 
   else
     # Restore the existing batch directly into the common CI-gate loop. The
-    # startup helper already waited for attempt > baseline and validated the
-    # Actions run, batch branch, and trunk CAS base.
+    # startup helper already waited for the exact initial run (or a newer retry
+    # attempt) and validated the Actions run, batch branch, and trunk CAS base.
     local batch trunk_sha trunk_sha7 included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns timeout_reruns_total
     batch="$(jq -r '.active_batch.branch' <<<"${resume_state}")"
     trunk_sha="$(jq -r '.active_batch.trunk_base' <<<"${resume_state}")"
@@ -752,6 +781,12 @@ main() {
   train_step_begin ci-gate
   local autofix_attempts=0
   while [[ "${gate}" != "SUCCESS" ]]; do
+    if [[ "${gate}" == "JOURNAL_FAILURE" ]]; then
+      train_annotate_warn "smart-CI run identity could not be durably journaled; stopping without polling, classification, or state overwrite"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "journal-failure" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
     local run_id; run_id="$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null || echo "")"
     if ! train_failure_has_current_run_id "${gate}" "${run_id}"; then
       _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "" "${fwdfix}" "${flake_reruns}"
@@ -821,7 +856,7 @@ main() {
         train_decision "forward-fix #${fwdfix} applied (dotnet format); re-running CI"
         train_reset_rerun_state_for_fresh_run
         _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
-        gate="$(train_run_batch_ci "${batch}")"
+        gate="$(train_run_batch_ci "${batch}" _persist_smart_ci_run_id)"
         continue
       fi
     fi
@@ -1047,7 +1082,7 @@ main() {
     batch="$(train_assemble "${trunk_sha7}" $(tr ',' ' ' <<<"${included}"))"
     included="$(cut -f1 "${TRAIN_INCLUDED_FILE}" | tr '\n' ',' | sed 's/,$//')"
     _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
-    gate="$(train_run_batch_ci "${batch}")"
+    gate="$(train_run_batch_ci "${batch}" _persist_smart_ci_run_id)"
   done
   train_step_end ci-gate >/dev/null
   train_endgroup

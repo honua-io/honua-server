@@ -81,6 +81,17 @@ dry-run.
    per-PR labels `train:landing`/`train:escalated`/`train:hold` carry transient
    state.
 
+After a batch CI dispatch becomes visible, the controller persists the exact
+Actions `run_id` in that state issue before entering the long poll. Failure to
+write that identity stops before polling. Attribution probes never update the
+primary batch journal. This makes the active run observable to operators and
+lets crash recovery bind to one exact workflow run instead of guessing from a
+mutable batch branch's run history. A replacement controller verifies the
+workflow path, `workflow_dispatch` event, batch branch, immutable batch SHA,
+trunk ancestry, and exact member heads before waiting for or consuming that
+run. A pre-discovery crash has no run ID and releases the batch for fresh
+assembly; an identity mismatch fails closed.
+
 ### Controller deadline and timeout precedence
 
 The controller initializes one absolute 6,600-second CI deadline for the whole run. Initial batch polling and any failed-job retry share it; retry never resets the clock. The 120-minute workflow cap therefore retains 10 minutes for fail-closed state, metrics, and summary persistence.

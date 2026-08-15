@@ -112,6 +112,64 @@ _train_resume_fetch_batch() {
   printf '%s\n' "${batch_sha}"
 }
 
+# train_restore_smart_ci_intent: restore the initial exact batch-CI run after a
+# controller restart. A smart-ci state without a run id is the pre-discovery
+# crash window and remains owned by terminal release/reassembly. Once a run id
+# is present, every persisted and remote identity must match before this waits
+# for or consumes that one run; it never dispatches CI or requests a rerun.
+# Returns 1 when no discovered smart-CI intent exists, 2 for malformed or
+# mismatched identity, and 3 when the exact run remains nonterminal at the
+# controller deadline.
+train_restore_smart_ci_intent() {
+  local state phase batch trunk run_id persisted_batch_sha batch_sha row
+  local run_branch run_head current_attempt run_event run_path selected gate descriptor state_rc=0
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 2
+  [[ -n "${state}" ]] || return 1
+  jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
+  phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  [[ "${phase}" == "smart-ci" ]] || return 1
+
+  batch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
+  trunk="$(jq -r '.active_batch.trunk_base // empty' <<<"${state}")"
+  run_id="$(jq -r '.active_batch.run_id // empty' <<<"${state}")"
+  persisted_batch_sha="$(jq -r '.active_batch.batch_sha // empty' <<<"${state}")"
+  [[ -n "${run_id}" ]] || return 1
+  [[ "${batch}" == train/batch/* && "${trunk}" =~ ^[0-9a-fA-F]{40}$ \
+    && "${run_id}" =~ ^[0-9]+$ && "${persisted_batch_sha}" =~ ^[0-9a-fA-F]{40}$ ]] || return 2
+  jq -e '.active_batch.included | type == "array" and length > 0
+    and all(.[]; type == "number" and floor == .)
+    and (unique | length) == length' >/dev/null <<<"${state}" || return 2
+
+  if [[ -n "${TRAIN_RESUME_FETCHER:-}" ]]; then
+    batch_sha="$("${TRAIN_RESUME_FETCHER}" "${batch}" "${trunk}")" || return 2
+  else
+    batch_sha="$(_train_resume_fetch_batch "${batch}")" || return 2
+  fi
+  [[ "${batch_sha}" == "${persisted_batch_sha}" ]] || return 2
+  _train_resume_is_ancestor "${trunk}" "${batch_sha}" || return 2
+
+  row="$(_train_resume_run_identity "${run_id}" || echo "")"
+  IFS="${TRAIN_RESUME_TAB}" read -r run_branch run_head current_attempt run_event run_path <<<"${row}"
+  [[ "${run_branch}" == "${batch}" && "${run_head}" == "${batch_sha}" \
+    && "${current_attempt}" =~ ^[1-9][0-9]*$ && "${run_event}" == "workflow_dispatch" \
+    && "${run_path}" == ".github/workflows/ci.yml" ]] || return 2
+
+  selected="$(train_restore_retry_members "${state}" "${trunk}" "${batch_sha}")" || return 2
+  train_wait_for_run_completion "${run_id}" || return 3
+  gate="$(gh run view "${run_id}" --json jobs \
+    --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' \
+    2>/dev/null | tr '[:lower:]' '[:upper:]')"
+  case "${gate}" in
+    SUCCESS|FAILURE|CANCELLED|TIMED_OUT|STARTUP_FAILURE) ;;
+    *) return 2 ;;
+  esac
+  descriptor="$(train_smart_ci_shards "${batch}")" || return 2
+
+  jq -c --arg gate "${gate}" --argjson descriptor "${descriptor}" --argjson selected "${selected}" \
+    '. + {resume_gate: $gate, resume_shard_descriptor: $descriptor, resume_selected: $selected}' <<<"${state}"
+}
+
 # train_restore_retry_intent: emit state JSON augmented with gate/descriptor
 # and the exact reconstructed member snapshot.
 # Returns 1 when no retry intent exists, 2 for malformed/mismatched intent, and

@@ -683,6 +683,14 @@ smart_ci_mode=immediate
 smart_ci_dispatch_marker="${SCRATCH}/smart-ci-dispatched"
 smart_ci_baseline_calls="${SCRATCH}/smart-ci-baseline-calls"
 smart_ci_nonce_file="${SCRATCH}/smart-ci-nonce"
+smart_ci_events="${SCRATCH}/smart-ci-events"
+record_discovered_run() {
+  printf 'discovered:%s:%s\n' "$1" "$2" >>"${smart_ci_events}"
+}
+reject_discovered_run() {
+  printf 'rejected:%s:%s\n' "$1" "$2" >>"${smart_ci_events}"
+  return 1
+}
 gh() {
   if [[ "$1 $2" == "workflow run" ]]; then
     smart_ci_dispatched=1
@@ -738,6 +746,7 @@ gh() {
     return 0
   fi
   if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then
+    printf 'poll:%s\n' "$3" >>"${smart_ci_events}"
     echo "completed"
     return 0
   fi
@@ -750,8 +759,21 @@ gh() {
 immediate_gate="$(TRAIN_APPLY=1 \
   TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
   TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
-  train_smart_ci_run train/batch/smartci-batch)"
+  train_smart_ci_run train/batch/smartci-batch record_discovered_run)"
 assert_eq "smart-ci: immediately visible dispatched run is not in baseline" "${immediate_gate}" "SUCCESS"
+assert_eq "smart-ci: exact run id is journaled before the long poll" \
+  "$(sed -n '1,2p' "${smart_ci_events}")" \
+  $'discovered:train/batch/smartci-batch:222\npoll:222'
+
+smart_ci_dispatched=0
+: >"${smart_ci_events}"
+rejected_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run train/batch/smartci-batch reject_discovered_run)"
+assert_eq "smart-ci: failed durable journal stops before polling" "${rejected_gate}" "JOURNAL_FAILURE"
+assert_not_contains "smart-ci: failed durable journal performs no long poll" \
+  "$(cat "${smart_ci_events}")" "poll:"
 
 smart_ci_mode=stale
 stale_gate="$(TRAIN_APPLY=1 \
@@ -857,7 +879,10 @@ assert_eq "select: oldest-first; draft/hold/conflict excluded" "${sel}" "[11,10]
 selected_evidence="$(MAX_BATCH=1 train_select | jq -s -r '.[0].gate')"
 assert_eq "select: PR+Review admission does not synthesize CI Gate" "${selected_evidence}" "MISSING"
 assert_not_contains "batch: direct all-green bypass removed" "$(cat "${TRAIN_DIR}/train.sh")" "direct-merge-all-green"
-assert_contains "batch: admitted PRs dispatch batch CI" "$(cat "${TRAIN_DIR}/train.sh")" 'gate="$(train_run_batch_ci "${batch}")"'
+assert_eq "batch: every primary fresh CI dispatch journals its run id" \
+  "$(grep -Fc 'gate="$(train_run_batch_ci "${batch}" _persist_smart_ci_run_id)"' "${TRAIN_DIR}/train.sh")" "3"
+assert_contains "batch: journal failure bypasses CI classification" \
+  "$(cat "${TRAIN_DIR}/train.sh")" 'if [[ "${gate}" == "JOURNAL_FAILURE" ]]'
 
 for admission_case in gate-fail review-fail unresolved negative-review held escalated draft closed advanced; do
   export ADMISSION_CASE="${admission_case}"
