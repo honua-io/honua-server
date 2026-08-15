@@ -645,9 +645,10 @@ jobs:
                 ...context.repo,
                 run_id: artifact.workflow_run.id,
               });
+              const trustedObserverEvents = new Set(['workflow_run', 'workflow_dispatch']);
               if (run.path === '.github/workflows/pr-gate-impact-observe.yml' &&
                   run.name === 'PR Gate Impact Observation' &&
-                  run.event === 'workflow_run' && run.status === 'completed' &&
+                  trustedObserverEvents.has(run.event) && run.status === 'completed' &&
                   run.conclusion === 'success' && run.head_branch === context.payload.repository.default_branch &&
                   run.repository?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
                   Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0 &&
