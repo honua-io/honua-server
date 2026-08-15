@@ -316,6 +316,8 @@ grep -Fq 'TRAIN_EARLY_FAILURE_RAW_OUT: ${{ github.workspace }}/merge-train-early
   "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
 [[ "$(grep -Fc '${{ github.workspace }}/merge-train-early-failure-observation.json' \
   "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml")" == "2" ]]
+grep -Fq 'rm -f -- "${TRAIN_EARLY_FAILURE_RAW_OUT}"' \
+  "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
 grep -Fq 'retention-days: 30' \
   "${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
 grep -Fq 'one bounded exception per' \

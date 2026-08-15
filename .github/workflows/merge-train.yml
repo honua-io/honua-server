@@ -222,6 +222,9 @@ jobs:
           # Stamp a real ISO-8601 instant (the repository updated_at above is only
           # a stable fallback; prefer a fresh UTC timestamp for this run).
           export TRAIN_RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # A reused workspace must never upload another controller's raw
+          # observation when this run has no selected-shard failure.
+          rm -f -- "${TRAIN_EARLY_FAILURE_RAW_OUT}"
           if [[ "${TRAIN_APPLY}" == "1" && "${MERGE_TRAIN_TOKEN_PRESENT}" != "true" ]]; then
             echo "::error::MERGE_TRAIN_TOKEN is required for TRAIN_APPLY=1. Set MERGE_TRAIN_TOKEN before running live mode."
             exit 1
