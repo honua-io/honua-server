@@ -231,7 +231,7 @@ test('receipt policy identity must match its trusted producer workflow head', ()
   assert.match(ledger.integrity_failures[0].reason, /producer workflow head/);
 });
 
-test('pull request target receipt binds the observed head separately from policy', () => {
+test('pull request target receipt preserves event, observed, and policy identities', () => {
   const receipt = observation({
     producerEvent: 'pull_request_target',
     observedAt: '2026-08-14T08:11:00.021Z',
@@ -239,7 +239,7 @@ test('pull request target receipt binds the observed head separately from policy
   const entry = {
     ...indexEntry(receipt),
     artifact_created_at: '2026-08-14T08:11:00Z',
-    producer_head_sha: receipt.head_sha,
+    producer_head_sha: 'e'.repeat(40),
   };
   const accepted = summarizeReceipts({
     index: index([entry]),
@@ -249,15 +249,9 @@ test('pull request target receipt binds the observed head separately from policy
   });
   assert.equal(accepted.gates.integrity_clean, true);
   assert.equal(accepted.counts.distinct_countable_heads, 1);
-
-  const mismatched = summarizeReceipts({
-    index: index([{ ...entry, producer_head_sha: 'e'.repeat(40) }]),
-    receiptsByArtifact: new Map([[entry.artifact_id, receipt]]),
-    policy: policy({ minimum_countable_heads: 1 }),
-    currentPolicyDigest: policyDigest,
-  });
-  assert.equal(mismatched.gates.integrity_clean, false);
-  assert.match(mismatched.integrity_failures[0].reason, /pull request target run head/);
+  assert.equal(accepted.countable_observations[0].head_sha, receipt.head_sha);
+  assert.equal(accepted.countable_observations[0].producer_event_head_sha, 'e'.repeat(40));
+  assert.equal(accepted.countable_observations[0].producer_policy_sha, policySha);
 
   const lateReceipt = observation({
     producerEvent: 'pull_request_target',

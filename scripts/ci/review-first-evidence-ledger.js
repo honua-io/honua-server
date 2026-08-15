@@ -635,16 +635,13 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
       producer.run_attempt !== entry.producer_run_attempt) {
     throw new Error('observation producer does not match workflow run');
   }
-  // GitHub reports a pull_request_target run's head_sha as the pull-request
-  // head even though github.workflow_sha (and the executed workflow code) is
-  // bound to the trusted base branch. Other trusted Review Gate events report
-  // the workflow policy commit as their run head. Preserve both identities
-  // instead of falsely treating a valid pull_request_target receipt as corrupt.
-  if (producer.event === 'pull_request_target') {
-    if (receipt.head_sha !== entry.producer_head_sha) {
-      throw new Error('observation head does not match pull request target run head');
-    }
-  } else if (receipt.policy_sha !== entry.producer_head_sha) {
+  // A serialized pull_request_target attestation can observe a newer current
+  // PR head than the event-time head recorded on the immutable workflow run.
+  // The attached receipt binds that current head after two stable snapshots;
+  // retain the event head separately for audit. Other trusted events report
+  // the workflow policy commit as their run head, so preserve that equality.
+  if (producer.event !== 'pull_request_target' &&
+      receipt.policy_sha !== entry.producer_head_sha) {
     throw new Error('observation policy does not match producer workflow head');
   }
   // Artifact catalog timestamps are serialized to whole seconds while the
@@ -702,6 +699,7 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
     admission_to_observation_ms: observedMs - Date.parse(selected.created_at),
     producer_run_id: entry.producer_run_id,
     producer_run_attempt: entry.producer_run_attempt,
+    producer_event_head_sha: entry.producer_head_sha,
     producer_policy_sha: receipt.policy_sha,
     measurement_policy_digest: receipt.measurement_policy_digest,
     current_policy: receipt.measurement_policy_digest === currentPolicyDigest,
