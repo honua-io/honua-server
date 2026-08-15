@@ -60,6 +60,8 @@ jobs:
       producer_attempt: ${{ steps.resolve.outputs.producer_attempt }}
       producer_policy_sha: ${{ steps.validate.outputs.producer_policy_sha }}
       verifier_policy_sha: ${{ steps.policy.outputs.sha }}
+      measurement_policy_digest: ${{ steps.validate.outputs.measurement_policy_digest }}
+      receipt_retention_days: ${{ steps.policy.outputs.receipt_retention_days }}
       has_candidates: ${{ steps.parity.outputs.has_candidates }}
       baseline: ${{ steps.parity.outputs.baseline }}
       candidates: ${{ steps.parity.outputs.candidates }}
@@ -74,7 +76,11 @@ jobs:
 
       - id: policy
         name: Bind trusted verifier policy
-        run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+        run: |
+          echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+          python3 policy/scripts/ci/audit-server-test-prebuild-evidence.py retention-window \
+            --policy policy/.github/server-test-prebuild-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
 
       - id: resolve
         name: Resolve current exact head and completed observer
@@ -255,6 +261,9 @@ jobs:
           git -C policy cat-file -e "${producer_policy_sha}^{commit}"
           git -C policy merge-base --is-ancestor \
             "${producer_policy_sha}" '${{ steps.policy.outputs.sha }}'
+          python3 policy/scripts/ci/audit-server-test-prebuild-evidence.py policy-digest \
+            --policy-root policy --policy-sha '${{ steps.policy.outputs.sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
 
       - id: parity
         name: Plan bounded independent and candidate selections
@@ -262,7 +271,7 @@ jobs:
         run: |
           python3 policy/scripts/ci/plan-server-test-prebuild-parity.py \
             --observation evidence/producer-plan/prebuild-plan.json \
-            --registry source/.github/server-test-artifact-projects.json \
+            --registry policy/.github/server-test-artifact-projects.json \
             --output evidence/parity-plan.json \
             --github-output "${GITHUB_OUTPUT}"
 
@@ -329,6 +338,7 @@ jobs:
         env:
           FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT: ${{ github.workspace }}/source
+          HONUA_SERVER_TEST_BENCHMARK_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json
         run: |
           policy/scripts/ci/benchmark-server-test-transfer.sh baseline \
             --project '${{ matrix.project }}' --source-sha '${{ needs.plan.outputs.head_sha }}' \
@@ -435,6 +445,7 @@ jobs:
         env:
           FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT: ${{ github.workspace }}/source
+          HONUA_SERVER_TEST_BENCHMARK_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json
         run: |
           policy/scripts/ci/benchmark-server-test-transfer.sh consumer-ready \
             --project '${{ matrix.project }}' --source-sha '${{ needs.plan.outputs.head_sha }}' \
@@ -513,9 +524,11 @@ jobs:
             --arg contract 'honua.server-test-prebuild-parity-observation/v1' \
             --argjson pr '${{ needs.plan.outputs.pr }}' \
             --arg head '${{ needs.plan.outputs.head_sha }}' \
+            --arg measurement_policy_digest '${{ needs.plan.outputs.measurement_policy_digest }}' \
             --argjson producer_run_id '${{ needs.plan.outputs.producer_run_id }}' \
             --argjson verifier_run_id '${{ github.run_id }}' \
             '{contract:$contract,pull_request:$pr,head_sha:$head,
+              measurement_policy_digest:$measurement_policy_digest,
               producer_run_id:$producer_run_id,verifier_run_id:$verifier_run_id,
               countable:(($summary[0].parity_failures|length)==0 and
                 ($summary[0].reuse_failures|length)==0 and
@@ -526,6 +539,13 @@ jobs:
           echo '' >> "${GITHUB_STEP_SUMMARY}"
           echo "Countable parity observation: \`$(jq -r '.countable' evidence/parity-observation.json)\`" \
             >> "${GITHUB_STEP_SUMMARY}"
+      - name: Retain the immutable promotion receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: server-test-prebuild-parity-receipt-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
+          path: evidence/parity-observation.json
+          retention-days: ${{ needs.plan.outputs.receipt_retention_days }}
+          if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: server-test-prebuild-parity-evidence-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}

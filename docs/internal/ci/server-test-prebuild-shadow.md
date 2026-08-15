@@ -71,7 +71,15 @@ The manual A/B workflow supports two profiles: two shards sharing Server.Tests,
 and a five-project hybrid with only the repeated Server.Tests project reused.
 Each baseline and candidate runs the same trusted proof filter and publishes a
 stable TRX identity/outcome digest. The summary uses complete GitHub-hosted job
-intervals, not partial shell timers.
+intervals, not partial shell timers. One measured baseline/candidate interval
+represents each selected project, but its trusted observer
+`selected_shard_count` weights both billed runner minutes and test-start
+percentile samples. The independent baseline and prebuilt consumer are each
+charged once per selected shard job; the shared plan/build producer intervals
+are charged once. This preserves the real N-shard counterfactual without
+spawning N redundant benchmark jobs. The retained summary records the weights
+so the model is auditable, and invalid, inconsistent, or over-100-shard weights
+fail closed.
 
 Promotion to a 20-exact-head shadow requires, for every profile:
 
@@ -103,6 +111,27 @@ dispatches another workflow, or changes the authoritative PR Gate result.
 The 20-run promotion input counts only distinct representative exact heads whose
 parity artifact says `countable: true`. Producer-only, skipped, fallback,
 incomplete, duplicate, or contradictory observations do not advance the count.
+
+The scheduled/manual `Server Test Prebuild Evidence Ledger` workflow is the
+only prebuild-reuse promotion-readiness counter. It scans successful parity workflow runs,
+requires one exact retained receipt-only artifact, revalidates the receipt's PR,
+head, run, parity, reuse, producer, and hosted-cost identities, and deduplicates
+exact heads. Discovery is server-side bounded to the policy's 30-day receipt
+retention window, so expired history cannot grow the daily API workload without
+bound. The observer, packager, and consumer all use the default-branch artifact
+registry; a candidate registry edit is measured as source content but cannot
+redefine the workload or artifact identity. A content digest over every
+execution-relevant policy input keeps
+old and current measurement methodologies in separate cohorts. The two
+supported profiles are derived from the selected-shard shape; each must provide
+at least 10 correctness heads and 15 cost heads and independently meet the 60%
+runner-minute, p90 test-start, and 5% p90 wall-clock gates. A green workflow
+shell without a retained receipt counts as zero. It covers this prebuild reuse
+decision only; ADR-0074's admission, post-review verification, and deterministic-
+failure cancellation thresholds remain separate evidence gates.
+The ledger is report-only and has read-only permissions: even an
+`eligible-for-human-promotion-review` result cannot change a repository
+variable, publish a required status, cancel work, or authorize a merge.
 
 ## Hosted procedure
 
