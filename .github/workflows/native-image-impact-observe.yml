@@ -86,6 +86,7 @@ jobs:
             const trustedInputs = [
               { path: 'scripts/ci/native-image-impact.py', output: 'policy_blob_sha' },
               { path: '.github/native-image-impact.json', output: 'routing_policy_blob_sha' },
+              { path: '.github/workflows/serving-image-boundary.yml', output: 'serving_workflow_blob_sha' },
               { path: 'scripts/ci/trusted-pr-workflow-run.js', output: 'resolver_blob_sha' },
               { path: '.github/workflows/native-image-impact-observe.yml', output: 'observer_workflow_blob_sha' },
             ];
@@ -161,6 +162,7 @@ jobs:
             --policy-sha '${{ steps.collect.outputs.policy_sha }}' \
             --policy-blob-sha '${{ steps.collect.outputs.policy_blob_sha }}' \
             --routing-policy-blob-sha '${{ steps.collect.outputs.routing_policy_blob_sha }}' \
+            --serving-workflow-blob-sha '${{ steps.collect.outputs.serving_workflow_blob_sha }}' \
             --resolver-blob-sha '${{ steps.collect.outputs.resolver_blob_sha }}' \
             --observer-workflow-blob-sha '${{ steps.collect.outputs.observer_workflow_blob_sha }}' \
             --policy-inputs-sha256 '${{ steps.collect.outputs.policy_inputs_sha256 }}' \

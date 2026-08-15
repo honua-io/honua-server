@@ -31,10 +31,11 @@ current PR. Fork heads are explicitly excluded from the observation denominator
 and retain the full authoritative image workflows. Missing or ambiguous
 same-repository associations fail closed and do not count. The artifact binds
 the canonical gate run, trusted policy commit, individual Git blob IDs for the
-selector, routing policy, resolver, and observer workflow, a digest over that
-fixed input manifest, base/head SHAs, exact project lists, graph fingerprints,
-normalized changed-path digest, matched reasons, and `mutation: none`. Neither
-expensive image workflow reads it.
+selector, routing policy, resolver, observer workflow, and authoritative legacy
+Serving Image Boundary workflow, a digest over that fixed input manifest,
+base/head SHAs, exact project lists, graph fingerprints, normalized changed-path
+digest, matched reasons, and `mutation: none`. Neither expensive image workflow
+reads it.
 
 ## Promotion and rollback
 
@@ -49,7 +50,10 @@ head only when every required exact-head image run completed successfully.
 Successful observer shells are never evidence by themselves.
 
 The ledger also requires positive impacted cohorts and actual narrowed/avoided
-cohorts; twenty unrelated negative observations cannot authorize promotion.
+cohorts; twenty unrelated negative observations cannot authorize promotion. A
+serving head is narrowed only when the candidate selects fewer variants than
+the receipt's replayed legacy per-variant decision. A Lambda-only change that
+selects Lambda in both policies therefore does not count as savings.
 Before enforcement, failure injection must prove
 that project-graph changes, conditional providers, external embedded resources,
 Dockerfiles, `.dockerignore`, and `.trivyignore` all fail safe.

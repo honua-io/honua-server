@@ -252,6 +252,28 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
     project_closure(repo, policy["roots"]["worker"], policy["global_projects"])
 
     legacy = policy["legacy"]
+    common = legacy.get("serving_common_patterns")
+    legacy_variants = legacy.get("serving_variant_patterns")
+    if not isinstance(common, list) or not common or len(common) != len(set(common)):
+        raise PolicyError("legacy serving common patterns must be non-empty and duplicate-free")
+    if not isinstance(legacy_variants, dict) or set(legacy_variants) != {
+        "generic", "lambda", "functions"
+    }:
+        raise PolicyError("legacy serving variants must be generic, lambda, and functions")
+    for name, patterns in legacy_variants.items():
+        if not isinstance(patterns, list) or not patterns or len(patterns) != len(set(patterns)):
+            raise PolicyError(
+                f"legacy serving variant {name} patterns must be non-empty and duplicate-free"
+            )
+    routed_patterns = common + [
+        pattern
+        for name in ("generic", "lambda", "functions")
+        for pattern in legacy_variants[name]
+    ]
+    if len(routed_patterns) != len(set(routed_patterns)):
+        raise PolicyError("legacy serving variant routes overlap")
+    if set(routed_patterns) != set(legacy["serving_patterns"]):
+        raise PolicyError("legacy serving variant routes do not cover the workflow trigger")
     for kind in ("serving", "worker"):
         workflow = repo / legacy[f"{kind}_workflow"]
         actual = _legacy_paths_from_workflow(workflow)
@@ -337,6 +359,7 @@ def evaluate(
     policy_sha: str = "",
     policy_blob_sha: str = "",
     routing_policy_blob_sha: str = "",
+    serving_workflow_blob_sha: str = "",
     resolver_blob_sha: str = "",
     observer_workflow_blob_sha: str = "",
     policy_inputs_sha256: str = "",
@@ -397,7 +420,19 @@ def evaluate(
         risk_classes[name]
         for name in ("worker_managed_graph", "worker_native_rootfs", "worker_vulnerability")
     )
-    legacy_serving = bool(matching_paths(paths, policy["legacy"]["serving_patterns"]))
+    legacy_common = bool(
+        matching_paths(paths, policy["legacy"]["serving_common_patterns"])
+    )
+    legacy_serving_variants = {
+        name: legacy_common
+        or bool(
+            matching_paths(
+                paths, policy["legacy"]["serving_variant_patterns"][name]
+            )
+        )
+        for name in ("generic", "lambda", "functions")
+    }
+    legacy_serving = any(legacy_serving_variants.values())
     legacy_worker = bool(matching_paths(paths, policy["legacy"]["worker_patterns"]))
     candidate_serving = any(serving_variants.values())
 
@@ -416,6 +451,7 @@ def evaluate(
         "policy_sha": policy_sha,
         "policy_blob_sha": policy_blob_sha,
         "routing_policy_blob_sha": routing_policy_blob_sha,
+        "serving_workflow_blob_sha": serving_workflow_blob_sha,
         "resolver_blob_sha": resolver_blob_sha,
         "observer_workflow_blob_sha": observer_workflow_blob_sha,
         "policy_inputs_sha256": policy_inputs_sha256,
@@ -441,6 +477,7 @@ def evaluate(
         },
         "legacy": {
             "serving_trigger": legacy_serving,
+            "serving_variants": legacy_serving_variants,
             "worker_trigger": legacy_worker,
         },
         "candidate": {
@@ -513,6 +550,7 @@ def observation_identity(args: argparse.Namespace) -> dict[str, Any]:
         "policy_sha": args.policy_sha,
         "policy_blob_sha": args.policy_blob_sha,
         "routing_policy_blob_sha": args.routing_policy_blob_sha,
+        "serving_workflow_blob_sha": args.serving_workflow_blob_sha,
         "resolver_blob_sha": args.resolver_blob_sha,
         "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
     }
@@ -534,6 +572,7 @@ def observation_identity(args: argparse.Namespace) -> dict[str, Any]:
         "policy_sha": args.policy_sha,
         "policy_blob_sha": args.policy_blob_sha,
         "routing_policy_blob_sha": args.routing_policy_blob_sha,
+        "serving_workflow_blob_sha": args.serving_workflow_blob_sha,
         "resolver_blob_sha": args.resolver_blob_sha,
         "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
         "policy_inputs_sha256": args.policy_inputs_sha256,
@@ -553,6 +592,8 @@ def markdown(report: dict[str, Any]) -> str:
         f"- Mode: `{report['mode']}` (mutation: `{report['mutation']}`)",
         f"- PR/head: `#{report['pull_request']}` / `{report['head_sha']}`",
         f"- Legacy serving trigger: `{str(report['legacy']['serving_trigger']).lower()}`",
+        "- Legacy serving variants: "
+        f"`{json.dumps(report['legacy']['serving_variants'], sort_keys=True)}`",
         f"- Candidate serving variants: `{json.dumps(candidate['serving_variants'], sort_keys=True)}`",
         f"- Legacy worker trigger: `{str(report['legacy']['worker_trigger']).lower()}`",
         f"- Candidate worker build: `{str(candidate['worker_build']).lower()}`",
@@ -593,6 +634,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     observe.add_argument("--policy-sha", required=True)
     observe.add_argument("--policy-blob-sha", required=True)
     observe.add_argument("--routing-policy-blob-sha", required=True)
+    observe.add_argument("--serving-workflow-blob-sha", required=True)
     observe.add_argument("--resolver-blob-sha", required=True)
     observe.add_argument("--observer-workflow-blob-sha", required=True)
     observe.add_argument("--policy-inputs-sha256", required=True)

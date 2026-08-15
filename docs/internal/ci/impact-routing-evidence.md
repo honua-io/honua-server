@@ -31,7 +31,11 @@ associated with more than one pull request.
 Both streams bind the Git blob of `scripts/ci/trusted-pr-workflow-run.js` that
 resolved the canonical PR, base, head, workflow, run, and attempt. A resolver
 change therefore starts a new policy cohort instead of mixing identities
-established under superseded trust logic.
+established under superseded trust logic. Native receipts additionally bind the
+authoritative Serving Image Boundary workflow and record its replayed
+per-variant decision. Serving narrowing is the strict difference between that
+legacy variant count and the candidate variant count; reproducing an existing
+Lambda-only, Functions-only, or generic-only selection does not count.
 
 Observer receipts use a seven-day rolling retention window. At current activity
 that keeps per-run catalog discovery and downloads below the repository token's

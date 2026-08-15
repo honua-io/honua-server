@@ -50,10 +50,27 @@ class NativeImageImpactTests(unittest.TestCase):
             generic["candidate"]["serving_variants"],
             {"generic": True, "lambda": False, "functions": False},
         )
+        self.assertEqual(
+            generic["legacy"]["serving_variants"],
+            {"generic": True, "lambda": False, "functions": False},
+        )
+        lambda_only = report("docker/Dockerfile.lambda.aot")
+        self.assertEqual(
+            lambda_only["legacy"]["serving_variants"],
+            {"generic": False, "lambda": True, "functions": False},
+        )
+        self.assertEqual(
+            lambda_only["candidate"]["serving_variants"],
+            lambda_only["legacy"]["serving_variants"],
+        )
         functions = report("docker/cloud/azure-functions/host.json")
         self.assertEqual(
             functions["candidate"]["serving_variants"],
             {"generic": False, "lambda": False, "functions": True},
+        )
+        self.assertEqual(
+            functions["candidate"]["serving_variants"],
+            functions["legacy"]["serving_variants"],
         )
 
     def test_worker_rootfs_change_does_not_select_serving(self) -> None:
@@ -183,6 +200,7 @@ class NativeImageImpactTests(unittest.TestCase):
             policy_sha="c" * 40,
             policy_blob_sha="d" * 40,
             routing_policy_blob_sha="e" * 40,
+            serving_workflow_blob_sha="3" * 40,
             resolver_blob_sha="f" * 40,
             observer_workflow_blob_sha="1" * 40,
             policy_inputs_sha256="2" * 64,
@@ -196,6 +214,7 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertEqual(result["gate_run_head_sha"], "b" * 40)
         self.assertEqual(result["policy_sha"], "c" * 40)
         self.assertEqual(result["routing_policy_blob_sha"], "e" * 40)
+        self.assertEqual(result["serving_workflow_blob_sha"], "3" * 40)
         self.assertEqual(result["policy_inputs_sha256"], "2" * 64)
         self.assertEqual(len(result["changed_paths_sha256"]), 64)
 
@@ -208,6 +227,7 @@ class NativeImageImpactTests(unittest.TestCase):
             policy_sha="c" * 40,
             policy_blob_sha="d" * 40,
             routing_policy_blob_sha="e" * 40,
+            serving_workflow_blob_sha="3" * 40,
             resolver_blob_sha="f" * 40,
             observer_workflow_blob_sha="1" * 40,
             policy_inputs_sha256="2" * 64,
@@ -223,6 +243,7 @@ class NativeImageImpactTests(unittest.TestCase):
 
         for attribute, invalid in (
             ("routing_policy_blob_sha", "short"),
+            ("serving_workflow_blob_sha", "short"),
             ("policy_inputs_sha256", "short"),
             ("trusted_execution", "candidate-controlled"),
             ("gate_run_conclusion", "in_progress"),

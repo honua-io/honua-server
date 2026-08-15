@@ -21,6 +21,7 @@ BASE = "a" * 40
 HEAD_A = "b" * 40
 HEAD_B = "c" * 40
 HEAD_C = "d" * 40
+HEAD_D = "e" * 40
 
 
 def policy(**overrides: object) -> dict:
@@ -151,9 +152,18 @@ def native_receipt(
     pr: int,
     head: str,
     worker: bool,
+    serving: dict[str, bool] | None = None,
+    legacy_serving: dict[str, bool] | None = None,
+    legacy_worker: bool = True,
 ) -> dict:
-    serving = {"generic": True, "lambda": False, "functions": False}
-    legacy_worker = True
+    if serving is None:
+        serving = {"generic": True, "lambda": False, "functions": False}
+    if legacy_serving is None:
+        legacy_serving = {
+            "generic": True,
+            "lambda": True,
+            "functions": True,
+        }
     changed_paths = ["src/Honua.Core/Models/Resource.cs"]
     return {
         "schema": MODULE.NATIVE_CONTRACT,
@@ -164,6 +174,7 @@ def native_receipt(
         "policy_sha": BASE,
         "policy_blob_sha": blobs["native_classifier"],
         "routing_policy_blob_sha": blobs["native_routing_policy"],
+        "serving_workflow_blob_sha": blobs["serving_workflow"],
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
         "policy_inputs_sha256": blobs["native_policy_inputs_sha256"],
@@ -179,13 +190,17 @@ def native_receipt(
         ).hexdigest(),
         "mode": "observe",
         "mutation": "none",
-        "legacy": {"serving_trigger": True, "worker_trigger": legacy_worker},
+        "legacy": {
+            "serving_trigger": any(legacy_serving.values()),
+            "serving_variants": legacy_serving,
+            "worker_trigger": legacy_worker,
+        },
         "candidate": {"serving_variants": serving, "worker_build": worker},
         "comparison": {
             "serving_candidate_only": False,
             "serving_legacy_only": False,
             "worker_candidate_only": False,
-            "worker_legacy_only": not worker,
+            "worker_legacy_only": legacy_worker and not worker,
         },
     }
 
@@ -319,15 +334,33 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             entry(MODULE.PR_GATE_STREAM, 101, 1),
             entry(MODULE.NATIVE_STREAM, 102, 2),
             entry(MODULE.NATIVE_STREAM, 103, 3),
+            entry(MODULE.NATIVE_STREAM, 104, 4),
         ]
         entries[1]["producer_head_sha"] = BASE
         entries[2]["producer_head_sha"] = BASE
+        entries[3]["producer_head_sha"] = BASE
         archive(archives, 101, MODULE.PR_GATE_STREAM, pr_gate_receipt(blobs))
         archive(archives, 102, MODULE.NATIVE_STREAM, native_receipt(blobs, pr=11, head=HEAD_B, worker=True))
         archive(archives, 103, MODULE.NATIVE_STREAM, native_receipt(blobs, pr=12, head=HEAD_C, worker=False))
+        lambda_only = {"generic": False, "lambda": True, "functions": False}
+        archive(
+            archives,
+            104,
+            MODULE.NATIVE_STREAM,
+            native_receipt(
+                blobs,
+                pr=13,
+                head=HEAD_D,
+                worker=False,
+                serving=lambda_only,
+                legacy_serving=lambda_only,
+                legacy_worker=False,
+            ),
+        )
         serving = [
             image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B),
             image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C),
+            image_run(205, MODULE.SERVING_WORKFLOW, HEAD_D),
         ]
         worker = [
             image_run(203, MODULE.WORKER_WORKFLOW, HEAD_B),
@@ -353,7 +386,7 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         )
         assert ledger["recommendation"] == "eligible-for-human-promotion-review"
         assert ledger["counts"]["docs_only_success_heads"] == 1
-        assert ledger["counts"]["native_countable_heads"] == 2
+        assert ledger["counts"]["native_countable_heads"] == 3
         assert ledger["counts"]["serving_narrowed_heads"] == 2
         assert ledger["counts"]["worker_impacted_heads"] == 1
         assert ledger["counts"]["worker_avoided_heads"] == 1

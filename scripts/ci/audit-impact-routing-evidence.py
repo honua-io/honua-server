@@ -162,12 +162,14 @@ def current_blobs(root: Path) -> dict[str, str]:
         "native_observer": NATIVE_WORKFLOW,
         "native_classifier": "scripts/ci/native-image-impact.py",
         "native_routing_policy": ".github/native-image-impact.json",
+        "serving_workflow": SERVING_WORKFLOW,
         "trusted_run_resolver": "scripts/ci/trusted-pr-workflow-run.js",
     }
     blobs = {key: git_blob_sha(root / value) for key, value in paths.items()}
     manifest = [
         {"path": "scripts/ci/native-image-impact.py", "blob_sha": blobs["native_classifier"]},
         {"path": ".github/native-image-impact.json", "blob_sha": blobs["native_routing_policy"]},
+        {"path": SERVING_WORKFLOW, "blob_sha": blobs["serving_workflow"]},
         {"path": "scripts/ci/trusted-pr-workflow-run.js", "blob_sha": blobs["trusted_run_resolver"]},
         {"path": NATIVE_WORKFLOW, "blob_sha": blobs["native_observer"]},
     ]
@@ -523,6 +525,7 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     expected_blobs = {
         "policy_blob_sha": blobs["native_classifier"],
         "routing_policy_blob_sha": blobs["native_routing_policy"],
+        "serving_workflow_blob_sha": blobs["serving_workflow"],
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
     }
@@ -561,12 +564,28 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     if not isinstance(legacy, dict) or not isinstance(candidate, dict) or not isinstance(comparison, dict):
         raise ValueError("native-image routing decision is invalid")
     serving = candidate.get("serving_variants")
-    if not isinstance(serving, dict) or set(serving) != {"generic", "lambda", "functions"}:
+    legacy_serving_variants = legacy.get("serving_variants")
+    variant_names = {"generic", "lambda", "functions"}
+    if not isinstance(serving, dict) or set(serving) != variant_names:
         raise ValueError("native-image serving decision is invalid")
-    values = [legacy.get("serving_trigger"), legacy.get("worker_trigger"), candidate.get("worker_build"), *serving.values()]
+    if (
+        not isinstance(legacy_serving_variants, dict)
+        or set(legacy_serving_variants) != variant_names
+    ):
+        raise ValueError("native-image legacy serving decision is invalid")
+    values = [
+        legacy.get("serving_trigger"),
+        legacy.get("worker_trigger"),
+        candidate.get("worker_build"),
+        *serving.values(),
+        *legacy_serving_variants.values(),
+    ]
     if not all(isinstance(item, bool) for item in values):
         raise ValueError("native-image decision contains a non-boolean value")
     candidate_serving = any(serving.values())
+    legacy_serving = any(legacy_serving_variants.values())
+    if legacy["serving_trigger"] != legacy_serving:
+        raise ValueError("native-image legacy serving trigger does not replay")
     expected_comparison = {
         "serving_candidate_only": candidate_serving and not legacy["serving_trigger"],
         "serving_legacy_only": legacy["serving_trigger"] and not candidate_serving,
@@ -580,7 +599,10 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         "pull_request": pull_request,
         "head_sha": head,
         "gate_conclusion": value["gate_run_conclusion"],
-        "legacy_serving": legacy["serving_trigger"],
+        "legacy_serving": legacy_serving,
+        "legacy_serving_count": sum(
+            1 for item in legacy_serving_variants.values() if item
+        ),
         "legacy_worker": legacy["worker_trigger"],
         "candidate_serving": candidate_serving,
         "candidate_serving_count": sum(1 for item in serving.values() if item),
@@ -693,7 +715,7 @@ def summarize(
     worker_impacted = [item for item in native_countable if item["candidate_worker"]]
     serving_narrowed = [
         item for item in native_countable
-        if item["legacy_serving"] and item["candidate_serving_count"] < 3
+        if item["candidate_serving_count"] < item["legacy_serving_count"]
     ]
     worker_avoided = [
         item for item in native_countable
