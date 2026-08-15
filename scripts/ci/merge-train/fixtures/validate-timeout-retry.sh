@@ -533,6 +533,10 @@ smart_gate_result=success
 gh() {
   if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
     printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json databaseId,attempt,event,headBranch,headSha,status,updatedAt,workflowName'* ]]; then
+    printf '{"databaseId":456,"attempt":1,"event":"workflow_dispatch","headBranch":"train/batch/abc/1","headSha":"%s","status":"completed","updatedAt":"2026-08-14T00:00:00Z","workflowName":"CI"}\n' "${fixture_batch_sha}"
+  elif [[ "$1" == "api" && "$*" == *'/actions/runs/456/jobs?filter=latest&per_page=100'* ]]; then
+    printf '[{"jobs":[]}]\n'
   elif [[ "$*" == *'--json status --jq .status'* ]]; then
     printf 'completed\n'
   elif [[ "$*" == *'--json jobs'* ]]; then
@@ -619,6 +623,10 @@ resume_identity_head="${fixture_batch_sha}"
 gh() {
   if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
     printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json databaseId,attempt,event,headBranch,headSha,status,updatedAt,workflowName'* ]]; then
+    printf '{"databaseId":456,"attempt":1,"event":"workflow_dispatch","headBranch":"train/batch/abc/1","headSha":"%s","status":"completed","updatedAt":"2026-08-14T00:00:00Z","workflowName":"CI"}\n' "${fixture_batch_sha}"
+  elif [[ "$1" == "api" && "$*" == *'/actions/runs/456/jobs?filter=latest&per_page=100'* ]]; then
+    printf '[{"jobs":[]}]\n'
   elif [[ "$*" == *'--json status --jq .status'* ]]; then
     printf 'completed\n'
   elif [[ "$*" == *'--json jobs'* ]]; then

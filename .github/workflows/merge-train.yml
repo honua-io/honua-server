@@ -177,6 +177,7 @@ jobs:
           # train ALSO appends its dashboard to $GITHUB_STEP_SUMMARY directly, so
           # the Summary tab is populated even when the train selects nothing.
           TRAIN_METRICS_OUT: ${{ github.workspace }}/merge-train-metrics.json
+          TRAIN_EARLY_FAILURE_RAW_OUT: ${{ github.workspace }}/merge-train-early-failure-observation.json
           # Observation only. No code path reads this evidence to cancel,
           # classify, drop, or land; #3224 requires 20 live observations before
           # a separate enforcement proposal is even eligible for review.
@@ -221,6 +222,9 @@ jobs:
           # Stamp a real ISO-8601 instant (the repository updated_at above is only
           # a stable fallback; prefer a fresh UTC timestamp for this run).
           export TRAIN_RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # A reused workspace must never upload another controller's raw
+          # observation when this run has no selected-shard failure.
+          rm -f -- "${TRAIN_EARLY_FAILURE_RAW_OUT}"
           if [[ "${TRAIN_APPLY}" == "1" && "${MERGE_TRAIN_TOKEN_PRESENT}" != "true" ]]; then
             echo "::error::MERGE_TRAIN_TOKEN is required for TRAIN_APPLY=1. Set MERGE_TRAIN_TOKEN before running live mode."
             exit 1
@@ -245,7 +249,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: merge-train-metrics
-          path: ${{ github.workspace }}/merge-train-metrics.json
+          path: |
+            ${{ github.workspace }}/merge-train-metrics.json
+            ${{ github.workspace }}/merge-train-early-failure-observation.json
           if-no-files-found: warn
           retention-days: 30
 

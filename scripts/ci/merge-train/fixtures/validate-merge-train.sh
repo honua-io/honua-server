@@ -741,8 +741,14 @@ gh() {
     if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
     return 0
   fi
-  if [[ "$1 $2" == "run view" && "$*" == *"--json status,updatedAt,jobs"* ]]; then
-    printf '{"status":"completed","updatedAt":"2026-08-14T00:00:00Z","jobs":[]}\n'
+  if [[ "$1 $2" == "run view" && "$*" == *"--json databaseId,attempt,event,headBranch,headSha,status,updatedAt,workflowName"* ]]; then
+    local head; head="$(git rev-parse train/batch/smartci-batch 2>/dev/null || echo "")"
+    printf 'poll:%s\n' "$3" >>"${smart_ci_events}"
+    printf '{"databaseId":222,"attempt":1,"event":"workflow_dispatch","headBranch":"train/batch/smartci-batch","headSha":"%s","status":"completed","updatedAt":"2026-08-14T00:00:00Z","workflowName":"CI"}\n' "${head}"
+    return 0
+  fi
+  if [[ "$1" == "api" && "$*" == *"/actions/runs/222/jobs?filter=latest&per_page=100"* ]]; then
+    printf '[{"jobs":[]}]\n'
     return 0
   fi
   if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then

@@ -243,6 +243,16 @@ unknown signature, evidence incompleteness, cancellation failure, or
 attribution ambiguity is a real non-success. Recovery clears or resumes durable
 phase/label state idempotently; it never dispatches duplicate batch CI.
 
+Before cancellation authority exists, the live controller runs a read-only
+shadow observer. Each retained record is bound to the exact CI run id, initial
+attempt, workflow-dispatch event, batch branch, and immutable batch SHA; job
+enumeration is explicitly paginated and attempt-bound. The terminal classifier
+appends its already-made outcome, but no train decision reads the observation.
+Promotion requires at least 20 countable deterministic candidates with complete selected
+shards and zero contradictions. The record separately measures ideal
+post-failure runner time and the actionable subset remaining after observation,
+so polling latency is charged rather than hidden.
+
 ### 7. Route specialized evidence by inputs
 
 Native-image evidence follows #3204. A fixture-backed router maps Native-AOT

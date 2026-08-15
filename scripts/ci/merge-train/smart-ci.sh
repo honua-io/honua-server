@@ -120,6 +120,8 @@ train_smart_ci_run() {
     echo "FAILURE"
     return 0
   }
+  export TRAIN_EARLY_FAILURE_BATCH_BRANCH="${batch}"
+  export TRAIN_EARLY_FAILURE_BATCH_SHA="${expected_head}"
   dispatch_nonce="$(printf '%s:%s:%s:%s:%s' "${GITHUB_RUN_ID:-local}" "${GITHUB_RUN_ATTEMPT:-0}" \
     "$(date -u +%s%N)" "${RANDOM}" "$$" | sha256sum | cut -c1-32)"
   dispatch_identity="merge-train:${dispatch_nonce}"
@@ -168,7 +170,7 @@ train_wait_for_run_completion() {
   local poll_interval="${3:-${TRAIN_SMART_CI_POLL_SECONDS:-30}}"
   local observation_interval="${TRAIN_EARLY_FAILURE_POLL_SECONDS:-120}"
   local last_observation_epoch=0 observe_enabled=0
-  local now status snapshot
+  local now status snapshot run_snapshot
   [[ "${observation_interval}" =~ ^[1-9][0-9]*$ ]] || observation_interval=120
   if type -t train_early_failure_observe_snapshot >/dev/null 2>&1 &&
      [[ "${TRAIN_EARLY_FAILURE_MODE:-off}" == "observe" ]] &&
@@ -178,23 +180,32 @@ train_wait_for_run_completion() {
   while :; do
     now="$(train_now)"
     snapshot=""
+    run_snapshot=""
     # This status read is authoritative and is never replaced by observation.
     # Failure of the optional richer jobs request must not change whether the
     # controller sees the workflow reach its terminal state.
-    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
+    if (( observe_enabled == 1 )); then
+      # Reuse the mandatory run-status request for exact observer identity.
+      # The separately throttled, explicitly paginated jobs read remains the
+      # observer's only additional request.
+      run_snapshot="$(train_early_failure_run_snapshot "${run_id}" || echo '{}')"
+      status="$(jq -r '.status // empty' <<<"${run_snapshot}" 2>/dev/null || echo '')"
+    else
+      status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
+    fi
     if (( observe_enabled == 1 )) && [[ ! -s "${TRAIN_EARLY_FAILURE_FILE}" ]] &&
        (( last_observation_epoch == 0 || now - last_observation_epoch >= observation_interval )); then
       # The exact job completion timestamp makes the measurement independent of
       # polling delay. The optional jobs page is bounded to once per 120s by
       # default and can never substitute for the authoritative status read.
-      snapshot="$(gh run view "${run_id}" --json status,updatedAt,jobs 2>/dev/null || echo '{}')"
+      snapshot="$(train_early_failure_attach_jobs "${run_id}" "${run_snapshot}" || echo '{}')"
       train_early_failure_observe_snapshot "${run_id}" "${snapshot}" || true
       last_observation_epoch="${now}"
     fi
     if [[ "${status}" == "completed" ]]; then
       if (( observe_enabled == 1 )); then
         if [[ -z "${snapshot}" ]]; then
-          snapshot="$(gh run view "${run_id}" --json status,updatedAt,jobs 2>/dev/null || echo '{}')"
+          snapshot="$(train_early_failure_attach_jobs "${run_id}" "${run_snapshot}" || echo '{}')"
           train_early_failure_observe_snapshot "${run_id}" "${snapshot}" || true
         fi
         train_early_failure_finalize_snapshot "${run_id}" "${snapshot}" || true
