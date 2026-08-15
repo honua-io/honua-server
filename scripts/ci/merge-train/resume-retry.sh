@@ -181,7 +181,10 @@ train_restore_retry_intent() {
   gate="$(gh run view "${run_id}" --json jobs \
     --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' \
     2>/dev/null | tr '[:lower:]' '[:upper:]')"
-  [[ "${gate}" == "SUCCESS" || "${gate}" == "FAILURE" ]] || return 2
+  case "${gate}" in
+    SUCCESS|FAILURE|CANCELLED|TIMED_OUT|STARTUP_FAILURE) ;;
+    *) return 2 ;;
+  esac
   descriptor="$(train_smart_ci_shards "${batch}")" || return 2
 
   jq -c --arg gate "${gate}" --argjson descriptor "${descriptor}" --argjson selected "${selected}" \

@@ -141,11 +141,11 @@ jobs:
           git -C source merge-base "${BASE_SHA}" "${HEAD_SHA}" >/dev/null
           git -C source diff --name-only "${BASE_SHA}...${HEAD_SHA}" \
             | policy/scripts/ci/honua-server-targeted-tests.sh --stdin \
-                --config source/.github/ci-shards.json > descriptor.json
+                --config policy/.github/ci-shards.json > descriptor.json
           python3 policy/scripts/ci/plan-server-test-prebuild.py \
             --config policy/.github/server-test-prebuild-observe.json \
-            --shards source/.github/ci-shards.json \
-            --registry source/.github/server-test-artifact-projects.json \
+            --shards policy/.github/ci-shards.json \
+            --registry policy/.github/server-test-artifact-projects.json \
             --descriptor descriptor.json \
             --output prebuild-plan.json \
             --github-output "${GITHUB_OUTPUT}"
@@ -251,7 +251,7 @@ jobs:
       - name: Package bounded build output with trusted policy
         env:
           HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT: ${{ github.workspace }}/source
-          HONUA_SERVER_TEST_ARTIFACT_REGISTRY: ${{ github.workspace }}/source/.github/server-test-artifact-projects.json
+          HONUA_SERVER_TEST_ARTIFACT_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json
           HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK: ${{ steps.toolchain.outputs.sdk }}
         run: |
           mkdir -p payload

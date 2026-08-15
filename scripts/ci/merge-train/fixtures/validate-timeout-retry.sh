@@ -105,7 +105,7 @@ saved_gh_before_scan="$(declare -f gh)"
 saved_run_log_text="${TRAIN_RUN_LOG_TEXT}"
 gh() {
   case "$*" in
-    *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\n12\tServer Tests (Migration)\n' ;;
+    *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\tfailure\n12\tServer Tests (Migration)\tfailure\n' ;;
     *"--job 11"*) printf 'Error: Process completed with exit code 124.\n' ;;
     *"--job 12"*) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget.\n::error::Server test shard 'Migration' timed out after 29 minute(s).\n" ;;
     *) printf '1\n' ;;
@@ -119,6 +119,29 @@ train_classify_timeout 123 0 || rc=$?
 if [[ -s "${record}" ]]; then fail "a later-job capacity exhaustion still consumed a rerun"; fi
 pass "capacity marker takes precedence over an earlier generic timeout"
 eval "${saved_gh_before_scan}"
+TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
+
+# GitHub reports a job-level timeout as conclusion=cancelled and often emits
+# only "The operation was canceled" instead of exit 124. The terminal
+# conclusion itself must reach the same single failed-job rerun path.
+: >"${record}"
+saved_gh_before_cancelled="$(declare -f gh)"
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '21\tPostgres Compatibility (postgis/postgis:16-3.4)\tcancelled\n' ;;
+    *"--json attempt"*) printf '1\n' ;;
+    *) printf '1\n' ;;
+  esac
+}
+unset TRAIN_RUN_LOG_TEXT
+train_classify_timeout 456 0 'Postgres Compatibility (postgis/postgis:16-3.4)' \
+  || fail "cancelled job did not enter the bounded timeout retry"
+grep -Fqx 'gh run rerun 456 --failed' "${record}" \
+  || fail "cancelled job retry did not target failed jobs only"
+[[ "${TRAIN_TIMEOUT_KIND}" == "hang" ]] \
+  || fail "cancelled job was not classified as a retryable timeout"
+pass "cancelled job-level timeout reaches bounded failed-job retry"
+eval "${saved_gh_before_cancelled}"
 TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
 
 # A timeout that stalled (suspected hang) keeps the existing one-rerun budget.
@@ -984,10 +1007,18 @@ gh() {
   if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
   elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
-  elif [[ "$*" == *'--json jobs'* ]]; then printf 'failure\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then printf '%s\n' "${fixture_resume_gate:-failure}"
   else fail "resumed failure attempted unexpected gh operation: $*"
   fi
 }
+for fixture_resume_gate in cancelled timed_out startup_failure; do
+  resumed_terminal_state="$(train_restore_retry_intent)" \
+    || fail "restart rejected terminal ${fixture_resume_gate} retry result"
+  [[ "$(jq -r '.resume_gate' <<<"${resumed_terminal_state}")" == "${fixture_resume_gate^^}" ]] \
+    || fail "restart did not preserve terminal ${fixture_resume_gate} retry result"
+done
+fixture_resume_gate=failure
+pass "retry restoration accepts terminal non-success conclusions"
 train_ci_jobs_are_terminal() { [[ "$1" == "123" ]] || fail "failure classification lost resumed run id"; }
 train_expected_shards_are_classifiable() { [[ "$1" == "123" ]] || fail "shard classification lost resumed run id"; }
 train_failing_jobs() { [[ "$1" == "123" ]] || fail "failure reader lost resumed run id"; printf 'Server Tests (OData Core)\n'; }

@@ -215,6 +215,13 @@ producer cost, not only the consumer download. The contract and promotion
 procedure are documented in
 `docs/internal/ci/server-test-prebuild-shadow.md` (honua-server#3226).
 
+The retained ledger partitions observations by the complete measurement-policy
+digest. If the same exact head is measured more than once under that policy,
+the highest verifier run id (then attempt and artifact id) is authoritative and
+older valid receipts are reported as superseded rather than as integrity
+corruption. The newer observation may remove a previously countable head; a
+repeat can never manufacture two samples from one head.
+
 ### 6. Fail fast without manufacturing success
 
 For a single-PR train batch, the first deterministic gating failure cancels
@@ -228,10 +235,13 @@ mapping. Ambiguous attribution fails closed or runs focused probes. It does not
 wait for unrelated green shards merely to classify a known failure.
 
 Classified infrastructure flakes and timeouts retain one controlled
-failed-job-only retry. A repeated timeout, unknown signature, evidence
-incompleteness, cancellation failure, or attribution ambiguity is a real
-non-success. Recovery clears or resumes durable phase/label state
-idempotently; it never dispatches duplicate batch CI.
+failed-job-only retry. GitHub's terminal `cancelled`, `timed_out`, and
+`startup_failure` job conclusions are retry inputs, not evidence: they bypass
+optimistic allowlists and pre-existing-failure subtraction, and only a newer
+explicitly successful attempt can satisfy the gate. A repeated timeout,
+unknown signature, evidence incompleteness, cancellation failure, or
+attribution ambiguity is a real non-success. Recovery clears or resumes durable
+phase/label state idempotently; it never dispatches duplicate batch CI.
 
 ### 7. Route specialized evidence by inputs
 
