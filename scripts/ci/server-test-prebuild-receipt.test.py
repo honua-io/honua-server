@@ -105,12 +105,17 @@ class PrebuildReceiptTests(unittest.TestCase):
     def test_unrelated_trunk_moves_are_compatible_but_policy_changes_are_not(self) -> None:
         receipt = MODULE.build_receipt(**self.common())
         producer_policy_sha = self.policy_sha
+        producer_policy_digest = MODULE.policy_inputs_digest(self.policy, producer_policy_sha)
         (self.policy / "unrelated.txt").write_text("unrelated trunk move\n", encoding="utf-8")
         subprocess.run(["git", "add", "."], cwd=self.policy, check=True)
         subprocess.run(
             ["git", "commit", "-m", "unrelated"], cwd=self.policy, check=True, capture_output=True
         )
         current_policy_sha = str(MODULE.BASE.git(self.policy, "rev-parse", "HEAD"))
+        self.assertEqual(
+            producer_policy_digest,
+            MODULE.policy_inputs_digest(self.policy, current_policy_sha),
+        )
         accepted = MODULE.validate_receipt(
             MODULE.BASE.canonical(receipt),
             **{
@@ -128,6 +133,10 @@ class PrebuildReceiptTests(unittest.TestCase):
             ["git", "commit", "-m", "policy change"], cwd=self.policy, check=True, capture_output=True
         )
         changed_policy_sha = str(MODULE.BASE.git(self.policy, "rev-parse", "HEAD"))
+        self.assertNotEqual(
+            producer_policy_digest,
+            MODULE.policy_inputs_digest(self.policy, changed_policy_sha),
+        )
         with self.assertRaisesRegex(ValueError, "current trusted policy inputs"):
             MODULE.validate_receipt(
                 MODULE.BASE.canonical(receipt),

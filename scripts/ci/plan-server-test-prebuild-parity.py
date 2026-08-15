@@ -62,7 +62,7 @@ def build_plan(observation: dict, registry: dict) -> dict:
         by_project[project] = item
 
     selected: list[dict] = []
-    profile_dimensions: list[tuple[str, int]] = []
+    profile_shard_counts: list[int] = []
     seen_projects: set[str] = set()
     for producer in producers:
         if not isinstance(producer, dict):
@@ -82,7 +82,7 @@ def build_plan(observation: dict, registry: dict) -> dict:
         ):
             raise ValueError(f"observer producer identity is invalid for {project!r}")
         seen_projects.add(project)
-        profile_dimensions.append((suffix, selected_shards))
+        profile_shard_counts.append(selected_shards)
         selected.append(
             {
                 "identity": suffix,
@@ -95,11 +95,14 @@ def build_plan(observation: dict, registry: dict) -> dict:
 
     return {
         "contract": BENCHMARK_CONTRACT,
-        "profile": "exact-head-shadow:"
-        + (
-            ",".join(f"{identity}={shards}" for identity, shards in sorted(profile_dimensions))
-            if profile_dimensions
-            else "none"
+        "profile": (
+            "exact-head-shadow:none"
+            if not profile_shard_counts
+            else (
+                "exact-head-shadow:two-shard"
+                if max(profile_shard_counts) == 2
+                else "exact-head-shadow:multi-shard"
+            )
         ),
         "baseline": selected,
         "candidates": selected,

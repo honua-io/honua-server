@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import re
@@ -26,10 +27,21 @@ ARTIFACT = re.compile(
 SHA = re.compile(r"^[0-9a-f]{40}$")
 MAX_RECEIPT_BYTES = 2 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
+PREBUILD_RECEIPT_SCRIPT = Path(__file__).with_name("server-test-prebuild-receipt.py")
+PREBUILD_RECEIPT_SPEC = importlib.util.spec_from_file_location(
+    "server_test_prebuild_receipt_for_evidence", PREBUILD_RECEIPT_SCRIPT
+)
+assert PREBUILD_RECEIPT_SPEC and PREBUILD_RECEIPT_SPEC.loader
+PREBUILD_RECEIPT = importlib.util.module_from_spec(PREBUILD_RECEIPT_SPEC)
+PREBUILD_RECEIPT_SPEC.loader.exec_module(PREBUILD_RECEIPT)
 
 
 def load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def measurement_policy_digest(policy_root: Path, policy_sha: str) -> str:
+    return PREBUILD_RECEIPT.policy_inputs_digest(policy_root, policy_sha)
 
 
 def flatten_runs(payload: object) -> list[dict]:
@@ -180,6 +192,7 @@ def validate_receipt(entry: dict, value: object) -> dict:
         value.get("pull_request") != entry["pull_request"]
         or value.get("head_sha") != entry["head_sha"]
         or value.get("verifier_run_id") != entry["run_id"]
+        or not re.fullmatch(r"[0-9a-f]{64}", str(value.get("measurement_policy_digest", "")))
         or not isinstance(value.get("countable"), bool)
     ):
         raise ValueError("receipt identity is inconsistent")
@@ -235,6 +248,7 @@ def validate_receipt(entry: dict, value: object) -> dict:
         "artifact_id": entry["artifact_id"],
         "head_sha": entry["head_sha"],
         "head_to_first_test_ms": head_to_first_test_ms,
+        "measurement_policy_digest": value["measurement_policy_digest"],
         "profile": summary["profile"],
         "producer_run_id": producer_run_id,
         "pull_request": entry["pull_request"],
@@ -250,16 +264,37 @@ def nearest_rank(values: list[int], percentile: float) -> int | None:
     return ordered[max(0, math.ceil(percentile * len(ordered)) - 1)]
 
 
-def summarize(index: object, receipts_root: Path, policy: object) -> dict:
+def summarize(
+    index: object,
+    receipts_root: Path,
+    policy: object,
+    current_policy_digest: str,
+) -> dict:
     if not isinstance(index, dict) or index.get("contract") != INDEX_CONTRACT:
         raise ValueError("evidence index contract is invalid")
     if index.get("workflow") != {"name": WORKFLOW_NAME, "path": WORKFLOW_PATH}:
         raise ValueError("evidence index workflow identity is invalid")
     if not isinstance(policy, dict) or policy.get("contract") != POLICY_CONTRACT:
         raise ValueError("promotion policy contract is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", current_policy_digest):
+        raise ValueError("current measurement policy digest is invalid")
     minimum_heads = positive_int(policy.get("minimum_countable_heads"), "minimum countable heads")
     minimum_cost = positive_int(policy.get("minimum_cost_heads"), "minimum cost heads")
-    minimum_profiles = positive_int(policy.get("minimum_distinct_profiles"), "minimum profiles")
+    required_profiles = policy.get("required_profiles")
+    if (
+        not isinstance(required_profiles, list)
+        or len(required_profiles) < 2
+        or not all(isinstance(item, str) and item.strip() for item in required_profiles)
+        or len(required_profiles) != len(set(required_profiles))
+    ):
+        raise ValueError("required profiles are invalid")
+    minimum_heads_per_profile = positive_int(
+        policy.get("minimum_countable_heads_per_profile"),
+        "minimum countable heads per profile",
+    )
+    minimum_cost_per_profile = positive_int(
+        policy.get("minimum_cost_heads_per_profile"), "minimum cost heads per profile"
+    )
     minimum_savings = policy.get("minimum_runner_minute_savings_percent")
     if (
         not isinstance(minimum_savings, (int, float))
@@ -308,8 +343,23 @@ def summarize(index: object, receipts_root: Path, policy: object) -> dict:
         ) as error:
             integrity_failures.append({"run_id": run_id, "reason": str(error)})
 
+    current_observations = [
+        item for item in observations if item["measurement_policy_digest"] == current_policy_digest
+    ]
+    noncurrent_policy_observations = len(observations) - len(current_observations)
+    unexpected_profiles = sorted(
+        {item["profile"] for item in current_observations} - set(required_profiles)
+    )
+    if unexpected_profiles:
+        integrity_failures.append(
+            {
+                "run_id": None,
+                "reason": f"current policy produced unsupported profiles: {unexpected_profiles}",
+            }
+        )
+
     grouped: dict[str, list[dict]] = defaultdict(list)
-    for observation in observations:
+    for observation in current_observations:
         grouped[observation["head_sha"]].append(observation)
     duplicate_heads = sorted(head for head, values in grouped.items() if len(values) != 1)
     countable = [
@@ -339,22 +389,75 @@ def summarize(index: object, receipts_root: Path, policy: object) -> dict:
     )
     parity_ready = len(countable) >= minimum_heads
     cost_ready = len(countable) >= minimum_cost
-    profile_ready = len(profiles) >= minimum_profiles
-    savings_ready = savings_percent is not None and savings_percent >= minimum_savings
-    p90_test_start_ready = (
-        baseline_p90_test_start_ms is not None
-        and candidate_p90_test_start_ms is not None
-        and (
-            candidate_p90_test_start_ms < baseline_p90_test_start_ms
-            if require_p90_improvement
-            else candidate_p90_test_start_ms <= baseline_p90_test_start_ms
+    profile_results: dict[str, dict] = {}
+    for profile in required_profiles:
+        values = [item for item in countable if item["profile"] == profile]
+        profile_baseline_minutes = sum(item["baseline_minutes"] for item in values)
+        profile_candidate_minutes = sum(item["candidate_minutes"] for item in values)
+        profile_savings = (
+            round(
+                (profile_baseline_minutes - profile_candidate_minutes)
+                * 100
+                / profile_baseline_minutes,
+                2,
+            )
+            if profile_baseline_minutes
+            else None
         )
+        profile_baseline_start = nearest_rank(
+            [item["baseline_p90_test_start_ms"] for item in values], 0.90
+        )
+        profile_candidate_start = nearest_rank(
+            [item["candidate_p90_test_start_ms"] for item in values], 0.90
+        )
+        profile_baseline_wall = nearest_rank(
+            [item["baseline_wall_clock_ms"] for item in values], 0.90
+        )
+        profile_candidate_wall = nearest_rank(
+            [item["candidate_wall_clock_ms"] for item in values], 0.90
+        )
+        profile_results[profile] = {
+            "countable_heads": len(values),
+            "runner_minute_savings_percent": profile_savings,
+            "baseline_p90_test_start_ms": profile_baseline_start,
+            "candidate_p90_test_start_ms": profile_candidate_start,
+            "baseline_p90_wall_clock_ms": profile_baseline_wall,
+            "candidate_p90_wall_clock_ms": profile_candidate_wall,
+            "gates": {
+                "parity_sample_ready": len(values) >= minimum_heads_per_profile,
+                "cost_sample_ready": len(values) >= minimum_cost_per_profile,
+                "runner_minute_target_met": (
+                    profile_savings is not None and profile_savings >= minimum_savings
+                ),
+                "p90_test_start_improved": (
+                    profile_baseline_start is not None
+                    and profile_candidate_start is not None
+                    and (
+                        profile_candidate_start < profile_baseline_start
+                        if require_p90_improvement
+                        else profile_candidate_start <= profile_baseline_start
+                    )
+                ),
+                "p90_wall_clock_within_budget": (
+                    profile_baseline_wall is not None
+                    and profile_candidate_wall is not None
+                    and profile_candidate_wall * 100
+                    <= profile_baseline_wall * (100 + maximum_wall_regression)
+                ),
+            },
+        }
+    profile_ready = all(
+        value["gates"]["parity_sample_ready"] and value["gates"]["cost_sample_ready"]
+        for value in profile_results.values()
     )
-    wall_clock_ready = (
-        baseline_p90_wall_clock_ms is not None
-        and candidate_p90_wall_clock_ms is not None
-        and candidate_p90_wall_clock_ms * 100
-        <= baseline_p90_wall_clock_ms * (100 + maximum_wall_regression)
+    savings_ready = all(
+        value["gates"]["runner_minute_target_met"] for value in profile_results.values()
+    )
+    p90_test_start_ready = all(
+        value["gates"]["p90_test_start_improved"] for value in profile_results.values()
+    )
+    wall_clock_ready = all(
+        value["gates"]["p90_wall_clock_within_budget"] for value in profile_results.values()
     )
     recommendation = (
         "eligible-for-human-promotion-review"
@@ -373,16 +476,19 @@ def summarize(index: object, receipts_root: Path, policy: object) -> dict:
         "mode": "report-only",
         "mutation": "none",
         "promotion_authority": "none",
+        "measurement_policy_digest": current_policy_digest,
         "recommendation": recommendation,
         "thresholds": policy,
         "counts": {
             "artifacts": len(entries),
             "validated_receipts": len(observations),
+            "current_policy_receipts": len(current_observations),
+            "noncurrent_policy_receipts": noncurrent_policy_observations,
             "distinct_countable_heads": len(countable),
             "distinct_profiles": len(profiles),
             "excluded_successful_shells": len(discovery_exclusions),
         },
-        "profiles": dict(sorted(profiles.items())),
+        "profiles": profile_results,
         "cost": {
             "baseline_rounded_runner_minutes": baseline_minutes,
             "candidate_rounded_runner_minutes": candidate_minutes,
@@ -429,6 +535,9 @@ def markdown(ledger: dict) -> str:
             "",
             f"- Distinct countable exact heads: `{counts['distinct_countable_heads']}`",
             f"- Distinct profiles: `{counts['distinct_profiles']}`",
+            "- Current/noncurrent policy receipts: "
+            f"`{counts['current_policy_receipts']}` / "
+            f"`{counts['noncurrent_policy_receipts']}`",
             "- Successful shells excluded for missing/invalid evidence: "
             f"`{counts['excluded_successful_shells']}`",
             f"- Runner-minute savings: {metric(cost['runner_minute_savings_percent'], '%')}",
@@ -445,6 +554,16 @@ def markdown(ledger: dict) -> str:
             "| Gate | Ready |",
             "|---|---|",
             *[f"| `{name}` | `{str(value).lower()}` |" for name, value in gates.items()],
+            "",
+            "| Required profile | Heads | Savings | p90 start | p90 wall |",
+            "|---|---:|---:|---:|---:|",
+            *[
+                f"| `{name}` | {value['countable_heads']} | "
+                f"{metric(value['runner_minute_savings_percent'], '%')} | "
+                f"{metric(value['candidate_p90_test_start_ms'], ' ms')} | "
+                f"{metric(value['candidate_p90_wall_clock_ms'], ' ms')} |"
+                for name, value in ledger["profiles"].items()
+            ],
             "",
             "A green workflow shell without a validated receipt is never counted.",
         ]
@@ -464,17 +583,34 @@ def main() -> int:
     discover_parser.add_argument("--catalog", type=Path, required=True)
     discover_parser.add_argument("--default-branch", required=True)
     discover_parser.add_argument("--output", type=Path, required=True)
+    digest_parser = subparsers.add_parser("policy-digest")
+    digest_parser.add_argument("--policy-root", type=Path, required=True)
+    digest_parser.add_argument("--policy-sha", required=True)
+    digest_parser.add_argument("--github-output", type=Path)
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--index", type=Path, required=True)
     summarize_parser.add_argument("--receipts", type=Path, required=True)
     summarize_parser.add_argument("--policy", type=Path, required=True)
+    summarize_parser.add_argument("--policy-digest", required=True)
     summarize_parser.add_argument("--output", type=Path, required=True)
     summarize_parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "discover":
         write_json(args.output, discover(load_json(args.runs), args.catalog, args.default_branch))
         return 0
-    ledger = summarize(load_json(args.index), args.receipts, load_json(args.policy))
+    if args.command == "policy-digest":
+        digest = measurement_policy_digest(args.policy_root, args.policy_sha)
+        if args.github_output:
+            with args.github_output.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(f"measurement_policy_digest={digest}\n")
+        print(digest)
+        return 0
+    ledger = summarize(
+        load_json(args.index),
+        args.receipts,
+        load_json(args.policy),
+        args.policy_digest,
+    )
     write_json(args.output, ledger)
     rendered = markdown(ledger)
     args.markdown.write_text(rendered, encoding="utf-8")

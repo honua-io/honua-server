@@ -22,11 +22,14 @@ POLICY_PATHS = (
     ".github/actions/setup-dotnet-ci/action.yml",
     ".github/server-test-artifact-projects.json",
     ".github/server-test-prebuild-observe.json",
+    ".github/server-test-prebuild-promotion.json",
     ".github/server-test-reuse-benchmark.json",
     ".github/workflows/server-test-prebuild-benchmark.yml",
     ".github/workflows/server-test-prebuild-parity.yml",
+    ".github/workflows/server-test-prebuild-evidence-ledger.yml",
     WORKFLOW_PATH,
     "scripts/ci/benchmark-server-test-transfer.sh",
+    "scripts/ci/audit-server-test-prebuild-evidence.py",
     "scripts/ci/package-server-test-binaries.sh",
     "scripts/ci/plan-server-test-prebuild-benchmark.py",
     "scripts/ci/plan-server-test-prebuild-parity.py",
@@ -56,6 +59,11 @@ def policy_inputs(repo: Path, sha: str) -> tuple[str, list[dict]]:
         assert isinstance(data, bytes)
         inputs.append({"path": path, "sha256": sha256(data)})
     return tree_sha, inputs
+
+
+def policy_inputs_digest(repo: Path, sha: str) -> str:
+    _, inputs = policy_inputs(repo, sha)
+    return sha256(BASE.canonical(inputs))
 
 
 def fingerprint(receipt: dict) -> str:

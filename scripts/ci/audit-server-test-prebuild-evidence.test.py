@@ -13,6 +13,9 @@ SPEC = importlib.util.spec_from_file_location("prebuild_evidence_audit", SCRIPT)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+POLICY_DIGEST = "d" * 64
+TWO_SHARD = "exact-head-shadow:two-shard"
+MULTI_SHARD = "exact-head-shadow:multi-shard"
 
 
 def run(run_id: int, head: str, attempt: int = 1) -> dict:
@@ -45,6 +48,7 @@ def receipt(run_id: int, pr: int, head: str, profile: str, *, countable: bool = 
         "contract": MODULE.OBSERVATION_CONTRACT,
         "pull_request": pr,
         "head_sha": head,
+        "measurement_policy_digest": POLICY_DIGEST,
         "producer_run_id": run_id + 1_000,
         "verifier_run_id": run_id,
         "countable": countable,
@@ -76,7 +80,9 @@ def policy() -> dict:
         "contract": MODULE.POLICY_CONTRACT,
         "minimum_countable_heads": 2,
         "minimum_cost_heads": 3,
-        "minimum_distinct_profiles": 2,
+        "required_profiles": [TWO_SHARD, MULTI_SHARD],
+        "minimum_countable_heads_per_profile": 1,
+        "minimum_cost_heads_per_profile": 1,
         "minimum_runner_minute_savings_percent": 60,
         "require_p90_test_start_improvement": True,
         "max_wall_clock_regression_percent": 5,
@@ -138,7 +144,7 @@ with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     receipts = root / "receipts"
     entries = []
-    for offset, profile in enumerate(["two-shard", "five-project", "two-shard"], start=1):
+    for offset, profile in enumerate([TWO_SHARD, MULTI_SHARD, TWO_SHARD], start=1):
         head = f"{offset:x}" * 40
         entry = {
             "artifact_id": offset + 10_000,
@@ -161,7 +167,7 @@ with tempfile.TemporaryDirectory() as directory:
         "artifacts": entries,
         "exclusions": [],
     }
-    ledger = MODULE.summarize(index, receipts, policy())
+    ledger = MODULE.summarize(index, receipts, policy(), POLICY_DIGEST)
     assert ledger["recommendation"] == "eligible-for-human-promotion-review"
     assert ledger["counts"]["distinct_countable_heads"] == 3
     assert ledger["cost"]["runner_minute_savings_percent"] == 70
@@ -182,13 +188,13 @@ with tempfile.TemporaryDirectory() as directory:
     write_receipt_archive(
         receipts,
         duplicate["artifact_id"],
-        receipt(99, 1, entries[0]["head_sha"], "two-shard"),
+        receipt(99, 1, entries[0]["head_sha"], TWO_SHARD),
     )
-    duplicate_ledger = MODULE.summarize(index, receipts, policy())
+    duplicate_ledger = MODULE.summarize(index, receipts, policy(), POLICY_DIGEST)
     assert duplicate_ledger["recommendation"] == "insufficient-evidence"
     assert duplicate_ledger["duplicate_heads"] == [entries[0]["head_sha"]]
 
-    bad = receipt(2, 2, entries[1]["head_sha"], "five-project")
+    bad = receipt(2, 2, entries[1]["head_sha"], MULTI_SHARD)
     bad["summary"]["parity_failures"] = ["server-a"]
     write_receipt_archive(receipts, entries[1]["artifact_id"], bad)
     invalid = MODULE.summarize(
@@ -200,11 +206,12 @@ with tempfile.TemporaryDirectory() as directory:
         },
         receipts,
         policy(),
+        POLICY_DIGEST,
     )
     assert invalid["recommendation"] == "insufficient-evidence"
     assert invalid["integrity_failures"][0]["run_id"] == 2
 
-    slow = receipt(2, 2, entries[1]["head_sha"], "five-project")
+    slow = receipt(2, 2, entries[1]["head_sha"], MULTI_SHARD)
     slow["summary"]["candidate"]["p90_test_start_ms"] = 130_000
     write_receipt_archive(receipts, entries[1]["artifact_id"], slow)
     slow_ledger = MODULE.summarize(
@@ -216,6 +223,7 @@ with tempfile.TemporaryDirectory() as directory:
         },
         receipts,
         policy(),
+        POLICY_DIGEST,
     )
     assert slow_ledger["recommendation"] == "insufficient-evidence"
     assert not slow_ledger["gates"]["p90_test_start_improved"]
@@ -225,7 +233,7 @@ with tempfile.TemporaryDirectory() as directory:
     write_receipt_archive(
         receipts,
         unsafe_entry["artifact_id"],
-        receipt(3, 3, entries[2]["head_sha"], "two-shard"),
+        receipt(3, 3, entries[2]["head_sha"], TWO_SHARD),
         "../parity-observation.json",
     )
     unsafe = MODULE.summarize(
@@ -237,7 +245,25 @@ with tempfile.TemporaryDirectory() as directory:
         },
         receipts,
         policy(),
+        POLICY_DIGEST,
     )
     assert unsafe["integrity_failures"][0]["reason"] == "receipt archive contains an unsafe member"
+
+    old_policy = receipt(3, 3, entries[2]["head_sha"], TWO_SHARD)
+    old_policy["measurement_policy_digest"] = "e" * 64
+    write_receipt_archive(receipts, entries[2]["artifact_id"], old_policy)
+    separated = MODULE.summarize(
+        {
+            "contract": MODULE.INDEX_CONTRACT,
+            "workflow": {"name": MODULE.WORKFLOW_NAME, "path": MODULE.WORKFLOW_PATH},
+            "artifacts": entries[:3],
+            "exclusions": [],
+        },
+        receipts,
+        policy(),
+        POLICY_DIGEST,
+    )
+    assert separated["counts"]["noncurrent_policy_receipts"] == 1
+    assert separated["recommendation"] == "insufficient-evidence"
 
 print("server-test-prebuild-evidence-audit=ok")

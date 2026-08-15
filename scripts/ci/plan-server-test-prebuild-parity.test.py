@@ -36,7 +36,7 @@ valid = {
 plan = MODULE.build_plan(observation([valid]), REGISTRY)
 assert plan == {
     "contract": MODULE.BENCHMARK_CONTRACT,
-    "profile": "exact-head-shadow:server=3",
+    "profile": "exact-head-shadow:multi-shard",
     "baseline": [
         {
             "identity": "server",
@@ -60,8 +60,8 @@ assert plan == {
 assert MODULE.build_plan(observation([]), REGISTRY)["candidates"] == []
 assert MODULE.build_plan(observation([]), REGISTRY)["profile"] == "exact-head-shadow:none"
 assert (
-    MODULE.build_plan(observation([{**valid, "selected_shard_count": 4}]), REGISTRY)["profile"]
-    == "exact-head-shadow:server=4"
+    MODULE.build_plan(observation([{**valid, "selected_shard_count": 2}]), REGISTRY)["profile"]
+    == "exact-head-shadow:two-shard"
 )
 
 for invalid in (

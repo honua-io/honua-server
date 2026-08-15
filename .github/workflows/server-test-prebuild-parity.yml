@@ -60,6 +60,7 @@ jobs:
       producer_attempt: ${{ steps.resolve.outputs.producer_attempt }}
       producer_policy_sha: ${{ steps.validate.outputs.producer_policy_sha }}
       verifier_policy_sha: ${{ steps.policy.outputs.sha }}
+      measurement_policy_digest: ${{ steps.validate.outputs.measurement_policy_digest }}
       has_candidates: ${{ steps.parity.outputs.has_candidates }}
       baseline: ${{ steps.parity.outputs.baseline }}
       candidates: ${{ steps.parity.outputs.candidates }}
@@ -255,6 +256,9 @@ jobs:
           git -C policy cat-file -e "${producer_policy_sha}^{commit}"
           git -C policy merge-base --is-ancestor \
             "${producer_policy_sha}" '${{ steps.policy.outputs.sha }}'
+          python3 policy/scripts/ci/audit-server-test-prebuild-evidence.py policy-digest \
+            --policy-root policy --policy-sha '${{ steps.policy.outputs.sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
 
       - id: parity
         name: Plan bounded independent and candidate selections
@@ -513,9 +517,11 @@ jobs:
             --arg contract 'honua.server-test-prebuild-parity-observation/v1' \
             --argjson pr '${{ needs.plan.outputs.pr }}' \
             --arg head '${{ needs.plan.outputs.head_sha }}' \
+            --arg measurement_policy_digest '${{ needs.plan.outputs.measurement_policy_digest }}' \
             --argjson producer_run_id '${{ needs.plan.outputs.producer_run_id }}' \
             --argjson verifier_run_id '${{ github.run_id }}' \
             '{contract:$contract,pull_request:$pr,head_sha:$head,
+              measurement_policy_digest:$measurement_policy_digest,
               producer_run_id:$producer_run_id,verifier_run_id:$verifier_run_id,
               countable:(($summary[0].parity_failures|length)==0 and
                 ($summary[0].reuse_failures|length)==0 and

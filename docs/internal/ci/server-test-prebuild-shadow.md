@@ -105,16 +105,17 @@ parity artifact says `countable: true`. Producer-only, skipped, fallback,
 incomplete, duplicate, or contradictory observations do not advance the count.
 
 The scheduled/manual `Server Test Prebuild Evidence Ledger` workflow is the
-only promotion-readiness counter. It scans successful parity workflow runs,
+only prebuild-reuse promotion-readiness counter. It scans successful parity workflow runs,
 requires one exact retained receipt-only artifact, revalidates the receipt's PR,
 head, run, parity, reuse, producer, and hosted-cost identities, and deduplicates
-exact heads. Profile identity is derived from the exact reused-project and
-selected-shard shape, rather than a constant label. A green workflow shell
-without a retained receipt counts as zero. A recommendation additionally
-requires the aggregate p90 test start to improve and the aggregate p90 wall
-clock to stay inside the existing 5% regression budget. It covers this prebuild
-reuse decision only; ADR-0074's admission, post-review verification, and
-deterministic-failure cancellation thresholds remain separate evidence gates.
+exact heads. A content digest over every execution-relevant policy input keeps
+old and current measurement methodologies in separate cohorts. The two
+supported profiles are derived from the selected-shard shape; each must provide
+at least 10 correctness heads and 15 cost heads and independently meet the 60%
+runner-minute, p90 test-start, and 5% p90 wall-clock gates. A green workflow
+shell without a retained receipt counts as zero. It covers this prebuild reuse
+decision only; ADR-0074's admission, post-review verification, and deterministic-
+failure cancellation thresholds remain separate evidence gates.
 The ledger is report-only and has read-only permissions: even an
 `eligible-for-human-promotion-review` result cannot change a repository
 variable, publish a required status, cancel work, or authorize a merge.

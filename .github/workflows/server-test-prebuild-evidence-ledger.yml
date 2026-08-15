@@ -24,6 +24,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - id: policy
+        name: Bind the current measurement policy cohort
+        run: |
+          python3 scripts/ci/audit-server-test-prebuild-evidence.py policy-digest \
+            --policy-root . --policy-sha '${{ github.sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
+
       - name: Validate ledger fixtures
         run: python3 scripts/ci/audit-server-test-prebuild-evidence.test.py
 
@@ -66,6 +73,7 @@ jobs:
             --index evidence/index.json \
             --receipts evidence/archives \
             --policy .github/server-test-prebuild-promotion.json \
+            --policy-digest '${{ steps.policy.outputs.measurement_policy_digest }}' \
             --output evidence/ledger.json \
             --markdown evidence/ledger.md
           cat evidence/ledger.md >> "${GITHUB_STEP_SUMMARY}"
