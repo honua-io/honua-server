@@ -522,6 +522,53 @@ train_restore_retry_intent >/dev/null || rc=$?
 [[ "${rc}" == "2" ]] || fail "malformed nonempty retry state was treated as no retry"
 unset TRAIN_STATE_BODY_OVERRIDE
 pass "resume exact-head, descendant-base, and malformed-state guards"
+
+# Initial smart-CI uses the same immutable identity checks as retry recovery,
+# but resumes attempt 1 itself instead of dispatching a replacement workflow.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":456,"fwdfix_attempts":0,"flake_reruns":0,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}\n```'
+resume_identity_event=workflow_dispatch
+resume_identity_path=.github/workflows/ci.yml
+resume_identity_head="${fixture_batch_sha}"
+smart_gate_result=success
+gh() {
+  if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
+    printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json status --jq .status'* ]]; then
+    printf 'completed\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then
+    printf '%s\n' "${smart_gate_result}"
+  else
+    fail "smart-CI resume attempted unexpected gh operation: $*"
+  fi
+}
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+now_value=100
+smart_resumed_json="$(train_restore_smart_ci_intent)" || fail "initial smart-CI intent did not resume"
+[[ "$(jq -r '.resume_gate' <<<"${smart_resumed_json}")" == "SUCCESS" ]] \
+  || fail "initial smart-CI resume did not recover the exact gate"
+[[ "$(cat "${fixture_included}")" == $'101\t'"${fixture_member_sha}" ]] \
+  || fail "initial smart-CI resume did not reconstruct the exact member head"
+smart_gate_result=missing
+smart_missing_json="$(train_restore_smart_ci_intent)" \
+  || fail "terminal smart-CI without a CI Gate was treated as an identity mismatch"
+[[ "$(jq -r '.resume_gate' <<<"${smart_missing_json}")" == "MISSING" ]] \
+  || fail "terminal missing CI Gate did not reach common ci-incomplete routing"
+smart_gate_result=skipped
+smart_skipped_json="$(train_restore_smart_ci_intent)" \
+  || fail "terminal skipped CI Gate was treated as an identity mismatch"
+[[ "$(jq -r '.resume_gate' <<<"${smart_skipped_json}")" == "SKIPPED" ]] \
+  || fail "terminal skipped CI Gate did not reach common ci-incomplete routing"
+smart_gate_result=success
+resume_identity_event=push
+rc=0
+train_restore_smart_ci_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "initial smart-CI resume accepted a non-dispatch run"
+resume_identity_event=workflow_dispatch
+export TRAIN_STATE_BODY_OVERRIDE="${TRAIN_STATE_BODY_OVERRIDE//bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/dddddddddddddddddddddddddddddddddddddddd}"
+rc=0
+train_restore_smart_ci_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "initial smart-CI resume accepted a moved batch ref"
+pass "initial smart-CI exact-run recovery"
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"phase":"select"}}\n```'
 
 # Restore the simple attempt reader for the remaining classifier cases.
@@ -559,6 +606,36 @@ pass "main-loop classifier behavior"
 export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
 train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
+train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
+
+# End-to-end startup must route discovered smart-CI through exact-run recovery
+# before terminal cleanup or fresh selection.
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":456,"fwdfix_attempts":0,"flake_reruns":0,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}\n```'
+export TRAIN_RESUME_STARTUP_TEST_ONLY=1
+resume_identity_event=workflow_dispatch
+resume_identity_path=.github/workflows/ci.yml
+resume_identity_head="${fixture_batch_sha}"
+gh() {
+  if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
+    printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json status --jq .status'* ]]; then
+    printf 'completed\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then
+    printf 'success\n'
+  else
+    fail "smart-CI startup attempted unexpected gh operation: $*"
+  fi
+}
+train_select() { fail "smart-CI startup recovery reached selection"; }
+: >"${record}"
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+now_value=100
+main || fail "main did not resume discovered initial smart-CI"
+[[ ! -s "${record}" ]] || fail "initial smart-CI startup mutated labels or dispatched replacement CI"
+pass "main resumes discovered initial smart-CI before selection"
+export TRAIN_RESUME_STARTUP_TEST_ONLY=0
+
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 : >"${record}"
 gh() { [[ "$*" == issue\ list* ]] && return 1; fail "state-list startup failure attempted unexpected gh operation: $*"; }
@@ -653,6 +730,7 @@ pass "branchless rebuild-assemble state releases and reselects"
 # a terminal one must actually clear state and let selection proceed. Without
 # this, a phase added to the schema alone re-creates the #3045 deadlock.
 for accepted_phase in "${TRAIN_STATE_PHASES[@]}"; do
+  [[ "${accepted_phase}" == "smart-ci" ]] && continue
   case "${TRAIN_PHASE_RECOVERY[${accepted_phase}]:-}" in
     escalate|release) ;;
     retry|post-land) continue ;;
@@ -681,6 +759,19 @@ for accepted_phase in "${TRAIN_STATE_PHASES[@]}"; do
   fi
 done
 pass "every accepted terminal phase recovers before selection"
+
+# A crash before dispatch discovery still has no run identity to resume, so it
+# releases the landing label and reselects instead of guessing a workflow run.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":null,"fwdfix_attempts":0,"flake_reruns":0}}\n```'
+: >"${record}"
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "pre-discovery smart-CI state did not release safely"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+  || fail "pre-discovery smart-CI state did not release its member"
+grep -Fqx 'selection-entered' "${record}" \
+  || fail "pre-discovery smart-CI state did not return to selection"
+pass "pre-discovery smart-CI crash releases for fresh assembly"
 
 # Retry-class phases are owned by train_restore_retry_intent. Terminal recovery
 # must defer to it — never release the batch or overwrite the retry intent.
