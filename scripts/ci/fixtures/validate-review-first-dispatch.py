@@ -138,7 +138,7 @@ def main() -> None:
     )
     require(
         review_gate,
-        "if (!['observe', 'rerun'].includes(decision.action)) return;",
+        "if (!['observe', 'rerun'].includes(decision.action)) {",
         "observe and enforce must share the final review-state revalidation",
     )
     require(
@@ -188,8 +188,8 @@ def main() -> None:
     )
     require(
         review_gate,
-        "const finalReview = await evaluateCurrentReview();",
-        "review workflow must repeat the complete review evaluation at the mutation boundary",
+        "finalState = await stabilizeReviewFirstEvaluation(async () => {",
+        "review workflow must stabilize review and admission as one final snapshot",
     )
     require(
         review_gate,
@@ -213,40 +213,30 @@ def main() -> None:
     )
     require(
         review_gate,
-        "const finalAdmission = await stabilizeAdmissionEvaluation(",
-        "review workflow must stabilize admission selection after final review revalidation",
+        "return { review, admission: await evaluateCurrentAdmission(review) };",
+        "each joint snapshot must bind admission to its review snapshot",
     )
     require(
         review_gate,
-        "const postAdmissionReview = await evaluateCurrentReview();",
-        "review workflow must revalidate review evidence after admission stabilization",
+        "const { review: finalReview, admission: finalAdmission } = finalState;",
+        "only the stabilized joint snapshot may cross the irreversible boundary",
     )
-    require(
-        review_gate,
-        "JSON.stringify(postAdmissionReview) !== JSON.stringify(finalReview)",
-        "post-admission review evidence must match the pre-admission snapshot",
-    )
-    final_state_read = review_gate.index("const finalReview = await evaluateCurrentReview();")
-    final_admission_read = review_gate.index(
-        "const finalAdmission = await stabilizeAdmissionEvaluation("
-    )
-    post_admission_review = review_gate.index(
-        "const postAdmissionReview = await evaluateCurrentReview();"
+    final_state_read = review_gate.index(
+        "finalState = await stabilizeReviewFirstEvaluation(async () => {"
     )
     observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
+    observe_write = review_gate.index("fs.writeFileSync(", observe_receipt)
+    observe_report = review_gate.index("await reportDecision(decision);", observe_write)
     rerun_mutation = review_gate.index(
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
     )
-    if not (
-        final_state_read
-        < final_admission_read
-        < post_admission_review
-        < observe_receipt
-        < rerun_mutation
-    ):
+    rerun_report = review_gate.index("await reportDecision(decision);", rerun_mutation)
+    if not final_state_read < observe_receipt < observe_write < rerun_mutation:
         raise AssertionError(
             "joint review/admission revalidation must precede observation and mutation"
         )
+    if not observe_write < observe_report or not rerun_mutation < rerun_report:
+        raise AssertionError("reporting must not delay an admitted irreversible boundary")
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:
             raise AssertionError(

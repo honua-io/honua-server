@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   evaluateReviewFirstDispatch,
-  stabilizeAdmissionEvaluation,
+  stabilizeReviewFirstEvaluation,
 } = require('./review-first-dispatch');
 
 const head = 'a'.repeat(40);
@@ -130,18 +130,31 @@ test('review evidence remains a mandatory defense in depth', () => {
   assert.equal(evaluate({ reviewReady: false }).action, 'noop');
 });
 
-test('final admission evidence must be stable across two evaluations', async () => {
-  const admission = { decision: { action: 'observe', runId: 100 }, runs: [run()] };
+test('final review and admission evidence must be stable as one joint snapshot', async () => {
+  const snapshot = {
+    review: { head, reasons: [] },
+    admission: { decision: { action: 'observe', runId: 100 }, runs: [run()] },
+  };
   assert.deepEqual(
-    await stabilizeAdmissionEvaluation(async () => structuredClone(admission)),
-    admission,
+    await stabilizeReviewFirstEvaluation(async () => structuredClone(snapshot)),
+    snapshot,
   );
 
   let query = 0;
   await assert.rejects(
-    stabilizeAdmissionEvaluation(async () => ({
-      decision: { action: 'observe', runId: 100 + query++ },
+    stabilizeReviewFirstEvaluation(async () => ({
+      review: { head, reasons: [] },
+      admission: { decision: { action: 'observe', runId: 100 + query++ } },
     })),
-    /admission changed while taking its final snapshot/,
+    /review\/admission state changed during final joint snapshot/,
+  );
+
+  query = 0;
+  await assert.rejects(
+    stabilizeReviewFirstEvaluation(async () => ({
+      review: { head, reasons: query++ === 0 ? [] : ['hold'] },
+      admission: { decision: { action: 'observe', runId: 100 } },
+    })),
+    /review\/admission state changed during final joint snapshot/,
   );
 });

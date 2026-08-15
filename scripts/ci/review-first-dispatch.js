@@ -176,11 +176,11 @@ function evaluateReviewFirstDispatch({
   };
 }
 
-async function stabilizeAdmissionEvaluation(evaluate) {
+async function stabilizeReviewFirstEvaluation(evaluate) {
   const first = await evaluate();
   const second = await evaluate();
   if (!isDeepStrictEqual(first, second)) {
-    throw new Error('Review-first admission changed while taking its final snapshot.');
+    throw new Error('Review-first review/admission state changed during final joint snapshot.');
   }
   return second;
 }
@@ -193,5 +193,5 @@ module.exports = {
   WAIT_FOR_REVIEW_STEP,
   evaluateReviewFirstDispatch,
   selectExactAdmissionRun,
-  stabilizeAdmissionEvaluation,
+  stabilizeReviewFirstEvaluation,
 };

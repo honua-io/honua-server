@@ -115,12 +115,12 @@ the singular combined-status response is not historical evidence.
 - Fork runs with an empty `pull_requests` payload are accepted only when the
   commit API resolves exactly one open associated PR.
 - Two complete, identical bounded review snapshots are required for each
-  attestation read. A final stable snapshot and PR/head/label read occurs
-  immediately before retaining an observation or mutating Actions. A dismissed
-  review, newly unresolved thread, truncated query, hold, or changed head fails
-  closed. The workflow then requires two identical evaluations of the exact-head
-  PR Gate runs, commit/PR association, selected run jobs, and production
-  decision; only that stable final admission snapshot may be retained or rerun.
+  attestation read. At the irreversible boundary, the workflow then requires two
+  identical evaluations of the entire joint state: that stable review result,
+  exact-head PR Gate runs, commit/PR association, selected run jobs, and the
+  production decision. A dismissed review, newly unresolved thread, truncated
+  query, hold, changed head, or canonical-run change fails closed. No awaited
+  summary write occurs between the final joint snapshot and the receipt/rerun.
   Normal PR Gate concurrency cancels the residual race if the head moves after
   those reads.
 - Live merge-train selection and pre-land validation independently fetch current

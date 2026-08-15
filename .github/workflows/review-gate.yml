@@ -109,7 +109,7 @@ jobs:
             const {
               evaluateReviewFirstDispatch,
               selectExactAdmissionRun,
-              stabilizeAdmissionEvaluation,
+              stabilizeReviewFirstEvaluation,
             } = require('./scripts/ci/review-first-dispatch');
             const {
               createReviewFirstObservation,
@@ -278,6 +278,16 @@ jobs:
                 .write();
             };
 
+            const failFinalRevalidation = async description => {
+              await github.rest.repos.createCommitStatus({
+                ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
+                description: description.slice(0, 140),
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                  `/pull/${prNumber}`,
+              });
+              core.setFailed(description);
+            };
+
             const initialAdmission = await evaluateCurrentAdmission(initialReview);
             if (initialAdmission.decision.action === 'block') {
               await reportDecision(initialAdmission.decision);
@@ -290,58 +300,46 @@ jobs:
               return;
             }
 
-            // Re-fetch and re-evaluate the complete review snapshot immediately
-            // before retaining an observe receipt or mutating Actions. This
-            // closes head/label/review-dismissal races between the initial
-            // attestation and the irreversible boundary.
-            const finalReview = await evaluateCurrentReview();
+            // Take the complete review snapshot and canonical admission state
+            // together twice. Only two identical joint evaluations may reach
+            // the irreversible receipt/rerun boundary.
+            let finalState;
+            try {
+              finalState = await stabilizeReviewFirstEvaluation(async () => {
+                const review = await evaluateCurrentReview();
+                if (!review || review.reasons.length !== 0) {
+                  return { review, admission: null };
+                }
+                return { review, admission: await evaluateCurrentAdmission(review) };
+              });
+            } catch (error) {
+              await failFinalRevalidation(error.message);
+              return;
+            }
+            const { review: finalReview, admission: finalAdmission } = finalState;
             if (!finalReview || finalReview.head !== head) {
-              core.info('PR state/head changed before dispatch; the current event is now a no-op.');
+              await failFinalRevalidation('PR state/head changed before dispatch.');
               return;
             }
             if (finalReview.reasons.length !== 0) {
               const finalDescription = finalReview.reasons.join('; ').slice(0, 140);
-              await github.rest.repos.createCommitStatus({
-                ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
-                description: finalDescription,
-                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
-                  `/pull/${prNumber}`,
-              });
-              core.setFailed(`Final review revalidation failed: ${finalDescription}`);
+              await failFinalRevalidation(`Final review revalidation failed: ${finalDescription}`);
               return;
             }
-
-            // Re-query every mutable admission input after final review
-            // revalidation. A close/reopen can create a newer canonical run on
-            // the same head; only this final selection may produce evidence or
-            // be rerun.
-            const finalAdmission = await stabilizeAdmissionEvaluation(
-              () => evaluateCurrentAdmission(finalReview));
-            const postAdmissionReview = await evaluateCurrentReview();
-            if (!postAdmissionReview || postAdmissionReview.head !== head) {
-              core.info('PR state/head changed during admission stabilization; no action taken.');
-              return;
-            }
-            if (JSON.stringify(postAdmissionReview) !== JSON.stringify(finalReview)) {
-              const postAdmissionDescription = postAdmissionReview.reasons.length === 0
-                ? 'review state changed during admission stabilization'
-                : postAdmissionReview.reasons.join('; ').slice(0, 140);
-              await github.rest.repos.createCommitStatus({
-                ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
-                description: postAdmissionDescription,
-                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
-                  `/pull/${prNumber}`,
-              });
-              core.setFailed(`Post-admission review revalidation failed: ${postAdmissionDescription}`);
+            if (!finalAdmission) {
+              await failFinalRevalidation('Final admission snapshot is missing.');
               return;
             }
             const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
-            await reportDecision(decision);
             if (decision.action === 'block') {
+              await reportDecision(decision);
               core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
               return;
             }
-            if (!['observe', 'rerun'].includes(decision.action)) return;
+            if (!['observe', 'rerun'].includes(decision.action)) {
+              await reportDecision(decision);
+              return;
+            }
 
             if (decision.action === 'observe') {
               const producerRunId = Number(process.env.REVIEW_FIRST_PRODUCER_RUN_ID);
@@ -369,6 +367,7 @@ jobs:
                 `${JSON.stringify(observation, null, 2)}\n`,
                 'utf8');
               core.setOutput('receipt_present', 'true');
+              await reportDecision(decision);
               return;
             }
 
@@ -377,6 +376,7 @@ jobs:
                 'POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs', {
                 ...context.repo, run_id: decision.runId,
               });
+              await reportDecision(decision);
               core.notice(`Released PR Gate run ${decision.runId} as attempt 2.`);
             } catch (error) {
               // A burst of review/comment events may serialize immediately
@@ -387,6 +387,7 @@ jobs:
                 ...context.repo, run_id: decision.runId,
               });
               if (Number(refreshed.run_attempt) > 1 || refreshed.status !== 'completed') {
+                await reportDecision(decision);
                 core.info(`Rerun already accepted for ${decision.runId}; duplicate event is a no-op.`);
                 return;
               }
