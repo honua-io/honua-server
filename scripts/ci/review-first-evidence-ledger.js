@@ -232,6 +232,7 @@ function createReviewFirstObservation({
   jobs,
   decision,
   reviewRevalidated,
+  admissionRevalidated,
 }) {
   digest(policyDigest, 'measurement policy digest');
   sha(policySha, 'policy SHA');
@@ -243,6 +244,9 @@ function createReviewFirstObservation({
   sha(head, 'observed head');
   if (reviewRevalidated !== true) {
     throw new Error('final review state was not revalidated');
+  }
+  if (admissionRevalidated !== true) {
+    throw new Error('final admission state was not revalidated');
   }
   const cleanRuns = requireArray(runs, 'admission runs').map(sanitizeRun);
   const cleanJobs = requireArray(jobs, 'admission jobs').map(sanitizeJob);
@@ -287,6 +291,7 @@ function createReviewFirstObservation({
       final_review_state_revalidated: true,
     },
     admission: {
+      final_state_revalidated: true,
       associated_pull_numbers: cleanAssociations,
       runs: cleanRuns,
       jobs: cleanJobs,
@@ -600,6 +605,9 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
     throw new Error('review evidence is not an exact complete snapshot');
   }
   const admission = requireObject(receipt.admission, 'admission evidence');
+  if (admission.final_state_revalidated !== true) {
+    throw new Error('admission evidence is not a final revalidated snapshot');
+  }
   const replay = evaluateReviewFirstDispatch({
     mode: 'observe',
     reviewReady: true,

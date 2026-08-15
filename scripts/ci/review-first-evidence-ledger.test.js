@@ -96,6 +96,7 @@ function observation(overrides = {}) {
       runId: Number(runs.at(-1).id),
     },
     reviewRevalidated: overrides.reviewRevalidated ?? true,
+    admissionRevalidated: overrides.admissionRevalidated ?? true,
   });
 }
 
@@ -200,11 +201,14 @@ test('trusted observation replays the production observe decision', () => {
   assert.equal(receipt.decision.run_id, 100);
   assert.equal(receipt.mutation, 'none');
   assert.equal(receipt.review.final_review_state_revalidated, true);
+  assert.equal(receipt.admission.final_state_revalidated, true);
 });
 
-test('observation requires final full review revalidation', () => {
+test('observation requires final review and admission revalidation', () => {
   assert.throws(() => observation({ reviewRevalidated: false }),
     /final review state was not revalidated/);
+  assert.throws(() => observation({ admissionRevalidated: false }),
+    /final admission state was not revalidated/);
 });
 
 test('workflow identities must be positive safe integers', () => {

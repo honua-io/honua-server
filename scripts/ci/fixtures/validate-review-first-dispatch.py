@@ -178,6 +178,11 @@ def main() -> None:
     )
     require(
         review_gate,
+        "const evaluateCurrentAdmission = async review => {",
+        "review workflow must define one complete admission evaluation",
+    )
+    require(
+        review_gate,
         "const finalReview = await evaluateCurrentReview();",
         "review workflow must repeat the complete review evaluation at the mutation boundary",
     )
@@ -185,6 +190,11 @@ def main() -> None:
         review_gate,
         "reviewRevalidated: true,",
         "observation receipt must assert final complete review revalidation",
+    )
+    require(
+        review_gate,
+        "admissionRevalidated: true,",
+        "observation receipt must assert final admission revalidation",
     )
     require(
         review_gate,
@@ -196,14 +206,22 @@ def main() -> None:
         "if (finalReview.reasons.length !== 0)",
         "final review evaluation must reject invalid review evidence",
     )
+    require(
+        review_gate,
+        "const finalAdmission = await evaluateCurrentAdmission(finalReview);",
+        "review workflow must repeat admission selection after final review revalidation",
+    )
     final_state_read = review_gate.index("const finalReview = await evaluateCurrentReview();")
+    final_admission_read = review_gate.index(
+        "const finalAdmission = await evaluateCurrentAdmission(finalReview);"
+    )
     observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
     rerun_mutation = review_gate.index(
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
     )
-    if not final_state_read < observe_receipt < rerun_mutation:
+    if not final_state_read < final_admission_read < observe_receipt < rerun_mutation:
         raise AssertionError(
-            "final full-review revalidation must precede both observation and mutation"
+            "final review and admission revalidation must precede observation and mutation"
         )
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:
