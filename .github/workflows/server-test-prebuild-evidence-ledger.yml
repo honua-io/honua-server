@@ -32,6 +32,9 @@ jobs:
           python3 scripts/ci/audit-server-test-prebuild-evidence.py policy-digest \
             --policy-root . --policy-sha '${{ github.sha }}' \
             --github-output "${GITHUB_OUTPUT}"
+          python3 scripts/ci/audit-server-test-prebuild-evidence.py retention-window \
+            --policy .github/server-test-prebuild-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Validate ledger fixtures
         run: python3 scripts/ci/audit-server-test-prebuild-evidence.test.py
@@ -42,8 +45,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence/catalog evidence/archives
-          gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/server-test-prebuild-parity.yml/runs?status=success&per_page=100" \
+          gh api --method GET --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/server-test-prebuild-parity.yml/runs" \
+            -f status=success \
+            -f "created=${{ steps.policy.outputs.receipt_created_filter }}" \
+            -F per_page=100 \
             > evidence/run-pages.json
           jq -r '.[] | .workflow_runs[]? | .id' evidence/run-pages.json | sort -nu \
             | while read -r run_id; do

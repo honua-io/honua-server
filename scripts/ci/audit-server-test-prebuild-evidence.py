@@ -11,6 +11,7 @@ import re
 import stat
 import zipfile
 from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 INDEX_CONTRACT = "honua.server-test-prebuild-evidence-index/v1"
@@ -132,6 +133,18 @@ def positive_int(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ValueError(f"{label} is invalid")
     return value
+
+
+def retention_window(policy: object, now: datetime) -> tuple[int, str]:
+    if not isinstance(policy, dict) or policy.get("contract") != POLICY_CONTRACT:
+        raise ValueError("promotion policy contract is invalid")
+    days = positive_int(policy.get("receipt_retention_days"), "receipt retention days")
+    if days > 90:
+        raise ValueError("receipt retention days exceeds GitHub's policy bound")
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("retention clock must be timezone-aware")
+    cutoff = (now.astimezone(timezone.utc) - timedelta(days=days)).replace(microsecond=0)
+    return days, f">={cutoff.isoformat().replace('+00:00', 'Z')}"
 
 
 def load_receipt_archive(root: Path, artifact_id: int) -> object:
@@ -276,6 +289,7 @@ def summarize(
         raise ValueError("evidence index workflow identity is invalid")
     if not isinstance(policy, dict) or policy.get("contract") != POLICY_CONTRACT:
         raise ValueError("promotion policy contract is invalid")
+    retention_window(policy, datetime.now(timezone.utc))
     if not re.fullmatch(r"[0-9a-f]{64}", current_policy_digest):
         raise ValueError("current measurement policy digest is invalid")
     minimum_heads = positive_int(policy.get("minimum_countable_heads"), "minimum countable heads")
@@ -587,6 +601,9 @@ def main() -> int:
     digest_parser.add_argument("--policy-root", type=Path, required=True)
     digest_parser.add_argument("--policy-sha", required=True)
     digest_parser.add_argument("--github-output", type=Path)
+    retention_parser = subparsers.add_parser("retention-window")
+    retention_parser.add_argument("--policy", type=Path, required=True)
+    retention_parser.add_argument("--github-output", type=Path)
     summarize_parser = subparsers.add_parser("summarize")
     summarize_parser.add_argument("--index", type=Path, required=True)
     summarize_parser.add_argument("--receipts", type=Path, required=True)
@@ -604,6 +621,16 @@ def main() -> int:
             with args.github_output.open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write(f"measurement_policy_digest={digest}\n")
         print(digest)
+        return 0
+    if args.command == "retention-window":
+        days, created_filter = retention_window(
+            load_json(args.policy), datetime.now(timezone.utc)
+        )
+        if args.github_output:
+            with args.github_output.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(f"receipt_retention_days={days}\n")
+                handle.write(f"receipt_created_filter={created_filter}\n")
+        print(created_filter)
         return 0
     ledger = summarize(
         load_json(args.index),

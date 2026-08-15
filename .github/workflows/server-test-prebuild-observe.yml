@@ -251,7 +251,7 @@ jobs:
       - name: Package bounded build output with trusted policy
         env:
           HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT: ${{ github.workspace }}/source
-          HONUA_SERVER_TEST_ARTIFACT_REGISTRY: ${{ github.workspace }}/source/.github/server-test-artifact-projects.json
+          HONUA_SERVER_TEST_ARTIFACT_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json
           HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK: ${{ steps.toolchain.outputs.sdk }}
         run: |
           mkdir -p payload

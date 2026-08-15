@@ -108,7 +108,12 @@ The scheduled/manual `Server Test Prebuild Evidence Ledger` workflow is the
 only prebuild-reuse promotion-readiness counter. It scans successful parity workflow runs,
 requires one exact retained receipt-only artifact, revalidates the receipt's PR,
 head, run, parity, reuse, producer, and hosted-cost identities, and deduplicates
-exact heads. A content digest over every execution-relevant policy input keeps
+exact heads. Discovery is server-side bounded to the policy's 30-day receipt
+retention window, so expired history cannot grow the daily API workload without
+bound. The observer, packager, and consumer all use the default-branch artifact
+registry; a candidate registry edit is measured as source content but cannot
+redefine the workload or artifact identity. A content digest over every
+execution-relevant policy input keeps
 old and current measurement methodologies in separate cohorts. The two
 supported profiles are derived from the selected-shard shape; each must provide
 at least 10 correctness heads and 15 cost heads and independently meet the 60%

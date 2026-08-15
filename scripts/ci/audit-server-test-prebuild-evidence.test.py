@@ -6,6 +6,7 @@ import importlib.util
 import json
 import tempfile
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("audit-server-test-prebuild-evidence.py")
@@ -78,6 +79,7 @@ def receipt(run_id: int, pr: int, head: str, profile: str, *, countable: bool = 
 def policy() -> dict:
     return {
         "contract": MODULE.POLICY_CONTRACT,
+        "receipt_retention_days": 30,
         "minimum_countable_heads": 2,
         "minimum_cost_heads": 3,
         "required_profiles": [TWO_SHARD, MULTI_SHARD],
@@ -87,6 +89,23 @@ def policy() -> dict:
         "require_p90_test_start_improvement": True,
         "max_wall_clock_regression_percent": 5,
     }
+
+
+days, created_filter = MODULE.retention_window(
+    policy(), datetime(2026, 8, 15, 0, 0, tzinfo=timezone.utc)
+)
+assert days == 30
+assert created_filter == ">=2026-07-16T00:00:00Z"
+invalid_retention_policy = policy()
+invalid_retention_policy["receipt_retention_days"] = 91
+try:
+    MODULE.retention_window(
+        invalid_retention_policy, datetime(2026, 8, 15, 0, 0, tzinfo=timezone.utc)
+    )
+except ValueError as error:
+    assert "policy bound" in str(error)
+else:
+    raise AssertionError("oversized receipt retention window must fail closed")
 
 
 def write_receipt_archive(

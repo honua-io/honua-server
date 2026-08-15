@@ -1,5 +1,6 @@
 {
   "contract": "honua.server-test-prebuild-promotion-policy/v1",
+  "receipt_retention_days": 30,
   "minimum_countable_heads": 20,
   "minimum_cost_heads": 30,
   "required_profiles": [

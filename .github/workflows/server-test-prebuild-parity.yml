@@ -61,6 +61,7 @@ jobs:
       producer_policy_sha: ${{ steps.validate.outputs.producer_policy_sha }}
       verifier_policy_sha: ${{ steps.policy.outputs.sha }}
       measurement_policy_digest: ${{ steps.validate.outputs.measurement_policy_digest }}
+      receipt_retention_days: ${{ steps.policy.outputs.receipt_retention_days }}
       has_candidates: ${{ steps.parity.outputs.has_candidates }}
       baseline: ${{ steps.parity.outputs.baseline }}
       candidates: ${{ steps.parity.outputs.candidates }}
@@ -75,7 +76,11 @@ jobs:
 
       - id: policy
         name: Bind trusted verifier policy
-        run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+        run: |
+          echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+          python3 policy/scripts/ci/audit-server-test-prebuild-evidence.py retention-window \
+            --policy policy/.github/server-test-prebuild-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
 
       - id: resolve
         name: Resolve current exact head and completed observer
@@ -537,7 +542,7 @@ jobs:
         with:
           name: server-test-prebuild-parity-receipt-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
           path: evidence/parity-observation.json
-          retention-days: 30
+          retention-days: ${{ needs.plan.outputs.receipt_retention_days }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:

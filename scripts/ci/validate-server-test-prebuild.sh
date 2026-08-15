@@ -25,6 +25,7 @@ jq -e '
 
 jq -e '
   .contract == "honua.server-test-prebuild-promotion-policy/v1" and
+  .receipt_retention_days == 30 and
   .minimum_countable_heads == 20 and
   .minimum_cost_heads == 30 and
   .required_profiles == ["exact-head-shadow:two-shard", "exact-head-shadow:multi-shard"] and
@@ -33,7 +34,7 @@ jq -e '
   .minimum_runner_minute_savings_percent == 60 and
   .require_p90_test_start_improvement == true and
   .max_wall_clock_regression_percent == 5 and
-  (keys | sort) == ["contract", "max_wall_clock_regression_percent", "minimum_cost_heads", "minimum_cost_heads_per_profile", "minimum_countable_heads", "minimum_countable_heads_per_profile", "minimum_runner_minute_savings_percent", "require_p90_test_start_improvement", "required_profiles"]
+  (keys | sort) == ["contract", "max_wall_clock_regression_percent", "minimum_cost_heads", "minimum_cost_heads_per_profile", "minimum_countable_heads", "minimum_countable_heads_per_profile", "minimum_runner_minute_savings_percent", "receipt_retention_days", "require_p90_test_start_improvement", "required_profiles"]
 ' "${promotion}" >/dev/null
 
 "${python_bin}" scripts/ci/plan-server-test-prebuild.test.py
@@ -72,6 +73,8 @@ grep -Fq 'server-test-prebuild-receipt.py build' "${observer}"
 grep -Fq -- '--config policy/.github/ci-shards.json' "${observer}"
 grep -Fq -- '--shards policy/.github/ci-shards.json' "${observer}"
 grep -Fq -- '--registry policy/.github/server-test-artifact-projects.json' "${observer}"
+grep -Fq 'HONUA_SERVER_TEST_ARTIFACT_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json' "${observer}"
+grep -Fq 'registry="${policy_root}/.github/server-test-artifact-projects.json"' scripts/ci/try-server-test-prebuild.sh
 grep -Fq '  workflow_dispatch:' "${benchmark}"
 grep -Fq "run.path !== expectedPath" "${benchmark}"
 grep -Fq "run.event === 'workflow_run' && run.head_branch === repository.default_branch" "${benchmark}"
@@ -104,6 +107,7 @@ grep -Fq 'Make one non-blocking exact-artifact download attempt' "${parity}"
 grep -Fq 'honua.server-test-prebuild-parity-observation/v1' "${parity}"
 grep -Fq -- '--registry policy/.github/server-test-artifact-projects.json' "${parity}"
 grep -Fq 'measurement_policy_digest:$measurement_policy_digest' "${parity}"
+grep -Fq 'retention-days: ${{ needs.plan.outputs.receipt_retention_days }}' "${parity}"
 grep -Fq 'server-test-prebuild-parity-receipt-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}' "${parity}"
 grep -Fq 'path: evidence/parity-observation.json' "${parity}"
 grep -Fq '  schedule:' "${ledger}"
@@ -114,6 +118,7 @@ grep -Fq 'contents: read' "${ledger}"
 grep -Fq 'actions/artifacts/${artifact_id}/zip' "${ledger}"
 grep -Fq 'audit-server-test-prebuild-evidence.py summarize' "${ledger}"
 grep -Fq 'steps.policy.outputs.measurement_policy_digest' "${ledger}"
+grep -Fq 'steps.policy.outputs.receipt_created_filter' "${ledger}"
 grep -Fq 'continue-on-error: true' "${ledger}"
 grep -Fq "steps.ledger.outcome != 'success'" "${ledger}"
 if grep -Fq 'wait-for-run-artifact.sh' "${benchmark}"; then
