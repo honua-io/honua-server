@@ -317,6 +317,24 @@ jobs:
             // be rerun.
             const finalAdmission = await stabilizeAdmissionEvaluation(
               () => evaluateCurrentAdmission(finalReview));
+            const postAdmissionReview = await evaluateCurrentReview();
+            if (!postAdmissionReview || postAdmissionReview.head !== head) {
+              core.info('PR state/head changed during admission stabilization; no action taken.');
+              return;
+            }
+            if (JSON.stringify(postAdmissionReview) !== JSON.stringify(finalReview)) {
+              const postAdmissionDescription = postAdmissionReview.reasons.length === 0
+                ? 'review state changed during admission stabilization'
+                : postAdmissionReview.reasons.join('; ').slice(0, 140);
+              await github.rest.repos.createCommitStatus({
+                ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
+                description: postAdmissionDescription,
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                  `/pull/${prNumber}`,
+              });
+              core.setFailed(`Post-admission review revalidation failed: ${postAdmissionDescription}`);
+              return;
+            }
             const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
             await reportDecision(decision);
             if (decision.action === 'block') {

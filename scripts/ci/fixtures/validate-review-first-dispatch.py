@@ -216,17 +216,36 @@ def main() -> None:
         "const finalAdmission = await stabilizeAdmissionEvaluation(",
         "review workflow must stabilize admission selection after final review revalidation",
     )
+    require(
+        review_gate,
+        "const postAdmissionReview = await evaluateCurrentReview();",
+        "review workflow must revalidate review evidence after admission stabilization",
+    )
+    require(
+        review_gate,
+        "JSON.stringify(postAdmissionReview) !== JSON.stringify(finalReview)",
+        "post-admission review evidence must match the pre-admission snapshot",
+    )
     final_state_read = review_gate.index("const finalReview = await evaluateCurrentReview();")
     final_admission_read = review_gate.index(
         "const finalAdmission = await stabilizeAdmissionEvaluation("
+    )
+    post_admission_review = review_gate.index(
+        "const postAdmissionReview = await evaluateCurrentReview();"
     )
     observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
     rerun_mutation = review_gate.index(
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
     )
-    if not final_state_read < final_admission_read < observe_receipt < rerun_mutation:
+    if not (
+        final_state_read
+        < final_admission_read
+        < post_admission_review
+        < observe_receipt
+        < rerun_mutation
+    ):
         raise AssertionError(
-            "final review and admission revalidation must precede observation and mutation"
+            "joint review/admission revalidation must precede observation and mutation"
         )
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:
