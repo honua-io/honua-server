@@ -109,6 +109,7 @@ jobs:
             const {
               evaluateReviewFirstDispatch,
               selectExactAdmissionRun,
+              stabilizeAdmissionEvaluation,
             } = require('./scripts/ci/review-first-dispatch');
             const {
               createReviewFirstObservation,
@@ -219,7 +220,8 @@ jobs:
               const associatedPullNumbers = associatedPulls
                 .filter(candidate =>
                   candidate.state === 'open' && candidate.head?.sha === review.head)
-                .map(candidate => candidate.number);
+                .map(candidate => candidate.number)
+                .sort((left, right) => left - right);
 
               const selection = selectExactAdmissionRun({
                 runs: runPage.workflow_runs,
@@ -313,7 +315,8 @@ jobs:
             // revalidation. A close/reopen can create a newer canonical run on
             // the same head; only this final selection may produce evidence or
             // be rerun.
-            const finalAdmission = await evaluateCurrentAdmission(finalReview);
+            const finalAdmission = await stabilizeAdmissionEvaluation(
+              () => evaluateCurrentAdmission(finalReview));
             const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
             await reportDecision(decision);
             if (decision.action === 'block') {

@@ -1,5 +1,7 @@
 'use strict';
 
+const { isDeepStrictEqual } = require('node:util');
+
 const PR_GATE_WORKFLOW = '.github/workflows/pr-gate.yml';
 const PR_GATE_JOB = 'PR Gate';
 const ADMISSION_RECEIPT_STEP = 'Admission receipt';
@@ -174,6 +176,15 @@ function evaluateReviewFirstDispatch({
   };
 }
 
+async function stabilizeAdmissionEvaluation(evaluate) {
+  const first = await evaluate();
+  const second = await evaluate();
+  if (!isDeepStrictEqual(first, second)) {
+    throw new Error('Review-first admission changed while taking its final snapshot.');
+  }
+  return second;
+}
+
 module.exports = {
   ADMISSION_RECEIPT_STEP,
   EXPENSIVE_STEPS,
@@ -182,4 +193,5 @@ module.exports = {
   WAIT_FOR_REVIEW_STEP,
   evaluateReviewFirstDispatch,
   selectExactAdmissionRun,
+  stabilizeAdmissionEvaluation,
 };

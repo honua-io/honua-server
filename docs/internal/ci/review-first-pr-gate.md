@@ -107,10 +107,11 @@ the singular combined-status response is not historical evidence.
   attestation read. A final stable snapshot and PR/head/label read occurs
   immediately before retaining an observation or mutating Actions. A dismissed
   review, newly unresolved thread, truncated query, hold, or changed head fails
-  closed. The workflow then re-queries the exact-head PR Gate runs, commit/PR
-  association, selected run jobs, and production decision; only that final
-  admission snapshot may be retained or rerun. Normal PR Gate concurrency
-  cancels the residual race if the head moves after those reads.
+  closed. The workflow then requires two identical evaluations of the exact-head
+  PR Gate runs, commit/PR association, selected run jobs, and production
+  decision; only that stable final admission snapshot may be retained or rerun.
+  Normal PR Gate concurrency cancels the residual race if the head moves after
+  those reads.
 - Live merge-train selection and pre-land validation independently fetch current
   reviews, threads, labels, and head identity from GitHub. They refresh
   `Review Gate` and fail closed on negative/truncated evidence, so a stale status

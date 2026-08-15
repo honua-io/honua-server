@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { evaluateReviewFirstDispatch } = require('./review-first-dispatch');
+const {
+  evaluateReviewFirstDispatch,
+  stabilizeAdmissionEvaluation,
+} = require('./review-first-dispatch');
 
 const head = 'a'.repeat(40);
 const prNumber = 3216;
@@ -125,4 +128,20 @@ test('observe mode records the decision without a rerun', () => {
 
 test('review evidence remains a mandatory defense in depth', () => {
   assert.equal(evaluate({ reviewReady: false }).action, 'noop');
+});
+
+test('final admission evidence must be stable across two evaluations', async () => {
+  const admission = { decision: { action: 'observe', runId: 100 }, runs: [run()] };
+  assert.deepEqual(
+    await stabilizeAdmissionEvaluation(async () => structuredClone(admission)),
+    admission,
+  );
+
+  let query = 0;
+  await assert.rejects(
+    stabilizeAdmissionEvaluation(async () => ({
+      decision: { action: 'observe', runId: 100 + query++ },
+    })),
+    /admission changed while taking its final snapshot/,
+  );
 });

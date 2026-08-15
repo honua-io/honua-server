@@ -208,12 +208,12 @@ def main() -> None:
     )
     require(
         review_gate,
-        "const finalAdmission = await evaluateCurrentAdmission(finalReview);",
-        "review workflow must repeat admission selection after final review revalidation",
+        "const finalAdmission = await stabilizeAdmissionEvaluation(",
+        "review workflow must stabilize admission selection after final review revalidation",
     )
     final_state_read = review_gate.index("const finalReview = await evaluateCurrentReview();")
     final_admission_read = review_gate.index(
-        "const finalAdmission = await evaluateCurrentAdmission(finalReview);"
+        "const finalAdmission = await stabilizeAdmissionEvaluation("
     )
     observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
     rerun_mutation = review_gate.index(
