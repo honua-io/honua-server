@@ -1,0 +1,124 @@
+name: Review-first Evidence Ledger
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "31 13 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: review-first-evidence-ledger
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit immutable review-first observations
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted ledger policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - id: policy
+        name: Bind the current review-first policy cohort
+        run: |
+          node scripts/ci/review-first-evidence-ledger.js policy-digest \
+            --root . \
+            --policy-sha '${{ github.workflow_sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
+          node scripts/ci/review-first-evidence-ledger.js retention-window \
+            --policy .github/review-first-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Validate review-first evidence fixtures
+        run: scripts/ci/validate-review-first-dispatch.sh
+
+      - name: Discover successful trusted Review Gate runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/catalog evidence/archives evidence/receipts
+          gh api --method GET --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/review-gate.yml/runs" \
+            -f status=success \
+            -f "created=${{ steps.policy.outputs.run_created_filter }}" \
+            -F per_page=100 \
+            > evidence/run-pages.json
+          jq -r '.[] | .workflow_runs[]? | .id' evidence/run-pages.json | sort -nu \
+            | while read -r run_id; do
+                [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
+                gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                  > "evidence/catalog/${run_id}.json"
+              done
+          node scripts/ci/review-first-evidence-ledger.js discover \
+            --runs evidence/run-pages.json \
+            --catalog evidence/catalog \
+            --cutoff '${{ steps.policy.outputs.run_created_after }}' \
+            --output evidence/index.json
+
+      - name: Download only exact retained observation receipts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -r '.artifacts[].artifact_id' evidence/index.json \
+            | while read -r artifact_id; do
+                [[ "${artifact_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
+                gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+                  > "evidence/archives/${artifact_id}.zip"
+              done
+
+      - name: Extract bounded observation receipts
+        run: |
+          node scripts/ci/review-first-evidence-ledger.js extract \
+            --index evidence/index.json \
+            --archives evidence/archives \
+            --receipts evidence/receipts \
+            --output evidence/extraction.json
+
+      - id: ledger
+        name: Replay production decisions and compute readiness
+        continue-on-error: true
+        run: |
+          set +e
+          node scripts/ci/review-first-evidence-ledger.js summarize \
+            --index evidence/index.json \
+            --extraction evidence/extraction.json \
+            --receipts evidence/receipts \
+            --policy .github/review-first-promotion.json \
+            --policy-digest '${{ steps.policy.outputs.measurement_policy_digest }}' \
+            --output evidence/ledger.json \
+            --markdown evidence/ledger.md
+          ledger_status=$?
+          set -e
+          if [[ -f evidence/ledger.md ]]; then
+            cat evidence/ledger.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          exit "${ledger_status}"
+
+      - name: Retain the report-only ledger
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: review-first-evidence-ledger-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/run-pages.json
+            evidence/catalog
+            evidence/index.json
+            evidence/extraction.json
+            evidence/ledger.json
+            evidence/ledger.md
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Fail closed on malformed trusted evidence
+        if: steps.ledger.outcome != 'success'
+        run: exit 1
