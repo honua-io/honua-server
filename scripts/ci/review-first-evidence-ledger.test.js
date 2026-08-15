@@ -144,6 +144,7 @@ test('trusted observation replays the production observe decision', () => {
   assert.equal(receipt.decision.action, 'observe');
   assert.equal(receipt.decision.run_id, 100);
   assert.equal(receipt.mutation, 'none');
+  assert.equal(receipt.review.final_pr_state_revalidated, true);
 });
 
 test('workflow identities must be positive safe integers', () => {

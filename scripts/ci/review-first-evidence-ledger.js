@@ -241,7 +241,11 @@ function createReviewFirstObservation({
     observed_at: observedAt,
     pull_request: prNumber,
     head_sha: head,
-    review: { ready: true, snapshot_truncated: false },
+    review: {
+      ready: true,
+      snapshot_truncated: false,
+      final_pr_state_revalidated: true,
+    },
     admission: {
       associated_pull_numbers: cleanAssociations,
       runs: cleanRuns,
@@ -500,7 +504,8 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
     throw new Error('observation producer does not match workflow run');
   }
   const review = requireObject(receipt.review, 'review evidence');
-  if (review.ready !== true || review.snapshot_truncated !== false) {
+  if (review.ready !== true || review.snapshot_truncated !== false ||
+      review.final_pr_state_revalidated !== true) {
     throw new Error('review evidence is not an exact complete snapshot');
   }
   const admission = requireObject(receipt.admission, 'admission evidence');

@@ -256,6 +256,26 @@ jobs:
               ])
               .write();
 
+            if (decision.action === 'block') {
+              core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
+              return;
+            }
+            if (!['observe', 'rerun'].includes(decision.action)) return;
+
+            // Close the event/snapshot race immediately before retaining an
+            // observe receipt or mutating Actions. A later synchronize event
+            // creates a new exact-head admission run; the old head must do
+            // neither.
+            const { data: currentPr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: prNumber,
+            });
+            const currentLabels = new Set(currentPr.labels.map(label => label.name));
+            if (currentPr.state !== 'open' || currentPr.draft || currentPr.head.sha !== head ||
+                ['hold', 'train:hold', 'train:escalated'].some(label => currentLabels.has(label))) {
+              core.info('PR state/head changed before dispatch; the current event is now a no-op.');
+              return;
+            }
+
             if (decision.action === 'observe') {
               const producerRunId = Number(process.env.REVIEW_FIRST_PRODUCER_RUN_ID);
               const producerRunAttempt = Number(
@@ -284,24 +304,6 @@ jobs:
                 'receipt_name',
                 `review-first-observation-${prNumber}-${head}` +
                   `-review-run-${producerRunId}-attempt-${producerRunAttempt}`);
-            }
-
-            if (decision.action === 'block') {
-              core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
-              return;
-            }
-            if (decision.action !== 'rerun') return;
-
-            // Close the event/snapshot race immediately before the mutation.
-            // A later synchronize event will create and evaluate a new exact-
-            // head admission run; it must not spend runners on the old head.
-            const { data: currentPr } = await github.rest.pulls.get({
-              ...context.repo, pull_number: prNumber,
-            });
-            const currentLabels = new Set(currentPr.labels.map(label => label.name));
-            if (currentPr.state !== 'open' || currentPr.draft || currentPr.head.sha !== head ||
-                ['hold', 'train:hold', 'train:escalated'].some(label => currentLabels.has(label))) {
-              core.info('PR state/head changed before dispatch; the current event is now a no-op.');
               return;
             }
 

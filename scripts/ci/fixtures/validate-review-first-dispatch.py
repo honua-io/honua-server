@@ -138,6 +138,11 @@ def main() -> None:
     )
     require(
         review_gate,
+        "if (!['observe', 'rerun'].includes(decision.action)) return;",
+        "observe and enforce must share the final PR-state revalidation",
+    )
+    require(
+        review_gate,
         "Retain immutable review-first observation",
         "trusted review workflow must retain an immutable observation receipt",
     )
@@ -166,6 +171,15 @@ def main() -> None:
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
         "review workflow must release the existing run, not dispatch a new check identity",
     )
+    final_state_read = review_gate.index("const { data: currentPr }")
+    observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
+    rerun_mutation = review_gate.index(
+        "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
+    )
+    if not final_state_read < observe_receipt < rerun_mutation:
+        raise AssertionError(
+            "final PR-state revalidation must precede both observation and mutation"
+        )
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:
             raise AssertionError(

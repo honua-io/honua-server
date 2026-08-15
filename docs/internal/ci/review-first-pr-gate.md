@@ -50,7 +50,8 @@ Every successful `observe` decision now emits a bounded
 `honua.review-first-observation/v1` artifact from the trusted Review Gate run.
 The receipt contains the exact PR/head, the complete bounded PR Gate run and job
 inputs used by the production dispatcher, the selected admission run, the
-decision, and a digest of all policy inputs. It records `mutation: none`.
+decision, the shared final PR state/head/label revalidation, and a digest of all
+policy inputs. It records `mutation: none`.
 Duplicate review events can emit duplicate receipts, but each exact head counts
 once.
 
