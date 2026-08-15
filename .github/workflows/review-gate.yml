@@ -115,61 +115,70 @@ jobs:
             } = require('./scripts/ci/review-first-evidence-ledger');
             const prNumber = Number('${{ needs.resolve.outputs.pr }}');
 
-            const pr = await fetchPullRequestSnapshot(
-              github, context.repo.owner, context.repo.repo, prNumber);
-            if (!pr) {
+            const evaluateCurrentReview = async () => {
+              const pr = await fetchPullRequestSnapshot(
+                github, context.repo.owner, context.repo.repo, prNumber);
+              if (!pr) return null;
+
+              const head = pr.headRefOid;
+              const labels = new Set(pr.labels.nodes.map(label => label.name));
+              const reasons = [];
+              if (pr.state !== 'OPEN') reasons.push('pull request is not open');
+              if (pr.isDraft) reasons.push('pull request is draft');
+              for (const label of ['hold', 'train:hold', 'train:escalated']) {
+                if (labels.has(label)) reasons.push(`blocked by ${label}`);
+              }
+              const snapshotTruncated = pr.labels.pageInfo.hasNextPage ||
+                  pr.reviews.pageInfo.hasNextPage ||
+                  pr.comments.pageInfo.hasNextPage ||
+                  pr.reviewThreads.pageInfo.hasNextPage ||
+                  pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage);
+              if (snapshotTruncated) {
+                reasons.push('bounded review query truncated');
+              }
+
+              const unresolved = pr.reviewThreads.nodes.filter(thread =>
+                !thread.isResolved && thread.comments.nodes.some(comment =>
+                  isCodex(comment.author?.login) && comment.commit?.oid === head));
+              if (unresolved.length) {
+                reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
+              }
+
+              const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
+                if (!isCodex(comment.author?.login)) return comment;
+                const matches = [...(comment.body || '').matchAll(
+                  /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
+                )];
+                if (matches.length !== 1) return comment;
+                const ref = matches[0][1];
+                if (ref.length === 40) return { ...comment, resolvedCommitOid: ref };
+                try {
+                  const { data: commit } = await github.rest.repos.getCommit({
+                    ...context.repo, ref,
+                  });
+                  return { ...comment, resolvedCommitOid: commit.sha };
+                } catch (error) {
+                  core.warning(`Could not uniquely resolve reviewed commit ${ref}: ${error.message}`);
+                  return comment;
+                }
+              }));
+
+              const { exactReview, exactCleanComment } = evaluateCodexEvidence({
+                reviews: pr.reviews.nodes, cleanComments,
+                unresolvedCount: unresolved.length, head,
+              });
+              if (!exactReview && !exactCleanComment) {
+                reasons.push('no exact-head Codex review evidence');
+              }
+              return { head, reasons, snapshotTruncated };
+            };
+
+            const initialReview = await evaluateCurrentReview();
+            if (!initialReview) {
               core.setFailed(`PR #${prNumber} not found.`);
               return;
             }
-            const head = pr.headRefOid;
-            const labels = new Set(pr.labels.nodes.map(label => label.name));
-            const reasons = [];
-            if (pr.state !== 'OPEN') reasons.push('pull request is not open');
-            if (pr.isDraft) reasons.push('pull request is draft');
-            for (const label of ['hold', 'train:hold', 'train:escalated']) {
-              if (labels.has(label)) reasons.push(`blocked by ${label}`);
-            }
-            const snapshotTruncated = pr.labels.pageInfo.hasNextPage ||
-                pr.reviews.pageInfo.hasNextPage ||
-                pr.comments.pageInfo.hasNextPage ||
-                pr.reviewThreads.pageInfo.hasNextPage ||
-                pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage);
-            if (snapshotTruncated) {
-              reasons.push('bounded review query truncated');
-            }
-
-            const unresolved = pr.reviewThreads.nodes.filter(thread =>
-              !thread.isResolved && thread.comments.nodes.some(comment =>
-                isCodex(comment.author?.login) && comment.commit?.oid === head));
-            if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
-
-            const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
-              if (!isCodex(comment.author?.login)) return comment;
-              const matches = [...(comment.body || '').matchAll(
-                /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
-              )];
-              if (matches.length !== 1) return comment;
-              const ref = matches[0][1];
-              if (ref.length === 40) return { ...comment, resolvedCommitOid: ref };
-              try {
-                const { data: commit } = await github.rest.repos.getCommit({
-                  ...context.repo, ref,
-                });
-                return { ...comment, resolvedCommitOid: commit.sha };
-              } catch (error) {
-                core.warning(`Could not uniquely resolve reviewed commit ${ref}: ${error.message}`);
-                return comment;
-              }
-            }));
-
-            const { exactReview, exactCleanComment } = evaluateCodexEvidence({
-              reviews: pr.reviews.nodes, cleanComments,
-              unresolvedCount: unresolved.length, head,
-            });
-
-            if (!exactReview && !exactCleanComment) {
-              reasons.push('no exact-head Codex review evidence');
-            }
+            const { head, reasons, snapshotTruncated } = initialReview;
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
               ? 'Codex reviewed this exact head'
@@ -262,17 +271,24 @@ jobs:
             }
             if (!['observe', 'rerun'].includes(decision.action)) return;
 
-            // Close the event/snapshot race immediately before retaining an
-            // observe receipt or mutating Actions. A later synchronize event
-            // creates a new exact-head admission run; the old head must do
-            // neither.
-            const { data: currentPr } = await github.rest.pulls.get({
-              ...context.repo, pull_number: prNumber,
-            });
-            const currentLabels = new Set(currentPr.labels.map(label => label.name));
-            if (currentPr.state !== 'open' || currentPr.draft || currentPr.head.sha !== head ||
-                ['hold', 'train:hold', 'train:escalated'].some(label => currentLabels.has(label))) {
+            // Re-fetch and re-evaluate the complete review snapshot immediately
+            // before retaining an observe receipt or mutating Actions. This
+            // closes head/label/review-dismissal races between the initial
+            // attestation and the irreversible boundary.
+            const finalReview = await evaluateCurrentReview();
+            if (!finalReview || finalReview.head !== head) {
               core.info('PR state/head changed before dispatch; the current event is now a no-op.');
+              return;
+            }
+            if (finalReview.reasons.length !== 0) {
+              const finalDescription = finalReview.reasons.join('; ').slice(0, 140);
+              await github.rest.repos.createCommitStatus({
+                ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
+                description: finalDescription,
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                  `/pull/${prNumber}`,
+              });
+              core.setFailed(`Final review revalidation failed: ${finalDescription}`);
               return;
             }
 
@@ -293,6 +309,7 @@ jobs:
                 runs: runPage.workflow_runs,
                 jobs,
                 decision,
+                reviewRevalidated: true,
               });
               fs.mkdirSync('review-first-evidence', { recursive: true });
               fs.writeFileSync(

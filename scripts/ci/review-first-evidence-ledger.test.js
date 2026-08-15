@@ -95,6 +95,7 @@ function observation(overrides = {}) {
       reason: 'exact-head review would release expensive verification in enforce mode',
       runId: Number(runs.at(-1).id),
     },
+    reviewRevalidated: overrides.reviewRevalidated ?? true,
   });
 }
 
@@ -198,7 +199,12 @@ test('trusted observation replays the production observe decision', () => {
   assert.equal(receipt.decision.action, 'observe');
   assert.equal(receipt.decision.run_id, 100);
   assert.equal(receipt.mutation, 'none');
-  assert.equal(receipt.review.final_pr_state_revalidated, true);
+  assert.equal(receipt.review.final_review_state_revalidated, true);
+});
+
+test('observation requires final full review revalidation', () => {
+  assert.throws(() => observation({ reviewRevalidated: false }),
+    /final review state was not revalidated/);
 });
 
 test('workflow identities must be positive safe integers', () => {

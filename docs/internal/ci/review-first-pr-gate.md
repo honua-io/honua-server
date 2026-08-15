@@ -50,8 +50,8 @@ Every successful `observe` decision now emits a bounded
 `honua.review-first-observation/v1` artifact from the trusted Review Gate run.
 The receipt contains the exact PR/head, the complete bounded PR Gate run and job
 inputs used by the production dispatcher, the selected admission run, the
-decision, the shared final PR state/head/label revalidation, and a digest of all
-policy inputs. It records `mutation: none`.
+decision, the shared final full review/state/head/label revalidation, and a
+digest of all policy inputs. It records `mutation: none`.
 Duplicate review events can emit duplicate receipts, but each exact head counts
 once.
 
@@ -103,7 +103,9 @@ the singular combined-status response is not historical evidence.
   closed before an enforced rerun.
 - Fork runs with an empty `pull_requests` payload are accepted only when the
   commit API resolves exactly one open associated PR.
-- A final PR/head/label read occurs immediately before the Actions mutation.
+- A final complete review snapshot and PR/head/label read occurs immediately
+  before retaining an observation or mutating Actions. A dismissed review,
+  newly unresolved thread, truncated query, hold, or changed head fails closed.
   Normal PR Gate concurrency cancels the residual race if the head moves after
   that read.
 - Live merge-train selection and pre-land validation independently fetch current

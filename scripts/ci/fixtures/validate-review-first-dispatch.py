@@ -139,7 +139,7 @@ def main() -> None:
     require(
         review_gate,
         "if (!['observe', 'rerun'].includes(decision.action)) return;",
-        "observe and enforce must share the final PR-state revalidation",
+        "observe and enforce must share the final review-state revalidation",
     )
     require(
         review_gate,
@@ -171,14 +171,39 @@ def main() -> None:
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
         "review workflow must release the existing run, not dispatch a new check identity",
     )
-    final_state_read = review_gate.index("const { data: currentPr }")
+    require(
+        review_gate,
+        "const evaluateCurrentReview = async () => {",
+        "review workflow must define one complete review evaluation",
+    )
+    require(
+        review_gate,
+        "const finalReview = await evaluateCurrentReview();",
+        "review workflow must repeat the complete review evaluation at the mutation boundary",
+    )
+    require(
+        review_gate,
+        "reviewRevalidated: true,",
+        "observation receipt must assert final complete review revalidation",
+    )
+    require(
+        review_gate,
+        "if (!finalReview || finalReview.head !== head)",
+        "final review evaluation must reject a missing or changed head",
+    )
+    require(
+        review_gate,
+        "if (finalReview.reasons.length !== 0)",
+        "final review evaluation must reject invalid review evidence",
+    )
+    final_state_read = review_gate.index("const finalReview = await evaluateCurrentReview();")
     observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
     rerun_mutation = review_gate.index(
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
     )
     if not final_state_read < observe_receipt < rerun_mutation:
         raise AssertionError(
-            "final PR-state revalidation must precede both observation and mutation"
+            "final full-review revalidation must precede both observation and mutation"
         )
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:

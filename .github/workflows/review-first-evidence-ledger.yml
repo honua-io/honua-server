@@ -48,9 +48,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence/run-query-pages evidence/catalog evidence/archives evidence/receipts
+          tab="$(printf '\t')"
           jq -r '.partitions[] | [.index, .created_filter] | @tsv' \
             evidence/query-windows.json \
-            | while IFS=$'\t' read -r partition created_filter; do
+            | while IFS="${tab}" read -r partition created_filter; do
                 [[ "${partition}" =~ ^[0-9]+$ ]] || exit 1
                 gh api --method GET --paginate --slurp \
                   "repos/${GITHUB_REPOSITORY}/actions/workflows/review-gate.yml/runs" \
