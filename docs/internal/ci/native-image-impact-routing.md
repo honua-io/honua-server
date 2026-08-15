@@ -31,11 +31,14 @@ current PR. Fork heads are explicitly excluded from the observation denominator
 and retain the full authoritative image workflows. Missing or ambiguous
 same-repository associations fail closed and do not count. The artifact binds
 the canonical gate run, trusted policy commit, individual Git blob IDs for the
-selector, routing policy, resolver, observer workflow, and authoritative legacy
-Serving Image Boundary workflow, a digest over that fixed input manifest,
-base/head SHAs, exact project lists, graph fingerprints, normalized changed-path
-digest, matched reasons, and `mutation: none`. Neither expensive image workflow
-reads it.
+selector, routing policy, resolver, observer workflow, PR Gate, Serving Image
+Boundary, and GDAL Worker Image workflows, a digest over that fixed input
+manifest, base/head SHAs, exact project lists, graph fingerprints, normalized
+changed-path digest, matched reasons, and `mutation: none`. Neither expensive
+image workflow reads it. The authoritative workflow blobs come from the exact
+observed PR head and must equal the current default-branch blobs before the
+ledger counts them. Validation parses the serving workflow's actual Bash case
+arms and rejects any common/variant mapping that differs from the replay policy.
 
 ## Promotion and rollback
 

@@ -124,6 +124,15 @@ jobs:
                 !/^[0-9a-f]{40}$/.test(observerWorkflow.sha || '')) {
               throw new Error('trusted observer workflow is unavailable or malformed');
             }
+            const { data: gateWorkflow } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: '.github/workflows/pr-gate.yml',
+              ref: expectedHead,
+            });
+            if (Array.isArray(gateWorkflow) || gateWorkflow.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(gateWorkflow.sha || '')) {
+              throw new Error('trusted PR Gate workflow is unavailable or malformed');
+            }
             const { data: resolver } = await github.rest.repos.getContent({
               ...context.repo,
               path: 'scripts/ci/trusted-pr-workflow-run.js',
@@ -144,6 +153,7 @@ jobs:
               head_sha: expectedHead,
               policy_sha: context.sha,
               policy_blob_sha: policy.sha,
+              gate_workflow_blob_sha: gateWorkflow.sha,
               resolver_blob_sha: resolver.sha,
               observer_workflow_blob_sha: observerWorkflow.sha,
               trusted_execution: 'default-branch-workflow-run/v1',

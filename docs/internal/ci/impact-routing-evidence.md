@@ -28,13 +28,16 @@ unsafe-archive, wrong-workflow, wrong-policy, and cross-head evidence. It
 deduplicates successful observations by full head SHA and never counts a head
 associated with more than one pull request.
 
-Both streams bind the Git blob of `scripts/ci/trusted-pr-workflow-run.js` that
-resolved the canonical PR, base, head, workflow, run, and attempt. A resolver
-change therefore starts a new policy cohort instead of mixing identities
-established under superseded trust logic. Native receipts additionally bind the
-authoritative Serving Image Boundary workflow and record its replayed
-per-variant decision. Serving narrowing is the strict difference between that
-legacy variant count and the candidate variant count; reproducing an existing
+Both streams bind the Git blobs of the authoritative PR Gate workflow and
+`scripts/ci/trusted-pr-workflow-run.js`, which resolved the canonical PR, base,
+head, workflow, run, and attempt. A gate or resolver change therefore starts a
+new policy cohort instead of mixing identities established under superseded
+logic. The receipt records the workflow blobs from the observed PR head, while
+the ledger accepts them only when they equal the current default-branch policy.
+Native receipts additionally bind both authoritative image workflows
+and record the Serving Image Boundary workflow's replayed per-variant decision.
+Serving narrowing is the strict difference between that legacy variant count
+and the candidate variant count; reproducing an existing
 Lambda-only, Functions-only, or generic-only selection does not count. An image
 outcome is authoritative only when its GitHub-managed workflow association
 matches the receipt's PR number, base SHA, and head SHA; an earlier run for a

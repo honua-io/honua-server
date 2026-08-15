@@ -219,6 +219,61 @@ def _legacy_paths_from_workflow(path: Path) -> list[str]:
     return paths
 
 
+def _legacy_serving_routes_from_workflow(path: Path) -> dict[str, list[str]]:
+    """Parse the authoritative Bash case arms without executing workflow code."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    starts = [index for index, line in enumerate(lines) if line.strip() == 'case "$path" in']
+    if len(starts) != 1:
+        raise PolicyError("serving workflow must contain one legacy variant case")
+    routes = {name: [] for name in ("common", "generic", "lambda", "functions")}
+    current: list[str] | None = None
+    outputs: set[str] = set()
+    ended = False
+    for line in lines[starts[0] + 1 :]:
+        value = line.strip()
+        if not value or value.startswith("#"):
+            continue
+        if current is None:
+            if value == "esac":
+                ended = True
+                break
+            if not value.endswith(")"):
+                raise PolicyError("serving workflow variant case contains an unknown statement")
+            current = []
+            outputs = set()
+            for pattern in value[:-1].split("|"):
+                if not re.fullmatch(r"[A-Za-z0-9_./*-]+", pattern):
+                    raise PolicyError("serving workflow variant case contains an unsafe pattern")
+                current.append(pattern[:-1] + "**" if pattern.endswith("/*") else pattern)
+            continue
+        assignment = re.fullmatch(r"(generic|lambda|functions)=true", value)
+        if assignment:
+            outputs.add(assignment.group(1))
+            continue
+        if value != ";;":
+            raise PolicyError("serving workflow variant case contains an unknown action")
+        if outputs == {"generic", "lambda", "functions"}:
+            route = "common"
+        elif len(outputs) == 1:
+            route = next(iter(outputs))
+        else:
+            raise PolicyError("serving workflow variant case has an unsupported decision")
+        routes[route].extend(current)
+        current = None
+    if not ended or current is not None or any(not patterns for patterns in routes.values()):
+        raise PolicyError("serving workflow variant case is incomplete")
+    return routes
+
+
+def _validate_legacy_serving_routes(path: Path, legacy: dict[str, Any]) -> None:
+    expected = {
+        "common": legacy["serving_common_patterns"],
+        **legacy["serving_variant_patterns"],
+    }
+    if _legacy_serving_routes_from_workflow(path) != expected:
+        raise PolicyError("serving legacy variant routes differ from authoritative workflow")
+
+
 def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
     required = {
         "roots",
@@ -274,6 +329,7 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
         raise PolicyError("legacy serving variant routes overlap")
     if set(routed_patterns) != set(legacy["serving_patterns"]):
         raise PolicyError("legacy serving variant routes do not cover the workflow trigger")
+    _validate_legacy_serving_routes(repo / legacy["serving_workflow"], legacy)
     for kind in ("serving", "worker"):
         workflow = repo / legacy[f"{kind}_workflow"]
         actual = _legacy_paths_from_workflow(workflow)
@@ -359,7 +415,9 @@ def evaluate(
     policy_sha: str = "",
     policy_blob_sha: str = "",
     routing_policy_blob_sha: str = "",
+    gate_workflow_blob_sha: str = "",
     serving_workflow_blob_sha: str = "",
+    worker_workflow_blob_sha: str = "",
     resolver_blob_sha: str = "",
     observer_workflow_blob_sha: str = "",
     policy_inputs_sha256: str = "",
@@ -451,7 +509,9 @@ def evaluate(
         "policy_sha": policy_sha,
         "policy_blob_sha": policy_blob_sha,
         "routing_policy_blob_sha": routing_policy_blob_sha,
+        "gate_workflow_blob_sha": gate_workflow_blob_sha,
         "serving_workflow_blob_sha": serving_workflow_blob_sha,
+        "worker_workflow_blob_sha": worker_workflow_blob_sha,
         "resolver_blob_sha": resolver_blob_sha,
         "observer_workflow_blob_sha": observer_workflow_blob_sha,
         "policy_inputs_sha256": policy_inputs_sha256,
@@ -550,7 +610,9 @@ def observation_identity(args: argparse.Namespace) -> dict[str, Any]:
         "policy_sha": args.policy_sha,
         "policy_blob_sha": args.policy_blob_sha,
         "routing_policy_blob_sha": args.routing_policy_blob_sha,
+        "gate_workflow_blob_sha": args.gate_workflow_blob_sha,
         "serving_workflow_blob_sha": args.serving_workflow_blob_sha,
+        "worker_workflow_blob_sha": args.worker_workflow_blob_sha,
         "resolver_blob_sha": args.resolver_blob_sha,
         "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
     }
@@ -572,7 +634,9 @@ def observation_identity(args: argparse.Namespace) -> dict[str, Any]:
         "policy_sha": args.policy_sha,
         "policy_blob_sha": args.policy_blob_sha,
         "routing_policy_blob_sha": args.routing_policy_blob_sha,
+        "gate_workflow_blob_sha": args.gate_workflow_blob_sha,
         "serving_workflow_blob_sha": args.serving_workflow_blob_sha,
+        "worker_workflow_blob_sha": args.worker_workflow_blob_sha,
         "resolver_blob_sha": args.resolver_blob_sha,
         "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
         "policy_inputs_sha256": args.policy_inputs_sha256,
@@ -634,7 +698,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     observe.add_argument("--policy-sha", required=True)
     observe.add_argument("--policy-blob-sha", required=True)
     observe.add_argument("--routing-policy-blob-sha", required=True)
+    observe.add_argument("--gate-workflow-blob-sha", required=True)
     observe.add_argument("--serving-workflow-blob-sha", required=True)
+    observe.add_argument("--worker-workflow-blob-sha", required=True)
     observe.add_argument("--resolver-blob-sha", required=True)
     observe.add_argument("--observer-workflow-blob-sha", required=True)
     observe.add_argument("--policy-inputs-sha256", required=True)

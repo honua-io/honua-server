@@ -135,6 +135,7 @@ def pr_gate_receipt(blobs: dict[str, str], head: str = HEAD_A, conclusion: str =
         "head_sha": head,
         "policy_sha": BASE,
         "policy_blob_sha": blobs["pr_gate_classifier"],
+        "gate_workflow_blob_sha": blobs["pr_gate_workflow"],
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["pr_gate_observer"],
         "trusted_execution": "default-branch-workflow-run/v1",
@@ -174,7 +175,9 @@ def native_receipt(
         "policy_sha": BASE,
         "policy_blob_sha": blobs["native_classifier"],
         "routing_policy_blob_sha": blobs["native_routing_policy"],
+        "gate_workflow_blob_sha": blobs["pr_gate_workflow"],
         "serving_workflow_blob_sha": blobs["serving_workflow"],
+        "worker_workflow_blob_sha": blobs["worker_workflow"],
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
         "policy_inputs_sha256": blobs["native_policy_inputs_sha256"],
@@ -455,7 +458,11 @@ def test_integrity_failures_do_not_count() -> None:
         }
         pages(root / "serving", "workflow_runs", [])
         pages(root / "worker", "workflow_runs", [])
-        for field in ("observer_workflow_blob_sha", "resolver_blob_sha"):
+        for field in (
+            "observer_workflow_blob_sha",
+            "resolver_blob_sha",
+            "gate_workflow_blob_sha",
+        ):
             bad = pr_gate_receipt(blobs)
             bad[field] = "f" * 40
             archive(archives, 301, MODULE.PR_GATE_STREAM, bad)

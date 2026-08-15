@@ -159,17 +159,21 @@ def current_blobs(root: Path) -> dict[str, str]:
     paths = {
         "pr_gate_observer": PR_GATE_WORKFLOW,
         "pr_gate_classifier": "scripts/ci/classify-pr-gate-impact.py",
+        "pr_gate_workflow": ".github/workflows/pr-gate.yml",
         "native_observer": NATIVE_WORKFLOW,
         "native_classifier": "scripts/ci/native-image-impact.py",
         "native_routing_policy": ".github/native-image-impact.json",
         "serving_workflow": SERVING_WORKFLOW,
+        "worker_workflow": WORKER_WORKFLOW,
         "trusted_run_resolver": "scripts/ci/trusted-pr-workflow-run.js",
     }
     blobs = {key: git_blob_sha(root / value) for key, value in paths.items()}
     manifest = [
         {"path": "scripts/ci/native-image-impact.py", "blob_sha": blobs["native_classifier"]},
         {"path": ".github/native-image-impact.json", "blob_sha": blobs["native_routing_policy"]},
+        {"path": ".github/workflows/pr-gate.yml", "blob_sha": blobs["pr_gate_workflow"]},
         {"path": SERVING_WORKFLOW, "blob_sha": blobs["serving_workflow"]},
+        {"path": WORKER_WORKFLOW, "blob_sha": blobs["worker_workflow"]},
         {"path": "scripts/ci/trusted-pr-workflow-run.js", "blob_sha": blobs["trusted_run_resolver"]},
         {"path": NATIVE_WORKFLOW, "blob_sha": blobs["native_observer"]},
     ]
@@ -482,6 +486,7 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
         raise ValueError("PR Gate receipt policy head differs from producer")
     if (
         value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
+        or value.get("gate_workflow_blob_sha") != blobs["pr_gate_workflow"]
         or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
         or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
     ):
@@ -525,7 +530,9 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     expected_blobs = {
         "policy_blob_sha": blobs["native_classifier"],
         "routing_policy_blob_sha": blobs["native_routing_policy"],
+        "gate_workflow_blob_sha": blobs["pr_gate_workflow"],
         "serving_workflow_blob_sha": blobs["serving_workflow"],
+        "worker_workflow_blob_sha": blobs["worker_workflow"],
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
     }
