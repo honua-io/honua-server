@@ -42,6 +42,7 @@ def _full(
         "head_sha": None,
         "policy_sha": None,
         "policy_blob_sha": None,
+        "resolver_blob_sha": None,
         "observer_workflow_blob_sha": None,
         "trusted_execution": None,
         "gate_workflow_path": None,
@@ -87,6 +88,7 @@ def classify(payload: object) -> dict[str, Any]:
     head_sha = payload.get("head_sha")
     policy_sha = payload.get("policy_sha")
     policy_blob_sha = payload.get("policy_blob_sha")
+    resolver_blob_sha = payload.get("resolver_blob_sha")
     observer_workflow_blob_sha = payload.get("observer_workflow_blob_sha")
     trusted_execution = payload.get("trusted_execution")
     gate_workflow_path = payload.get("gate_workflow_path")
@@ -110,6 +112,8 @@ def classify(payload: object) -> dict[str, Any]:
         or re.fullmatch(r"[0-9a-f]{40}", policy_sha) is None
         or not isinstance(policy_blob_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", policy_blob_sha) is None
+        or not isinstance(resolver_blob_sha, str)
+        or re.fullmatch(r"[0-9a-f]{40}", resolver_blob_sha) is None
         or not isinstance(observer_workflow_blob_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", observer_workflow_blob_sha) is None
         or trusted_execution != "default-branch-workflow-run/v1"
@@ -131,6 +135,7 @@ def classify(payload: object) -> dict[str, Any]:
         "head_sha": head_sha,
         "policy_sha": policy_sha,
         "policy_blob_sha": policy_blob_sha,
+        "resolver_blob_sha": resolver_blob_sha,
         "observer_workflow_blob_sha": observer_workflow_blob_sha,
         "trusted_execution": trusted_execution,
         "gate_workflow_path": gate_workflow_path,

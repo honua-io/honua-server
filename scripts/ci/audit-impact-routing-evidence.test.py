@@ -134,6 +134,7 @@ def pr_gate_receipt(blobs: dict[str, str], head: str = HEAD_A, conclusion: str =
         "head_sha": head,
         "policy_sha": BASE,
         "policy_blob_sha": blobs["pr_gate_classifier"],
+        "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["pr_gate_observer"],
         "trusted_execution": "default-branch-workflow-run/v1",
         "gate_workflow_path": ".github/workflows/pr-gate.yml",
@@ -377,9 +378,6 @@ def test_integrity_failures_do_not_count() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         archives = root / "archives"
-        bad = pr_gate_receipt(blobs)
-        bad["observer_workflow_blob_sha"] = "f" * 40
-        archive(archives, 301, MODULE.PR_GATE_STREAM, bad)
         index = {
             "contract": MODULE.INDEX_CONTRACT,
             "artifacts": [entry(MODULE.PR_GATE_STREAM, 301, 1)],
@@ -388,17 +386,21 @@ def test_integrity_failures_do_not_count() -> None:
         }
         pages(root / "serving", "workflow_runs", [])
         pages(root / "worker", "workflow_runs", [])
-        ledger = MODULE.summarize(
-            index,
-            archives,
-            root / "serving",
-            root / "worker",
-            policy(),
-            REPOSITORY_ROOT,
-        )
-        assert ledger["counts"]["validated_pr_gate_receipts"] == 0
-        assert ledger["counts"]["integrity_failures"] == 1
-        assert ledger["gates"]["integrity_clean"] is False
+        for field in ("observer_workflow_blob_sha", "resolver_blob_sha"):
+            bad = pr_gate_receipt(blobs)
+            bad[field] = "f" * 40
+            archive(archives, 301, MODULE.PR_GATE_STREAM, bad)
+            ledger = MODULE.summarize(
+                index,
+                archives,
+                root / "serving",
+                root / "worker",
+                policy(),
+                REPOSITORY_ROOT,
+            )
+            assert ledger["counts"]["validated_pr_gate_receipts"] == 0
+            assert ledger["counts"]["integrity_failures"] == 1
+            assert ledger["gates"]["integrity_clean"] is False
 
         archive(archives, 301, MODULE.PR_GATE_STREAM, {}, unsafe=True)
         unsafe = MODULE.summarize(

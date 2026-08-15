@@ -124,6 +124,15 @@ jobs:
                 !/^[0-9a-f]{40}$/.test(observerWorkflow.sha || '')) {
               throw new Error('trusted observer workflow is unavailable or malformed');
             }
+            const { data: resolver } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: 'scripts/ci/trusted-pr-workflow-run.js',
+              ref: context.sha,
+            });
+            if (Array.isArray(resolver) || resolver.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(resolver.sha || '')) {
+              throw new Error('trusted workflow-run resolver is unavailable or malformed');
+            }
 
             const classifierPath = path.join(runnerTemp, 'trusted-classify-pr-gate-impact.py');
             const inputPath = path.join(runnerTemp, 'pr-gate-impact-input.json');
@@ -135,6 +144,7 @@ jobs:
               head_sha: expectedHead,
               policy_sha: context.sha,
               policy_blob_sha: policy.sha,
+              resolver_blob_sha: resolver.sha,
               observer_workflow_blob_sha: observerWorkflow.sha,
               trusted_execution: 'default-branch-workflow-run/v1',
               gate_workflow_path: gateRun.path,

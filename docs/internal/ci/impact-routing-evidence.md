@@ -28,6 +28,11 @@ unsafe-archive, wrong-workflow, wrong-policy, and cross-head evidence. It
 deduplicates successful observations by full head SHA and never counts a head
 associated with more than one pull request.
 
+Both streams bind the Git blob of `scripts/ci/trusted-pr-workflow-run.js` that
+resolved the canonical PR, base, head, workflow, run, and attempt. A resolver
+change therefore starts a new policy cohort instead of mixing identities
+established under superseded trust logic.
+
 Observer receipts use a seven-day rolling retention window. At current activity
 that keeps per-run catalog discovery and downloads below the repository token's
 bounded request budget while requiring the positive/narrowed cohorts to reflect

@@ -480,6 +480,7 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
         raise ValueError("PR Gate receipt policy head differs from producer")
     if (
         value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
+        or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
         or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
     ):
         raise ValueError("PR Gate receipt policy inputs are not current")
