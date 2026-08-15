@@ -1007,10 +1007,18 @@ gh() {
   if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
   elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
-  elif [[ "$*" == *'--json jobs'* ]]; then printf 'failure\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then printf '%s\n' "${fixture_resume_gate:-failure}"
   else fail "resumed failure attempted unexpected gh operation: $*"
   fi
 }
+for fixture_resume_gate in cancelled timed_out startup_failure; do
+  resumed_terminal_state="$(train_restore_retry_intent)" \
+    || fail "restart rejected terminal ${fixture_resume_gate} retry result"
+  [[ "$(jq -r '.resume_gate' <<<"${resumed_terminal_state}")" == "${fixture_resume_gate^^}" ]] \
+    || fail "restart did not preserve terminal ${fixture_resume_gate} retry result"
+done
+fixture_resume_gate=failure
+pass "retry restoration accepts terminal non-success conclusions"
 train_ci_jobs_are_terminal() { [[ "$1" == "123" ]] || fail "failure classification lost resumed run id"; }
 train_expected_shards_are_classifiable() { [[ "$1" == "123" ]] || fail "shard classification lost resumed run id"; }
 train_failing_jobs() { [[ "$1" == "123" ]] || fail "failure reader lost resumed run id"; printf 'Server Tests (OData Core)\n'; }

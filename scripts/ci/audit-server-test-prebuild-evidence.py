@@ -265,6 +265,7 @@ def validate_receipt(entry: dict, value: object) -> dict:
         "profile": summary["profile"],
         "producer_run_id": producer_run_id,
         "pull_request": entry["pull_request"],
+        "run_attempt": entry["run_attempt"],
         "run_id": entry["run_id"],
         "verifier_policy_sha": entry["verifier_policy_sha"],
     }
@@ -376,10 +377,15 @@ def summarize(
     for observation in current_observations:
         grouped[observation["head_sha"]].append(observation)
     duplicate_heads = sorted(head for head, values in grouped.items() if len(values) != 1)
-    countable = [
-        values[0]
+    selected_observations = [
+        max(
+            values,
+            key=lambda item: (item["run_id"], item["run_attempt"], item["artifact_id"]),
+        )
         for values in grouped.values()
-        if len(values) == 1 and values[0]["countable"]
+    ]
+    countable = [
+        observation for observation in selected_observations if observation["countable"]
     ]
     profiles = Counter(item["profile"] for item in countable)
     baseline_minutes = sum(item["baseline_minutes"] for item in countable)
@@ -482,7 +488,6 @@ def summarize(
         and p90_test_start_ready
         and wall_clock_ready
         and not integrity_failures
-        and not duplicate_heads
         else "insufficient-evidence"
     )
     return {
@@ -498,6 +503,9 @@ def summarize(
             "validated_receipts": len(observations),
             "current_policy_receipts": len(current_observations),
             "noncurrent_policy_receipts": noncurrent_policy_observations,
+            "superseded_duplicate_receipts": sum(
+                max(0, len(values) - 1) for values in grouped.values()
+            ),
             "distinct_countable_heads": len(countable),
             "distinct_profiles": len(profiles),
             "excluded_successful_shells": len(discovery_exclusions),
@@ -522,7 +530,7 @@ def summarize(
             "runner_minute_target_met": savings_ready,
             "p90_test_start_improved": p90_test_start_ready,
             "p90_wall_clock_within_budget": wall_clock_ready,
-            "integrity_clean": not integrity_failures and not duplicate_heads,
+            "integrity_clean": not integrity_failures,
         },
         "countable_observations": sorted(
             countable, key=lambda item: (item["head_sha"], item["run_id"])
@@ -563,7 +571,9 @@ def markdown(ledger: dict) -> str:
             f"{metric(cost['candidate_p90_wall_clock_ms'], ' ms')}",
             f"- p90 head-to-first-test: {metric(cost['p90_head_to_first_test_ms'], ' ms')}",
             f"- Integrity failures: `{len(ledger['integrity_failures'])}`",
-            f"- Duplicate exact heads: `{len(ledger['duplicate_heads'])}`",
+            "- Superseded duplicate receipts: "
+            f"`{counts['superseded_duplicate_receipts']}` across "
+            f"`{len(ledger['duplicate_heads'])}` exact head(s)",
             "",
             "| Gate | Ready |",
             "|---|---|",

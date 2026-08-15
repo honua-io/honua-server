@@ -210,8 +210,16 @@ with tempfile.TemporaryDirectory() as directory:
         receipt(99, 1, entries[0]["head_sha"], TWO_SHARD),
     )
     duplicate_ledger = MODULE.summarize(index, receipts, policy(), POLICY_DIGEST)
-    assert duplicate_ledger["recommendation"] == "insufficient-evidence"
+    assert duplicate_ledger["recommendation"] == "eligible-for-human-promotion-review"
     assert duplicate_ledger["duplicate_heads"] == [entries[0]["head_sha"]]
+    assert duplicate_ledger["counts"]["superseded_duplicate_receipts"] == 1
+    assert duplicate_ledger["gates"]["integrity_clean"] is True
+    selected_duplicate = next(
+        item
+        for item in duplicate_ledger["countable_observations"]
+        if item["head_sha"] == entries[0]["head_sha"]
+    )
+    assert selected_duplicate["run_id"] == 99
 
     bad = receipt(2, 2, entries[1]["head_sha"], MULTI_SHARD)
     bad["summary"]["parity_failures"] = ["server-a"]

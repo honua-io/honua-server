@@ -215,6 +215,13 @@ producer cost, not only the consumer download. The contract and promotion
 procedure are documented in
 `docs/internal/ci/server-test-prebuild-shadow.md` (honua-server#3226).
 
+The retained ledger partitions observations by the complete measurement-policy
+digest. If the same exact head is measured more than once under that policy,
+the highest verifier run id (then attempt and artifact id) is authoritative and
+older valid receipts are reported as superseded rather than as integrity
+corruption. The newer observation may remove a previously countable head; a
+repeat can never manufacture two samples from one head.
+
 ### 6. Fail fast without manufacturing success
 
 For a single-PR train batch, the first deterministic gating failure cancels
