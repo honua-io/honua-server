@@ -156,6 +156,10 @@ train_restore_smart_ci_intent() {
     && "${run_path}" == ".github/workflows/ci.yml" ]] || return 2
 
   selected="$(train_restore_retry_members "${state}" "${trunk}" "${batch_sha}")" || return 2
+  descriptor="$(train_smart_ci_shards "${batch}")" || return 2
+  export TRAIN_EARLY_FAILURE_SHARD_DESCRIPTOR="${descriptor}"
+  export TRAIN_EARLY_FAILURE_BATCH_BRANCH="${batch}"
+  export TRAIN_EARLY_FAILURE_BATCH_SHA="${batch_sha}"
   train_wait_for_run_completion "${run_id}" || return 3
   gate="$(gh run view "${run_id}" --json jobs \
     --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' \
@@ -169,8 +173,6 @@ train_restore_smart_ci_intent() {
     # ci-incomplete path under the exact recovered run id.
     *) gate="MISSING" ;;
   esac
-  descriptor="$(train_smart_ci_shards "${batch}")" || return 2
-
   jq -c --arg gate "${gate}" --argjson descriptor "${descriptor}" --argjson selected "${selected}" \
     '. + {resume_gate: $gate, resume_shard_descriptor: $descriptor, resume_selected: $selected}' <<<"${state}"
 }

@@ -266,7 +266,9 @@ train_attribute_probe_gate() {
     return 0
   fi
 
-  gate="$(train_run_batch_ci "${probe_batch}")"
+  # Attribution probes answer a different causal question and must never
+  # populate the primary batch's one-per-controller shadow observation.
+  gate="$(TRAIN_EARLY_FAILURE_MODE=off train_run_batch_ci "${probe_batch}")"
   _train_restore_attribute_probe_state \
     "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
     "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
@@ -805,6 +807,7 @@ main() {
       && "${gate}" != "TIMED_OUT" && "${gate}" != "STARTUP_FAILURE" ]] \
       || ! train_ci_jobs_are_terminal "${run_id}" \
       || ! train_expected_shards_are_classifiable "${run_id}" "${shard_descriptor}"; then
+      train_early_failure_record_classification "${run_id}" incomplete false false || true
       _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "${run_id}" "${fwdfix}" "${flake_reruns}"
       train_annotate_warn "CI Gate/run is ${gate} with incomplete or unusable jobs; failing closed without landing or dropping PRs"
       train_step_end ci-gate >/dev/null; train_endgroup
@@ -833,11 +836,13 @@ main() {
     failing="$(printf '%s\n%s\n' "${failing}" "${retry_terminal}" | sed '/^$/d' | sort -u)"
     if [[ -z "${failing//[${HONUA_NL}${HONUA_TAB} ]/}" ]]; then
       if [[ "${nonblocking_only}" == "1" ]]; then
+        train_early_failure_record_classification "${run_id}" nonblocking true false || true
         train_metric_set nonblocking_passes 1
         train_notice "only non-blocking aux/aggregator jobs failed and every selected shard explicitly succeeded; landing on shard results"
         gate="SUCCESS"; continue
       fi
 
+      train_early_failure_record_classification "${run_id}" incomplete false false || true
       _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "${run_id}" "${fwdfix}" "${flake_reruns}"
       train_annotate_warn "CI has no blocking failures to classify but selected-shard evidence is missing or skipped; failing closed"
       train_step_end ci-gate >/dev/null; train_endgroup
@@ -878,6 +883,7 @@ main() {
     else
       introduced="$(train_preexisting_filter "${run_id}" "${failing}")" || rc_pe=$?
       if [[ "${rc_pe}" == "11" ]]; then
+        train_early_failure_record_classification "${run_id}" preexisting true false || true
         train_metric_set preexisting_passes 1
         train_notice "pre-existing filter: all batch failures are pre-existing on trunk; landing"
         gate="SUCCESS"
@@ -894,6 +900,7 @@ main() {
     local rc_retry=0
     train_classify_retry_candidate "${run_id}" "${timeout_reruns}" "${flake_reruns}" "${failing}" _persist_retry_intent || rc_retry=$?
     if [[ "${rc_retry}" == "3" ]]; then
+      train_early_failure_record_classification "${run_id}" retry-control-plane false false || true
       _write_state "${batch}" "${trunk_sha}" "${included}" "rerun-command-failed" "${run_id}" "${fwdfix}" "${flake_reruns}"
       train_annotate_warn "failed-job rerun command failed; stopping without landing or attribution"
       train_step_end ci-gate >/dev/null; train_endgroup
@@ -901,18 +908,21 @@ main() {
       return 1
     fi
     if [[ "${rc_retry}" == "4" ]]; then
+      train_early_failure_record_classification "${run_id}" retry-control-plane false false || true
       train_annotate_warn "failed-job rerun request remains in recoverable requesting state; stopping without overwriting it"
       train_step_end ci-gate >/dev/null; train_endgroup
       _emit_metrics "ci-rerun-requesting" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
     if [[ "${rc_retry}" == "6" ]]; then
+      train_early_failure_record_classification "${run_id}" retry-control-plane false false || true
       train_annotate_warn "Actions rejected the rerun but terminal state persistence failed; stopping without cleanup or state overwrite"
       train_step_end ci-gate >/dev/null; train_endgroup
       _emit_metrics "ci-rerun-rejection-persist-failed" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
     if [[ "${rc_retry}" == "7" ]]; then
+      train_early_failure_record_classification "${run_id}" capacity true false || true
       # #3054: a server-test shard used its whole configured budget while still
       # executing tests. That is a CI-capacity defect owned by
       # .github/ci-shards.json, not something any batch member did, so it must
@@ -928,6 +938,7 @@ main() {
       return 0
     fi
     if [[ "${rc_retry}" == "5" ]]; then
+      train_early_failure_record_classification "${run_id}" retry-control-plane false false || true
       train_annotate_warn "Actions definitively rejected the failed-job rerun; escalating this batch and clearing it so the queue can progress"
       train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
       train_escalate_batch "${included}" "Actions definitively rejected the failed-job rerun request; manual CI correction required"
@@ -947,11 +958,15 @@ main() {
       if train_wait_for_new_run_attempt "${run_id}" "${TRAIN_RERUN_BASE_ATTEMPT}"; then
         gate="$(gh run view "${run_id}" --json jobs \
           --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+        if [[ "${gate}" == "SUCCESS" ]]; then
+          train_early_failure_record_classification "${run_id}" retry-passed true false || true
+        fi
       else
         # The rerun command was accepted and its intent is already durable.
         # Never replace that resumable state with ci-incomplete merely because
         # this controller's shared deadline expired while the attempt remained
         # queued/running; the next controller must consume the same attempt.
+        train_early_failure_record_classification "${run_id}" retry-control-plane false false || true
         train_annotate_warn "accepted failed-job rerun remains pending at the controller deadline; preserving retry intent for restart"
         train_step_end ci-gate >/dev/null; train_endgroup
         _emit_metrics "ci-rerun-pending" "${trunk_sha}" "" "${shard_descriptor}"
@@ -963,11 +978,13 @@ main() {
     elif [[ "${rc_retry}" == "2" ]]; then
       # Recognized flake persisted across the rerun => consistent environmental
       # failure (e.g. the schema-setup race). Merge through: land the batch.
+      train_early_failure_record_classification "${run_id}" known-flake true false || true
       train_metric_set flake_mergethrough 1
       train_notice "recognized environmental flake persisted across rerun; MERGING THROUGH — landing the batch (optimistic model)"
       gate="SUCCESS"; continue
     fi
     # rc_retry == 1 => a real failure, including any persistent timeout.
+    train_early_failure_record_classification "${run_id}" real-blocking true true || true
 
     # --- (4) ROLL-FORWARD AI FIX-AGENT (capstone; gated TRAIN_AUTOFIX) -------
     # A REAL, batch-introduced, non-flake failure. With autofix enabled, ask the

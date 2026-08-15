@@ -101,3 +101,26 @@ The post-change report must retain this methodology, include at least 30 runs,
 and compare admission, verification, first-failure, cancellation, and runner
 time separately. A faster wall clock that increases runner minutes, or lower
 runner minutes that weakens evidence, does not pass ADR-0074's promotion gate.
+
+## Early-failure shadow comparison contract
+
+The historical sample above establishes the pre-change population-level
+signal: CI's median first job failure was 19.1 minutes, while Merge Train's
+median first reported failure was 60.8 minutes. Those values come from different
+workflow populations, so they show the bottleneck but are not treated as a
+paired savings estimate.
+
+Issue #3224's observe-only record makes the paired comparison possible for each
+exact train run. The before/after measures are:
+
+| Measure | Current terminal path | Shadow early path |
+|---|---|---|
+| Time to classification | `classification.delay_seconds` from failed-job completion to the existing classifier decision | `detection_delay_seconds` from failed-job completion to read-only observation |
+| Runner consumption after failure | `avoidable_runner_seconds`, summing every terminal job's overlap after the first deterministic candidate | `actionable_runner_seconds`, summing overlap after the candidate was actually observed |
+| Safety result | Existing terminal classifier outcome | `classification.disposition`, which must be `consistent` |
+
+The post-change summary must use only countable exact-run records, report both
+wall-clock and summed runner-time distributions, and treat missing evidence or
+any contradiction as a failed promotion gate. Observe mode performs no
+cancellation, so these are measured potential savings rather than claimed
+billed savings until a separately reviewed enforcement experiment exists.

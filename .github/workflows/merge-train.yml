@@ -177,6 +177,7 @@ jobs:
           # train ALSO appends its dashboard to $GITHUB_STEP_SUMMARY directly, so
           # the Summary tab is populated even when the train selects nothing.
           TRAIN_METRICS_OUT: ${{ github.workspace }}/merge-train-metrics.json
+          TRAIN_EARLY_FAILURE_RAW_OUT: ${{ github.workspace }}/merge-train-early-failure-observation.json
           # Observation only. No code path reads this evidence to cancel,
           # classify, drop, or land; #3224 requires 20 live observations before
           # a separate enforcement proposal is even eligible for review.
@@ -245,7 +246,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: merge-train-metrics
-          path: ${{ github.workspace }}/merge-train-metrics.json
+          path: |
+            ${{ github.workspace }}/merge-train-metrics.json
+            ${{ github.workspace }}/merge-train-early-failure-observation.json
           if-no-files-found: warn
           retention-days: 30
 
