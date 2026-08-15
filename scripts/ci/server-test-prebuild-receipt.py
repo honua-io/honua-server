@@ -38,6 +38,7 @@ POLICY_PATHS = (
     "scripts/ci/plan-server-test-prebuild-parity.py",
     "scripts/ci/plan-server-test-prebuild.py",
     "scripts/ci/restore-server-test-binaries.sh",
+    "scripts/ci/validate-server-test-archive.py",
     "scripts/ci/server-test-prebuild-receipt.py",
     "scripts/ci/server-test-reuse-receipt.py",
     "scripts/ci/summarize-dotnet-trx.py",
