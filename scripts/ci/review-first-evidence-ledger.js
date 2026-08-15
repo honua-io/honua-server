@@ -15,6 +15,7 @@ const LEDGER_CONTRACT = 'honua.review-first-evidence-ledger/v1';
 const OBSERVATION_CONTRACT = 'honua.review-first-observation/v1';
 const POLICY_CONTRACT = 'honua.review-first-promotion-policy/v1';
 const EXTRACTION_CONTRACT = 'honua.review-first-evidence-extraction/v1';
+const QUERY_PARTITIONS_CONTRACT = 'honua.review-first-query-partitions/v1';
 const REVIEW_GATE_WORKFLOW = '.github/workflows/review-gate.yml';
 const REVIEW_GATE_WORKFLOW_NAME = 'Review Gate Attestation';
 const MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
@@ -101,6 +102,14 @@ function loadPolicy(value) {
     throw new Error('receipt retention days exceeds GitHub policy bound');
   }
   positiveInteger(policy.minimum_countable_heads, 'minimum countable heads');
+  const partitionHours = positiveInteger(
+    policy.query_partition_hours, 'query partition hours');
+  if (partitionHours > 24) throw new Error('query partition hours exceeds one day');
+  const maximumRuns = positiveInteger(
+    policy.maximum_runs_per_partition, 'maximum runs per partition');
+  if (maximumRuns >= 1_000) {
+    throw new Error('maximum runs per partition must remain below GitHub search cap');
+  }
   if (policy.require_zero_integrity_failures !== true) {
     throw new Error('promotion policy must require zero integrity failures');
   }
@@ -113,10 +122,37 @@ function retentionWindow(policyValue, now = new Date()) {
   const retentionStart = new Date(now.getTime() - policy.receipt_retention_days * 86_400_000);
   const observationStart = new Date(policy.observation_started_at);
   const start = retentionStart > observationStart ? retentionStart : observationStart;
+  if (start.getTime() > now.getTime()) throw new Error('observation start is in the future');
+  const partitions = [];
+  let cursor = start;
+  do {
+    const end = new Date(Math.min(
+      cursor.getTime() + policy.query_partition_hours * 3_600_000,
+      now.getTime()));
+    const from = cursor.toISOString().replace('.000Z', 'Z');
+    const to = end.toISOString().replace('.000Z', 'Z');
+    partitions.push({
+      index: partitions.length,
+      from,
+      to,
+      created_filter: `${from}..${to}`,
+    });
+    if (end.getTime() === now.getTime()) break;
+    cursor = end;
+  } while (partitions.length <= 90 * 24);
+  if (partitions.at(-1)?.to !== now.toISOString().replace('.000Z', 'Z')) {
+    throw new Error('query partition generation exceeded its safety bound');
+  }
   return {
     receiptRetentionDays: policy.receipt_retention_days,
     runCreatedAfter: start.toISOString().replace('.000Z', 'Z'),
     runCreatedFilter: `>=${start.toISOString().replace('.000Z', 'Z')}`,
+    queryPartitions: {
+      contract: QUERY_PARTITIONS_CONTRACT,
+      partition_hours: policy.query_partition_hours,
+      maximum_runs_per_partition: policy.maximum_runs_per_partition,
+      partitions,
+    },
   };
 }
 
@@ -278,6 +314,57 @@ function flattenRunPages(payload) {
   const [total] = totals;
   if (runs.length !== total) throw new Error('workflow-run catalog is truncated');
   return runs;
+}
+
+function combineRunPartitions(specValue, pagesRoot) {
+  const spec = requireObject(specValue, 'query partition specification');
+  exactString(spec.contract, QUERY_PARTITIONS_CONTRACT, 'query partition contract');
+  const maximumRuns = positiveInteger(
+    spec.maximum_runs_per_partition, 'maximum runs per partition');
+  if (maximumRuns >= 1_000) {
+    throw new Error('maximum runs per partition must remain below GitHub search cap');
+  }
+  const partitions = requireArray(spec.partitions, 'query partitions');
+  if (partitions.length === 0) throw new Error('query partitions are empty');
+  const partitionHours = positiveInteger(spec.partition_hours, 'query partition hours');
+  if (partitionHours > 24) throw new Error('query partition hours exceeds one day');
+  const runsById = new Map();
+  let priorEnd = null;
+  for (const [expectedIndex, rawPartition] of partitions.entries()) {
+    const partition = requireObject(rawPartition, `query partition ${expectedIndex}`);
+    if (partition.index !== expectedIndex) throw new Error('query partition order is invalid');
+    const fromMs = Date.parse(timestamp(partition.from, 'query partition start'));
+    const toMs = Date.parse(timestamp(partition.to, 'query partition end'));
+    if (fromMs > toMs || partition.created_filter !== `${partition.from}..${partition.to}`) {
+      throw new Error(`query partition ${expectedIndex} bounds are invalid`);
+    }
+    if (toMs - fromMs > partitionHours * 3_600_000 ||
+        (priorEnd !== null && partition.from !== priorEnd)) {
+      throw new Error(`query partition ${expectedIndex} continuity is invalid`);
+    }
+    priorEnd = partition.to;
+    const file = path.join(pagesRoot, `${expectedIndex}.json`);
+    if (!fs.existsSync(file)) throw new Error(`query partition ${expectedIndex} is missing`);
+    const runs = flattenRunPages(readJson(file));
+    if (runs.length > maximumRuns) {
+      throw new Error(`query partition ${expectedIndex} reached GitHub's search cap`);
+    }
+    for (const run of runs) {
+      const createdMs = Date.parse(timestamp(run.created_at, 'workflow run creation time'));
+      if (createdMs < fromMs || createdMs > toMs) {
+        throw new Error(`query partition ${expectedIndex} returned an out-of-range run`);
+      }
+      const runId = positiveInteger(Number(run.id), 'workflow run id');
+      const prior = runsById.get(runId);
+      if (prior && JSON.stringify(prior) !== JSON.stringify(run)) {
+        throw new Error(`workflow run ${runId} changed across query partitions`);
+      }
+      runsById.set(runId, run);
+    }
+  }
+  const workflowRuns = [...runsById.values()].sort((left, right) =>
+    Date.parse(left.created_at) - Date.parse(right.created_at) || Number(left.id) - Number(right.id));
+  return [{ total_count: workflowRuns.length, workflow_runs: workflowRuns }];
 }
 
 function discover(runsPayload, catalogRoot, cutoff) {
@@ -731,7 +818,13 @@ function main(argv = process.argv.slice(2)) {
       run_created_after: result.runCreatedAfter,
       run_created_filter: result.runCreatedFilter,
     });
+    if (values.output) writeJson(values.output, result.queryPartitions);
     process.stdout.write(`${result.runCreatedFilter}\n`);
+    return 0;
+  }
+  if (command === 'combine-runs') {
+    writeJson(values.output,
+      combineRunPartitions(readJson(values.partitions), values.pages));
     return 0;
   }
   if (command === 'discover') {
@@ -787,9 +880,11 @@ module.exports = {
   OBSERVATION_CONTRACT,
   POLICY_CONTRACT,
   POLICY_INPUTS,
+  QUERY_PARTITIONS_CONTRACT,
   REVIEW_GATE_WORKFLOW,
   REVIEW_GATE_WORKFLOW_NAME,
   createReviewFirstObservation,
+  combineRunPartitions,
   discover,
   extractReceipts,
   loadPolicy,

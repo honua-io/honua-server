@@ -2,6 +2,8 @@
   "contract": "honua.review-first-promotion-policy/v1",
   "observation_started_at": "2026-08-14T07:45:26Z",
   "receipt_retention_days": 30,
+  "query_partition_hours": 24,
+  "maximum_runs_per_partition": 999,
   "minimum_countable_heads": 20,
   "require_zero_integrity_failures": true
 }

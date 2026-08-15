@@ -9,9 +9,11 @@ const path = require('node:path');
 const {
   INDEX_CONTRACT,
   POLICY_CONTRACT,
+  QUERY_PARTITIONS_CONTRACT,
   REVIEW_GATE_WORKFLOW,
   REVIEW_GATE_WORKFLOW_NAME,
   createReviewFirstObservation,
+  combineRunPartitions,
   discover,
   loadPolicy,
   retentionWindow,
@@ -28,6 +30,8 @@ function policy(overrides = {}) {
     contract: POLICY_CONTRACT,
     observation_started_at: '2026-08-14T07:45:26Z',
     receipt_retention_days: 30,
+    query_partition_hours: 24,
+    maximum_runs_per_partition: 999,
     minimum_countable_heads: 2,
     require_zero_integrity_failures: true,
     ...overrides,
@@ -123,20 +127,70 @@ function index(entries) {
 }
 
 test('retention starts at observer rollout until the rolling window overtakes it', () => {
-  assert.deepEqual(retentionWindow(policy(), new Date('2026-08-15T00:00:00Z')), {
-    receiptRetentionDays: 30,
-    runCreatedAfter: '2026-08-14T07:45:26Z',
-    runCreatedFilter: '>=2026-08-14T07:45:26Z',
-  });
-  assert.equal(
-    retentionWindow(policy(), new Date('2026-10-01T00:00:00Z')).runCreatedFilter,
-    '>=2026-09-01T00:00:00Z');
+  const initial = retentionWindow(policy(), new Date('2026-08-15T00:00:00Z'));
+  assert.equal(initial.receiptRetentionDays, 30);
+  assert.equal(initial.runCreatedAfter, '2026-08-14T07:45:26Z');
+  assert.equal(initial.runCreatedFilter, '>=2026-08-14T07:45:26Z');
+  assert.deepEqual(initial.queryPartitions.partitions, [{
+    index: 0,
+    from: '2026-08-14T07:45:26Z',
+    to: '2026-08-15T00:00:00Z',
+    created_filter: '2026-08-14T07:45:26Z..2026-08-15T00:00:00Z',
+  }]);
+  const rolling = retentionWindow(policy(), new Date('2026-10-01T00:00:00Z'));
+  assert.equal(rolling.runCreatedFilter, '>=2026-09-01T00:00:00Z');
+  assert.equal(rolling.queryPartitions.partitions.length, 30);
 });
 
 test('invalid policy bounds fail closed', () => {
   assert.throws(() => loadPolicy(policy({ receipt_retention_days: 91 })), /policy bound/);
   assert.throws(() => loadPolicy(policy({ require_zero_integrity_failures: false })),
     /zero integrity/);
+  assert.throws(() => loadPolicy(policy({ query_partition_hours: 25 })), /one day/);
+  assert.throws(() => loadPolicy(policy({ maximum_runs_per_partition: 1_000 })),
+    /search cap/);
+});
+
+test('partition catalogs combine boundary duplicates and fail below GitHub search cap', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-partitions-'));
+  try {
+    const boundaryRun = { id: 1, created_at: '2026-08-15T00:00:00Z' };
+    const spec = {
+      contract: QUERY_PARTITIONS_CONTRACT,
+      partition_hours: 24,
+      maximum_runs_per_partition: 999,
+      partitions: [
+        {
+          index: 0,
+          from: '2026-08-14T00:00:00Z',
+          to: '2026-08-15T00:00:00Z',
+          created_filter: '2026-08-14T00:00:00Z..2026-08-15T00:00:00Z',
+        },
+        {
+          index: 1,
+          from: '2026-08-15T00:00:00Z',
+          to: '2026-08-16T00:00:00Z',
+          created_filter: '2026-08-15T00:00:00Z..2026-08-16T00:00:00Z',
+        },
+      ],
+    };
+    for (const index of [0, 1]) {
+      fs.writeFileSync(path.join(directory, `${index}.json`), JSON.stringify([
+        { total_count: 1, workflow_runs: [boundaryRun] },
+      ]));
+    }
+    const combined = combineRunPartitions(spec, directory);
+    assert.equal(combined[0].total_count, 1);
+
+    fs.writeFileSync(path.join(directory, '0.json'), JSON.stringify([{
+      total_count: 2,
+      workflow_runs: [boundaryRun, { id: 2, created_at: '2026-08-14T12:00:00Z' }],
+    }]));
+    assert.throws(() => combineRunPartitions({ ...spec, maximum_runs_per_partition: 1 },
+      directory), /search cap/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('trusted observation replays the production observe decision', () => {

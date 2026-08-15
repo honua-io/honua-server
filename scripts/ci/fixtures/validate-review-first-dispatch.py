@@ -228,6 +228,16 @@ def main() -> None:
     )
     require(
         evidence_ledger,
+        "review-first-evidence-ledger.js combine-runs",
+        "workflow-run discovery must combine bounded time partitions",
+    )
+    require(
+        evidence_ledger,
+        'jq -r \'.partitions[] | [.index, .created_filter] | @tsv\'',
+        "workflow-run discovery must query each bounded time partition",
+    )
+    require(
+        evidence_ledger,
         "report-only ledger",
         "evidence ledger must describe its non-mutating authority",
     )
@@ -256,6 +266,16 @@ def main() -> None:
         promotion_policy,
         '"minimum_countable_heads": 20',
         "review-first promotion threshold must remain explicit",
+    )
+    require(
+        promotion_policy,
+        '"query_partition_hours": 24',
+        "review-first queries must remain partitioned below GitHub's search cap",
+    )
+    require(
+        promotion_policy,
+        '"maximum_runs_per_partition": 999',
+        "review-first queries must fail before GitHub's 1,000-result cap",
     )
     require(
         promotion_policy,

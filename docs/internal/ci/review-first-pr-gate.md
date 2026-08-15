@@ -65,6 +65,10 @@ new cohort, and retains JSON plus Markdown for 30 days. It has only
 change a label, change mode, trigger the train, or merge. The report shows both
 distinct exact heads and distinct pull requests so a human can judge whether the
 cohort is representative rather than accepting a burst of updates to one PR.
+Workflow-run discovery divides the rolling window into 24-hour ranges, combines
+and deduplicates their results, and fails closed if any partition reaches 1,000
+runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
+`created` filter.
 
 The pre-ledger audit found seven conservative API-derived candidates among 53
 distinct heads. Those remain useful supporting evidence, but they are not
