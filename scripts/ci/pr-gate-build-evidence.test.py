@@ -180,6 +180,10 @@ class BuildEvidenceTests(unittest.TestCase):
         self.receipt.write_bytes(MODULE.canonical(receipt) + b"\n")
         return receipt
 
+    def test_policy_roster_covers_candidate_packaging_and_proof_parser(self) -> None:
+        self.assertIn("scripts/ci/package-pr-gate-build-evidence.sh", MODULE.POLICY_PATHS)
+        self.assertIn("scripts/ci/summarize-dotnet-trx.py", MODULE.POLICY_PATHS)
+
     def test_accepts_different_commit_with_identical_tree(self) -> None:
         receipt = self.write_receipt()
         consumer = run(

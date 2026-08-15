@@ -15,6 +15,7 @@ train=.github/workflows/merge-train.yml
 
 "${python_bin}" scripts/ci/pr-gate-build-evidence.test.py
 "${python_bin}" scripts/ci/validate-server-test-archive.test.py
+"${python_bin}" scripts/ci/summarize-dotnet-trx.test.py
 "${python_bin}" -m py_compile \
   scripts/ci/pr-gate-build-evidence.py \
   scripts/ci/validate-server-test-archive.py
@@ -66,6 +67,9 @@ grep -Fq 'artifact.digest === receipt?.artifact?.artifact_digest' "${ci}"
 grep -Fq 'python3 scripts/ci/pr-gate-build-evidence.py validate' "${ci}"
 grep -Fq 'scripts/ci/restore-server-test-binaries.sh' "${ci}"
 grep -Fq 'dotnet test "${project}" --no-build --no-restore --configuration Release' "${ci}"
+grep -Fq 'python3 scripts/ci/summarize-dotnet-trx.py' "${ci}"
+grep -Fq 'proof_executed_tests:$proof_executed_tests' "${ci}"
+grep -Fq '${{ runner.temp }}/pr-gate-build-shadow/proof-*.json' "${ci}"
 grep -Fq 'mode:"observe",mutation:"none",promotion_authority:"none"' "${ci}"
 grep -Fq 'Authoritative server shards: `independent restore + build (unchanged)`' "${ci}"
 

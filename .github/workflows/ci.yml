@@ -767,6 +767,8 @@ jobs:
           runner_image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
           status=accepted
           reason=tree_equivalent_proof_passed
+          proof_project_count=0
+          proof_executed_tests=0
           tab="$(printf '\t')"
           while IFS="${tab}" read -r project proof_filter artifact_id merge_sha; do
             python3 scripts/ci/pr-gate-build-evidence.py validate \
@@ -794,10 +796,20 @@ jobs:
                 --project "${project}" \
                 --source-sha "${merge_sha}" || { status=rejected; reason=payload_restore_rejected; break; }
             suffix="$(jq -r --arg project "${project}" '.projects[] | select(.project == $project) | .project_suffix' "${RECEIPT}")"
+            trx_name="pr-gate-build-shadow-${suffix}.trx"
+            trx_path="tests/TestResults/${trx_name}"
+            proof_evidence="${RUNNER_TEMP}/pr-gate-build-shadow/proof-${suffix}.json"
             dotnet test "${project}" --no-build --no-restore --configuration Release \
               --filter "${proof_filter}" \
-              --logger "trx;LogFileName=pr-gate-build-shadow-${suffix}.trx" \
+              --logger "trx;LogFileName=${trx_name}" \
               --results-directory tests/TestResults || { status=rejected; reason=proof_test_failed; break; }
+            python3 scripts/ci/summarize-dotnet-trx.py \
+              --input "${trx_path}" \
+              --output "${proof_evidence}" || { status=rejected; reason=proof_result_empty_or_invalid; break; }
+            executed="$(jq -er '.result_count | select(type == "number" and floor == . and . > 0)' \
+              "${proof_evidence}")" || { status=rejected; reason=proof_result_empty_or_invalid; break; }
+            proof_project_count=$((proof_project_count + 1))
+            proof_executed_tests=$((proof_executed_tests + executed))
           done < <(jq -r '. as $receipt | .projects[] |
             [.project,.proof_filter,($receipt.artifact.artifact_id|tostring),$receipt.source.merge_sha] | @tsv' "${RECEIPT}")
           jq -nS \
@@ -808,10 +820,13 @@ jobs:
             --arg batch_tree_sha "$(git rev-parse HEAD^{tree})" \
             --argjson source_run_id '${{ inputs.pr_gate_run_id }}' \
             --argjson source_run_attempt '${{ inputs.pr_gate_run_attempt }}' \
+            --argjson proof_project_count "${proof_project_count}" \
+            --argjson proof_executed_tests "${proof_executed_tests}" \
             --arg receipt_fingerprint "$(jq -r '.fingerprint' "${RECEIPT}")" \
             '{contract:$contract,mode:"observe",mutation:"none",promotion_authority:"none",
               status:$status,reason:$reason,batch_sha:$batch_sha,batch_tree_sha:$batch_tree_sha,
               source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,
+              proof_project_count:$proof_project_count,proof_executed_tests:$proof_executed_tests,
               receipt_fingerprint:$receipt_fingerprint}' \
             > "${RUNNER_TEMP}/pr-gate-build-shadow/result.json"
           echo "status=${status}" >> "${GITHUB_OUTPUT}"
@@ -854,6 +869,7 @@ jobs:
           name: pr-gate-build-reuse-shadow-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/pr-gate-build-shadow/result.json
+            ${{ runner.temp }}/pr-gate-build-shadow/proof-*.json
             tests/TestResults/pr-gate-build-shadow-*.trx
           if-no-files-found: error
           retention-days: 7

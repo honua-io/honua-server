@@ -47,11 +47,13 @@ POLICY_PATHS = (
     "scripts/ci/merge-train/select.sh",
     "scripts/ci/merge-train/smart-ci.sh",
     "scripts/ci/merge-train/train.sh",
+    "scripts/ci/package-pr-gate-build-evidence.sh",
     "scripts/ci/package-server-test-binaries.sh",
     "scripts/ci/plan-server-test-prebuild.py",
     "scripts/ci/pr-gate-build-evidence.py",
     "scripts/ci/restore-server-test-binaries.sh",
     "scripts/ci/review-gate-snapshot.js",
+    "scripts/ci/summarize-dotnet-trx.py",
     "scripts/ci/trusted-pr-workflow-run.js",
     "scripts/ci/validate-server-test-archive.py",
 )
