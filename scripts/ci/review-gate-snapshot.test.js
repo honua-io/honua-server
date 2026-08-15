@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   collectPullRequestSnapshot,
+  stabilizePullRequestSnapshot,
   trainSnapshot,
 } = require('./review-gate-snapshot');
 
@@ -113,5 +114,18 @@ test('rejects a head change during pagination', async () => {
       return value;
     }),
     /pull request changed during pagination/,
+  );
+});
+
+test('requires two identical complete snapshots', async () => {
+  const first = await collectPullRequestSnapshot(async () =>
+    page({ threadPage: 1, reviewsPage: 1, commentsPage: 1 }));
+  const second = structuredClone(first);
+  second.reviewThreads.nodes[0].isResolved = false;
+  const snapshots = [first, second];
+
+  await assert.rejects(
+    stabilizePullRequestSnapshot(async () => snapshots.shift()),
+    /changed while taking its snapshot/,
   );
 });

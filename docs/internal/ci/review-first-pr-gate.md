@@ -103,11 +103,12 @@ the singular combined-status response is not historical evidence.
   closed before an enforced rerun.
 - Fork runs with an empty `pull_requests` payload are accepted only when the
   commit API resolves exactly one open associated PR.
-- A final complete review snapshot and PR/head/label read occurs immediately
-  before retaining an observation or mutating Actions. A dismissed review,
-  newly unresolved thread, truncated query, hold, or changed head fails closed.
-  Normal PR Gate concurrency cancels the residual race if the head moves after
-  that read.
+- Two complete, identical bounded review snapshots are required for each
+  attestation read. A final stable snapshot and PR/head/label read occurs
+  immediately before retaining an observation or mutating Actions. A dismissed
+  review, newly unresolved thread, truncated query, hold, or changed head fails
+  closed. Normal PR Gate concurrency cancels the residual race if the head moves
+  after that read.
 - Live merge-train selection and pre-land validation independently fetch current
   reviews, threads, labels, and head identity from GitHub. They refresh
   `Review Gate` and fail closed on negative/truncated evidence, so a stale status
