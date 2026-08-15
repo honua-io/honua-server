@@ -68,7 +68,14 @@ cohort is representative rather than accepting a burst of updates to one PR.
 Workflow-run discovery divides the rolling window into 24-hour ranges, combines
 and deduplicates their results, and fails closed if any partition reaches 1,000
 runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
-`created` filter.
+`created` filter. Artifact discovery reads one paginated repository artifact
+catalog and joins artifacts to those trusted run IDs locally; it never makes one
+artifact-list request per run. The promotion policy caps the worst case at 300
+run-query pages, 200 repository-artifact pages, and 300 receipt downloads: 800
+requests with 200 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
+repository per hour. Every page must report the same total, IDs must be unique,
+the complete count must fit the page bound, and the selected receipt count must
+fit the download bound. Any inconsistency or exhausted bound fails closed.
 
 The pre-ledger audit found seven conservative API-derived candidates among 53
 distinct heads. Those remain useful supporting evidence, but they are not

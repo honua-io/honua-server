@@ -281,6 +281,30 @@ def main() -> None:
     )
     require(
         evidence_ledger,
+        '"repos/${GITHUB_REPOSITORY}/actions/artifacts"',
+        "artifact discovery must use one bounded repository catalog",
+    )
+    require(
+        evidence_ledger,
+        "maximum_artifact_catalog_pages",
+        "artifact discovery must enforce its catalog-page budget",
+    )
+    require(
+        evidence_ledger,
+        "maximum_receipt_downloads",
+        "receipt downloads must enforce their API budget",
+    )
+    require(
+        evidence_ledger,
+        "maximum_run_pages",
+        "workflow-run discovery must enforce its page budget",
+    )
+    if "--paginate" in evidence_ledger:
+        raise AssertionError("ledger API pagination must use explicit policy bounds")
+    if re.search(r"actions/runs/\$\{run_id\}/artifacts", evidence_ledger):
+        raise AssertionError("artifact discovery must not make one API request per workflow run")
+    require(
+        evidence_ledger,
         "report-only ledger",
         "evidence ledger must describe its non-mutating authority",
     )
@@ -319,6 +343,21 @@ def main() -> None:
         promotion_policy,
         '"maximum_runs_per_partition": 999',
         "review-first queries must fail before GitHub's 1,000-result cap",
+    )
+    require(
+        promotion_policy,
+        '"maximum_artifact_catalog_pages": 200',
+        "repository artifact discovery must remain bounded",
+    )
+    require(
+        promotion_policy,
+        '"maximum_receipt_downloads": 300',
+        "receipt downloads must remain bounded",
+    )
+    require(
+        promotion_policy,
+        '"maximum_github_api_requests": 800',
+        "ledger API use must preserve GITHUB_TOKEN headroom",
     )
     require(
         promotion_policy,

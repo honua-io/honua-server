@@ -32,6 +32,9 @@ function policy(overrides = {}) {
     receipt_retention_days: 30,
     query_partition_hours: 24,
     maximum_runs_per_partition: 999,
+    maximum_artifact_catalog_pages: 200,
+    maximum_receipt_downloads: 300,
+    maximum_github_api_requests: 800,
     minimum_countable_heads: 2,
     require_zero_integrity_failures: true,
     ...overrides,
@@ -131,6 +134,14 @@ function index(entries) {
 test('retention starts at observer rollout until the rolling window overtakes it', () => {
   const initial = retentionWindow(policy(), new Date('2026-08-15T00:00:00Z'));
   assert.equal(initial.receiptRetentionDays, 30);
+  assert.equal(initial.maximumArtifactCatalogPages, 200);
+  assert.equal(initial.maximumReceiptDownloads, 300);
+  assert.equal(initial.maximumGithubApiRequests, 800);
+  assert.deepEqual(initial.queryPartitions.api_budget, {
+    maximum_artifact_catalog_pages: 200,
+    maximum_receipt_downloads: 300,
+    maximum_github_api_requests: 800,
+  });
   assert.equal(initial.runCreatedAfter, '2026-08-14T07:45:26Z');
   assert.equal(initial.runCreatedFilter, '>=2026-08-14T07:45:26Z');
   assert.deepEqual(initial.queryPartitions.partitions, [{
@@ -151,6 +162,10 @@ test('invalid policy bounds fail closed', () => {
   assert.throws(() => loadPolicy(policy({ query_partition_hours: 25 })), /one day/);
   assert.throws(() => loadPolicy(policy({ maximum_runs_per_partition: 1_000 })),
     /search cap/);
+  assert.throws(() => loadPolicy(policy({ maximum_github_api_requests: 801 })),
+    /token headroom/);
+  assert.throws(() => loadPolicy(policy({ maximum_receipt_downloads: 301 })),
+    /request budget/);
 });
 
 test('partition catalogs combine boundary duplicates and fail below GitHub search cap', () => {
@@ -318,40 +333,62 @@ test('a head associated with two pull requests is an integrity failure', () => {
 });
 
 test('discovery proves pagination and selects one exact receipt artifact', () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-ledger-'));
-  try {
-    const run = {
-      id: 300,
-      name: REVIEW_GATE_WORKFLOW_NAME,
-      path: REVIEW_GATE_WORKFLOW,
-      status: 'completed',
-      conclusion: 'success',
-      event: 'workflow_run',
-      run_attempt: 1,
-      created_at: '2026-08-14T08:10:30Z',
-      updated_at: '2026-08-14T08:12:00Z',
-      head_sha: policySha,
-      html_url: 'https://github.example/actions/runs/300',
-    };
-    fs.writeFileSync(path.join(directory, '300.json'), JSON.stringify({
-      total_count: 1,
-      artifacts: [{
-        id: 400,
-        name: `review-first-observation-${prNumber}-${head}-review-run-300-attempt-1`,
-        expired: false,
-        size_in_bytes: 1024,
-        created_at: '2026-08-14T08:11:30Z',
-        workflow_run: { id: 300, head_sha: policySha },
-      }],
-    }));
-    const result = discover([{ total_count: 1, workflow_runs: [run] }], directory,
-      '2026-08-14T07:45:26Z');
-    assert.equal(result.artifacts.length, 1);
-    assert.equal(result.integrity_failures.length, 0);
-    assert.throws(() => discover([
-      { total_count: 2, workflow_runs: [run] },
-    ], directory, '2026-08-14T07:45:26Z'), /truncated/);
-  } finally {
-    fs.rmSync(directory, { recursive: true, force: true });
-  }
+  const run = {
+    id: 300,
+    name: REVIEW_GATE_WORKFLOW_NAME,
+    path: REVIEW_GATE_WORKFLOW,
+    status: 'completed',
+    conclusion: 'success',
+    event: 'workflow_run',
+    run_attempt: 1,
+    created_at: '2026-08-14T08:10:30Z',
+    updated_at: '2026-08-14T08:12:00Z',
+    head_sha: policySha,
+    html_url: 'https://github.example/actions/runs/300',
+  };
+  const receiptArtifact = {
+    id: 400,
+    name: `review-first-observation-${prNumber}-${head}-review-run-300-attempt-1`,
+    expired: false,
+    size_in_bytes: 1024,
+    created_at: '2026-08-14T08:11:30Z',
+    workflow_run: { id: 300, head_sha: policySha },
+  };
+  const unrelatedArtifact = {
+    id: 401,
+    name: 'unrelated-artifact',
+    expired: false,
+    size_in_bytes: 1024,
+    created_at: '2026-08-14T08:11:30Z',
+    workflow_run: { id: 999, head_sha: 'b'.repeat(40) },
+  };
+  const result = discover(
+    [{ total_count: 1, workflow_runs: [run] }],
+    [{ total_count: 2, artifacts: [receiptArtifact] },
+      { total_count: 2, artifacts: [unrelatedArtifact] }],
+    '2026-08-14T07:45:26Z');
+  assert.equal(result.artifacts.length, 1);
+  assert.equal(result.integrity_failures.length, 0);
+  assert.throws(() => discover([
+    { total_count: 2, workflow_runs: [run] },
+  ], [{ total_count: 2, artifacts: [receiptArtifact, unrelatedArtifact] }],
+  '2026-08-14T07:45:26Z'), /truncated/);
+});
+
+test('repository artifact snapshots reject truncation, drift, and duplicate pages', () => {
+  const artifact = {
+    id: 400,
+    workflow_run: { id: 300, head_sha: policySha },
+  };
+  const runs = [{ total_count: 0, workflow_runs: [] }];
+  assert.throws(() => discover(runs, [{ total_count: 2, artifacts: [artifact] }],
+    '2026-08-14T07:45:26Z'), /truncated/);
+  assert.throws(() => discover(runs, [
+    { total_count: 1, artifacts: [artifact] },
+    { total_count: 2, artifacts: [] },
+  ], '2026-08-14T07:45:26Z'), /totals disagree/);
+  assert.throws(() => discover(runs, [
+    { total_count: 2, artifacts: [artifact] },
+    { total_count: 2, artifacts: [artifact] },
+  ], '2026-08-14T07:45:26Z'), /duplicates/);
 });

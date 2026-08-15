@@ -47,32 +47,105 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p evidence/run-query-pages evidence/catalog evidence/archives evidence/receipts
+          mkdir -p evidence/run-query-pages evidence/run-query-batches \
+            evidence/artifact-query-pages evidence/archives evidence/receipts
           tab="$(printf '\t')"
+          maximum_run_pages="$(jq -er '.maximum_runs_per_partition / 100 | ceil' \
+            evidence/query-windows.json)"
+          [[ "${maximum_run_pages}" =~ ^[1-9][0-9]*$ ]] || exit 1
           jq -r '.partitions[] | [.index, .created_filter] | @tsv' \
             evidence/query-windows.json \
             | while IFS="${tab}" read -r partition created_filter; do
                 [[ "${partition}" =~ ^[0-9]+$ ]] || exit 1
-                gh api --method GET --paginate --slurp \
-                  "repos/${GITHUB_REPOSITORY}/actions/workflows/review-gate.yml/runs" \
-                  -f status=success \
-                  -f "created=${created_filter}" \
-                  -F per_page=100 \
+                partition_root="evidence/run-query-batches/${partition}"
+                mkdir -p "${partition_root}"
+                expected_total=''
+                partition_complete=false
+                page=1
+                while (( page <= maximum_run_pages )); do
+                  page_file="$(printf '%s/%03d.json' "${partition_root}" "${page}")"
+                  gh api --method GET \
+                    "repos/${GITHUB_REPOSITORY}/actions/workflows/review-gate.yml/runs" \
+                    -f status=success \
+                    -f "created=${created_filter}" \
+                    -F per_page=100 \
+                    -F page="${page}" \
+                    > "${page_file}"
+                  page_total="$(jq -er \
+                    '.total_count | select(type == "number" and floor == . and . >= 0)' \
+                    "${page_file}")"
+                  page_count="$(jq -er '.workflow_runs | arrays | length' "${page_file}")"
+                  [[ "${page_total}" =~ ^[0-9]+$ && "${page_count}" =~ ^[0-9]+$ ]] || exit 1
+                  if (( page_total >= 1000 )); then
+                    echo "workflow-run partition reached GitHub's search cap" >&2
+                    exit 1
+                  fi
+                  if [[ -z "${expected_total}" ]]; then
+                    expected_total="${page_total}"
+                  elif [[ "${page_total}" != "${expected_total}" ]]; then
+                    echo "workflow-run total changed during pagination" >&2
+                    exit 1
+                  fi
+                  if (( page * 100 >= expected_total )); then
+                    partition_complete=true
+                    break
+                  fi
+                  if (( page_count != 100 )); then
+                    echo "workflow-run partition ended before its declared total" >&2
+                    exit 1
+                  fi
+                  page=$((page + 1))
+                done
+                if [[ "${partition_complete}" != true ]]; then
+                  echo "workflow-run partition exceeded its bounded page budget" >&2
+                  exit 1
+                fi
+                jq -s '.' "${partition_root}"/*.json \
                   > "evidence/run-query-pages/${partition}.json"
               done
           node scripts/ci/review-first-evidence-ledger.js combine-runs \
             --partitions evidence/query-windows.json \
             --pages evidence/run-query-pages \
             --output evidence/run-pages.json
-          jq -r '.[] | .workflow_runs[]? | .id' evidence/run-pages.json | sort -nu \
-            | while read -r run_id; do
-                [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
-                gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
-                  > "evidence/catalog/${run_id}.json"
-              done
+          maximum_pages='${{ steps.policy.outputs.maximum_artifact_catalog_pages }}'
+          [[ "${maximum_pages}" =~ ^[1-9][0-9]*$ ]] || exit 1
+          expected_total=''
+          catalog_complete=false
+          page=1
+          while (( page <= maximum_pages )); do
+            page_file="$(printf 'evidence/artifact-query-pages/%03d.json' "${page}")"
+            gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+              -F per_page=100 \
+              -F page="${page}" \
+              > "${page_file}"
+            page_total="$(jq -er '.total_count | select(type == "number" and floor == . and . >= 0)' \
+              "${page_file}")"
+            page_count="$(jq -er '.artifacts | arrays | length' "${page_file}")"
+            [[ "${page_total}" =~ ^[0-9]+$ && "${page_count}" =~ ^[0-9]+$ ]] || exit 1
+            if [[ -z "${expected_total}" ]]; then
+              expected_total="${page_total}"
+            elif [[ "${page_total}" != "${expected_total}" ]]; then
+              echo "repository artifact total changed during pagination" >&2
+              exit 1
+            fi
+            if (( page * 100 >= expected_total )); then
+              catalog_complete=true
+              break
+            fi
+            if (( page_count != 100 )); then
+              echo "repository artifact catalog ended before its declared total" >&2
+              exit 1
+            fi
+            page=$((page + 1))
+          done
+          if [[ "${catalog_complete}" != true ]]; then
+            echo "repository artifact catalog exceeded the bounded page budget" >&2
+            exit 1
+          fi
+          jq -s '.' evidence/artifact-query-pages/*.json > evidence/artifact-pages.json
           node scripts/ci/review-first-evidence-ledger.js discover \
             --runs evidence/run-pages.json \
-            --catalog evidence/catalog \
+            --catalog evidence/artifact-pages.json \
             --cutoff '${{ steps.policy.outputs.run_created_after }}' \
             --output evidence/index.json
 
@@ -81,6 +154,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          maximum_downloads='${{ steps.policy.outputs.maximum_receipt_downloads }}'
+          receipt_count="$(jq -er '.artifacts | arrays | length' evidence/index.json)"
+          [[ "${maximum_downloads}" =~ ^[1-9][0-9]*$ && "${receipt_count}" =~ ^[0-9]+$ ]] || exit 1
+          if (( receipt_count > maximum_downloads )); then
+            echo "observation receipts exceeded the bounded download budget" >&2
+            exit 1
+          fi
           jq -r '.artifacts[].artifact_id' evidence/index.json \
             | while read -r artifact_id; do
                 [[ "${artifact_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
@@ -125,7 +205,9 @@ jobs:
             evidence/run-pages.json
             evidence/query-windows.json
             evidence/run-query-pages
-            evidence/catalog
+            evidence/run-query-batches
+            evidence/artifact-pages.json
+            evidence/artifact-query-pages
             evidence/index.json
             evidence/extraction.json
             evidence/ledger.json

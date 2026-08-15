@@ -20,6 +20,9 @@ const REVIEW_GATE_WORKFLOW = '.github/workflows/review-gate.yml';
 const REVIEW_GATE_WORKFLOW_NAME = 'Review Gate Attestation';
 const MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 20 * 1024 * 1024;
+const GITHUB_TOKEN_REQUEST_LIMIT = 1_000;
+const GITHUB_TOKEN_REQUEST_RESERVE = 200;
+const GITHUB_PAGE_SIZE = 100;
 const SHA = /^[0-9a-f]{40}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const POLICY_INPUTS = Object.freeze([
@@ -110,6 +113,24 @@ function loadPolicy(value) {
   if (maximumRuns >= 1_000) {
     throw new Error('maximum runs per partition must remain below GitHub search cap');
   }
+  const maximumArtifactPages = positiveInteger(
+    policy.maximum_artifact_catalog_pages, 'maximum artifact catalog pages');
+  const maximumReceiptDownloads = positiveInteger(
+    policy.maximum_receipt_downloads, 'maximum receipt downloads');
+  const maximumApiRequests = positiveInteger(
+    policy.maximum_github_api_requests, 'maximum GitHub API requests');
+  if (maximumApiRequests > GITHUB_TOKEN_REQUEST_LIMIT - GITHUB_TOKEN_REQUEST_RESERVE) {
+    throw new Error('maximum GitHub API requests must preserve token headroom');
+  }
+  const maximumPartitions = Math.max(
+    1, Math.ceil(retentionDays * 24 / partitionHours));
+  const maximumRunQueryPages = maximumPartitions *
+    Math.ceil(maximumRuns / GITHUB_PAGE_SIZE);
+  const calculatedMaximumRequests = maximumRunQueryPages +
+    maximumArtifactPages + maximumReceiptDownloads;
+  if (calculatedMaximumRequests > maximumApiRequests) {
+    throw new Error('promotion policy exceeds its GitHub API request budget');
+  }
   if (policy.require_zero_integrity_failures !== true) {
     throw new Error('promotion policy must require zero integrity failures');
   }
@@ -151,8 +172,16 @@ function retentionWindow(policyValue, now = new Date()) {
       contract: QUERY_PARTITIONS_CONTRACT,
       partition_hours: policy.query_partition_hours,
       maximum_runs_per_partition: policy.maximum_runs_per_partition,
+      api_budget: {
+        maximum_artifact_catalog_pages: policy.maximum_artifact_catalog_pages,
+        maximum_receipt_downloads: policy.maximum_receipt_downloads,
+        maximum_github_api_requests: policy.maximum_github_api_requests,
+      },
       partitions,
     },
+    maximumArtifactCatalogPages: policy.maximum_artifact_catalog_pages,
+    maximumReceiptDownloads: policy.maximum_receipt_downloads,
+    maximumGithubApiRequests: policy.maximum_github_api_requests,
   };
 }
 
@@ -325,6 +354,31 @@ function flattenRunPages(payload) {
   return runs;
 }
 
+function flattenArtifactPages(payload) {
+  const pages = requireArray(payload, 'repository artifact pages');
+  if (pages.length === 0) throw new Error('repository artifact pages are empty');
+  const totals = new Set();
+  const artifacts = [];
+  for (const [index, value] of pages.entries()) {
+    const page = requireObject(value, `repository artifact page ${index}`);
+    if (!Number.isSafeInteger(page.total_count) || page.total_count < 0) {
+      throw new Error(`repository artifact page ${index} total is invalid`);
+    }
+    totals.add(page.total_count);
+    artifacts.push(...requireArray(
+      page.artifacts, `repository artifact page ${index} artifacts`));
+  }
+  if (totals.size !== 1) throw new Error('repository artifact page totals disagree');
+  const ids = artifacts.map((artifact, index) => positiveInteger(
+    Number(artifact?.id), `repository artifact ${index} id`));
+  if (new Set(ids).size !== ids.length) {
+    throw new Error('repository artifact pages contain duplicates');
+  }
+  const [total] = totals;
+  if (artifacts.length !== total) throw new Error('repository artifact catalog is truncated');
+  return artifacts;
+}
+
 function combineRunPartitions(specValue, pagesRoot) {
   const spec = requireObject(specValue, 'query partition specification');
   exactString(spec.contract, QUERY_PARTITIONS_CONTRACT, 'query partition contract');
@@ -376,8 +430,16 @@ function combineRunPartitions(specValue, pagesRoot) {
   return [{ total_count: workflowRuns.length, workflow_runs: workflowRuns }];
 }
 
-function discover(runsPayload, catalogRoot, cutoff) {
+function discover(runsPayload, catalogPayload, cutoff) {
   const cutoffMs = Date.parse(timestamp(cutoff, 'receipt cutoff'));
+  const artifactsByRun = new Map();
+  for (const artifact of flattenArtifactPages(catalogPayload)) {
+    const runId = Number(artifact?.workflow_run?.id);
+    if (!Number.isSafeInteger(runId) || runId <= 0) continue;
+    const runArtifacts = artifactsByRun.get(runId) ?? [];
+    runArtifacts.push(artifact);
+    artifactsByRun.set(runId, runArtifacts);
+  }
   const artifacts = [];
   const exclusions = [];
   const integrityFailures = [];
@@ -398,23 +460,7 @@ function discover(runsPayload, catalogRoot, cutoff) {
       integrityFailures.push({ producer_run_id: runId, reason: 'producer workflow run is invalid' });
       continue;
     }
-    const catalogFile = path.join(catalogRoot, `${runId}.json`);
-    if (!fs.existsSync(catalogFile)) {
-      integrityFailures.push({ producer_run_id: runId, reason: 'artifact-catalog-missing' });
-      continue;
-    }
-    let catalog;
-    try {
-      catalog = requireObject(readJson(catalogFile), `artifact catalog ${runId}`);
-      requireArray(catalog.artifacts, `artifact catalog ${runId} artifacts`);
-      if (Number(catalog.total_count) !== catalog.artifacts.length) {
-        throw new Error('artifact catalog is truncated');
-      }
-    } catch (error) {
-      integrityFailures.push({ producer_run_id: runId, reason: error.message });
-      continue;
-    }
-    const matches = catalog.artifacts.filter(artifact => {
+    const matches = (artifactsByRun.get(runId) ?? []).filter(artifact => {
       if (!artifact || artifact.expired !== false || typeof artifact.name !== 'string') return false;
       const match = ARTIFACT_PATTERN.exec(artifact.name);
       return match && Number(match.groups.run) === runId &&
@@ -829,6 +875,9 @@ function main(argv = process.argv.slice(2)) {
       receipt_retention_days: result.receiptRetentionDays,
       run_created_after: result.runCreatedAfter,
       run_created_filter: result.runCreatedFilter,
+      maximum_artifact_catalog_pages: result.maximumArtifactCatalogPages,
+      maximum_receipt_downloads: result.maximumReceiptDownloads,
+      maximum_github_api_requests: result.maximumGithubApiRequests,
     });
     if (values.output) writeJson(values.output, result.queryPartitions);
     process.stdout.write(`${result.runCreatedFilter}\n`);
@@ -841,7 +890,7 @@ function main(argv = process.argv.slice(2)) {
   }
   if (command === 'discover') {
     const result = discover(
-      readJson(values.runs), values.catalog, values.cutoff);
+      readJson(values.runs), readJson(values.catalog), values.cutoff);
     writeJson(values.output, result);
     return 0;
   }
@@ -899,6 +948,7 @@ module.exports = {
   combineRunPartitions,
   discover,
   extractReceipts,
+  flattenArtifactPages,
   loadPolicy,
   markdown,
   measurementPolicyDigest,
