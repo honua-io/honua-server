@@ -272,6 +272,9 @@ __ci_jobs() {
     timed-out)
       printf 'success\tBuild & Format Check\ntimed_out\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
       ;;
+    pending)
+      printf 'success\tBuild & Format Check\n\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
   esac
 }
 export -f __ci_jobs
@@ -287,14 +290,27 @@ CI_JOBS_CASE=cancelled train_nonblocking_failures_are_safe 2 "${SAFE_DESCRIPTOR}
   && bad "ci-safe: cancelled gate/shard must fail closed" \
   || ok "ci-safe: cancelled gate/shard fails closed"
 CI_JOBS_CASE=cancelled train_ci_jobs_are_terminal 2 \
-  && bad "ci-safe: cancelled jobs must make the run unusable" \
-  || ok "ci-safe: cancelled jobs make the run unusable"
+  && ok "ci-safe: cancelled jobs are terminal retry inputs" \
+  || bad "ci-safe: cancelled jobs were mistaken for incomplete jobs"
+CI_JOBS_CASE=cancelled train_expected_shards_are_classifiable 2 "${SAFE_DESCRIPTOR}" \
+  && ok "ci-safe: cancelled selected shard may enter bounded retry" \
+  || bad "ci-safe: cancelled selected shard could not reach bounded retry"
+cancelled_retry_jobs="$(CI_JOBS_CASE=cancelled train_retry_terminal_jobs 2 | sort)"
+[[ "${cancelled_retry_jobs}" == $'CI Gate\nServer Tests (Core)' ]] \
+  && ok "ci-safe: cancelled jobs remain visible to retry classification" \
+  || bad "ci-safe: cancelled jobs were lost before retry classification"
 CI_JOBS_CASE=missing-shards train_nonblocking_failures_are_safe 3 "${SAFE_DESCRIPTOR}" \
   && bad "ci-safe: missing blocking jobs must fail closed" \
   || ok "ci-safe: missing blocking jobs fail closed"
 CI_JOBS_CASE=timed-out train_nonblocking_failures_are_safe 4 "${SAFE_DESCRIPTOR}" \
   && bad "ci-safe: timed-out shard must fail closed" \
   || ok "ci-safe: timed-out shard fails closed"
+CI_JOBS_CASE=timed-out train_ci_jobs_are_terminal 4 \
+  && ok "ci-safe: timed-out jobs are terminal retry inputs" \
+  || bad "ci-safe: timed-out jobs were mistaken for incomplete jobs"
+CI_JOBS_CASE=pending train_ci_jobs_are_terminal 7 \
+  && bad "ci-safe: pending jobs must remain unusable" \
+  || ok "ci-safe: pending jobs remain unusable"
 CI_JOBS_CASE=partial-missing train_expected_shards_are_classifiable 5 "${TWO_SHARD_DESCRIPTOR}" \
   && bad "ci-safe: partially missing selected shard must fail closed" \
   || ok "ci-safe: partially missing selected shard fails closed"

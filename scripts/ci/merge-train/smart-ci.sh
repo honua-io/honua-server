@@ -223,11 +223,17 @@ train_wait_for_new_run_attempt() {
   done
 }
 
-# train_failing_jobs <run-id>: emit the names of the failing jobs (live).
+# train_failing_jobs <run-id>: emit every terminal, non-success job that the
+# retry/attribution loop must classify. GitHub reports a job-level timeout as
+# `cancelled` rather than `failure`, so failure-only selection strands an
+# otherwise complete batch before the bounded timeout retry can run.
 train_failing_jobs() {
   local run_id="$1"
   gh run view "${run_id}" --json jobs \
-    --jq '.jobs[] | select(.conclusion=="failure") | .name'
+    --jq '.jobs[]
+      | select(.conclusion=="failure" or .conclusion=="cancelled"
+               or .conclusion=="timed_out" or .conclusion=="startup_failure")
+      | .name'
 }
 
 # train_ci_jobs <run-id>: emit every job as "<conclusion>\t<name>". Tests may
@@ -243,9 +249,27 @@ train_ci_jobs() {
     --jq '.jobs[] | [.conclusion, .name] | @tsv'
 }
 
-# train_ci_jobs_are_terminal <run-id>: success/failure/skipped are the only
-# conclusions safe to classify. Any cancellation or incomplete conclusion
-# makes the entire run unusable as merge evidence.
+# train_retry_terminal_jobs <run-id>: emit jobs whose terminal conclusion has
+# no successful evidence and whose first recovery action is a bounded rerun.
+# Keeping this separate from ordinary failures prevents pre-existing-failure
+# subtraction and the optimistic non-blocking allowlist from erasing a
+# cancelled/timed-out job before the retry classifier sees it.
+train_retry_terminal_jobs() {
+  local run_id="$1" rows conclusion name
+  rows="$(train_ci_jobs "${run_id}")" || return 1
+  while IFS=$'\t' read -r conclusion name; do
+    [[ -n "${name}" ]] || continue
+    conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${conclusion}")"
+    case "${conclusion}" in
+      cancelled|timed_out|startup_failure) printf '%s\n' "${name}" ;;
+    esac
+  done <<<"${rows}"
+}
+
+# train_ci_jobs_are_terminal <run-id>: every job must have a terminal Actions
+# conclusion. cancelled/timed_out/startup_failure are terminal retry inputs,
+# never successful merge evidence. Pending/null/neutral conclusions remain
+# unusable and fail closed.
 train_ci_jobs_are_terminal() {
   local run_id="$1" rows conclusion name saw_gate=0
   rows="$(train_ci_jobs "${run_id}")" || return 1
@@ -255,7 +279,7 @@ train_ci_jobs_are_terminal() {
     [[ -n "${name}" ]] || return 1
     conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${conclusion}")"
     case "${conclusion}" in
-      success|failure|skipped) ;;
+      success|failure|skipped|cancelled|timed_out|startup_failure) ;;
       *) return 1 ;;
     esac
     [[ "${name}" == "CI Gate" ]] && saw_gate=1
@@ -265,8 +289,9 @@ train_ci_jobs_are_terminal() {
 }
 
 # train_expected_shards_are_classifiable <run-id> <shard-descriptor>
-# Every shard selected by the router must exist exactly once and conclude
-# SUCCESS or FAILURE. A missing or skipped selected shard is not evidence.
+# Every shard selected by the router must exist exactly once and either
+# succeed or reach a terminal failure-like conclusion that can enter bounded
+# retry/attribution. A missing or skipped selected shard is not evidence.
 train_expected_shards_are_classifiable() {
   local run_id="$1" descriptor="$2" rows shard expected matches conclusion
   jq -e '.shards | type == "array" and length > 0' <<<"${descriptor}" >/dev/null 2>&1 || return 1
@@ -278,7 +303,10 @@ train_expected_shards_are_classifiable() {
     matches="$(awk -F '\t' -v expected="${expected}" '$2 == expected { print $1 }' <<<"${rows}")"
     [[ "$(sed '/^$/d' <<<"${matches}" | wc -l | tr -d ' ')" == "1" ]] || return 1
     conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${matches}")"
-    [[ "${conclusion}" == "success" || "${conclusion}" == "failure" ]] || return 1
+    case "${conclusion}" in
+      success|failure|cancelled|timed_out|startup_failure) ;;
+      *) return 1 ;;
+    esac
   done < <(jq -r '.shards[]' <<<"${descriptor}")
 }
 

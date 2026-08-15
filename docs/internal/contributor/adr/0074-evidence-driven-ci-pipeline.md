@@ -228,10 +228,13 @@ mapping. Ambiguous attribution fails closed or runs focused probes. It does not
 wait for unrelated green shards merely to classify a known failure.
 
 Classified infrastructure flakes and timeouts retain one controlled
-failed-job-only retry. A repeated timeout, unknown signature, evidence
-incompleteness, cancellation failure, or attribution ambiguity is a real
-non-success. Recovery clears or resumes durable phase/label state
-idempotently; it never dispatches duplicate batch CI.
+failed-job-only retry. GitHub's terminal `cancelled`, `timed_out`, and
+`startup_failure` job conclusions are retry inputs, not evidence: they bypass
+optimistic allowlists and pre-existing-failure subtraction, and only a newer
+explicitly successful attempt can satisfy the gate. A repeated timeout,
+unknown signature, evidence incompleteness, cancellation failure, or
+attribution ambiguity is a real non-success. Recovery clears or resumes durable
+phase/label state idempotently; it never dispatches duplicate batch CI.
 
 ### 7. Route specialized evidence by inputs
 

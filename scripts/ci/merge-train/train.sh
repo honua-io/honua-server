@@ -761,11 +761,13 @@ main() {
       return 1
     fi
 
-    # Only an ordinary FAILURE has actionable failed jobs. A cancelled,
-    # missing, timed-out, stale, neutral, or otherwise incomplete gate must
-    # never flow into failure subtraction/classification: doing so can turn an
-    # empty failure list into a false success and land unvalidated code.
-    if [[ "${gate}" != "FAILURE" ]] \
+    # Terminal failure-like gate conclusions are actionable because GitHub
+    # reports job-level timeouts as CANCELLED. They may enter only the bounded
+    # retry/attribution loop below; no branch can turn them into merge evidence
+    # without a newer explicit SUCCESS. Missing, stale, neutral, or incomplete
+    # jobs still fail closed here.
+    if [[ "${gate}" != "FAILURE" && "${gate}" != "CANCELLED" \
+      && "${gate}" != "TIMED_OUT" && "${gate}" != "STARTUP_FAILURE" ]] \
       || ! train_ci_jobs_are_terminal "${run_id}" \
       || ! train_expected_shards_are_classifiable "${run_id}" "${shard_descriptor}"; then
       _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "${run_id}" "${fwdfix}" "${flake_reruns}"
@@ -777,7 +779,9 @@ main() {
       return 1
     fi
 
-    local failing; failing="$(train_failing_jobs "${run_id}")"
+    local failing retry_terminal
+    failing="$(train_failing_jobs "${run_id}")"
+    retry_terminal="$(train_retry_terminal_jobs "${run_id}")"
 
     # --- (0) NON-BLOCKING aux/aggregator filter (deterministic) --------------
     # Strip the heavy aux jobs that run on every batch + flake on environment
@@ -788,6 +792,10 @@ main() {
     local nonblocking_only=0
     train_nonblocking_failures_are_safe "${run_id}" "${shard_descriptor}" && nonblocking_only=1
     failing="$(train_subtract_lines "${TRAIN_NONBLOCKING_JOBS}" "${failing}")"
+    # Ordinary allowlisted failures may be ignored only after every selected
+    # shard succeeded. A cancelled/timed-out allowlisted job has no evidence,
+    # so restore it to the classifier input even if its name is allowlisted.
+    failing="$(printf '%s\n%s\n' "${failing}" "${retry_terminal}" | sed '/^$/d' | sort -u)"
     if [[ -z "${failing//[${HONUA_NL}${HONUA_TAB} ]/}" ]]; then
       if [[ "${nonblocking_only}" == "1" ]]; then
         train_metric_set nonblocking_passes 1
@@ -826,12 +834,20 @@ main() {
     # batch-introduced failures for flake/autofix/attribute.
     _write_state "${batch}" "${trunk_sha}" "${included}" "preexisting-filter" "${run_id}" "${fwdfix}" "${flake_reruns}"
     local introduced rc_pe=0
-    introduced="$(train_preexisting_filter "${run_id}" "${failing}")" || rc_pe=$?
-    if [[ "${rc_pe}" == "11" ]]; then
-      train_metric_set preexisting_passes 1
-      train_notice "pre-existing filter: all batch failures are pre-existing on trunk; landing"
-      gate="SUCCESS"
-      continue
+    if [[ -n "${retry_terminal//[${HONUA_NL}${HONUA_TAB} ]/}" ]]; then
+      # A missing result cannot be proven equivalent to a trunk failure by job
+      # name or log signature. Require the bounded rerun before any optimistic
+      # pre-existing-failure merge-through.
+      introduced="${failing}"
+      train_log "terminal cancelled/timed-out job bypasses pre-existing subtraction and requires bounded retry"
+    else
+      introduced="$(train_preexisting_filter "${run_id}" "${failing}")" || rc_pe=$?
+      if [[ "${rc_pe}" == "11" ]]; then
+        train_metric_set preexisting_passes 1
+        train_notice "pre-existing filter: all batch failures are pre-existing on trunk; landing"
+        gate="SUCCESS"
+        continue
+      fi
     fi
     # From here on, evaluate only the BATCH-INTRODUCED failing jobs.
     failing="${introduced}"
