@@ -34,9 +34,12 @@ def build_plan(observation: dict, registry: dict) -> dict:
     if observation.get("contract") != OBSERVATION_CONTRACT:
         raise ValueError("observer plan contract is invalid")
     producers = observation.get("producers")
+    observed_shards = observation.get("selected_shard_count")
     projects = registry.get("projects")
     if not isinstance(producers, list) or len(producers) > 2:
         raise ValueError("observer producers are outside the bounded range")
+    if type(observed_shards) is not int or not 1 <= observed_shards <= 100:
+        raise ValueError("observer selected shard count is outside the bounded range")
     if not isinstance(projects, list) or not projects:
         raise ValueError("artifact registry has no projects")
 
@@ -77,8 +80,8 @@ def build_plan(observation: dict, registry: dict) -> dict:
             or project not in by_project
             or suffix != by_project[project]["artifact_suffix"]
             or identity != suffix
-            or not isinstance(selected_shards, int)
-            or selected_shards < 2
+            or type(selected_shards) is not int
+            or not 2 <= selected_shards <= observed_shards
         ):
             raise ValueError(f"observer producer identity is invalid for {project!r}")
         seen_projects.add(project)
@@ -90,8 +93,12 @@ def build_plan(observation: dict, registry: dict) -> dict:
                 "project_suffix": suffix,
                 "filter": by_project[project]["proof_filter"],
                 "reuse_expected": True,
+                "selected_shard_count": selected_shards,
             }
         )
+
+    if sum(profile_shard_counts) > observed_shards:
+        raise ValueError("observer producer shard counts exceed the selected shard set")
 
     return {
         "contract": BENCHMARK_CONTRACT,

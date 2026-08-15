@@ -71,7 +71,15 @@ The manual A/B workflow supports two profiles: two shards sharing Server.Tests,
 and a five-project hybrid with only the repeated Server.Tests project reused.
 Each baseline and candidate runs the same trusted proof filter and publishes a
 stable TRX identity/outcome digest. The summary uses complete GitHub-hosted job
-intervals, not partial shell timers.
+intervals, not partial shell timers. One measured baseline/candidate interval
+represents each selected project, but its trusted observer
+`selected_shard_count` weights both billed runner minutes and test-start
+percentile samples. The independent baseline and prebuilt consumer are each
+charged once per selected shard job; the shared plan/build producer intervals
+are charged once. This preserves the real N-shard counterfactual without
+spawning N redundant benchmark jobs. The retained summary records the weights
+so the model is auditable, and invalid, inconsistent, or over-100-shard weights
+fail closed.
 
 Promotion to a 20-exact-head shadow requires, for every profile:
 

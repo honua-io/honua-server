@@ -49,27 +49,29 @@ def job(name: str, start: int, elapsed: int, attempt: int = 1) -> dict:
 
 
 def inputs() -> tuple:
+    workload = [
+        {
+            "identity": "server",
+            "project": "server",
+            "reuse_expected": True,
+            "selected_shard_count": 3,
+        }
+    ]
     plan = {
         "contract": MODULE.PLAN_CONTRACT,
-        "profile": "two-same-project",
-        "baseline": [
-            {"identity": "server-a", "project": "server", "reuse_expected": True},
-            {"identity": "server-b", "project": "server", "reuse_expected": True},
-        ],
+        "profile": "exact-head-shadow:multi-shard",
+        "baseline": [dict(item) for item in workload],
+        "candidates": [dict(item) for item in workload],
         "reused_projects": ["server"],
     }
     config = {"decision_thresholds": {"max_wall_clock_regression_percent": 5}}
     metrics = [
-        metric("baseline", "server-a", 10_000, 300_000),
-        metric("baseline", "server-b", 10_000, 300_000),
-        metric("consumer-ready", "server-a", 400_000, 60_000),
-        metric("consumer-ready", "server-b", 400_000, 60_000),
+        metric("baseline", "server", 10_000, 300_000),
+        metric("consumer-ready", "server", 400_000, 60_000),
     ]
     benchmark_jobs = [
-        job("Independent prebuild baseline / server-a", 10_000, 300_000),
-        job("Independent prebuild baseline / server-b", 10_000, 300_000),
-        job("Opportunistic prebuild candidate / server-a", 400_000, 60_000),
-        job("Opportunistic prebuild candidate / server-b", 400_000, 60_000),
+        job("Independent prebuild baseline / server", 10_000, 300_000),
+        job("Opportunistic prebuild candidate / server", 400_000, 60_000),
     ]
     producer_metrics = [
         {
@@ -98,8 +100,13 @@ def summarize(values: tuple) -> dict:
 values = inputs()
 result = summarize(values)
 assert result["decision"] == "eligible-for-20-head-shadow"
-assert result["baseline"]["rounded_runner_minutes"] == 10
-assert result["candidate"]["rounded_runner_minutes_including_prebuild"] == 6
+assert result["baseline"]["rounded_runner_minutes"] == 15
+assert result["candidate"]["rounded_runner_minutes_including_prebuild"] == 7
+assert result["workload"] == {
+    "representative_project_count": 1,
+    "selected_shard_count": 3,
+    "shard_weights": [{"identity": "server", "selected_shard_count": 3}],
+}
 
 values = inputs()
 values[2][-1]["result_sha256"] = "c" * 64
@@ -107,14 +114,14 @@ assert summarize(values)["decision"] == "keep-local-build-authoritative"
 
 values = inputs()
 values[2][-1]["prebuild"]["mode"] = "local-fallback"
-assert summarize(values)["reuse_failures"] == ["server-b"]
+assert summarize(values)["reuse_failures"] == ["server"]
 
 values = inputs()
 values[5][1]["elapsed_ms"] = 600_001
 values[5][1]["end_ms"] = values[5][1]["start_ms"] + 600_001
 assert not summarize(values)["rounded_runner_minutes_ok"]
 
-for interval in (0, 2):
+for interval in (0, 1):
     values = inputs()
     values[4][interval]["conclusion"] = "failure"
     try:
@@ -152,7 +159,72 @@ values[3].append(
 values[5].append(job("Prebuild repeated project / unused", 2_000, 60_000))
 extra_result = summarize(values)
 assert extra_result["decision"] == "eligible-for-20-head-shadow"
-assert extra_result["candidate"]["rounded_runner_minutes_including_prebuild"] == 7
+assert extra_result["candidate"]["rounded_runner_minutes_including_prebuild"] == 8
+
+# The single hosted interval for each project represents every selected shard job.
+# Weighting must affect both billed minutes and percentile samples without spawning
+# duplicate benchmark jobs.
+values = inputs()
+values[0]["baseline"][0]["selected_shard_count"] = 18
+values[0]["candidates"][0]["selected_shard_count"] = 18
+second = {
+    "identity": "geoservices",
+    "project": "geoservices",
+    "reuse_expected": True,
+    "selected_shard_count": 2,
+}
+values[0]["baseline"].append(dict(second))
+values[0]["candidates"].append(dict(second))
+values[0]["reused_projects"].append("geoservices")
+values[2][0]["test_started_epoch_ms"] = 20_000
+values[2][1]["test_started_epoch_ms"] = 410_000
+values[2].extend(
+    [
+        {**metric("baseline", "geoservices", 10_000, 60_000), "test_started_epoch_ms": 210_000},
+        {
+            **metric("consumer-ready", "geoservices", 400_000, 60_000),
+            "test_started_epoch_ms": 420_000,
+        },
+    ]
+)
+values[4].extend(
+    [
+        job("Independent prebuild baseline / geoservices", 10_000, 60_000),
+        job("Opportunistic prebuild candidate / geoservices", 400_000, 60_000),
+    ]
+)
+values[3].append(
+    {
+        "contract": MODULE.PRODUCER_METRIC_CONTRACT,
+        "project": "geoservices",
+        "head_sha": HEAD,
+        "run_attempt": 1,
+    }
+)
+values[5].append(job("Prebuild repeated project / geoservices", 1_000, 60_000))
+weighted_result = summarize(values)
+assert weighted_result["baseline"]["rounded_runner_minutes"] == 92
+assert weighted_result["candidate"]["rounded_runner_minutes_including_prebuild"] == 25
+assert weighted_result["baseline"]["p90_test_start_ms"] == 10_000
+assert weighted_result["candidate"]["p90_test_start_ms"] == 10_000
+
+for invalid_weight in (None, 1, 101, True):
+    values = inputs()
+    values[0]["baseline"][0]["selected_shard_count"] = invalid_weight
+    values[0]["candidates"][0]["selected_shard_count"] = invalid_weight
+    try:
+        summarize(values)
+        raise AssertionError("invalid selected shard weight was accepted")
+    except ValueError as error:
+        assert "shard weight" in str(error)
+
+values = inputs()
+values[0]["candidates"][0]["selected_shard_count"] = 2
+try:
+    summarize(values)
+    raise AssertionError("candidate workload drift was accepted")
+except ValueError as error:
+    assert "differs from baseline" in str(error)
 
 with tempfile.TemporaryDirectory() as directory:
     payload = {
@@ -165,7 +237,7 @@ with tempfile.TemporaryDirectory() as directory:
                 "conclusion": None,
             },
             {
-                "name": "Independent prebuild baseline / server-a",
+                "name": "Independent prebuild baseline / server",
                 "run_attempt": 1,
                 "started_at": "2026-08-14T00:00:00Z",
                 "completed_at": "2026-08-14T00:01:00Z",
@@ -176,6 +248,6 @@ with tempfile.TemporaryDirectory() as directory:
     jobs_file = Path(directory) / "jobs.json"
     jobs_file.write_text(json.dumps(payload), encoding="utf-8")
     loaded = MODULE.load_hosted_jobs(Path(directory))
-    assert [item["name"] for item in loaded] == ["Independent prebuild baseline / server-a"]
+    assert [item["name"] for item in loaded] == ["Independent prebuild baseline / server"]
 
 print("server-test-prebuild-benchmark-summary=ok")
