@@ -20,6 +20,7 @@ MAX_RECEIPT_BYTES = 128 * 1024
 WORKFLOW_PATH = ".github/workflows/server-test-prebuild-observe.yml"
 POLICY_PATHS = (
     ".github/actions/setup-dotnet-ci/action.yml",
+    ".github/ci-shards.json",
     ".github/server-test-artifact-projects.json",
     ".github/server-test-prebuild-observe.json",
     ".github/server-test-prebuild-promotion.json",
@@ -30,6 +31,8 @@ POLICY_PATHS = (
     WORKFLOW_PATH,
     "scripts/ci/benchmark-server-test-transfer.sh",
     "scripts/ci/audit-server-test-prebuild-evidence.py",
+    "scripts/ci/honua-server-targeted-tests.sh",
+    "scripts/ci/lib/jq-cr-safe.sh",
     "scripts/ci/package-server-test-binaries.sh",
     "scripts/ci/plan-server-test-prebuild-benchmark.py",
     "scripts/ci/plan-server-test-prebuild-parity.py",
@@ -39,6 +42,7 @@ POLICY_PATHS = (
     "scripts/ci/server-test-reuse-receipt.py",
     "scripts/ci/summarize-server-test-prebuild-benchmark.py",
     "scripts/ci/try-server-test-prebuild.sh",
+    "scripts/ci/trusted-pr-workflow-run.js",
 )
 
 

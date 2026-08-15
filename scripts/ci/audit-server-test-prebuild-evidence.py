@@ -615,7 +615,7 @@ def main() -> int:
     rendered = markdown(ledger)
     args.markdown.write_text(rendered, encoding="utf-8")
     print(rendered)
-    return 1 if ledger["integrity_failures"] else 0
+    return 1 if not ledger["gates"]["integrity_clean"] else 0
 
 
 if __name__ == "__main__":

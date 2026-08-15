@@ -266,7 +266,7 @@ jobs:
         run: |
           python3 policy/scripts/ci/plan-server-test-prebuild-parity.py \
             --observation evidence/producer-plan/prebuild-plan.json \
-            --registry source/.github/server-test-artifact-projects.json \
+            --registry policy/.github/server-test-artifact-projects.json \
             --output evidence/parity-plan.json \
             --github-output "${GITHUB_OUTPUT}"
 
