@@ -98,3 +98,20 @@ test('rejects a stalled cursor instead of looping', async () => {
     /pagination cursor stalled/,
   );
 });
+
+test('rejects a head change during pagination', async () => {
+  let request = 0;
+  await assert.rejects(
+    collectPullRequestSnapshot(async () => {
+      const value = page({
+        threadPage: request === 0 ? 0 : 1,
+        reviewsPage: request === 0 ? 0 : 1,
+        commentsPage: request === 0 ? 0 : 1,
+      });
+      request += 1;
+      if (request === 2) value.repository.pullRequest.headRefOid = 'def456';
+      return value;
+    }),
+    /pull request changed during pagination/,
+  );
+});

@@ -91,12 +91,18 @@ async function collectPullRequestSnapshot(fetchPage) {
     const pr = result?.repository?.pullRequest ?? result?.data?.repository?.pullRequest;
     if (!pr) return null;
 
-    metadata ??= {
+    const currentMetadata = {
       number: pr.number,
       state: pr.state,
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
     };
+    if (metadata === null) {
+      metadata = currentMetadata;
+    } else if (Object.keys(currentMetadata).some(
+      key => currentMetadata[key] !== metadata[key])) {
+      throw new Error('Review Gate pull request changed during pagination.');
+    }
 
     const pages = {
       labels: connectionPage(pr, 'labels'),
