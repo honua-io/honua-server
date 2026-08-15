@@ -115,6 +115,33 @@ jobs:
                 !policy.content || !/^[0-9a-f]{40}$/.test(policy.sha || '')) {
               throw new Error('trusted classifier is unavailable or malformed');
             }
+            const { data: observerWorkflow } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: '.github/workflows/pr-gate-impact-observe.yml',
+              ref: context.sha,
+            });
+            if (Array.isArray(observerWorkflow) || observerWorkflow.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(observerWorkflow.sha || '')) {
+              throw new Error('trusted observer workflow is unavailable or malformed');
+            }
+            const { data: gateWorkflow } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: '.github/workflows/pr-gate.yml',
+              ref: expectedHead,
+            });
+            if (Array.isArray(gateWorkflow) || gateWorkflow.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(gateWorkflow.sha || '')) {
+              throw new Error('trusted PR Gate workflow is unavailable or malformed');
+            }
+            const { data: resolver } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: 'scripts/ci/trusted-pr-workflow-run.js',
+              ref: context.sha,
+            });
+            if (Array.isArray(resolver) || resolver.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(resolver.sha || '')) {
+              throw new Error('trusted workflow-run resolver is unavailable or malformed');
+            }
 
             const classifierPath = path.join(runnerTemp, 'trusted-classify-pr-gate-impact.py');
             const inputPath = path.join(runnerTemp, 'pr-gate-impact-input.json');
@@ -126,6 +153,9 @@ jobs:
               head_sha: expectedHead,
               policy_sha: context.sha,
               policy_blob_sha: policy.sha,
+              gate_workflow_blob_sha: gateWorkflow.sha,
+              resolver_blob_sha: resolver.sha,
+              observer_workflow_blob_sha: observerWorkflow.sha,
               trusted_execution: 'default-branch-workflow-run/v1',
               gate_workflow_path: gateRun.path,
               gate_run_id: gateRun.id,
@@ -143,7 +173,8 @@ jobs:
             core.setOutput('head', expectedHead);
             core.setOutput('run_id', String(gateRun.id));
 
-      - name: Classify non-authoritative PR Gate impact
+      - id: classify
+        name: Classify non-authoritative PR Gate impact
         run: |
           python3 "${RUNNER_TEMP}/trusted-classify-pr-gate-impact.py" \
             --input "${RUNNER_TEMP}/pr-gate-impact-input.json" \
@@ -151,6 +182,8 @@ jobs:
           mode="$(jq -r '.mode' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
           reason="$(jq -r '.reason' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
           files="$(jq -r '.changed_file_count' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          [[ "${mode}" == docs-only || "${mode}" == full ]] || exit 1
+          echo "mode=${mode}" >> "${GITHUB_OUTPUT}"
           {
             echo '### Trusted PR Gate impact observation'
             echo "- Rollout: \`${PR_GATE_IMPACT_MODE}\`"
@@ -164,7 +197,7 @@ jobs:
       - name: Upload trusted PR Gate impact observation
         uses: actions/upload-artifact@v7
         with:
-          name: pr-gate-impact-observation-${{ steps.collect.outputs.pr }}-${{ steps.collect.outputs.head }}
+          name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pr-gate-impact-observation.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
