@@ -529,13 +529,14 @@ export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/bat
 resume_identity_event=workflow_dispatch
 resume_identity_path=.github/workflows/ci.yml
 resume_identity_head="${fixture_batch_sha}"
+smart_gate_result=success
 gh() {
   if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
     printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json status --jq .status'* ]]; then
     printf 'completed\n'
   elif [[ "$*" == *'--json jobs'* ]]; then
-    printf 'success\n'
+    printf '%s\n' "${smart_gate_result}"
   else
     fail "smart-CI resume attempted unexpected gh operation: $*"
   fi
@@ -547,6 +548,17 @@ smart_resumed_json="$(train_restore_smart_ci_intent)" || fail "initial smart-CI 
   || fail "initial smart-CI resume did not recover the exact gate"
 [[ "$(cat "${fixture_included}")" == $'101\t'"${fixture_member_sha}" ]] \
   || fail "initial smart-CI resume did not reconstruct the exact member head"
+smart_gate_result=missing
+smart_missing_json="$(train_restore_smart_ci_intent)" \
+  || fail "terminal smart-CI without a CI Gate was treated as an identity mismatch"
+[[ "$(jq -r '.resume_gate' <<<"${smart_missing_json}")" == "MISSING" ]] \
+  || fail "terminal missing CI Gate did not reach common ci-incomplete routing"
+smart_gate_result=skipped
+smart_skipped_json="$(train_restore_smart_ci_intent)" \
+  || fail "terminal skipped CI Gate was treated as an identity mismatch"
+[[ "$(jq -r '.resume_gate' <<<"${smart_skipped_json}")" == "SKIPPED" ]] \
+  || fail "terminal skipped CI Gate did not reach common ci-incomplete routing"
+smart_gate_result=success
 resume_identity_event=push
 rc=0
 train_restore_smart_ci_intent >/dev/null || rc=$?

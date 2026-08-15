@@ -159,10 +159,15 @@ train_restore_smart_ci_intent() {
   train_wait_for_run_completion "${run_id}" || return 3
   gate="$(gh run view "${run_id}" --json jobs \
     --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' \
-    2>/dev/null | tr '[:lower:]' '[:upper:]')"
+    2>/dev/null || echo "missing")"
+  gate="$(tr '[:lower:]' '[:upper:]' <<<"${gate}")"
   case "${gate}" in
-    SUCCESS|FAILURE|CANCELLED|TIMED_OUT|STARTUP_FAILURE) ;;
-    *) return 2 ;;
+    SUCCESS|FAILURE|CANCELLED|TIMED_OUT|STARTUP_FAILURE|\
+    MISSING|SKIPPED|NEUTRAL|STALE|ACTION_REQUIRED) ;;
+    # An unfamiliar or malformed conclusion is unusable gate evidence, not an
+    # immutable run-identity mismatch. Route it through the common fail-closed
+    # ci-incomplete path under the exact recovered run id.
+    *) gate="MISSING" ;;
   esac
   descriptor="$(train_smart_ci_shards "${batch}")" || return 2
 
