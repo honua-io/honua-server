@@ -1,4 +1,4 @@
-# ADR-0074: UI5 Web Components as the Application Chrome Component Set
+# ADR-0074: UI5 Web Components for Application Chrome, Vega-Lite for Charting
 
 ## Status
 
@@ -126,6 +126,72 @@ operation rather than forty, and it is the same engine `honua-collect` and
 Fiori is not shipped as Honua's visual identity. A Honua token layer over UI5's
 theming parameters is required work, budgeted as design rather than treated as
 a configuration step.
+
+### 7. Charting is a separate grammar, and it is Vega-Lite
+
+UI5 ships **no charting at all** — there is not a single chart element among
+the 139 core or 63 `-fiori` components. Charting was therefore always going to
+be a separate dependency, and this ADR settles it because no prior ADR records
+the choice even though the code has already made it.
+
+**The chart *grammar* is Vega-Lite** (BSD-3-Clause). `src/studio/chart-spec.ts`
+in `honua-sdk-js` already targets it with a deliberately narrowed vocabulary —
+four marks (`bar`, `line`, `point`, `arc`), four field types (`quantitative`,
+`nominal`, `ordinal`, `temporal`), and a closed aggregate set — translated by
+`chartWidgetToVegaLiteSpec()`. That narrowing is ratified here as normative,
+for a reason given below.
+
+**The chart *renderer* is swappable and is not Vega.** `src/analytics/`
+carries an adapter registry with µPlot (MIT) as the current adapter. Keeping
+the grammar decoupled from the Vega runtime is the load-bearing part of this
+decision, not an implementation detail: vega-lite unpacks to 5.8 MB and the
+Vega runtime to a further 3.7 MB, against µPlot's 545 KB. On a public-facing
+map embed that difference is decisive. **The Vega runtime MUST NOT become a
+non-optional dependency**; if a full-fidelity Vega adapter is added as a
+correctness fallback, it is lazy-loaded, and any additional adapter (Apache
+ECharts is the plausible candidate for sankey/treemap/gauge coverage and
+large-N canvas rendering) joins the same registry rather than replacing the
+grammar.
+
+**Agents author the narrowed Honua grammar, never raw Vega-Lite.** The
+published `vega-lite-schema.json` is 1.88 MB across 458 JSON Schema draft-07
+definitions with deep `$ref` nesting. It cannot be placed in a model's context,
+and a model authoring against it directly will not reliably produce valid
+output. The narrowed Honua chart grammar carries its own small schema, the
+model authors that, and translation to Vega-Lite happens afterwards. This is
+the same relationship sub-decision 2 establishes between semantic component
+names and `ui5-*` tag names.
+
+**The schema version is pinned deliberately and tracks latest stable.** The
+grammar targets the current stable Vega-Lite major (v6). Version drift is a
+decision, not an accident: bumping requires re-validating the narrowed
+vocabulary against the new schema.
+
+Why Vega-Lite rather than the alternatives. **Observable Plot** has the most
+elegant API but its spec is JavaScript, not a JSON document, so it cannot be
+serialized, persisted, validated, or diffed — disqualifying for both agent
+authoring and a durable composition document. **Apache ECharts** is JSON-config
+driven and therefore authorable, with broader chart coverage, but has no
+rigorous published schema and an enormous, inconsistently-nested option
+surface, which makes constraining a model to valid output much harder; it is a
+good renderer adapter and a poor grammar. **Plotly** and **Chart.js** are
+JSON-ish configuration rather than grammars, and are weak at layering and
+faceting.
+
+Two properties specific to Honua's architecture decided it. Vega-Lite's
+`params` and selections are first-class grammar constructs producing filter
+predicates, which is the natural bridge into the shared exploration contexts of
+geospatial-mcp ADR-0032 — a chart bound with `role: "chart"` publishes its
+brush into the shared `filters` slice, and because the semantics belong to the
+grammar rather than to a renderer, they survive an adapter swap. And a
+declarative, schema-validatable spec can be checked *before* it renders, which
+is the same posture as the typed composition document; an imperative charting
+API cannot be.
+
+Chart accessibility is weak across the entire ecosystem regardless of library.
+`src/analytics/accessible-table.ts` already provides the standard mitigation, a
+data-table alternative, and it is normative rather than optional: a rendered
+chart ships with its accessible table equivalent.
 
 ## Alternatives considered
 
