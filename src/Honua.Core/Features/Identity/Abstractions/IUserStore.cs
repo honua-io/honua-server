@@ -21,6 +21,14 @@ public interface IUserStore
     Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds a user by the identity-provider-owned external identifier
+    /// (<see cref="ManagedUser.ExternalId"/>, case-insensitive). Returns <see langword="null"/>
+    /// when no user carries the identifier, or when it is ambiguous across users — an ambiguous
+    /// match must never be used to derive authorization identity.
+    /// </summary>
+    Task<ManagedUser?> FindByExternalIdAsync(string externalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates role assignments for a user.
     /// </summary>
     Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default);

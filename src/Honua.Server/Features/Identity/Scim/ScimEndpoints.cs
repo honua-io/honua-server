@@ -150,6 +150,7 @@ internal static partial class ScimEndpoints
             new ScimUserProvisioning
             {
                 UserName = input.UserName.Trim(),
+                ExternalId = NormalizeExternalId(input.ExternalId),
                 DisplayName = input.DisplayName,
                 Email = SelectEmail(input.Emails),
                 Active = input.Active,
@@ -158,7 +159,7 @@ internal static partial class ScimEndpoints
 
         if (created is null)
         {
-            return ScimErrorResult(StatusCodes.Status409Conflict, "A user with that userName already exists.", "uniqueness");
+            return ScimErrorResult(StatusCodes.Status409Conflict, "A user with that userName or externalId already exists.", "uniqueness");
         }
 
         ScimLog.UserProvisioned(logger, created.UserId);
@@ -206,6 +207,10 @@ internal static partial class ScimEndpoints
             new ScimUserProvisioning
             {
                 UserName = input.UserName.Trim(),
+                // PUT omitting externalId preserves the stored value: the identifier bridges
+                // deferred-authorization lookups, so an IdP that only round-trips core
+                // attributes must not silently sever it (honua-server#3081).
+                ExternalId = NormalizeExternalId(input.ExternalId) ?? existing?.ExternalId,
                 DisplayName = input.DisplayName,
                 Email = SelectEmail(input.Emails),
                 Active = input.Active,
@@ -492,9 +497,13 @@ internal static partial class ScimEndpoints
 
     // ---- Mapping ----------------------------------------------------------------------
 
+    private static string? NormalizeExternalId(string? externalId)
+        => string.IsNullOrWhiteSpace(externalId) ? null : externalId.Trim();
+
     private static ScimUser ToScimUser(ManagedUser user) => new()
     {
         Id = user.UserId,
+        ExternalId = user.ExternalId,
         UserName = user.UserId,
         DisplayName = user.DisplayName,
         Active = user.IsActive,

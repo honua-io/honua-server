@@ -24,6 +24,14 @@ public sealed class ManagedUser
     public string? Email { get; init; }
 
     /// <summary>
+    /// Identity-provider-owned stable external identifier (SCIM <c>externalId</c>, RFC 7643
+    /// §3.1). Bridges provisioning identity to authentication identity: when the IdP's SCIM
+    /// <c>userName</c> differs from its OIDC subject, membership lookups resolve the captured
+    /// subject through this identifier (honua-server#3081).
+    /// </summary>
+    public string? ExternalId { get; init; }
+
+    /// <summary>
     /// How this user was provisioned (e.g., "oidc", "scim", "manual").
     /// </summary>
     public required string ProvisioningSource { get; init; }

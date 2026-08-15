@@ -11,7 +11,10 @@ namespace Honua.Server.Features.Admin.Services;
 /// In-memory user store for the admin API surface. Also backs the SCIM 2.0 provisioning
 /// surface (<see cref="IScimUserStore"/>, #510) over the same record set so users created by
 /// an identity provider are immediately visible to the admin endpoints.
-/// Will be replaced by a persistent implementation when #496/#498 land.
+/// Node-local: this is the default only for single-node/no-Redis profiles. When Redis is
+/// configured the durable <see cref="RedisUserStore"/> is registered instead, because
+/// deferred-lane membership revalidation must observe provisioning handled on other replicas
+/// (honua-server#3081).
 /// </summary>
 internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 {
@@ -59,6 +62,9 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return Task.FromResult(user);
     }
 
+    public Task<ManagedUser?> FindByExternalIdAsync(string externalId, CancellationToken cancellationToken = default)
+        => Task.FromResult(FindByExternalIdInternal(externalId));
+
     public Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
     {
         if (!_users.TryGetValue(userId, out var existing))
@@ -66,18 +72,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
             return Task.FromResult<ManagedUser?>(null);
         }
 
-        var updated = new ManagedUser
-        {
-            UserId = existing.UserId,
-            DisplayName = existing.DisplayName,
-            Email = existing.Email,
-            ProvisioningSource = existing.ProvisioningSource,
-            ProviderId = existing.ProviderId,
-            IsActive = existing.IsActive,
-            Roles = NormalizeRoles(roles),
-            CreatedAt = existing.CreatedAt,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
+        var updated = Clone(existing, existing.IsActive, NormalizeRoles(roles));
 
         _users[userId] = updated;
         return Task.FromResult<ManagedUser?>(updated);
@@ -102,8 +97,15 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
         // SCIM userName is the IdP-owned, unique login identifier; reuse it as the stable
         // user id so re-provisioning is idempotent on the same key. A conflicting userName
-        // is reported to the caller (SCIM 409) rather than silently overwriting.
+        // is reported to the caller (SCIM 409) rather than silently overwriting. An
+        // externalId already carried by ANOTHER user is likewise a conflict: the identifier
+        // bridges deferred-authorization lookups, so it must stay unambiguous (#3081).
         if (FindByUserNameInternal(provisioning.UserName) is not null)
+        {
+            return Task.FromResult<ManagedUser?>(null);
+        }
+
+        if (provisioning.ExternalId is not null && FindByExternalIdInternal(provisioning.ExternalId) is not null)
         {
             return Task.FromResult<ManagedUser?>(null);
         }
@@ -112,6 +114,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         var user = new ManagedUser
         {
             UserId = provisioning.UserName,
+            ExternalId = provisioning.ExternalId,
             DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
             Email = provisioning.Email,
             ProvisioningSource = "scim",
@@ -159,6 +162,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         var updated = new ManagedUser
         {
             UserId = existing.UserId,
+            ExternalId = provisioning.ExternalId ?? existing.ExternalId,
             DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
             Email = provisioning.Email,
             ProvisioningSource = existing.ProvisioningSource,
@@ -247,11 +251,41 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return _users.Values.FirstOrDefault(u => u.UserId.Equals(userName, StringComparison.OrdinalIgnoreCase));
     }
 
+    private ManagedUser? FindByExternalIdInternal(string externalId)
+    {
+        if (string.IsNullOrWhiteSpace(externalId))
+        {
+            return null;
+        }
+
+        // An ambiguous external identifier must never resolve: the caller may be deriving
+        // authorization identity from the match (honua-server#3081). Creation enforces
+        // uniqueness, but SCIM PUT can still write duplicates, so resolve defensively.
+        ManagedUser? match = null;
+        foreach (var user in _users.Values)
+        {
+            if (user.ExternalId is null || !user.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                return null;
+            }
+
+            match = user;
+        }
+
+        return match;
+    }
+
     private static ManagedUser Deactivate(ManagedUser existing) => Clone(existing, isActive: false, roles: []);
 
     private static ManagedUser Clone(ManagedUser existing, bool isActive, IReadOnlyList<string> roles) => new()
     {
         UserId = existing.UserId,
+        ExternalId = existing.ExternalId,
         DisplayName = existing.DisplayName,
         Email = existing.Email,
         ProvisioningSource = existing.ProvisioningSource,

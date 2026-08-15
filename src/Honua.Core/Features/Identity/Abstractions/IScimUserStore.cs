@@ -66,6 +66,13 @@ public sealed class ScimUserProvisioning
     public required string UserName { get; init; }
 
     /// <summary>
+    /// The SCIM <c>externalId</c> — the IdP-owned stable identifier (RFC 7643 §3.1). Persisted
+    /// so membership lookups can bridge an OIDC subject to the SCIM-provisioned record when the
+    /// two identifier namespaces differ (honua-server#3081).
+    /// </summary>
+    public string? ExternalId { get; init; }
+
+    /// <summary>
     /// Display name. Falls back to <see cref="UserName"/> when the IdP omits it.
     /// </summary>
     public string? DisplayName { get; init; }

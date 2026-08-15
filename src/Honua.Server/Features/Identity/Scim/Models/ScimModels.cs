@@ -219,6 +219,13 @@ public sealed class ScimUser
     /// <summary>Server-assigned unique identifier.</summary>
     public string? Id { get; init; }
 
+    /// <summary>
+    /// Provisioning-client-owned stable identifier (RFC 7643 §3.1 <c>externalId</c>). Persisted
+    /// and echoed back so the IdP can correlate the resource, and used server-side to bridge
+    /// OIDC subjects to SCIM-provisioned users (honua-server#3081).
+    /// </summary>
+    public string? ExternalId { get; init; }
+
     /// <summary>Unique login identifier owned by the identity provider.</summary>
     public string? UserName { get; init; }
 
