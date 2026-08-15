@@ -1,0 +1,17 @@
+{
+  "contract": "honua.impact-routing-promotion-policy/v1",
+  "observation_started_at": "2026-08-15T14:01:18Z",
+  "receipt_retention_days": 7,
+  "image_outcome_lookback_hours": 24,
+  "maximum_pages_per_query": 4,
+  "maximum_receipt_downloads": 420,
+  "minimum_docs_only_heads": 20,
+  "minimum_native_heads": 20,
+  "minimum_serving_impacted_heads": 3,
+  "minimum_worker_impacted_heads": 3,
+  "minimum_serving_narrowed_heads": 3,
+  "minimum_worker_avoided_heads": 3,
+  "require_zero_integrity_failures": true,
+  "require_zero_docs_only_gate_failures": true,
+  "require_successful_authoritative_image_outcomes": true
+}

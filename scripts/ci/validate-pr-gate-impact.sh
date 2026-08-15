@@ -108,11 +108,12 @@ grep -Fq 'ref: context.sha' "${observer_workflow}"
 grep -Fq "trusted_execution: 'default-branch-workflow-run/v1'" "${observer_workflow}"
 grep -Fq 'trusted-classify-pr-gate-impact.py' "${observer_workflow}"
 grep -Fq 'policy_blob_sha' scripts/ci/classify-pr-gate-impact.py
+grep -Fq 'observer_workflow_blob_sha' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'gate_run_head_sha != head_sha' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'gate_run_conclusion' scripts/ci/classify-pr-gate-impact.py
 grep -Fq '"authoritative_gate": "full"' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'Authoritative path: `full` (unchanged)' "${observer_workflow}"
-grep -Fq 'name: pr-gate-impact-observation-${{ steps.collect.outputs.pr }}-${{ steps.collect.outputs.head }}' "${observer_workflow}"
+grep -Fq 'name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3' "${observer_workflow}"
 if grep -Fq 'pr-gate-impact' "${required_workflow}"; then
   echo '::error::Candidate-controlled required workflow must not collect or publish impact evidence.' >&2
   exit 1

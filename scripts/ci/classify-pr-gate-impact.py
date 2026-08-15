@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 
-CONTRACT = "honua.pr-gate-impact-observation/v2"
+CONTRACT = "honua.pr-gate-impact-observation/v3"
 MAX_FILES = 3_000
 DOCS_PREFIX = "docs/internal/"
 EXPECTED_REPOSITORY = "honua-io/honua-server"
@@ -42,6 +42,7 @@ def _full(
         "head_sha": None,
         "policy_sha": None,
         "policy_blob_sha": None,
+        "observer_workflow_blob_sha": None,
         "trusted_execution": None,
         "gate_workflow_path": None,
         "gate_run_id": None,
@@ -86,6 +87,7 @@ def classify(payload: object) -> dict[str, Any]:
     head_sha = payload.get("head_sha")
     policy_sha = payload.get("policy_sha")
     policy_blob_sha = payload.get("policy_blob_sha")
+    observer_workflow_blob_sha = payload.get("observer_workflow_blob_sha")
     trusted_execution = payload.get("trusted_execution")
     gate_workflow_path = payload.get("gate_workflow_path")
     gate_run_id = payload.get("gate_run_id")
@@ -108,6 +110,8 @@ def classify(payload: object) -> dict[str, Any]:
         or re.fullmatch(r"[0-9a-f]{40}", policy_sha) is None
         or not isinstance(policy_blob_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", policy_blob_sha) is None
+        or not isinstance(observer_workflow_blob_sha, str)
+        or re.fullmatch(r"[0-9a-f]{40}", observer_workflow_blob_sha) is None
         or trusted_execution != "default-branch-workflow-run/v1"
         or gate_workflow_path != ".github/workflows/pr-gate.yml"
         or not isinstance(gate_run_id, int)
@@ -127,6 +131,7 @@ def classify(payload: object) -> dict[str, Any]:
         "head_sha": head_sha,
         "policy_sha": policy_sha,
         "policy_blob_sha": policy_blob_sha,
+        "observer_workflow_blob_sha": observer_workflow_blob_sha,
         "trusted_execution": trusted_execution,
         "gate_workflow_path": gate_workflow_path,
         "gate_run_id": gate_run_id,

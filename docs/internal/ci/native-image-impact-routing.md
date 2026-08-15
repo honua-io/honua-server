@@ -22,7 +22,8 @@ verification policy, and these independently measured risk classes:
 Every completed canonical PR Gate triggers a trusted default-branch observer.
 It checks out the exact PR tree only as inert data, executes selector code from
 the observer policy SHA, and emits a
-`honua.ci.native-image-impact-observation/v2` artifact comparing the candidate
+`honua.ci.native-image-impact-observation/v2` receipt under the stable artifact
+name `native-image-impact-observation-v2`, comparing the candidate
 decision with the current workflow triggers. The resolver obtains the immutable
 gate-time PR base/head association from the exact GitHub Actions job's
 GitHub-managed check run; it never reconstructs the base from the mutable
@@ -38,9 +39,17 @@ expensive image workflow reads it.
 ## Promotion and rollback
 
 Routing authority stays with the existing workflows until at least 20 distinct
-PR observations show no unexplained candidate-only or legacy-only result. Each
-candidate skip must be checked against the authoritative build outcome and the
-final-rootfs/security boundary. Before enforcement, failure injection must prove
+PR observations satisfy the machine-readable cohort policy in
+`.github/impact-routing-promotion.json`. The report-only Impact Routing Evidence
+Ledger rejects dynamic or ambiguous artifacts, policy-input drift, duplicate
+head identities, and missing receipts. It queries the authoritative Serving
+Image Boundary and GDAL Worker Image histories and counts an impacted or narrowed
+head only when every required exact-head image run completed successfully.
+Successful observer shells are never evidence by themselves.
+
+The ledger also requires positive impacted cohorts and actual narrowed/avoided
+cohorts; twenty unrelated negative observations cannot authorize promotion.
+Before enforcement, failure injection must prove
 that project-graph changes, conditional providers, external embedded resources,
 Dockerfiles, `.dockerignore`, and `.trivyignore` all fail safe.
 

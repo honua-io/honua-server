@@ -208,9 +208,9 @@ jobs:
       - name: Retain trusted observation evidence
         uses: actions/upload-artifact@v7
         with:
-          name: native-image-impact-${{ steps.collect.outputs.pr }}-${{ steps.collect.outputs.head_sha }}
+          name: native-image-impact-observation-v2
           path: |
             native-image-impact-observation.json
             native-image-impact-summary.md
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
