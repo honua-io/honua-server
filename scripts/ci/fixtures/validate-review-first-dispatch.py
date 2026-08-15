@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[3]
 PR_GATE = ROOT / ".github/workflows/pr-gate.yml"
 REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
 REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
+EVIDENCE_LEDGER = ROOT / ".github/workflows/review-first-evidence-ledger.yml"
+PROMOTION_POLICY = ROOT / ".github/review-first-promotion.json"
 AUTO_RERUN = ROOT / ".github/workflows/auto-rerun-flaky.yml"
 FAILURE_TRIAGE = ROOT / ".github/workflows/ci-failure-triage.yml"
 PREBUILD_BENCHMARK = ROOT / ".github/workflows/server-test-prebuild-benchmark.yml"
@@ -37,6 +39,8 @@ def main() -> None:
     pr_gate = PR_GATE.read_text(encoding="utf-8")
     review_gate = REVIEW_GATE.read_text(encoding="utf-8")
     review_bridge = REVIEW_BRIDGE.read_text(encoding="utf-8")
+    evidence_ledger = EVIDENCE_LEDGER.read_text(encoding="utf-8")
+    promotion_policy = PROMOTION_POLICY.read_text(encoding="utf-8")
     action_workflows = {
         REVIEW_GATE: review_gate,
         AUTO_RERUN: AUTO_RERUN.read_text(encoding="utf-8"),
@@ -113,10 +117,55 @@ def main() -> None:
         raise AssertionError("fork workflow events must not use a different concurrency identity")
     require(
         review_gate,
-        "ref: ${{ github.event.repository.default_branch }}",
-        "review workflow must check out default-branch policy",
+        "ref: ${{ github.workflow_sha }}",
+        "review workflow must pin the exact trusted workflow policy commit",
+    )
+    require(
+        review_gate,
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "trusted review workflow must pin its checkout action",
     )
     require(review_gate, "persist-credentials: false", "trusted checkout must not persist credentials")
+    require(
+        review_gate,
+        "review-first-evidence-ledger.js policy-digest",
+        "trusted review workflow must bind its measurement policy",
+    )
+    require(
+        review_gate,
+        "createReviewFirstObservation",
+        "trusted review workflow must serialize the production observe decision",
+    )
+    require(
+        review_gate,
+        "if (!['observe', 'rerun'].includes(decision.action)) {",
+        "observe and enforce must share the final review-state revalidation",
+    )
+    require(
+        review_gate,
+        "Retain immutable review-first observation",
+        "trusted review workflow must retain an immutable observation receipt",
+    )
+    require(
+        review_gate,
+        "if: always() && steps.attest.outputs.receipt_present == 'true'",
+        "trusted review workflow must upload only an emitted observe receipt",
+    )
+    require(
+        review_gate,
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "trusted review workflow must pin the artifact writer",
+    )
+    require(
+        review_gate,
+        "name: review-first-observation-v1",
+        "trusted observations need one server-filterable artifact name",
+    )
+    require(
+        review_gate,
+        "retention-days: 30",
+        "review observation retention must match the promotion policy window",
+    )
     require(
         review_gate,
         "require('./scripts/ci/review-first-dispatch')",
@@ -127,6 +176,67 @@ def main() -> None:
         "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
         "review workflow must release the existing run, not dispatch a new check identity",
     )
+    require(
+        review_gate,
+        "const evaluateCurrentReview = async () => {",
+        "review workflow must define one complete review evaluation",
+    )
+    require(
+        review_gate,
+        "const evaluateCurrentAdmission = async review => {",
+        "review workflow must define one complete admission evaluation",
+    )
+    require(
+        review_gate,
+        "finalState = await stabilizeReviewFirstEvaluation(async () => {",
+        "review workflow must stabilize review and admission as one final snapshot",
+    )
+    require(
+        review_gate,
+        "reviewRevalidated: true,",
+        "observation receipt must assert final complete review revalidation",
+    )
+    require(
+        review_gate,
+        "admissionRevalidated: true,",
+        "observation receipt must assert final admission revalidation",
+    )
+    require(
+        review_gate,
+        "if (!finalReview || finalReview.head !== head)",
+        "final review evaluation must reject a missing or changed head",
+    )
+    require(
+        review_gate,
+        "if (finalReview.reasons.length !== 0)",
+        "final review evaluation must reject invalid review evidence",
+    )
+    require(
+        review_gate,
+        "return { review, admission: await evaluateCurrentAdmission(review) };",
+        "each joint snapshot must bind admission to its review snapshot",
+    )
+    require(
+        review_gate,
+        "const { review: finalReview, admission: finalAdmission } = finalState;",
+        "only the stabilized joint snapshot may cross the irreversible boundary",
+    )
+    final_state_read = review_gate.index(
+        "finalState = await stabilizeReviewFirstEvaluation(async () => {"
+    )
+    observe_receipt = review_gate.index("const observation = createReviewFirstObservation")
+    observe_write = review_gate.index("fs.writeFileSync(", observe_receipt)
+    observe_report = review_gate.index("await reportDecision(decision);", observe_write)
+    rerun_mutation = review_gate.index(
+        "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"
+    )
+    rerun_report = review_gate.index("await reportDecision(decision);", rerun_mutation)
+    if not final_state_read < observe_receipt < observe_write < rerun_mutation:
+        raise AssertionError(
+            "joint review/admission revalidation must precede observation and mutation"
+        )
+    if not observe_write < observe_report or not rerun_mutation < rerun_report:
+        raise AssertionError("reporting must not delay an admitted irreversible boundary")
     for path, workflow in action_workflows.items():
         if "github.rest.actions." in workflow:
             raise AssertionError(
@@ -157,6 +267,121 @@ def main() -> None:
         review_bridge,
         "  pull_request_review_comment:\n",
         "review bridge must observe inline thread changes",
+    )
+
+    require(evidence_ledger, "  workflow_dispatch:\n", "evidence ledger needs a manual audit path")
+    require(evidence_ledger, "  schedule:\n", "evidence ledger must run on a schedule")
+    require(evidence_ledger, "  actions: read", "evidence ledger must read retained artifacts")
+    require(evidence_ledger, "  contents: read", "evidence ledger must read trusted policy")
+    require(
+        evidence_ledger,
+        "ref: ${{ github.workflow_sha }}",
+        "evidence ledger must pin its trusted workflow policy commit",
+    )
+    require(
+        evidence_ledger,
+        "Replay production decisions and compute readiness",
+        "evidence ledger must replay the production decision helper",
+    )
+    require(
+        evidence_ledger,
+        "review-first-evidence-ledger.js combine-runs",
+        "workflow-run discovery must combine bounded time partitions",
+    )
+    require(
+        evidence_ledger,
+        'jq -r \'.partitions[] | [.index, .created_filter] | @tsv\'',
+        "workflow-run discovery must query each bounded time partition",
+    )
+    require(
+        evidence_ledger,
+        '"repos/${GITHUB_REPOSITORY}/actions/artifacts"',
+        "artifact discovery must use one bounded repository catalog",
+    )
+    require(
+        evidence_ledger,
+        "-f name=review-first-observation-v1",
+        "repository artifact discovery must filter at the server",
+    )
+    require(
+        evidence_ledger,
+        "maximum_artifact_catalog_pages",
+        "artifact discovery must enforce its catalog-page budget",
+    )
+    require(
+        evidence_ledger,
+        "maximum_receipt_downloads",
+        "receipt downloads must enforce their API budget",
+    )
+    require(
+        evidence_ledger,
+        "maximum_run_pages",
+        "workflow-run discovery must enforce its page budget",
+    )
+    if "--paginate" in evidence_ledger:
+        raise AssertionError("ledger API pagination must use explicit policy bounds")
+    if re.search(r"actions/runs/\$\{run_id\}/artifacts", evidence_ledger):
+        raise AssertionError("artifact discovery must not make one API request per workflow run")
+    require(
+        evidence_ledger,
+        "report-only ledger",
+        "evidence ledger must describe its non-mutating authority",
+    )
+    require(
+        evidence_ledger,
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "evidence ledger must pin the artifact writer",
+    )
+    require(
+        evidence_ledger,
+        "retention-days: 30",
+        "ledger report retention must match the observation window",
+    )
+    for forbidden in (
+        "actions: write",
+        "contents: write",
+        "pull-requests: write",
+        "statuses: write",
+        "rerun-failed-jobs",
+        "merge-train.yml",
+        "createCommitStatus",
+    ):
+        if forbidden in evidence_ledger:
+            raise AssertionError(f"evidence ledger must remain read-only: found {forbidden}")
+    require(
+        promotion_policy,
+        '"minimum_countable_heads": 20',
+        "review-first promotion threshold must remain explicit",
+    )
+    require(
+        promotion_policy,
+        '"query_partition_hours": 24',
+        "review-first queries must remain partitioned below GitHub's search cap",
+    )
+    require(
+        promotion_policy,
+        '"maximum_runs_per_partition": 999',
+        "review-first queries must fail before GitHub's 1,000-result cap",
+    )
+    require(
+        promotion_policy,
+        '"maximum_artifact_catalog_pages": 3',
+        "repository artifact discovery must remain bounded",
+    )
+    require(
+        promotion_policy,
+        '"maximum_receipt_downloads": 300',
+        "receipt downloads must remain bounded",
+    )
+    require(
+        promotion_policy,
+        '"maximum_github_api_requests": 650',
+        "ledger API use must preserve GITHUB_TOKEN headroom",
+    )
+    require(
+        promotion_policy,
+        '"require_zero_integrity_failures": true',
+        "review-first promotion must fail closed on evidence contradictions",
     )
     require(review_bridge, "  contents: read", "review bridge must have a read-only token")
     for forbidden in ("actions: write", "statuses: write", "pull-requests: write", "actions/checkout"):

@@ -11,5 +11,6 @@ python_bin="$(honua_resolve_python)"
 "${python_bin}" scripts/ci/fixtures/validate-review-first-dispatch.py
 node --test \
   scripts/ci/review-first-dispatch.test.js \
+  scripts/ci/review-first-evidence-ledger.test.js \
   scripts/ci/review-gate-evidence.test.js \
   scripts/ci/review-gate-snapshot.test.js

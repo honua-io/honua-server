@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFileSync } = require('node:child_process');
+const { isDeepStrictEqual } = require('node:util');
 
 const QUERY = `
 query(
@@ -91,12 +92,18 @@ async function collectPullRequestSnapshot(fetchPage) {
     const pr = result?.repository?.pullRequest ?? result?.data?.repository?.pullRequest;
     if (!pr) return null;
 
-    metadata ??= {
+    const currentMetadata = {
       number: pr.number,
       state: pr.state,
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
     };
+    if (metadata === null) {
+      metadata = currentMetadata;
+    } else if (Object.keys(currentMetadata).some(
+      key => currentMetadata[key] !== metadata[key])) {
+      throw new Error('Review Gate pull request changed during pagination.');
+    }
 
     const pages = {
       labels: connectionPage(pr, 'labels'),
@@ -157,10 +164,21 @@ async function collectPullRequestSnapshot(fetchPage) {
 }
 
 async function fetchPullRequestSnapshot(github, owner, repo, number) {
-  return collectPullRequestSnapshot(cursors => github.graphql(
-    QUERY,
-    { owner, repo, number, includeChecks: false, ...cursors },
-  ));
+  return stabilizePullRequestSnapshot(() => collectPullRequestSnapshot(cursors =>
+    github.graphql(
+      QUERY,
+      { owner, repo, number, includeChecks: false, ...cursors },
+    )));
+}
+
+async function stabilizePullRequestSnapshot(fetchSnapshot) {
+  const first = await fetchSnapshot();
+  if (!first) return null;
+  const second = await fetchSnapshot();
+  if (!second || !isDeepStrictEqual(first, second)) {
+    throw new Error('Review Gate pull request changed while taking its snapshot.');
+  }
+  return second;
 }
 
 function trainSnapshot(pr) {
@@ -241,5 +259,6 @@ module.exports = {
   QUERY,
   collectPullRequestSnapshot,
   fetchPullRequestSnapshot,
+  stabilizePullRequestSnapshot,
   trainSnapshot,
 };

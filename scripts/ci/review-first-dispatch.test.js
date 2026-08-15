@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { evaluateReviewFirstDispatch } = require('./review-first-dispatch');
+const {
+  evaluateReviewFirstDispatch,
+  stabilizeReviewFirstEvaluation,
+} = require('./review-first-dispatch');
 
 const head = 'a'.repeat(40);
 const prNumber = 3216;
@@ -125,4 +128,33 @@ test('observe mode records the decision without a rerun', () => {
 
 test('review evidence remains a mandatory defense in depth', () => {
   assert.equal(evaluate({ reviewReady: false }).action, 'noop');
+});
+
+test('final review and admission evidence must be stable as one joint snapshot', async () => {
+  const snapshot = {
+    review: { head, reasons: [] },
+    admission: { decision: { action: 'observe', runId: 100 }, runs: [run()] },
+  };
+  assert.deepEqual(
+    await stabilizeReviewFirstEvaluation(async () => structuredClone(snapshot)),
+    snapshot,
+  );
+
+  let query = 0;
+  await assert.rejects(
+    stabilizeReviewFirstEvaluation(async () => ({
+      review: { head, reasons: [] },
+      admission: { decision: { action: 'observe', runId: 100 + query++ } },
+    })),
+    /review\/admission state changed during final joint snapshot/,
+  );
+
+  query = 0;
+  await assert.rejects(
+    stabilizeReviewFirstEvaluation(async () => ({
+      review: { head, reasons: query++ === 0 ? [] : ['hold'] },
+      admission: { decision: { action: 'observe', runId: 100 } },
+    })),
+    /review\/admission state changed during final joint snapshot/,
+  );
 });
