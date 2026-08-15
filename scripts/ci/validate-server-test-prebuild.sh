@@ -107,6 +107,10 @@ grep -Fq 'Make one non-blocking exact-artifact download attempt' "${parity}"
 grep -Fq 'honua.server-test-prebuild-parity-observation/v1' "${parity}"
 grep -Fq -- '--registry policy/.github/server-test-artifact-projects.json' "${parity}"
 grep -Fq 'measurement_policy_digest:$measurement_policy_digest' "${parity}"
+if [[ "$(grep -c 'HONUA_SERVER_TEST_BENCHMARK_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json' "${parity}")" -ne 2 ]]; then
+  echo '::error::Parity baseline and candidate benchmarks must share the trusted registry.' >&2
+  exit 1
+fi
 grep -Fq 'retention-days: ${{ needs.plan.outputs.receipt_retention_days }}' "${parity}"
 grep -Fq 'server-test-prebuild-parity-receipt-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}' "${parity}"
 grep -Fq 'path: evidence/parity-observation.json' "${parity}"

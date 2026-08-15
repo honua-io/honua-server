@@ -10,11 +10,16 @@ cleanup() { rm -rf "${fixture}"; }
 trap cleanup EXIT
 
 source_root="${fixture}/source"
+policy_root="${fixture}/policy"
 outside_root="${fixture}/outside"
 fake_bin="${fixture}/bin"
-mkdir -p "${source_root}/.github" "${outside_root}" "${fake_bin}"
-cp "${REPO_ROOT}/.github/server-test-artifact-projects.json" "${source_root}/.github/"
-project="$(jq -er '.projects[0].csproj' "${source_root}/.github/server-test-artifact-projects.json")"
+mkdir -p "${source_root}/.github" "${policy_root}/.github" "${outside_root}" "${fake_bin}"
+cp "${REPO_ROOT}/.github/server-test-artifact-projects.json" "${policy_root}/.github/"
+project="$(jq -er '.projects[0].csproj' "${policy_root}/.github/server-test-artifact-projects.json")"
+jq --arg project "${project}" \
+  '(.projects[] | select(.csproj == $project) | .artifact_suffix) = "candidate-controlled"' \
+  "${policy_root}/.github/server-test-artifact-projects.json" \
+  > "${source_root}/.github/server-test-artifact-projects.json"
 mkdir -p "${source_root}/$(dirname "${project}")"
 : > "${source_root}/${project}"
 
@@ -50,6 +55,7 @@ chmod +x "${fake_bin}/dotnet"
   cd "${outside_root}"
   PATH="${fake_bin}:${PATH}" DOTNET_PWD_LOG="${fixture}/dotnet-pwds" \
     HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT="${source_root}" \
+    HONUA_SERVER_TEST_BENCHMARK_REGISTRY="${policy_root}/.github/server-test-artifact-projects.json" \
     "${SCRIPT_DIR}/benchmark-server-test-transfer.sh" consumer-ready \
       --project "${project}" --source-sha "$(printf 'a%.0s' {1..40})" \
       --metrics metrics/result.json --identity fixture --filter Fixture \

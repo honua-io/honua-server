@@ -40,6 +40,7 @@ POLICY_PATHS = (
     "scripts/ci/restore-server-test-binaries.sh",
     "scripts/ci/server-test-prebuild-receipt.py",
     "scripts/ci/server-test-reuse-receipt.py",
+    "scripts/ci/summarize-dotnet-trx.py",
     "scripts/ci/summarize-server-test-prebuild-benchmark.py",
     "scripts/ci/try-server-test-prebuild.sh",
     "scripts/ci/trusted-pr-workflow-run.js",

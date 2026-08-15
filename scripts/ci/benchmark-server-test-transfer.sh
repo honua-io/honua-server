@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 REPO_ROOT="${HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT:-${DEFAULT_REPO_ROOT}}"
 REPO_ROOT="$(cd "${REPO_ROOT}" && pwd)"
-REGISTRY="${REPO_ROOT}/.github/server-test-artifact-projects.json"
+REGISTRY="${HONUA_SERVER_TEST_BENCHMARK_REGISTRY:-${REPO_ROOT}/.github/server-test-artifact-projects.json}"
 CONFIGURATION="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
 
 mode=""

@@ -147,6 +147,24 @@ class PrebuildReceiptTests(unittest.TestCase):
                 },
             )
 
+    def test_trx_summarizer_is_a_measurement_policy_input(self) -> None:
+        relative = "scripts/ci/summarize-dotnet-trx.py"
+        self.assertIn(relative, MODULE.POLICY_PATHS)
+        original = MODULE.policy_inputs_digest(self.policy, self.policy_sha)
+        (self.policy / relative).write_text("changed trx policy\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.policy, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "trx policy change"],
+            cwd=self.policy,
+            check=True,
+            capture_output=True,
+        )
+        changed_policy_sha = str(MODULE.BASE.git(self.policy, "rev-parse", "HEAD"))
+        self.assertNotEqual(
+            original,
+            MODULE.policy_inputs_digest(self.policy, changed_policy_sha),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
