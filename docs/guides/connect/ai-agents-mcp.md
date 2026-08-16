@@ -274,14 +274,13 @@ edge limiter remains the first line of defense.
 
 ## Deployment profiles and the resulting surface
 
-The MCP surface is the same set of tools and resources everywhere, but two
-configuration switches change how progress is delivered and whether
-`honua_plan_analysis` compiles real intents. Pick the profile that matches your
-ingress and planner configuration:
+The MCP surface is the same set of tools and resources everywhere; one
+configuration switch changes how progress is delivered. Pick the profile that
+matches your ingress:
 
 | Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
 |---|---|---|---|---|
-| **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false`; no live planner | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
+| **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false` | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
 | **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 
 Both profiles change only *how* the surface behaves, not *which* tools and

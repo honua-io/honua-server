@@ -28,8 +28,7 @@ internal static class StudioAiProxyServiceCollectionExtensions
             .Bind(section)
             .PostConfigure(options =>
             {
-                // Per-provider API-key environment fallback (e.g. HONUA_STUDIOAI_MYPROVIDER_API_KEY),
-                // mirroring WorkflowGeneration's HONUA_WORKFLOWGEN_* pattern.
+                // Per-provider API-key environment fallback (e.g. HONUA_STUDIOAI_MYPROVIDER_API_KEY).
                 foreach (var (name, provider) in options.Providers)
                 {
                     if (!string.IsNullOrWhiteSpace(provider.ApiKey))

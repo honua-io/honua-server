@@ -195,7 +195,7 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
     /// Resolves the backend API key: secret reference via the registered
     /// <see cref="ISecretProvider"/> first, then the literal configured value,
     /// then the <see cref="ImageryInferenceOptions.ApiKeyEnvironmentVariable"/>
-    /// fallback. Mirrors the WorkflowGeneration key-resolution order.
+    /// fallback.
     /// </summary>
     private async Task<string> ResolveApiKeyAsync(
         ImageryInferenceOptions options,

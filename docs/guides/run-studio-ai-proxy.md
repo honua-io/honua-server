@@ -31,7 +31,7 @@ one at a local vLLM instance) — see Configuration below.
 
 ### Why Bedrock is a bridge, not a rewrite
 
-The existing `BedrockChatClientAdapter` (`src/Honua.Ai/Features/Providers/Bedrock/`) already speaks
+The `BedrockChatClientAdapter` (`src/Honua.Ai/Features/StudioAiProxy/Adapters/Bedrock/`) already speaks
 Bedrock's Converse streaming API as a `Microsoft.Extensions.AI.IChatClient`. The Studio AI proxy's
 Bedrock adapter (`BedrockStudioAiProxyAdapter`) is a thin translation layer over that same client —
 no new AWS wire code. One difference from the Anthropic/OpenAI-compatible adapters: Bedrock's

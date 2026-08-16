@@ -6,8 +6,7 @@ using Honua.Core.Features.Infrastructure.ServiceRegistration;
 namespace Honua.Ai.StudioAiProxy;
 
 /// <summary>
-/// Configuration for the provider-agnostic Studio AI proxy (honua-server#3000). Unlike
-/// <c>WorkflowGenerationConfiguration</c> (one fixed provider id per adapter), operators declare
+/// Configuration for the provider-agnostic Studio AI proxy (honua-server#3000). Operators declare
 /// any number of arbitrarily-named providers, each pointing at one of the three adapter
 /// <see cref="StudioAiProxyProviderOptions.Kind"/> values. This is what makes OpenRouter, LiteLLM,
 /// Ollama, and vLLM all reachable through the single <c>openai</c> kind — they differ only by
