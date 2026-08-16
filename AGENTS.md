@@ -182,10 +182,9 @@ the product and *nothing* signals it. This cost roughly 3,800 insertions across
 - **The MERGED badge is not evidence.** The authoritative test that a PR's work
   is in the product is
   `git merge-base --is-ancestor <mergeCommitSha> origin/trunk`.
-- `.github/workflows/stranded-merge-audit.yml` runs that test daily over the
-  recent merged PRs (`scripts/ci/audit-merged-pr-landing.py`) and also flags open
-  PRs stacked on a base that already landed. Findings open/refresh a tracking
-  issue and fail the job.
+- The scheduled stranded-merge detector (#3248) runs that test over the recent
+  merged PRs and raises a tracking issue on findings. It is the backstop, not
+  the control: re-target the stack member yourself when its base lands.
 
 ### Live batch train
 

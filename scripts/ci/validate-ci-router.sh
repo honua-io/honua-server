@@ -1235,7 +1235,11 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Studio and Feature Store" \
-  --assert-owner \
+  `# Synthetic probe, not a real class (#2709): proves an unknown future` \
+  `# Features.Protocols.* namespace still falls through to the Server Features` \
+  `# Misc catch-all. --assert-route skips the class-exists check that` \
+  `# --assert-owner applies; it must not be used for a class that does exist.` \
+  --assert-route \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Misc" \
@@ -1325,6 +1329,19 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "FileImport" \
   --assert-owner \
     "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
+  `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
+  `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \
+  `# so no FQN ever contained 'Import.EmulatorCloudStorage'. Narrowed to` \
+  `# '~Honua.Server.Tests.Import.Emulator', which claims both.` \
+  --assert-owner \
+    "Honua.Server.Tests.Import.EmulatorAwsS3CloudStorageImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.EmulatorAzureBlobCloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "FileImport"
 else

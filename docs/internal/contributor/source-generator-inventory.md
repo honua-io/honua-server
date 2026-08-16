@@ -68,16 +68,6 @@ mechanical.
 | `StartupResilienceOptions` | 5 | 5 |
 | **Total** | **148** | **138** |
 
-The `LimitsOptions` row above understates that graph. `LimitsOptions.Imports` is a
-settable `ImportLimits` (`src/Honua.Core/Configuration/LimitsOptions.cs`), so its
-20 properties are reachable from the `Configure<LimitsOptions>` root in
-`src/Honua.Server/Startup/InfrastructureCompositionRoot.cs`, but they were not
-counted and stayed `init`-only — every `Limits:Imports:*` value silently retained
-its default. Fixed while recovering stranded PR #3113 (see #3248). The guard
-hole that let a reachable nested graph through is tracked in #3306; until it is
-closed, `ConfigurationBindingShapeTests` passing does not by itself prove the
-convention holds for nested option graphs.
-
 The scan also confirmed that similarly named immutable types were outside the
 vulnerable path: `CsvImportOptions` and `StyleSuggestionOptions` are request/domain objects; and
 `CircuitBreakerOptions` / `HttpResilienceOptions` had no configuration-binding
