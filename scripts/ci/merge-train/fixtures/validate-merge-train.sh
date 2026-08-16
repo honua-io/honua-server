@@ -903,6 +903,39 @@ export -f __queue_pages
 export TRAIN_PR_QUEUE_PAGES_CMD=__queue_pages
 assert_eq "select: paginated queue includes entries beyond first 100" "$(train_open_pr_queue | jq length)" "101"
 unset TRAIN_PR_QUEUE_PAGES_CMD
+
+# GitHub reports mergeable=UNKNOWN briefly after trunk advances. The selector
+# refreshes that live snapshot within a strict bound so the drain does not stop
+# and wait for another schedule/operator prompt.
+mergeability_refresh_record="${SCRATCH}/mergeability-refresh"; : >"${mergeability_refresh_record}"
+__resolved_queue_pages() {
+  printf 'refresh\n' >>"${mergeability_refresh_record}"
+  jq -nc '{data:{repository:{pullRequests:{nodes:[{number:1200,headRefOid:"resolved",isDraft:false,mergeable:"MERGEABLE",labels:{nodes:[]},createdAt:"2026-01-03T00:00:00Z",author:{login:"c"}}],pageInfo:{hasNextPage:false,endCursor:null}}}}}'
+}
+export -f __resolved_queue_pages
+export TRAIN_PR_QUEUE_PAGES_CMD=__resolved_queue_pages
+export TRAIN_MERGEABILITY_REFRESH_ATTEMPTS=3 TRAIN_MERGEABILITY_REFRESH_DELAY_SECONDS=0
+unknown_queue='[{"number":1200,"headRefOid":"pending","isDraft":false,"mergeable":"UNKNOWN","labels":[],"createdAt":"2026-01-03T00:00:00Z"}]'
+resolved_queue="$(train_refresh_unknown_mergeability_queue "${unknown_queue}")"
+assert_eq "select: transient UNKNOWN refreshes to MERGEABLE" "$(jq -r '.[0].mergeable' <<<"${resolved_queue}")" "MERGEABLE"
+assert_eq "select: transient UNKNOWN needs one bounded refresh" "$(wc -l <"${mergeability_refresh_record}" | tr -d ' ')" "1"
+
+: >"${mergeability_refresh_record}"
+__unknown_queue_pages() {
+  printf 'refresh\n' >>"${mergeability_refresh_record}"
+  jq -nc '{data:{repository:{pullRequests:{nodes:[{number:1201,headRefOid:"pending",isDraft:false,mergeable:"UNKNOWN",labels:{nodes:[]},createdAt:"2026-01-04T00:00:00Z",author:{login:"d"}}],pageInfo:{hasNextPage:false,endCursor:null}}}}}'
+}
+export -f __unknown_queue_pages
+export TRAIN_PR_QUEUE_PAGES_CMD=__unknown_queue_pages TRAIN_MERGEABILITY_REFRESH_ATTEMPTS=2
+still_unknown="$(train_refresh_unknown_mergeability_queue "${unknown_queue}")"
+assert_eq "select: persistent UNKNOWN remains fail-closed" "$(jq -r '.[0].mergeable' <<<"${still_unknown}")" "UNKNOWN"
+assert_eq "select: persistent UNKNOWN stops at refresh bound" "$(wc -l <"${mergeability_refresh_record}" | tr -d ' ')" "2"
+
+export TRAIN_MERGEABILITY_REFRESH_ATTEMPTS=invalid
+train_refresh_unknown_mergeability_queue "${unknown_queue}" >/dev/null 2>&1 \
+  && bad "select: invalid mergeability refresh bounds must fail closed" \
+  || ok "select: invalid mergeability refresh bounds fail closed"
+unset TRAIN_PR_QUEUE_PAGES_CMD TRAIN_MERGEABILITY_REFRESH_ATTEMPTS TRAIN_MERGEABILITY_REFRESH_DELAY_SECONDS
 export TRAIN_PR_LIST_JSON='[
   {"number":10,"headRefOid":"aaa","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-02T00:00:00Z"},
   {"number":11,"headRefOid":"bbb","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-01T00:00:00Z"},
