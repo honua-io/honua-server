@@ -1238,7 +1238,95 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Misc"
+    "Server Features Misc" \
+  `# --- #3259: the 20 classes that matched no shard filter and never ran ---` \
+  `# Honua.Ai.Tests assembly -> MCP (the only shard targeting that csproj).` \
+  --assert-owner \
+    "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.AnalysisGeneration.AnalysisGenerationServiceTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.AnthropicStudioAiProxyAdapterTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.BedrockStudioAiProxyAdapterTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.OpenAiCompatibleStudioAiProxyAdapterTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiChatRequestMapperTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyConfigurationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyJsonContextReflectionSafetyTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyLatencyTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
+  `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
+  `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
+  --assert-owner \
+    "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Services" \
+  --assert-owner \
+    "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices ImageServer" \
+  `# Honua.Server.Tests assembly. AlertNotificationRateLimiterTests was swallowed` \
+  `# by the Admin-family '!~RateLimit' exclusion, now narrowed to` \
+  `# '!~Honua.Server.Tests.Features.Admin.RateLimit'.` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Alerts.AlertNotificationRateLimiterTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Console and Alerts" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.AwsS3ShapefileImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.AwsS3UploadProgressTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.AzureBlobShapefileImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport"
 else
   echo "⚠️  Skipping server-test shard coverage check (no working Python 3: tried python3/python/py)"
 fi
