@@ -36,6 +36,11 @@ grep -Fq "vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true'" "${pr_gate}"
 grep -Fq 'scripts/ci/package-pr-gate-build-evidence.sh' "${pr_gate}"
 grep -Fq 'continue-on-error: true' "${pr_gate}"
 grep -Fq 'retention-days: 3' "${pr_gate}"
+grep -Fq 'diff --name-only "${base_sha}" "${merge_sha}"' scripts/ci/package-pr-gate-build-evidence.sh
+if grep -Fq '${base_sha}...${head_sha}' scripts/ci/package-pr-gate-build-evidence.sh; then
+  echo '::error::PR Gate evidence routing requires unbounded base/head history.' >&2
+  exit 1
+fi
 grep -Fq "vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true'" "${ci}"
 grep -Fq "TRAIN_PR_GATE_BUILD_REUSE_SHADOW: \${{ vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true' && 'true' || 'false' }}" "${train}"
 grep -Fq '[[ "${TRAIN_PR_GATE_BUILD_REUSE_SHADOW:-false}" != "true" ]]' scripts/ci/merge-train/select.sh

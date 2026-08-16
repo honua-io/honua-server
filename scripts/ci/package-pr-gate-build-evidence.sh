@@ -78,7 +78,9 @@ if find "${output_dir}" -mindepth 1 -print -quit | grep -q .; then
 fi
 mkdir -p "${output_dir}/metadata/manifests" "${output_dir}/payload"
 
-git -C "${REPO_ROOT}" diff --name-only "${base_sha}...${head_sha}" \
+# Route the exact synthetic merge tree that PR Gate built. This avoids needing
+# unbounded branch history merely to rediscover the base/head merge-base.
+git -C "${REPO_ROOT}" diff --name-only "${base_sha}" "${merge_sha}" \
   | "${SCRIPT_DIR}/honua-server-targeted-tests.sh" --stdin --config "${SHARDS}" \
     > "${output_dir}/metadata/descriptor.json"
 python3 "${SCRIPT_DIR}/plan-server-test-prebuild.py" \

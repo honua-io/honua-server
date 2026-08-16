@@ -50,6 +50,16 @@ honua_ensure_pr_gate_ancestry \
 git -C "${checkout}" merge-base --is-ancestor "${base_sha}" "${merge_sha}"
 git -C "${checkout}" merge-base --is-ancestor "${head_sha}" "${merge_sha}"
 
+# Both parents intentionally remain shallow roots. A triple-dot diff therefore
+# has no merge-base, while the exact base-to-synthetic-merge tree delta remains
+# available and is the tree PR Gate actually built.
+if git -C "${checkout}" diff --name-only \
+  "${base_sha}...${head_sha}" >/dev/null 2>&1; then
+  echo '::error::Fixture unexpectedly exposed unbounded base/head history.' >&2
+  exit 1
+fi
+[[ "$(git -C "${checkout}" diff --name-only "${base_sha}" "${merge_sha}")" == 'fixture.txt' ]]
+
 printf 'unrelated\n' > "${source_repo}/unrelated.txt"
 git -C "${source_repo}" checkout --quiet --orphan unrelated
 git -C "${source_repo}" rm --quiet -rf .

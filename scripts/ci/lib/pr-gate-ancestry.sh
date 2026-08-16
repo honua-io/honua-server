@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # Restore only the immediate history hidden by actions/checkout's depth-one
-# pull-request checkout, then prove the declared base and head belong to the
-# exact synthetic merge commit. The proof remains fail-closed if GitHub ever
-# stops exposing that relationship.
+# pull-request checkout, then prove the declared base and head are the exact
+# two parents of the synthetic merge commit. The proof remains fail-closed if
+# GitHub ever stops exposing that relationship.
 honua_ensure_pr_gate_ancestry() {
   local repo_root="$1"
   local base_sha="$2"
@@ -23,14 +23,13 @@ honua_ensure_pr_gate_ancestry() {
       origin "${merge_sha}"
   fi
 
-  local sha
-  for sha in "${base_sha}" "${head_sha}"; do
-    if ! git -C "${repo_root}" cat-file -e "${sha}^{commit}" 2>/dev/null; then
-      git -C "${repo_root}" fetch --no-tags --filter=blob:none origin "${sha}"
-    fi
-    git -C "${repo_root}" merge-base --is-ancestor "${sha}" "${merge_sha}" || {
-      echo "::error::${sha} is not an ancestor of the PR Gate merge commit." >&2
-      return 1
-    }
-  done
+  local -a merge_record
+  read -r -a merge_record <<<"$(git -C "${repo_root}" rev-list --parents -n 1 "${merge_sha}")"
+  if [[ "${#merge_record[@]}" -ne 3 ]] ||
+     [[ "${merge_record[0]}" != "${merge_sha}" ]] ||
+     [[ "${merge_record[1]}" != "${base_sha}" ]] ||
+     [[ "${merge_record[2]}" != "${head_sha}" ]]; then
+    echo "::error::Declared base/head do not match the PR Gate merge commit's exact parents." >&2
+    return 1
+  fi
 }
