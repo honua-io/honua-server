@@ -128,6 +128,25 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Be200Ok();
             response.Content.Headers.ContentType?.MediaType.Should().Be(SldMediaType);
         }
+
+        // A more-specific q=0 excludes Esri even though the wildcard accepts other
+        // representations. MapLibre remains the server-preferred wildcard fallback.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{EsriDrawingInfoMediaType};q=0, */*;q=1");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        }
+
+        // Without an acceptable fallback, q=0 means the representation is rejected.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", $"{EsriDrawingInfoMediaType};q=0");
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+        }
     }
 
     [IntegrationTest]

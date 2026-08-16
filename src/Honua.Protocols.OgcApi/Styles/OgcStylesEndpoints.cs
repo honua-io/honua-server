@@ -574,9 +574,14 @@ public static class OgcStylesEndpoints
             return true;
         }
 
-        var matchedAny = false;
-        var bestQuality = -1d;
-        var wildcard = false;
+        var preferences = new Dictionary<OgcStyleEncoding, (int Specificity, double Quality)>();
+        ReadOnlySpan<OgcStyleEncoding> supportedEncodings =
+        [
+            OgcStyleEncoding.MapboxStyle,
+            OgcStyleEncoding.Sld10,
+            OgcStyleEncoding.Sld11,
+            OgcStyleEncoding.EsriDrawingInfo
+        ];
 
         foreach (var headerValue in accept)
         {
@@ -597,28 +602,47 @@ public static class OgcStylesEndpoints
 
                 if (mediaType is "*/*" or "application/*")
                 {
-                    wildcard = true;
+                    var specificity = mediaType == "application/*" ? 1 : 0;
+                    foreach (var supportedEncoding in supportedEncodings)
+                    {
+                        RecordPreference(preferences, supportedEncoding, specificity, quality);
+                    }
                     continue;
                 }
 
-                if (TryMapMediaType(mediaType, media, out var candidate) && quality > bestQuality)
+                if (TryMapMediaType(mediaType, media, out var mappedEncoding))
                 {
-                    bestQuality = quality;
-                    encoding = candidate;
-                    matchedAny = true;
+                    RecordPreference(preferences, mappedEncoding, specificity: 2, quality);
                 }
             }
         }
 
-        if (matchedAny)
+        var bestQuality = 0d;
+        foreach (var candidate in supportedEncodings)
         {
-            return true;
+            if (preferences.TryGetValue(candidate, out var preference)
+                && preference.Quality > bestQuality)
+            {
+                bestQuality = preference.Quality;
+                encoding = candidate;
+            }
         }
 
-        // No explicit stylesheet media type matched: fall back to MapLibre default only
-        // when the client accepts anything; otherwise the request is not acceptable.
-        encoding = OgcStyleEncoding.MapboxStyle;
-        return wildcard;
+        return bestQuality > 0d;
+    }
+
+    private static void RecordPreference(
+        Dictionary<OgcStyleEncoding, (int Specificity, double Quality)> preferences,
+        OgcStyleEncoding encoding,
+        int specificity,
+        double quality)
+    {
+        if (!preferences.TryGetValue(encoding, out var current)
+            || specificity > current.Specificity
+            || (specificity == current.Specificity && quality > current.Quality))
+        {
+            preferences[encoding] = (specificity, quality);
+        }
     }
 
     private static bool TryMapMediaType(string mediaType, MediaTypeHeaderValue media, out OgcStyleEncoding encoding)
