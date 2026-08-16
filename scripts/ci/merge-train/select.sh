@@ -276,7 +276,10 @@ train_publish_review_gate_status() {
 }
 
 train_resolve_clean_comment_commits() {
-  local comments="$1" comment login referenced resolved annotated output='[]'
+  # $2 is passed explicitly rather than read from the caller's `local` via bash
+  # dynamic scoping: an implicit cross-function contract is the same coupling
+  # that produced the hardcoded-login drift this function was fixed for.
+  local comments="$1" attesting_logins="$2" comment login referenced resolved annotated output='[]'
   while IFS= read -r comment; do
     [[ -z "${comment}" ]] && continue
     login="$(jq -r '.author.login // ""' <<<"${comment}")"
@@ -286,7 +289,7 @@ train_resolve_clean_comment_commits() {
       catch ""
     ' <<<"${comment}")"
     resolved="$(jq -r '.resolvedCommitOid // ""' <<<"${comment}")"
-    if [[ -z "${resolved}" ]] && jq -e --arg l "${login}" 'index($l)' >/dev/null 2>&1 <<<"${attesting_logins:-$(train_attesting_logins_json)}"; then
+    if [[ -z "${resolved}" ]] && jq -e --arg l "${login}" 'index($l)' >/dev/null 2>&1 <<<"${attesting_logins}"; then
       if [[ "${#referenced}" == "40" ]]; then
         resolved="${referenced}"
       elif [[ -n "${referenced}" ]]; then
@@ -313,7 +316,7 @@ train_refresh_review_gate() {
   attesting_logins="$(train_attesting_logins_json)" || return 1
   unresolved="$(jq --argjson bots "${attesting_logins}" --arg head "${head}" \
     '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login as $l | $bots | index($l)) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
-  clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")")" || return 1
+  clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")" "${attesting_logins}")" || return 1
   # Keep review history off the process argument vector. Busy PRs can carry
   # enough paginated review evidence to exceed Linux ARG_MAX when injected
   # through --argjson, even though jq can process the same data via stdin.

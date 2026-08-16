@@ -296,3 +296,88 @@ test('an objection with an unparseable timestamp stays open (fails closed)', () 
   const broken = { ...codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), submittedAt: undefined, updatedAt: undefined };
   assert.equal(ev({ reviews: [broken, claudeReview('COMMENTED', '2026-01-11T00:00:00Z')] }).exactReview, false);
 });
+
+// --- A withdrawal must be at least as strong as the objection (#3314 review 3).
+// `cleanComments` is built with `.map`, not `.filter`, so it is EVERY comment on
+// the PR. Treating any artifact from an attesting identity as a withdrawal let a
+// Codex rate-limit notice -- "You have reached your Codex usage limits for code
+// review", which this repo emits in normal operation -- clear a live objection.
+const codexProseComment = (at) => ({
+  author: { login: 'chatgpt-codex-connector' },
+  body: 'You have reached your Codex usage limits for code review.',
+  createdAt: at, updatedAt: at, includesCreatedEdit: false,
+});
+
+test('a rate-limit notice does NOT withdraw the objection that reviewer raised', () => {
+  const input = {
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [codexProseComment('2026-01-09T00:30:00Z'),
+      claudeCleanComment({ createdAt: '2026-01-10T00:00:00Z', updatedAt: '2026-01-10T00:00:00Z' })],
+  };
+  assert.equal(ev(input).exactCleanComment, false);
+  assert.equal(ev({ ...input, reviews: [...input.reviews, claudeReview('COMMENTED', '2026-01-10T00:00:00Z')] }).exactReview, false);
+});
+test('an arbitrary prose comment does NOT withdraw an objection', () => {
+  assert.equal(ev({
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      claudeReview('COMMENTED', '2026-01-11T00:00:00Z')],
+    cleanComments: [{ ...codexProseComment('2026-01-10T00:00:00Z'), body: 'working on it' }],
+  }).exactReview, false);
+});
+test('an EDITED clean comment does NOT withdraw an objection', () => {
+  // Rejected as evidence by cleanCommentMatchesHead; must not be accepted as a
+  // withdrawal either.
+  assert.equal(ev({
+    reviews: [claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [claudeCleanComment({ createdAt: '2026-01-10T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z' })],
+  }).exactCleanComment, false);
+});
+test('a markerless review does NOT withdraw an objection', () => {
+  assert.equal(ev({
+    reviews: [claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      { ...claudeReview('COMMENTED', '2026-01-11T00:00:00Z'), body: 'here are more findings' }],
+  }).exactReview, false);
+});
+test('a timestamp-less entry does not erase a valid withdrawal', () => {
+  // NaN poisoning: Math.max(prev, NaN) is NaN, which would permanently erase
+  // every valid withdrawal from that reviewer.
+  const withdrawal = claudeReview('COMMENTED', '2026-01-11T00:00:00Z');
+  const broken = { ...claudeCleanComment(), createdAt: undefined, updatedAt: undefined };
+  assert.equal(ev({
+    reviews: [claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), withdrawal],
+    cleanComments: [broken],
+  }).exactReview, true);
+});
+test('per-identity rule blocks even when the global recency cutoff would allow it', () => {
+  // Isolates hasOpenObjection from the global negativeAt check: the newest
+  // artifact of all is claude's approval, so recency alone would pass.
+  assert.equal(ev({
+    reviews: [
+      claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      claudeReview('COMMENTED', '2026-01-10T00:00:00Z'),
+      codexReview('CHANGES_REQUESTED', '2026-01-11T00:00:00Z'),
+      claudeReview('COMMENTED', '2026-01-12T00:00:00Z'),
+    ],
+  }).exactReview, false);
+});
+
+// --- The global negativeAt cutoff, isolated (#3314 review 3, finding 15).
+// Mutating it away previously failed zero tests, so it could not be relied on as
+// a second layer. These two fail if it is removed.
+test('a clean comment predating a since-withdrawn objection does not attest', () => {
+  assert.equal(ev({
+    reviews: [
+      claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      claudeReview('COMMENTED', '2026-01-12T00:00:00Z'),
+    ],
+    cleanComments: [claudeCleanComment({ createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' })],
+  }).exactCleanComment, false);
+});
+test('an undated objection can never be superseded (fails closed forever)', () => {
+  // Recorded as Infinity rather than skipped: an objection we cannot date must
+  // not be silently droppable by anything that happens to carry a timestamp.
+  const undated = { ...claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), submittedAt: undefined, updatedAt: undefined };
+  assert.equal(ev({
+    reviews: [undated, claudeReview('COMMENTED', '2026-01-12T00:00:00Z')],
+  }).exactReview, false);
+});

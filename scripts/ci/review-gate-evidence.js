@@ -116,15 +116,42 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // property held for free, because only Codex could supersede Codex (a reviewer
   // withdrawing its own objection, which is legitimate). Adding a second
   // identity made it reachable, so it now has to be enforced explicitly.
-  const newestByReviewer = (entries, timeOf) => entries.reduce((acc, entry) => {
+  // A non-finite timestamp is skipped rather than max'd in: Math.max(prev, NaN)
+  // is NaN, which would permanently erase every valid withdrawal from that
+  // reviewer. Skipping keeps an undated NEGATIVE open (nothing can be newer than
+  // a negative that never enters the map only if it also never blocks -- so
+  // undated negatives are recorded as Infinity, which nothing can supersede).
+  const newestByReviewer = (entries, timeOf, undatedValue = null) => entries.reduce((acc, entry) => {
     const reviewer = reviewerFor(entry.author?.login);
-    if (reviewer) acc.set(reviewer.id, Math.max(acc.get(reviewer.id) ?? 0, timeOf(entry)));
+    if (!reviewer) return acc;
+    const at = timeOf(entry);
+    const value = Number.isFinite(at) ? at : undatedValue;
+    if (value === null) return acc;
+    acc.set(reviewer.id, Math.max(acc.get(reviewer.id) ?? 0, value));
     return acc;
   }, new Map());
 
-  const newestNegative = newestByReviewer(negatives, r => Date.parse(r.updatedAt || r.submittedAt));
+  const newestNegative = newestByReviewer(
+    negatives, r => Date.parse(r.updatedAt || r.submittedAt), Infinity);
+
+  // A withdrawal must be at least as strong as the objection it clears.
+  //
+  // The third review of #3314 caught this: the positives set was unvalidated on
+  // both branches, and `cleanComments` is built by review-gate.yml with `.map`,
+  // not `.filter` -- it is EVERY comment on the PR, returned unchanged for
+  // non-reviewers. So any artifact from an attesting identity read as a
+  // withdrawal, including Codex's own "You have reached your Codex usage limits
+  // for code review" notice, which this repo emits in normal operation. The
+  // reviewer announcing it could not review cleared its own live objection.
+  //
+  // Reviews must therefore pass the same marker filter as attesting evidence,
+  // and comments must pass the full clean-comment check -- an artifact rejected
+  // as evidence must not be accepted as a withdrawal.
   const newestPositive = newestByReviewer(
-    [...reviews.filter(r => ATTESTING_REVIEW_STATES.has(r.state)), ...cleanComments],
+    [
+      ...attestingReviews.filter(r => ATTESTING_REVIEW_STATES.has(r.state)),
+      ...cleanComments.filter(comment => cleanCommentMatchesHead(comment, head)),
+    ],
     entry => Date.parse(entry.submittedAt ?? entry.createdAt));
 
   // NaN-safe by construction: an unparseable timestamp makes every `>` false, so
