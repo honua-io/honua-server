@@ -324,6 +324,7 @@ public sealed class CapabilityRegistryConformanceTests
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
             new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
             new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
             new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
