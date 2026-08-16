@@ -27,7 +27,12 @@ const ATTESTING_REVIEWERS = [
     cleanMarker: /Claude Review:\s+No major issues found\./i,
   },
   {
-    // GitHub's Copilot code review (repo ruleset `copilot_code_review`). Unlike
+    // GitHub's Copilot code review, triggered by repo ruleset 19481638
+    // ("Code Quality Copilot review for default branch", rule
+    // `copilot_code_review`, `review_on_push: true`), enabled 2026-08-16.
+    // Note the trigger lives in repo settings, not in this repo's files -- if
+    // reviews stop appearing, check that ruleset's enforcement before looking
+    // for a code cause. It also requires an assigned Copilot seat. Unlike
     // the others it posts reviews with an EMPTY body, so there is no phrasing to
     // match: `reviewMarker: null` means "any body, including none".
     //
