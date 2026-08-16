@@ -37,6 +37,14 @@ public static class StudioDraftServiceCollectionExtensions
         services.TryAddSingleton<IMapPackageDraftFactory, MapPackageDraftFactory>();
         services.TryAddSingleton<IAppPackageDraftFactory, AppPackageDraftFactory>();
 
+        // The store is what makes the identifier the factories mint actually
+        // resolvable at honua://map-packages/{id} (honua-server#3262). It is a
+        // constructor dependency of both tools and both package resources for the
+        // same reason the factories are: a missing registration must fail at
+        // startup, not degrade into a URI that silently never resolves.
+        services.TryAddSingleton(new PackageDraftRetentionOptions());
+        services.TryAddSingleton<IPackageDraftStore, InMemoryPackageDraftStore>();
+
         return services;
     }
 }

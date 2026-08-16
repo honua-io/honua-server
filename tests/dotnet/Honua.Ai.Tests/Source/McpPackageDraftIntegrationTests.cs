@@ -142,6 +142,114 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         result.GetProperty("structuredContent").GetProperty("packageId").GetString().Should().StartWith("map_");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
+    public async Task ResourcesRead_MapPackageDraftUri_ResolvesWithoutADeployment()
+    {
+        // ADR-0076 promises the returned identifier is addressable at its URI. Creating
+        // without persisting passes the create half of that promise and fails this half
+        // (honua-server#3262), so both halves are asserted in one call sequence.
+        var resourceUri = await CreateAndReadUriAsync("""
+            {"jsonrpc":"2.0","id":"map-persist","method":"tools/call","params":{
+                "name":"honua_create_map_package",
+                "arguments":{"templateId":"analysis_default"}
+            }}
+            """, "map_", "honua://map-packages/");
+
+        var body = await ReadResourceAsync(resourceUri);
+
+        body.GetProperty("packageKind").GetString().Should().Be("map_package");
+        body.GetProperty("resourceUri").GetString().Should().Be(resourceUri);
+        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        // A draft is reachable precisely because it does not need a deployment yet.
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
+        body.GetProperty("deploymentResourceUris").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
+    public async Task ResourcesRead_AppPackageDraftUri_ResolvesWithoutADeployment()
+    {
+        var resourceUri = await CreateAndReadUriAsync("""
+            {"jsonrpc":"2.0","id":"app-persist","method":"tools/call","params":{
+                "name":"honua_create_app_package",
+                "arguments":{"templateId":"analysis_dashboard"}
+            }}
+            """, "app_", "honua://app-packages/");
+
+        var body = await ReadResourceAsync(resourceUri);
+
+        body.GetProperty("packageKind").GetString().Should().Be("app_package");
+        body.GetProperty("resourceUri").GetString().Should().Be(resourceUri);
+        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
+    public async Task ResourcesRead_UnknownPackageUri_StillReportsNotFound()
+    {
+        // The draft fallback must not turn the package resources into a surface that
+        // accepts any identifier: an id nobody created is still unknown.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"map-unknown","method":"resources/read","params":{
+                "uri":"honua://map-packages/map_never_created"
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        // Either a JSON-RPC error or an isError result is an acceptable spelling of
+        // not-found here; what must not happen is a resolvable package view.
+        var isNotFound = root.TryGetProperty("error", out _)
+            || (root.TryGetProperty("result", out var result)
+                && result.TryGetProperty("isError", out var isError)
+                && isError.GetBoolean());
+        isNotFound.Should().BeTrue();
+    }
+
+    private async Task<string> CreateAndReadUriAsync(string createRequest, string idPrefix, string uriPrefix)
+    {
+        var response = await PostRpcAsync(createRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = await ReadJsonAsync(response);
+        var structured = document.RootElement.GetProperty("result").GetProperty("structuredContent");
+
+        var packageId = structured.GetProperty("packageId").GetString();
+        packageId.Should().StartWith(idPrefix);
+
+        var resourceUri = structured.GetProperty("resourceUri").GetString();
+        resourceUri.Should().Be(uriPrefix + packageId);
+        return resourceUri!;
+    }
+
+    private async Task<JsonElement> ReadResourceAsync(string resourceUri)
+    {
+        var response = await PostRpcAsync(
+            $$$"""{"jsonrpc":"2.0","id":"read","method":"resources/read","params":{"uri":"{{{resourceUri}}}"}}""");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+        root.TryGetProperty("error", out _).Should().BeFalse();
+
+        var contents = root.GetProperty("result").GetProperty("contents");
+        contents.GetArrayLength().Should().Be(1);
+
+        var text = contents[0].GetProperty("text").GetString();
+        using var body = JsonDocument.Parse(text!);
+        return body.RootElement.Clone();
+    }
+
     private async Task<HttpResponseMessage> PostRpcAsync(string body)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")

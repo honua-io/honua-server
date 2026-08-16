@@ -280,10 +280,12 @@ public sealed class CapabilityRegistryConformanceTests
             new CreateMapPackageTool(
                 jobService,
                 new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
                 NullLogger<CreateMapPackageTool>.Instance),
             new CreateAppPackageTool(
                 jobService,
                 new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
                 NullLogger<CreateAppPackageTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
@@ -348,6 +350,7 @@ public sealed class CapabilityRegistryConformanceTests
         var reportService = Substitute.For<IAnalysisReportService>();
         var services = Substitute.For<IPublishedServiceStore>();
         var deployments = Substitute.For<IDeploymentStore>();
+        var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
         return
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
@@ -362,8 +365,8 @@ public sealed class CapabilityRegistryConformanceTests
             new PublishedServiceResource(
                 services, deployments, jobService, NullLogger<PublishedServiceResource>.Instance),
             new DeploymentResource(deployments, jobService, NullLogger<DeploymentResource>.Instance),
-            new MapPackageResource(deployments, jobService, NullLogger<MapPackageResource>.Instance),
-            new AppPackageResource(deployments, jobService, NullLogger<AppPackageResource>.Instance),
+            new MapPackageResource(deployments, drafts, jobService, NullLogger<MapPackageResource>.Instance),
+            new AppPackageResource(deployments, drafts, jobService, NullLogger<AppPackageResource>.Instance),
             new PromotionSurfaceIndexResource(
                 services, deployments, jobService, NullLogger<PromotionSurfaceIndexResource>.Instance),
         ];

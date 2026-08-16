@@ -42,16 +42,19 @@ internal sealed class CreateMapPackageTool : IMcpTool
 
     private readonly IGeoprocessingJobService _jobService;
     private readonly IMapPackageDraftFactory _drafts;
+    private readonly IPackageDraftStore _draftStore;
     private readonly ILogger<CreateMapPackageTool> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="CreateMapPackageTool"/> class.</summary>
     public CreateMapPackageTool(
         IGeoprocessingJobService jobService,
         IMapPackageDraftFactory drafts,
+        IPackageDraftStore draftStore,
         ILogger<CreateMapPackageTool> logger)
     {
         _jobService = jobService;
         _drafts = drafts;
+        _draftStore = draftStore;
         _logger = logger;
     }
 
@@ -109,6 +112,12 @@ internal sealed class CreateMapPackageTool : IMcpTool
             throw new GeoprocessingValidationException(McpPackageDraftProjection.DescribeErrors(
                 "Map-package draft input is invalid", result.Errors));
         }
+
+        // Persist before returning: ADR-0076 promises a package "addressable at
+        // its honua://map-packages/{id} URI", and MapPackageResource can only
+        // honour that for a deployment-less draft if the draft was recorded
+        // (honua-server#3262).
+        await _draftStore.SaveMapDraftAsync(result.Package, cancellationToken).ConfigureAwait(false);
 
         var output = new McpPackageDraftOutput
         {

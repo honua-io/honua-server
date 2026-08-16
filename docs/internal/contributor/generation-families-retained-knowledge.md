@@ -169,6 +169,11 @@ Recorded because deleting the code would also delete the evidence.
    only check `chartSpecRequired` for chart panels. Deleting the prompts drops
    the rule while leaving the impression it is enforced. If the rule is wanted,
    it must move into the validators.
+   **Closed.** The rule was wanted. It landed in both document validators as
+   `chartSpecNotAllowed` (#3261) and on the separate publish-time gate,
+   `ContentPublicationBodyValidator`, as `publication.panel.chartSpec.notAllowed`
+   (#3263). The publish path had the identical blind spot and is the only gate
+   left once the prompts are gone.
 2. **Six placeholder conventions for one concept.** Form used
    `serviceId "placeholder"` + `layerId 0`; Map used
    `https://placeholder/<service>`; Analysis used the string `"0"`; Query used

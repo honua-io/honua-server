@@ -273,10 +273,12 @@ public sealed class McpPackageDraftToolTests
                 new CreateMapPackageTool(
                     _jobService,
                     new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                    new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
                     NullLogger<CreateMapPackageTool>.Instance),
                 new CreateAppPackageTool(
                     _jobService,
                     new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                    new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
                     NullLogger<CreateAppPackageTool>.Instance),
             ],
             [],

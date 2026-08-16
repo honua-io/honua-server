@@ -30,16 +30,19 @@ internal sealed class CreateAppPackageTool : IMcpTool
 
     private readonly IGeoprocessingJobService _jobService;
     private readonly IAppPackageDraftFactory _drafts;
+    private readonly IPackageDraftStore _draftStore;
     private readonly ILogger<CreateAppPackageTool> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="CreateAppPackageTool"/> class.</summary>
     public CreateAppPackageTool(
         IGeoprocessingJobService jobService,
         IAppPackageDraftFactory drafts,
+        IPackageDraftStore draftStore,
         ILogger<CreateAppPackageTool> logger)
     {
         _jobService = jobService;
         _drafts = drafts;
+        _draftStore = draftStore;
         _logger = logger;
     }
 
@@ -93,6 +96,11 @@ internal sealed class CreateAppPackageTool : IMcpTool
             throw new GeoprocessingValidationException(McpPackageDraftProjection.DescribeErrors(
                 "App-package draft input is invalid", result.Errors));
         }
+
+        // Persist before returning, for the same reason CreateMapPackageTool does:
+        // the honua://app-packages/{id} URI in this response is only honourable if
+        // AppPackageResource can find the draft without a deployment (honua-server#3262).
+        await _draftStore.SaveAppDraftAsync(result.Package, cancellationToken).ConfigureAwait(false);
 
         var output = new McpPackageDraftOutput
         {
