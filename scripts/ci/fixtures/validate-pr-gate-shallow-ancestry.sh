@@ -8,11 +8,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 fixture="$(mktemp -d "${RUNNER_TEMP:-/tmp}/honua-pr-gate-ancestry.XXXXXX")"
 trap 'rm -rf "${fixture}"' EXIT
 
-remote="${fixture}/remote.git"
 source_repo="${fixture}/source"
 checkout="${fixture}/checkout"
 
-git init --quiet --bare "${remote}"
 git init --quiet "${source_repo}"
 git -C "${source_repo}" config user.email 'ci-fixture@honua.io'
 git -C "${source_repo}" config user.name 'Honua CI Fixture'
@@ -31,11 +29,13 @@ head_sha="$(git -C "${source_repo}" rev-parse HEAD)"
 git -C "${source_repo}" checkout --quiet trunk
 git -C "${source_repo}" merge --quiet --no-ff feature -m 'synthetic merge'
 merge_sha="$(git -C "${source_repo}" rev-parse HEAD)"
-git -C "${source_repo}" remote add origin "file://${remote}"
-git -C "${source_repo}" push --quiet origin trunk feature "HEAD:refs/pull/1/merge"
+# Expose the synthetic pull-request ref directly from the local fixture repo.
+# Avoid a fixture-local `git push`: the single-merge-authority scanner correctly
+# treats every executable push as authority it cannot prove safe.
+git -C "${source_repo}" update-ref refs/pull/1/merge "${merge_sha}"
 
 git init --quiet "${checkout}"
-git -C "${checkout}" remote add origin "file://${remote}"
+git -C "${checkout}" remote add origin "file://${source_repo}/.git"
 git -C "${checkout}" fetch --quiet --depth=1 origin refs/pull/1/merge
 git -C "${checkout}" checkout --quiet --detach FETCH_HEAD
 
@@ -66,7 +66,6 @@ git -C "${source_repo}" rm --quiet -rf .
 git -C "${source_repo}" add unrelated.txt
 git -C "${source_repo}" commit --quiet -m unrelated
 unrelated_sha="$(git -C "${source_repo}" rev-parse HEAD)"
-git -C "${source_repo}" push --quiet origin unrelated
 
 if honua_ensure_pr_gate_ancestry \
   "${checkout}" "${base_sha}" "${unrelated_sha}" "${merge_sha}" 2>/dev/null; then
