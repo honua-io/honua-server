@@ -356,6 +356,38 @@ train_open_pr_queue() {
   jq -sc '[.[].data.repository.pullRequests.nodes[] | .labels = (.labels.nodes // [])]' <<<"${pages}"
 }
 
+# GitHub computes `mergeable` asynchronously after trunk or a PR head moves.
+# The first GraphQL snapshot immediately after a successful land can therefore
+# report every otherwise-ready PR as UNKNOWN. Treating that transient value as
+# terminal made the continuous drain stop until the schedule/operator prompted
+# it again. Refresh the complete immutable queue snapshot a few times, then
+# retain the conservative UNKNOWN result if GitHub still has not decided.
+#
+# The bounds are deliberately small: this is freshness convergence, not a wait
+# loop. Tests pass zero delay and an offline queue-pages command.
+train_refresh_unknown_mergeability_queue() {
+  local pr_list="$1" attempt=0
+  local max_attempts="${TRAIN_MERGEABILITY_REFRESH_ATTEMPTS:-3}"
+  local delay_seconds="${TRAIN_MERGEABILITY_REFRESH_DELAY_SECONDS:-2}"
+  if [[ ! "${max_attempts}" =~ ^[0-9]+$ ]] \
+    || [[ ! "${delay_seconds}" =~ ^[0-9]+$ ]]; then
+    train_error "mergeability refresh bounds must be non-negative integers"
+    return 1
+  fi
+
+  while jq -e 'any(.[]; .mergeable == "UNKNOWN")' <<<"${pr_list}" >/dev/null \
+    && [[ "${attempt}" -lt "${max_attempts}" ]]; do
+    attempt=$((attempt + 1))
+    train_log "mergeability UNKNOWN; refreshing queue (${attempt}/${max_attempts})"
+    if [[ "${delay_seconds}" -gt 0 ]]; then
+      sleep "${delay_seconds}"
+    fi
+    pr_list="$(train_open_pr_queue)" || return 1
+  done
+
+  printf '%s\n' "${pr_list}"
+}
+
 # train_select: emit the selected batch as JSON lines (one object per PR):
 #   {number, headRefOid, createdAt, gate}
 # Honors MAX_BATCH. Caller pipes through `jq -s .` if it wants an array.
@@ -368,6 +400,7 @@ train_select() {
     pr_list="${TRAIN_PR_LIST_JSON}"
   else
     pr_list="$(train_open_pr_queue)"
+    pr_list="$(train_refresh_unknown_mergeability_queue "${pr_list}")"
   fi
 
   # Oldest createdAt first.

@@ -52,7 +52,7 @@
     "target_utilization": 0.7,
     "warn_utilization": 0.8
   },
-  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING — src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs — which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all 45. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ — Authentication/ and Security/ — route to the auth/security-relevant shards (Infra and Security, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all 45. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), or unmapped src/Honua.Hosting/Features areas (Rendering/Caching/etc. stay run_all via the unmapped net; bounded Tiles ownership is declared directly on its shards), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
+  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING — src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs — which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all shards. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ — Authentication/ and Security/ — route to the auth/security-relevant shards (Infrastructure and Control Plane, Security and Authorization, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all shards. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), or unmapped src/Honua.Hosting/Features areas (Rendering/Caching/etc. stay run_all via the unmapped net; bounded Tiles ownership is declared directly on its shards), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
   "targeted_override_prefixes": [
     {
       "prefix": "src/Honua.Server/EndpointRegistry.cs",
@@ -106,7 +106,8 @@
       "prefix": "src/Honua.Hosting/Features/Authentication/",
       "reason": "shared_auth_feature_area",
       "shards": [
-        "Infra and Security",
+        "Infrastructure and Control Plane",
+        "Security and Authorization",
         "Admin & Infrastructure",
         "OData Core"
       ]
@@ -115,7 +116,8 @@
       "prefix": "src/Honua.Hosting/Features/Security/",
       "reason": "shared_security_feature_area",
       "shards": [
-        "Infra and Security",
+        "Infrastructure and Control Plane",
+        "Security and Authorization",
         "Admin & Infrastructure",
         "OData Core"
       ]
@@ -136,7 +138,7 @@
       ]
     }
   ],
-  "_shard_partitions_comment": "Exact class-level partition contracts for shards split under #3059. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
+  "_shard_partitions_comment": "Exact class-level partition contracts for split shards. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
   "shard_partitions": [
     {
       "name": "Server Features Admin and Console",
@@ -173,6 +175,15 @@
         "Server Features Admin Release Control",
         "Server Features Admin Platform and Connections",
         "Server Features Admin Governance and Sharing"
+      ]
+    },
+    {
+      "name": "Infra and Security",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
+      "children": [
+        "Infrastructure and Control Plane",
+        "Security and Authorization",
+        "Caching File Storage and Styling"
       ]
     }
   ],
@@ -1026,44 +1037,74 @@
       ]
     },
     {
-      "name": "Infra and Security",
-      "shard_name": "Infra and Security",
-      "artifact_suffix": "infra-security",
-      "log_name": "server-tests-infra-security",
-      "timeout_minutes": 49,
-      "test_timeout_minutes": 39,
+      "name": "Infrastructure and Control Plane",
+      "shard_name": "Infrastructure and Control Plane",
+      "artifact_suffix": "infrastructure-control-plane",
+      "log_name": "server-tests-infrastructure-control-plane",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
-      "_paths_comment": "src-dir->shard map (#1897 follow-up to #2035): claims the SOURCE trees whose tests this shard's filter runs (Features.Infrastructure, Caching, Security, Styling, GeoServices.Catalog, FileStorage). src/Honua.Server/Features/Infrastructure/ AND the sibling src/Honua.Server/Features/ControlPlane/ are claimed here so an Infrastructure-feature or ControlPlane (deploy/coordinated-release/telemetry) change targets this shard instead of tripping the unmapped-source net (the deploy reconciler/telemetry tests live under tests/.../Features/Infrastructure/ControlPlane/, which this shard's Features.Infrastructure filter selects); the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring) still escalate to run_all because they are listed in infrastructure_paths, which short-circuits (step 3) BEFORE this path match (step 4). Core/Postgres Caching/Security/Styling slices map here too so a provider-side change to those features targets this shard.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure",
+      "_paths_comment": "Capacity split of the former Infra and Security shard after Smart CI 31940825557 exhausted its 39-minute test budget. This child owns Infrastructure and ControlPlane. Security/Authorization and Caching/FileStorage/Styling move to separate siblings so all three execute in parallel under bounded 30-minute test caps. The old GeoServices Catalog clause could never discover tests from the default Honua.Server.Tests project; those tests remain owned by the GeoServices ImageServer shard and its explicit GeoServices test project.",
+      "paths": [
+        "src/Honua.Server/Features/Infrastructure/",
+        "src/Honua.Server/Features/ControlPlane/",
+        "src/Honua.Core/Features/ControlPlane/",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
+        "src/Honua.Io/Features/Export/",
+        "tests/dotnet/Honua.Server.Tests/Features/Export/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
+      ]
+    },
+    {
+      "name": "Security and Authorization",
+      "shard_name": "Security and Authorization",
+      "artifact_suffix": "security-authorization",
+      "log_name": "server-tests-security-authorization",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Security",
+      "_paths_comment": "Capacity split of the former Infra and Security shard. Historical TRX 31939301584 shows the Security namespace was the dominant child at 151 tests and about 13 minutes of active work. Authorization source and test paths route here because the endpoint authorization regressions live under Features.Security.",
+      "paths": [
+        "src/Honua.Server/Features/Authorization/",
+        "src/Honua.Server/Features/Security/",
+        "src/Honua.Core/Features/Security/",
+        "src/Honua.Db/Postgres/Features/Security/",
+        "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
+        "tests/dotnet/Honua.Server.Tests/Features/Security/",
+        "src/Honua.Core/Features/Validation/"
+      ]
+    },
+    {
+      "name": "Caching File Storage and Styling",
+      "shard_name": "Caching File Storage and Styling",
+      "artifact_suffix": "caching-file-storage-styling",
+      "log_name": "server-tests-caching-file-storage-styling",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
+      "_paths_comment": "Capacity split of the former Infra and Security shard. This child isolates the cache, file-storage, and style endpoint/integration suites that previously shared one 39-minute budget with the control-plane and security suites.",
       "paths": [
         "src/Honua.Server/Features/Caching/",
         "src/Honua.Core/Features/Caching/",
         "src/Honua.Io/Features/FileStorage/",
         "src/Honua.Server/Features/FileStorage/",
-        "src/Honua.Server/Features/Authorization/",
-        "src/Honua.Server/Features/Security/",
-        "src/Honua.Core/Features/Security/",
-        "src/Honua.Db/Postgres/Features/Security/",
         "src/Honua.Server/Features/Styling/",
         "src/Honua.Core/Features/Styling/",
         "src/Honua.Db/Postgres/Features/Styling/",
-        "src/Honua.Server/Features/Infrastructure/",
-        "src/Honua.Server/Features/ControlPlane/",
-        "src/Honua.Core/Features/ControlPlane/",
-        "src/Honua.Protocols.GeoServices/Catalog/",
-        "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
         "tests/dotnet/Honua.Server.Tests/Features/Caching/",
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
-        "tests/dotnet/Honua.Server.Tests/Features/Security/",
         "tests/dotnet/Honua.Server.Tests/Features/Styling/",
-        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
-        "src/Honua.Io/Features/Export/",
-        "tests/dotnet/Honua.Server.Tests/Features/Export/",
-        "src/Honua.Core/Features/Validation/",
-        "src/Honua.Hosting/Features/Services/"
+        "src/Honua.Core/Features/Validation/"
       ]
     },
     {

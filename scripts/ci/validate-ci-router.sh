@@ -802,7 +802,13 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Security and Authorization"
+assert_descriptor \
+  "hosting-authentication-includes-infrastructure-tests" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "targeted" \
+  "false" \
+  "Infrastructure and Control Plane"
 assert_excludes_shard \
   "hosting-authentication-excludes-featureserver" \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
@@ -814,7 +820,13 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Security and Authorization"
+assert_descriptor \
+  "hosting-security-includes-infrastructure-tests" \
+  "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
+  "targeted" \
+  "false" \
+  "Infrastructure and Control Plane"
 
 # Conservatism guards: the override must NOT widen run_all coverage. A NON-override
 # Startup file (DI/host bootstrap core) must STILL run_all, and a generic unmapped
@@ -1091,7 +1103,7 @@ assert_descriptor \
   "Server Features Studio and Feature Store"
 
 # A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
-# maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —
+# maps to Infrastructure and Control Plane (Features.Infrastructure.* tests), NOT run_all —
 # while the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring)
 # still escalate via infrastructure_paths (asserted below).
 assert_descriptor \
@@ -1099,18 +1111,36 @@ assert_descriptor \
   "src/Honua.Server/Features/Infrastructure/ControlPlane/DeployWorkflowService.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Infrastructure and Control Plane"
 # The deploy/coordinated-release/telemetry ControlPlane source actually lives at
 # src/Honua.Server/Features/ControlPlane/ (sibling of Features/Infrastructure/),
 # while its tests live under tests/.../Features/Infrastructure/ControlPlane/. That
-# path is claimed by the Infra and Security shard so a reconciler/telemetry change
+# path is claimed by the Infrastructure and Control Plane shard so a reconciler/telemetry change
 # targets it instead of tripping the unmapped-source run_all net.
 assert_descriptor \
   "controlplane-source-targeted" \
   "src/Honua.Server/Features/ControlPlane/DeployWorkflowReconciler.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Infrastructure and Control Plane"
+assert_descriptor \
+  "core-caching-targeted-to-split-child" \
+  "src/Honua.Core/Features/Caching/MetadataCacheState.cs" \
+  "targeted" \
+  "false" \
+  "Caching File Storage and Styling"
+assert_descriptor \
+  "file-storage-targeted-to-split-child" \
+  "src/Honua.Server/Features/FileStorage/FileStorageServiceCollectionExtensions.cs" \
+  "targeted" \
+  "false" \
+  "Caching File Storage and Styling"
+assert_descriptor \
+  "styling-targeted-to-split-child" \
+  "src/Honua.Server/Features/Styling/OgcStyleProjection.cs" \
+  "targeted" \
+  "false" \
+  "Caching File Storage and Styling"
 assert_descriptor \
   "infra-hosting-wiring-still-run-all" \
   "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
