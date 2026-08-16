@@ -616,15 +616,15 @@ public static class OgcStylesEndpoints
 
                 if (mediaType is "*/*" or "application/*")
                 {
-                    var specificity = mediaType == "application/*" ? 1 : 0;
+                    var wildcardSpecificity = mediaType == "application/*" ? 1 : 0;
                     foreach (var supportedEncoding in supportedEncodings)
                     {
-                        RecordPreference(preferences, supportedEncoding, specificity, quality);
+                        RecordPreference(preferences, supportedEncoding, wildcardSpecificity, quality);
                     }
                     continue;
                 }
 
-                if (TryMapMediaType(mediaType, media, out var mappedEncoding))
+                if (TryMapMediaType(mediaType, media, out var mappedEncoding, out var mappedSpecificity))
                 {
                     // A concrete emitted representation is more specific than the
                     // application/json compatibility alias. This lets an explicit
@@ -632,11 +632,7 @@ public static class OgcStylesEndpoints
                     // outranks application/* and */* ranges. An SLD version parameter
                     // further narrows the representation and must beat an unversioned
                     // range that maps to the same encoding.
-                    var specificity = mediaType == SldBaseMediaType
-                        && ReadSldVersion(media) is not null
-                            ? 4
-                            : 3;
-                    RecordPreference(preferences, mappedEncoding, specificity, quality);
+                    RecordPreference(preferences, mappedEncoding, mappedSpecificity, quality);
                 }
             }
         }
@@ -669,19 +665,39 @@ public static class OgcStylesEndpoints
         }
     }
 
-    private static bool TryMapMediaType(string mediaType, MediaTypeHeaderValue media, out OgcStyleEncoding encoding)
+    private static bool TryMapMediaType(
+        string mediaType,
+        MediaTypeHeaderValue media,
+        out OgcStyleEncoding encoding,
+        out int specificity)
     {
         encoding = OgcStyleEncoding.MapboxStyle;
+        specificity = 3;
         switch (mediaType)
         {
             case "application/vnd.mapbox.style+json":
                 encoding = OgcStyleEncoding.MapboxStyle;
                 return true;
             case SldBaseMediaType:
-                encoding = ReadSldVersion(media) == "1.1"
-                    ? OgcStyleEncoding.Sld11
-                    : OgcStyleEncoding.Sld10;
-                return true;
+                var version = ReadSldVersion(media);
+                switch (version)
+                {
+                    case null:
+                        encoding = OgcStyleEncoding.Sld10;
+                        return true;
+                    case "1.0":
+                        encoding = OgcStyleEncoding.Sld10;
+                        specificity = 4;
+                        return true;
+                    case "1.1":
+                        encoding = OgcStyleEncoding.Sld11;
+                        specificity = 4;
+                        return true;
+                    default:
+                        // An unsupported version parameter matches neither emitted SLD
+                        // representation and must not include or exclude SLD 1.0 by alias.
+                        return false;
+                }
             case "application/vnd.esri.drawinginfo+json":
                 encoding = OgcStyleEncoding.EsriDrawingInfo;
                 return true;
@@ -693,7 +709,7 @@ public static class OgcStylesEndpoints
     private static string? ReadSldVersion(MediaTypeHeaderValue media)
         => media.Parameters
             .Where(parameter => string.Equals(parameter.Name.Value, "version", StringComparison.OrdinalIgnoreCase))
-            .Select(parameter => parameter.Value.Value)
+            .Select(parameter => parameter.Value.Value?.Trim('"'))
             .FirstOrDefault();
 
     private static bool IsMapboxStyleContentType(string contentType)
