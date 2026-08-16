@@ -261,6 +261,9 @@ jobs:
         with:
           artifact-ids: ${{ steps.collect.outputs.metadata_artifact_id }}
           path: ${{ runner.temp }}/pr-gate-build-metadata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.collect.outputs.run_id }}
 
       - id: validate-build-evidence
         name: Validate tree-bound PR Gate build evidence

@@ -56,6 +56,12 @@ grep -Fq 'persist-credentials: false' "${observer}"
 grep -Fq 'resolveTrustedPullRequestWorkflowRun' "${observer}"
 grep -Fq 'python3 policy/scripts/ci/pr-gate-build-evidence.py build' "${observer}"
 grep -Fq 'pr-gate-build-evidence-receipt-' "${observer}"
+# Cross-workflow artifact downloads default to the observer's own run unless
+# all three source coordinates are explicit. Keep the trusted observer bound
+# to the canonical PR Gate run that produced the metadata.
+grep -Fq 'github-token: ${{ github.token }}' "${observer}"
+grep -Fq 'repository: ${{ github.repository }}' "${observer}"
+grep -Fq 'run-id: ${{ steps.collect.outputs.run_id }}' "${observer}"
 if grep -Eq '^  (actions|checks|contents|pull-requests|statuses): write' "${observer}"; then
   echo '::error::PR Gate build-evidence observer gained write permission.' >&2
   exit 1
