@@ -119,16 +119,19 @@ With the flag on:
   which (as above) can be recorded under a different owner. A caller who owns
   only the target version, even with a matching `StudioDraft` operator grant,
   cannot move another principal's item's pointer.
-- **AI generation is elevated, never implicitly widened.** `POST
+- **Package draft creation is elevated, never implicitly widened.** `POST
   /map-packages/generate` and `POST /app-packages/generate` are not opened to
-  every authenticated principal by the end-user flag: generation consumes model
-  resources and creates content with no pre-existing resource whose ownership
-  could gate it, so a non-admin caller requires a `StudioDraft` `Execute`
-  operator grant (the self-service `own`-sentinel form suffices; admins are
-  unaffected, and with the flag off both routes stay admin-only exactly as
-  before). Without the grant the request is denied
-  `studio_authorization/elevated_grant_required` before the request body is
-  even parsed. To enable generation for a pilot end user, an operator
+  every authenticated principal by the end-user flag: they create content with
+  no pre-existing resource whose ownership could gate it, so a non-admin caller
+  requires a `StudioDraft` `Execute` operator grant (the self-service
+  `own`-sentinel form suffices; admins are unaffected, and with the flag off
+  both routes stay admin-only exactly as before). Without the grant the request
+  is denied `studio_authorization/elevated_grant_required` before the request
+  body is even parsed. Both routes became deterministic draft-creation entry
+  points in ADR-0076 (#3255) — they take structured composition input, call no
+  model, and return a draft package with a stable `map_`/`app_` identifier; the
+  authorization posture is unchanged. To enable draft creation for a pilot end
+  user, an operator
   provisions the grant `Service=StudioDraft`, `Layer=own`, `Operation=Execute`
   on a role held by that user (honua-server#3023); revoking the grant closes
   access again without touching the flag.

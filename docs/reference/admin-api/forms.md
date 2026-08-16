@@ -12,7 +12,6 @@ Also available in Honua Console — UI guide coming soon.
 |---|---|---|
 | GET | `/api/v1/admin/forms/packages` | List package summaries (one per package family) |
 | POST | `/api/v1/admin/forms/packages` | Create draft version 1, or the next draft for an existing `formId` |
-| POST | `/api/v1/admin/forms/packages/generate` | Generate or refine a form package from a natural-language prompt |
 | GET | `/api/v1/admin/forms/packages/{formId}` | Get the current draft (falls back to the current published version) |
 | GET | `/api/v1/admin/forms/packages/{formId}/versions` | List all versions, newest first |
 | GET | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | Get one version with `ETag` |

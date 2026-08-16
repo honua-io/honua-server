@@ -2,12 +2,11 @@
 
 honua-server#3000 adds a provider-agnostic chat proxy for Honua Studio: the server holds every
 model provider's credentials, and Studio clients call one streaming endpoint regardless of which
-provider is configured behind it. This is the general-purpose sibling of the one-shot document
-generators described in [`run-studio-ai-on-bedrock.md`](./run-studio-ai-on-bedrock.md) — that guide
-covers `WorkflowGeneration` (workflow/dashboard/report/map/app/form generation, each forcing a
-single structured-output tool call); this guide covers the general streaming chat surface at
-`/api/v1/studio/ai/*`. The two features share provider plumbing patterns (config shape, secret
-resolution, HTTP resilience) but are configured, and called, independently.
+provider is configured behind it. It is the only path by which the server talks to a model:
+ADR-0076 retired the server-side document generators (workflow/dashboard/report/map/app/form),
+so the server performs no model inference of its own as part of executing a capability and only
+forwards a client's inference request through this explicitly configured proxy at
+`/api/v1/studio/ai/*`.
 
 ## What this is (and isn't)
 
@@ -98,8 +97,7 @@ Notes:
   endpoints (Ollama/vLLM/LM Studio) — validated at startup by `StudioAiProxyConfigurationValidator`.
 - **`bedrock` providers need only a `Model`** (and optionally `Region`, default `us-west-2`) — no
   `Endpoint`, no `ApiKey` required; the AWS credential chain (env vars, shared profile, IAM role,
-  container/Lambda ambient credentials) supplies auth, exactly as for the `WorkflowGeneration`
-  Bedrock provider.
+  container/Lambda ambient credentials) supplies auth.
 - **`DefaultProvider`** selects the provider used when a chat/capabilities request does not name one
   explicitly. Every declared provider is independently callable by name.
 - **`SupportsTools`** (default `true`) lets an operator honestly mark a provider/model that doesn't

@@ -72,7 +72,7 @@ named "operator surface" ships in this repo.
 3. Ask the agent to list tools and start with the safe ones — everything in the planning family is read-only:
 
    - `honua_ground_candidates` / `honua_clarify_intent` — turn a natural-language goal into a drafted intent with candidate datasets and processes
-   - `honua_plan_analysis` — draft an executable plan from an intent. Runs in fixture (demo) mode by default (responses are flagged `engine: "fixture"`); [turn on the live planner](mcp-live-planner.md) to compile arbitrary intents.
+   - `honua_plan_analysis` — draft an executable plan from an intent. It replays deterministic fixtures (responses are flagged `engine: "fixture"`); the server performs no model inference of its own (ADR-0076), so compiling an arbitrary intent into plan steps is your client agent's job — then confirm it with `honua_validate_plan`.
    - `honua_validate_plan` — static validation: returns `isExecutable`, `requiresApproval`, violations, and warnings
    - `honua_dry_run_plan` — estimates duration, artifacts, and side effects without executing
    - `honua_validate_package` / `honua_preview_package` — review a map/app package before execute or publish
@@ -282,14 +282,12 @@ ingress and planner configuration:
 | Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
 |---|---|---|---|---|
 | **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false`; no live planner | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
-| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (still fixture unless a live planner is on) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
-| **Live planner** | `PlanAnalysis:Enabled=true` (+ provider) or `WorkflowGeneration:Enabled=true` | Follows whichever streaming profile above is set | `engine:"live"` — plans compiled from your intent | See [Turn on the live MCP planner](mcp-live-planner.md). Combine with the streaming profile for push progress. |
+| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 
-These three profiles change only *how* the surface behaves, not *which* tools and
-resources it advertises: the progress-delivery and live-planner switches leave
+Both profiles change only *how* the surface behaves, not *which* tools and
+resources it advertises: the progress-delivery switch leaves
 `tools/list`, `resources/list`, and `prompts/list` unchanged. The difference is
-operational — whether progress is pushed or polled, and whether a plan is compiled
-from your intent or replayed as a demo. The read-only pre-flight tools
+operational — whether progress is pushed or polled. The read-only pre-flight tools
 (`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in
 every profile — including that a job runs a single process, so multi-step or
 sync-only plans are flagged rather than silently under-executed.
@@ -328,7 +326,6 @@ advertised, in any profile, by design (ADR-0028).
 ## Next steps
 
 - [Operating Honua](../operate/README.md)
-- [Turn on the live MCP planner (Honua-brings-LLM)](mcp-live-planner.md)
 - [Run geoprocessing](../query-analyze/run-geoprocessing.md)
 - [Authentication](../secure/authentication.md)
 - [Protocol overview](../../concepts/protocols.md)
