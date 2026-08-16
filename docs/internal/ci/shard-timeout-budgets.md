@@ -218,6 +218,48 @@ the batch `server-tests` critical path before closing #3059. Each child must be
 at or below 15.4 minutes p90, and the batch critical path must be lower than the
 49.1-minute historical parent p90.
 
+## Infra and Security capacity split (2026-08-16)
+
+The #3197 merge-train canary exposed a deterministic capacity failure in the
+historical `Infra and Security` shard. Smart CI run `31940825557`, job
+`95149717187`, consumed the full 39-minute inner test budget and emitted
+`HONUA_SHARD_CAPACITY_EXHAUSTED` after 2,343 seconds. This was not attributed to
+the PR: the merge-train observer classifies the exact job annotation/log as
+capacity evidence and escalates the shard instead of dropping the PR.
+
+The nearest scheduled full-run baseline, run `31939301584`, already showed the
+same risk before the canary: the shard's test step took 36.02 minutes and the
+job took 42.98 minutes. Raising the cap would preserve a large serial critical
+path, so the shard is split into three parallel children:
+
+| Child | Test surface | Inner / outer cap |
+|---|---|---:|
+| Infrastructure and Control Plane | infrastructure, control plane | 30 / 40 min |
+| Security and Authorization | security, authorization | 30 / 40 min |
+| Caching File Storage and Styling | caching, file storage, styling | 30 / 40 min |
+
+The legacy parent filter remains an exact partition contract. The class-level
+coverage guard proves every formerly discoverable class is claimed by exactly
+one child with no leakage. The historical GeoServices Catalog filter was dead
+in this shard because its default `Honua.Server.Tests` project cannot discover
+the catalog classes; those remain covered by `GeoServices ImageServer`, which
+targets `Honua.Protocols.GeoServices.Tests` explicitly.
+
+The successful scheduled baseline `31939301584` provides a finer check on the
+partition: security/authorization covered 151 tests and about 13 minutes of
+active test intervals; infrastructure/control-plane covered 948 tests and
+about 10 minutes; caching/file-storage/styling covered 186 tests and about 15
+minutes. These are single-run active intervals rather than percentile claims,
+but they show why three children are safer than leaving security and
+infrastructure combined near the new cap.
+
+This split is evidence-driven but not yet a new percentile baseline. After it
+lands, retain at least 20 successful train/full-run artifacts for all three child
+suffixes and replace this section with observed p50/p90, timeout utilization,
+and the resulting batch critical path. A child reaching the 80% warning line
+must be rebalanced or split again rather than silently receiving another cap
+increase.
+
 ### Findings
 
 * **Nine shards were at or above 75% of their inner cap**, five of which had
@@ -230,7 +272,7 @@ at or below 15.4 minutes p90, and the batch critical path must be lower than the
   `GP Devkit CLI`; 16 of them were not otherwise re-capped), so an inner timeout
   there could have been pre-empted by the runner cancelling the job — losing the
   log, TRX and timing artifacts and surfacing as an unattributable cancellation.
-  All 63 configured shards are now at gap >= 10.
+  All 65 configured shards are now at gap >= 10.
 * **Watchlist.** Of the unchanged shards, `Admin & Infrastructure` (74%) and
   `Operator Eval Harness` (70%) remain closest to the warn line. The 13 #3059
   children need fresh batch samples before they can be ranked. The
