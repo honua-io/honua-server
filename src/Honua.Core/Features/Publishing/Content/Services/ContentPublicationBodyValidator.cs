@@ -13,8 +13,9 @@ namespace Honua.Core.Features.Publishing.Content.Services;
 /// request <c>contentPayload</c> (a <c>bindings[]</c> + <c>panels[]</c> graph with embedded Vega-Lite
 /// chart specs); this validator parses that document and surfaces the same business rules the console
 /// enforces client-side — required bindings (alias + contentRef), unique binding aliases, every panel's
-/// <c>bindingAlias</c> referencing a declared binding, and every chart panel declaring a parseable
-/// Vega-Lite spec (a JSON object with a vega-lite <c>$schema</c>) — as
+/// <c>bindingAlias</c> referencing a declared binding, every chart panel declaring a parseable
+/// Vega-Lite spec (a JSON object with a vega-lite <c>$schema</c>), and — the converse — no non-chart
+/// panel carrying a chart spec at all — as
 /// <see cref="FieldValidationError"/>s keyed by JSON Pointer so they bind back onto the offending input.
 /// <para>
 /// It is intentionally tolerant: a payload that is absent, not JSON, or not a recognised
@@ -182,11 +183,30 @@ internal static class ContentPublicationBodyValidator
                     path: path + "/bindingAlias"));
             }
 
-            if (IsChartPanel(panel) && !DeclaresVegaLiteSchema(panel))
+            if (IsChartPanel(panel))
             {
+                if (!DeclaresVegaLiteSchema(panel))
+                {
+                    errors.Add(FieldValidationError.Create(
+                        "publication.panel.chartSpec.vegaLite",
+                        "Chart panels must declare a Vega-Lite spec: a JSON object with a vega-lite \"$schema\".",
+                        path: path + "/chartSpec"));
+                }
+            }
+            else if (CarriesChartSpec(panel))
+            {
+                // Converse of publication.panel.chartSpec.vegaLite: only chart panels may carry a spec.
+                // A spec on a map/table/text/filter/metric panel is contradictory authoring — the panel
+                // renders as its declared kind and the chart the author wrote never appears, with nothing
+                // saying why — so the publish path rejects it, matching the document validators'
+                // chartSpecNotAllowed error severity (honua-server#3263) — FieldValidationError.Create
+                // defaults to ValidationSeverity.Error, and there is no publish-path reason to soften it:
+                // publish is the last gate before the panel is served. Keyed off the same non-empty test
+                // the document validators use, so an absent, null, or empty round-tripped chartSpec never
+                // trips it.
                 errors.Add(FieldValidationError.Create(
-                    "publication.panel.chartSpec.vegaLite",
-                    "Chart panels must declare a Vega-Lite spec: a JSON object with a vega-lite \"$schema\".",
+                    "publication.panel.chartSpec.notAllowed",
+                    $"Panel kind '{GetString(panel, "kind")?.Trim()}' must not carry a chartSpec; only chart panels may.",
                     path: path + "/chartSpec"));
             }
 
@@ -227,6 +247,27 @@ internal static class ContentPublicationBodyValidator
         var schemaUrl = schema.GetString();
         return !string.IsNullOrEmpty(schemaUrl)
             && schemaUrl.Contains("vega-lite", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when the panel carries a chart spec with any content at all, whatever shape it round-tripped
+    /// in. Mirrors the document validators' <c>HasNonEmptySpec</c> so the publish path and the document
+    /// path agree on what "carries a spec" means: an absent member, an explicit <c>null</c>, an empty
+    /// object, and an empty/whitespace string all read as no spec.
+    /// </summary>
+    private static bool CarriesChartSpec(JsonElement panel)
+    {
+        if (panel.ValueKind != JsonValueKind.Object || !panel.TryGetProperty("chartSpec", out var spec))
+        {
+            return false;
+        }
+
+        return spec.ValueKind switch
+        {
+            JsonValueKind.Object => spec.EnumerateObject().MoveNext(),
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(spec.GetString()),
+            _ => false,
+        };
     }
 
     private static string? GetString(JsonElement element, string property)
