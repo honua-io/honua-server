@@ -93,8 +93,10 @@ train_attribute() {
 train_drop_pr() {
   local pr="$1" reason="$2"
   train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}"
+  train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
   train_side_effect gh pr comment "${pr}" --body \
     "Merge train dropped this PR from the batch: ${reason}. Rebuild the batch will exclude it until the ${TRAIN_LABEL_ESCALATED} label is removed."
+  train_decision "DROP #${pr}: labeled ${TRAIN_LABEL_ESCALATED}, removed ${TRAIN_LABEL_LANDING}"
 }
 
 # train_escalate_batch <included-csv> <reason>: the loop-bug fix. When the train

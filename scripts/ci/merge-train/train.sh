@@ -941,6 +941,20 @@ main() {
       _emit_metrics "ci-shard-capacity-exhausted" "${trunk_sha}" "" "${shard_descriptor}"
       return 0
     fi
+    if [[ "${rc_retry}" == "8" ]]; then
+      train_early_failure_record_classification "${run_id}" evidence-unavailable true false || true
+      # A terminal failed job without readable log evidence cannot safely be
+      # called a product regression, timeout, capacity exhaustion, or flake.
+      # Hold the whole batch as a control-plane failure; never blame a member
+      # diff using only the matrix job name.
+      train_annotate_warn "required failed-job log evidence is unavailable; escalating this batch without per-PR attribution"
+      train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+      train_escalate_batch "${included}" "A selected CI job failed but its terminal log evidence was unavailable. Restore GitHub Actions evidence access, then re-dispatch; no member diff was attributed."
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-failure-evidence-unavailable" "${trunk_sha}" "" "${shard_descriptor}"
+      return 0
+    fi
     if [[ "${rc_retry}" == "5" ]]; then
       train_early_failure_record_classification "${run_id}" retry-control-plane false false || true
       train_annotate_warn "Actions definitively rejected the failed-job rerun; escalating this batch and clearing it so the queue can progress"
@@ -1083,7 +1097,7 @@ main() {
       train_metric_inc attribution_drops
       train_metric_inc escalated
       train_notice "DROP #${pr}: real CI failure attributed to its diff; rebuilding batch without it"
-      remaining="$(tr ',' '\n' <<<"${remaining}" | grep -vx "${pr}" | tr '\n' ',' | sed 's/,$//')"
+      remaining="$(train_csv_remove_exact "${remaining}" "${pr}")"
     done
     if [[ -z "${remaining}" ]]; then
       train_annotate_warn "all members dropped; batch empty"

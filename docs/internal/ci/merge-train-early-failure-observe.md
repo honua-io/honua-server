@@ -33,6 +33,12 @@ the journaled run. Attribution probes explicitly disable the primary observer,
 so their deliberately different merge trees cannot contaminate the controller's
 single primary-batch sample. If later attribution rebuilds the primary batch,
 the first complete classified sample remains the controller's retained record.
+Completed timeout/capacity jobs are classified first from their small,
+paginated exact-check annotations. Other failures use an exact-job log reader:
+the Actions job-log REST endpoint is primary, with the ordinary
+`gh run view --job` surface retained as fallback. This preserves immutable job
+identity, avoids downloading a 20 MB log for an annotated capacity marker, and
+avoids a several-minute aggregate-log race.
 
 Conservative early categories are `deterministic-candidate`, `known-flake`,
 `timeout`, `capacity`, and `infra-or-unknown`. When the initial attempt becomes
@@ -57,8 +63,11 @@ does not cancel jobs, change train state, classify a batch, drop a PR, or
 authorize landing. The classifier only writes a copy of the decision it already
 made; no decision reads the observation. API, pagination, identity, or log
 errors are observational misses and leave the existing terminal classifier
-untouched. The raw record is retained inside the existing
-`merge-train-metrics` artifact for 30 days.
+untouched. Independently, the terminal classifier fails closed when both exact
+job-log surfaces are unavailable: it escalates the batch as an evidence/control-
+plane failure and cannot attribute a member from the matrix job name alone. The
+raw record is retained inside the existing `merge-train-metrics` artifact for
+30 days.
 
 ## Promotion boundary
 

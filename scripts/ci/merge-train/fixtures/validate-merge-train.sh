@@ -320,6 +320,18 @@ CI_JOBS_CASE=blocking-skipped train_expected_shards_are_classifiable 6 "${TWO_SH
 unset TRAIN_CI_JOBS_READER CI_JOBS_CASE SAFE_DESCRIPTOR TWO_SHARD_DESCRIPTOR
 
 echo "== Case 5: real-test-fail (attribute + drop; 0-suspect escalates) =="
+# Removing the sole member is a valid empty-batch result, not a `set -e`
+# failure. Dropped members must also lose the transient in-flight label in the
+# same mutation sequence so a controller exit cannot strand both labels.
+assert_eq "attribute cleanup: sole CSV member removes cleanly" \
+  "$(train_csv_remove_exact '3197' '3197')" ""
+assert_eq "attribute cleanup: exact CSV removal preserves peers" \
+  "$(train_csv_remove_exact '3197,3260' '3197')" "3260"
+drop_log="$(train_drop_pr 3197 'fixture failure' 2>&1)"
+assert_contains "attribute cleanup: drop adds escalation" "${drop_log}" \
+  "gh pr edit 3197 --add-label train:escalated"
+assert_contains "attribute cleanup: drop clears landing" "${drop_log}" \
+  "gh pr edit 3197 --remove-label train:landing"
 # Build a 2-PR batch where pr401 touches a FeatureServer path and pr402 an OGC
 # path; a failing "FeatureServer Endpoints" shard must attribute to pr401 only.
 : >"${INC}"
