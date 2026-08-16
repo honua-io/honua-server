@@ -128,6 +128,45 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Be200Ok();
             response.Content.Headers.ContentType?.MediaType.Should().Be(SldMediaType);
         }
+
+        // A more-specific q=0 excludes Esri even though the wildcard accepts other
+        // representations. MapLibre remains the server-preferred wildcard fallback.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{EsriDrawingInfoMediaType};q=0, */*;q=1");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        }
+
+        // application/json is an accepted request alias, not the emitted vendor media
+        // type, so excluding only the alias must not override a wildcard Mapbox match.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", "application/json;q=0, */*;q=1");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        }
+
+        // HTTP media type tokens are case-insensitive for both aliases and concrete
+        // vendor representations.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", "Application/Vnd.Esri.DrawingInfo+Json");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        }
+
+        // Without an acceptable fallback, q=0 means the representation is rejected.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", $"{EsriDrawingInfoMediaType};q=0");
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+        }
     }
 
     [IntegrationTest]
@@ -338,6 +377,52 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_EsriDrawingInfo_UnboundStyle_Returns400WithoutRebindingToLayerZero()
+    {
+        const string unboundStyle =
+            """
+            {
+              "version": 8,
+              "sources": {
+                "layer-0": {
+                  "type": "vector",
+                  "tiles": ["https://example.test/tiles/{z}/{x}/{y}.mvt"]
+                }
+              },
+              "layers": [
+                { "id": "external-points", "type": "circle", "source": "layer-0" }
+              ]
+            }
+            """;
+        var client = _fixture.CreateAdminClient();
+        var styleId = $"unbound-{Guid.NewGuid():N}";
+        using (var content = new StringContent(unboundStyle, Encoding.UTF8, MapboxStyleMediaType))
+        using (var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content })
+        {
+            request.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        using var drawingInfo = new StringContent(
+            SimpleRendererDrawingInfoJson,
+            Encoding.UTF8,
+            EsriDrawingInfoMediaType);
+        var response = await client.PutAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}", drawingInfo);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("not bound to a Honua layer");
+
+        var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        fetched.Be200Ok();
+        using var document = JsonDocument.Parse(await fetched.Content.ReadAsStringAsync());
+        var sources = document.RootElement.GetProperty("sources");
+        sources.TryGetProperty("layer-0", out var externalSource).Should().BeTrue();
+        externalSource.GetProperty("tiles")[0].GetString().Should().StartWith("https://example.test/");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
     public async Task PutStyle_EsriDrawingInfo_MalformedJson_Returns400()
     {
         var client = _fixture.CreateAdminClient();
@@ -448,14 +533,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         body.Should().Contain("version=\"1.1.0\"");
     }
 
-    [IntegrationTest(Skip = "Product bug: /ogc/styles/{styleId} advertises application/vnd.esri.drawinginfo+json, "
-        + "but OgcStyleProjection.GetCatalogStylesheetAsync has no EsriDrawingInfo branch, so a standalone "
-        + "catalog style requested with Accept: application/vnd.esri.drawinginfo+json falls through to "
-        + "DeriveSldFromMapLibre and returns 200 with SLD 1.0 XML (Content-Type application/vnd.ogc.sld+xml;version=1.0) "
-        + "instead of the negotiated drawingInfo JSON. Repro: POST /ogc/styles (X-Style-Id: any, valid MapLibre body), "
-        + "then GET /ogc/styles/{id} with Accept: application/vnd.esri.drawinginfo+json. "
-        + "Expected: drawingInfo JSON (or 406 if unsupported for standalone styles). "
-        + "Tracked by #3188. See src/Honua.Server/Features/Styling/OgcStyleProjection.cs GetCatalogStylesheetAsync.")]
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_StandaloneStyle_AcceptEsriDrawingInfo_ReturnsDrawingInfo()
@@ -474,13 +552,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         document.RootElement.TryGetProperty("renderer", out _).Should().BeTrue();
     }
 
-    [IntegrationTest(Skip = "Product gap: manage-styles is asymmetric for standalone catalog styles - POST creates "
-        + "and DELETE removes them, but PUT /ogc/styles/{styleId} resolves only Phase 1 collection-keyed styles "
-        + "(OgcStyleProjection.UpdateStyleAsync walks the metadata-v2 graph and never consults the independent "
-        + "style catalog), so updating a style you just created returns 404. Repro: POST /ogc/styles with "
-        + "X-Style-Id: my-style (201), then PUT /ogc/styles/my-style with a valid MapLibre body -> 404. "
-        + "Expected: 204 with the catalog style updated. "
-        + "Tracked by #3188. See src/Honua.Server/Features/Styling/OgcStyleProjection.cs UpdateStyleAsync.")]
+    [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
     public async Task PutStyle_StandaloneStyle_UpdatesCatalogStyle()

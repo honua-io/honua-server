@@ -48,6 +48,7 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var rendererType = renderer.TryGetProperty("type", out var typeElement)
+            && typeElement.ValueKind == JsonValueKind.String
             ? typeElement.GetString()
             : null;
 
@@ -262,6 +263,11 @@ internal static class GeoServicesToMapLibreConverter
 
         foreach (var info in infos.EnumerateArray())
         {
+            if (info.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
             if (!info.TryGetProperty("value", out var valueElement))
             {
                 continue;
@@ -355,6 +361,11 @@ internal static class GeoServicesToMapLibreConverter
         var breaks = new List<(double MaxValue, StyleColor Color, JsonElement Symbol)>();
         foreach (var info in infos.EnumerateArray())
         {
+            if (info.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
             if (!info.TryGetProperty("classMaxValue", out var maxElement))
             {
                 continue;
@@ -652,6 +663,11 @@ internal static class GeoServicesToMapLibreConverter
         var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
+            if (info.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
             if (!info.TryGetProperty("value", out var valueElement))
             {
                 continue;
@@ -789,6 +805,11 @@ internal static class GeoServicesToMapLibreConverter
         var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
+            if (info.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
             if (!info.TryGetProperty("classMaxValue", out var maxElement))
             {
                 continue;
