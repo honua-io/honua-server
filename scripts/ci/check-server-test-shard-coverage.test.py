@@ -58,8 +58,8 @@ def test_clause_flattening_and_selection_pool() -> None:
         ("Ns.BetaTests", OTHER, ("Ignored",)),
     )
     pool = MODULE.selection_pool(classes, KNOWN)
-    # Class FQN AND method-level FQN, and nothing from the other assembly.
-    assert sorted(pool) == ["Ns.AlphaTests", "Ns.AlphaTests.ShouldWork"]
+    # Only runnable method FQNs, and nothing from the other assembly.
+    assert pool == ["Ns.AlphaTests.ShouldWork"]
 
 
 def test_dead_clause_inside_a_live_or_is_flagged() -> None:
@@ -95,7 +95,7 @@ def test_whole_shard_filter_selecting_nothing_is_flagged() -> None:
 
 
 def test_and_composed_filter_is_resolved_per_clause() -> None:
-    classes = inventory(("Ns.Admin.AdminTests", KNOWN, ()))
+    classes = inventory(("Ns.Admin.AdminTests", KNOWN, ("Runs",)))
     result = resolve(
         [{
             "name": "Admin",
@@ -111,7 +111,7 @@ def test_and_composed_filter_is_resolved_per_clause() -> None:
 
 def test_stale_exclusion_is_reported_but_not_a_positive_failure() -> None:
     """A dead `!~` cannot zero out a shard, so it is reported, not failed."""
-    classes = inventory(("Ns.A.ATests", KNOWN, ()))
+    classes = inventory(("Ns.A.ATests", KNOWN, ("Runs",)))
     result = resolve(
         [{
             "name": "Shard",
@@ -168,6 +168,16 @@ def test_exact_match_operator_resolves_against_method_fqns() -> None:
     assert names(dead["dead_positive"]) == ["Exact"]
 
 
+def test_exact_class_name_is_not_treated_as_a_runnable_test() -> None:
+    classes = inventory(("Ns.A.ATests", KNOWN, ("Runs",)))
+    result = resolve(
+        [{"name": "ExactClass", "filter": "FullyQualifiedName=Ns.A.ATests"}],
+        classes,
+    )
+    assert names(result["empty_shards"]) == ["ExactClass"]
+    assert names(result["dead_positive"]) == ["ExactClass"]
+
+
 def test_test_attribute_inventory_covers_testkit_fact_subtypes() -> None:
     """A hardcoded attribute list under-enumerates classes, which both hides
     orphans and makes live filters look dangling. Discovery must be dynamic."""
@@ -200,6 +210,7 @@ test_unknown_target_assembly_is_unresolvable_not_a_silent_pass()
 test_non_fully_qualified_name_property_is_unresolvable()
 test_method_level_clause_is_not_falsely_flagged()
 test_exact_match_operator_resolves_against_method_fqns()
+test_exact_class_name_is_not_treated_as_a_runnable_test()
 test_test_attribute_inventory_covers_testkit_fact_subtypes()
 test_repository_shard_filters_all_select_at_least_one_test()
 print("shard-filter-dangling-guard=ok")
