@@ -163,6 +163,18 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
         }
 
+        // An explicit exclusion of the emitted Mapbox representation is more specific
+        // than its JSON compatibility alias, so the acceptable Esri representation wins.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"application/json;q=1, {MapboxStyleMediaType};q=0, {EsriDrawingInfoMediaType};q=0.5");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        }
+
         // HTTP media type tokens are case-insensitive for both aliases and concrete
         // vendor representations.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))

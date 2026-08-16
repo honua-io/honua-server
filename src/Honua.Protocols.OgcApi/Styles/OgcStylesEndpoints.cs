@@ -624,7 +624,11 @@ public static class OgcStylesEndpoints
 
                 if (TryMapMediaType(mediaType, media, out var mappedEncoding))
                 {
-                    RecordPreference(preferences, mappedEncoding, specificity: 2, quality);
+                    // A concrete emitted representation is more specific than the
+                    // application/json compatibility alias. This lets an explicit
+                    // Mapbox q=0 exclusion veto the alias while a positive alias still
+                    // outranks application/* and */* ranges.
+                    RecordPreference(preferences, mappedEncoding, specificity: 3, quality);
                 }
             }
         }
