@@ -381,3 +381,41 @@ test('an undated objection can never be superseded (fails closed forever)', () =
     reviews: [undated, claudeReview('COMMENTED', '2026-01-12T00:00:00Z')],
   }).exactReview, false);
 });
+
+// --- The review branch's marker filter, actually covered (#3314 review 4,
+// finding 19). Test 46 named this property but never reached the withdrawal
+// logic -- it failed earlier, on `latest` being the objection itself. Mutation
+// testing showed the filter had ZERO coverage. This construction supplies valid
+// head evidence from the OTHER identity, so evaluation gets far enough for the
+// withdrawal check to be the deciding factor.
+test('a markerless review does not withdraw, even when other head evidence exists', () => {
+  const input = {
+    reviews: [
+      claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      { ...claudeReview('COMMENTED', '2026-01-10T00:00:00Z'), body: 'here are more findings' },
+    ],
+    cleanComments: [{
+      author: { login: 'chatgpt-codex-connector' },
+      body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\``,
+      createdAt: '2026-01-11T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z', includesCreatedEdit: false,
+    }],
+  };
+  // Claude's objection is still open: a body without its reviewer's marker is
+  // not a withdrawal, so Codex's otherwise-valid head evidence cannot carry it.
+  assert.equal(ev(input).exactCleanComment, false);
+});
+test('an edited clean comment does not withdraw, even when other head evidence exists', () => {
+  // Finding 20: the original version of this test passed vacuously (its input
+  // held no valid evidence at all). This one bites in both directions.
+  assert.equal(ev({
+    reviews: [claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [
+      claudeCleanComment({ createdAt: '2026-01-10T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z' }),
+      {
+        author: { login: 'chatgpt-codex-connector' },
+        body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\``,
+        createdAt: '2026-01-12T00:00:00Z', updatedAt: '2026-01-12T00:00:00Z', includesCreatedEdit: false,
+      },
+    ],
+  }).exactCleanComment, false);
+});

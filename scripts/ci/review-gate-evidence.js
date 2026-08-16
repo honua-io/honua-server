@@ -134,6 +134,13 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   const newestNegative = newestByReviewer(
     negatives, r => Date.parse(r.updatedAt || r.submittedAt), Infinity);
 
+  // A withdrawal is NOT required to be at head. Requiring it would expire the
+  // withdrawal on every push, deadlocking the gate exactly when the objecting
+  // reviewer is rate-limited -- the case this PR exists for. The accepted
+  // residual: X objects to commit A and withdraws about A, the author pushes B,
+  // Y attests B, and X is never re-asked about B. That is inherent to any
+  // 2-of-N reviewer model rather than a hole in this one.
+  //
   // A withdrawal must be at least as strong as the objection it clears.
   //
   // The third review of #3314 caught this: the positives set was unvalidated on
@@ -169,6 +176,9 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // A clean reviewer comment is accepted only when it is unedited, names one
   // commit whose uniquely resolved full OID equals the head, and no reviewer
   // finding is open.
+  // Unconditionally false: a reaction carries no reviewed SHA, so it can never
+  // attest. Tests asserting `freshCleanReaction === false` therefore pass against
+  // any implementation -- do not count them as coverage.
   const freshCleanReaction = false;
   return { exactReview, exactCleanComment, freshCleanReaction };
 }
