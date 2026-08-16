@@ -145,3 +145,71 @@ test('same-second edit and reaction cannot attest', () => {
   const reactionArtifacts = [{ body: `@codex review ${head}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-04T00:00:00Z', reactions }];
   assert.equal(evaluateCodexEvidence({ reviews: [], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
 });
+
+// --- Claude reviewer identity (Codex rate limits blocked every PR from
+// landing). The gate accepts a second INDEPENDENT bot reviewer. Every safety
+// property is re-asserted for the new identity, so widening the reviewer set
+// cannot quietly widen what counts as evidence.
+//
+// NOTE: the clean-comment path requires a 10-40 hex reviewed SHA, so these use
+// a full 40-char head rather than the short module-level `head`. With the short
+// one the assertions would pass for the wrong reason (regex miss, not policy).
+const claudeHead = 'c'.repeat(40);
+const claudeReview = (state, submittedAt = '2026-01-02T00:00:00Z', oid = claudeHead) => ({
+  author: { login: 'claude[bot]' },
+  body: '### Claude Review\nReviewed commit',
+  submittedAt, updatedAt: submittedAt, commit: { oid }, state,
+});
+const claudeCleanComment = (overrides = {}) => ({
+  author: { login: 'claude[bot]' },
+  body: `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${claudeHead}\``,
+  createdAt: '2026-01-02T00:00:00Z',
+  updatedAt: '2026-01-02T00:00:00Z',
+  includesCreatedEdit: false,
+  ...overrides,
+});
+const evalClaude = (input) => evaluateCodexEvidence({ reviews: [], unresolvedCount: 0, head: claudeHead, ...input });
+
+test('active exact-head Claude review attests', () => {
+  assert.equal(evalClaude({ reviews: [claudeReview('COMMENTED')] }).exactReview, true);
+});
+test('unedited Claude clean comment for exact head attests', () => {
+  assert.equal(evalClaude({ cleanComments: [claudeCleanComment()] }).exactCleanComment, true);
+});
+test('Claude review for another head cannot attest', () => {
+  assert.equal(evalClaude({ reviews: [claudeReview('COMMENTED', '2026-01-02T00:00:00Z', 'd'.repeat(40))] }).exactReview, false);
+});
+test('edited Claude clean comment cannot attest', () => {
+  assert.equal(evalClaude({ cleanComments: [claudeCleanComment({ updatedAt: '2026-01-03T00:00:00Z' })] }).exactCleanComment, false);
+});
+test('Claude clean comment created with an edit cannot attest', () => {
+  assert.equal(evalClaude({ cleanComments: [claudeCleanComment({ includesCreatedEdit: true })] }).exactCleanComment, false);
+});
+test('unresolved finding overrides an exact-head Claude clean comment', () => {
+  assert.equal(evalClaude({ cleanComments: [claudeCleanComment()], unresolvedCount: 1 }).exactCleanComment, false);
+});
+test('Claude CHANGES_REQUESTED suppresses an older Claude approval', () => {
+  assert.equal(evalClaude({
+    reviews: [claudeReview('COMMENTED', '2026-01-02T00:00:00Z'), claudeReview('CHANGES_REQUESTED', '2026-01-04T00:00:00Z')],
+  }).exactReview, false);
+});
+test('a Codex objection suppresses a newer Claude clean comment until superseded', () => {
+  // Cross-reviewer: one reviewer's open objection must not be papered over by
+  // another reviewer's approval. negativeAt is global, not per-reviewer.
+  const codexNegative = {
+    author: { login: 'chatgpt-codex-connector' }, body: '### Codex Review\nReviewed commit',
+    submittedAt: '2026-01-05T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
+    commit: { oid: claudeHead }, state: 'CHANGES_REQUESTED',
+  };
+  assert.equal(evalClaude({ reviews: [codexNegative], cleanComments: [claudeCleanComment()] }).exactCleanComment, false);
+});
+test('Claude clean phrasing does not attest when posted by an arbitrary account', () => {
+  assert.equal(evalClaude({ cleanComments: [claudeCleanComment({ author: { login: 'contributor' } })] }).exactCleanComment, false);
+});
+test('Codex clean phrasing from the Claude identity cannot attest', () => {
+  // Markers are per-reviewer on purpose: a body must match its own reviewer's
+  // phrasing, so replaying one reviewer's text under another identity fails.
+  assert.equal(evalClaude({
+    cleanComments: [claudeCleanComment({ body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\`` })],
+  }).exactCleanComment, false);
+});
