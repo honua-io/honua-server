@@ -1,4 +1,4 @@
-# ADR-0074: UI5 Web Components for Application Chrome, Vega-Lite for Charting
+# ADR-0075: UI5 Web Components for Application Chrome, Vega-Lite for Charting
 
 ## Status
 
@@ -153,7 +153,22 @@ ECharts is the plausible candidate for sankey/treemap/gauge coverage and
 large-N canvas rendering) joins the same registry rather than replacing the
 grammar.
 
-**Agents author the narrowed Honua grammar, never raw Vega-Lite.** The
+**Agents author the narrowed Honua grammar, never raw Vega-Lite — scoped to
+SDK Studio compositions.** This rule governs the `honua-sdk-js` Studio
+composition path only. It does **not** retroactively bind the two server-side
+generators, which today instruct agents to emit raw Vega-Lite **v5**:
+`ReportGenerationPrompt.cs:29` and `DashboardGenerationPrompt.cs:30` both
+require a `chartSpec` declaring `https://vega.github.io/schema/vega-lite/v5.json`,
+and their generation schemas leave `chartSpec` unconstrained.
+
+That is a real divergence, stated here rather than papered over: two agent
+chart contracts coexist, on different Vega-Lite majors. It is not resolved by
+this ADR because those two prompts belong to the server-side generation
+families that **#3255 (D5) proposes retiring** in favour of client-side
+inference. If D5 lands, the divergence disappears with the generators. If D5 is
+rejected, the generators must be migrated onto the narrowed grammar and the
+version pin reconciled — and that migration is then in scope for whoever
+rejects it, not deferred again. The
 published `vega-lite-schema.json` is 1.88 MB across 458 JSON Schema draft-07
 definitions with deep `$ref` nesting. It cannot be placed in a model's context,
 and a model authoring against it directly will not reliably produce valid
