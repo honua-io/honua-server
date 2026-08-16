@@ -190,6 +190,63 @@ def enumerate_test_classes() -> dict[str, dict]:
     return classes
 
 
+def enumerate_declared_classes() -> dict[str, str]:
+    """Return {fully_qualified_class_name: csproj} for EVERY top-level class in
+    the test projects, whether or not it currently owns a recognised test method.
+
+    `enumerate_test_classes()` above deliberately only sees classes whose test
+    methods use an attribute the enumerator recognises, so it under-reports while
+    the attribute inventory is hardcoded (see TEST_METHOD_ATTR). That makes it
+    the wrong basis for `--assert-owner`, whose job is to catch a typo'd or
+    deleted class name in an assertion. This walk is attribute-independent: it
+    answers only "does a class by this fully-qualified name exist in this
+    assembly", which is exactly what the assertion needs on top of the filter
+    match.
+    """
+    declared: dict[str, str] = {}
+    for proj, csproj in TEST_PROJECT_DIRS.items():
+        root = REPO_ROOT / proj
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*.cs"):
+            raw = path.read_text(encoding="utf-8", errors="replace")
+            ns_match = NAMESPACE_RE.search(raw)
+            if not ns_match:
+                continue
+            namespace = ns_match.group(1)
+            block_scoped = ns_match.group(2) == "{"
+            text = _strip_noise(raw)
+            ns_body_depth = 1 if block_scoped else 0
+            depth = 0
+            current_top_class: str | None = None
+            current_top_class_depth = -1
+            i = 0
+            n = len(text)
+            while i < n:
+                ch = text[i]
+                if ch == "{":
+                    depth += 1
+                    i += 1
+                    continue
+                if ch == "}":
+                    if current_top_class is not None and depth == current_top_class_depth + 1:
+                        current_top_class = None
+                        current_top_class_depth = -1
+                    depth -= 1
+                    i += 1
+                    continue
+                if current_top_class is None and depth == ns_body_depth:
+                    m = CLASS_RE.match(text, i)
+                    if m and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+                        current_top_class = m.group(1)
+                        current_top_class_depth = depth
+                        declared.setdefault(f"{namespace}.{current_top_class}", csproj)
+                        i = m.end()
+                        continue
+                i += 1
+    return declared
+
+
 # --- dotnet `--filter` FullyQualifiedName expression evaluator -----------------
 # Grammar (subset used by ci-shards.json filters):
 #   expr   := or
@@ -311,7 +368,17 @@ def main() -> int:
         action="append",
         nargs=3,
         metavar=("FQN", "CSPROJ", "SHARD"),
-        help="assert that SHARD targets CSPROJ and its filter selects FQN; repeatable",
+        help="assert that the class FQN exists in CSPROJ, that SHARD targets "
+             "CSPROJ, and that SHARD's filter selects FQN; repeatable",
+    )
+    parser.add_argument(
+        "--assert-route",
+        action="append",
+        nargs=3,
+        metavar=("FQN", "CSPROJ", "SHARD"),
+        help="like --assert-owner but for a SYNTHETIC FQN that need not exist — "
+             "use only to prove a catch-all shard would claim a hypothetical "
+             "future namespace; repeatable",
     )
     args = parser.parse_args()
 
@@ -385,7 +452,10 @@ def main() -> int:
         partition_children.update(children)
         parsed_partitions.append((name, parent_filter, children))
 
-    for fqn, csproj, shard_name in args.assert_owner or []:
+    declared_classes = enumerate_declared_classes() if args.assert_owner else {}
+    assertions = [(a, True) for a in (args.assert_owner or [])]
+    assertions += [(a, False) for a in (args.assert_route or [])]
+    for (fqn, csproj, shard_name), require_declared in assertions:
         if shard_name not in parsed:
             print(f"::error::asserted owner shard {shard_name!r} does not exist", file=sys.stderr)
             return 2
@@ -396,13 +466,38 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
+        # Both the shard's csproj and the asserted csproj are author-supplied
+        # strings; matching them proves nothing about the class. Look the class
+        # up in the sources so a typo'd, renamed or deleted class fails here
+        # instead of reporting a passing assertion for a class that no longer
+        # exists. This is attribute-independent on purpose (see
+        # enumerate_declared_classes).
+        if require_declared:
+            if fqn not in declared_classes:
+                print(
+                    f"::error::asserted class {fqn!r} is not declared in any test "
+                    "project — check for a typo, a rename, or a deleted class "
+                    "(use --assert-route if the name is a deliberate synthetic "
+                    "probe for a catch-all shard)",
+                    file=sys.stderr,
+                )
+                return 1
+            if declared_classes[fqn] != csproj:
+                print(
+                    f"::error::asserted class {fqn!r} lives in "
+                    f"{declared_classes[fqn]!r}, not in asserted project {csproj!r}; "
+                    f"shard {shard_name!r} could never discover it",
+                    file=sys.stderr,
+                )
+                return 1
         if not _eval(parsed[shard_name], fqn):
             print(
                 f"::error::shard {shard_name!r} filter does not select {fqn!r}",
                 file=sys.stderr,
             )
             return 1
-        print(f"Owner assertion passed: {fqn} -> {shard_name} [{csproj}]")
+        kind = "Owner" if require_declared else "Route"
+        print(f"{kind} assertion passed: {fqn} -> {shard_name} [{csproj}]")
 
     classes = enumerate_test_classes()
     if not classes:
