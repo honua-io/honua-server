@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-08-16). Records decision **D5**, extracted from the Studio/MCP
+Accepted (2026-08-16). Records decision **D5**, extracted from the Studio/MCP
 convergence epic ([#3220](https://github.com/honua-io/honua-server/issues/3220))
 and tracked as [#3255](https://github.com/honua-io/honua-server/issues/3255).
 Pairs with D4 (model routing default, #3254), which is related but independent.
