@@ -56,6 +56,12 @@ grep -Fq 'persist-credentials: false' "${observer}"
 grep -Fq 'resolveTrustedPullRequestWorkflowRun' "${observer}"
 grep -Fq 'python3 policy/scripts/ci/pr-gate-build-evidence.py build' "${observer}"
 grep -Fq 'pr-gate-build-evidence-receipt-' "${observer}"
+# Cross-workflow artifact downloads default to the observer's own run unless
+# all three source coordinates are explicit. Keep the trusted observer bound
+# to the canonical PR Gate run that produced the metadata.
+grep -Fq 'github-token: ${{ github.token }}' "${observer}"
+grep -Fq 'repository: ${{ github.repository }}' "${observer}"
+grep -Fq 'run-id: ${{ steps.collect.outputs.run_id }}' "${observer}"
 if grep -Eq '^  (actions|checks|contents|pull-requests|statuses): write' "${observer}"; then
   echo '::error::PR Gate build-evidence observer gained write permission.' >&2
   exit 1
@@ -72,6 +78,14 @@ grep -Fq 'trustedObserverEvents.has(run.event)' "${ci}"
 grep -Fq "sourceRun.path !== '.github/workflows/pr-gate.yml'" "${ci}"
 grep -Fq 'artifact.size_in_bytes === receipt?.artifact?.artifact_bytes' "${ci}"
 grep -Fq 'artifact.digest === receipt?.artifact?.artifact_digest' "${ci}"
+receipt_download_block="$(sed -n '/name: Download trusted build receipt/,/id: payload-artifact/p' "${ci}")"
+grep -Fq 'github-token: ${{ github.token }}' <<<"${receipt_download_block}"
+grep -Fq 'repository: ${{ github.repository }}' <<<"${receipt_download_block}"
+grep -Fq 'run-id: ${{ steps.receipt-artifact.outputs.observer_run_id }}' <<<"${receipt_download_block}"
+payload_download_block="$(sed -n '/name: Download exact PR Gate build payload/,/name: Setup exact .NET toolchain/p' "${ci}")"
+grep -Fq 'github-token: ${{ github.token }}' <<<"${payload_download_block}"
+grep -Fq 'repository: ${{ github.repository }}' <<<"${payload_download_block}"
+grep -Fq 'run-id: ${{ inputs.pr_gate_run_id }}' <<<"${payload_download_block}"
 grep -Fq 'python3 scripts/ci/pr-gate-build-evidence.py validate' "${ci}"
 grep -Fq 'scripts/ci/restore-server-test-binaries.sh' "${ci}"
 grep -Fq 'dotnet test "${project}" --no-build --no-restore --configuration Release' "${ci}"
