@@ -678,6 +678,9 @@ jobs:
         with:
           artifact-ids: ${{ steps.receipt-artifact.outputs.artifact_id }}
           path: ${{ runner.temp }}/pr-gate-build-receipt
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.receipt-artifact.outputs.observer_run_id }}
 
       - id: payload-artifact
         name: Resolve exact immutable source payload
@@ -744,6 +747,9 @@ jobs:
         with:
           artifact-ids: ${{ steps.payload-artifact.outputs.artifact_id }}
           path: ${{ runner.temp }}/pr-gate-build-payload
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.pr_gate_run_id }}
 
       - name: Setup exact .NET toolchain
         if: steps.payload-download.outcome == 'success'
