@@ -7,22 +7,17 @@ the ArcGIS REST request pattern, while this lane is reserved for licensed
 ArcGIS Pro / ArcPy automation.
 
 This slice does not make ordinary PR gates depend on ArcGIS Pro. It adds the
-runner contract, the manual/scheduled workflow entry point, artifact guardrails,
+runner contract, a manual execution entry point, artifact guardrails,
 an ArcPy script that emits standard `.cert.json` envelopes, a headless
 layout/map-frame screenshot fallback for ProPy runs, and a strict artifact
 validator for licensed runs.
 A successful licensed run still needs to be executed and linked before #1019
 can be closed.
 
-## Workflow
+## Manual execution entry point
 
-Workflow file:
-[`arcgis-pro-desktop-evidence.yml`](../../../.github/workflows/arcgis-pro-desktop-evidence.yml)
-
-Triggers:
-- `workflow_dispatch` with `run_licensed_lane=true`
-- weekly `schedule`, but only when repository variable
-  `ARCGIS_PRO_EVIDENCE_ENABLED=true`
+The licensed lane is executed locally or through ad-hoc runner automation using
+[`scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py`](../../../scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py). The dedicated GitHub Actions workflow entry point is intentionally not enabled by default.
 
 The licensed job runs only on a self-hosted Windows runner with labels:
 
@@ -34,18 +29,18 @@ Required runner state:
 - ArcGIS Pro installed and licensed.
 - ArcGIS Pro Python available through `propy.bat` or the `arcgispro-py3`
   Python executable.
-- A runner-local blank `.aprx` template path supplied through the workflow
-  input `project_template_path` or repository variable
+- A runner-local blank `.aprx` template path supplied via script argument
+  `--project-template` or repository variable
   `ARCGIS_PRO_PROJECT_TEMPLATE`.
 - For reliable headless render evidence, the `.aprx` template should contain a
-  layout with a map frame. Use workflow inputs or repository variables
+  layout with a map frame. Use script arguments or repository variables
   `ARCGIS_PRO_LAYOUT_NAME` and `ARCGIS_PRO_MAP_FRAME_NAME` when the template has
   multiple layouts or frames. If the script is run inside an open ArcGIS Pro UI,
   it can still export the active view first.
 - Network access to a seeded Honua service.
 
 Required target service:
-- `HONUA_BASE_URL` / workflow input `honua_base_url` points to Honua.
+- `HONUA_BASE_URL` / execution argument `--base-url` points to Honua.
 - Default service and layers match `tests/seed/browser-compat.yaml`:
   `browser_compat` layers `2000` (point), `2001` (line), and `2002`
   (polygon).
@@ -94,7 +89,7 @@ python scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py \
 
 ## Artifact Contract
 
-The workflow uploads:
+The manual lane uploads:
 
 ```text
 artifacts/arcgis-pro-desktop/<run-id>/
@@ -121,9 +116,8 @@ They must not be renamed to `arcgis-stub`; that lane remains REST-only.
 
 ## Guardrails
 
-- The workflow has no `pull_request` trigger.
-- The scheduled self-hosted job is skipped unless
-  `ARCGIS_PRO_EVIDENCE_ENABLED=true`.
+- The dedicated workflow entrypoint is not enabled by default; execution is by
+  operator action or scheduled local runner orchestration.
 - Uploaded evidence uses the shared `upload-ci-evidence` action with nightly
   retention, currently 30 days.
 - The runner redacts known secret environment values, URL credentials,
