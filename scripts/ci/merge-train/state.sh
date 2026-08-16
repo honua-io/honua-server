@@ -321,6 +321,21 @@ train_state_read() {
   jq -sc '.[0]' <<<"${json}"
 }
 
+# train_state_requires_live_reconciliation: return 0 when the durable journal
+# records a land-family phase that must be reconciled by a live controller even
+# if no open PR is currently selectable. Return 1 when no reconciliation is
+# needed, and 2 when state cannot be read safely. The distinction lets the
+# workflow self-chain fail closed on an unreadable journal instead of either
+# stranding a landed PR or dispatching blindly.
+train_state_requires_live_reconciliation() {
+  local state state_rc=0 phase
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 2
+  [[ -n "${state}" ]] || return 1
+  phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  [[ "${phase}" == "land" || "${phase}" == "pre-land-cleanup" || "${phase}" == "post-land-finalize" ]]
+}
+
 # --- persistent over-time dashboard (the founder's "dashboard") ---------------
 # Aggregate metrics accumulate across LIVE runs in a second fenced block
 # (```json aggregate```) inside the SAME Merge Train State issue, with a

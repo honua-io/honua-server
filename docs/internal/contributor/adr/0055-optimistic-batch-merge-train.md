@@ -54,11 +54,16 @@ dry-run.
    read the **CI Gate** job conclusion. The batch is a BRANCH, so its CI keys on
    `ci-<ref>` — a DISTINCT concurrency group from each member's `ci-<pr#>`, so
    the batch run can never cancel-in-progress a member's PR run. Polling allows 110 minutes for the observed 42-55 minute shards, queueing, and one failed-job retry while remaining inside the controller's 120-minute cap.
+   Before dispatch, deterministic feature-catalog and GeoServices-parity emitters
+   run in their required order. They share one Architecture test-project build:
+   the parity emitter uses `--no-build --no-restore` after the feature-catalog
+   emitter succeeds. This removes a redundant project evaluation from the
+   otherwise invisible pre-dispatch portion of every live batch.
 4. **forward-fix** — ONLY when the sole failure is the format-verify step:
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
    drift, compile/test failures) ESCALATES, never auto-patched.
-5. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
+5. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. GitHub job-level timeouts may surface as terminal `cancelled`, `timed_out`, or `startup_failure` conclusions instead of an exit code; those conclusions enter the same bounded retry path and cannot be removed by the non-blocking allowlist or pre-existing-failure subtraction. Pending, skipped selected-shard, missing, and neutral evidence still fail closed. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
    `40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)`
    over failing-job logs. Match → a single `gh run rerun --failed` (cap 1),
    never bisection. Their existing optimistic merge-through policy remains separate from generic timeout handling.
@@ -76,11 +81,22 @@ dry-run.
    per-PR labels `train:landing`/`train:escalated`/`train:hold` carry transient
    state.
 
+After a batch CI dispatch becomes visible, the controller persists the exact
+Actions `run_id` in that state issue before entering the long poll. Failure to
+write that identity stops before polling. Attribution probes never update the
+primary batch journal. This makes the active run observable to operators and
+lets crash recovery bind to one exact workflow run instead of guessing from a
+mutable batch branch's run history. A replacement controller verifies the
+workflow path, `workflow_dispatch` event, batch branch, immutable batch SHA,
+trunk ancestry, and exact member heads before waiting for or consuming that
+run. A pre-discovery crash has no run ID and releases the batch for fresh
+assembly; an identity mismatch fails closed.
+
 ### Controller deadline and timeout precedence
 
 The controller initializes one absolute 6,600-second CI deadline for the whole run. Initial batch polling and any failed-job retry share it; retry never resets the clock. The 120-minute workflow cap therefore retains 10 minutes for fail-closed state, metrics, and summary persistence.
 
-Generic timeout or exit-124 evidence has strict precedence over known-flake matching. It receives one `gh run rerun --failed`; failure to request that rerun stops the controller, and a repeated timeout is a real failure even when the same log also matches a known environmental-flake regex. Persistent generic timeouts are never merged through. A failed-job rerun records and persists the current Actions attempt before the side effect. Polling then ignores the old completed attempt until GitHub exposes a strictly newer attempt and that attempt completes. Persisted retry intent is idempotent across cancellation: resume waits for the newer attempt and never issues a duplicate rerun. On controller startup, retry intent is restored before selection or assembly; the stored run, batch branch, trunk base, members, counters, kind, and attempt baseline must all match. A valid intent resumes the existing CI gate and landing path without dispatching a batch, while any mismatch fails closed.
+Generic timeout, exit-124, or terminal cancellation evidence has strict precedence over known-flake matching. It receives one `gh run rerun --failed`; failure to request that rerun stops the controller, and a repeated timeout/cancellation is a real failure even when the same log also matches a known environmental-flake regex. Persistent generic timeouts are never merged through. A failed-job rerun records and persists the current Actions attempt before the side effect. Polling then ignores the old completed attempt until GitHub exposes a strictly newer attempt and that attempt completes. Persisted retry intent is idempotent across cancellation: resume waits for the newer attempt and never issues a duplicate rerun. On controller startup, retry intent is restored before selection or assembly; the stored run, batch branch, trunk base, members, counters, kind, and attempt baseline must all match. A valid intent resumes `success`, `failure`, `cancelled`, `timed_out`, or `startup_failure` from the newer attempt through the existing CI gate and landing-or-fail-closed path without dispatching a batch. Any identity mismatch or nonterminal conclusion fails closed.
 ### Dry-run contract (the safety bar)
 
 `TRAIN_APPLY` (default 0) gates every state-mutating action through a single

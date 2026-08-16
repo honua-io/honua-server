@@ -210,25 +210,23 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding mosaic raster artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputLength = new FileInfo(outputPath).Length;
+            if (outputLength == 0)
             {
                 return JobExecutionResult.Failed("gdalwarp produced an empty output raster.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            var publishError = await GdalArtifactPublisher.PublishFileAsync(
+                context, opts, logger, job.OperationId, outputPath, GeoTiffContentType,
+                "Mosaic raster", cancellationToken).ConfigureAwait(false);
+            if (publishError is not null)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Mosaic raster size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+                return JobExecutionResult.Failed(publishError);
             }
 
-            var artifactUri = GdalDataUri.Build(GeoTiffContentType, outputBytes);
-            await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Mosaic completed", cancellationToken).ConfigureAwait(false);
 
-            Log.MosaicCompleted(logger, job.OperationId, sources.Count, outputBytes.Length);
+            Log.MosaicCompleted(logger, job.OperationId, sources.Count, outputLength);
             return JobExecutionResult.Succeeded();
         }
         finally
@@ -349,10 +347,6 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         [LoggerMessage(9333, LogLevel.Error,
             "GDAL raster mosaic executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
-
-        [LoggerMessage(9334, LogLevel.Warning,
-            "GDAL raster mosaic executor refused job {OperationId}: artifact size {ActualBytes} exceeds limit {MaxBytes}")]
-        public static partial void ArtifactTooLarge(ILogger logger, string operationId, long actualBytes, long maxBytes);
 
         [LoggerMessage(9335, LogLevel.Information,
             "GDAL raster mosaic executor completed job {OperationId}: sources={SourceCount}, bytes={Bytes}")]

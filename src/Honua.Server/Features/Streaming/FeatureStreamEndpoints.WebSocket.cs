@@ -26,6 +26,7 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context,
+        FeatureStreamSession session,
         IStreamSubscriptionFilter? subscriptionFilter,
         bool addDefaultSubscription,
         bool announceInitialSubscription,
@@ -34,21 +35,8 @@ internal static partial class FeatureStreamEndpoints
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-        var session = sessionManager.TryCreateSession(
-            WebSocketTransport,
-            NullIfEmpty(clientLabel),
-            subscriptionFilter,
-            addDefaultSubscription);
-        if (session is null)
-        {
-            await WriteSessionLimitExceededAsync(context, options.MaxConcurrentSessions).ConfigureAwait(false);
-            return;
-        }
-
-        using var sessionLease = session;
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
         // The default subscription is allocated at session creation and is never replaced
@@ -142,7 +130,9 @@ internal static partial class FeatureStreamEndpoints
                         new FeatureStreamStatusFrame
                         {
                             Status = "error",
-                            Message = "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
+                            Message = snapshotResult.IncompleteReason is { } incompleteReason
+                                ? $"The baseline snapshot was incomplete: {incompleteReason}. Reconnect without a cursor to take a fresh snapshot."
+                                : "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
                             SessionId = session.SessionId,
                             SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
                         },
@@ -158,6 +148,25 @@ internal static partial class FeatureStreamEndpoints
             }
             catch (WebSocketException)
             {
+                return;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // The socket is already open, so the failure can only be reported in-band. End
+                // with a terminal error frame rather than unwinding into an aborted connection
+                // (honua-server#3181 REQ-002).
+                FeatureStreamLog.SnapshotEmitFailed(
+                    logger,
+                    session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    exception);
+                await TrySendWebSocketTerminalErrorAsync(
+                    webSocket,
+                    session.WriteLock,
+                    session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    "The baseline snapshot could not be completed. Reconnect to take a fresh snapshot.",
+                    linkedCts.Token).ConfigureAwait(false);
                 return;
             }
         }
@@ -913,7 +922,9 @@ internal static partial class FeatureStreamEndpoints
                         new FeatureStreamStatusFrame
                         {
                             Status = "error",
-                            Message = "The baseline snapshot was incomplete; re-subscribe to take a fresh snapshot.",
+                            Message = snapshotResult.IncompleteReason is { } incompleteReason
+                                ? $"The baseline snapshot was incomplete: {incompleteReason}. Re-subscribe to take a fresh snapshot."
+                                : "The baseline snapshot was incomplete; re-subscribe to take a fresh snapshot.",
                             SessionId = session.SessionId,
                             SubscriptionId = subscriptionId
                         },
@@ -931,6 +942,21 @@ internal static partial class FeatureStreamEndpoints
             catch (WebSocketException)
             {
                 deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
+                return;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // Same in-band contract as the query-string path: the subscription is removed and
+                // the condition is named, never left as an aborted socket (honua-server#3181).
+                FeatureStreamLog.SnapshotEmitFailed(logger, session.SessionId, subscriptionId, exception);
+                deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);
+                await TrySendWebSocketTerminalErrorAsync(
+                    webSocket,
+                    session.WriteLock,
+                    session.SessionId,
+                    subscriptionId,
+                    "The baseline snapshot could not be completed. Re-subscribe to take a fresh snapshot.",
+                    cancellationToken).ConfigureAwait(false);
                 return;
             }
         }
@@ -1400,6 +1426,39 @@ internal static partial class FeatureStreamEndpoints
             {
                 return (false, Encoding.UTF8.GetString(stream.ToArray()), false);
             }
+        }
+    }
+
+    /// <summary>
+    /// Sends a terminal <c>status: error</c> frame naming why the stream is ending. Best effort:
+    /// the socket may already be gone, and the caller is closing it either way.
+    /// </summary>
+    private static async Task TrySendWebSocketTerminalErrorAsync(
+        WebSocket webSocket,
+        SemaphoreSlim writeLock,
+        Guid sessionId,
+        string subscriptionId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendWebSocketStatusAsync(
+                webSocket,
+                writeLock,
+                new FeatureStreamStatusFrame
+                {
+                    Status = "error",
+                    Message = message,
+                    SessionId = sessionId,
+                    SubscriptionId = subscriptionId
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is OperationCanceledException or WebSocketException or IOException or ObjectDisposedException)
+        {
+            // The client is already gone; the stream is ending regardless.
         }
     }
 

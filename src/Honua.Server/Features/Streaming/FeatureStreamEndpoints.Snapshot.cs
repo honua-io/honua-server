@@ -4,10 +4,13 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -32,9 +35,10 @@ namespace Honua.Server.Features.Streaming;
 /// is therefore in the baseline if and only if a delta describing it would be admitted,
 /// which is what makes the subscription-local sequence meaningful across the boundary.</para>
 /// <para><b>Bounds.</b> Snapshots require an explicit layer scope and are bounded by
-/// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/> and
-/// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>. Hitting either bound ends the
-/// snapshot with <c>complete: false</c> rather than silently truncating.</para>
+/// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/>,
+/// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>, and
+/// <see cref="FeatureStreamOptions.MaxSnapshotBytes"/>. Hitting any bound ends the snapshot
+/// with <c>complete: false</c> rather than silently truncating.</para>
 /// </remarks>
 internal static partial class FeatureStreamEndpoints
 {
@@ -51,9 +55,38 @@ internal static partial class FeatureStreamEndpoints
         => mode is FeatureStreamSubscriptionMode.Snapshot or FeatureStreamSubscriptionMode.SnapshotThenDelta;
 
     /// <summary>
-    /// Result of emitting one baseline snapshot.
+    /// Client-safe descriptions of why a baseline ended incomplete. They name the bound that was
+    /// hit — every one of them is advertised on the capability document — without exposing
+    /// provider internals, SQL, or exception text.
     /// </summary>
-    private readonly record struct SnapshotEmitResult(long BaselineCursor, long FeatureCount, bool Complete);
+    private static class SnapshotIncompleteReasons
+    {
+        public const string FeatureCap =
+            "the baseline reached the advertised maxSnapshotFeatures cap";
+
+        public const string ScanBound =
+            "the baseline reached the advertised maxSnapshotScanRows bound";
+
+        public const string ByteBudget =
+            "the baseline reached the advertised maxSnapshotBytes payload budget";
+
+        public const string LayerRemoved =
+            "a layer in the subscription scope left the catalog while the baseline was being read";
+
+        public const string RetentionOvertaken =
+            "the replay window was trimmed past the baseline cursor";
+    }
+
+    /// <summary>
+    /// Result of emitting one baseline snapshot. <paramref name="IncompleteReason"/> is null when
+    /// the baseline is whole and otherwise carries a client-safe description of the bound that
+    /// truncated it, so the terminating frame can name the condition instead of closing silently.
+    /// </summary>
+    private readonly record struct SnapshotEmitResult(
+        long BaselineCursor,
+        long FeatureCount,
+        bool Complete,
+        string? IncompleteReason = null);
 
     /// <summary>
     /// Transport-neutral sink for snapshot frames. Keeps the baseline emitter free of any
@@ -68,6 +101,21 @@ internal static partial class FeatureStreamEndpoints
         /// never written would be burned and the first delta would land at a gap.
         /// </summary>
         public virtual bool BatchesFrames => false;
+
+        /// <summary>
+        /// Returns a conservative encoded-byte count for the mandatory baseline envelope. The
+        /// count includes JSON and transport framing; streamed sinks reserve an end sequence at
+        /// its maximum width so the emitted value can never exceed the budget later.
+        /// </summary>
+        public abstract int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end);
+
+        /// <summary>
+        /// Returns the encoded-byte increment for one admitted feature, including transport
+        /// framing and any feature-count/comma growth in a batched frame.
+        /// </summary>
+        public abstract int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount);
 
         public abstract Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken);
 
@@ -95,9 +143,47 @@ internal static partial class FeatureStreamEndpoints
             return Task.CompletedTask;
         }
 
+        public sealed override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
+        {
+            var featureBytes = JsonSerializer.SerializeToUtf8Bytes(
+                ToBatchedFeature(frame),
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeature).Length;
+            var commaBytes = featureCount > 1 ? 1 : 0;
+            var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
+            var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
+            return featureBytes + commaBytes + currentDigits - previousDigits;
+        }
+
         public sealed override Task WriteFeatureAsync(FeatureStreamSnapshotFeatureFrame frame, CancellationToken cancellationToken)
         {
-            _features.Add(new FeatureStreamSnapshotFeature
+            _features.Add(ToBatchedFeature(frame));
+            return Task.CompletedTask;
+        }
+
+        protected static FeatureStreamSnapshotFrame CreateEmptyMeasuredFrame(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => new()
+            {
+                SnapshotId = end.SnapshotId,
+                SubscriptionId = end.SubscriptionId,
+                Sequence = end.Sequence,
+                Cursor = end.Cursor,
+                Reason = begin.Reason,
+                ServiceId = begin.ServiceId,
+                LayerIds = begin.LayerIds,
+                FeatureCount = 0,
+                // False is one byte longer than true, so it safely reserves either outcome.
+                Complete = false,
+                Features = [],
+                // The emitted frame receives a fresh UtcNow timestamp. Reserve the longest
+                // DateTimeOffset JSON representation so fractional-second trimming can never
+                // make the later payload larger than the measured empty envelope.
+                Timestamp = DateTimeOffset.MaxValue
+            };
+
+        private static FeatureStreamSnapshotFeature ToBatchedFeature(FeatureStreamSnapshotFeatureFrame frame)
+            => new()
             {
                 Id = frame.FeatureId,
                 SourceId = frame.ServiceId,
@@ -109,9 +195,7 @@ internal static partial class FeatureStreamEndpoints
                     Geometry = frame.Geometry,
                     Properties = frame.Attributes
                 }
-            });
-            return Task.CompletedTask;
-        }
+            };
 
         public sealed override Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken)
         {
@@ -153,6 +237,15 @@ internal static partial class FeatureStreamEndpoints
     /// </remarks>
     private sealed class BatchedSseSnapshotSink(HttpResponse response) : BatchedSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => MeasureSseEventBytes(
+                "snapshot",
+                CreateEmptyMeasuredFrame(begin, end),
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame,
+                end.Cursor);
+
         protected override async Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
         {
             await WriteSseEventAsync(
@@ -171,6 +264,17 @@ internal static partial class FeatureStreamEndpoints
     /// </summary>
     private sealed class BatchedWebSocketSnapshotSink(WebSocket webSocket, SemaphoreSlim writeLock) : BatchedSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            // The frame grows as features are appended and may cross either variable-length
+            // WebSocket header boundary. Reserve the maximum server-frame header up front;
+            // the remaining increments are then exactly the JSON growth.
+            => JsonSerializer.SerializeToUtf8Bytes(
+                CreateEmptyMeasuredFrame(begin, end),
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame).Length
+                + 10;
+
         protected override Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
             => SendWebSocketJsonAsync(
                 webSocket,
@@ -217,6 +321,32 @@ internal static partial class FeatureStreamEndpoints
     /// </remarks>
     private sealed class SseSnapshotSink(HttpResponse response) : FeatureStreamSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => MeasureSseEventBytes(
+                "snapshot-begin",
+                begin,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame,
+                null)
+                + MeasureSseEventBytes(
+                    "snapshot-end",
+                    end,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame,
+                    end.Cursor);
+
+        public override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
+        {
+            var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
+            var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
+            return MeasureSseEventBytes(
+                "snapshot-feature",
+                frame,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame,
+                null)
+                + currentDigits - previousDigits;
+        }
+
         public override async Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken)
         {
             await WriteSseEventAsync(
@@ -259,6 +389,29 @@ internal static partial class FeatureStreamEndpoints
 
     private sealed class WebSocketSnapshotSink(WebSocket webSocket, SemaphoreSlim writeLock) : FeatureStreamSnapshotSink
     {
+        public override int MeasureFixedBytes(
+            FeatureStreamSnapshotBeginFrame begin,
+            FeatureStreamSnapshotEndFrame end)
+            => MeasureWebSocketMessageBytes(
+                JsonSerializer.SerializeToUtf8Bytes(
+                    begin,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame).Length)
+                + MeasureWebSocketMessageBytes(
+                    JsonSerializer.SerializeToUtf8Bytes(
+                        end,
+                        FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame).Length);
+
+        public override int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount)
+        {
+            var previousDigits = (featureCount - 1).ToString(CultureInfo.InvariantCulture).Length;
+            var currentDigits = featureCount.ToString(CultureInfo.InvariantCulture).Length;
+            return MeasureWebSocketMessageBytes(
+                JsonSerializer.SerializeToUtf8Bytes(
+                    frame,
+                    FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame).Length)
+                + currentDigits - previousDigits;
+        }
+
         public override Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken)
             => SendWebSocketJsonAsync(
                 webSocket,
@@ -279,6 +432,36 @@ internal static partial class FeatureStreamEndpoints
                 writeLock,
                 JsonSerializer.SerializeToUtf8Bytes(frame, FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame),
                 cancellationToken);
+    }
+
+    private static int MeasureWebSocketMessageBytes(int payloadBytes)
+    {
+        // Server-to-client frames are not masked. Each snapshot envelope item is sent as its
+        // own final text message, so charge its RFC 6455 header as well as the JSON payload.
+        var headerBytes = payloadBytes switch
+        {
+            <= 125 => 2,
+            <= ushort.MaxValue => 4,
+            _ => 10
+        };
+
+        return payloadBytes + headerBytes;
+    }
+
+    private static int MeasureSseEventBytes<T>(
+        string eventName,
+        T payload,
+        JsonTypeInfo<T> jsonTypeInfo,
+        long? id)
+    {
+        var json = JsonSerializer.Serialize(payload, jsonTypeInfo);
+        var frame = id.HasValue
+            ? string.Concat(
+                "id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n",
+                "event: ", eventName, "\n",
+                "data: ", json, "\n\n")
+            : string.Concat("event: ", eventName, "\n", "data: ", json, "\n\n");
+        return Encoding.UTF8.GetByteCount(frame);
     }
 
     /// <summary>
@@ -345,6 +528,114 @@ internal static partial class FeatureStreamEndpoints
         return scoped.HasValueDependentPredicate
             ? "snapshot subscriptions cannot be combined with bbox, attribute, or temporal filters: a feature that leaves the filter after an update produces no delta, so the baseline could not be kept convergent. Use mode=delta with the filter, or mode=snapshot scoped by service/layer only."
             : null;
+    }
+
+    /// <summary>
+    /// Verifies, BEFORE the response is started, that every layer in a snapshot subscription can
+    /// actually produce a baseline. Returns null when the subscription is servable, or a typed
+    /// RFC 7807 problem naming the condition.
+    /// </summary>
+    /// <remarks>
+    /// A stream cannot report a failure as a problem document once its first frame has been
+    /// written — the status line is already committed, so a baseline that dies mid-emission
+    /// reaches the client as a truncated body or, behind a buffering gateway, as that gateway's
+    /// own untyped 500 (honua-server#3181 REQ-002). The only place a typed response is still
+    /// possible is ahead of the handshake, so the two failure modes that are cheap to detect —
+    /// a layer that has left the catalog, and a backing store that will not accept the baseline
+    /// read at all — are detected here with one bounded probe per layer rather than discovered
+    /// halfway through the emission. Failures raised by the probe are logged with their
+    /// exception and reported to the client as a condition only, never as provider text.
+    /// </remarks>
+    private static async Task<IResult?> ValidateSnapshotServabilityAsync(
+        FeatureStreamDependencies deps,
+        ILogger logger,
+        HttpContext context,
+        bool isSse,
+        FeatureStreamSubscriptionMode mode,
+        IStreamSubscriptionFilter? subscriptionFilter)
+    {
+        if (!IsSnapshotMode(mode) ||
+            subscriptionFilter is not StreamSubscriptionFilter filter ||
+            filter.LayerIds is not { Length: > 0 } layerIds)
+        {
+            return null;
+        }
+
+        // A reconnect whose cursor remains inside the retained event window takes the delta-only
+        // replay path and never reads the feature store. Do not let a temporary feature-read
+        // outage block a resume the event store can satisfy by itself (#3206 review).
+        var cursorValue = context.Request.Query["cursor"].ToString();
+        long? cursor = long.TryParse(cursorValue, CultureInfo.InvariantCulture, out var parsedCursor)
+            ? parsedCursor
+            : null;
+        if (!cursor.HasValue && isSse)
+        {
+            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
+            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var parsedLastEventId))
+            {
+                cursor = parsedLastEventId;
+            }
+        }
+
+        if (cursor.HasValue &&
+            await ResolveResnapshotReasonAsync(
+                deps.EventStore,
+                cursor.Value,
+                context.RequestAborted).ConfigureAwait(false) is null)
+        {
+            return null;
+        }
+
+        var graph = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var service = filter.ServiceId is null ? null : ResolveStreamService(graph, filter.ServiceId);
+
+        foreach (var layerId in layerIds)
+        {
+            var descriptor = ResolveStreamLayer(graph, service, layerId);
+            if (descriptor is null)
+            {
+                FeatureStreamLog.SnapshotUnservable(logger, layerId, "layer-not-in-catalog");
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    $"A baseline snapshot cannot be served for layer {layerId.ToString(CultureInfo.InvariantCulture)}: the layer is no longer present in the catalog.");
+            }
+
+            try
+            {
+                var probeIds = await deps.FeatureReader.QueryObjectIdsAsync(
+                    descriptor.LayerId,
+                    new FeatureQuery { Limit = 1 },
+                    context.RequestAborted).ConfigureAwait(false);
+                if (!probeIds.IsDefaultOrEmpty)
+                {
+                    // The id sweep can succeed even when geometry/attribute projection or row
+                    // materialization cannot. Exercise the same bounded feature-read path the
+                    // baseline uses while the response can still become a typed problem.
+                    await deps.FeatureReader.QueryAsync(
+                        descriptor.LayerId,
+                        new FeatureQuery
+                        {
+                            ObjectIds = ImmutableArray.Create(probeIds[0]),
+                            IncludeNullGeometry = true,
+                            Limit = 1
+                        },
+                        context.RequestAborted).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                FeatureStreamLog.SnapshotProbeFailed(logger, layerId, exception);
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    $"A baseline snapshot cannot be served for layer {layerId.ToString(CultureInfo.InvariantCulture)}: its backing store did not accept the baseline read.");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -428,29 +719,49 @@ internal static partial class FeatureStreamEndpoints
             return batchedSequence.Value;
         }
 
-        await sink.WriteBeginAsync(
-            new FeatureStreamSnapshotBeginFrame
-            {
-                SnapshotId = snapshotId,
-                SubscriptionId = subscriptionId,
-                Sequence = AllocateSequence(),
-                Cursor = baselineCursor,
-                Reason = reason,
-                ServiceId = snapshotServiceId,
-                LayerIds = layerIds
-            },
-            cancellationToken).ConfigureAwait(false);
+        var beginFrame = new FeatureStreamSnapshotBeginFrame
+        {
+            SnapshotId = snapshotId,
+            SubscriptionId = subscriptionId,
+            Sequence = AllocateSequence(),
+            Cursor = baselineCursor,
+            Reason = reason,
+            ServiceId = snapshotServiceId,
+            LayerIds = layerIds
+        };
+        var measuredEndFrame = new FeatureStreamSnapshotEndFrame
+        {
+            SnapshotId = snapshotId,
+            SubscriptionId = subscriptionId,
+            Sequence = sink.BatchesFrames ? beginFrame.Sequence : long.MaxValue,
+            Cursor = baselineCursor,
+            FeatureCount = 0,
+            Complete = false
+        };
+        var fixedBytes = sink.MeasureFixedBytes(beginFrame, measuredEndFrame);
+        if (fixedBytes > options.MaxSnapshotBytes)
+        {
+            return new SnapshotEmitResult(
+                baselineCursor,
+                0,
+                Complete: false,
+                SnapshotIncompleteReasons.ByteBudget);
+        }
+
+        await sink.WriteBeginAsync(beginFrame, cancellationToken).ConfigureAwait(false);
 
         var graph = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var service = snapshotServiceId is null ? null : ResolveStreamService(graph, snapshotServiceId);
 
         long emitted = 0;
         long scanned = 0;
+        long emittedBytes = fixedBytes;
         var complete = true;
+        string? incompleteReason = null;
 
-        // Set once the feature cap is reached. Anything still unread after that point —
-        // later pages of the current layer, or any remaining layer — makes the baseline
-        // non-authoritative, including when the cap lands exactly on a page boundary.
+        // Set once the feature cap or the payload budget is reached. Anything still unread after
+        // that point — later pages of the current layer, or any remaining layer — makes the
+        // baseline non-authoritative, including when the bound lands exactly on a page boundary.
         var capped = false;
 
         foreach (var layerId in layerIds)
@@ -468,6 +779,7 @@ internal static partial class FeatureStreamEndpoints
                 // concurrent catalog revision can still remove it. Report the baseline as
                 // incomplete rather than emitting a silently partial view.
                 complete = false;
+                incompleteReason ??= SnapshotIncompleteReasons.LayerRemoved;
                 continue;
             }
 
@@ -477,6 +789,7 @@ internal static partial class FeatureStreamEndpoints
             if (remainingScan <= 0)
             {
                 complete = false;
+                incompleteReason ??= SnapshotIncompleteReasons.ScanBound;
                 break;
             }
 
@@ -491,6 +804,7 @@ internal static partial class FeatureStreamEndpoints
             if (objectIds.Length > remainingScan)
             {
                 complete = false;
+                incompleteReason ??= SnapshotIncompleteReasons.ScanBound;
                 pageIds = objectIds.Take(remainingScan);
             }
 
@@ -519,10 +833,11 @@ internal static partial class FeatureStreamEndpoints
                         // Rows left inside the current page: definitively truncated.
                         capped = true;
                         complete = false;
+                        incompleteReason ??= SnapshotIncompleteReasons.FeatureCap;
                         break;
                     }
 
-                    var frame = BuildSnapshotFeatureFrame(
+                    var projection = ProjectSnapshotFeature(
                         feature,
                         serviceId,
                         descriptor.LayerId,
@@ -530,15 +845,33 @@ internal static partial class FeatureStreamEndpoints
                         filter,
                         snapshotId,
                         subscriptionId,
-                        baselineCursor,
-                        AllocateSequence);
-                    if (frame is null)
+                        baselineCursor);
+                    if (projection is null)
                     {
                         continue;
                     }
 
-                    await sink.WriteFeatureAsync(frame, cancellationToken).ConfigureAwait(false);
+                    // Payload budget. The projection is measured BEFORE a sequence is allocated:
+                    // a frame that does not fit must consume no subscription-local sequence, or
+                    // the first delta after the baseline would land at what the client reads as
+                    // a gap. Truncating here is the same fail-closed outcome as the feature cap,
+                    // and it is the bound that keeps a baseline deliverable through a response
+                    // path that buffers (honua-server#3181).
+                    var measuredFrame = projection.Value.ToFrame(long.MaxValue);
+                    var featureBytes = sink.MeasureFeatureBytes(measuredFrame, emitted + 1);
+                    if (emittedBytes + featureBytes > options.MaxSnapshotBytes)
+                    {
+                        capped = true;
+                        complete = false;
+                        incompleteReason ??= SnapshotIncompleteReasons.ByteBudget;
+                        break;
+                    }
+
+                    await sink.WriteFeatureAsync(
+                        projection.Value.ToFrame(AllocateSequence()),
+                        cancellationToken).ConfigureAwait(false);
                     emitted++;
+                    emittedBytes += featureBytes;
                 }
 
                 if (capped)
@@ -556,6 +889,7 @@ internal static partial class FeatureStreamEndpoints
                     if (offset + options.SnapshotPageSize < ordered.Length)
                     {
                         complete = false;
+                        incompleteReason ??= SnapshotIncompleteReasons.FeatureCap;
                     }
 
                     break;
@@ -582,6 +916,7 @@ internal static partial class FeatureStreamEndpoints
             if (retentionWindow.HasGapAfter(baselineCursor))
             {
                 complete = false;
+                incompleteReason ??= SnapshotIncompleteReasons.RetentionOvertaken;
                 var oldestRetained = retentionWindow.IsEmpty
                     ? long.MaxValue
                     : retentionWindow.OldestRetainedCursor;
@@ -603,15 +938,49 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
 
         FeatureStreamLog.SnapshotEmitted(logger, sessionId, subscriptionId, reason, emitted, baselineCursor, complete);
-        return new SnapshotEmitResult(baselineCursor, emitted, complete);
+        return new SnapshotEmitResult(baselineCursor, emitted, complete, complete ? null : incompleteReason);
     }
 
     /// <summary>
-    /// Projects one stored feature into a snapshot frame, applying the subscription's own
-    /// admission predicate so the baseline and the delta stream agree on membership.
-    /// Returns null when the feature is not admitted by the subscription.
+    /// One admitted baseline feature, projected and measured but not yet sequenced. Keeping the
+    /// sequence out of the projection is what lets the caller weigh the frame against the
+    /// payload budget before committing a subscription-local sequence number to it.
     /// </summary>
-    private static FeatureStreamSnapshotFeatureFrame? BuildSnapshotFeatureFrame(
+    private readonly record struct SnapshotFeatureProjection(
+        string SnapshotId,
+        string SubscriptionId,
+        long Cursor,
+        string ServiceId,
+        int LayerId,
+        string FeatureId,
+        long ObjectId,
+        JsonElement? Geometry,
+        string? GeometryCrs,
+        Dictionary<string, JsonElement>? Attributes)
+    {
+        public FeatureStreamSnapshotFeatureFrame ToFrame(long sequence)
+            => new()
+            {
+                SnapshotId = SnapshotId,
+                SubscriptionId = SubscriptionId,
+                Sequence = sequence,
+                Cursor = Cursor,
+                ServiceId = ServiceId,
+                LayerId = LayerId,
+                FeatureId = FeatureId,
+                ObjectId = ObjectId,
+                Geometry = Geometry,
+                GeometryCrs = GeometryCrs,
+                Attributes = Attributes
+            };
+    }
+
+    /// <summary>
+    /// Projects one stored feature into a measured snapshot-frame payload, applying the
+    /// subscription's own admission predicate so the baseline and the delta stream agree on
+    /// membership. Returns null when the feature is not admitted by the subscription.
+    /// </summary>
+    private static SnapshotFeatureProjection? ProjectSnapshotFeature(
         Feature feature,
         string serviceId,
         int layerId,
@@ -619,8 +988,7 @@ internal static partial class FeatureStreamEndpoints
         StreamSubscriptionFilter filter,
         string snapshotId,
         string subscriptionId,
-        long baselineCursor,
-        Func<long> allocateSequence)
+        long baselineCursor)
     {
         var objectId = feature.ObjectId ?? feature.Id;
         var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature, layerSrid);
@@ -652,20 +1020,17 @@ internal static partial class FeatureStreamEndpoints
             ? string.Concat("EPSG:", enrichment.GeometrySrid.Value.ToString(CultureInfo.InvariantCulture))
             : null;
 
-        return new FeatureStreamSnapshotFeatureFrame
-        {
-            SnapshotId = snapshotId,
-            SubscriptionId = subscriptionId,
-            Sequence = allocateSequence(),
-            Cursor = baselineCursor,
-            ServiceId = serviceId,
-            LayerId = layerId,
-            FeatureId = probe.FeatureId,
-            ObjectId = objectId,
-            Geometry = geometry,
-            GeometryCrs = geometryCrs,
-            Attributes = FeatureStreamPublisher.ParseAttributes(enrichment.PropertiesJson)
-        };
+        return new SnapshotFeatureProjection(
+            snapshotId,
+            subscriptionId,
+            baselineCursor,
+            serviceId,
+            layerId,
+            probe.FeatureId,
+            objectId,
+            geometry,
+            geometryCrs,
+            FeatureStreamPublisher.ParseAttributes(enrichment.PropertiesJson));
     }
 
     /// <summary>

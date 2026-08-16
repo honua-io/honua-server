@@ -1,0 +1,242 @@
+name: Derived Artifact Normalization Consumer
+
+on:
+  workflow_run:
+    workflows: ["Derived Artifact Normalization"]
+    types: [completed]
+
+# Observe mode deliberately has no contents:write permission or write secret.
+# Enforce mode is a later reviewed change after #3219's 20-head shadow audit.
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  NORMALIZATION_MODE: observe
+
+jobs:
+  validate:
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    name: Validate normalization envelope (observe only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted default-branch policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Resolve exact PR and download artifact as bytes
+        id: artifact
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const run = context.payload.workflow_run;
+            if (run.name !== 'Derived Artifact Normalization' ||
+                run.path !== '.github/workflows/normalize-derived-artifacts.yml' ||
+                run.event !== 'pull_request' || run.conclusion !== 'success') {
+              throw new Error('Workflow-run producer identity is not canonical.');
+            }
+            if (run.repository?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              throw new Error('Producer repository does not match this repository.');
+            }
+
+            const eventAssociated = run.pull_requests || [];
+            let associated = eventAssociated;
+            if (associated.length === 0) {
+              const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...context.repo, commit_sha: run.head_sha,
+              });
+              associated = data.filter(pr => pr.state === 'open' && pr.head?.sha === run.head_sha);
+            }
+            if (associated.length !== 1) {
+              throw new Error(`Expected one open PR for producer head; found ${associated.length}.`);
+            }
+            const prNumber = associated[0].number;
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: prNumber,
+            });
+            if (pr.state !== 'open' || pr.draft || pr.head.sha !== run.head_sha) {
+              throw new Error('PR closed, draft, or moved after normalization production.');
+            }
+            const sameRepository = pr.head.repo.full_name === pr.base.repo.full_name;
+            const eventBaseSha = eventAssociated[0]?.base?.sha || '';
+            if (sameRepository && !eventBaseSha) {
+              throw new Error('Same-repository producer lacks event-time base identity.');
+            }
+
+            const { data: artifactPage } = await github.rest.actions.listWorkflowRunArtifacts({
+              ...context.repo, run_id: run.id, per_page: 100,
+            });
+            if (artifactPage.total_count > artifactPage.artifacts.length) {
+              throw new Error('Artifact query exceeded its bounded page.');
+            }
+            const expectedName = `normalization-envelope-${run.id}-attempt-${run.run_attempt}`;
+            const artifacts = artifactPage.artifacts.filter(artifact => artifact.name === expectedName);
+            if (artifacts.length !== 1 || artifacts[0].expired) {
+              throw new Error(`Expected one non-expired ${expectedName} artifact.`);
+            }
+            const maxArchiveBytes = 10 * 1024 * 1024;
+            if (!Number.isSafeInteger(artifacts[0].size_in_bytes) ||
+                artifacts[0].size_in_bytes <= 0 ||
+                artifacts[0].size_in_bytes > maxArchiveBytes) {
+              throw new Error(
+                `Artifact metadata size ${artifacts[0].size_in_bytes} is outside the 10 MiB bound.`);
+            }
+            const download = await github.rest.actions.downloadArtifact({
+              ...context.repo, artifact_id: artifacts[0].id, archive_format: 'zip',
+            });
+            const archive = path.join(process.env.RUNNER_TEMP, 'normalization-envelope.zip');
+            fs.writeFileSync(archive, Buffer.from(download.data));
+
+            const { data: commit } = await github.rest.git.getCommit({
+              ...context.repo, commit_sha: run.head_sha,
+            });
+
+            core.setOutput('archive', archive);
+            core.setOutput('base_sha', sameRepository ? eventBaseSha : '');
+            core.setOutput('head_sha', run.head_sha);
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('run_attempt', String(run.run_attempt));
+            core.setOutput('run_id', String(run.id));
+            core.setOutput('same_repository', String(sameRepository));
+            core.setOutput('tree_sha', commit.tree.sha);
+
+      - name: Validate archive and data envelope with trusted policy
+        env:
+          ARCHIVE: ${{ steps.artifact.outputs.archive }}
+          BASE_SHA: ${{ steps.artifact.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
+          TREE_SHA: ${{ steps.artifact.outputs.tree_sha }}
+          PR_NUMBER: ${{ steps.artifact.outputs.pr_number }}
+          PRODUCER_ATTEMPT: ${{ steps.artifact.outputs.run_attempt }}
+          PRODUCER_RUN_ID: ${{ steps.artifact.outputs.run_id }}
+        run: |
+          base_args=()
+          if [[ -n "${BASE_SHA}" ]]; then
+            base_args=(--base-sha "${BASE_SHA}")
+          fi
+          python3 scripts/ci/normalization-envelope.py validate-archive \
+            --archive "${ARCHIVE}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --pull-request "${PR_NUMBER}" \
+            --source-sha "${HEAD_SHA}" \
+            --source-tree-sha "${TREE_SHA}" \
+            "${base_args[@]}" \
+            --run-id "${PRODUCER_RUN_ID}" \
+            --run-attempt "${PRODUCER_ATTEMPT}" \
+            --plan "${RUNNER_TEMP}/normalization-plan.json"
+
+      - name: Compare prospective blobs without checking out PR code
+        uses: actions/github-script@v9
+        env:
+          HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.artifact.outputs.pr_number }}
+          SAME_REPOSITORY: ${{ steps.artifact.outputs.same_repository }}
+        with:
+          script: |
+            const crypto = require('crypto');
+            const fs = require('fs');
+            const plan = JSON.parse(
+              fs.readFileSync(`${process.env.RUNNER_TEMP}/normalization-plan.json`, 'utf8'));
+            const prNumber = Number(process.env.PR_NUMBER);
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: prNumber,
+            });
+            if (pr.state !== 'open' || pr.draft || pr.head.sha !== process.env.HEAD_SHA) {
+              throw new Error('PR changed between envelope validation and comparison.');
+            }
+            const { data: commit } = await github.rest.git.getCommit({
+              ...context.repo, commit_sha: process.env.HEAD_SHA,
+            });
+            if (plan.source.tree_sha !== commit.tree.sha) {
+              throw new Error('Envelope source tree does not match the exact PR head.');
+            }
+            const { data: tree } = await github.rest.git.getTree({
+              ...context.repo, tree_sha: commit.tree.sha, recursive: 'true',
+            });
+            if (tree.truncated) throw new Error('PR tree query was truncated.');
+            const entries = new Map(tree.tree.map(entry => [entry.path, entry]));
+            const readBlobDigest = async (path, required) => {
+              const entry = entries.get(path);
+              if (!entry) {
+                if (required) throw new Error(`${path} is absent from the exact PR tree.`);
+                return null;
+              }
+              if (entry.type !== 'blob' || !entry.sha) {
+                throw new Error(`${path} is not a regular Git blob.`);
+              }
+              const { data: blob } = await github.rest.git.getBlob({
+                ...context.repo, file_sha: entry.sha,
+              });
+              if (blob.encoding !== 'base64') {
+                throw new Error(`${path} Git blob has unexpected encoding ${blob.encoding}.`);
+              }
+              const content = Buffer.from(blob.content.replace(/\n/g, ''), 'base64');
+              return crypto.createHash('sha256').update(content).digest('hex');
+            };
+
+            // The pull_request workflow is intentionally unprivileged, but its
+            // recipe is still PR-authored. Authenticate every executable
+            // orchestration component against the checked-out default-branch
+            // policy before accepting output provenance. Generator scripts are
+            // allowed PR inputs and are bound separately below.
+            const trustedRecipePaths = [
+              '.github/workflows/normalize-derived-artifacts.yml',
+              '.github/actions/setup-dotnet-ci/action.yml',
+              'scripts/ci/normalization-envelope.py',
+            ];
+            for (const recipePath of trustedRecipePaths) {
+              const stat = fs.lstatSync(recipePath);
+              if (!stat.isFile()) {
+                throw new Error(`${recipePath} trusted recipe is not a regular file.`);
+              }
+              const trustedDigest = crypto.createHash('sha256')
+                .update(fs.readFileSync(recipePath)).digest('hex');
+              const exactDigest = await readBlobDigest(recipePath, true);
+              if (exactDigest !== trustedDigest) {
+                throw new Error(`${recipePath} does not match the trusted generation recipe.`);
+              }
+            }
+
+            for (const generator of plan.generators) {
+              const exactDigest = await readBlobDigest(generator.path, true);
+              if (exactDigest !== generator.sha256) {
+                throw new Error(`${generator.path} generator digest does not match the exact PR head.`);
+              }
+            }
+
+            const changes = [];
+            for (const output of plan.outputs) {
+              const currentDigest = await readBlobDigest(output.path, false);
+              if (currentDigest !== output.sha256) {
+                changes.push({ path: output.path, before: currentDigest, after: output.sha256 });
+              }
+            }
+
+            const fork = process.env.SAME_REPOSITORY !== 'true';
+            await core.summary
+              .addHeading('Untrusted derived-artifact normalization candidate')
+              .addRaw('This validated candidate is not canonical evidence and publishes no commit status. ' +
+                'Count it only after independent exact-head PR Gate corroboration.\n\n')
+              .addTable([
+                [{ data: 'Field', header: true }, { data: 'Value', header: true }],
+                ['Mode', process.env.NORMALIZATION_MODE],
+                ['PR / head', `#${prNumber} / ${process.env.HEAD_SHA}`],
+                ['Same-repository branch', String(!fork)],
+                ['Would update', String(changes.length)],
+                ['Paths', changes.map(change => change.path).join(', ') || 'none'],
+                ['Envelope bytes', String(plan.total_output_bytes)],
+                ['Audit authority', 'candidate only; independent PR Gate required'],
+              ])
+              .write();

@@ -122,6 +122,28 @@ internal static partial class FeatureStreamLog
         long firstAvailableCursor);
 
     [LoggerMessage(EventId = 5025, Level = LogLevel.Warning,
+        Message = "Feature stream baseline snapshot is not servable for layer {LayerId} (condition={Condition}). Rejecting the subscription with a typed problem response before the stream is started.")]
+    public static partial void SnapshotUnservable(
+        ILogger logger,
+        int layerId,
+        string condition);
+
+    [LoggerMessage(EventId = 5026, Level = LogLevel.Warning,
+        Message = "Feature stream baseline snapshot pre-flight read failed for layer {LayerId}.")]
+    public static partial void SnapshotProbeFailed(
+        ILogger logger,
+        int layerId,
+        Exception exception);
+
+    [LoggerMessage(EventId = 5027, Level = LogLevel.Error,
+        Message = "Feature stream baseline snapshot failed for session {SessionId} subscription {SubscriptionId} after the stream was started. Ending the stream with a terminal error frame.")]
+    public static partial void SnapshotEmitFailed(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        Exception exception);
+
+    [LoggerMessage(EventId = 5028, Level = LogLevel.Warning,
         Message = "Feature stream routability refresh failed; scoped subscriptions are failing closed until metadata is readable.")]
     public static partial void RoutabilityRefreshFailed(ILogger logger, Exception exception);
 }

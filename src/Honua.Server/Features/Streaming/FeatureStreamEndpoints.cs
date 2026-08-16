@@ -90,8 +90,8 @@ internal static partial class FeatureStreamEndpoints
         // Determine transport from request headers.
         var isWebSocket = context.WebSockets.IsWebSocketRequest;
         var accept = context.Request.Headers.Accept.ToString();
-        var isSse = accept.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
-        if (!isWebSocket && !isSse)
+        var acceptsSse = accept.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
+        if (!isWebSocket && !acceptsSse)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -121,20 +121,59 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
+        // Reserve capacity before snapshot preflight. The preflight can read from backing
+        // storage, so admitting the session afterwards would let rejected callers consume
+        // unbounded storage work outside MaxConcurrentSessions.
+        var addDefaultSubscription = !isWebSocket || filterResult.HasSubscription || isAdmin;
+        var session = deps.SessionManager.TryCreateSession(
+            isWebSocket ? WebSocketTransport : SseTransport,
+            NullIfEmpty(context.Request.Query["clientLabel"].ToString()),
+            filterResult.Filter,
+            addDefaultSubscription);
+        if (session is null)
+        {
+            return CreateSessionLimitExceeded(context, deps.Options.Value.MaxConcurrentSessions);
+        }
+
+        using var sessionLease = session;
+
+        // Snapshot servability is decided here, ahead of the transport handshake: it is the last
+        // point at which an unservable baseline can still be reported as a typed problem document
+        // rather than as a dead stream (honua-server#3181 REQ-002).
+        var snapshotError = await ValidateSnapshotServabilityAsync(
+            deps,
+            logger,
+            context,
+            // A WebSocket upgrade wins even when its request also advertises SSE.
+            isSse: !isWebSocket,
+            filterResult.Mode,
+            filterResult.Filter).ConfigureAwait(false);
+        if (snapshotError is not null)
+        {
+            return snapshotError;
+        }
+
         if (isWebSocket)
         {
             await HandleWebSocketStream(
                 deps,
                 logger,
                 context,
+                session,
                 filterResult.Filter,
-                addDefaultSubscription: filterResult.HasSubscription || isAdmin,
+                addDefaultSubscription,
                 announceInitialSubscription: filterResult.HasSubscription,
                 filterResult.Mode).ConfigureAwait(false);
             return Results.Empty;
         }
 
-        await HandleSseStream(deps, logger, context, filterResult.Filter, filterResult.Mode).ConfigureAwait(false);
+        await HandleSseStream(
+            deps,
+            logger,
+            context,
+            session,
+            filterResult.Filter,
+            filterResult.Mode).ConfigureAwait(false);
         return Results.Empty;
     }
 
@@ -200,6 +239,7 @@ internal static partial class FeatureStreamEndpoints
             SubscriptionSequence = enabled,
             MaxSnapshotFeatures = options.MaxSnapshotFeatures,
             MaxSnapshotScanRows = options.MaxSnapshotScanRows,
+            MaxSnapshotBytes = options.MaxSnapshotBytes,
             // The mutable release version and the immutable deployment revision are separate
             // fields: evidence bound to a deployment must reference the revision (#3038).
             ServerVersion = deploymentIdentity.ReleaseVersion,
@@ -278,12 +318,11 @@ internal static partial class FeatureStreamEndpoints
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static Task WriteSessionLimitExceededAsync(HttpContext context, int maxConcurrentSessions)
+    private static IResult CreateSessionLimitExceeded(HttpContext context, int maxConcurrentSessions)
         => ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status503ServiceUnavailable,
-                $"Feature stream session limit of {maxConcurrentSessions} concurrent sessions reached.")
-            .ExecuteAsync(context);
+                $"Feature stream session limit of {maxConcurrentSessions} concurrent sessions reached.");
 }
 
 /// <summary>

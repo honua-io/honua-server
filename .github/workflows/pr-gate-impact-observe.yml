@@ -1,0 +1,351 @@
+name: PR Gate Impact Observation
+
+# This observer is intentionally separate from the required pull-request
+# workflow. workflow_run executes the default-branch copy, so a candidate cannot
+# change the collector, its input, or the produced evidence. The full PR Gate
+# remains authoritative throughout the shadow period in #3235. Fork heads are
+# explicitly outside the observation denominator and always retain the full gate.
+on:
+  workflow_run:
+    workflows: [PR Gate]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed canonical PR Gate run to observe
+        required: true
+        type: string
+      run_attempt:
+        description: Exact completed attempt of the canonical PR Gate run
+        required: true
+        type: string
+      run_conclusion:
+        description: Exact terminal conclusion of that PR Gate attempt
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-gate-impact-${{ github.event.workflow_run.id || inputs.run_id }}
+  cancel-in-progress: false
+
+env:
+  PR_GATE_IMPACT_MODE: observe
+
+jobs:
+  observe:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted observer policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 1
+
+      - id: collect
+        name: Collect exact change metadata from trusted policy
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const runnerTemp = process.env.RUNNER_TEMP;
+            if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
+
+            const { data: repository } = await github.rest.repos.get(context.repo);
+            const trustedRef = `refs/heads/${repository.default_branch}`;
+            if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
+              throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
+            }
+
+            const {
+              resolveTrustedPullRequestWorkflowRun,
+            } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            const resolved = await resolveTrustedPullRequestWorkflowRun({
+              github,
+              ...context.repo,
+              runId: process.env.SOURCE_RUN_ID,
+              runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+              runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+              workflowPath: '.github/workflows/pr-gate.yml',
+              workflowName: 'PR Gate',
+              defaultBranch: repository.default_branch,
+              repositoryId: repository.id,
+            });
+            const gateRun = resolved.run;
+            const pr = resolved.pullRequest;
+            const number = resolved.pullRequestNumber;
+            const expectedBase = resolved.baseSha;
+            const expectedHead = resolved.headSha;
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              { ...context.repo, pull_number: number, per_page: 100 },
+            );
+            const { data: currentPr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: number,
+            });
+            if (currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead) {
+              throw new Error('pull request moved while paginating changed files');
+            }
+
+            const runArtifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { ...context.repo, run_id: gateRun.id, per_page: 100 },
+            );
+            const payloadName = `pr-gate-server-test-binaries-${gateRun.id}-attempt-${gateRun.run_attempt}`;
+            const metadataName = `pr-gate-server-test-metadata-${gateRun.id}-attempt-${gateRun.run_attempt}`;
+            const exactArtifact = (name) => {
+              const matches = runArtifacts.filter((artifact) =>
+                artifact.name === name && artifact.expired === false,
+              );
+              return matches.length === 1 ? matches[0] : null;
+            };
+            const payloadArtifact = exactArtifact(payloadName);
+            const metadataArtifact = exactArtifact(metadataName);
+
+            const { data: policy } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: 'scripts/ci/classify-pr-gate-impact.py',
+              ref: context.sha,
+            });
+            if (Array.isArray(policy) || policy.type !== 'file' || policy.encoding !== 'base64' ||
+                !policy.content || !/^[0-9a-f]{40}$/.test(policy.sha || '')) {
+              throw new Error('trusted classifier is unavailable or malformed');
+            }
+            const { data: observerWorkflow } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: '.github/workflows/pr-gate-impact-observe.yml',
+              ref: context.sha,
+            });
+            if (Array.isArray(observerWorkflow) || observerWorkflow.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(observerWorkflow.sha || '')) {
+              throw new Error('trusted observer workflow is unavailable or malformed');
+            }
+            const { data: gateWorkflow } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: '.github/workflows/pr-gate.yml',
+              ref: expectedHead,
+            });
+            if (Array.isArray(gateWorkflow) || gateWorkflow.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(gateWorkflow.sha || '')) {
+              throw new Error('trusted PR Gate workflow is unavailable or malformed');
+            }
+            const { data: resolver } = await github.rest.repos.getContent({
+              ...context.repo,
+              path: 'scripts/ci/trusted-pr-workflow-run.js',
+              ref: context.sha,
+            });
+            if (Array.isArray(resolver) || resolver.type !== 'file' ||
+                !/^[0-9a-f]{40}$/.test(resolver.sha || '')) {
+              throw new Error('trusted workflow-run resolver is unavailable or malformed');
+            }
+
+            const classifierPath = path.join(runnerTemp, 'trusted-classify-pr-gate-impact.py');
+            const inputPath = path.join(runnerTemp, 'pr-gate-impact-input.json');
+            fs.writeFileSync(classifierPath, Buffer.from(policy.content, 'base64'));
+            fs.writeFileSync(inputPath, JSON.stringify({
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              pull_request: number,
+              base_sha: expectedBase,
+              head_sha: expectedHead,
+              policy_sha: context.sha,
+              policy_blob_sha: policy.sha,
+              gate_workflow_blob_sha: gateWorkflow.sha,
+              resolver_blob_sha: resolver.sha,
+              observer_workflow_blob_sha: observerWorkflow.sha,
+              trusted_execution: 'default-branch-workflow-run/v1',
+              gate_workflow_path: gateRun.path,
+              gate_run_id: gateRun.id,
+              gate_run_attempt: gateRun.run_attempt,
+              gate_run_head_sha: gateRun.head_sha,
+              gate_run_conclusion: gateRun.conclusion,
+              changed_files: pr.changed_files,
+              files: files.map((item) => ({
+                filename: item.filename,
+                previous_filename: item.previous_filename,
+                status: item.status,
+              })),
+            }));
+            core.setOutput('pr', String(number));
+            core.setOutput('base', expectedBase);
+            core.setOutput('head', expectedHead);
+            core.setOutput('run_id', String(gateRun.id));
+            core.setOutput('run_attempt', String(gateRun.run_attempt));
+            if (payloadArtifact && metadataArtifact &&
+                Number.isSafeInteger(payloadArtifact.id) && payloadArtifact.id > 0 &&
+                Number.isSafeInteger(metadataArtifact.id) && metadataArtifact.id > 0 &&
+                Number.isSafeInteger(payloadArtifact.size_in_bytes) && payloadArtifact.size_in_bytes > 0 &&
+                payloadArtifact.size_in_bytes <= 536870912 &&
+                Number.isSafeInteger(metadataArtifact.size_in_bytes) &&
+                metadataArtifact.size_in_bytes > 0 && metadataArtifact.size_in_bytes <= 2097152 &&
+                /^sha256:[0-9a-f]{64}$/.test(payloadArtifact.digest || '') &&
+                /^sha256:[0-9a-f]{64}$/.test(metadataArtifact.digest || '')) {
+              core.setOutput('payload_artifact_id', String(payloadArtifact.id));
+              core.setOutput('payload_artifact_name', payloadArtifact.name);
+              core.setOutput('payload_artifact_bytes', String(payloadArtifact.size_in_bytes));
+              core.setOutput('payload_artifact_digest', payloadArtifact.digest);
+              core.setOutput('metadata_artifact_id', String(metadataArtifact.id));
+            } else {
+              core.notice('No unique current-contract PR Gate build artifact pair is available; reuse remains a cache miss.');
+            }
+
+      - id: classify
+        name: Classify non-authoritative PR Gate impact
+        run: |
+          python3 "${RUNNER_TEMP}/trusted-classify-pr-gate-impact.py" \
+            --input "${RUNNER_TEMP}/pr-gate-impact-input.json" \
+            --output "${RUNNER_TEMP}/pr-gate-impact-observation.json"
+          mode="$(jq -r '.mode' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          reason="$(jq -r '.reason' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          files="$(jq -r '.changed_file_count' "${RUNNER_TEMP}/pr-gate-impact-observation.json")"
+          [[ "${mode}" == docs-only || "${mode}" == full ]] || exit 1
+          echo "mode=${mode}" >> "${GITHUB_OUTPUT}"
+          {
+            echo '### Trusted PR Gate impact observation'
+            echo "- Rollout: \`${PR_GATE_IMPACT_MODE}\`"
+            echo "- Would route: \`${mode}\`"
+            echo "- Reason: \`${reason}\`"
+            echo "- Changed files: \`${files}\`"
+            echo "- Canonical PR Gate run: \`${{ steps.collect.outputs.run_id }}\`"
+            echo '- Authoritative path: `full` (unchanged)'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload trusted PR Gate impact observation
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr-gate-impact-observation.json
+          if-no-files-found: error
+          retention-days: 7
+
+      # Reuse evidence is derived by this trusted default-branch workflow. Only
+      # the tiny metadata artifact is downloaded here; the large binary payload
+      # stays immutable in the source PR Gate run and is fetched only by a
+      # tree-equivalent shadow consumer.
+      - name: Checkout current pull-request merge tree without credentials
+        if: steps.collect.outputs.metadata_artifact_id != ''
+        id: build-source-checkout
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ steps.collect.outputs.pr }}/merge
+          path: source
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Download bounded PR Gate build metadata
+        if: >-
+          steps.collect.outputs.metadata_artifact_id != '' &&
+          steps.build-source-checkout.outcome == 'success'
+        id: build-metadata-download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          artifact-ids: ${{ steps.collect.outputs.metadata_artifact_id }}
+          path: ${{ runner.temp }}/pr-gate-build-metadata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.collect.outputs.run_id }}
+
+      - id: validate-build-evidence
+        name: Validate tree-bound PR Gate build evidence
+        if: steps.build-metadata-download.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          SOURCE_ARTIFACT_ID: ${{ steps.collect.outputs.payload_artifact_id }}
+          SOURCE_ARTIFACT_NAME: ${{ steps.collect.outputs.payload_artifact_name }}
+          SOURCE_ARTIFACT_BYTES: ${{ steps.collect.outputs.payload_artifact_bytes }}
+          SOURCE_ARTIFACT_DIGEST: ${{ steps.collect.outputs.payload_artifact_digest }}
+        run: |
+          set -euo pipefail
+          metadata="${RUNNER_TEMP}/pr-gate-build-metadata"
+          context="${metadata}/context.json"
+          test -f "${context}"
+
+          jq -r '.files[].filename' "${RUNNER_TEMP}/pr-gate-impact-input.json" \
+            | policy/scripts/ci/honua-server-targeted-tests.sh --stdin \
+                --config policy/.github/ci-shards.json \
+              > "${RUNNER_TEMP}/trusted-descriptor.json"
+          python3 policy/scripts/ci/plan-server-test-prebuild.py \
+            --config policy/.github/server-test-prebuild-observe.json \
+            --shards policy/.github/ci-shards.json \
+            --registry policy/.github/server-test-artifact-projects.json \
+            --descriptor "${RUNNER_TEMP}/trusted-descriptor.json" \
+            --output "${RUNNER_TEMP}/trusted-plan.json"
+          jq -nS \
+            --argjson artifact_id "${SOURCE_ARTIFACT_ID}" \
+            --arg artifact_name "${SOURCE_ARTIFACT_NAME}" \
+            --argjson artifact_bytes "${SOURCE_ARTIFACT_BYTES}" \
+            --arg artifact_digest "${SOURCE_ARTIFACT_DIGEST}" \
+            '{artifact_id:$artifact_id,artifact_name:$artifact_name,
+              artifact_bytes:$artifact_bytes,artifact_digest:$artifact_digest}' \
+            > "${RUNNER_TEMP}/pr-gate-source-artifact.json"
+
+          mkdir -p "${RUNNER_TEMP}/pr-gate-build-receipt"
+          python3 policy/scripts/ci/pr-gate-build-evidence.py build \
+            --repository "${GITHUB_REPOSITORY}" \
+            --pull-request '${{ steps.collect.outputs.pr }}' \
+            --base-sha '${{ steps.collect.outputs.base }}' \
+            --head-sha '${{ steps.collect.outputs.head }}' \
+            --source-run-id '${{ steps.collect.outputs.run_id }}' \
+            --source-run-attempt '${{ steps.collect.outputs.run_attempt }}' \
+            --configuration "$(jq -r '.configuration' "${context}")" \
+            --dotnet-sdk "$(jq -r '.dotnet_sdk' "${context}")" \
+            --runner-os "$(jq -r '.runner_os' "${context}")" \
+            --runner-arch "$(jq -r '.runner_arch' "${context}")" \
+            --runner-image "$(jq -r '.runner_image' "${context}")" \
+            --policy-root policy \
+            --policy-sha "${GITHUB_SHA}" \
+            --source-root source \
+            --context "${context}" \
+            --plan "${metadata}/plan.json" \
+            --expected-plan "${RUNNER_TEMP}/trusted-plan.json" \
+            --source-artifact "${RUNNER_TEMP}/pr-gate-source-artifact.json" \
+            --metadata-dir "${metadata}" \
+            --registry policy/.github/server-test-artifact-projects.json \
+            --observer-run-id "${GITHUB_RUN_ID}" \
+            --observer-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --receipt "${RUNNER_TEMP}/pr-gate-build-receipt/receipt.json"
+          echo "accepted=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload trusted PR Gate build receipt
+        if: steps.validate-build-evidence.outputs.accepted == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-build-evidence-receipt-${{ steps.collect.outputs.run_id }}-attempt-${{ steps.collect.outputs.run_attempt }}
+          path: ${{ runner.temp }}/pr-gate-build-receipt/receipt.json
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 7
+
+      - name: Report PR Gate build evidence decision
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### PR Gate build evidence'
+            echo '- Mode: `observe`'
+            echo '- Mutation / promotion authority: `none / none`'
+            echo '- Source PR Gate run: `${{ steps.collect.outputs.run_id }}` attempt `${{ steps.collect.outputs.run_attempt }}`'
+            echo '- Trusted receipt emitted: `${{ steps.validate-build-evidence.outputs.accepted || false }}`'
+            echo '- Rejection behavior: `immediate independent-build fallback`'
+          } >> "${GITHUB_STEP_SUMMARY}"

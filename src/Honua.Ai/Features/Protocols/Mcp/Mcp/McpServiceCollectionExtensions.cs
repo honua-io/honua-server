@@ -143,6 +143,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioLayerTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioLayerTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioLayerStyleTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioLayerVisibilityTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioViewTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioWidgetTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioWidgetTool>());
@@ -155,6 +156,15 @@ internal static class McpServiceCollectionExtensions
         // UpdateDraftAsync path as every other composition tool above.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, BindStudioInteractionTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioInteractionTool>());
+
+        // Composition controls (geospatial-mcp ADR-0031, composition profile): the
+        // reference implementation of the standard's add_control / remove_control.
+        // Controls are a peer collection to layers/widgets — input affordances that
+        // emit `change` and are what a `control:{id}` interaction reference resolves
+        // against — and, like the interaction tools, they mutate presentation wiring
+        // only through the shared editor + generation-checked UpdateDraftAsync path.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioControlTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioControlTool>());
 
         // Publication intent ONLY (REQ-003/REQ-009): no publish/share/embed
         // execution tool exists on the agent surface. This is the sole

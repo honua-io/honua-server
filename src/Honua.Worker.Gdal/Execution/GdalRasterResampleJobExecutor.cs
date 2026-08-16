@@ -202,25 +202,23 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding resampled raster artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputLength = new FileInfo(outputPath).Length;
+            if (outputLength == 0)
             {
                 return JobExecutionResult.Failed("gdalwarp produced an empty output raster.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            var publishError = await GdalArtifactPublisher.PublishFileAsync(
+                context, opts, logger, job.OperationId, outputPath, GeoTiffContentType,
+                "Resampled raster", cancellationToken).ConfigureAwait(false);
+            if (publishError is not null)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Resampled raster size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+                return JobExecutionResult.Failed(publishError);
             }
 
-            var artifactUri = GdalDataUri.Build(GeoTiffContentType, outputBytes);
-            await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Resample completed", cancellationToken).ConfigureAwait(false);
 
-            Log.ResampleCompleted(logger, job.OperationId, cellSizeX, outputBytes.Length);
+            Log.ResampleCompleted(logger, job.OperationId, cellSizeX, outputLength);
             return JobExecutionResult.Succeeded();
         }
         finally
@@ -326,10 +324,6 @@ internal sealed partial class GdalRasterResampleJobExecutor(
         [LoggerMessage(9313, LogLevel.Error,
             "GDAL raster resample executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
-
-        [LoggerMessage(9314, LogLevel.Warning,
-            "GDAL raster resample executor refused job {OperationId}: artifact size {ActualBytes} exceeds limit {MaxBytes}")]
-        public static partial void ArtifactTooLarge(ILogger logger, string operationId, long actualBytes, long maxBytes);
 
         [LoggerMessage(9315, LogLevel.Information,
             "GDAL raster resample executor completed job {OperationId}: cellSize={CellSize}, bytes={Bytes}")]

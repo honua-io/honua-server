@@ -40,7 +40,8 @@ jobs:
             const run = context.payload.workflow_run;
             const { classifyFailures } = require('./scripts/ci/ci-failure-classifier.js');
 
-            const { data: jobsResp } = await github.rest.actions.listJobsForWorkflowRun({
+            const { data: jobsResp } = await github.request(
+              'GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
               owner, repo, run_id: run.id, per_page: 100, filter: 'latest',
             });
             const failed = jobsResp.jobs
@@ -58,4 +59,6 @@ jobs:
             }
 
             core.info(`Re-running failed flaky jobs once: ${flakyFailed.join(', ')}`);
-            await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.id });
+            await github.request(
+              'POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs',
+              { owner, repo, run_id: run.id });
