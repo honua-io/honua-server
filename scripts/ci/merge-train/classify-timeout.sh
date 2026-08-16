@@ -141,7 +141,9 @@ train_request_failed_job_rerun() {
     return 0
   fi
 
-  base="$(gh run view "${run_id}" --json attempt --jq '.attempt' 2>/dev/null || echo "")"
+  base="$(gh run view "${run_id}" \
+    --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" \
+    --json attempt --jq '.attempt' 2>/dev/null || echo "")"
   if [[ ! "${base}" =~ ^[0-9]+$ ]]; then
     if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
       base=1
@@ -199,6 +201,10 @@ train_match_timeout_text() {
 
 # train_run_logs_match_timeout <run-id> [failing-job-names]
 # Sets TRAIN_TIMEOUT_KIND to capacity|hang on a match (empty otherwise).
+# Returns 2 when any selected failing job's log is unavailable. Missing failure
+# evidence must never fall through to per-PR attribution: without the log we
+# cannot distinguish product failure, timeout, capacity exhaustion, or runner
+# loss. Capacity still wins immediately when another readable log proves it.
 # Test override: TRAIN_RUN_LOG_TEXT supplies the log text directly.
 train_run_logs_match_timeout() {
   local run_id="$1" failing_names="${2:-}"
@@ -208,8 +214,9 @@ train_run_logs_match_timeout() {
     return $?
   fi
 
-  local rows jid name conclusion saw_job=0 saw_timeout=0
-  rows="$(gh run view "${run_id}" --json jobs \
+  local rows jid name conclusion text annotations saw_job=0 saw_timeout=0 logs_complete=1
+  rows="$(gh run view "${run_id}" \
+    --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --json jobs \
     --jq '.jobs[]
       | select(.conclusion=="failure" or .conclusion=="cancelled"
                or .conclusion=="timed_out" or .conclusion=="startup_failure")
@@ -235,22 +242,48 @@ train_run_logs_match_timeout() {
         continue
         ;;
     esac
-    if train_match_timeout_text "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
-      saw_timeout=1
-      if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
+    # Workflow `::error::` markers are exact-job annotations. Read that small,
+    # paginated surface first so capacity classification does not wait on or
+    # download a 20 MB aggregate log. A complete generic timeout annotation is
+    # also sufficient for the existing bounded hang retry.
+    if annotations="$(train_read_job_annotations "${jid}")"; then
+      if train_log_is_capacity_exhaustion "${annotations}"; then
+        TRAIN_TIMEOUT_KIND=capacity
         return 0
       fi
+      if train_log_is_timeout "${annotations}"; then
+        saw_timeout=1
+        continue
+      fi
+    fi
+    if text="$(train_read_job_log "${jid}")"; then
+      if train_match_timeout_text "${text}"; then
+        saw_timeout=1
+        if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
+          return 0
+        fi
+      fi
+    else
+      logs_complete=0
     fi
   done <<<"${rows}"
 
+  if [[ "${logs_complete}" != "1" ]]; then
+    TRAIN_TIMEOUT_KIND=""
+    return 2
+  fi
   if [[ "${saw_timeout}" == "1" ]]; then
     TRAIN_TIMEOUT_KIND=hang
     return 0
   fi
 
   if [[ "${saw_job}" == "0" ]]; then
-    train_match_timeout_text "$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
-    return $?
+    if text="$(gh run view "${run_id}" \
+      --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --log-failed 2>/dev/null)"; then
+      train_match_timeout_text "${text}"
+      return $?
+    fi
+    return 2
   fi
   TRAIN_TIMEOUT_KIND=""
   return 1
@@ -260,10 +293,14 @@ train_run_logs_match_timeout() {
 # Returns 0 after issuing a retry, 1 when this is not a timeout, 2 when a
 # timeout persisted past the cap and must be handled as a real failure, and
 # 7 (#3054) when a shard exhausted its configured budget while still running
-# tests, which is a CI-capacity failure rather than anything a batch member did.
+# tests, which is a CI-capacity failure rather than anything a batch member did,
+# and 8 when required failure-log evidence is unavailable.
 train_classify_timeout() {
   local run_id="$1" retry_count="${2:-0}" failing_names="${3:-}" callback="${4:-}"
-  train_run_logs_match_timeout "${run_id}" "${failing_names}" || return 1
+  local scan_rc=0
+  train_run_logs_match_timeout "${run_id}" "${failing_names}" || scan_rc=$?
+  [[ "${scan_rc}" == "2" ]] && return 8
+  [[ "${scan_rc}" == "0" ]] || return 1
   if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
     # #3054: the shard was still executing tests when its configured budget
     # expired. A rerun burns another full shard's worth of runner time and
@@ -291,7 +328,8 @@ train_classify_timeout() {
 # API rejection persisted for terminal recovery, 6=rejection known but terminal
 # state persistence failed (cleanup is unauthorized and must not run),
 # 7=shard capacity exhausted (#3054): a CI-configuration failure that must skip
-# autofix and per-PR attribution entirely.
+# autofix and per-PR attribution entirely; 8=required failure evidence was not
+# readable, which also must skip attribution and fail closed.
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
   local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
@@ -301,7 +339,7 @@ train_classify_retry_candidate() {
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
-    3|4|5|6|7) return "${rc}" ;;
+    3|4|5|6|7|8) return "${rc}" ;;
   esac
 
   rc=0

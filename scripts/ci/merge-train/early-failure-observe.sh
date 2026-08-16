@@ -110,11 +110,17 @@ train_early_failure_classify_log() {
 }
 
 train_early_failure_log() {
-  local job_id="$1"
+  local job_id="$1" annotations
   if [[ -n "${TRAIN_EARLY_FAILURE_LOG_READER:-}" ]]; then
     "${TRAIN_EARLY_FAILURE_LOG_READER}" "${job_id}"
   else
-    gh run view --job "${job_id}" --log 2>/dev/null
+    if annotations="$(train_read_job_annotations "${job_id}")" \
+      && { train_log_is_capacity_exhaustion "${annotations}" \
+        || train_log_is_timeout "${annotations}"; }; then
+      printf '%s\n' "${annotations}"
+      return 0
+    fi
+    train_read_job_log "${job_id}"
   fi
 }
 

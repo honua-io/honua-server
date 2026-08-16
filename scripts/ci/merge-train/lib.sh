@@ -115,6 +115,62 @@ train_log()  { _train_emit INFO "$*"; }
 train_warn() { _train_emit WARN "$*"; }
 train_err()  { _train_emit ERROR "$*"; }
 
+# train_read_job_log <job-id>: read one completed Actions job log without
+# depending on the parent workflow having finished publishing its aggregate
+# log archive. `gh run view --job --log` can remain unavailable for minutes
+# after the job itself is terminal (observed on Smart CI run 31940825557),
+# while the job-log REST endpoint is already readable. Read the exact job REST
+# resource first so an unavailable aggregate archive cannot block terminal
+# classification, retaining the familiar CLI surface only as fallback. Tests
+# may inject TRAIN_JOB_LOG_READER.
+train_read_job_log() {
+  local job_id="$1" text
+  if [[ -n "${TRAIN_JOB_LOG_READER:-}" ]]; then
+    "${TRAIN_JOB_LOG_READER}" "${job_id}"
+    return
+  fi
+  if text="$(gh api "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/jobs/${job_id}/logs" 2>/dev/null)" \
+    && [[ -n "${text//[[:space:]]/}" ]]; then
+    printf '%s\n' "${text}"
+    return 0
+  fi
+  if text="$(gh run view --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" \
+      --job "${job_id}" --log 2>/dev/null)" \
+    && [[ -n "${text//[[:space:]]/}" ]]; then
+    printf '%s\n' "${text}"
+    return 0
+  fi
+  return 1
+}
+
+# train_read_job_annotations <job-id>: read the small, paginated annotation set
+# attached to an exact Actions check/job. Timeout and capacity markers are
+# emitted with workflow commands and therefore appear here without downloading
+# a multi-megabyte console log. Tests may inject TRAIN_JOB_ANNOTATION_READER.
+train_read_job_annotations() {
+  local job_id="$1"
+  if [[ -n "${TRAIN_JOB_ANNOTATION_READER:-}" ]]; then
+    "${TRAIN_JOB_ANNOTATION_READER}" "${job_id}"
+    return
+  fi
+  gh api --paginate \
+    "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/check-runs/${job_id}/annotations?per_page=100" \
+    --jq '.[] | [(.message // ""), (.raw_details // "")] | @tsv' \
+    2>/dev/null
+}
+
+# train_csv_remove_exact <csv> <value>: remove an exact non-empty member from
+# a comma-separated list. `grep -v` returns 1 when it removes the sole member;
+# under `set -e -o pipefail` that aborted the train before all-dropped cleanup,
+# metrics, and state persistence. jq always emits the resulting CSV, including
+# the legitimate empty string.
+train_csv_remove_exact() {
+  local csv="$1" value="$2"
+  jq -Rr --arg value "${value}" \
+    'split(",") | map(select(length > 0 and . != $value)) | join(",")' \
+    <<<"${csv}"
+}
+
 # Publish the one authoritative cross-step proof that this controller observed
 # its exact batch on trunk and persisted the matching post-land journal. The
 # workflow consumes this output to permit at most one immediate reconciliation
