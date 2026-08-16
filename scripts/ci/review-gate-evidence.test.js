@@ -213,3 +213,55 @@ test('Codex clean phrasing from the Claude identity cannot attest', () => {
     cleanComments: [claudeCleanComment({ body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\`` })],
   }).exactCleanComment, false);
 });
+
+// --- Copilot code review (github-code-quality[bot], repo ruleset
+// `copilot_code_review`). It posts body-less reviews, so it attests by identity
+// + exact-head binding only, and can never use the clean-comment path.
+const copilotHead = 'e'.repeat(40);
+const copilotReview = (overrides = {}) => ({
+  author: { login: 'github-code-quality[bot]' },
+  body: '',
+  submittedAt: '2026-01-02T00:00:00Z',
+  updatedAt: '2026-01-02T00:00:00Z',
+  commit: { oid: copilotHead },
+  state: 'COMMENTED',
+  ...overrides,
+});
+const evalCopilot = (input) => evaluateCodexEvidence({ reviews: [], unresolvedCount: 0, head: copilotHead, ...input });
+
+test('body-less Copilot review for the exact head attests', () => {
+  assert.equal(evalCopilot({ reviews: [copilotReview()] }).exactReview, true);
+});
+test('Copilot review for another head cannot attest', () => {
+  assert.equal(evalCopilot({ reviews: [copilotReview({ commit: { oid: 'f'.repeat(40) } })] }).exactReview, false);
+});
+test('an unresolved Copilot finding blocks its own body-less review', () => {
+  // This is what carries the weight for a reviewer that states nothing: the
+  // gate counts unresolved threads from attesting reviewers, so Copilot finding
+  // something still stops the PR. Only "looked and said nothing" passes.
+  assert.equal(evalCopilot({ reviews: [copilotReview()], unresolvedCount: 1 }).exactReview, false);
+});
+test('a body-less Copilot comment can never attest via the clean-comment path', () => {
+  assert.equal(evalCopilot({
+    cleanComments: [{
+      author: { login: 'github-code-quality[bot]' }, body: '',
+      createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+      includesCreatedEdit: false, resolvedCommitOid: copilotHead,
+    }],
+  }).exactCleanComment, false);
+});
+test('a body-less review from a non-attesting account cannot attest', () => {
+  assert.equal(evalCopilot({ reviews: [copilotReview({ author: { login: 'contributor' } })] }).exactReview, false);
+});
+test('Copilot CHANGES_REQUESTED suppresses a later Claude clean comment', () => {
+  const negative = copilotReview({ state: 'CHANGES_REQUESTED', submittedAt: '2026-01-05T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z' });
+  assert.equal(evaluateCodexEvidence({
+    reviews: [negative],
+    cleanComments: [{
+      author: { login: 'claude[bot]' },
+      body: `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${copilotHead}\``,
+      createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z', includesCreatedEdit: false,
+    }],
+    unresolvedCount: 0, head: copilotHead,
+  }).exactCleanComment, false);
+});

@@ -26,6 +26,26 @@ const ATTESTING_REVIEWERS = [
     reviewMarker: /Claude Review|Reviewed commit/i,
     cleanMarker: /Claude Review:\s+No major issues found\./i,
   },
+  {
+    // GitHub's Copilot code review (repo ruleset `copilot_code_review`). Unlike
+    // the others it posts reviews with an EMPTY body, so there is no phrasing to
+    // match: `reviewMarker: null` means "any body, including none".
+    //
+    // That makes its review a weaker statement -- it proves a reviewer examined
+    // this exact commit, not that it declared the commit clean. Two things carry
+    // the weight instead: the review is still bound to the head SHA, and because
+    // this login is an attesting reviewer, its own unresolved inline threads are
+    // counted by the gate's unresolvedCount and block the merge. So Copilot
+    // finding something still stops the PR; only "looked and said nothing" passes.
+    //
+    // It has no cleanMarker on purpose: a body-less comment must never satisfy
+    // the clean-comment path, which exists to accept an explicit no-findings
+    // statement. Copilot can only attest through the exact-head review path.
+    id: 'copilot',
+    logins: ['github-code-quality', 'github-code-quality[bot]'],
+    reviewMarker: null,
+    cleanMarker: null,
+  },
 ];
 
 function reviewerFor(login) {
@@ -43,7 +63,10 @@ const isCodex = isAttestingReviewer;
 
 function cleanCommentMatchesHead(comment, head) {
   const reviewer = reviewerFor(comment.author?.login);
-  if (!reviewer || comment.includesCreatedEdit ||
+  // A reviewer with no cleanMarker (Copilot) cannot attest via a comment at all:
+  // this path exists to accept an explicit "no findings" statement, and a
+  // body-less comment makes no such statement.
+  if (!reviewer || !reviewer.cleanMarker || comment.includesCreatedEdit ||
       comment.createdAt !== comment.updatedAt ||
       !reviewer.cleanMarker.test(comment.body || '')) {
     return false;
@@ -65,7 +88,10 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   const attestingReviews = reviews
     .filter(review => {
       const reviewer = reviewerFor(review.author?.login);
-      return reviewer !== null && reviewer.reviewMarker.test(review.body || '');
+      if (reviewer === null) return false;
+      // reviewMarker === null means the reviewer posts body-less reviews and is
+      // recognised by identity + head binding alone (see ATTESTING_REVIEWERS).
+      return reviewer.reviewMarker === null || reviewer.reviewMarker.test(review.body || '');
     })
     .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   const latest = attestingReviews[0];
