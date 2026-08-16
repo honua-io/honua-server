@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Styling;
 using Honua.TestKit.Attributes;
@@ -70,6 +71,38 @@ public sealed class StandaloneStyleDescriptorTests
         Assert.Equal(7, descriptor.Id);
         Assert.True(descriptor.IsBoundToStorageLayer);
         Assert.Equal(MetadataV2GeometryType.LineString, descriptor.GeometryType);
+    }
+
+    [UnitTest]
+    public void FromMapLibre_OutlinePromotion_SelectsMatchingFillForEsriProjection()
+    {
+        const string style =
+            """
+            {
+              "version": 8,
+              "sources": { "layer-7": { "type": "vector", "tiles": ["/tiles/7/{z}/{x}/{y}.mvt"] } },
+              "layers": [
+                { "id": "roads-outline", "type": "line", "source": "layer-7", "source-layer": "roads" },
+                { "id": "parcels-fill", "type": "fill", "source": "layer-7", "source-layer": "parcels", "paint": { "fill-color": "#ff0000" } },
+                { "id": "roads-fill", "type": "fill", "source": "layer-7", "source-layer": "roads", "paint": { "fill-color": "#00ff00" } }
+              ]
+            }
+            """;
+
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre("roads", style);
+        var drawingInfo = MapLibreToGeoServicesConverter.Convert(style, descriptor);
+        using var document = JsonDocument.Parse(drawingInfo);
+        var color = document.RootElement
+            .GetProperty("renderer")
+            .GetProperty("symbol")
+            .GetProperty("color");
+
+        Assert.Equal(MetadataV2GeometryType.Polygon, descriptor.GeometryType);
+        Assert.Equal("layer-7", descriptor.SourceName);
+        Assert.Equal("roads", descriptor.SourceLayer);
+        Assert.Equal(0, color[0].GetInt32());
+        Assert.Equal(255, color[1].GetInt32());
+        Assert.Equal(0, color[2].GetInt32());
     }
 
     [UnitTest]

@@ -29,6 +29,8 @@ internal static class StandaloneStyleDescriptor
     {
         int? layerId = null;
         var geometryType = GeometryType.None;
+        string? selectedSourceName = null;
+        string? selectedSourceLayer = null;
 
         try
         {
@@ -36,8 +38,10 @@ internal static class StandaloneStyleDescriptor
             var root = document.RootElement;
             if (root.ValueKind == JsonValueKind.Object)
             {
-                var (symbolizingGeometryType, sourceName, _) = ReadSymbolizingLayer(root);
+                var (symbolizingGeometryType, sourceName, sourceLayer) = ReadSymbolizingLayer(root);
                 geometryType = symbolizingGeometryType;
+                selectedSourceName = sourceName;
+                selectedSourceLayer = sourceLayer;
                 layerId = ResolveStorageLayerId(root, sourceName);
             }
         }
@@ -51,7 +55,9 @@ internal static class StandaloneStyleDescriptor
             layerId ?? 0,
             styleId,
             geometryType,
-            IsBoundToStorageLayer: layerId.HasValue);
+            IsBoundToStorageLayer: layerId.HasValue,
+            SourceName: selectedSourceName,
+            SourceLayer: selectedSourceLayer);
     }
 
     /// <summary>

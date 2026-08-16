@@ -140,6 +140,107 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
 public sealed class OgcStyleProjectionGraphSyncTests
 {
     [UnitTest]
+    public async Task ExistingCatalogStyle_WhenCollectionLaterUsesSameName_RemainsCatalogOwned()
+    {
+        const string styleId = "future-collection";
+        const string mapLibreStyle =
+            """
+            {
+              "version": 8,
+              "layers": [ { "id": "roads", "type": "line" } ]
+            }
+            """;
+        var existing = new StyleCatalogRecord
+        {
+            StyleId = styleId,
+            Title = "Standalone owner",
+            MapLibreStyleJson = mapLibreStyle,
+            StyleVersion = 1,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "resource.future-collection",
+                Name = styleId,
+                Title = "Later collection"
+            },
+            StorageBindingIds = ["binding.future-collection"]
+        };
+        var binding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "binding.future-collection",
+                Name = "binding.future-collection"
+            },
+            ResourceId = resource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "public.future_collection",
+            StorageLayerId = 42
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph
+            {
+                Resources = [resource],
+                StorageBindings = [binding]
+            },
+            "\"collision\"",
+            DateTimeOffset.UnixEpoch);
+
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(styleId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<StyleCatalogRecord?>(existing));
+        catalog.ListStylesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<StyleCatalogRecord>>([existing]));
+        catalog.UpdateStyleAsync(
+                styleId,
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<StyleCatalogRecord?>(existing with { StyleVersion = 2 }));
+        catalog.ListAssociationsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<StyleLayerAssociation>>([]));
+        var layerStyleService = Substitute.For<ILayerStyleService>();
+        var projection = new OgcStyleProjection(
+            new StaticGraphProvider(snapshot),
+            layerStyleService,
+            Substitute.For<ILayerStyleCatalog>(),
+            Substitute.For<IGeoServicesStyleConverter>(),
+            catalog);
+
+        var summaries = await projection.ListStylesAsync();
+        var update = await projection.UpdateStyleAsync(styleId, mapLibreStyle, strict: false);
+
+        summaries.Should().ContainSingle()
+            .Which.Should().Be(new OgcStyleSummary(styleId, "Standalone owner"));
+        update.Status.Should().Be(OgcStyleUpdateStatus.Updated);
+        await catalog.Received(1).UpdateStyleAsync(
+            styleId,
+            mapLibreStyle,
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+        await layerStyleService.DidNotReceive().UpdateStyleAsync(
+            Arg.Any<MetadataV2Resource>(),
+            Arg.Any<int>(),
+            Arg.Any<JsonElement?>(),
+            Arg.Any<JsonElement?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task UpdateStyle_WhenFirstAssociationSyncFails_ContinuesRemainingAssociations()
     {
         const string styleId = "shared-style";
@@ -223,5 +324,17 @@ public sealed class OgcStyleProjectionGraphSyncTests
             long revision,
             CancellationToken cancellationToken = default)
             => new((MetadataV2GraphSnapshot?)null);
+    }
+
+    private sealed class StaticGraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(
+            CancellationToken cancellationToken = default)
+            => new(snapshot);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => new(revision == snapshot.Revision ? snapshot : null);
     }
 }

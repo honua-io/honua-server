@@ -9,7 +9,9 @@ internal readonly record struct StyleLayerDescriptor(
     int Id,
     string Name,
     MetadataV2GeometryType GeometryType,
-    bool IsBoundToStorageLayer = true)
+    bool IsBoundToStorageLayer = true,
+    string? SourceName = null,
+    string? SourceLayer = null)
 {
     public static StyleLayerDescriptor FromResource(MetadataV2Resource resource, int storageLayerId)
     {

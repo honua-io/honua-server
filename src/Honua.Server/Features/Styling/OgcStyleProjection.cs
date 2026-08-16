@@ -58,6 +58,19 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var summaries = new List<OgcStyleSummary>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        IReadOnlyList<StyleCatalogRecord> catalogStyles = [];
+        if (_independentStyleCatalog is not null)
+        {
+            catalogStyles = await _independentStyleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var style in catalogStyles.Where(style => !TryParseMirroredStyleId(style.StyleId, out _)))
+            {
+                seen.Add(style.StyleId);
+                summaries.Add(new OgcStyleSummary(
+                    style.StyleId,
+                    string.IsNullOrWhiteSpace(style.Title) ? style.StyleId : style.Title!));
+            }
+        }
+
         var candidates = new List<(string StyleId, MetadataV2Resource Resource, int StorageLayerId)>();
         foreach (var resource in snapshot.Graph.Resources)
         {
@@ -103,7 +116,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         // represented as a Phase 1 collection-keyed style.
         if (_independentStyleCatalog is not null)
         {
-            var catalogStyles = await _independentStyleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
             foreach (var style in catalogStyles)
             {
                 if (!seen.Add(style.StyleId))
@@ -277,7 +289,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentNullException.ThrowIfNull(mapLibreStyleJson);
 
-        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
             // Phase 2: the styleId may identify a catalog style rather than a collection-keyed
@@ -342,7 +354,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 shapeError);
         }
 
-        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
             // Phase 2: catalog styles accept the negotiated Esri encoding on write too, so
@@ -934,7 +946,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private async Task<(MetadataV2Resource? Resource, int? StorageLayerId, MetadataV2GraphSnapshot Snapshot)> ResolveStyledResourceAsync(
         string styleId,
         CancellationToken cancellationToken)
-        => await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+    {
+        var resolved = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (_independentStyleCatalog is null || TryParseMirroredStyleId(styleId, out _))
+        {
+            return resolved;
+        }
+
+        var catalogStyle = await _independentStyleCatalog
+            .GetStyleAsync(styleId, cancellationToken)
+            .ConfigureAwait(false);
+        return catalogStyle is null
+            ? resolved
+            : (null, null, resolved.Snapshot);
+    }
 
     private static string ResolveTitle(MetadataV2Resource resource)
         => resource.Metadata.Title
