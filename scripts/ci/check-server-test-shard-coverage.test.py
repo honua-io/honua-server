@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Tests for the shard-coverage / dangling-filter guard.
+
+Focus is the dangling-filter half (a shard filter clause that selects no test
+runs zero tests and PASSES, so CI stays green while coverage disappears) plus
+the static-resolution contract: anything this guard cannot resolve must be
+reported as UNRESOLVABLE, never silently passed.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+
+
+SCRIPT = Path(__file__).with_name("check-server-test-shard-coverage.py")
+SPEC = importlib.util.spec_from_file_location("shard_coverage", SCRIPT)
+assert SPEC and SPEC.loader
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+REPOSITORY_ROOT = SCRIPT.parents[2]
+
+KNOWN = MODULE.DEFAULT_CSPROJ
+OTHER = "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj"
+UNKNOWN = "tests/dotnet/Honua.Nowhere.Tests/Honua.Nowhere.Tests.csproj"
+
+
+def inventory(*entries: tuple[str, str, tuple[str, ...]]) -> dict[str, dict]:
+    return {
+        fqn: {"csproj": csproj, "src": ["synthetic.cs"], "methods": set(methods)}
+        for fqn, csproj, methods in entries
+    }
+
+
+def resolve(shard_defs: list[dict], classes: dict[str, dict]) -> dict[str, list]:
+    parsed = {s["name"]: MODULE._FilterParser(s["filter"]).parse() for s in shard_defs}
+    csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in shard_defs}
+    return MODULE.find_dangling_filters(shard_defs, parsed, csprojs, classes)
+
+
+def names(rows: list) -> list[str]:
+    return [row[0] for row in rows]
+
+
+def test_clause_flattening_and_selection_pool() -> None:
+    node = MODULE._FilterParser(
+        "(FullyQualifiedName~A|FullyQualifiedName~B)&FullyQualifiedName!~C"
+    ).parse()
+    assert MODULE.iter_clauses(node) == [
+        ("FullyQualifiedName", "~", "A"),
+        ("FullyQualifiedName", "~", "B"),
+        ("FullyQualifiedName", "!~", "C"),
+    ]
+
+    classes = inventory(
+        ("Ns.AlphaTests", KNOWN, ("ShouldWork",)),
+        ("Ns.BetaTests", OTHER, ("Ignored",)),
+    )
+    pool = MODULE.selection_pool(classes, KNOWN)
+    # Class FQN AND method-level FQN, and nothing from the other assembly.
+    assert sorted(pool) == ["Ns.AlphaTests", "Ns.AlphaTests.ShouldWork"]
+
+
+def test_dead_clause_inside_a_live_or_is_flagged() -> None:
+    """The #3255 / WorkflowGeneration shape.
+
+    A filter is usually an OR of many clauses. When one clause's namespace is
+    deleted the SHARD still runs (the other clauses match), so shard-level
+    checking sees nothing wrong — while the tests that clause was written to run
+    have silently left CI. The guard must therefore work clause by clause.
+    """
+    classes = inventory(("Ns.Features.Mcp.McpTests", KNOWN, ("Runs",)))
+    result = resolve(
+        [{
+            "name": "MCP",
+            "filter": "FullyQualifiedName~Ns.Features.Mcp"
+                      "|FullyQualifiedName~Ns.Features.WorkflowGeneration",
+        }],
+        classes,
+    )
+    assert result["empty_shards"] == [], "shard-level check alone misses this"
+    assert names(result["dead_positive"]) == ["MCP"]
+    assert result["dead_positive"][0][2] == "~Ns.Features.WorkflowGeneration"
+    assert result["unresolvable"] == []
+
+
+def test_whole_shard_filter_selecting_nothing_is_flagged() -> None:
+    classes = inventory(("Ns.Kept.KeptTests", KNOWN, ()))
+    result = resolve(
+        [{"name": "Gone", "filter": "FullyQualifiedName~Ns.Deleted"}], classes
+    )
+    assert names(result["empty_shards"]) == ["Gone"]
+    assert names(result["dead_positive"]) == ["Gone"]
+
+
+def test_and_composed_filter_is_resolved_per_clause() -> None:
+    classes = inventory(("Ns.Admin.AdminTests", KNOWN, ()))
+    result = resolve(
+        [{
+            "name": "Admin",
+            "filter": "FullyQualifiedName~Ns.Admin&FullyQualifiedName!~Ns.Admin.Legacy",
+        }],
+        classes,
+    )
+    # Live positive clause, and the exclusion no longer excludes anything.
+    assert result["dead_positive"] == []
+    assert result["empty_shards"] == []
+    assert names(result["stale_negative"]) == ["Admin"]
+
+
+def test_stale_exclusion_is_reported_but_not_a_positive_failure() -> None:
+    """A dead `!~` cannot zero out a shard, so it is reported, not failed."""
+    classes = inventory(("Ns.A.ATests", KNOWN, ()))
+    result = resolve(
+        [{
+            "name": "Shard",
+            "filter": "FullyQualifiedName~Ns.A&FullyQualifiedName!~Ns.Vanished",
+        }],
+        classes,
+    )
+    assert result["stale_negative"] and result["dead_positive"] == []
+    assert result["empty_shards"] == [] and result["unresolvable"] == []
+
+
+def test_unknown_target_assembly_is_unresolvable_not_a_silent_pass() -> None:
+    classes = inventory(("Ns.A.ATests", KNOWN, ()))
+    result = resolve(
+        [{"name": "Elsewhere", "filter": "FullyQualifiedName~Ns.A", "csproj": UNKNOWN}],
+        classes,
+    )
+    assert names(result["unresolvable"]) == ["Elsewhere"]
+    # It must NOT be quietly counted as fine just because it could not be read.
+    assert result["dead_positive"] == [] and result["empty_shards"] == []
+
+
+def test_non_fully_qualified_name_property_is_unresolvable() -> None:
+    """Trait/Category clauses are not statically decidable, so report them."""
+    classes = inventory(("Ns.A.ATests", KNOWN, ()))
+    result = resolve(
+        [{"name": "Traity", "filter": "FullyQualifiedName~Ns.A&Category=Fast"}],
+        classes,
+    )
+    assert names(result["unresolvable"]) == ["Traity"]
+    reason = result["unresolvable"][0][2]
+    assert "Category" in reason
+
+
+def test_method_level_clause_is_not_falsely_flagged() -> None:
+    """A clause may name a test METHOD; class-only matching would false-fail."""
+    classes = inventory(("Ns.A.ATests", KNOWN, ("Query_Filters_Rows",)))
+    result = resolve(
+        [{"name": "Method", "filter": "FullyQualifiedName~Query_Filters_Rows"}],
+        classes,
+    )
+    assert result["dead_positive"] == [] and result["empty_shards"] == []
+
+
+def test_exact_match_operator_resolves_against_method_fqns() -> None:
+    classes = inventory(("Ns.A.ATests", KNOWN, ("Runs",)))
+    live = resolve(
+        [{"name": "Exact", "filter": "FullyQualifiedName=Ns.A.ATests.Runs"}], classes
+    )
+    assert live["dead_positive"] == []
+    dead = resolve(
+        [{"name": "Exact", "filter": "FullyQualifiedName=Ns.A.ATests.Gone"}], classes
+    )
+    assert names(dead["dead_positive"]) == ["Exact"]
+
+
+def test_test_attribute_inventory_covers_testkit_fact_subtypes() -> None:
+    """A hardcoded attribute list under-enumerates classes, which both hides
+    orphans and makes live filters look dangling. Discovery must be dynamic."""
+    discovered = set(MODULE.discover_test_method_attributes())
+    for expected in ("Fact", "Theory", "IntegrationTest", "UnitTest",
+                     "CloudTest", "EmulatorTest", "ScaleTest", "RoutingTest"):
+        assert expected in discovered, expected
+
+
+def test_repository_shard_filters_all_select_at_least_one_test() -> None:
+    """Regression lock against the live .github/ci-shards.json."""
+    config = json.loads(
+        (REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8")
+    )
+    shard_defs = config["shards"]
+    classes = MODULE.enumerate_test_classes()
+    assert len(classes) > 1000, "test inventory collapsed — enumerator is broken"
+    result = resolve(shard_defs, classes)
+    assert result["unresolvable"] == [], result["unresolvable"]
+    assert result["empty_shards"] == [], result["empty_shards"]
+    assert result["dead_positive"] == [], result["dead_positive"]
+
+
+test_clause_flattening_and_selection_pool()
+test_dead_clause_inside_a_live_or_is_flagged()
+test_whole_shard_filter_selecting_nothing_is_flagged()
+test_and_composed_filter_is_resolved_per_clause()
+test_stale_exclusion_is_reported_but_not_a_positive_failure()
+test_unknown_target_assembly_is_unresolvable_not_a_silent_pass()
+test_non_fully_qualified_name_property_is_unresolvable()
+test_method_level_clause_is_not_falsely_flagged()
+test_exact_match_operator_resolves_against_method_fqns()
+test_test_attribute_inventory_covers_testkit_fact_subtypes()
+test_repository_shard_filters_all_select_at_least_one_test()
+print("shard-filter-dangling-guard=ok")
