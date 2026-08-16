@@ -669,6 +669,21 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             (await client.SendAsync(unsupportedRequest)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
+        using (var missingEntrySymbolContent = new StringContent(
+                   "{\"renderer\":{\"type\":\"uniqueValue\",\"field1\":\"category\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255],\"size\":8}},{\"value\":\"b\"}]}}",
+                   Encoding.UTF8,
+                   EsriDrawingInfoMediaType))
+        {
+            using var missingEntrySymbolRequest = new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+            {
+                Content = missingEntrySymbolContent
+            };
+            missingEntrySymbolRequest.Headers.TryAddWithoutValidation("Prefer", "handling=strict");
+            (await client.SendAsync(missingEntrySymbolRequest)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
         var drawingInfo = JsonSerializer.Serialize(
             StyleDefaults.BuildDefaultDrawingInfo(MetadataV2GeometryType.Point));
         using var content = new StringContent(drawingInfo, Encoding.UTF8, EsriDrawingInfoMediaType);

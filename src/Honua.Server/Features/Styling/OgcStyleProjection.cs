@@ -817,14 +817,16 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         {
             // The catalog delete has committed and cascaded its associations. Reconcile the
             // layers captured before that cascade so their StyleResourceIds no longer expose
-            // the deleted record. As with updates, this post-commit mirror is best-effort.
+            // the deleted record. As with updates, this post-commit mirror is best-effort and
+            // detached from request cancellation so the endpoint can evict its output cache.
+            var postCommitToken = CancellationToken.None;
             foreach (var layerId in deleteResult.AssociatedLayerIds)
             {
                 try
                 {
-                    await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, postCommitToken).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, styleId, ex);
                 }

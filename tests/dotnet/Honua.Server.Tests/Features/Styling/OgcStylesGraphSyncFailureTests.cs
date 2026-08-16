@@ -367,6 +367,41 @@ public sealed class OgcStyleProjectionGraphSyncTests
         await graphSync.Received(1).SyncLayerStylesAsync(11, CancellationToken.None);
     }
 
+    [UnitTest]
+    public async Task DeleteStyle_WhenRequestCancelsAfterCommit_CompletesPostCommitWorkWithoutRequestToken()
+    {
+        const string styleId = "delete-cancel-after-commit";
+        using var cancellation = new CancellationTokenSource();
+
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.DeleteStyleAsync(styleId, null, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                cancellation.Cancel();
+                return Task.FromResult(
+                    new StyleCatalogDeleteResult(StyleCatalogDeleteStatus.Deleted, [11]));
+            });
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        graphSync.SyncLayerStylesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        var projection = new OgcStyleProjection(
+            new EmptyGraphProvider(),
+            Substitute.For<ILayerStyleService>(),
+            Substitute.For<ILayerStyleCatalog>(),
+            Substitute.For<IGeoServicesStyleConverter>(),
+            catalog,
+            graphSync);
+
+        var result = await projection.DeleteStyleAsync(styleId, cancellation.Token);
+
+        result.Status.Should().Be(OgcStyleDeleteStatus.Deleted);
+        await graphSync.Received(1).SyncLayerStylesAsync(11, CancellationToken.None);
+    }
+
     private sealed class FirstLayerThrowingGraphSync(int failingLayerId) : IMetadataV2StyleGraphSync
     {
         public List<int> Calls { get; } = [];

@@ -99,7 +99,12 @@ internal static class StandaloneStyleDescriptor
             foreach (var info in infos.EnumerateArray())
             {
                 if (info.ValueKind == JsonValueKind.Object
-                    && !TryMergeSymbolGeometry(info, "symbol", ref geometryType, ref hasUnsupportedSymbol))
+                    && !TryMergeSymbolGeometry(
+                        info,
+                        "symbol",
+                        ref geometryType,
+                        ref hasUnsupportedSymbol,
+                        required: true))
                 {
                     return false;
                 }
@@ -113,10 +118,12 @@ internal static class StandaloneStyleDescriptor
         JsonElement owner,
         string propertyName,
         ref GeometryType geometryType,
-        ref bool hasUnsupportedSymbol)
+        ref bool hasUnsupportedSymbol,
+        bool required = false)
     {
         if (!owner.TryGetProperty(propertyName, out _))
         {
+            hasUnsupportedSymbol |= required;
             return true;
         }
 
