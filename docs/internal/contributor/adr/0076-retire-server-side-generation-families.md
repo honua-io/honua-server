@@ -38,7 +38,7 @@ whose stated failure mode is composition "generated whole by a vendor surface."
 The streaming canvas is not speculative: honua-studio #24, #27, #28, and #29 have
 all landed. D5 removes what they replaced.
 
-### 2. "The server makes no outbound LLM calls" is currently a configuration accident
+### 2. "The server decides to call a model" is currently a configuration accident
 
 `FeatureRegistrationExtensions.cs:213` and `:218` register `IMapGenerationService`
 and `IAppGenerationService` **unconditionally** — no options gate, no feature
@@ -47,8 +47,29 @@ flag. The `Enabled` check lives inside the implementation
 resolvable and always builds real chat-completion requests. It fails at call time
 for want of a key rather than being absent.
 
-That is not a property anyone can attest to. Moving inference to the client makes
-zero-outbound-LLM **structural**.
+**State the resulting property precisely, because the obvious phrasing is wrong.**
+"The server makes no outbound LLM calls" would be false even after this work, and
+it is exactly the kind of sentence that ends up in a compliance attestation. The
+Studio AI proxy (`src/Honua.Ai/Features/StudioAiProxy/`, honua-server#3000) is a
+deliberate, shipped, provider-agnostic **pass-through** at
+`POST /api/v1/studio/ai/chat`. It exists so a browser that cannot hold model keys
+can still do client-side inference, which is what makes the rest of this decision
+workable. It stays.
+
+The defensible claim, and the one this ADR makes, is narrower:
+
+> **The server performs no model inference of its own as part of executing a
+> capability.** It may forward a client's inference request through an explicitly
+> configured proxy.
+
+Getting there requires one thing beyond the eight families:
+`OpenAiNlQueryPlanProvider` (`src/Honua.Ai/Features/NlQuery/`) made real
+`/chat/completions` calls, was registered unconditionally, and was **not** in the
+original D5 scope. It is removed here. Doing so costs nothing: `INlQueryOrchestrator`
+has zero consumers outside its own feature and tests — no endpoint, no MCP tool, no
+route — so the whole NlQuery feature is registered but unreachable. Removing the
+one provider that opened a socket leaves the `INlQueryPlanProvider` seam and the
+deterministic fixture provider in place.
 
 ### 3. The unconstrained generation surface is a live security exposure
 
@@ -182,8 +203,11 @@ deleting the code would otherwise delete the evidence.
 
 ### Improved
 
-- Zero outbound LLM calls from the server becomes an architectural fact rather
-  than a missing-key accident — a claim `honua-compliance` can attest.
+- "The server performs no model inference of its own as part of executing a
+  capability" becomes an architectural fact rather than a missing-key accident —
+  a claim `honua-compliance` can attest, stated in the form that is actually
+  true. The Studio AI proxy remains a deliberate BYOM pass-through and is
+  excluded from that claim by construction, not by oversight.
 - The tool API stops lying: the undefined `prompt` requirement goes away, and
   `sourceBindings` / `initialView` start being honored instead of rejected and
   silently dropped.
@@ -236,7 +260,15 @@ regression this work caused.
 
 ## Non-goals
 
-- Removing BYOM.
+- Removing BYOM. Inference moves to the client, and the Studio AI proxy stays so
+  a browser can reach a model without holding a key.
+- Removing NL-to-spatial-SQL. The pipeline is
+  `NL -> FilterPlan -> FilterPlanCompiler -> SQL`, and both load-bearing pieces
+  sit outside this deletion: `FilterPlan` in `Honua.Core/Features/NlQuery/Domain`
+  and `FilterPlanCompiler` in `Honua.Geometry/Features/NlQuery/Services`. Only
+  the step that decides *who runs the model* changes. A client-planned
+  `FilterPlan` is also strictly better than a generated SQL string, because it is
+  inspectable and dry-runnable before it reaches the database.
 - D4 model routing (#3254).
 - Touching `src/Honua.Scene/Generation` or
   `src/Honua.Core/Features/WorkflowPackages/Generation`, which are not AI

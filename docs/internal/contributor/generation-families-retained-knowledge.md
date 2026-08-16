@@ -130,6 +130,36 @@ Algorithm-specific and easy to lose: `eps` + `minPoints` when
 `algorithm = dbscan`; `k` when `algorithm = kmeans`; `distance` when
 `predicate = dwithin`.
 
+## NL-to-spatial-SQL survives this deletion
+
+Recorded because `QueryGeneration` looks like the NL-to-SQL feature and is not.
+
+The pipeline is `NL -> FilterPlan -> FilterPlanCompiler -> SQL`, and both
+load-bearing pieces sit outside the delete boundary:
+
+- `FilterPlan` — `src/Honua.Core/Features/NlQuery/Domain/`
+- `FilterPlanCompiler` — `src/Honua.Geometry/Features/NlQuery/Services/`
+
+`QueryGeneration` was one route to a `FilterPlan`. A second, separate feature —
+`src/Honua.Ai/Features/NlQuery/` — does the same job behind an
+`INlQueryPlanProvider` seam and already shipped two implementations. Only the
+step deciding *who runs the model* changes: a client emits a `FilterPlan`, the
+server validates and compiles it. That is the better shape, because a plan is
+inspectable and dry-runnable before it reaches the database in a way a generated
+SQL string never is.
+
+The query rules in §3 above are what a client-side planner or a server-side plan
+validator needs in order to keep the behaviour that `QueryGenerationValidationGate`
+enforced.
+
+**`NlQuery` is itself currently unreachable.** `INlQueryOrchestrator` has no
+consumers outside its own feature and tests — no endpoint, no MCP tool, no
+registry route — so the feature is registered by
+`FeatureRegistrationExtensions.cs:133` and never invoked. Its
+`OpenAiNlQueryPlanProvider` was removed with the generation families (it was the
+last path on which the server initiated inference of its own accord); the
+deterministic provider and the seam remain.
+
 ## Defects found during extraction
 
 Recorded because deleting the code would also delete the evidence.

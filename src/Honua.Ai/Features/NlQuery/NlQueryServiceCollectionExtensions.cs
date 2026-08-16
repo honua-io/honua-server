@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
-using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Ai.AiBuilder;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -27,14 +26,17 @@ internal static class NlQueryServiceCollectionExtensions
             return services;
         }
 
+        // The 'openai' provider was removed with the server-side generation families
+        // (ADR-0076): it was the last path on which the server initiated model inference
+        // of its own accord. Planning a FilterPlan from natural language is the client's
+        // job; the server validates and compiles the plan it is handed.
         var provider = section.GetValue<string>("Provider");
-        var isDeterministic = string.Equals(provider, "deterministic", StringComparison.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(provider)
-            && !isDeterministic
-            && !string.Equals(provider, "openai", StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(provider, "deterministic", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Unsupported NlQuery provider '{provider}'. Supported values: 'openai', 'deterministic'.");
+                $"Unsupported NlQuery provider '{provider}'. Supported values: 'deterministic'. "
+                + "Server-side model inference was removed in ADR-0076; supply a FilterPlan from the client instead.");
         }
 
         services.AddOptions<NlQueryConfiguration>()
@@ -53,19 +55,8 @@ internal static class NlQueryServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<NlQueryConfiguration>, NlQueryConfigurationValidator>();
 
-        if (isDeterministic)
-        {
-            services.AddAiBuilderFixtures();
-            services.AddScoped<INlQueryPlanProvider, DeterministicNlQueryPlanProvider>();
-        }
-        else
-        {
-            services.AddResilientHttpClient(
-                "nl-query",
-                "nl-query",
-                HttpResiliencePolicies.FastApiDefaults);
-            services.AddScoped<INlQueryPlanProvider, OpenAiNlQueryPlanProvider>();
-        }
+        services.AddAiBuilderFixtures();
+        services.AddScoped<INlQueryPlanProvider, DeterministicNlQueryPlanProvider>();
 
         services.AddScoped<INlQueryOrchestrator, NlQueryOrchestrator>();
         return services;
