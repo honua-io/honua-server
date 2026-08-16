@@ -66,15 +66,15 @@ internal static class StandaloneStyleDescriptor
     /// </summary>
     /// <param name="drawingInfo">Parsed <c>drawingInfo</c> document.</param>
     /// <param name="geometryType">The inferred geometry type, or <see cref="GeometryType.None"/> when unknown.</param>
-    /// <param name="hasUnsupportedSymbol">Whether a declared symbol has a missing or unsupported Esri type.</param>
+    /// <param name="hasUnsupportedContent">Whether declared renderer content is incomplete or unsupported.</param>
     /// <returns><see langword="false"/> when recognized symbols use different geometry families.</returns>
     public static bool TryInferConsistentGeometryType(
         JsonElement drawingInfo,
         out GeometryType geometryType,
-        out bool hasUnsupportedSymbol)
+        out bool hasUnsupportedContent)
     {
         geometryType = GeometryType.None;
-        hasUnsupportedSymbol = false;
+        hasUnsupportedContent = false;
 
         if (drawingInfo.ValueKind != JsonValueKind.Object
             || !drawingInfo.TryGetProperty("renderer", out var renderer)
@@ -83,8 +83,8 @@ internal static class StandaloneStyleDescriptor
             return true;
         }
 
-        if (!TryMergeSymbolGeometry(renderer, "symbol", ref geometryType, ref hasUnsupportedSymbol)
-            || !TryMergeSymbolGeometry(renderer, "defaultSymbol", ref geometryType, ref hasUnsupportedSymbol))
+        if (!TryMergeSymbolGeometry(renderer, "symbol", ref geometryType, ref hasUnsupportedContent)
+            || !TryMergeSymbolGeometry(renderer, "defaultSymbol", ref geometryType, ref hasUnsupportedContent))
         {
             return false;
         }
@@ -98,12 +98,26 @@ internal static class StandaloneStyleDescriptor
 
             foreach (var info in infos.EnumerateArray())
             {
-                if (info.ValueKind == JsonValueKind.Object
-                    && !TryMergeSymbolGeometry(
+                if (info.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (infosProperty == "uniqueValueInfos")
+                {
+                    hasUnsupportedContent |= !info.TryGetProperty("value", out _);
+                }
+                else
+                {
+                    hasUnsupportedContent |= !info.TryGetProperty("classMaxValue", out var classMaxValue)
+                        || !StyleParsingHelpers.TryGetDouble(classMaxValue, out _);
+                }
+
+                if (!TryMergeSymbolGeometry(
                         info,
                         "symbol",
                         ref geometryType,
-                        ref hasUnsupportedSymbol,
+                        ref hasUnsupportedContent,
                         required: true))
                 {
                     return false;
@@ -118,18 +132,18 @@ internal static class StandaloneStyleDescriptor
         JsonElement owner,
         string propertyName,
         ref GeometryType geometryType,
-        ref bool hasUnsupportedSymbol,
+        ref bool hasUnsupportedContent,
         bool required = false)
     {
         if (!owner.TryGetProperty(propertyName, out _))
         {
-            hasUnsupportedSymbol |= required;
+            hasUnsupportedContent |= required;
             return true;
         }
 
         if (!TryReadSymbolGeometry(owner, propertyName, out var candidate))
         {
-            hasUnsupportedSymbol = true;
+            hasUnsupportedContent = true;
             return true;
         }
 

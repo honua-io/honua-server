@@ -540,7 +540,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         if (!StandaloneStyleDescriptor.TryInferConsistentGeometryType(
                 drawingInfo,
                 out var rendererGeometryType,
-                out var hasUnsupportedRendererSymbol))
+                out var hasUnsupportedRendererContent))
         {
             return new OgcStyleUpdateResult(
                 OgcStyleUpdateStatus.Invalid,
@@ -560,9 +560,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var warningList = conversion.Unsupported
             .Select(u => $"{u.Code} ({u.SymbolizerType}): {u.Guidance}")
             .ToList();
-        if (hasUnsupportedRendererSymbol)
+        if (hasUnsupportedRendererContent)
         {
-            warningList.Add("unsupported-symbol-type (renderer): A renderer symbol has a missing or unsupported Esri type.");
+            warningList.Add("unsupported-renderer-content (renderer): Renderer content is incomplete or uses an unsupported Esri symbol type.");
         }
 
         var warnings = warningList.Count == 0 ? null : warningList.ToArray();
