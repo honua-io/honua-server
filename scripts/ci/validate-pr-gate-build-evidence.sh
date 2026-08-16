@@ -16,11 +16,14 @@ train=.github/workflows/merge-train.yml
 "${python_bin}" scripts/ci/pr-gate-build-evidence.test.py
 "${python_bin}" scripts/ci/validate-server-test-archive.test.py
 "${python_bin}" scripts/ci/summarize-dotnet-trx.test.py
+bash scripts/ci/fixtures/validate-pr-gate-shallow-ancestry.sh
 "${python_bin}" -m py_compile \
   scripts/ci/pr-gate-build-evidence.py \
   scripts/ci/validate-server-test-archive.py
 bash -n \
   scripts/ci/package-pr-gate-build-evidence.sh \
+  scripts/ci/lib/pr-gate-ancestry.sh \
+  scripts/ci/fixtures/validate-pr-gate-shallow-ancestry.sh \
   scripts/ci/restore-server-test-binaries.sh \
   scripts/ci/merge-train/select.sh \
   scripts/ci/merge-train/smart-ci.sh \
