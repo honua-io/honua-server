@@ -66,6 +66,22 @@ on:
         description: 'Opaque merge-train dispatch identity used to correlate the exact Actions run'
         required: false
         default: ''
+      pr_gate_run_id:
+        description: 'Exact admitted PR Gate run eligible for report-only tree-equivalent build evidence'
+        required: false
+        default: ''
+      pr_gate_run_attempt:
+        description: 'Exact admitted PR Gate run attempt'
+        required: false
+        default: ''
+      pr_gate_pr:
+        description: 'Single admitted pull request associated with optional PR Gate build evidence'
+        required: false
+        default: ''
+      pr_gate_head_sha:
+        description: 'Exact admitted pull-request head associated with optional PR Gate build evidence'
+        required: false
+        default: ''
       sdk_ref:
         description: 'honua-sdk-js git ref for MCP tests (overrides MCP_SDK_REF env)'
         required: false
@@ -574,6 +590,295 @@ jobs:
           echo "matrix_include: ${matrix_include}"
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
+
+  pr-gate-build-reuse-shadow:
+    name: PR Gate Build Reuse Shadow
+    # This is evidence collection only. The source run identity is supplied by
+    # the trusted merge-train controller for one-member batches; multi-PR and
+    # ordinary manual/full CI runs omit it and never instantiate this job.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/heads/train/batch/') &&
+      vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true' &&
+      inputs.pr_gate_run_id != '' &&
+      inputs.pr_gate_run_attempt != '' &&
+      inputs.pr_gate_pr != '' &&
+      inputs.pr_gate_head_sha != ''
+    needs: [changes, targeted-shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout exact merge-tree consumer
+        continue-on-error: true
+        uses: actions/checkout@v7
+
+      - id: receipt-artifact
+        name: Locate unique trusted build receipt
+        continue-on-error: true
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ inputs.pr_gate_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.pr_gate_run_attempt }}
+        with:
+          script: |
+            const runId = Number(process.env.SOURCE_RUN_ID);
+            const runAttempt = Number(process.env.SOURCE_RUN_ATTEMPT);
+            if (!Number.isSafeInteger(runId) || runId <= 0 ||
+                !Number.isSafeInteger(runAttempt) || runAttempt <= 0) {
+              core.notice('PR Gate build evidence input is absent or malformed.');
+              return;
+            }
+            const name = `pr-gate-build-evidence-receipt-${runId}-attempt-${runAttempt}`;
+            const artifacts = await github.paginate(
+              github.rest.actions.listArtifactsForRepo,
+              { ...context.repo, name, per_page: 100 },
+            );
+            const candidates = [];
+            for (const artifact of artifacts.filter((item) =>
+              item.name === name && item.expired === false,
+            )) {
+              if (!artifact.workflow_run?.id) continue;
+              const { data: run } = await github.rest.actions.getWorkflowRun({
+                ...context.repo,
+                run_id: artifact.workflow_run.id,
+              });
+              const trustedObserverEvents = new Set(['workflow_run', 'workflow_dispatch']);
+              if (run.path === '.github/workflows/pr-gate-impact-observe.yml' &&
+                  run.name === 'PR Gate Impact Observation' &&
+                  trustedObserverEvents.has(run.event) && run.status === 'completed' &&
+                  run.conclusion === 'success' && run.head_branch === context.payload.repository.default_branch &&
+                  run.repository?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
+                  Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0 &&
+                  Number.isSafeInteger(artifact.size_in_bytes) && artifact.size_in_bytes > 0 &&
+                  artifact.size_in_bytes <= 524288 &&
+                  /^sha256:[0-9a-f]{64}$/.test(artifact.digest || '')) {
+                candidates.push(artifact);
+              }
+            }
+            if (candidates.length !== 1) {
+              core.notice(`Trusted receipt artifact count is ${candidates.length}; reuse is a cache miss.`);
+              return;
+            }
+            core.setOutput('artifact_id', String(candidates[0].id));
+            core.setOutput('observer_run_id', String(candidates[0].workflow_run.id));
+            const { data: observerRun } = await github.rest.actions.getWorkflowRun({
+              ...context.repo,
+              run_id: candidates[0].workflow_run.id,
+            });
+            core.setOutput('observer_run_attempt', String(observerRun.run_attempt));
+
+      - name: Download trusted build receipt
+        if: steps.receipt-artifact.outputs.artifact_id != ''
+        id: receipt-download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          artifact-ids: ${{ steps.receipt-artifact.outputs.artifact_id }}
+          path: ${{ runner.temp }}/pr-gate-build-receipt
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.receipt-artifact.outputs.observer_run_id }}
+
+      - id: payload-artifact
+        name: Resolve exact immutable source payload
+        if: steps.receipt-download.outcome == 'success'
+        continue-on-error: true
+        uses: actions/github-script@v9
+        env:
+          RECEIPT_PATH: ${{ runner.temp }}/pr-gate-build-receipt/receipt.json
+          SOURCE_RUN_ID: ${{ inputs.pr_gate_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.pr_gate_run_attempt }}
+          SOURCE_HEAD: ${{ inputs.pr_gate_head_sha }}
+          OBSERVER_RUN_ID: ${{ steps.receipt-artifact.outputs.observer_run_id }}
+          OBSERVER_RUN_ATTEMPT: ${{ steps.receipt-artifact.outputs.observer_run_attempt }}
+        with:
+          script: |
+            const fs = require('fs');
+            const receipt = JSON.parse(fs.readFileSync(process.env.RECEIPT_PATH, 'utf8'));
+            const runId = Number(process.env.SOURCE_RUN_ID);
+            const runAttempt = Number(process.env.SOURCE_RUN_ATTEMPT);
+            const artifactId = receipt?.artifact?.artifact_id;
+            const artifactName = receipt?.artifact?.artifact_name;
+            const observerRunId = Number(process.env.OBSERVER_RUN_ID);
+            const observerRunAttempt = Number(process.env.OBSERVER_RUN_ATTEMPT);
+            if (!Number.isSafeInteger(artifactId) || artifactId <= 0 ||
+                !Number.isSafeInteger(observerRunId) || observerRunId <= 0 ||
+                !Number.isSafeInteger(observerRunAttempt) || observerRunAttempt <= 0 ||
+                receipt?.source?.run_id !== runId ||
+                receipt?.source?.run_attempt !== runAttempt ||
+                receipt?.source?.head_sha !== process.env.SOURCE_HEAD ||
+                receipt?.observer?.run_id !== observerRunId ||
+                receipt?.observer?.run_attempt !== observerRunAttempt ||
+                receipt?.observer?.workflow_path !== '.github/workflows/pr-gate-impact-observe.yml') {
+              throw new Error('trusted receipt does not match dispatch identity');
+            }
+            const { data: sourceRun } = await github.rest.actions.getWorkflowRun({
+              ...context.repo,
+              run_id: runId,
+            });
+            if (sourceRun.path !== '.github/workflows/pr-gate.yml' ||
+                sourceRun.name !== 'PR Gate' || sourceRun.event !== 'pull_request' ||
+                sourceRun.status !== 'completed' || sourceRun.conclusion !== 'success' ||
+                sourceRun.run_attempt !== runAttempt || sourceRun.head_sha !== process.env.SOURCE_HEAD ||
+                sourceRun.repository?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
+                sourceRun.head_repository?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              throw new Error('source PR Gate run is no longer canonical');
+            }
+            const sourceArtifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { ...context.repo, run_id: runId, per_page: 100 },
+            );
+            const matches = sourceArtifacts.filter((artifact) =>
+              artifact.id === artifactId && artifact.name === artifactName && artifact.expired === false &&
+              artifact.size_in_bytes === receipt?.artifact?.artifact_bytes &&
+              artifact.digest === receipt?.artifact?.artifact_digest,
+            );
+            if (matches.length !== 1) throw new Error('source payload artifact is absent or ambiguous');
+            core.setOutput('artifact_id', String(artifactId));
+
+      - name: Download exact PR Gate build payload
+        if: steps.payload-artifact.outputs.artifact_id != ''
+        id: payload-download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          artifact-ids: ${{ steps.payload-artifact.outputs.artifact_id }}
+          path: ${{ runner.temp }}/pr-gate-build-payload
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.pr_gate_run_id }}
+
+      - name: Setup exact .NET toolchain
+        if: steps.payload-download.outcome == 'success'
+        id: reuse-dotnet
+        continue-on-error: true
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - id: shadow-proof
+        name: Prove tree-equivalent payload without build
+        if: steps.reuse-dotnet.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          RECEIPT: ${{ runner.temp }}/pr-gate-build-receipt/receipt.json
+          PAYLOAD: ${{ runner.temp }}/pr-gate-build-payload
+        run: |
+          set +e
+          mkdir -p tests/TestResults "${RUNNER_TEMP}/pr-gate-build-shadow"
+          runner_image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
+          status=accepted
+          reason=tree_equivalent_proof_passed
+          proof_project_count=0
+          proof_executed_tests=0
+          tab="$(printf '\t')"
+          while IFS="${tab}" read -r project proof_filter artifact_id merge_sha; do
+            python3 scripts/ci/pr-gate-build-evidence.py validate \
+              --repository "${GITHUB_REPOSITORY}" \
+              --pull-request '${{ inputs.pr_gate_pr }}' \
+              --head-sha '${{ inputs.pr_gate_head_sha }}' \
+              --source-run-id '${{ inputs.pr_gate_run_id }}' \
+              --source-run-attempt '${{ inputs.pr_gate_run_attempt }}' \
+              --configuration Release \
+              --dotnet-sdk "$(dotnet --version)" \
+              --runner-os "${RUNNER_OS}" \
+              --runner-arch "${RUNNER_ARCH}" \
+              --runner-image "${runner_image}" \
+              --consumer-root . \
+              --consumer-sha "${GITHUB_SHA}" \
+              --source-artifact-id "${artifact_id}" \
+              --payload-dir "${PAYLOAD}" \
+              --project "${project}" \
+              --receipt "${RECEIPT}" || { status=rejected; reason=receipt_or_tree_rejected; break; }
+            manifest="${PAYLOAD}/$(jq -r --arg project "${project}" '.projects[] | select(.project == $project) | .manifest_file' "${RECEIPT}")"
+            HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="$(dotnet --version)" \
+              scripts/ci/restore-server-test-binaries.sh \
+                --manifest "${manifest}" \
+                --destination . \
+                --project "${project}" \
+                --source-sha "${merge_sha}" || { status=rejected; reason=payload_restore_rejected; break; }
+            suffix="$(jq -r --arg project "${project}" '.projects[] | select(.project == $project) | .project_suffix' "${RECEIPT}")"
+            trx_name="pr-gate-build-shadow-${suffix}.trx"
+            trx_path="tests/TestResults/${trx_name}"
+            proof_evidence="${RUNNER_TEMP}/pr-gate-build-shadow/proof-${suffix}.json"
+            dotnet test "${project}" --no-build --no-restore --configuration Release \
+              --filter "${proof_filter}" \
+              --logger "trx;LogFileName=${trx_name}" \
+              --results-directory tests/TestResults || { status=rejected; reason=proof_test_failed; break; }
+            python3 scripts/ci/summarize-dotnet-trx.py \
+              --input "${trx_path}" \
+              --output "${proof_evidence}" || { status=rejected; reason=proof_result_empty_or_invalid; break; }
+            executed="$(jq -er '.result_count | select(type == "number" and floor == . and . > 0)' \
+              "${proof_evidence}")" || { status=rejected; reason=proof_result_empty_or_invalid; break; }
+            proof_project_count=$((proof_project_count + 1))
+            proof_executed_tests=$((proof_executed_tests + executed))
+          done < <(jq -r '. as $receipt | .projects[] |
+            [.project,.proof_filter,($receipt.artifact.artifact_id|tostring),$receipt.source.merge_sha] | @tsv' "${RECEIPT}")
+          jq -nS \
+            --arg contract 'honua.pr-gate-server-test-shadow/v1' \
+            --arg status "${status}" \
+            --arg reason "${reason}" \
+            --arg batch_sha "${GITHUB_SHA}" \
+            --arg batch_tree_sha "$(git rev-parse HEAD^{tree})" \
+            --argjson source_run_id '${{ inputs.pr_gate_run_id }}' \
+            --argjson source_run_attempt '${{ inputs.pr_gate_run_attempt }}' \
+            --argjson proof_project_count "${proof_project_count}" \
+            --argjson proof_executed_tests "${proof_executed_tests}" \
+            --arg receipt_fingerprint "$(jq -r '.fingerprint' "${RECEIPT}")" \
+            '{contract:$contract,mode:"observe",mutation:"none",promotion_authority:"none",
+              status:$status,reason:$reason,batch_sha:$batch_sha,batch_tree_sha:$batch_tree_sha,
+              source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,
+              proof_project_count:$proof_project_count,proof_executed_tests:$proof_executed_tests,
+              receipt_fingerprint:$receipt_fingerprint}' \
+            > "${RUNNER_TEMP}/pr-gate-build-shadow/result.json"
+          echo "status=${status}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Record unavailable shadow evidence
+        if: always() && steps.shadow-proof.outputs.status == ''
+        shell: bash
+        run: |
+          mkdir -p "${RUNNER_TEMP}/pr-gate-build-shadow"
+          jq -nS \
+            --arg contract 'honua.pr-gate-server-test-shadow/v1' \
+            --arg batch_sha "${GITHUB_SHA}" \
+            --arg receipt '${{ steps.receipt-artifact.outcome }}' \
+            --arg payload '${{ steps.payload-download.outcome }}' \
+            '{contract:$contract,mode:"observe",mutation:"none",promotion_authority:"none",
+              status:"unavailable",reason:"trusted_evidence_not_materialized",
+              batch_sha:$batch_sha,receipt_step:$receipt,payload_step:$payload}' \
+            > "${RUNNER_TEMP}/pr-gate-build-shadow/result.json"
+
+      - name: Report PR Gate build reuse shadow
+        if: always()
+        shell: bash
+        run: |
+          status="$(jq -r '.status' "${RUNNER_TEMP}/pr-gate-build-shadow/result.json")"
+          reason="$(jq -r '.reason' "${RUNNER_TEMP}/pr-gate-build-shadow/result.json")"
+          {
+            echo '### PR Gate build reuse shadow'
+            echo "- Result: \`${status}\`"
+            echo "- Reason: \`${reason}\`"
+            echo '- Mutation / promotion authority: `none / none`'
+            echo '- Authoritative server shards: `independent restore + build (unchanged)`'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Retain PR Gate build reuse shadow evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-build-reuse-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pr-gate-build-shadow/result.json
+            ${{ runner.temp }}/pr-gate-build-shadow/proof-*.json
+            tests/TestResults/pr-gate-build-shadow-*.trx
+          if-no-files-found: error
+          retention-days: 7
 
   ci-router-validation:
     name: CI Router Validation

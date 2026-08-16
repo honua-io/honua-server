@@ -627,12 +627,6 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
   timestamp(receipt.observed_at, 'observation time');
   positiveInteger(receipt.pull_request, 'observation pull request');
   sha(receipt.head_sha, 'observation head');
-  if (receipt.policy_sha !== entry.producer_head_sha) {
-    throw new Error('observation policy does not match producer workflow head');
-  }
-  if (Date.parse(receipt.observed_at) > Date.parse(entry.artifact_created_at)) {
-    throw new Error('observation was recorded after its artifact was created');
-  }
   const producer = requireObject(receipt.producer, 'observation producer');
   exactString(producer.workflow_name, REVIEW_GATE_WORKFLOW_NAME, 'producer workflow name');
   exactString(producer.workflow_path, REVIEW_GATE_WORKFLOW, 'producer workflow path');
@@ -640,6 +634,20 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
       producer.run_id !== entry.producer_run_id ||
       producer.run_attempt !== entry.producer_run_attempt) {
     throw new Error('observation producer does not match workflow run');
+  }
+  // A serialized pull_request_target attestation can observe a newer current
+  // PR head than the event-time head recorded on the immutable workflow run.
+  // The attached receipt binds that current head after two stable snapshots;
+  // retain the event head separately for audit. Other trusted events report
+  // the workflow policy commit as their run head, so preserve that equality.
+  if (producer.event !== 'pull_request_target' &&
+      receipt.policy_sha !== entry.producer_head_sha) {
+    throw new Error('observation policy does not match producer workflow head');
+  }
+  // Artifact catalog timestamps are serialized to whole seconds while the
+  // receipt retains milliseconds. Permit only that lost subsecond precision.
+  if (Date.parse(receipt.observed_at) >= Date.parse(entry.artifact_created_at) + 1_000) {
+    throw new Error('observation was recorded after its artifact was created');
   }
   const review = requireObject(receipt.review, 'review evidence');
   if (review.ready !== true || review.snapshot_truncated !== false ||
@@ -691,6 +699,7 @@ function validateObservation(receiptValue, entry, currentPolicyDigest) {
     admission_to_observation_ms: observedMs - Date.parse(selected.created_at),
     producer_run_id: entry.producer_run_id,
     producer_run_attempt: entry.producer_run_attempt,
+    producer_event_head_sha: entry.producer_head_sha,
     producer_policy_sha: receipt.policy_sha,
     measurement_policy_digest: receipt.measurement_policy_digest,
     current_policy: receipt.measurement_policy_digest === currentPolicyDigest,

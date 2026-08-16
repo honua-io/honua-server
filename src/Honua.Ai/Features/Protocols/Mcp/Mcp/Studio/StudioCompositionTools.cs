@@ -239,6 +239,92 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
 }
 
 /// <summary>
+/// MCP tool that shows or hides a layer in a map/app-family Studio draft's
+/// composition (honua-server#3199), the server-side execution path for the
+/// ADR-0030 <c>setVisibility</c> action verb.
+/// </summary>
+/// <remarks>
+/// <c>visible</c> is part of the stored <c>StudioCompositionLayer</c> wire shape, so a draft sync
+/// overwrites a client-local visibility toggle with the stored value. Before this tool the only
+/// writer of <c>visible</c> was <c>honua_studio_add_layer</c>, which sets it once and rejects
+/// duplicate ids — leaving composition state with no way to change a layer's visibility at all.
+/// </remarks>
+internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, IMcpTool
+{
+    /// <summary>The tool name published in <c>tools/list</c>.</summary>
+    public const string ToolName = "honua_studio_set_layer_visibility";
+
+    private readonly ILogger<SetStudioLayerVisibilityTool> _typedLogger;
+
+    public SetStudioLayerVisibilityTool(IGeoprocessingJobService jobService, ILogger<SetStudioLayerVisibilityTool> logger)
+        : base(jobService, logger)
+    {
+        _typedLogger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Name => ToolName;
+
+    /// <inheritdoc />
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
+
+    /// <inheritdoc />
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = ToolName,
+        Title = "Set Studio layer visibility",
+        Description =
+            "Show or hide a layer in a map/app-family Studio draft's composition, with optimistic-generation "
+            + "checking. This is the persisted counterpart of the ADR-0030 'setVisibility' action verb: a "
+            + "client-local toggle is overwritten by the next draft sync, a toggle written here is not. "
+            + "Fails with not_found if no layer with that id exists.",
+        InputSchema = StudioMcpSchemas.SetLayerVisibilityArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        // Hiding a layer removes no composed state (the layer, its source and its style binding
+        // all survive), and re-applying the same visibility is idempotent.
+        Annotations = McpToolAnnotationSets.Write("Set Studio layer visibility", destructive: false, idempotent: true)
+    };
+
+    /// <inheritdoc />
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("StudioSetLayerVisibility");
+        McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
+
+        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+            .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+
+        var argument = McpToolHelpers.ParseArguments(
+            arguments, StudioMcpJsonContext.Default.McpStudioSetLayerVisibilityArgument);
+        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
+        var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
+        if (string.IsNullOrWhiteSpace(argument.LayerId))
+        {
+            throw new GeoprocessingValidationException("'layerId' is required.");
+        }
+
+        // MCP dispatch does not evaluate the advertised inputSchema, so the required 'visible'
+        // is enforced HERE. Defaulting an omitted value would silently show or hide a layer the
+        // caller never named.
+        var visible = argument.Visible
+            ?? throw new GeoprocessingValidationException("'visible' is required and must be a JSON boolean.");
+
+        var updated = await MutateCompositionAsync(
+            principal,
+            ToolName,
+            lifecycleService,
+            draftId,
+            generation,
+            body => StudioCompositionBodyEditor.SetLayerVisibility(body, argument.LayerId!, visible),
+            cancellationToken).ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+    }
+}
+
+/// <summary>
 /// MCP tool that replaces a map/app-family Studio draft's composition view
 /// (honua-server#3002, REQ-002). Mirrors the honua-sdk-js agent-tools
 /// <c>setViewport</c> shape (bbox, center, zoom, pitch, bearing, crs).

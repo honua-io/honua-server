@@ -668,6 +668,24 @@ assert_contains "derived artifacts: parity reuses the feature-catalog build" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
   'generate-geoservices-parity.sh" --no-build --no-restore'
 
+single_reuse='[{"number":77,"headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prGateRunId":424242,"prGateRunAttempt":2}]'
+TRAIN_PR_GATE_REUSE_RUN_ID="stale"
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW
+train_configure_pr_gate_build_reuse "${single_reuse}" "77"
+assert_eq "smart-ci: disabled shadow clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
+export TRAIN_PR_GATE_BUILD_REUSE_SHADOW=true
+train_configure_pr_gate_build_reuse "${single_reuse}" "77"
+assert_eq "smart-ci: one-member exact batch carries PR Gate run id" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" "424242"
+assert_eq "smart-ci: one-member exact batch carries PR Gate attempt" "${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" "2"
+assert_eq "smart-ci: one-member exact batch carries PR identity" "${TRAIN_PR_GATE_REUSE_PR:-}" "77"
+assert_eq "smart-ci: one-member exact batch carries head identity" \
+  "${TRAIN_PR_GATE_REUSE_HEAD:-}" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+train_configure_pr_gate_build_reuse "${single_reuse}" "77,78"
+assert_eq "smart-ci: multi-member batch clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
+train_configure_pr_gate_build_reuse '[{"number":77,"headRefOid":"bad","prGateRunId":424242,"prGateRunAttempt":2}]' "77"
+assert_eq "smart-ci: malformed admitted metadata clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW single_reuse
+
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
 #
@@ -951,6 +969,57 @@ assert_eq "select: StatusContext FAILURE => FAIL" \
   "$(train_select_ci_gate_state '[{"__typename":"StatusContext","context":"CI Gate","state":"FAILURE"}]')" "FAIL"
 assert_eq "select: recovery status supersedes failed CheckRun" \
   "$(train_select_ci_gate_state '[{"__typename":"CheckRun","name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"StatusContext","context":"CI Gate","state":"SUCCESS","startedAt":"2026-01-02T00:00:00Z"}]')" "SUCCESS"
+
+# Optional build reuse metadata is accepted only from one exact successful PR
+# Gate CheckRun whose Actions run remains canonical for the admitted head. A
+# miss never changes admission; it merely omits the shadow inputs.
+reuse_head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+disabled_lookup_marker="${SCRATCH}/unexpected-pr-gate-run-lookup"
+__disabled_pr_gate_run_json() {
+  : >"${disabled_lookup_marker}"
+  return 1
+}
+export disabled_lookup_marker
+export -f __disabled_pr_gate_run_json
+export TRAIN_PR_GATE_RUN_JSON_FOR_ID=__disabled_pr_gate_run_json
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW
+assert_eq "select: disabled shadow omits optional reuse metadata" \
+  "$(train_select_pr_gate_reuse_metadata \
+    '{"statusCheckRollup":[{"__typename":"CheckRun","name":"PR Gate","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://github.com/honua-io/honua-server/actions/runs/424242/job/7"}]}' \
+    "${reuse_head}")" '{}'
+[[ ! -e "${disabled_lookup_marker}" ]] \
+  && ok "select: disabled shadow avoids PR Gate run lookup" \
+  || bad "select: disabled shadow unexpectedly queried PR Gate run"
+unset -f __disabled_pr_gate_run_json
+export TRAIN_PR_GATE_BUILD_REUSE_SHADOW=true
+__pr_gate_run_json() {
+  local run_id="$1"
+  jq -nc --argjson id "${run_id}" --arg head "${reuse_head}" \
+    '{id:$id,status:"completed",conclusion:"success",event:"pull_request",
+      path:".github/workflows/pr-gate.yml",head_sha:$head,run_attempt:2}'
+}
+export reuse_head
+export -f __pr_gate_run_json
+export TRAIN_PR_GATE_RUN_JSON_FOR_ID=__pr_gate_run_json
+reuse_snapshot="$(jq -nc '{statusCheckRollup:[
+  {__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:"SUCCESS",
+   detailsUrl:"https://github.com/honua-io/honua-server/actions/runs/424242/job/7"}
+]}')"
+assert_eq "select: canonical PR Gate run enables optional reuse metadata" \
+  "$(train_select_pr_gate_reuse_metadata "${reuse_snapshot}" "${reuse_head}")" \
+  '{"prGateRunId":424242,"prGateRunAttempt":2}'
+assert_eq "select: head mismatch is an ordinary reuse miss" \
+  "$(train_select_pr_gate_reuse_metadata "${reuse_snapshot}" "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")" '{}'
+duplicate_reuse_snapshot="$(jq -c '.statusCheckRollup += [.statusCheckRollup[0]]' <<<"${reuse_snapshot}")"
+assert_eq "select: ambiguous successful PR Gate checks are a reuse miss" \
+  "$(train_select_pr_gate_reuse_metadata "${duplicate_reuse_snapshot}" "${reuse_head}")" '{}'
+assert_eq "select: absent PR Gate details URL is a reuse miss" \
+  "$(train_select_pr_gate_reuse_metadata \
+    '{"statusCheckRollup":[{"__typename":"CheckRun","name":"PR Gate","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
+    "${reuse_head}")" '{}'
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW TRAIN_PR_GATE_RUN_JSON_FOR_ID \
+  disabled_lookup_marker reuse_head reuse_snapshot duplicate_reuse_snapshot
+unset -f __pr_gate_run_json
 
 echo
 echo "== select: merge-through-flakes (FAILURE => FLAKE only when flake-only) =="

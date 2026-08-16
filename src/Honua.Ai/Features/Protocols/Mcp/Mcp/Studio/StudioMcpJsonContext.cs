@@ -32,6 +32,7 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 [JsonSerializable(typeof(McpStudioAddLayerArgument))]
 [JsonSerializable(typeof(McpStudioRemoveLayerArgument))]
 [JsonSerializable(typeof(McpStudioSetLayerStyleArgument))]
+[JsonSerializable(typeof(McpStudioSetLayerVisibilityArgument))]
 [JsonSerializable(typeof(McpStudioSetViewArgument))]
 [JsonSerializable(typeof(McpStudioAddWidgetArgument))]
 [JsonSerializable(typeof(McpStudioRemoveWidgetArgument))]

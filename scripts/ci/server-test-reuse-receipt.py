@@ -24,6 +24,7 @@ INPUT_PATHS = (
     "global.json",
     "scripts/ci/package-server-test-binaries.sh",
     "scripts/ci/restore-server-test-binaries.sh",
+    "scripts/ci/validate-server-test-archive.py",
     "scripts/ci/server-test-reuse-receipt.py",
 )
 OPTIONAL_INPUT_PATHS = {"global.json"}
