@@ -462,6 +462,14 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
             .GetString().Should().Be("esriSFS");
+
+        using var sldRequest = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{styleId}");
+        sldRequest.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(Sld10MediaType));
+
+        var sldResponse = await client.SendAsync(sldRequest);
+
+        sldResponse.Be200Ok();
+        (await sldResponse.Content.ReadAsStringAsync()).Should().Contain("StyledLayerDescriptor");
     }
 
     [IntegrationTest]

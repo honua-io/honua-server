@@ -892,9 +892,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             layers = !document.RootElement.TryGetProperty("layers", out var layersElement)
                 || layersElement.ValueKind != JsonValueKind.Array
                 ? Array.Empty<MapLibreStyleLayer>()
-                : JsonSerializer.Deserialize(
-                    layersElement.GetRawText(),
-                    MapLibreStyleJsonContext.Default.MapLibreStyleLayerArray) ?? Array.Empty<MapLibreStyleLayer>();
+                : DeserializeSupportedSldLayers(layersElement);
         }
 
         var export = MapLibreToSldConverter.Export(layers, layerName);
@@ -907,6 +905,39 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         }
 
         return new OgcStylesheet(sldXml, OgcStyleMediaTypes.Sld10, OgcStyleEncoding.Sld10);
+    }
+
+    private static MapLibreStyleLayer[] DeserializeSupportedSldLayers(JsonElement layersElement)
+    {
+        var layers = new List<MapLibreStyleLayer>();
+        foreach (var layerElement in layersElement.EnumerateArray())
+        {
+            if (layerElement.ValueKind != JsonValueKind.Object
+                || !layerElement.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            try
+            {
+                var layer = JsonSerializer.Deserialize(
+                    layerElement.GetRawText(),
+                    MapLibreStyleJsonContext.Default.MapLibreStyleLayer);
+                if (layer is not null)
+                {
+                    layers.Add(layer);
+                }
+            }
+            catch (JsonException)
+            {
+                // Standalone styles deliberately tolerate unsupported MapLibre members.
+                // Keep SLD projection equally tolerant by omitting only the malformed
+                // layer instead of turning a previously accepted style into a 500.
+            }
+        }
+
+        return [.. layers];
     }
 
     private static string RewriteSldVersion(string sldXml, string version)
