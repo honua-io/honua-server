@@ -66,10 +66,15 @@ internal static class StandaloneStyleDescriptor
     /// </summary>
     /// <param name="drawingInfo">Parsed <c>drawingInfo</c> document.</param>
     /// <param name="geometryType">The inferred geometry type, or <see cref="GeometryType.None"/> when unknown.</param>
+    /// <param name="hasUnsupportedSymbol">Whether a declared symbol has a missing or unsupported Esri type.</param>
     /// <returns><see langword="false"/> when recognized symbols use different geometry families.</returns>
-    public static bool TryInferConsistentGeometryType(JsonElement drawingInfo, out GeometryType geometryType)
+    public static bool TryInferConsistentGeometryType(
+        JsonElement drawingInfo,
+        out GeometryType geometryType,
+        out bool hasUnsupportedSymbol)
     {
         geometryType = GeometryType.None;
+        hasUnsupportedSymbol = false;
 
         if (drawingInfo.ValueKind != JsonValueKind.Object
             || !drawingInfo.TryGetProperty("renderer", out var renderer)
@@ -78,8 +83,8 @@ internal static class StandaloneStyleDescriptor
             return true;
         }
 
-        if (!TryMergeSymbolGeometry(renderer, "symbol", ref geometryType)
-            || !TryMergeSymbolGeometry(renderer, "defaultSymbol", ref geometryType))
+        if (!TryMergeSymbolGeometry(renderer, "symbol", ref geometryType, ref hasUnsupportedSymbol)
+            || !TryMergeSymbolGeometry(renderer, "defaultSymbol", ref geometryType, ref hasUnsupportedSymbol))
         {
             return false;
         }
@@ -94,7 +99,7 @@ internal static class StandaloneStyleDescriptor
             foreach (var info in infos.EnumerateArray())
             {
                 if (info.ValueKind == JsonValueKind.Object
-                    && !TryMergeSymbolGeometry(info, "symbol", ref geometryType))
+                    && !TryMergeSymbolGeometry(info, "symbol", ref geometryType, ref hasUnsupportedSymbol))
                 {
                     return false;
                 }
@@ -107,10 +112,17 @@ internal static class StandaloneStyleDescriptor
     private static bool TryMergeSymbolGeometry(
         JsonElement owner,
         string propertyName,
-        ref GeometryType geometryType)
+        ref GeometryType geometryType,
+        ref bool hasUnsupportedSymbol)
     {
+        if (!owner.TryGetProperty(propertyName, out _))
+        {
+            return true;
+        }
+
         if (!TryReadSymbolGeometry(owner, propertyName, out var candidate))
         {
+            hasUnsupportedSymbol = true;
             return true;
         }
 

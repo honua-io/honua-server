@@ -654,6 +654,21 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             (await client.SendAsync(mixedRequest)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
+        using (var unsupportedContent = new StringContent(
+                   "{\"renderer\":{\"type\":\"uniqueValue\",\"field1\":\"category\",\"defaultSymbol\":{\"type\":\"esriTS\",\"color\":[1,2,3,255]},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255],\"size\":8}}]}}",
+                   Encoding.UTF8,
+                   EsriDrawingInfoMediaType))
+        {
+            using var unsupportedRequest = new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+            {
+                Content = unsupportedContent
+            };
+            unsupportedRequest.Headers.TryAddWithoutValidation("Prefer", "handling=strict");
+            (await client.SendAsync(unsupportedRequest)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
         var drawingInfo = JsonSerializer.Serialize(
             StyleDefaults.BuildDefaultDrawingInfo(MetadataV2GeometryType.Point));
         using var content = new StringContent(drawingInfo, Encoding.UTF8, EsriDrawingInfoMediaType);

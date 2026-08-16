@@ -296,6 +296,77 @@ public sealed class OgcStyleProjectionGraphSyncTests
         graphSync.Calls.Should().Equal(11, 22);
     }
 
+    [UnitTest]
+    public async Task UpdateStyle_WhenRequestCancelsAfterCommit_CompletesPostCommitWorkWithoutRequestToken()
+    {
+        const string styleId = "cancel-after-commit";
+        const string mapLibreStyle =
+            """
+            {
+              "version": 8,
+              "layers": [ { "id": "roads", "type": "line" } ]
+            }
+            """;
+        var existing = new StyleCatalogRecord
+        {
+            StyleId = styleId,
+            Title = "Committed style",
+            MapLibreStyleJson = mapLibreStyle,
+            StyleVersion = 1,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch
+        };
+        using var cancellation = new CancellationTokenSource();
+
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(styleId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<StyleCatalogRecord?>(existing));
+        catalog.UpdateStyleAsync(
+                styleId,
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                cancellation.Cancel();
+                return Task.FromResult<StyleCatalogRecord?>(existing with { StyleVersion = 2 });
+            });
+        catalog.ListAssociationsAsync(Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.FromResult<IReadOnlyList<StyleLayerAssociation>>(
+                [
+                    new StyleLayerAssociation(11, styleId, 0)
+                ]);
+            });
+
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        graphSync.SyncLayerStylesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        var projection = new OgcStyleProjection(
+            new EmptyGraphProvider(),
+            Substitute.For<ILayerStyleService>(),
+            Substitute.For<ILayerStyleCatalog>(),
+            Substitute.For<IGeoServicesStyleConverter>(),
+            catalog,
+            graphSync);
+
+        var result = await projection.UpdateStyleAsync(styleId, mapLibreStyle, strict: false, cancellation.Token);
+
+        result.Status.Should().Be(OgcStyleUpdateStatus.Updated);
+        await catalog.Received(1).ListAssociationsAsync(CancellationToken.None);
+        await graphSync.Received(1).SyncLayerStylesAsync(11, CancellationToken.None);
+    }
+
     private sealed class FirstLayerThrowingGraphSync(int failingLayerId) : IMetadataV2StyleGraphSync
     {
         public List<int> Calls { get; } = [];

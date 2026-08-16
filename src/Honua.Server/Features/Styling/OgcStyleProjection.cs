@@ -537,7 +537,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 "The bound layer's geometry type could not be determined, so an Esri drawingInfo update cannot be converted safely.");
         }
 
-        if (!StandaloneStyleDescriptor.TryInferConsistentGeometryType(drawingInfo, out var rendererGeometryType))
+        if (!StandaloneStyleDescriptor.TryInferConsistentGeometryType(
+                drawingInfo,
+                out var rendererGeometryType,
+                out var hasUnsupportedRendererSymbol))
         {
             return new OgcStyleUpdateResult(
                 OgcStyleUpdateStatus.Invalid,
@@ -554,9 +557,15 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var conversion = _geoServicesConverter.Convert(drawingInfo, descriptor.Id, styleId, geometryType);
 
-        var warnings = conversion.Unsupported.Count == 0
-            ? null
-            : conversion.Unsupported.Select(u => $"{u.Code} ({u.SymbolizerType}): {u.Guidance}").ToArray();
+        var warningList = conversion.Unsupported
+            .Select(u => $"{u.Code} ({u.SymbolizerType}): {u.Guidance}")
+            .ToList();
+        if (hasUnsupportedRendererSymbol)
+        {
+            warningList.Add("unsupported-symbol-type (renderer): A renderer symbol has a missing or unsupported Esri type.");
+        }
+
+        var warnings = warningList.Count == 0 ? null : warningList.ToArray();
 
         // Strict: never persist a lossy conversion — reject so the operator can adjust the renderer.
         if (strict && warnings is { Length: > 0 })
@@ -622,18 +631,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             // its output-cache eviction (serving the stale list for the whole TTL) and a
             // client retry would apply a second revision of an edit that already landed.
             // Best-effort, mirroring LayerStyleService's own catalog/graph sync — log it and
-            // let StyleResourceIds lag until the next publish.
+            // let StyleResourceIds lag until the next publish. Request cancellation can no
+            // longer abort this path: the write is already durable, and the endpoint still
+            // has to observe Updated so it can evict its output cache.
+            var postCommitToken = CancellationToken.None;
             IReadOnlyList<StyleLayerAssociation> associations;
             try
             {
                 associations = await _independentStyleCatalog
-                    .ListAssociationsAsync(cancellationToken)
+                    .ListAssociationsAsync(postCommitToken)
                     .ConfigureAwait(false);
             }
             // Intentional broad catch: a post-commit synchronization failure must not be
-            // reported as a failed edit. Cancellation still propagates so a shutdown or an
-            // aborted request is not silently swallowed.
-            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            // reported as a failed edit, including cancellation raised by a dependency.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
                 associations = [];
@@ -649,9 +660,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             {
                 try
                 {
-                    await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, postCommitToken).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Each layer is an independent public projection. A conflict on one
                     // must not leave every later association stale.
