@@ -17,6 +17,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -80,12 +82,25 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         document.RootElement.TryGetProperty("openapi", out _).Should().BeTrue();
-        document.RootElement.GetProperty("paths")
-            .GetProperty("/ogc/styles/{styleId}")
-            .GetProperty("delete")
-            .GetProperty("responses")
-            .TryGetProperty("403", out _)
-            .Should().BeTrue();
+
+        // The OGC endpoint may serve a packaged protocol document (or its minimal
+        // fallback). ASP.NET endpoint metadata is the direct authority for the
+        // response contract declared by .Produces(...), so verify the manage-styles
+        // DELETE declaration there without assuming a generated OpenAPI route is hosted.
+        var deleteEndpoint = _fixture.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(endpoint =>
+                string.Equals(
+                    endpoint.RoutePattern.RawText?.TrimStart('/'),
+                    "ogc/styles/{styleId}",
+                    StringComparison.OrdinalIgnoreCase)
+                && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods
+                    .Contains(HttpMethod.Delete.Method, StringComparer.OrdinalIgnoreCase) == true);
+        deleteEndpoint.Metadata
+            .OfType<IProducesResponseTypeMetadata>()
+            .Should().Contain(metadata => metadata.StatusCode == (int)HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
@@ -372,9 +387,20 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         {
             var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
             (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
-            await scope.ServiceProvider.GetRequiredService<IMetadataV2StyleGraphSync>()
-                .SyncLayerStylesAsync(WebAppFixture.TestLayerId);
         }
+
+        // Reconcile through the public request path so the shared test host carries
+        // this fixture's schema into the Metadata v2 graph store. Calling the sync
+        // service directly here would run outside request scope and mutate the shared
+        // baseline partition instead of this test's isolated graph.
+        using var updateContent = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var updateRequest = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = updateContent
+        };
+        (await client.SendAsync(updateRequest)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
         _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
