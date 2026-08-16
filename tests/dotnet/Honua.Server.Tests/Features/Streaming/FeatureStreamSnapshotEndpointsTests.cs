@@ -1243,6 +1243,12 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             full = await ReadMeasuredBaselineAsync(fullReader, cts.Token);
         }
 
+        // Assert the baseline was actually read to snapshot-end before reading into it. A
+        // premature close or an expired CTS returns a partial MeasuredBaseline whose End is a
+        // default JsonElement, and GetProperty would then throw InvalidOperationException
+        // instead of naming what went wrong.
+        full.Frames.End.ValueKind.Should().Be(JsonValueKind.Object,
+            "the reference baseline must reach snapshot-end; a partial read means the stream closed early");
         full.Frames.End.GetProperty("complete").GetBoolean().Should().BeTrue(
             "the unconstrained baseline is the reference this test truncates against");
         full.Frames.Features.Count.Should().BeGreaterThanOrEqualTo(2,
@@ -1284,6 +1290,16 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 "the bytes written must stay inside maxSnapshotBytes — overrunning it is what a "
                 + "buffering intermediary converts into an untyped 500");
 
+            // Bound the truncation on BOTH sides. Without the lower bound this test can silently
+            // degenerate into the envelope-only case the previous test already covers: if the
+            // seed's rows ever grow so that half the feature payload is smaller than a single
+            // feature frame, the budget admits zero features and every other assertion here
+            // still passes. Feature sizes are unequal, so `full.Features >= 2` does not rule
+            // that out. Emitting at least one feature is what makes this the "features overran"
+            // shape rather than "the envelope did not fit".
+            bounded.Frames.Features.Count.Should().BeGreaterThan(0,
+                "the budget admits the envelope plus part of the payload, so the baseline must carry "
+                + "features — zero would silently reduce this to the envelope-only case");
             bounded.Frames.Features.Count.Should().BeLessThan(full.Frames.Features.Count,
                 "the budget is below the whole baseline, so it must drop features");
             bounded.Frames.End.GetProperty("featureCount").GetInt64()
@@ -1926,6 +1942,10 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     /// the blank line that terminates the frame — because a budget the server honors in its own
     /// units but overruns on the wire is exactly the failure this measurement exists to catch.
     /// Non-snapshot frames (the status handshake) are excluded: the budget bounds the baseline.
+    /// <para>The count is scoped to those three SSE field types, which is the complete set the
+    /// snapshot writer emits today. A line of any other kind (an SSE comment/keepalive, or a
+    /// <c>retry:</c> field) would be skipped rather than charged, so if the writer ever emits
+    /// one inside a baseline this must charge it too or the measurement would undercount.</para>
     /// </summary>
     private static async Task<MeasuredBaseline> ReadMeasuredBaselineAsync(
         StreamReader reader,
