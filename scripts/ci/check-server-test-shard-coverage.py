@@ -504,17 +504,16 @@ def iter_clauses(node) -> list[tuple[str, str, str]]:
 
 
 def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
-    """Every FullyQualifiedName xUnit can report for tests in `csproj`.
+    """Every runnable test FullyQualifiedName xUnit can report for `csproj`.
 
-    That is each test class FQN plus `<class FQN>.<method>` for each of its test
-    methods, because a filter clause may legitimately name a method rather than
-    a namespace or class.
+    Runnable FQNs include the test method. Class-only names are deliberately not
+    candidates: `FullyQualifiedName=Namespace.Class` selects zero tests even though
+    substring filters commonly name a namespace or class prefix.
     """
     pool: list[str] = []
     for fqn, entry in classes.items():
         if entry["csproj"] != csproj:
             continue
-        pool.append(fqn)
         pool.extend(f"{fqn}.{method}" for method in entry["methods"])
     return pool
 
