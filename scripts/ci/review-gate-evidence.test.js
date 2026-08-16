@@ -231,23 +231,68 @@ test('one reviewer objection suppresses the other reviewer clean comment', () =>
     cleanComments: [claudeCleanComment()],
   }).exactCleanComment, false);
 });
-test('a genuinely LATER clean comment is accepted after an objection', () => {
-  // The recovery branch: without this, an objection would be permanent and the
-  // gate could never go green again. The two suppression tests above use an
-  // EARLIER comment, which is the trivial direction and does not prove this.
+test('a genuinely LATER clean comment from the OBJECTING reviewer is accepted', () => {
+  // The recovery branch: without it an objection would be permanent and the gate
+  // could never go green again. The suppression tests above use an EARLIER
+  // comment, the trivial direction, which does not prove this.
+  //
+  // Recovery must come from the SAME identity that objected. These two tests
+  // originally used a Codex objection cleared by a Claude approval -- which is
+  // the cross-reviewer hole the second #3314 review found, not a recovery case.
   const later = claudeCleanComment({ createdAt: '2026-01-11T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z' });
   assert.equal(ev({
-    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    reviews: [claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
     cleanComments: [later],
   }).exactCleanComment, true);
 });
-test('a genuinely LATER review is accepted after an objection', () => {
+test('a genuinely LATER review from the OBJECTING reviewer is accepted', () => {
   assert.equal(ev({
-    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), claudeReview('COMMENTED', '2026-01-11T00:00:00Z')],
+    reviews: [claudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), claudeReview('COMMENTED', '2026-01-11T00:00:00Z')],
   }).exactReview, true);
 });
 test('the exported login set matches the registry', () => {
   const m = require('./review-gate-evidence');
   assert.deepEqual(m.ATTESTING_LOGINS, ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]', 'claude[bot]']);
   assert.equal(m.isAttestingReviewer('github-code-quality[bot]'), false);
+});
+
+// --- An objection is cleared only by the identity that raised it (#3314 review 2).
+// A single global cutoff let mere recency clear an objection regardless of who
+// raised it, so Codex could object and a Claude review two minutes later would
+// attest. Before the second identity existed this held for free.
+test('another reviewer approval does NOT clear an open objection', () => {
+  assert.equal(ev({
+    reviews: [
+      codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      claudeReview('COMMENTED', '2026-01-09T00:02:00Z'),
+    ],
+  }).exactReview, false);
+});
+test('another reviewer clean comment does NOT clear an open objection', () => {
+  assert.equal(ev({
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [claudeCleanComment({ createdAt: '2026-01-09T00:02:00Z', updatedAt: '2026-01-09T00:02:00Z' })],
+  }).exactCleanComment, false);
+});
+test('the objecting reviewer CAN withdraw its own objection', () => {
+  // The legitimate case the per-identity rule must keep working.
+  assert.equal(ev({
+    reviews: [
+      codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      codexReview('COMMENTED', '2026-01-11T00:00:00Z'),
+    ],
+  }).exactReview, true);
+});
+test('a withdrawn objection from one reviewer still blocks on another open one', () => {
+  assert.equal(ev({
+    reviews: [
+      codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'),
+      codexReview('COMMENTED', '2026-01-11T00:00:00Z'),
+      claudeReview('CHANGES_REQUESTED', '2026-01-12T00:00:00Z'),
+    ],
+  }).exactReview, false);
+});
+test('an objection with an unparseable timestamp stays open (fails closed)', () => {
+  const broken = { ...codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), submittedAt: undefined, updatedAt: undefined };
+  assert.equal(ev({ reviews: [broken, claudeReview('COMMENTED', '2026-01-11T00:00:00Z')] }).exactReview, false);
 });

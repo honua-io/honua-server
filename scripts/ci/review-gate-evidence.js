@@ -94,26 +94,50 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
     })
     .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   const latest = attestingReviews[0];
-  // negativeAt is scoped by IDENTITY ONLY -- deliberately NOT by reviewMarker.
+  // Negative verdicts are scanned by IDENTITY ONLY -- deliberately NOT by
+  // reviewMarker. Computing this from the marker-filtered list (as it did until
+  // the first review of #3314) drops a CHANGES_REQUESTED whose body happens not
+  // to match its reviewer's marker: a plain-prose objection -- "I found a
+  // hardcoded key, blocking" -- would be discarded and an older positive review
+  // would attest. An objection counts whatever its wording; only POSITIVE
+  // evidence has to be well-formed.
+  const negatives = reviews.filter(review =>
+    reviewerFor(review.author?.login) !== null && NEGATIVE_REVIEW_STATES.has(review.state));
+  const negativeAt = negatives.reduce(
+    (max, review) => Math.max(max, Date.parse(review.updatedAt || review.submittedAt)), 0);
+
+  // An objection is cleared ONLY by the identity that raised it.
   //
-  // Computing it from the marker-filtered list (as this did until the reviewer
-  // on #3314 caught it) means a CHANGES_REQUESTED whose body happens not to
-  // match its reviewer's marker is dropped before the negative scan, leaving
-  // negativeAt = 0. A reviewer writing a plain-prose objection -- "I found a
-  // hardcoded key, blocking" -- would be discarded, and an older positive review
-  // would then attest. An objection must count as an objection whatever its
-  // wording; only POSITIVE evidence has to be well-formed.
-  //
-  // It also spans reviewers: one reviewer's open objection must not be papered
-  // over by another reviewer's approval.
-  const negativeAt = reviews
-    .filter(review => reviewerFor(review.author?.login) !== null &&
-      NEGATIVE_REVIEW_STATES.has(review.state))
-    .reduce((max, review) => Math.max(max, Date.parse(review.updatedAt || review.submittedAt)), 0);
-  const exactReview = unresolvedCount === 0 && latest?.commit?.oid === head &&
+  // The second review of #3314 caught this: with a single global cutoff, mere
+  // recency cleared an objection regardless of who raised it, so Codex could
+  // post CHANGES_REQUESTED and a Claude review two minutes later would attest --
+  // the exact "papered over by another reviewer" case the previous comment here
+  // claimed to prevent while the code did the opposite. Before this PR the
+  // property held for free, because only Codex could supersede Codex (a reviewer
+  // withdrawing its own objection, which is legitimate). Adding a second
+  // identity made it reachable, so it now has to be enforced explicitly.
+  const newestByReviewer = (entries, timeOf) => entries.reduce((acc, entry) => {
+    const reviewer = reviewerFor(entry.author?.login);
+    if (reviewer) acc.set(reviewer.id, Math.max(acc.get(reviewer.id) ?? 0, timeOf(entry)));
+    return acc;
+  }, new Map());
+
+  const newestNegative = newestByReviewer(negatives, r => Date.parse(r.updatedAt || r.submittedAt));
+  const newestPositive = newestByReviewer(
+    [...reviews.filter(r => ATTESTING_REVIEW_STATES.has(r.state)), ...cleanComments],
+    entry => Date.parse(entry.submittedAt ?? entry.createdAt));
+
+  // NaN-safe by construction: an unparseable timestamp makes every `>` false, so
+  // the objection stays open and the gate fails closed.
+  const hasOpenObjection = [...newestNegative].some(
+    ([id, negatedAt]) => !((newestPositive.get(id) ?? 0) > negatedAt));
+
+  const exactReview = unresolvedCount === 0 && !hasOpenObjection &&
+    latest?.commit?.oid === head &&
     ATTESTING_REVIEW_STATES.has(latest.state) && Date.parse(latest.submittedAt) > negativeAt;
-  const exactCleanComment = unresolvedCount === 0 && cleanComments.some(comment =>
-    cleanCommentMatchesHead(comment, head) && Date.parse(comment.createdAt) > negativeAt);
+  const exactCleanComment = unresolvedCount === 0 && !hasOpenObjection &&
+    cleanComments.some(comment =>
+      cleanCommentMatchesHead(comment, head) && Date.parse(comment.createdAt) > negativeAt);
   // Generic reactions remain insufficient because they carry no reviewed SHA.
   // A clean reviewer comment is accepted only when it is unedited, names one
   // commit whose uniquely resolved full OID equals the head, and no reviewer

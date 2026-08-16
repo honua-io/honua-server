@@ -249,8 +249,19 @@ train_pr_admission_snapshot() {
 # stamp the gate green while a reviewer's threads sat unresolved
 # (honua-server#3314 review finding 1).
 train_attesting_logins_json() {
-  node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}" --print-logins \
-    | jq -R -s 'split("\n") | map(select(length > 0))'
+  local logins
+  logins="$(node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}" --print-logins \
+    | jq -R -s 'split("\n") | map(select(length > 0))')" || return 1
+  # Fail closed explicitly rather than relying on the caller having set pipefail.
+  # Without this, a node crash yields `[]` from jq with exit 0, and an empty
+  # login set makes every unresolved thread invisible -- the train would then
+  # stamp Review Gate green on a head with open reviewer findings. That is the
+  # same failure this function exists to prevent, one layer down.
+  jq -e 'type == "array" and length > 0' >/dev/null 2>&1 <<<"${logins}" || {
+    train_warn "attesting reviewer login set is empty or unreadable"
+    return 1
+  }
+  printf '%s' "${logins}"
 }
 
 train_publish_review_gate_status() {
