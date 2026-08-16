@@ -241,6 +241,18 @@ train_pr_admission_snapshot() {
     --repo "${GITHUB_REPOSITORY}" --pr "${pr}"
 }
 
+# train_attesting_logins_json: the reviewer identity set, read from the SAME
+# source the gate evaluates with (scripts/ci/review-gate-evidence.js
+# --print-logins) instead of restating logins here. This function recomputes
+# unresolvedCount and train_publish_review_gate_status WRITES the required
+# `Review Gate` status, so a login set that drifted from the evaluator's could
+# stamp the gate green while a reviewer's threads sat unresolved
+# (honua-server#3314 review finding 1).
+train_attesting_logins_json() {
+  node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}" --print-logins \
+    | jq -R -s 'split("\n") | map(select(length > 0))'
+}
+
 train_publish_review_gate_status() {
   local pr="$1" head="$2" state="$3" description="$4"
   if [[ -n "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER:-}" ]]; then
@@ -263,9 +275,7 @@ train_resolve_clean_comment_commits() {
       catch ""
     ' <<<"${comment}")"
     resolved="$(jq -r '.resolvedCommitOid // ""' <<<"${comment}")"
-    if [[ -z "${resolved}" &&
-          ("${login}" == "chatgpt-codex-connector" ||
-           "${login}" == "chatgpt-codex-connector[bot]") ]]; then
+    if [[ -z "${resolved}" ]] && jq -e --arg l "${login}" 'index($l)' >/dev/null 2>&1 <<<"${attesting_logins:-$(train_attesting_logins_json)}"; then
       if [[ "${#referenced}" == "40" ]]; then
         resolved="${referenced}"
       elif [[ -n "${referenced}" ]]; then
@@ -288,8 +298,10 @@ train_resolve_clean_comment_commits() {
 # publish the result so branch protection and subsequent controllers see it.
 train_refresh_review_gate() {
   local pr="$1" head="$2" snapshot="$3" unresolved clean_comments payload result state description
-  unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
-    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
+  local attesting_logins
+  attesting_logins="$(train_attesting_logins_json)" || return 1
+  unresolved="$(jq --argjson bots "${attesting_logins}" --arg head "${head}" \
+    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login as $l | $bots | index($l)) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
   clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")")" || return 1
   # Keep review history off the process argument vector. Busy PRs can carry
   # enough paginated review evidence to exceed Linux ARG_MAX when injected

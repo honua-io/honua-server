@@ -21,37 +21,32 @@ const ATTESTING_REVIEWERS = [
     cleanMarker: /Codex Review:\s+Didn't find any major issues\./i,
   },
   {
+    // `claude[bot]` only -- the bare `claude` account is a real GitHub User and
+    // a User can hold a PAT, which would break the bot-distinct-from-author
+    // property this list depends on.
     id: 'claude',
-    logins: ['claude', 'claude[bot]'],
+    logins: ['claude[bot]'],
     reviewMarker: /Claude Review|Reviewed commit/i,
     cleanMarker: /Claude Review:\s+No major issues found\./i,
   },
-  {
-    // GitHub's Copilot code review, triggered by repo ruleset 19481638
-    // ("Code Quality Copilot review for default branch", rule
-    // `copilot_code_review`, `review_on_push: true`), enabled 2026-08-16.
-    // Note the trigger lives in repo settings, not in this repo's files -- if
-    // reviews stop appearing, check that ruleset's enforcement before looking
-    // for a code cause. It also requires an assigned Copilot seat. Unlike
-    // the others it posts reviews with an EMPTY body, so there is no phrasing to
-    // match: `reviewMarker: null` means "any body, including none".
-    //
-    // That makes its review a weaker statement -- it proves a reviewer examined
-    // this exact commit, not that it declared the commit clean. Two things carry
-    // the weight instead: the review is still bound to the head SHA, and because
-    // this login is an attesting reviewer, its own unresolved inline threads are
-    // counted by the gate's unresolvedCount and block the merge. So Copilot
-    // finding something still stops the PR; only "looked and said nothing" passes.
-    //
-    // It has no cleanMarker on purpose: a body-less comment must never satisfy
-    // the clean-comment path, which exists to accept an explicit no-findings
-    // statement. Copilot can only attest through the exact-head review path.
-    id: 'copilot',
-    logins: ['github-code-quality', 'github-code-quality[bot]'],
-    reviewMarker: null,
-    cleanMarker: null,
-  },
 ];
+
+// DELIBERATELY NOT ACCEPTED: GitHub Copilot code review (`github-code-quality[bot]`,
+// repo ruleset 19481638 / `copilot_code_review`). It was added here and then
+// removed, because a body-less reviewer cannot safely attest under this design:
+//
+//   * Its review states no verdict. `COMMENTED` with an empty body does not
+//     distinguish "looked and found nothing" from "looked and commented inline".
+//   * The only compensating control would be `unresolvedCount`, and that filter
+//     is head-scoped: a thread is counted only when its comment sits on the
+//     CURRENT head. Observed on PR #3197 -- the body-less review was on head
+//     `ac365415` while its own findings were anchored to `6f3fd7a9`/`d8a280da`.
+//     With `review_on_push` re-posting a review per head, still-applicable
+//     findings from earlier commits become invisible and the gate goes green
+//     with open findings.
+//
+// Accepting it would need the unresolved filter to stop being head-scoped for
+// verdict-less reviewers. Until that exists, this identity stays out.
 
 function reviewerFor(login) {
   if (!login) return null;
@@ -68,9 +63,11 @@ const isCodex = isAttestingReviewer;
 
 function cleanCommentMatchesHead(comment, head) {
   const reviewer = reviewerFor(comment.author?.login);
-  // A reviewer with no cleanMarker (Copilot) cannot attest via a comment at all:
-  // this path exists to accept an explicit "no findings" statement, and a
-  // body-less comment makes no such statement.
+  // Defensive: a reviewer without a cleanMarker cannot attest via a comment at
+  // all. This path exists to accept an explicit "no findings" statement, and a
+  // reviewer with no such phrasing makes no such statement. Every current entry
+  // has one; this guard keeps that a precondition rather than an assumption if
+  // a verdict-less identity is ever added.
   if (!reviewer || !reviewer.cleanMarker || comment.includesCreatedEdit ||
       comment.createdAt !== comment.updatedAt ||
       !reviewer.cleanMarker.test(comment.body || '')) {
@@ -93,19 +90,25 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   const attestingReviews = reviews
     .filter(review => {
       const reviewer = reviewerFor(review.author?.login);
-      if (reviewer === null) return false;
-      // reviewMarker === null means the reviewer posts body-less reviews and is
-      // recognised by identity + head binding alone (see ATTESTING_REVIEWERS).
-      return reviewer.reviewMarker === null || reviewer.reviewMarker.test(review.body || '');
+      return reviewer !== null && reviewer.reviewMarker.test(review.body || '');
     })
     .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
   const latest = attestingReviews[0];
-  // A negative verdict from ANY attesting reviewer suppresses evidence from
-  // every attesting reviewer until something newer supersedes it. Scoping this
-  // per-reviewer would let a second reviewer's stale approval paper over a
-  // first reviewer's open objection.
-  const negativeAt = attestingReviews
-    .filter(review => NEGATIVE_REVIEW_STATES.has(review.state))
+  // negativeAt is scoped by IDENTITY ONLY -- deliberately NOT by reviewMarker.
+  //
+  // Computing it from the marker-filtered list (as this did until the reviewer
+  // on #3314 caught it) means a CHANGES_REQUESTED whose body happens not to
+  // match its reviewer's marker is dropped before the negative scan, leaving
+  // negativeAt = 0. A reviewer writing a plain-prose objection -- "I found a
+  // hardcoded key, blocking" -- would be discarded, and an older positive review
+  // would then attest. An objection must count as an objection whatever its
+  // wording; only POSITIVE evidence has to be well-formed.
+  //
+  // It also spans reviewers: one reviewer's open objection must not be papered
+  // over by another reviewer's approval.
+  const negativeAt = reviews
+    .filter(review => reviewerFor(review.author?.login) !== null &&
+      NEGATIVE_REVIEW_STATES.has(review.state))
     .reduce((max, review) => Math.max(max, Date.parse(review.updatedAt || review.submittedAt)), 0);
   const exactReview = unresolvedCount === 0 && latest?.commit?.oid === head &&
     ATTESTING_REVIEW_STATES.has(latest.state) && Date.parse(latest.submittedAt) > negativeAt;
@@ -119,10 +122,22 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   return { exactReview, exactCleanComment, freshCleanReaction };
 }
 
+// Every attesting login, flattened. This is THE source of truth for the reviewer
+// identity set, exported so no other component has to restate it. The merge
+// train's select.sh reads it via `--print-logins` rather than hardcoding logins
+// in its own jq -- it recomputes unresolvedCount and then WRITES the required
+// `Review Gate` status, so if its login set drifted from this one it could stamp
+// the gate green while a reviewer's threads sat unresolved.
+const ATTESTING_LOGINS = ATTESTING_REVIEWERS.flatMap(reviewer => reviewer.logins);
+
 if (require.main === module) {
-  const fs = require('node:fs');
-  const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-  process.stdout.write(JSON.stringify(evaluateCodexEvidence(input)));
+  if (process.argv.includes('--print-logins')) {
+    process.stdout.write(ATTESTING_LOGINS.join('\n') + '\n');
+  } else {
+    const fs = require('node:fs');
+    const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+    process.stdout.write(JSON.stringify(evaluateCodexEvidence(input)));
+  }
 }
 
 module.exports = {
@@ -131,4 +146,5 @@ module.exports = {
   isAttestingReviewer,
   reviewerFor,
   ATTESTING_REVIEWERS,
+  ATTESTING_LOGINS,
 };

@@ -146,14 +146,13 @@ test('same-second edit and reaction cannot attest', () => {
   assert.equal(evaluateCodexEvidence({ reviews: [], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
 });
 
-// --- Claude reviewer identity (Codex rate limits blocked every PR from
-// landing). The gate accepts a second INDEPENDENT bot reviewer. Every safety
-// property is re-asserted for the new identity, so widening the reviewer set
-// cannot quietly widen what counts as evidence.
+// --- Second attesting identity: claude[bot]. Every safety property is
+// re-asserted here, so widening the reviewer set cannot quietly widen what
+// counts as evidence.
 //
-// NOTE: the clean-comment path requires a 10-40 hex reviewed SHA, so these use
-// a full 40-char head rather than the short module-level `head`. With the short
-// one the assertions would pass for the wrong reason (regex miss, not policy).
+// NOTE: the clean-comment path requires a 10-40 hex reviewed SHA, so these use a
+// full 40-char head rather than the short module-level `head`. With the short one
+// the assertions would pass for the wrong reason (regex miss, not policy).
 const claudeHead = 'c'.repeat(40);
 const claudeReview = (state, submittedAt = '2026-01-02T00:00:00Z', oid = claudeHead) => ({
   author: { login: 'claude[bot]' },
@@ -168,100 +167,87 @@ const claudeCleanComment = (overrides = {}) => ({
   includesCreatedEdit: false,
   ...overrides,
 });
-const evalClaude = (input) => evaluateCodexEvidence({ reviews: [], unresolvedCount: 0, head: claudeHead, ...input });
+const ev = (input) => evaluateCodexEvidence({ reviews: [], unresolvedCount: 0, head: claudeHead, ...input });
 
 test('active exact-head Claude review attests', () => {
-  assert.equal(evalClaude({ reviews: [claudeReview('COMMENTED')] }).exactReview, true);
+  assert.equal(ev({ reviews: [claudeReview('COMMENTED')] }).exactReview, true);
 });
 test('unedited Claude clean comment for exact head attests', () => {
-  assert.equal(evalClaude({ cleanComments: [claudeCleanComment()] }).exactCleanComment, true);
+  assert.equal(ev({ cleanComments: [claudeCleanComment()] }).exactCleanComment, true);
 });
 test('Claude review for another head cannot attest', () => {
-  assert.equal(evalClaude({ reviews: [claudeReview('COMMENTED', '2026-01-02T00:00:00Z', 'd'.repeat(40))] }).exactReview, false);
+  assert.equal(ev({ reviews: [claudeReview('COMMENTED', '2026-01-02T00:00:00Z', 'd'.repeat(40))] }).exactReview, false);
 });
 test('edited Claude clean comment cannot attest', () => {
-  assert.equal(evalClaude({ cleanComments: [claudeCleanComment({ updatedAt: '2026-01-03T00:00:00Z' })] }).exactCleanComment, false);
+  assert.equal(ev({ cleanComments: [claudeCleanComment({ updatedAt: '2026-01-03T00:00:00Z' })] }).exactCleanComment, false);
 });
 test('Claude clean comment created with an edit cannot attest', () => {
-  assert.equal(evalClaude({ cleanComments: [claudeCleanComment({ includesCreatedEdit: true })] }).exactCleanComment, false);
+  assert.equal(ev({ cleanComments: [claudeCleanComment({ includesCreatedEdit: true })] }).exactCleanComment, false);
 });
 test('unresolved finding overrides an exact-head Claude clean comment', () => {
-  assert.equal(evalClaude({ cleanComments: [claudeCleanComment()], unresolvedCount: 1 }).exactCleanComment, false);
+  assert.equal(ev({ cleanComments: [claudeCleanComment()], unresolvedCount: 1 }).exactCleanComment, false);
 });
-test('Claude CHANGES_REQUESTED suppresses an older Claude approval', () => {
-  assert.equal(evalClaude({
-    reviews: [claudeReview('COMMENTED', '2026-01-02T00:00:00Z'), claudeReview('CHANGES_REQUESTED', '2026-01-04T00:00:00Z')],
-  }).exactReview, false);
-});
-test('a Codex objection suppresses a newer Claude clean comment until superseded', () => {
-  // Cross-reviewer: one reviewer's open objection must not be papered over by
-  // another reviewer's approval. negativeAt is global, not per-reviewer.
-  const codexNegative = {
-    author: { login: 'chatgpt-codex-connector' }, body: '### Codex Review\nReviewed commit',
-    submittedAt: '2026-01-05T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
-    commit: { oid: claudeHead }, state: 'CHANGES_REQUESTED',
-  };
-  assert.equal(evalClaude({ reviews: [codexNegative], cleanComments: [claudeCleanComment()] }).exactCleanComment, false);
-});
-test('Claude clean phrasing does not attest when posted by an arbitrary account', () => {
-  assert.equal(evalClaude({ cleanComments: [claudeCleanComment({ author: { login: 'contributor' } })] }).exactCleanComment, false);
+test('the bare `claude` User account is not an attesting identity', () => {
+  // Only claude[bot]. A User can hold a PAT, which would break the
+  // bot-distinct-from-author property the reviewer list depends on.
+  assert.equal(ev({ reviews: [claudeReview('COMMENTED')].map(r => ({ ...r, author: { login: 'claude' } })) }).exactReview, false);
 });
 test('Codex clean phrasing from the Claude identity cannot attest', () => {
-  // Markers are per-reviewer on purpose: a body must match its own reviewer's
-  // phrasing, so replaying one reviewer's text under another identity fails.
-  assert.equal(evalClaude({
+  // Markers are per-reviewer: replaying one reviewer's text under another
+  // identity must not attest.
+  assert.equal(ev({
     cleanComments: [claudeCleanComment({ body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\`` })],
   }).exactCleanComment, false);
 });
 
-// --- Copilot code review (github-code-quality[bot], repo ruleset
-// `copilot_code_review`). It posts body-less reviews, so it attests by identity
-// + exact-head binding only, and can never use the clean-comment path.
-const copilotHead = 'e'.repeat(40);
-const copilotReview = (overrides = {}) => ({
-  author: { login: 'github-code-quality[bot]' },
-  body: '',
-  submittedAt: '2026-01-02T00:00:00Z',
-  updatedAt: '2026-01-02T00:00:00Z',
-  commit: { oid: copilotHead },
-  state: 'COMMENTED',
-  ...overrides,
+// --- negativeAt is identity-scoped, not marker-scoped (#3314 review finding 3).
+const codexReview = (state, at, body = '### Codex Review\nReviewed commit') => ({
+  author: { login: 'chatgpt-codex-connector[bot]' }, body,
+  submittedAt: at, updatedAt: at, commit: { oid: claudeHead }, state,
 });
-const evalCopilot = (input) => evaluateCodexEvidence({ reviews: [], unresolvedCount: 0, head: copilotHead, ...input });
 
-test('body-less Copilot review for the exact head attests', () => {
-  assert.equal(evalCopilot({ reviews: [copilotReview()] }).exactReview, true);
+test('a CHANGES_REQUESTED whose body lacks its reviewer marker still suppresses', () => {
+  // Regression for the exploit found reviewing #3314: negativeAt was reduced
+  // over the marker-FILTERED list, so a plain-prose objection was dropped
+  // before the negative scan and an older positive review attested.
+  const proseObjection = {
+    author: { login: 'claude[bot]' },
+    body: 'I found a hardcoded AWS key in config.ts. Blocking.',
+    submittedAt: '2026-01-09T00:00:00Z', updatedAt: '2026-01-09T00:00:00Z',
+    commit: { oid: claudeHead }, state: 'CHANGES_REQUESTED',
+  };
+  assert.equal(ev({ reviews: [proseObjection, claudeReview('COMMENTED', '2026-01-02T00:00:00Z')] }).exactReview, false);
+  assert.equal(ev({ reviews: [proseObjection], cleanComments: [claudeCleanComment()] }).exactCleanComment, false);
 });
-test('Copilot review for another head cannot attest', () => {
-  assert.equal(evalCopilot({ reviews: [copilotReview({ commit: { oid: 'f'.repeat(40) } })] }).exactReview, false);
-});
-test('an unresolved Copilot finding blocks its own body-less review', () => {
-  // This is what carries the weight for a reviewer that states nothing: the
-  // gate counts unresolved threads from attesting reviewers, so Copilot finding
-  // something still stops the PR. Only "looked and said nothing" passes.
-  assert.equal(evalCopilot({ reviews: [copilotReview()], unresolvedCount: 1 }).exactReview, false);
-});
-test('a body-less Copilot comment can never attest via the clean-comment path', () => {
-  assert.equal(evalCopilot({
-    cleanComments: [{
-      author: { login: 'github-code-quality[bot]' }, body: '',
-      createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
-      includesCreatedEdit: false, resolvedCommitOid: copilotHead,
-    }],
+test('a markerless Codex CHANGES_REQUESTED also suppresses', () => {
+  assert.equal(ev({
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z', 'blocking, see inline')],
+    cleanComments: [claudeCleanComment()],
   }).exactCleanComment, false);
 });
-test('a body-less review from a non-attesting account cannot attest', () => {
-  assert.equal(evalCopilot({ reviews: [copilotReview({ author: { login: 'contributor' } })] }).exactReview, false);
-});
-test('Copilot CHANGES_REQUESTED suppresses a later Claude clean comment', () => {
-  const negative = copilotReview({ state: 'CHANGES_REQUESTED', submittedAt: '2026-01-05T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z' });
-  assert.equal(evaluateCodexEvidence({
-    reviews: [negative],
-    cleanComments: [{
-      author: { login: 'claude[bot]' },
-      body: `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${copilotHead}\``,
-      createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z', includesCreatedEdit: false,
-    }],
-    unresolvedCount: 0, head: copilotHead,
+test('one reviewer objection suppresses the other reviewer clean comment', () => {
+  assert.equal(ev({
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [claudeCleanComment()],
   }).exactCleanComment, false);
+});
+test('a genuinely LATER clean comment is accepted after an objection', () => {
+  // The recovery branch: without this, an objection would be permanent and the
+  // gate could never go green again. The two suppression tests above use an
+  // EARLIER comment, which is the trivial direction and does not prove this.
+  const later = claudeCleanComment({ createdAt: '2026-01-11T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z' });
+  assert.equal(ev({
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [later],
+  }).exactCleanComment, true);
+});
+test('a genuinely LATER review is accepted after an objection', () => {
+  assert.equal(ev({
+    reviews: [codexReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z'), claudeReview('COMMENTED', '2026-01-11T00:00:00Z')],
+  }).exactReview, true);
+});
+test('the exported login set matches the registry', () => {
+  const m = require('./review-gate-evidence');
+  assert.deepEqual(m.ATTESTING_LOGINS, ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]', 'claude[bot]']);
+  assert.equal(m.isAttestingReviewer('github-code-quality[bot]'), false);
 });
