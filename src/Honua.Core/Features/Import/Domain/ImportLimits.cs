@@ -15,31 +15,31 @@ public sealed record ImportLimits
     /// Number of features to batch together for database insertion.
     /// Default: 1000 features per batch.
     /// </summary>
-    public int BatchSize { get; init; } = 1000;
+    public int BatchSize { get; set; } = 1000;
 
     /// <summary>
     /// Maximum memory usage target in bytes during import.
     /// Default: 100MB (104857600 bytes).
     /// </summary>
-    public long MaxMemoryBytes { get; init; } = FileSizeConstants.OneHundredMB;
+    public long MaxMemoryBytes { get; set; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
     /// File size threshold in bytes above which imports are queued for background processing.
     /// Default: 100MB (104857600 bytes).
     /// </summary>
-    public long BackgroundJobThresholdBytes { get; init; } = FileSizeConstants.OneHundredMB;
+    public long BackgroundJobThresholdBytes { get; set; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
     /// Maximum file size allowed for preview operations in bytes.
     /// Default: 10MB (10485760 bytes).
     /// </summary>
-    public long MaxPreviewSizeBytes { get; init; } = FileSizeConstants.TenMB;
+    public long MaxPreviewSizeBytes { get; set; } = FileSizeConstants.TenMB;
 
     /// <summary>
     /// Maximum number of features to include in a preview.
     /// Default: 100 features.
     /// </summary>
-    public int MaxPreviewFeatures { get; init; } = 100;
+    public int MaxPreviewFeatures { get; set; } = 100;
 
     /// <summary>
     /// Maximum number of features to stream when counting features for preview
@@ -47,40 +47,40 @@ public sealed record ImportLimits
     /// with FeaturesCount=0). Prevents unbounded scans of very large files.
     /// Default: 100,000 features.
     /// </summary>
-    public int MaxPreviewCountScan { get; init; } = 100_000;
+    public int MaxPreviewCountScan { get; set; } = 100_000;
 
     /// <summary>
     /// Buffer size for streaming reads in bytes.
     /// Default: 64KB (65536 bytes).
     /// </summary>
-    public int StreamBufferSize { get; init; } = 64 * (int)FileSizeConstants.OneKB;
+    public int StreamBufferSize { get; set; } = 64 * (int)FileSizeConstants.OneKB;
 
     /// <summary>
     /// Whether to use transactions for batch inserts.
     /// When true, each batch is wrapped in a transaction.
     /// Default: true.
     /// </summary>
-    public bool UseTransactions { get; init; } = true;
+    public bool UseTransactions { get; set; } = true;
 
     /// <summary>
     /// Whether to continue processing after encountering invalid features.
     /// When true, invalid features are skipped; when false, the import fails on first error.
     /// Default: true.
     /// </summary>
-    public bool ContinueOnError { get; init; } = true;
+    public bool ContinueOnError { get; set; } = true;
 
     /// <summary>
     /// Maximum number of features to import from a single file.
     /// 0 means no limit.
     /// Default: 0 (no limit).
     /// </summary>
-    public int MaxFeaturesPerFile { get; init; }
+    public int MaxFeaturesPerFile { get; set; }
 
     /// <summary>
     /// Whether to validate geometry during import.
     /// Default: true.
     /// </summary>
-    public bool ValidateGeometry { get; init; } = true;
+    public bool ValidateGeometry { get; set; } = true;
 
     /// <summary>
     /// How topologically-invalid geometry (e.g. self-intersecting polygons) is handled
@@ -98,25 +98,25 @@ public sealed record ImportLimits
     /// Default: <see cref="ValidationMode.Repair"/> — matches the edit paths and prevents
     /// later overlay queries from failing with GEOS topology exceptions.
     /// </summary>
-    public ValidationMode GeometryValidityMode { get; init; } = ValidationMode.Repair;
+    public ValidationMode GeometryValidityMode { get; set; } = ValidationMode.Repair;
 
     /// <summary>
     /// Maximum number of vertices allowed per geometry.
     /// Default: 10000 vertices.
     /// </summary>
-    public int MaxVertices { get; init; } = 10000;
+    public int MaxVertices { get; set; } = 10000;
 
     /// <summary>
     /// Maximum number of rings allowed per polygon geometry.
     /// Default: 100 rings.
     /// </summary>
-    public int MaxRings { get; init; } = 100;
+    public int MaxRings { get; set; } = 100;
 
     /// <summary>
     /// Maximum WKB size in bytes per geometry.
     /// Default: 1MB (1048576 bytes).
     /// </summary>
-    public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
+    public long MaxWkbSize { get; set; } = FileSizeConstants.OneMB;
 
     /// <summary>
     /// Maximum number of bytes that may be buffered in memory for a single,
@@ -127,32 +127,32 @@ public sealed record ImportLimits
     /// fast once the leftover buffer would exceed this budget.
     /// Default: 64MB (67108864 bytes).
     /// </summary>
-    public long MaxSingleFeatureBytes { get; init; } = 64 * FileSizeConstants.OneMB;
+    public long MaxSingleFeatureBytes { get; set; } = 64 * FileSizeConstants.OneMB;
 
     /// <summary>
     /// Maximum uncompressed bytes extracted from a single archive entry during ZIP/KMZ import.
     /// Default: 500MB (524288000 bytes).
     /// </summary>
-    public long MaxArchiveEntryBytes { get; init; } = FileSizeConstants.FiveHundredMB;
+    public long MaxArchiveEntryBytes { get; set; } = FileSizeConstants.FiveHundredMB;
 
     /// <summary>
     /// Maximum total uncompressed bytes extracted from a ZIP/KMZ archive during import.
     /// Default: 1GB (1073741824 bytes).
     /// </summary>
-    public long MaxArchiveExtractedBytes { get; init; } = FileSizeConstants.OneGB;
+    public long MaxArchiveExtractedBytes { get; set; } = FileSizeConstants.OneGB;
 
     /// <summary>
     /// Maximum allowed compression ratio for ZIP/KMZ entries (uncompressed/compressed).
     /// Default: 200.
     /// </summary>
-    public double MaxArchiveCompressionRatio { get; init; } = 200;
+    public double MaxArchiveCompressionRatio { get; set; } = 200;
 
     /// <summary>
     /// Whether to skip invalid geometries or fail the import.
     /// When true, invalid geometries are skipped; when false, import fails.
     /// Default: true (skip invalid).
     /// </summary>
-    public bool SkipInvalidGeometry { get; init; } = true;
+    public bool SkipInvalidGeometry { get; set; } = true;
 
     /// <summary>
     /// Default configuration for standard import operations.
