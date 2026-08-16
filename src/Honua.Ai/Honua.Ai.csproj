@@ -56,17 +56,18 @@
     <!-- StackExchange.Redis is required by InMemoryAnalysisContentStore and
          by GroundingService for distributed-cache helpers. -->
     <PackageReference Include="StackExchange.Redis" />
-    <!-- AWS Bedrock (Claude) provider for the studio generation flows. The
-         BedrockChatClientAdapter wraps the Converse API as a Microsoft.Extensions.AI
-         IChatClient so the dashboard/report/workflow generators can run on cloud AI
-         (no local Ollama/Qwen). Mirrors the honua-devops agent's Bedrock provider. -->
+    <!-- AWS Bedrock (Claude) SDK for the Studio AI proxy's "bedrock" provider kind. The
+         BedrockChatClientAdapter (Features/StudioAiProxy/Adapters/Bedrock) wraps the Converse
+         API as a Microsoft.Extensions.AI IChatClient so the proxy can stream from cloud AI.
+         Mirrors the honua-devops agent's Bedrock provider. Confined to Honua.Ai so
+         Honua.Core / Honua.Hosting / Honua.Server stay SDK-free (CloudSdkIsolationTests). -->
     <PackageReference Include="AWSSDK.BedrockRuntime" />
-    <!-- Azure OpenAI / AI Foundry provider for the studio generation flows. Azure OpenAI is
-         OpenAI-API-compatible, so only the deployment-routed URL and auth differ; Azure.Identity
-         supplies Entra Managed-Identity tokens (the preferred Azure auth) for the
-         AzureOpenAiStructuredGenerationClient. Confined to Honua.Ai exactly like the Bedrock SDK
+    <!-- Azure.Identity supplies Entra Managed-Identity tokens (the preferred Azure auth) for the
+         Azure OpenAI / AI Foundry provider. Confined to Honua.Ai exactly like the Bedrock SDK
          above, so Honua.Core / Honua.Hosting / Honua.Server stay SDK-free (CloudSdkIsolationTests). -->
     <PackageReference Include="Azure.Identity" />
+    <!-- Microsoft.Extensions.AI abstractions (IChatClient / ChatMessage / ChatResponseUpdate) are
+         the provider-neutral chat surface the Studio AI proxy's Bedrock adapter bridges onto. -->
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
   </ItemGroup>

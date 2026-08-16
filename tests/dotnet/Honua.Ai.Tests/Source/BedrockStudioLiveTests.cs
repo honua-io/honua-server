@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Ai.DashboardGeneration;
-using Honua.Ai.Providers.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Core.Features.Publishing.Dashboards;
 using Honua.Core.Features.WorkflowPackages.Generation;

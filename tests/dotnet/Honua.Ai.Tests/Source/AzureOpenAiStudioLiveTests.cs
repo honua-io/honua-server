@@ -83,7 +83,7 @@ public sealed class AzureOpenAiStudioLiveTests
             httpClientFactory: new SimpleHttpClientFactory(),
             options: options,
             apiKeyResolver: apiKeyResolver,
-            bedrockChatClientFactory: new Honua.Ai.Providers.Bedrock.BedrockChatClientFactory(),
+            bedrockChatClientFactory: new Honua.Ai.StudioAiProxy.Adapters.Bedrock.BedrockChatClientFactory(),
             logger: NullLogger<DashboardGenerationService>.Instance,
             azureAuthResolver: authResolver);
 

@@ -3,7 +3,7 @@
 
 using System.Diagnostics;
 using System.Text.Json;
-using Honua.Ai.Providers.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.WorkflowGeneration.Models;
 using Honua.Ai.WorkflowGeneration.Prompts;
 using Honua.Core.Features.WorkflowPackages.Generation;

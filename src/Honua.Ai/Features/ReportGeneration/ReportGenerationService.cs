@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Ai.Providers.AzureOpenAi;
 using Honua.Ai.Providers.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Ai.WorkflowGeneration.Models;
 using Honua.Core.Features.Publishing.Reports;

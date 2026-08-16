@@ -9,22 +9,21 @@ using Amazon.BedrockRuntime.Model;
 using Amazon.Runtime;
 using Amazon.Runtime.Documents;
 using Amazon.Runtime.EventStreams;
-using Honua.Core.Features.WorkflowPackages.Generation;
 using Microsoft.Extensions.AI;
 
-namespace Honua.Ai.Providers.Bedrock;
+namespace Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 
 /// <summary>
 /// An <see cref="IChatClient"/> backed by Amazon Bedrock's Converse API
 /// (<c>ConverseAsync</c> / <c>ConverseStreamAsync</c>). The Converse API is used
-/// (rather than the raw <c>InvokeModel</c> API) because the studio generation flows force a
-/// single tool call for structured output, and Converse exposes a model-agnostic
+/// (rather than the raw <c>InvokeModel</c> API) because it exposes a model-agnostic
 /// <see cref="ToolConfiguration"/> / <see cref="ToolUseBlock"/> / <see cref="ToolResultBlock"/>
 /// contract that we map to/from Microsoft.Extensions.AI's
-/// <see cref="FunctionCallContent"/> / <see cref="FunctionResultContent"/>.
+/// <see cref="FunctionCallContent"/> / <see cref="FunctionResultContent"/>, which is what the
+/// Studio AI proxy's provider-neutral tool-call surface needs.
 ///
 /// Ported from honua-devops <c>Honua.DevOps.Agent/Providers/BedrockChatClientAdapter.cs</c> so the
-/// studio AI flows can run on cloud AI (AWS Bedrock / Claude) without a local Ollama/Qwen model.
+/// Studio AI proxy can run on cloud AI (AWS Bedrock / Claude) without a local Ollama/Qwen model.
 /// </summary>
 internal sealed class BedrockChatClientAdapter : IChatClient
 {
@@ -53,7 +52,7 @@ internal sealed class BedrockChatClientAdapter : IChatClient
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
 
         var effectiveRegion = string.IsNullOrWhiteSpace(region)
-            ? WorkflowGenerationConfiguration.DefaultBedrockRegion
+            ? StudioAiProxyConfiguration.DefaultBedrockRegion
             : region;
 
         var config = new AmazonBedrockRuntimeConfig

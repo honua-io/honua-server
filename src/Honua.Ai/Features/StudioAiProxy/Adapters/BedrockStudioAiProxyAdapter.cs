@@ -4,8 +4,8 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Honua.Ai.Providers.Bedrock;
 using Honua.Ai.StudioAiProxy.Abstractions;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;

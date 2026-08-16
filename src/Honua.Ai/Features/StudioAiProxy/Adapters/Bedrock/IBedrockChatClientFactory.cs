@@ -3,12 +3,12 @@
 
 using Microsoft.Extensions.AI;
 
-namespace Honua.Ai.Providers.Bedrock;
+namespace Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 
 /// <summary>
-/// Builds an <see cref="IChatClient"/> targeting AWS Bedrock for the studio generation flows.
-/// Abstracted so the generation services can be unit-tested against a fake chat client without an
-/// AWS account, while production resolves the real Converse-API-backed
+/// Builds an <see cref="IChatClient"/> targeting AWS Bedrock for the Studio AI proxy's
+/// <c>bedrock</c> provider kind. Abstracted so the adapter can be tested against a fake chat client
+/// without an AWS account, while production resolves the real Converse-API-backed
 /// <see cref="BedrockChatClientAdapter"/>.
 /// </summary>
 public interface IBedrockChatClientFactory

@@ -48,7 +48,7 @@ internal static class BedrockStructuredGenerationClient
     /// <param name="toolDescription">Human-readable description of what the tool emits.</param>
     /// <param name="chatClientFactory">
     /// Factory used to build the <see cref="IChatClient"/>. Injected so tests can substitute a fake
-    /// client; in production this builds a real <see cref="BedrockChatClientAdapter"/>.
+    /// client; in production this builds a real <c>BedrockChatClientAdapter</c>.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     internal static async Task<BedrockStructuredResult> GenerateAsync(

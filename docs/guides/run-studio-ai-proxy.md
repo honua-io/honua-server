@@ -24,7 +24,7 @@ resolution, HTTP resilience) but are configured, and called, independently.
 |---|---|---|
 | `anthropic` | Anthropic Messages API (`POST {endpoint}/v1/messages`, streaming) | Claude direct from Anthropic |
 | `openai` | Any OpenAI-compatible `POST {endpoint}/chat/completions` (streaming) | OpenAI itself, **OpenRouter, LiteLLM, Ollama, vLLM, LM Studio** — all reachable through this one adapter kind by pointing `Endpoint` at the right base URL |
-| `bedrock` | AWS Bedrock Converse API, via the same `IBedrockChatClientFactory` / `IChatClient` bridge the `WorkflowGeneration` Bedrock provider already uses | Claude (or any Converse-supported model) on Bedrock, AWS credential chain, no API key |
+| `bedrock` | AWS Bedrock Converse API, via the proxy's own `IBedrockChatClientFactory` / `IChatClient` bridge | Claude (or any Converse-supported model) on Bedrock, AWS credential chain, no API key |
 
 Each adapter kind can back any number of operator-named providers (a `bedrock` provider using
 `us-east-1` and another using `us-west-2`; two `openai`-kind providers, one pointed at OpenRouter and

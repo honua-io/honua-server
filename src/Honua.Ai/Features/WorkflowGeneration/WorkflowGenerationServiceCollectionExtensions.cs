@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Ai.Providers.AzureOpenAi;
-using Honua.Ai.Providers.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.WorkflowPackages.Generation;
 using Honua.Core.Features.WorkflowPackages.Generation.Abstractions;
