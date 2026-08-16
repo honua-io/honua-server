@@ -11,8 +11,8 @@ namespace Honua.Core.Features.Publishing.Dashboards;
 /// <c>ReportDocumentValidator</c>. The dashboard has no DB-backed publish validator (the publication
 /// registry hashes the payload opaquely), so this is the only validation gate — it requires no live
 /// metadata. It checks: a title is present, at least one panel exists, panel ids are non-empty and
-/// unique, every panel kind is in the allowed set, and every chart panel carries a non-empty Vega-Lite
-/// spec. Every collection access is null-guarded so a partially-populated document never throws. The
+/// unique, every panel kind is in the allowed set, every chart panel carries a non-empty Vega-Lite
+/// spec, and — the converse — no non-chart panel carries one. Every collection access is null-guarded so a partially-populated document never throws. The
 /// result mirrors the report package's <c>ReportValidationResult</c> (IsValid + Issues[code, severity,
 /// message, path]).
 /// </summary>
@@ -115,6 +115,20 @@ public static class DashboardDocumentValidator
                     Code = "chartSpecRequired",
                     Severity = "error",
                     Message = $"Chart panel '{PanelLabel(panel, i)}' must carry a non-empty Vega-Lite spec.",
+                    Path = path + ".chartSpec",
+                });
+            }
+            else if (!IsChart(panel.Kind) && HasNonEmptySpec(panel.ChartSpec))
+            {
+                // Exact converse of chartSpecRequired: only chart panels may carry a spec. A spec on a
+                // map/table/filter/metric panel is contradictory authoring — the chart it describes is
+                // never rendered — so it is an error, not a tolerated extra. Deliberately keyed off the
+                // same non-empty test, so an absent, null, or empty round-tripped chartSpec never trips it.
+                issues.Add(new DashboardValidationIssue
+                {
+                    Code = "chartSpecNotAllowed",
+                    Severity = "error",
+                    Message = $"Panel '{PanelLabel(panel, i)}' has kind '{panel.Kind}' and must not carry a Vega-Lite spec; only chart panels may.",
                     Path = path + ".chartSpec",
                 });
             }
