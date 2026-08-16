@@ -600,6 +600,18 @@ public static class OgcStylesEndpoints
                 var quality = media.Quality ?? 1d;
                 var mediaType = media.MediaType.Value ?? string.Empty;
 
+                // application/json is an input compatibility alias; the emitted response
+                // is application/vnd.mapbox.style+json. A q=0 alias therefore cannot
+                // exclude that distinct vendor type when a wildcard accepts it.
+                if (mediaType == "application/json")
+                {
+                    if (quality > 0d)
+                    {
+                        RecordPreference(preferences, OgcStyleEncoding.MapboxStyle, specificity: 0, quality);
+                    }
+                    continue;
+                }
+
                 if (mediaType is "*/*" or "application/*")
                 {
                     var specificity = mediaType == "application/*" ? 1 : 0;
@@ -651,7 +663,6 @@ public static class OgcStylesEndpoints
         switch (mediaType)
         {
             case "application/vnd.mapbox.style+json":
-            case "application/json":
                 encoding = OgcStyleEncoding.MapboxStyle;
                 return true;
             case "application/vnd.ogc.sld+xml":

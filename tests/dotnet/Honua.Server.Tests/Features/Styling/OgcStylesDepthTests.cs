@@ -141,6 +141,16 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
         }
 
+        // application/json is an accepted request alias, not the emitted vendor media
+        // type, so excluding only the alias must not override a wildcard Mapbox match.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", "application/json;q=0, */*;q=1");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        }
+
         // Without an acceptable fallback, q=0 means the representation is rejected.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
         {
