@@ -65,19 +65,10 @@ for command in cp git jq python3; do
   }
 done
 
-if [[ "$(git -C "${REPO_ROOT}" rev-parse HEAD)" != "${merge_sha}" ]]; then
-  echo "::error::PR Gate checkout does not match the declared merge commit." >&2
-  exit 1
-fi
-for sha in "${base_sha}" "${head_sha}"; do
-  if ! git -C "${REPO_ROOT}" cat-file -e "${sha}^{commit}" 2>/dev/null; then
-    git -C "${REPO_ROOT}" fetch --no-tags --filter=blob:none origin "${sha}"
-  fi
-  git -C "${REPO_ROOT}" merge-base --is-ancestor "${sha}" "${merge_sha}" || {
-    echo "::error::${sha} is not an ancestor of the PR Gate merge commit." >&2
-    exit 1
-  }
-done
+# shellcheck source=scripts/ci/lib/pr-gate-ancestry.sh
+. "${SCRIPT_DIR}/lib/pr-gate-ancestry.sh"
+honua_ensure_pr_gate_ancestry \
+  "${REPO_ROOT}" "${base_sha}" "${head_sha}" "${merge_sha}"
 
 mkdir -p "${output_dir}"
 output_dir="$(cd "${output_dir}" && pwd)"
@@ -87,7 +78,9 @@ if find "${output_dir}" -mindepth 1 -print -quit | grep -q .; then
 fi
 mkdir -p "${output_dir}/metadata/manifests" "${output_dir}/payload"
 
-git -C "${REPO_ROOT}" diff --name-only "${base_sha}...${head_sha}" \
+# Route the exact synthetic merge tree that PR Gate built. This avoids needing
+# unbounded branch history merely to rediscover the base/head merge-base.
+git -C "${REPO_ROOT}" diff --name-only "${base_sha}" "${merge_sha}" \
   | "${SCRIPT_DIR}/honua-server-targeted-tests.sh" --stdin --config "${SHARDS}" \
     > "${output_dir}/metadata/descriptor.json"
 python3 "${SCRIPT_DIR}/plan-server-test-prebuild.py" \
