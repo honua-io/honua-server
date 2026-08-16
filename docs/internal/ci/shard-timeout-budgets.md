@@ -75,6 +75,17 @@ terminal result code so the train escalates the whole batch instead of running
 autofix and per-PR attribution, which would drop or escalate an arbitrary member
 for a defect none of them introduced.
 
+The classifier reads the small, paginated exact-check annotations first;
+`HONUA_SHARD_CAPACITY_EXHAUSTED` is an error annotation, so no multi-megabyte
+log download is needed for the normal capacity path. Other failures use the
+Actions job-log REST endpoint, with `gh run view --job` as a fallback. GitHub
+can expose a terminal job and its REST log while the parent workflow's aggregate
+log remains unavailable; relying on only the aggregate surface can therefore
+erase the capacity marker or block classification. If neither exact log surface
+is readable, classification stops with a distinct evidence-unavailable result
+and escalates the batch without per-PR attribution. Job-name routing alone is
+never sufficient evidence that a member caused the failure.
+
 ## Re-basing the budgets
 
 ```bash

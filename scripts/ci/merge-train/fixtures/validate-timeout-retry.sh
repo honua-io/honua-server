@@ -106,8 +106,9 @@ saved_run_log_text="${TRAIN_RUN_LOG_TEXT}"
 gh() {
   case "$*" in
     *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\tfailure\n12\tServer Tests (Migration)\tfailure\n' ;;
-    *"--job 11"*) printf 'Error: Process completed with exit code 124.\n' ;;
-    *"--job 12"*) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget.\n::error::Server test shard 'Migration' timed out after 29 minute(s).\n" ;;
+    *"check-runs/"*"/annotations"*) return 0 ;;
+    *"actions/jobs/11/logs"*|*"--job 11"*) printf 'Error: Process completed with exit code 124.\n' ;;
+    *"actions/jobs/12/logs"*|*"--job 12"*) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget.\n::error::Server test shard 'Migration' timed out after 29 minute(s).\n" ;;
     *) printf '1\n' ;;
   esac
 }
@@ -119,6 +120,64 @@ train_classify_timeout 123 0 || rc=$?
 if [[ -s "${record}" ]]; then fail "a later-job capacity exhaustion still consumed a rerun"; fi
 pass "capacity marker takes precedence over an earlier generic timeout"
 eval "${saved_gh_before_scan}"
+TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
+
+# Production-shaped regression for Smart CI 31940825557: its exact check
+# annotations exposed HONUA_SHARD_CAPACITY_EXHAUSTED without downloading the
+# 20 MB job log. That fast path must retain non-attributable classification.
+saved_gh_before_rest_fallback="$(declare -f gh)"
+: >"${record}"
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '31\tServer Tests (Infra and Security)\tfailure\n' ;;
+    *"check-runs/31/annotations"*)
+      printf "failure\tServer test shard 'Infra and Security' timed out after 39 minute(s).\nfailure\tHONUA_SHARD_CAPACITY_EXHAUSTED shard='Infra and Security' hit its 39m test budget.\n"
+      ;;
+    *"--job 31"*|*"actions/jobs/31/logs"*) printf 'unexpected-log-read\n' >>"${record}"; return 1 ;;
+    *) return 1 ;;
+  esac
+}
+unset TRAIN_RUN_LOG_TEXT
+rc=0
+train_classify_timeout 31940825557 0 'Server Tests (Infra and Security)' || rc=$?
+[[ "${rc}" == "7" ]] || fail "annotation fast path lost capacity classification (rc=${rc})"
+[[ ! -s "${record}" ]] || fail "annotated capacity path downloaded the full job log"
+pass "exact annotations classify capacity without job-log download"
+
+# If annotations are empty, the exact REST job log remains the primary
+# fallback; the aggregate gh-run log may still be unavailable.
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '31\tServer Tests (Infra and Security)\tfailure\n' ;;
+    *"check-runs/31/annotations"*) return 0 ;;
+    *"api repos/honua-io/honua-server/actions/jobs/31/logs"*)
+      printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Infra and Security' hit its 39m test budget.\n::error::Server test shard 'Infra and Security' timed out after 39 minute(s).\n"
+      ;;
+    *"--job 31"*) return 1 ;;
+    *) return 1 ;;
+  esac
+}
+rc=0
+train_classify_timeout 31940825557 0 'Server Tests (Infra and Security)' || rc=$?
+[[ "${rc}" == "7" ]] || fail "REST job-log fallback lost capacity classification (rc=${rc})"
+pass "REST job-log fallback preserves capacity classification"
+
+# If neither log surface is readable, the train must fail closed before flake
+# or per-PR attribution. Job-name routing alone is not failure evidence.
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '32\tServer Tests (Infra and Security)\tfailure\n' ;;
+    *) return 1 ;;
+  esac
+}
+rc=0
+train_classify_timeout 31940825557 0 'Server Tests (Infra and Security)' || rc=$?
+[[ "${rc}" == "8" ]] || fail "missing failed-job evidence reached attribution path (rc=${rc})"
+if [[ -s "${record}" ]]; then fail "missing failed-job evidence consumed a rerun"; fi
+grep -q 'rc_retry.*==.*"8"' "${TRAIN_DIR}/train.sh" \
+  || fail "train.sh has no fail-closed branch for unavailable failure evidence"
+pass "unavailable failed-job evidence skips per-PR attribution"
+eval "${saved_gh_before_rest_fallback}"
 TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
 
 # GitHub reports a job-level timeout as conclusion=cancelled and often emits
