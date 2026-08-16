@@ -308,6 +308,20 @@ internal static class StudioMcpSchemas
         }
         """;
 
+    private const string SetLayerVisibilityArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "layerId", "visible"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to show or hide." },
+            "visible": { "type": "boolean", "description": "Whether the layer is visible in the composition." }
+          }
+        }
+        """;
+
     private static readonly string SetViewArgumentSchemaJson = $$"""
         {
           "type": "object",
@@ -383,6 +397,9 @@ internal static class StudioMcpSchemas
 
     /// <summary>Schema for <see cref="McpStudioSetLayerStyleArgument"/>.</summary>
     public static readonly JsonElement SetLayerStyleArgumentSchema = Parse(SetLayerStyleArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpStudioSetLayerVisibilityArgument"/>.</summary>
+    public static readonly JsonElement SetLayerVisibilityArgumentSchema = Parse(SetLayerVisibilityArgumentSchemaJson);
 
     /// <summary>Schema for <see cref="McpStudioSetViewArgument"/>.</summary>
     public static readonly JsonElement SetViewArgumentSchema = Parse(SetViewArgumentSchemaJson);
