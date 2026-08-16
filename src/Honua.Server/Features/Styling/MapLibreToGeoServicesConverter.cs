@@ -32,7 +32,7 @@ internal static class MapLibreToGeoServicesConverter
                 return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultDrawingInfo(layer));
             }
 
-            if (!TrySelectLayers(layersElement, layer.GeometryType, out var primaryLayer, out var outlineLayer))
+            if (!TrySelectLayers(layersElement, layer, out var primaryLayer, out var outlineLayer))
             {
                 return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultDrawingInfo(layer));
             }
@@ -394,29 +394,29 @@ internal static class MapLibreToGeoServicesConverter
 
     private static bool TrySelectLayers(
         JsonElement layersElement,
-        GeometryType geometryType,
+        StyleLayerDescriptor descriptor,
         out JsonElement primaryLayer,
         out JsonElement? outlineLayer)
     {
         outlineLayer = null;
         primaryLayer = default;
 
-        switch (geometryType)
+        switch (descriptor.GeometryType)
         {
             case GeometryType.Point:
             case GeometryType.MultiPoint:
-                if (!TryFindLayer(layersElement, "circle", out primaryLayer))
+                if (!TryFindLayer(layersElement, "circle", descriptor, out primaryLayer))
                 {
-                    return TryFindLayer(layersElement, "symbol", out primaryLayer);
+                    return TryFindLayer(layersElement, "symbol", descriptor, out primaryLayer);
                 }
                 return true;
             case GeometryType.LineString:
             case GeometryType.MultiLineString:
-                return TryFindLayer(layersElement, "line", out primaryLayer);
+                return TryFindLayer(layersElement, "line", descriptor, out primaryLayer);
             case GeometryType.Polygon:
             case GeometryType.MultiPolygon:
             case GeometryType.GeometryCollection:
-                if (!TryFindLayer(layersElement, "fill", out primaryLayer))
+                if (!TryFindLayer(layersElement, "fill", descriptor, out primaryLayer))
                 {
                     return false;
                 }
@@ -428,7 +428,11 @@ internal static class MapLibreToGeoServicesConverter
         }
     }
 
-    private static bool TryFindLayer(JsonElement layersElement, string type, out JsonElement layer)
+    private static bool TryFindLayer(
+        JsonElement layersElement,
+        string type,
+        StyleLayerDescriptor descriptor,
+        out JsonElement layer)
     {
         foreach (var element in layersElement.EnumerateArray())
         {
@@ -438,7 +442,9 @@ internal static class MapLibreToGeoServicesConverter
             }
 
             if (element.TryGetProperty("type", out var typeElement)
-                && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase))
+                && typeElement.ValueKind == JsonValueKind.String
+                && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase)
+                && MatchesSelectedSource(element, descriptor))
             {
                 layer = element;
                 return true;
@@ -447,6 +453,17 @@ internal static class MapLibreToGeoServicesConverter
 
         layer = default;
         return false;
+    }
+
+    private static bool MatchesSelectedSource(JsonElement layer, StyleLayerDescriptor descriptor)
+    {
+        if (descriptor.SourceName is null)
+        {
+            return true;
+        }
+
+        return string.Equals(GetLayerString(layer, "source"), descriptor.SourceName, StringComparison.Ordinal)
+            && string.Equals(GetLayerString(layer, "source-layer"), descriptor.SourceLayer, StringComparison.Ordinal);
     }
 
     private static bool TryGetLayerType(JsonElement layer, out string? type)
@@ -486,6 +503,7 @@ internal static class MapLibreToGeoServicesConverter
             }
 
             if (!element.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String
                 || !string.Equals(typeElement.GetString(), "line", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
