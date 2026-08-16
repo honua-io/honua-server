@@ -235,8 +235,6 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         specApply.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.AiSpecApplyKey);
         GetCapability(root, "ai.grounding").GetProperty("entitlementKey").GetString()
             .Should().Be(FeatureCatalog.AiGroundingKey);
-        GetCapability(root, "ai.workflow-generation").GetProperty("entitlementKey").GetString()
-            .Should().Be(FeatureCatalog.AiWorkflowGenerationKey);
         var animation = GetCapability(root, "temporal.animation-api");
         animation.GetProperty("available").GetBoolean().Should().BeTrue();
         animation.GetProperty("entitlementKey").GetString().Should().Be("temporal.animation-api");
@@ -324,7 +322,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             offlineSync.GetProperty("reasonCode").GetString().Should().Be("license-required");
             offlineSync.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.FieldOpsOfflineSyncKey);
 
-            foreach (var capability in new[] { "ai.spec-apply", "ai.grounding", "ai.workflow-generation" }
+            foreach (var capability in new[] { "ai.spec-apply", "ai.grounding" }
                 .Select(capabilityId => GetCapability(root, capabilityId)))
             {
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();

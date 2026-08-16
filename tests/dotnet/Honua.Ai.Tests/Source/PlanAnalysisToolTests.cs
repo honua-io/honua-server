@@ -207,7 +207,12 @@ public sealed class PlanAnalysisToolTests
         var reason = body.GetProperty("reason").GetString();
         reason.Should().NotBeNullOrWhiteSpace();
         reason.Should().Contain("fixture", "the miss reason must disclose fixture (demo) mode");
-        reason.Should().ContainAny("live", "provider", "PlanAnalysis", "WorkflowGeneration");
+
+        // ADR-0076 (#3255) removed the live server-side planner, so the escape hatch the
+        // reason must point at is now the caller's own model plus honua_validate_plan
+        // rather than a server provider setting. The invariant is unchanged: a miss must
+        // tell the caller where planning actually happens.
+        reason.Should().ContainAny("client model", "honua_validate_plan");
 
         // #2815: an unmatched intent is the genuine fixture-mode dead-end. The tool must
         // still hand back an actionable next step (hand-author from the process catalog and

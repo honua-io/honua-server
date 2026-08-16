@@ -61,7 +61,6 @@ public sealed class CapabilityRegistryConformanceTests
         "jobs.runner",
         "ai.spec-apply",
         "ai.grounding",
-        "ai.workflow-generation",
         "gitops.release-manifest",
         "transport.grpc",
         "transport.grpc-web",

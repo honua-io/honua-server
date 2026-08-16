@@ -6,15 +6,12 @@ using FluentAssertions;
 using Honua.Ai.AiBuilder.Fixtures;
 using Honua.Ai.AiBuilder.Planning;
 using Honua.Core.Features.Grounding.Abstractions;
-using Honua.Core.Features.WorkflowPackages.Abstractions;
-using Honua.Core.Features.WorkflowPackages.Generation.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Discovery;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -148,7 +145,7 @@ public sealed class McpToolDescriptionTeachingTests
     }
 
     // -------------------------------------------------------------------
-    // Item 3: the engine field is surfaced from whichever planner ran.
+    // Item 3: the engine field is surfaced from the planner that ran.
     // -------------------------------------------------------------------
 
     [UnitTest]
@@ -158,18 +155,6 @@ public sealed class McpToolDescriptionTeachingTests
             new AiBuilderFixtureCatalog(), NullLogger<FixturePlanAnalysisService>.Instance);
 
         service.Engine.Should().Be("fixture");
-    }
-
-    [UnitTest]
-    public void LivePlanAnalysisService_ReportsLiveEngine()
-    {
-        var service = new LivePlanAnalysisService(
-            Substitute.For<IWorkflowGenerationService>(),
-            Substitute.For<IWorkflowNodeRegistry>(),
-            Options.Create(new PlanAnalysisConfiguration()),
-            NullLogger<LivePlanAnalysisService>.Instance);
-
-        service.Engine.Should().Be("live");
     }
 
     [UnitTest]
