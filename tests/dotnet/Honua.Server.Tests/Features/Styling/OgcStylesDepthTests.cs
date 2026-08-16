@@ -151,6 +151,16 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
         }
 
+        // HTTP media type tokens are case-insensitive for both aliases and concrete
+        // vendor representations.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", "Application/Vnd.Esri.DrawingInfo+Json");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        }
+
         // Without an acceptable fallback, q=0 means the representation is rejected.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
         {

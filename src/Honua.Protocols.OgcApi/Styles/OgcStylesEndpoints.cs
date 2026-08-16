@@ -598,7 +598,7 @@ public static class OgcStylesEndpoints
                 }
 
                 var quality = media.Quality ?? 1d;
-                var mediaType = media.MediaType.Value ?? string.Empty;
+                var mediaType = (media.MediaType.Value ?? string.Empty).ToLowerInvariant();
 
                 // application/json is an input compatibility alias; the emitted response
                 // is application/vnd.mapbox.style+json. A q=0 alias therefore cannot
