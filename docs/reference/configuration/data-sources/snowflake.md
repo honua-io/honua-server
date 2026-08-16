@@ -95,6 +95,7 @@ backend; layers are routed to it by their secure connection's provider name, not
 
 | Setting | Default | Description |
 |---|---|---|
+| `Experimental:Features:SnowflakeProvider` | `false` | **Required opt-in (PA-182).** Setting `Snowflake:Enabled=true` without this throws at startup. |
 | `Snowflake:Enabled` | `true` | Set to `false` to skip provider registration even if the assembly is referenced. Disable for Native AOT publishing profiles. |
 | `Snowflake:ConnectionString` | _none_ | Default `Snowflake.Data` connection string used when a layer's secure connection is unavailable. Takes precedence over the discrete account/warehouse/database/schema/role fields. Prefer secret-store references in production. |
 | `Snowflake:Account` | _none_ | Account identifier (for example `xy12345.us-east-1`). Documentation field used only when composing a connection string from discrete fields. |

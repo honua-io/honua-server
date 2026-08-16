@@ -164,11 +164,28 @@ internal static class InfrastructureCompositionRoot
         // backing connection resolves to provider 'databricks' (aliases 'databrickssql',
         // 'dbsql') are routed here. Databricks has no first-class .NET driver, so the
         // provider is a best-effort HTTP adapter over the SQL Statement Execution REST API
-        // against a SQL Warehouse. It is pure-HTTP and AOT-friendly. Disabled when
-        // Databricks:Enabled is explicitly false.
-        if (configuration.GetValue("Databricks:Enabled", true))
+        // against a SQL Warehouse. It is pure-HTTP and AOT-friendly.
+        // Experimental gate (#2436): Databricks requires the experimental feature flag, matching
+        // Redshift (PA-181) and Snowflake (PA-182). Until this gate existed, Databricks was the
+        // only one of the three warehouse providers an operator could enable without opting in —
+        // configuring Databricks:Host was enough — while the identical action on Redshift threw.
+        // Fail closed if the operator explicitly enables Databricks without opting into the gate.
+        var databricksExperimental = configuration.GetValue<bool>("Experimental:Features:DatabricksProvider", false);
+        var databricksExplicitlyEnabled = string.Equals(configuration["Databricks:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
+        if (databricksExperimental)
         {
-            Honua.Db.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
+            if (configuration.GetValue("Databricks:Enabled", true))
+            {
+                Honua.Db.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
+            }
+        }
+        else if (databricksExplicitlyEnabled)
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: Databricks:Enabled is set to true but the experimental gate " +
+                "'Experimental:Features:DatabricksProvider' is not enabled (#2436). " +
+                "Set Experimental__Features__DatabricksProvider=true to opt in to this experimental provider, " +
+                "or set Databricks__Enabled=false to disable it.");
         }
 
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
