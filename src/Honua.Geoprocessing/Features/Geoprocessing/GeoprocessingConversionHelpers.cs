@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Proto = Geospatial.V1;
 using DomainPlan = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan;
 using DomainPlanStep = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStep;

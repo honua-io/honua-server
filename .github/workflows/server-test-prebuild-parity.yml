@@ -1,0 +1,554 @@
+name: Server Test Prebuild Parity Observation
+
+# Read-only post-verification shadow for #3226 and ADR-0074. A successful PR
+# Gate remains authoritative. This workflow only asks whether one already-ready
+# exact prebuild produces the same bounded proof results as an independent
+# restore/build; it publishes no status and has no merge or dispatch authority.
+on:
+  workflow_run:
+    workflows: [PR Gate]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed canonical PR Gate run to observe
+        required: true
+        type: string
+      run_attempt:
+        description: Exact completed attempt of the PR Gate run
+        required: true
+        type: string
+      run_conclusion:
+        description: Exact terminal conclusion of the PR Gate run
+        required: true
+        type: string
+
+run-name: Prebuild parity from PR Gate run ${{ github.event.workflow_run.id || inputs.run_id }}
+
+concurrency:
+  group: server-test-prebuild-parity-${{ github.event.workflow_run.id || inputs.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  packages: read
+  pull-requests: read
+  statuses: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+
+jobs:
+  plan:
+    name: Resolve one exact prebuild parity subject
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.HONUA_SERVER_TEST_PREBUILD_SHADOW == 'true' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.resolve.outputs.pr }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      producer_run_id: ${{ steps.resolve.outputs.producer_run_id }}
+      producer_attempt: ${{ steps.resolve.outputs.producer_attempt }}
+      producer_policy_sha: ${{ steps.validate.outputs.producer_policy_sha }}
+      verifier_policy_sha: ${{ steps.policy.outputs.sha }}
+      measurement_policy_digest: ${{ steps.validate.outputs.measurement_policy_digest }}
+      receipt_retention_days: ${{ steps.policy.outputs.receipt_retention_days }}
+      has_candidates: ${{ steps.parity.outputs.has_candidates }}
+      baseline: ${{ steps.parity.outputs.baseline }}
+      candidates: ${{ steps.parity.outputs.candidates }}
+    steps:
+      - name: Checkout trusted verifier policy with producer history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: policy
+        name: Bind trusted verifier policy
+        run: |
+          echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+          python3 policy/scripts/ci/audit-server-test-prebuild-evidence.py retention-window \
+            --policy policy/.github/server-test-prebuild-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - id: resolve
+        name: Resolve current exact head and completed observer
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
+        with:
+          script: |
+            const unavailable = (reason) => {
+              core.info(`prebuild parity unavailable: ${reason}`);
+              core.setOutput('eligible', 'false');
+              core.setOutput('reason', reason);
+            };
+            const repositoryResponse = await github.rest.repos.get({ ...context.repo });
+            const repository = repositoryResponse.data;
+            const defaultBranch = repositoryResponse.data.default_branch;
+            if (context.ref !== `refs/heads/${defaultBranch}` ||
+                !/^[0-9a-f]{40}$/.test(context.sha || '')) {
+              unavailable('observer-is-not-default-branch-policy');
+              return;
+            }
+
+            let resolved;
+            try {
+              const {
+                resolveTrustedPullRequestWorkflowRun,
+              } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+              resolved = await resolveTrustedPullRequestWorkflowRun({
+                github,
+                ...context.repo,
+                runId: process.env.SOURCE_RUN_ID,
+                runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+                runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+                workflowPath: '.github/workflows/pr-gate.yml',
+                workflowName: 'PR Gate',
+                jobName: 'PR Gate',
+                jobConclusion: 'success',
+                defaultBranch,
+                repositoryId: repository.id,
+              });
+            } catch (error) {
+              unavailable(`untrusted-or-moved-pr-gate:${error.message}`);
+              return;
+            }
+            const pr = resolved.pullRequest;
+            const number = resolved.pullRequestNumber;
+            if (pr.draft) {
+              unavailable('pull-request-is-draft');
+              return;
+            }
+            const statusResponse = await github.request(
+              'GET /repos/{owner}/{repo}/commits/{ref}/status',
+              { ...context.repo, ref: pr.head.sha, per_page: 100 },
+            );
+            const reviewStatuses = statusResponse.data.statuses.filter((item) => item.context === 'Review Gate');
+            if (reviewStatuses[0]?.state !== 'success') {
+              unavailable('exact-head-review-gate-is-not-successful');
+              return;
+            }
+            const workflowResponse = await github.request(
+              'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}',
+              { ...context.repo, workflow_id: 'server-test-prebuild-observe.yml' },
+            );
+            if (workflowResponse.data.path !== '.github/workflows/server-test-prebuild-observe.yml') {
+              unavailable('observer-workflow-identity-mismatch');
+              return;
+            }
+            const runsResponse = await github.request(
+              'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
+              { ...context.repo, workflow_id: workflowResponse.data.id, status: 'completed', per_page: 100 },
+            );
+            const candidates = runsResponse.data.workflow_runs
+              .filter((run) => run.path === '.github/workflows/server-test-prebuild-observe.yml'
+                && run.conclusion === 'success'
+                && ((run.event === 'workflow_run' && run.head_branch === defaultBranch)
+                  || (run.event === 'workflow_dispatch' && run.head_branch === defaultBranch)))
+              .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+            let selected = null;
+            let artifactName = '';
+            for (const run of candidates) {
+              const expected = `server-test-prebuild-plan-${number}-${pr.head.sha}-attempt-${run.run_attempt}`;
+              const artifactsResponse = await github.request(
+                'GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts',
+                { ...context.repo, run_id: run.id, per_page: 100 },
+              );
+              const matches = artifactsResponse.data.artifacts.filter(
+                (artifact) => artifact.name === expected && !artifact.expired,
+              );
+              if (matches.length === 1) {
+                selected = run;
+                artifactName = expected;
+                break;
+              }
+            }
+            if (!selected) {
+              unavailable('no-completed-exact-head-observer-artifact');
+              return;
+            }
+            core.setOutput('eligible', 'true');
+            core.setOutput('reason', 'exact-observer-found');
+            core.setOutput('pr', String(number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_sha', resolved.baseSha);
+            core.setOutput('producer_run_id', String(selected.id));
+            core.setOutput('producer_attempt', String(selected.run_attempt));
+            core.setOutput('producer_workflow_sha', selected.head_sha);
+            core.setOutput('plan_artifact', artifactName);
+
+      - name: Record an unavailable one-shot observation
+        if: steps.resolve.outputs.eligible != 'true'
+        run: |
+          echo '## Server-test prebuild parity' >> "${GITHUB_STEP_SUMMARY}"
+          echo '' >> "${GITHUB_STEP_SUMMARY}"
+          echo 'Not countable: `${{ steps.resolve.outputs.reason }}`.' >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Download the exact observer plan once
+        if: steps.resolve.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p evidence/producer-plan
+          gh run download '${{ steps.resolve.outputs.producer_run_id }}' \
+            --repo '${{ github.repository }}' \
+            --name '${{ steps.resolve.outputs.plan_artifact }}' \
+            --dir evidence/producer-plan
+
+      - name: Checkout raw exact pull-request head
+        if: steps.resolve.outputs.eligible == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ steps.resolve.outputs.head_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - id: validate
+        name: Validate exact observer plan identity
+        if: steps.resolve.outputs.eligible == 'true'
+        run: |
+          set -euo pipefail
+          plan=evidence/producer-plan/prebuild-plan.json
+          test -f "${plan}"
+          jq -e \
+            --arg repository '${{ github.repository }}' \
+            --argjson pr '${{ steps.resolve.outputs.pr }}' \
+            --arg head '${{ steps.resolve.outputs.head_sha }}' \
+            --arg base '${{ steps.resolve.outputs.base_sha }}' \
+            --argjson run_id '${{ steps.resolve.outputs.producer_run_id }}' \
+            --argjson attempt '${{ steps.resolve.outputs.producer_attempt }}' \
+            --arg workflow_sha '${{ steps.resolve.outputs.producer_workflow_sha }}' \
+            '.contract == "honua.server-test-prebuild-plan/v1" and
+             .observation.repository == $repository and
+             .observation.pull_request == $pr and
+             .observation.source_sha == $head and
+             .observation.base_sha == $base and
+             .observation.policy_sha == $workflow_sha and
+             .observation.run_id == $run_id and
+             .observation.run_attempt == $attempt and
+             .observation.source_workflow.path == ".github/workflows/review-gate.yml" and
+             .observation.source_workflow.name == "Review Gate Attestation" and
+             .observation.source_workflow.event == "pull_request_target" and
+             (.observation.source_workflow.run_head_sha | type == "string" and test("^[0-9a-f]{40}$")) and
+             (.observation.source_workflow.run_sha_role == "association-head" or
+              .observation.source_workflow.run_sha_role == "association-base") and
+             .observation.source_workflow.job_name == "Resolve pull request identity" and
+             .observation.source_workflow.job_conclusion == "success" and
+             (.observation.source_workflow.run_id | type == "number") and
+             (.observation.source_workflow.run_attempt | type == "number") and
+             (.observation.source_workflow.conclusion | type == "string") and
+             (.observation.source_workflow.job_id | type == "number") and
+             (.observation.policy_sha | type == "string" and test("^[0-9a-f]{40}$"))' \
+            "${plan}"
+          echo "producer_policy_sha=$(jq -r '.observation.policy_sha' "${plan}")" >> "${GITHUB_OUTPUT}"
+          producer_policy_sha="$(jq -r '.observation.policy_sha' "${plan}")"
+          git -C policy cat-file -e "${producer_policy_sha}^{commit}"
+          git -C policy merge-base --is-ancestor \
+            "${producer_policy_sha}" '${{ steps.policy.outputs.sha }}'
+          python3 policy/scripts/ci/audit-server-test-prebuild-evidence.py policy-digest \
+            --policy-root policy --policy-sha '${{ steps.policy.outputs.sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - id: parity
+        name: Plan bounded independent and candidate selections
+        if: steps.resolve.outputs.eligible == 'true'
+        run: |
+          python3 policy/scripts/ci/plan-server-test-prebuild-parity.py \
+            --observation evidence/producer-plan/prebuild-plan.json \
+            --registry policy/.github/server-test-artifact-projects.json \
+            --output evidence/parity-plan.json \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Retain the exact parity plan
+        if: steps.resolve.outputs.eligible == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-parity-plan-${{ steps.resolve.outputs.pr }}-${{ steps.resolve.outputs.head_sha }}-attempt-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+
+  baseline:
+    name: Independent prebuild baseline / ${{ matrix.identity }}
+    needs: plan
+    if: needs.plan.outputs.has_candidates == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.baseline) }}
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - id: timing
+        run: echo "job_start_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - name: Checkout trusted verifier policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.verifier_policy_sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout raw exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ needs.plan.outputs.head_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: ./policy/.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Authenticate read-only package inputs
+        working-directory: source
+        run: |
+          dotnet nuget update source github-honua \
+            --username '${{ github.actor }}' --password '${{ github.token }}' \
+            --store-password-in-clear-text
+      - name: Build independently and run the exact proof selection
+        env:
+          FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT: ${{ github.workspace }}/source
+          HONUA_SERVER_TEST_BENCHMARK_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json
+        run: |
+          policy/scripts/ci/benchmark-server-test-transfer.sh baseline \
+            --project '${{ matrix.project }}' --source-sha '${{ needs.plan.outputs.head_sha }}' \
+            --metrics metrics/baseline-${{ matrix.identity }}.json \
+            --identity '${{ matrix.identity }}' --filter "${FILTER}" \
+            --job-start-epoch-ms '${{ steps.timing.outputs.job_start_ms }}'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-parity-baseline-${{ matrix.identity }}-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 30
+          if-no-files-found: error
+
+  candidate:
+    name: Opportunistic prebuild candidate / ${{ matrix.identity }}
+    needs: plan
+    if: needs.plan.outputs.has_candidates == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.candidates) }}
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - id: timing
+        run: echo "job_start_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - name: Checkout trusted verifier policy with producer history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.verifier_policy_sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Checkout raw exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ needs.plan.outputs.head_sha }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: ./policy/.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - id: runner
+        run: echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "${GITHUB_OUTPUT}"
+      - name: Authenticate read-only package inputs
+        working-directory: source
+        run: |
+          dotnet nuget update source github-honua \
+            --username '${{ github.actor }}' --password '${{ github.token }}' \
+            --store-password-in-clear-text
+      - id: download
+        name: Make one non-blocking exact-artifact download attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          started="$(date +%s%3N)"
+          artifact='server-test-prebuild-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-${{ matrix.project_suffix }}-attempt-${{ needs.plan.outputs.producer_attempt }}'
+          mkdir -p payload
+          if gh run download '${{ needs.plan.outputs.producer_run_id }}' \
+              --repo '${{ github.repository }}' --name "${artifact}" --dir payload; then
+            outcome=downloaded
+          else
+            outcome=unavailable
+            rm -rf payload
+            mkdir -p payload
+          fi
+          echo "outcome=${outcome}" >> "${GITHUB_OUTPUT}"
+          echo "elapsed_ms=$(( $(date +%s%3N) - started ))" >> "${GITHUB_OUTPUT}"
+      - id: prebuild
+        name: Validate once, restore safely, or build locally
+        env:
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          policy/scripts/ci/try-server-test-prebuild.sh \
+            --source-root source --policy-root policy --payload payload \
+            --repository '${{ github.repository }}' --pull-request '${{ needs.plan.outputs.pr }}' \
+            --source-sha '${{ needs.plan.outputs.head_sha }}' \
+            --policy-sha '${{ needs.plan.outputs.verifier_policy_sha }}' \
+            --producer-policy-sha '${{ needs.plan.outputs.producer_policy_sha }}' \
+            --project '${{ matrix.project }}' \
+            --producer-run-id '${{ needs.plan.outputs.producer_run_id }}' \
+            --producer-run-attempt '${{ needs.plan.outputs.producer_attempt }}' \
+            --runner-image '${{ steps.runner.outputs.image }}' \
+            --github-output "${GITHUB_OUTPUT}" \
+            --metrics metrics/prebuild-${{ matrix.identity }}.json
+      - name: Run the exact candidate proof selection
+        env:
+          FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_BENCHMARK_REPO_ROOT: ${{ github.workspace }}/source
+          HONUA_SERVER_TEST_BENCHMARK_REGISTRY: ${{ github.workspace }}/policy/.github/server-test-artifact-projects.json
+        run: |
+          policy/scripts/ci/benchmark-server-test-transfer.sh consumer-ready \
+            --project '${{ matrix.project }}' --source-sha '${{ needs.plan.outputs.head_sha }}' \
+            --metrics metrics/candidate-${{ matrix.identity }}.json \
+            --identity '${{ matrix.identity }}' --filter "${FILTER}" \
+            --job-start-epoch-ms '${{ steps.timing.outputs.job_start_ms }}'
+          jq --slurpfile prebuild metrics/prebuild-${{ matrix.identity }}.json \
+            --arg download_outcome '${{ steps.download.outputs.outcome }}' \
+            --argjson download_ms '${{ steps.download.outputs.elapsed_ms }}' \
+            '. + {prebuild:$prebuild[0],artifact_download_outcome:$download_outcome,
+              artifact_download_ms:$download_ms}' \
+            metrics/candidate-${{ matrix.identity }}.json > metrics/candidate-updated.json
+          mv metrics/candidate-updated.json metrics/candidate-${{ matrix.identity }}.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-parity-candidate-${{ matrix.identity }}-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 30
+          if-no-files-found: error
+
+  summary:
+    name: Prebuild parity evidence summary
+    needs: [plan, baseline, candidate]
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      needs.plan.outputs.has_candidates == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted verifier policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.verifier_policy_sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: server-test-prebuild-parity-*-${{ github.run_attempt }}
+          path: evidence/current
+      - name: Download producer metrics without polling
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p evidence/producer-metrics
+          gh run download '${{ needs.plan.outputs.producer_run_id }}' \
+            --repo '${{ github.repository }}' \
+            --pattern 'server-test-prebuild-metrics-*' \
+            --dir evidence/producer-metrics
+      - name: Capture authoritative hosted intervals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p evidence/current-jobs evidence/producer-jobs
+          gh api --paginate --slurp \
+            'repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs?per_page=100' \
+            > evidence/current-jobs/jobs.json
+          gh api --paginate --slurp \
+            'repos/${{ github.repository }}/actions/runs/${{ needs.plan.outputs.producer_run_id }}/attempts/${{ needs.plan.outputs.producer_attempt }}/jobs?per_page=100' \
+            > evidence/producer-jobs/jobs.json
+      - name: Compare exact test identities and complete hosted cost
+        run: |
+          plan="$(find evidence/current -name parity-plan.json -print -quit)"
+          test -n "${plan}"
+          python3 policy/scripts/ci/summarize-server-test-prebuild-benchmark.py \
+            --metrics evidence/current --producer-metrics evidence/producer-metrics \
+            --plan "${plan}" \
+            --config policy/.github/server-test-reuse-benchmark.json \
+            --benchmark-jobs evidence/current-jobs \
+            --producer-jobs evidence/producer-jobs \
+            --benchmark-attempt '${{ github.run_attempt }}' \
+            --producer-attempt '${{ needs.plan.outputs.producer_attempt }}' \
+            --head-sha '${{ needs.plan.outputs.head_sha }}' \
+            --output evidence/summary.json --markdown evidence/summary.md
+          jq -n \
+            --slurpfile summary evidence/summary.json \
+            --arg contract 'honua.server-test-prebuild-parity-observation/v1' \
+            --argjson pr '${{ needs.plan.outputs.pr }}' \
+            --arg head '${{ needs.plan.outputs.head_sha }}' \
+            --arg measurement_policy_digest '${{ needs.plan.outputs.measurement_policy_digest }}' \
+            --argjson producer_run_id '${{ needs.plan.outputs.producer_run_id }}' \
+            --argjson verifier_run_id '${{ github.run_id }}' \
+            '{contract:$contract,pull_request:$pr,head_sha:$head,
+              measurement_policy_digest:$measurement_policy_digest,
+              producer_run_id:$producer_run_id,verifier_run_id:$verifier_run_id,
+              countable:(($summary[0].parity_failures|length)==0 and
+                ($summary[0].reuse_failures|length)==0 and
+                $summary[0].producer_evidence_ok==true and
+                $summary[0].producer_ready_before_candidate==true),
+              summary:$summary[0]}' > evidence/parity-observation.json
+          cat evidence/summary.md >> "${GITHUB_STEP_SUMMARY}"
+          echo '' >> "${GITHUB_STEP_SUMMARY}"
+          echo "Countable parity observation: \`$(jq -r '.countable' evidence/parity-observation.json)\`" \
+            >> "${GITHUB_STEP_SUMMARY}"
+      - name: Retain the immutable promotion receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: server-test-prebuild-parity-receipt-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
+          path: evidence/parity-observation.json
+          retention-days: ${{ needs.plan.outputs.receipt_retention_days }}
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-parity-evidence-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error

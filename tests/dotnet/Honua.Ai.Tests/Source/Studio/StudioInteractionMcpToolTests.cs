@@ -168,21 +168,31 @@ public sealed class StudioInteractionMcpToolTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
-    public async Task BindInteraction_WithAControlRef_SurfacesInvalidArgumentExplainingControlsAreUnsupported()
+    public async Task BindInteraction_WithAControlRef_ResolvesOnceTheControlIsAdded()
     {
+        // End-to-end inverse of the pre-ADR-0031 behaviour: the same bind that used to be
+        // rejected outright now succeeds against a draft whose controls collection declares
+        // the control, and still fails while it does not.
         var harness = await StudioDraftHarness.CreateAsync();
-
-        var act = () => harness.BindAsync(
+        const string bind =
             """
             {
               "id": "year-filters-parcels",
               "on": { "ref": "control:year-slider", "event": "change" },
               "do": { "ref": "layer:parcels", "verb": "setFilter" }
             }
-            """);
+            """;
 
-        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
-        error.Which.Message.Should().Contain("declare no controls collection");
+        var beforeControl = () => harness.BindAsync(bind);
+        var error = await beforeControl.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("does not resolve");
+
+        await harness.AddControlAsync("""{"id":"year-slider","kind":"timeSlider","sourceId":"parcels"}""");
+        var result = await harness.BindAsync(bind);
+
+        result.IsError.Should().BeFalse();
+        var body = await harness.ReadCompositionAsync();
+        body.Interactions.Should().ContainSingle().Which.On.Ref.Should().Be("control:year-slider");
     }
 
     [UnitTest]
@@ -567,6 +577,10 @@ public sealed class StudioInteractionMcpToolTests
         public Task<McpToolsCallResult> BindAsync(string interactionJson) => InvokeAsync(
             new BindStudioInteractionTool(JobService, NullLogger<BindStudioInteractionTool>.Instance),
             g => $$"""{"draftId":"{{DraftId}}","generation":{{g}},"interaction":{{interactionJson}}}""");
+
+        public Task<McpToolsCallResult> AddControlAsync(string controlJson) => InvokeAsync(
+            new AddStudioControlTool(JobService, NullLogger<AddStudioControlTool>.Instance),
+            g => $$"""{"draftId":"{{DraftId}}","generation":{{g}},"control":{{controlJson}}}""");
 
         public Task<McpToolsCallResult> RemoveAsync(string interactionId) => InvokeAsync(
             new RemoveStudioInteractionTool(JobService, NullLogger<RemoveStudioInteractionTool>.Instance),

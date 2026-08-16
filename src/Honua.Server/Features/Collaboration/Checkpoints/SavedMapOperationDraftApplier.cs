@@ -163,15 +163,10 @@ internal static class SavedMapOperationDraftApplier
             throw new SavedMapCheckpointPayloadException(operation, "The layer-visibility payload requires a boolean 'visible'.");
         }
 
-        var layers = body.Layers.ToList();
-        var index = layers.FindIndex(layer => string.Equals(layer.Id, layerId, StringComparison.Ordinal));
-        if (index < 0)
-        {
-            throw new StudioCompositionNotFoundException($"No layer with id '{layerId}' exists in the composition.");
-        }
-
-        layers[index] = layers[index] with { Visible = visibleElement.GetBoolean() };
-        return body with { Layers = layers };
+        // Shared seam with the honua_studio_set_layer_visibility MCP tool (honua-server#3199),
+        // exactly as ApplyPatchStyle shares SetLayerStyleRef: this applier owns only payload
+        // admission, never the lookup/not-found behaviour.
+        return StudioCompositionBodyEditor.SetLayerVisibility(body, layerId, visibleElement.GetBoolean());
     }
 
     private static StudioCompositionBody ApplyReorderLayers(
@@ -312,13 +307,27 @@ internal static class SavedMapOperationDraftApplier
         // ReplaceComposition, not WriteBody: the projection serializes with WhenWritingNull, so a
         // replacement omitting "view" would leave the STORED viewport in place and the wholesale
         // replacement would not be wholesale (honua-server#2999 review).
-        return StudioCompositionBodyEditor.ReplaceComposition(
-            envelope,
-            replacement with
-            {
-                Layers = replacement.Layers ?? [],
-                Widgets = replacement.Widgets ?? [],
-            });
+        var normalizedReplacement = replacement with
+        {
+            Layers = replacement.Layers ?? [],
+            Widgets = replacement.Widgets ?? [],
+            // sourceBindings is a canonical, unmodelled package member that replacement
+            // operations preserve. Project its ids into the replacement for checkpoint-time
+            // source validation even though the original JSON block remains untouched.
+            SourceBindingIds = StudioCompositionBodyEditor.ReadBody(envelope).SourceBindingIds,
+        };
+
+        var unresolvedControl = (normalizedReplacement.Controls ?? []).FirstOrDefault(control =>
+            control.SourceId is not null
+            && !StudioInteractionVocabulary.IsDeclaredSourceId(normalizedReplacement, control.SourceId));
+        if (unresolvedControl is not null)
+        {
+            throw new StudioCompositionNotFoundException(
+                $"Control '{unresolvedControl.Id}' sourceId '{unresolvedControl.SourceId}' does not resolve to a "
+                + "preserved source binding, replacement layer, or datasource.");
+        }
+
+        return StudioCompositionBodyEditor.ReplaceComposition(envelope, normalizedReplacement);
     }
 
     /// <summary>

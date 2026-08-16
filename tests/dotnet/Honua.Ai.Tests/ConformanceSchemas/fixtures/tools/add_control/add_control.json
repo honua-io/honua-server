@@ -1,0 +1,23 @@
+{
+  "id": "add_control.parcel_year_filter_select",
+  "schemaRef": "tools/add_control.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "draftId": "8b6b8f5e-6c1a-4a2a-9a3d-2f0c9c9b8a11",
+    "generation": 5,
+    "control": {
+      "id": "year-built-filter",
+      "kind": "filterSelect",
+      "title": "Year built",
+      "sourceId": "parcels",
+      "config": {
+        "field": "yearBuilt",
+        "multiple": false,
+        "includeAllOption": true
+      }
+    }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [],
+  "notes": "Reference-shape variant of the upstream geospatial-mcp fixture (conformance/fixtures/tools/add_control/): the standard targets a composition document by mapPackageId/appPackageId, while the reference implementation authors compositions through the draft lifecycle. The standard schema declares draftId/generation as x-honua-reference-shape and requires only `control`, so this instance validates against BOTH the standard schema and Honua's live inputSchema."
+}

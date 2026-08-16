@@ -394,7 +394,13 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
-        var resultsDocument = ToOgcResultsDocument(resultPackage);
+        var resultsDocument = ToOgcResultsDocument(
+            resultPackage,
+            BaseUrlResolver.GetBaseUrl(context),
+            jobId,
+            context.RequestServices
+                .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
+            logger);
         return Results.Json(
             resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
@@ -891,11 +897,45 @@ internal static class JobEndpoints
 
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
-    private static OgcResultsDocument ToOgcResultsDocument(AnalysisResultPackage resultPackage)
+    private static OgcResultsDocument ToOgcResultsDocument(
+        AnalysisResultPackage resultPackage,
+        string baseUrl,
+        string jobId,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore,
+        ILogger logger)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        foreach (var artifact in resultPackage.Artifacts)
+        for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
+            var artifact = resultPackage.Artifacts[index];
+
+            // Staged output artifacts (#3089) link through the canonical authenticated
+            // content route, so no provider location or expiring URL leaks into result
+            // links. A link is only
+            // advertised when this host's registered output store can actually serve
+            // it — a worker-enabled/server-disabled (or mismatched) staging topology
+            // must surface as an explicit unavailable state, not a guaranteed 503.
+            var href = artifact.Uri;
+            if (artifact.Metadata.TryGetValue(
+                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var isStaged)
+                && string.Equals(isStaged, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.CanServe(
+                        outputStore,
+                        artifact.Metadata.GetValueOrDefault(
+                            Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreProvider),
+                        artifact.Metadata.GetValueOrDefault(
+                            Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.StoreReference)))
+                {
+                    href = Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(baseUrl, jobId, index);
+                }
+                else
+                {
+                    href = null;
+                    OgcProcessesLog.ArtifactStoreUnavailable(logger, jobId, index);
+                }
+            }
+
             var outputName = ResolveUniqueOutputName(ResolveOutputName(artifact, outputs.Count), outputs);
             outputs[outputName] = JsonSerializer.SerializeToElement(
                 new OgcArtifactResult
@@ -903,7 +943,7 @@ internal static class JobEndpoints
                     Id = artifact.ArtifactId,
                     Kind = artifact.Kind.ToString(),
                     Title = artifact.Label,
-                    Href = artifact.Uri,
+                    Href = href,
                     Type = artifact.ContentType
                 },
                 OgcProcessesJsonContext.Default.OgcArtifactResult);

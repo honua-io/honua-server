@@ -22,6 +22,7 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 [JsonSerializable(typeof(RasterChecksum))]
 [JsonSerializable(typeof(RasterSecurityContextReference))]
 [JsonSerializable(typeof(RasterSourceSelection))]
+[JsonSerializable(typeof(RasterSourceDimensions))]
 [JsonSerializable(typeof(RasterSourcePixelScale))]
 [JsonSerializable(typeof(RasterPixelWindow))]
 [JsonSerializable(typeof(RasterTimeSelection))]

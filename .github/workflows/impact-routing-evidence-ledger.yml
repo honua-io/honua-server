@@ -1,0 +1,208 @@
+name: Impact Routing Evidence Ledger
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 13 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: impact-routing-evidence-ledger
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit trusted impact-routing observations
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted ledger policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - id: policy
+        name: Bind the current impact-routing cohort
+        run: |
+          mkdir -p evidence
+          python3 scripts/ci/audit-impact-routing-evidence.py policy \
+            --policy .github/impact-routing-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Validate impact-routing evidence fixtures
+        run: |
+          python3 scripts/ci/classify-pr-gate-impact.test.py
+          python3 scripts/ci/audit-impact-routing-evidence.test.py
+
+      - id: collect
+        name: Collect bounded workflow and artifact catalogs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
+          PRODUCER_RUN_CUTOFF: ${{ steps.policy.outputs.producer_run_cutoff }}
+          IMAGE_RUN_CUTOFF: ${{ steps.policy.outputs.image_run_cutoff }}
+          MAXIMUM_PAGES: ${{ steps.policy.outputs.maximum_pages_per_query }}
+          MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/runs/{pr-gate,native,serving,worker} \
+            evidence/artifacts/{pr-gate,native} evidence/archives
+
+          collect_pages() {
+            local endpoint="$1"
+            local collection="$2"
+            local output_root="$3"
+            shift 3
+            local expected_total=''
+            local complete=false
+            local page=1
+            while (( page <= MAXIMUM_PAGES )); do
+              local output
+              output="$(printf '%s/%03d.json' "${output_root}" "${page}")"
+              gh api --method GET "${endpoint}" \
+                -F per_page=100 \
+                -F page="${page}" \
+                "$@" > "${output}"
+              local total count
+              total="$(jq -er '.total_count | select(type == "number" and floor == . and . >= 0)' "${output}")"
+              count="$(jq -er --arg collection "${collection}" \
+                '.[$collection] | arrays | length' "${output}")"
+              if [[ -z "${expected_total}" ]]; then
+                expected_total="${total}"
+              elif [[ "${total}" != "${expected_total}" ]]; then
+                echo "${collection} total changed during pagination" >&2
+                exit 1
+              fi
+              if (( page * 100 >= expected_total )); then
+                complete=true
+                break
+              fi
+              if (( count != 100 )); then
+                echo "${collection} catalog ended before its declared total" >&2
+                exit 1
+              fi
+              page=$((page + 1))
+            done
+            if [[ "${complete}" != true ]]; then
+              echo "${collection} catalog exceeded the bounded page budget" >&2
+              exit 1
+            fi
+          }
+
+          created_filter=">=${PRODUCER_RUN_CUTOFF}"
+          collect_pages \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/pr-gate-impact-observe.yml/runs" \
+            workflow_runs evidence/runs/pr-gate \
+            -f status=completed -f "created=${created_filter}"
+          collect_pages \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/native-image-impact-observe.yml/runs" \
+            workflow_runs evidence/runs/native \
+            -f status=completed -f "created=${created_filter}"
+
+          {
+            jq -r '.workflow_runs[].id' evidence/runs/pr-gate/*.json
+            jq -r '.workflow_runs[].id' evidence/runs/native/*.json
+          } | sort -nu > evidence/producer-run-ids.txt
+          producer_count="$(wc -l < evidence/producer-run-ids.txt | tr -d '[:space:]')"
+          [[ "${producer_count}" =~ ^[0-9]+$ && "${MAXIMUM_CATALOGS}" =~ ^[1-9][0-9]*$ ]] || exit 1
+          if (( producer_count > MAXIMUM_CATALOGS )); then
+            echo "observer runs exceeded the bounded artifact-catalog budget" >&2
+            exit 1
+          fi
+
+          collect_run_artifacts() {
+            local run_root="$1"
+            local output_root="$2"
+            jq -r '.workflow_runs[].id' "${run_root}"/*.json | sort -nu \
+              | while read -r run_id; do
+                  [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
+                  gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                    > "${output_root}/${run_id}.json"
+                done
+          }
+          collect_run_artifacts evidence/runs/pr-gate evidence/artifacts/pr-gate
+          collect_run_artifacts evidence/runs/native evidence/artifacts/native
+          image_created_filter=">=${IMAGE_RUN_CUTOFF}"
+          collect_pages \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/serving-image-boundary.yml/runs" \
+            workflow_runs evidence/runs/serving \
+            -f event=pull_request -f "created=${image_created_filter}"
+          collect_pages \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/worker-gdal-image.yml/runs" \
+            workflow_runs evidence/runs/worker \
+            -f event=pull_request -f "created=${image_created_filter}"
+
+      - id: discover
+        name: Select exact current-attempt observation receipts
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/audit-impact-routing-evidence.py discover \
+            --policy .github/impact-routing-promotion.json \
+            --pr-gate-runs evidence/runs/pr-gate \
+            --native-runs evidence/runs/native \
+            --pr-gate-artifacts evidence/artifacts/pr-gate \
+            --native-artifacts evidence/artifacts/native \
+            --output evidence/index.json
+
+      - name: Download only indexed observation receipts
+        if: always() && hashFiles('evidence/index.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAXIMUM_DOWNLOADS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
+        run: |
+          set -euo pipefail
+          count="$(jq -er '.artifacts | arrays | length' evidence/index.json)"
+          [[ "${count}" =~ ^[0-9]+$ && "${MAXIMUM_DOWNLOADS}" =~ ^[1-9][0-9]*$ ]] || exit 1
+          if (( count > MAXIMUM_DOWNLOADS )); then
+            echo "observation receipts exceeded the bounded download budget" >&2
+            exit 1
+          fi
+          jq -r '.artifacts[].artifact_id' evidence/index.json \
+            | while read -r artifact_id; do
+                [[ "${artifact_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
+                gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+                  > "evidence/archives/${artifact_id}.zip"
+              done
+
+      - id: summarize
+        name: Reconcile receipts with authoritative exact-head image outcomes
+        if: always() && hashFiles('evidence/index.json') != ''
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/audit-impact-routing-evidence.py summarize \
+            --policy .github/impact-routing-promotion.json \
+            --index evidence/index.json \
+            --archives evidence/archives \
+            --serving-runs evidence/runs/serving \
+            --worker-runs evidence/runs/worker \
+            --repository-root . \
+            --output evidence/ledger.json \
+            --markdown evidence/ledger.md
+          cat evidence/ledger.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Retain the report-only ledger
+        if: always() && hashFiles('evidence/index.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: impact-routing-evidence-ledger-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/index.json
+            evidence/ledger.json
+            evidence/ledger.md
+            evidence/runs
+            evidence/artifacts
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail closed on receipt integrity errors
+        if: always()
+        env:
+          DISCOVER_OUTCOME: ${{ steps.discover.outcome }}
+          SUMMARIZE_OUTCOME: ${{ steps.summarize.outcome }}
+        run: |
+          [[ "${DISCOVER_OUTCOME}" == success && "${SUMMARIZE_OUTCOME}" == success ]]

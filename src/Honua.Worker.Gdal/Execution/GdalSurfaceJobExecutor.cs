@@ -176,25 +176,23 @@ internal sealed partial class GdalSurfaceJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, $"Encoding {processId} artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputLength = new FileInfo(outputPath).Length;
+            if (outputLength == 0)
             {
                 return JobExecutionResult.Failed("gdaldem produced an empty output raster.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            var publishError = await GdalArtifactPublisher.PublishFileAsync(
+                context, opts, logger, job.OperationId, outputPath, GeoTiffContentType,
+                "Output raster", cancellationToken).ConfigureAwait(false);
+            if (publishError is not null)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Output raster size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+                return JobExecutionResult.Failed(publishError);
             }
 
-            var artifactUri = GdalDataUri.Build(GeoTiffContentType, outputBytes);
-            await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, $"{processId} completed", cancellationToken).ConfigureAwait(false);
 
-            Log.OperationCompleted(logger, job.OperationId, processId, outputBytes.Length);
+            Log.OperationCompleted(logger, job.OperationId, processId, outputLength);
             return JobExecutionResult.Succeeded();
         }
         finally
@@ -400,10 +398,6 @@ internal sealed partial class GdalSurfaceJobExecutor(
         [LoggerMessage(9243, LogLevel.Error,
             "GDAL surface executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
-
-        [LoggerMessage(9244, LogLevel.Warning,
-            "GDAL surface executor refused job {OperationId}: artifact size {ActualBytes} exceeds limit {MaxBytes}")]
-        public static partial void ArtifactTooLarge(ILogger logger, string operationId, long actualBytes, long maxBytes);
 
         [LoggerMessage(9245, LogLevel.Information,
             "GDAL surface executor completed job {OperationId}: process={ProcessId}, bytes={Bytes}")]

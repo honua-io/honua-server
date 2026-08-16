@@ -222,6 +222,47 @@ public sealed class StudioCompositionBodyEditorTests
             () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
     }
 
+    [Theory]
+    [InlineData("roads")]
+    [InlineData("roads-source")]
+    public void RemoveLayer_WhenControlUsesItsLayerOrSourceId_ThrowsConflict(string controlSourceId)
+    {
+        var body = StudioCompositionBodyEditor.AddLayer(
+            StudioCompositionBody.Empty,
+            new StudioCompositionLayer { Id = "roads", SourceId = "roads-source" });
+        body = StudioCompositionBodyEditor.AddControl(
+            body,
+            new StudioCompositionControl { Id = "road-filter", Kind = "filterSelect", SourceId = controlSourceId });
+
+        var error = Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
+
+        Assert.Contains("road-filter", error.Message, StringComparison.Ordinal);
+        Assert.Contains(controlSourceId, error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void RemoveLayer_WhenAnotherLayerDeclaresTheControlSource_RemovesOnlyRequestedLayer()
+    {
+        var body = StudioCompositionBody.Empty with
+        {
+            Layers =
+            [
+                new StudioCompositionLayer { Id = "roads", SourceId = "shared-source" },
+                new StudioCompositionLayer { Id = "roads-labels", SourceId = "shared-source" },
+            ],
+            Controls =
+            [
+                new StudioCompositionControl { Id = "road-filter", Kind = "filterSelect", SourceId = "shared-source" },
+            ],
+        };
+
+        body = StudioCompositionBodyEditor.RemoveLayer(body, "roads");
+
+        Assert.Equal(["roads-labels"], body.Layers.Select(layer => layer.Id));
+        Assert.Equal("shared-source", Assert.Single(body.Controls!).SourceId);
+    }
+
     [UnitTest]
     public void SetLayerStyleRef_WithMissingId_ThrowsNotFound()
         => Assert.Throws<StudioCompositionNotFoundException>(
@@ -236,6 +277,54 @@ public sealed class StudioCompositionBodyEditorTests
         body = StudioCompositionBodyEditor.SetLayerStyleRef(body, "parcels", styleRef: null);
 
         Assert.Null(body.Layers[0].StyleRef);
+    }
+
+    [UnitTest]
+    public void SetLayerVisibility_WithMissingId_ThrowsNotFound()
+        => Assert.Throws<StudioCompositionNotFoundException>(
+            () => StudioCompositionBodyEditor.SetLayerVisibility(StudioCompositionBody.Empty, "no-such-layer", visible: false));
+
+    [UnitTest]
+    public void SetLayerVisibility_TogglesOnlyTheNamedLayer()
+    {
+        // honua-server#3199: before this seam AddLayer was the only writer of `visible`, and it
+        // rejects duplicate ids -- so composition state had no way to change a layer's visibility.
+        var body = StudioCompositionBodyEditor.AddLayer(
+            StudioCompositionBody.Empty, new StudioCompositionLayer { Id = "parcels" });
+        body = StudioCompositionBodyEditor.AddLayer(body, new StudioCompositionLayer { Id = "zoning" });
+
+        body = StudioCompositionBodyEditor.SetLayerVisibility(body, "parcels", visible: false);
+
+        Assert.False(body.Layers[0].Visible);
+        Assert.True(body.Layers[1].Visible);
+
+        // Re-showing restores it: the toggle is a plain set, not a one-way latch.
+        body = StudioCompositionBodyEditor.SetLayerVisibility(body, "parcels", visible: true);
+        Assert.True(body.Layers[0].Visible);
+    }
+
+    [UnitTest]
+    public void SetLayerVisibility_PreservesTheLayersOtherMembers()
+    {
+        var body = StudioCompositionBodyEditor.AddLayer(
+            StudioCompositionBody.Empty,
+            new StudioCompositionLayer
+            {
+                Id = "parcels",
+                SourceId = "content.parcels",
+                Type = "fill",
+                Title = "Parcels",
+                StyleRef = "style_parcels_default",
+            });
+
+        body = StudioCompositionBodyEditor.SetLayerVisibility(body, "parcels", visible: false);
+
+        var layer = body.Layers[0];
+        Assert.False(layer.Visible);
+        Assert.Equal("content.parcels", layer.SourceId);
+        Assert.Equal("fill", layer.Type);
+        Assert.Equal("Parcels", layer.Title);
+        Assert.Equal("style_parcels_default", layer.StyleRef);
     }
 
     [UnitTest]
