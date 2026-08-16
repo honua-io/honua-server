@@ -11,11 +11,14 @@ policy_root="${fixture}/policy"
 tools="${fixture}/tools"
 mkdir -p "${source_root}/.github" "${source_root}/tests/Project/bin/Release" \
   "${source_root}/tests/Project/obj" "${source_root}/scripts/ci" \
-  "${policy_root}/scripts/ci" "${tools}"
+  "${policy_root}/.github" "${policy_root}/scripts/ci" "${tools}"
 touch "${source_root}/tests/Project/Project.csproj"
 printf 'stale\n' > "${source_root}/tests/Project/bin/Release/stale.dll"
 printf 'stale\n' > "${source_root}/tests/Project/obj/stale.txt"
 cat > "${source_root}/.github/server-test-artifact-projects.json" <<'JSON'
+{"projects":[{"artifact_suffix":"candidate-controlled","csproj":"tests/Project/Project.csproj"}]}
+JSON
+cat > "${policy_root}/.github/server-test-artifact-projects.json" <<'JSON'
 {"projects":[{"artifact_suffix":"project","csproj":"tests/Project/Project.csproj"}]}
 JSON
 cat > "${source_root}/scripts/ci/dotnet-restore-retry.sh" <<'SH'

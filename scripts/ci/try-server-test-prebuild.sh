@@ -65,7 +65,7 @@ done
 
 source_root="$(cd "${source_root}" && pwd)"
 policy_root="$(cd "${policy_root}" && pwd)"
-registry="${source_root}/.github/server-test-artifact-projects.json"
+registry="${policy_root}/.github/server-test-artifact-projects.json"
 artifact_suffix="$(jq -er --arg project "${project}" '.projects[] | select(.csproj == $project) | .artifact_suffix' "${registry}")" || {
   echo "::error::Project '${project}' is not registered for prebuild reuse." >&2
   exit 2

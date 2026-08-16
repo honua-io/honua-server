@@ -50,10 +50,27 @@ class NativeImageImpactTests(unittest.TestCase):
             generic["candidate"]["serving_variants"],
             {"generic": True, "lambda": False, "functions": False},
         )
+        self.assertEqual(
+            generic["legacy"]["serving_variants"],
+            {"generic": True, "lambda": False, "functions": False},
+        )
+        lambda_only = report("docker/Dockerfile.lambda.aot")
+        self.assertEqual(
+            lambda_only["legacy"]["serving_variants"],
+            {"generic": False, "lambda": True, "functions": False},
+        )
+        self.assertEqual(
+            lambda_only["candidate"]["serving_variants"],
+            lambda_only["legacy"]["serving_variants"],
+        )
         functions = report("docker/cloud/azure-functions/host.json")
         self.assertEqual(
             functions["candidate"]["serving_variants"],
             {"generic": False, "lambda": False, "functions": True},
+        )
+        self.assertEqual(
+            functions["candidate"]["serving_variants"],
+            functions["legacy"]["serving_variants"],
         )
 
     def test_worker_rootfs_change_does_not_select_serving(self) -> None:
@@ -122,6 +139,22 @@ class NativeImageImpactTests(unittest.TestCase):
     def test_checked_in_policy_matches_authoritative_workflow_triggers(self) -> None:
         MODULE.validate_policy(ROOT, POLICY)
 
+    def test_legacy_variant_mapping_drift_fails_closed(self) -> None:
+        source = (ROOT / POLICY["legacy"]["serving_workflow"]).read_text(
+            encoding="utf-8"
+        )
+        mutated = source.replace(
+            "docker/Dockerfile.lambda.aot)\n                lambda=true",
+            "docker/Dockerfile.lambda.aot)\n                generic=true",
+            1,
+        )
+        self.assertNotEqual(source, mutated)
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = Path(directory) / "serving-image-boundary.yml"
+            workflow.write_text(mutated, encoding="utf-8")
+            with self.assertRaises(MODULE.PolicyError):
+                MODULE._validate_legacy_serving_routes(workflow, POLICY["legacy"])
+
     def test_observer_permissions_reject_semantic_write_variants(self) -> None:
         workflow = (
             ROOT / ".github" / "workflows" / "native-image-impact-observe.yml"
@@ -183,6 +216,9 @@ class NativeImageImpactTests(unittest.TestCase):
             policy_sha="c" * 40,
             policy_blob_sha="d" * 40,
             routing_policy_blob_sha="e" * 40,
+            gate_workflow_blob_sha="4" * 40,
+            serving_workflow_blob_sha="3" * 40,
+            worker_workflow_blob_sha="5" * 40,
             resolver_blob_sha="f" * 40,
             observer_workflow_blob_sha="1" * 40,
             policy_inputs_sha256="2" * 64,
@@ -196,6 +232,9 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertEqual(result["gate_run_head_sha"], "b" * 40)
         self.assertEqual(result["policy_sha"], "c" * 40)
         self.assertEqual(result["routing_policy_blob_sha"], "e" * 40)
+        self.assertEqual(result["gate_workflow_blob_sha"], "4" * 40)
+        self.assertEqual(result["serving_workflow_blob_sha"], "3" * 40)
+        self.assertEqual(result["worker_workflow_blob_sha"], "5" * 40)
         self.assertEqual(result["policy_inputs_sha256"], "2" * 64)
         self.assertEqual(len(result["changed_paths_sha256"]), 64)
 
@@ -208,6 +247,9 @@ class NativeImageImpactTests(unittest.TestCase):
             policy_sha="c" * 40,
             policy_blob_sha="d" * 40,
             routing_policy_blob_sha="e" * 40,
+            gate_workflow_blob_sha="4" * 40,
+            serving_workflow_blob_sha="3" * 40,
+            worker_workflow_blob_sha="5" * 40,
             resolver_blob_sha="f" * 40,
             observer_workflow_blob_sha="1" * 40,
             policy_inputs_sha256="2" * 64,
@@ -223,6 +265,9 @@ class NativeImageImpactTests(unittest.TestCase):
 
         for attribute, invalid in (
             ("routing_policy_blob_sha", "short"),
+            ("gate_workflow_blob_sha", "short"),
+            ("serving_workflow_blob_sha", "short"),
+            ("worker_workflow_blob_sha", "short"),
             ("policy_inputs_sha256", "short"),
             ("trusted_execution", "candidate-controlled"),
             ("gate_run_conclusion", "in_progress"),

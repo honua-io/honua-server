@@ -89,6 +89,56 @@ def rounded_minutes(jobs: list[dict]) -> int:
     return sum(math.ceil(item["elapsed_ms"] / 60_000) for item in jobs)
 
 
+def weighted_plan(plan: dict) -> tuple[list[dict], dict[str, int]]:
+    baseline = plan.get("baseline")
+    candidates = plan.get("candidates")
+    reused_projects = plan.get("reused_projects")
+    if not isinstance(baseline, list) or not baseline:
+        raise ValueError("prebuild benchmark plan has no baseline projects")
+    if candidates != baseline:
+        raise ValueError("prebuild benchmark candidate workload differs from baseline")
+    if (
+        not isinstance(reused_projects, list)
+        or not all(isinstance(item, str) and item for item in reused_projects)
+        or len(reused_projects) != len(set(reused_projects))
+    ):
+        raise ValueError("prebuild benchmark reused-project identity is invalid")
+
+    weights: dict[str, int] = {}
+    projects: set[str] = set()
+    for item in baseline:
+        if not isinstance(item, dict):
+            raise ValueError("prebuild benchmark workload entries must be objects")
+        identity = item.get("identity")
+        project = item.get("project")
+        count = item.get("selected_shard_count")
+        if (
+            not isinstance(identity, str)
+            or not identity
+            or identity in weights
+            or not isinstance(project, str)
+            or not project
+            or project in projects
+            or type(count) is not int
+            or not 2 <= count <= 100
+        ):
+            raise ValueError("prebuild benchmark workload identity or shard weight is invalid")
+        weights[identity] = count
+        projects.add(project)
+    if sum(weights.values()) > 100:
+        raise ValueError("prebuild benchmark workload exceeds the bounded shard count")
+    if set(reused_projects) != projects:
+        raise ValueError("prebuild benchmark reused-project identity is inconsistent")
+    return baseline, weights
+
+
+def expand_by_weight(jobs: list[dict], weights: dict[str, int]) -> list[dict]:
+    expanded: list[dict] = []
+    for item in jobs:
+        expanded.extend([item] * weights[item["identity"]])
+    return expanded
+
+
 def bind_metrics(metrics: list[dict], jobs: list[dict], *, attempt: int) -> dict[tuple[str, str], dict]:
     prefixes = {
         "baseline": "Independent prebuild baseline / ",
@@ -154,12 +204,13 @@ def summarize(
     if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 20:
         raise ValueError("wall-clock threshold is invalid")
 
+    workload, shard_weights = weighted_plan(plan)
     bound = bind_metrics(metrics, benchmark_jobs, attempt=benchmark_attempt)
     baseline = []
     candidate = []
     parity_failures = []
     reuse_failures = []
-    for shard in plan.get("baseline", []):
+    for shard in workload:
         identity = shard["identity"]
         before = bound.get(("baseline", identity))
         after = bound.get(("consumer-ready", identity))
@@ -227,15 +278,17 @@ def summarize(
         item["job_start_epoch_ms"] for item in candidate
     )
 
-    baseline_timing = timing(baseline)
-    candidate_timing = timing(candidate)
+    weighted_baseline = expand_by_weight(baseline, shard_weights)
+    weighted_candidate = expand_by_weight(candidate, shard_weights)
+    baseline_timing = timing(weighted_baseline)
+    candidate_timing = timing(weighted_candidate)
     baseline_jobs = [
         {
             "elapsed_ms": item["job_elapsed_ms"],
             "start_ms": item["job_start_epoch_ms"],
             "end_ms": item["job_start_epoch_ms"] + item["job_elapsed_ms"],
         }
-        for item in baseline
+        for item in weighted_baseline
     ]
     candidate_jobs = [
         {
@@ -243,7 +296,7 @@ def summarize(
             "start_ms": item["job_start_epoch_ms"],
             "end_ms": item["job_start_epoch_ms"] + item["job_elapsed_ms"],
         }
-        for item in candidate
+        for item in weighted_candidate
     ]
     baseline_minutes = rounded_minutes(baseline_jobs)
     candidate_minutes = rounded_minutes(candidate_jobs) + rounded_minutes(external_jobs)
@@ -267,6 +320,14 @@ def summarize(
         "decision": "eligible-for-20-head-shadow" if eligible else "keep-local-build-authoritative",
         "profile": plan["profile"],
         "head_sha": head_sha,
+        "workload": {
+            "representative_project_count": len(workload),
+            "selected_shard_count": sum(shard_weights.values()),
+            "shard_weights": [
+                {"identity": item["identity"], "selected_shard_count": shard_weights[item["identity"]]}
+                for item in workload
+            ],
+        },
         "baseline": {**baseline_timing, "rounded_runner_minutes": baseline_minutes},
         "candidate": {
             **candidate_timing,
@@ -284,11 +345,17 @@ def summarize(
 
 
 def markdown(summary: dict) -> str:
+    weights = ", ".join(
+        f"{item['identity']}={item['selected_shard_count']}"
+        for item in summary["workload"]["shard_weights"]
+    )
     return "\n".join(
         [
             "# Opportunistic server-test prebuild benchmark",
             "",
             f"Decision: **{summary['decision']}**",
+            f"Weighted selected shard jobs: `{summary['workload']['selected_shard_count']}` "
+            f"across `{summary['workload']['representative_project_count']}` measured projects ({weights}).",
             "",
             "| Path | Rounded runner min | First test ms | p90 test start ms | Wall ms |",
             "|---|---:|---:|---:|---:|",

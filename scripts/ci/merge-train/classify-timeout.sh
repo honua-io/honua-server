@@ -208,20 +208,33 @@ train_run_logs_match_timeout() {
     return $?
   fi
 
-  local rows jid name saw_job=0 saw_timeout=0
+  local rows jid name conclusion saw_job=0 saw_timeout=0
   rows="$(gh run view "${run_id}" --json jobs \
-    --jq '.jobs[] | select(.conclusion=="failure") | [.databaseId, .name] | @tsv' \
+    --jq '.jobs[]
+      | select(.conclusion=="failure" or .conclusion=="cancelled"
+               or .conclusion=="timed_out" or .conclusion=="startup_failure")
+      | [.databaseId, .name, .conclusion] | @tsv' \
     2>/dev/null || echo "")"
   # Scan EVERY selected failing job before deciding the kind. A generic timeout
   # in one job must not shortcut past a capacity-exhausted shard in another, or
   # the caller reruns the very job this change promises never to retry. Capacity
   # has precedence and is terminal, so it is the only early exit.
-  while IFS="${TRAIN_TIMEOUT_TAB}" read -r jid name; do
+  while IFS="${TRAIN_TIMEOUT_TAB}" read -r jid name conclusion; do
     [[ -n "${jid}" ]] || continue
     if [[ -n "${failing_names}" ]] && ! grep -Fqx -- "${name}" <<<"${failing_names}"; then
       continue
     fi
     saw_job=1
+    # Actions uses these terminal conclusions for job-level timeout, runner
+    # loss, and startup failure. They have no reliable exit-124 log to grep,
+    # but a single failed-job rerun is still fail-closed: no code lands unless
+    # the newer attempt completes with explicit success.
+    case "${conclusion}" in
+      cancelled|timed_out|startup_failure)
+        saw_timeout=1
+        continue
+        ;;
+    esac
     if train_match_timeout_text "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
       saw_timeout=1
       if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then

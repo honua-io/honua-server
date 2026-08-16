@@ -10,6 +10,7 @@ const {
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
+const POLICY = 'c'.repeat(40);
 
 function fixtures(overrides = {}) {
   const run = {
@@ -19,8 +20,8 @@ function fixtures(overrides = {}) {
     event: 'pull_request',
     status: 'completed',
     conclusion: 'success',
-    repository: { full_name: 'honua-io/honua-server' },
-    head_repository: { full_name: 'honua-io/honua-server' },
+    repository: { id: 1, full_name: 'honua-io/honua-server' },
+    head_repository: { id: 1, full_name: 'honua-io/honua-server' },
     head_sha: HEAD,
     run_attempt: 2,
     pull_requests: [],
@@ -57,11 +58,11 @@ function fixtures(overrides = {}) {
     base: {
       ref: 'trunk',
       sha: BASE,
-      repo: { full_name: 'honua-io/honua-server' },
+      repo: { id: 1, full_name: 'honua-io/honua-server' },
     },
     head: {
       sha: HEAD,
-      repo: { full_name: 'honua-io/honua-server' },
+      repo: { id: 1, full_name: 'honua-io/honua-server' },
     },
     ...overrides.pullRequest,
   };
@@ -109,6 +110,62 @@ function resolve(github, { runAttempt = '2', runConclusion = 'success' } = {}) {
   });
 }
 
+function reviewGateFixtures({ runSha = HEAD, baseSha = BASE } = {}) {
+  const association = {
+    number: 42,
+    base: { ref: 'trunk', sha: baseSha, repo: { id: 1 } },
+    head: { sha: HEAD, repo: { id: 1 } },
+  };
+  return fixtures({
+    run: {
+      path: '.github/workflows/review-gate.yml',
+      name: 'Review Gate Attestation',
+      event: 'pull_request_target',
+      conclusion: 'failure',
+      head_sha: runSha,
+    },
+    job: {
+      workflow_name: 'Review Gate Attestation',
+      name: 'Resolve pull request identity',
+      head_sha: runSha,
+    },
+    checkRun: {
+      name: 'Resolve pull request identity',
+      head_sha: runSha,
+      pull_requests: [association],
+    },
+    pullRequest: {
+      base: {
+        ref: 'trunk',
+        sha: baseSha,
+        repo: { id: 1, full_name: 'honua-io/honua-server' },
+      },
+    },
+  });
+}
+
+function resolveReviewGate(
+  github,
+  { workflowShaRole = 'pull-request-target-associated' } = {},
+) {
+  return resolveTrustedPullRequestWorkflowRun({
+    github,
+    owner: 'honua-io',
+    repo: 'honua-server',
+    runId: '123',
+    runAttempt: '2',
+    runConclusion: 'failure',
+    workflowPath: '.github/workflows/review-gate.yml',
+    workflowName: 'Review Gate Attestation',
+    workflowEvent: 'pull_request_target',
+    workflowShaRole,
+    jobName: 'Resolve pull request identity',
+    jobConclusion: 'success',
+    defaultBranch: 'trunk',
+    repositoryId: 1,
+  });
+}
+
 test('uses the immutable check-run association when workflow_run PRs are empty', async () => {
   const { github } = fixtures();
   const result = await resolve(github);
@@ -118,9 +175,43 @@ test('uses the immutable check-run association when workflow_run PRs are empty',
   assert.equal(result.pullRequest.head.repo.full_name, 'honua-io/honua-server');
 });
 
+test('derives a pull-request-target candidate from the association, not run SHA', async () => {
+  const { github } = reviewGateFixtures();
+  const result = await resolveReviewGate(github);
+  assert.equal(result.run.conclusion, 'failure');
+  assert.equal(result.job.conclusion, 'success');
+  assert.equal(result.pullRequestNumber, 42);
+  assert.equal(result.baseSha, BASE);
+  assert.equal(result.headSha, HEAD);
+  assert.equal(result.workflowSha, HEAD);
+  assert.equal(result.workflowShaRole, 'association-head');
+});
+
+test('accepts a pull-request-target run represented by its associated base', async () => {
+  const { github } = reviewGateFixtures({ runSha: POLICY, baseSha: POLICY });
+  const result = await resolveReviewGate(github);
+  assert.equal(result.baseSha, POLICY);
+  assert.equal(result.headSha, HEAD);
+  assert.equal(result.workflowSha, POLICY);
+  assert.equal(result.workflowShaRole, 'association-base');
+});
+
+test('requires pull-request-target workflows to declare their associated SHA role', async () => {
+  const { github } = reviewGateFixtures();
+  await assert.rejects(
+    resolveReviewGate(github, { workflowShaRole: 'pull-request-head' }),
+    /input is incomplete/,
+  );
+});
+
+test('rejects a pull-request-target run outside both associated commits', async () => {
+  const { github } = reviewGateFixtures({ runSha: 'd'.repeat(40), baseSha: POLICY });
+  await assert.rejects(resolveReviewGate(github), /identity is inconsistent/);
+});
+
 test('explicitly excludes fork workflow runs from the evidence denominator', async () => {
   const { github } = fixtures({
-    run: { head_repository: { full_name: 'contributor/honua-server' } },
+    run: { head_repository: { id: 2, full_name: 'contributor/honua-server' } },
   });
   await assert.rejects(resolve(github), /completed canonical/);
 });
@@ -149,7 +240,7 @@ test('rejects a current PR whose base advanced after the gate run', async () => 
       base: {
         ref: 'trunk',
         sha: 'c'.repeat(40),
-        repo: { full_name: 'honua-io/honua-server' },
+        repo: { id: 1, full_name: 'honua-io/honua-server' },
       },
     },
   });

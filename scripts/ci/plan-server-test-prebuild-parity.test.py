@@ -23,8 +23,12 @@ REGISTRY = {
 }
 
 
-def observation(producers: list[dict]) -> dict:
-    return {"contract": MODULE.OBSERVATION_CONTRACT, "producers": producers}
+def observation(producers: list[dict], selected_shards: int = 3) -> dict:
+    return {
+        "contract": MODULE.OBSERVATION_CONTRACT,
+        "selected_shard_count": selected_shards,
+        "producers": producers,
+    }
 
 
 valid = {
@@ -36,7 +40,7 @@ valid = {
 plan = MODULE.build_plan(observation([valid]), REGISTRY)
 assert plan == {
     "contract": MODULE.BENCHMARK_CONTRACT,
-    "profile": "exact-head-shadow",
+    "profile": "exact-head-shadow:multi-shard",
     "baseline": [
         {
             "identity": "server",
@@ -44,6 +48,7 @@ assert plan == {
             "project_suffix": "server",
             "filter": "FullyQualifiedName~ServerProofTests",
             "reuse_expected": True,
+            "selected_shard_count": 3,
         }
     ],
     "candidates": [
@@ -53,15 +58,25 @@ assert plan == {
             "project_suffix": "server",
             "filter": "FullyQualifiedName~ServerProofTests",
             "reuse_expected": True,
+            "selected_shard_count": 3,
         }
     ],
     "reused_projects": [PROJECT],
 }
 assert MODULE.build_plan(observation([]), REGISTRY)["candidates"] == []
+assert MODULE.build_plan(observation([]), REGISTRY)["profile"] == "exact-head-shadow:none"
+assert (
+    MODULE.build_plan(
+        observation([{**valid, "selected_shard_count": 2}], selected_shards=2), REGISTRY
+    )["profile"]
+    == "exact-head-shadow:two-shard"
+)
 
 for invalid in (
     {**valid, "project_suffix": "wrong"},
     {**valid, "selected_shard_count": 1},
+    {**valid, "selected_shard_count": 4},
+    {**valid, "selected_shard_count": True},
     {**valid, "identity": "wrong"},
 ):
     try:
@@ -75,6 +90,38 @@ try:
     raise AssertionError("duplicate observer producer was accepted")
 except ValueError:
     pass
+
+for invalid_total in (0, 101, True):
+    try:
+        MODULE.build_plan(observation([valid], selected_shards=invalid_total), REGISTRY)
+        raise AssertionError("invalid observer shard total was accepted")
+    except ValueError:
+        pass
+
+second_project = "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+second_producer = {
+    "identity": "geoservices",
+    "project": second_project,
+    "project_suffix": "geoservices",
+    "selected_shard_count": 3,
+}
+try:
+    MODULE.build_plan(
+        observation([valid, second_producer], selected_shards=5),
+        {
+            "projects": [
+                *REGISTRY["projects"],
+                {
+                    "csproj": second_project,
+                    "artifact_suffix": "geoservices",
+                    "proof_filter": "FullyQualifiedName~GeoServicesProofTests",
+                },
+            ]
+        },
+    )
+    raise AssertionError("producer weights exceeding the observed shard total were accepted")
+except ValueError as error:
+    assert "exceed the selected shard set" in str(error)
 
 for unsafe_project in ("../escape.csproj", "/tmp/escape.csproj", "tests/Bad'Path.csproj"):
     try:

@@ -37,10 +37,56 @@ trusted exact-head review decision.
 | `observe` | Admission and current eager verification | Publishes exact-head admission; records `observe` without an Actions mutation | Not created by review-first |
 | `enforce` | Admission only; intentionally fails at `Await exact-head review` | Publishes exact-head admission and reruns the exact failed job once | Runs expensive verification |
 
-Rollout begins in `observe`. After at least 20 representative PR heads and the
-#3216 invariants are verified, switch both values to `enforce` in one reviewed
-commit. Collect at least 30 post-change heads before judging the latency and
-runner-minute target from #3213.
+Rollout begins in `observe`. After at least 20 representative PR heads have
+immutable current-policy receipts, the evidence ledger is integrity-clean, and
+the #3216 invariants are verified, a human may propose switching both values to
+`enforce` in one reviewed commit. The ledger never performs that switch. Collect
+at least 30 post-change heads before judging the latency and runner-minute target
+from #3213.
+
+## Promotion evidence ledger
+
+Every successful `observe` decision now emits a bounded
+`honua.review-first-observation/v1` artifact from the trusted Review Gate run.
+The receipt contains the exact PR/head, the complete bounded PR Gate run and job
+inputs used by the production dispatcher, the selected admission run, the
+decision, the shared final full review/state/head/label and admission
+revalidations, and a digest of all policy inputs. It records `mutation: none`.
+Duplicate review events can emit duplicate receipts, but each exact head counts
+once.
+
+`Review-first Evidence Ledger` runs on the default branch daily or on manual
+request. It downloads only artifacts attached to successful canonical Review
+Gate runs, validates artifact/run identity and bounds, replays every receipt
+through `evaluateReviewFirstDispatch`, separates changed policy digests into a
+new cohort, and retains JSON plus Markdown for 30 days. It has only
+`actions: read` and `contents: read`; its output is either `observe-more` or
+`eligible-for-human-promotion-review`. It cannot publish a status, rerun a job,
+change a label, change mode, trigger the train, or merge. The report shows both
+distinct exact heads and distinct pull requests so a human can judge whether the
+cohort is representative rather than accepting a burst of updates to one PR.
+Workflow-run discovery divides the rolling window into 24-hour ranges, combines
+and deduplicates their results, and fails closed if any partition reaches 1,000
+runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
+`created` filter. Every observation uses the stable exact artifact name
+`review-first-observation-v1`, so artifact discovery can ask GitHub for only that
+name rather than scanning the repository's unrelated artifacts. It reads one
+paginated repository artifact catalog and joins artifacts to trusted run IDs
+locally; it never makes one artifact-list request per run. The promotion policy
+caps the worst case at 300 run-query pages, three repository-artifact pages, and
+300 receipt downloads: 603 requests under a 650-request policy ceiling, with at
+least 350 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
+repository per hour. Every page must report the same total, IDs must be unique,
+the complete count must fit the page bound, and the selected receipt count must
+fit the download bound. Any inconsistency or exhausted bound fails closed.
+
+The pre-ledger audit found seven conservative API-derived candidates among 53
+distinct heads. Those remain useful supporting evidence, but they are not
+countable receipts: GitHub's historical PR association reflects the PR's current
+head, and the combined commit-status endpoint exposes only the newest state.
+Promotion therefore counts only the contemporaneous trusted receipts. Audits of
+status history must use the paginated plural `/commits/{sha}/statuses` endpoint;
+the singular combined-status response is not historical evidence.
 
 ## Trust boundary
 
@@ -53,18 +99,30 @@ runner-minute target from #3213.
   PR code can delay or suppress it.
 - `Review Gate Attestation` wakes from the bridge's `workflow_run`, PR Gate
   completion, `pull_request_target`, or default-branch `issue_comment`. It has
-  `actions: write`, but checks out only the default branch, persists no checkout
-  credential, and executes no PR-authored code. It has no manual dispatch path
-  that can select a PR ref.
+  `actions: write`, but checks out the immutable `github.workflow_sha`, persists
+  no checkout credential, and executes no PR-authored code. That SHA identifies
+  the trusted default-branch workflow policy for the event. It has no manual
+  dispatch path that can select a PR ref.
+- Observation artifacts are evidence, not authority. Their stable artifact name,
+  producer workflow, run, attempt, event, producer policy SHA, receipt PR/head
+  identity, policy digest, bounded snapshot, and replayed decision must all
+  agree. Malformed or contradictory evidence fails the ledger's integrity gate
+  and can never recommend promotion.
 - Exact-head review, unresolved threads, draft/hold/escalation state, pagination,
   workflow identity, event type, head SHA, PR association, run identity, run
   attempt, admission receipt, wait receipt, and skipped expensive steps all fail
   closed before an enforced rerun.
 - Fork runs with an empty `pull_requests` payload are accepted only when the
   commit API resolves exactly one open associated PR.
-- A final PR/head/label read occurs immediately before the Actions mutation.
+- Two complete, identical bounded review snapshots are required for each
+  attestation read. At the irreversible boundary, the workflow then requires two
+  identical evaluations of the entire joint state: that stable review result,
+  exact-head PR Gate runs, commit/PR association, selected run jobs, and the
+  production decision. A dismissed review, newly unresolved thread, truncated
+  query, hold, changed head, or canonical-run change fails closed. No awaited
+  summary write occurs between the final joint snapshot and the receipt/rerun.
   Normal PR Gate concurrency cancels the residual race if the head moves after
-  that read.
+  those reads.
 - Live merge-train selection and pre-land validation independently fetch current
   reviews, threads, labels, and head identity from GitHub. They refresh
   `Review Gate` and fail closed on negative/truncated evidence, so a stale status
@@ -83,6 +141,8 @@ runner-minute target from #3213.
 Review, comment, status, and workflow completion events can all re-evaluate the
 same head. Every event first resolves exactly one PR number, including fork
 workflow completions, and trusted evaluations serialize on that PR number.
+Repeated clean events may retain repeated observation artifacts, but the ledger
+deduplicates by exact head and fails closed if one head maps to multiple PRs.
 Once GitHub accepts the rerun,
 the workflow's `run_attempt` becomes greater than one and every later event is a
 no-op. A duplicate API rejection is ignored only after a fresh run read proves

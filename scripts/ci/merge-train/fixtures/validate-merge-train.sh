@@ -272,6 +272,9 @@ __ci_jobs() {
     timed-out)
       printf 'success\tBuild & Format Check\ntimed_out\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
       ;;
+    pending)
+      printf 'success\tBuild & Format Check\n\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
   esac
 }
 export -f __ci_jobs
@@ -287,14 +290,27 @@ CI_JOBS_CASE=cancelled train_nonblocking_failures_are_safe 2 "${SAFE_DESCRIPTOR}
   && bad "ci-safe: cancelled gate/shard must fail closed" \
   || ok "ci-safe: cancelled gate/shard fails closed"
 CI_JOBS_CASE=cancelled train_ci_jobs_are_terminal 2 \
-  && bad "ci-safe: cancelled jobs must make the run unusable" \
-  || ok "ci-safe: cancelled jobs make the run unusable"
+  && ok "ci-safe: cancelled jobs are terminal retry inputs" \
+  || bad "ci-safe: cancelled jobs were mistaken for incomplete jobs"
+CI_JOBS_CASE=cancelled train_expected_shards_are_classifiable 2 "${SAFE_DESCRIPTOR}" \
+  && ok "ci-safe: cancelled selected shard may enter bounded retry" \
+  || bad "ci-safe: cancelled selected shard could not reach bounded retry"
+cancelled_retry_jobs="$(CI_JOBS_CASE=cancelled train_retry_terminal_jobs 2 | sort)"
+[[ "${cancelled_retry_jobs}" == $'CI Gate\nServer Tests (Core)' ]] \
+  && ok "ci-safe: cancelled jobs remain visible to retry classification" \
+  || bad "ci-safe: cancelled jobs were lost before retry classification"
 CI_JOBS_CASE=missing-shards train_nonblocking_failures_are_safe 3 "${SAFE_DESCRIPTOR}" \
   && bad "ci-safe: missing blocking jobs must fail closed" \
   || ok "ci-safe: missing blocking jobs fail closed"
 CI_JOBS_CASE=timed-out train_nonblocking_failures_are_safe 4 "${SAFE_DESCRIPTOR}" \
   && bad "ci-safe: timed-out shard must fail closed" \
   || ok "ci-safe: timed-out shard fails closed"
+CI_JOBS_CASE=timed-out train_ci_jobs_are_terminal 4 \
+  && ok "ci-safe: timed-out jobs are terminal retry inputs" \
+  || bad "ci-safe: timed-out jobs were mistaken for incomplete jobs"
+CI_JOBS_CASE=pending train_ci_jobs_are_terminal 7 \
+  && bad "ci-safe: pending jobs must remain unusable" \
+  || ok "ci-safe: pending jobs remain unusable"
 CI_JOBS_CASE=partial-missing train_expected_shards_are_classifiable 5 "${TWO_SHARD_DESCRIPTOR}" \
   && bad "ci-safe: partially missing selected shard must fail closed" \
   || ok "ci-safe: partially missing selected shard fails closed"
@@ -652,6 +668,24 @@ assert_contains "derived artifacts: parity reuses the feature-catalog build" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
   'generate-geoservices-parity.sh" --no-build --no-restore'
 
+single_reuse='[{"number":77,"headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prGateRunId":424242,"prGateRunAttempt":2}]'
+TRAIN_PR_GATE_REUSE_RUN_ID="stale"
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW
+train_configure_pr_gate_build_reuse "${single_reuse}" "77"
+assert_eq "smart-ci: disabled shadow clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
+export TRAIN_PR_GATE_BUILD_REUSE_SHADOW=true
+train_configure_pr_gate_build_reuse "${single_reuse}" "77"
+assert_eq "smart-ci: one-member exact batch carries PR Gate run id" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" "424242"
+assert_eq "smart-ci: one-member exact batch carries PR Gate attempt" "${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" "2"
+assert_eq "smart-ci: one-member exact batch carries PR identity" "${TRAIN_PR_GATE_REUSE_PR:-}" "77"
+assert_eq "smart-ci: one-member exact batch carries head identity" \
+  "${TRAIN_PR_GATE_REUSE_HEAD:-}" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+train_configure_pr_gate_build_reuse "${single_reuse}" "77,78"
+assert_eq "smart-ci: multi-member batch clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
+train_configure_pr_gate_build_reuse '[{"number":77,"headRefOid":"bad","prGateRunId":424242,"prGateRunAttempt":2}]' "77"
+assert_eq "smart-ci: malformed admitted metadata clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW single_reuse
+
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
 #
@@ -667,6 +701,14 @@ smart_ci_mode=immediate
 smart_ci_dispatch_marker="${SCRATCH}/smart-ci-dispatched"
 smart_ci_baseline_calls="${SCRATCH}/smart-ci-baseline-calls"
 smart_ci_nonce_file="${SCRATCH}/smart-ci-nonce"
+smart_ci_events="${SCRATCH}/smart-ci-events"
+record_discovered_run() {
+  printf 'discovered:%s:%s\n' "$1" "$2" >>"${smart_ci_events}"
+}
+reject_discovered_run() {
+  printf 'rejected:%s:%s\n' "$1" "$2" >>"${smart_ci_events}"
+  return 1
+}
 gh() {
   if [[ "$1 $2" == "workflow run" ]]; then
     smart_ci_dispatched=1
@@ -717,11 +759,18 @@ gh() {
     if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
     return 0
   fi
-  if [[ "$1 $2" == "run view" && "$*" == *"--json status,updatedAt,jobs"* ]]; then
-    printf '{"status":"completed","updatedAt":"2026-08-14T00:00:00Z","jobs":[]}\n'
+  if [[ "$1 $2" == "run view" && "$*" == *"--json databaseId,attempt,event,headBranch,headSha,status,updatedAt,workflowName"* ]]; then
+    local head; head="$(git rev-parse train/batch/smartci-batch 2>/dev/null || echo "")"
+    printf 'poll:%s\n' "$3" >>"${smart_ci_events}"
+    printf '{"databaseId":222,"attempt":1,"event":"workflow_dispatch","headBranch":"train/batch/smartci-batch","headSha":"%s","status":"completed","updatedAt":"2026-08-14T00:00:00Z","workflowName":"CI"}\n' "${head}"
+    return 0
+  fi
+  if [[ "$1" == "api" && "$*" == *"/actions/runs/222/jobs?filter=latest&per_page=100"* ]]; then
+    printf '[{"jobs":[]}]\n'
     return 0
   fi
   if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then
+    printf 'poll:%s\n' "$3" >>"${smart_ci_events}"
     echo "completed"
     return 0
   fi
@@ -734,8 +783,21 @@ gh() {
 immediate_gate="$(TRAIN_APPLY=1 \
   TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
   TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
-  train_smart_ci_run train/batch/smartci-batch)"
+  train_smart_ci_run train/batch/smartci-batch record_discovered_run)"
 assert_eq "smart-ci: immediately visible dispatched run is not in baseline" "${immediate_gate}" "SUCCESS"
+assert_eq "smart-ci: exact run id is journaled before the long poll" \
+  "$(sed -n '1,2p' "${smart_ci_events}")" \
+  $'discovered:train/batch/smartci-batch:222\npoll:222'
+
+smart_ci_dispatched=0
+: >"${smart_ci_events}"
+rejected_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run train/batch/smartci-batch reject_discovered_run)"
+assert_eq "smart-ci: failed durable journal stops before polling" "${rejected_gate}" "JOURNAL_FAILURE"
+assert_not_contains "smart-ci: failed durable journal performs no long poll" \
+  "$(cat "${smart_ci_events}")" "poll:"
 
 smart_ci_mode=stale
 stale_gate="$(TRAIN_APPLY=1 \
@@ -841,7 +903,10 @@ assert_eq "select: oldest-first; draft/hold/conflict excluded" "${sel}" "[11,10]
 selected_evidence="$(MAX_BATCH=1 train_select | jq -s -r '.[0].gate')"
 assert_eq "select: PR+Review admission does not synthesize CI Gate" "${selected_evidence}" "MISSING"
 assert_not_contains "batch: direct all-green bypass removed" "$(cat "${TRAIN_DIR}/train.sh")" "direct-merge-all-green"
-assert_contains "batch: admitted PRs dispatch batch CI" "$(cat "${TRAIN_DIR}/train.sh")" 'gate="$(train_run_batch_ci "${batch}")"'
+assert_eq "batch: every primary fresh CI dispatch journals its run id" \
+  "$(grep -Fc 'gate="$(train_run_batch_ci "${batch}" _persist_smart_ci_run_id)"' "${TRAIN_DIR}/train.sh")" "3"
+assert_contains "batch: journal failure bypasses CI classification" \
+  "$(cat "${TRAIN_DIR}/train.sh")" 'if [[ "${gate}" == "JOURNAL_FAILURE" ]]'
 
 for admission_case in gate-fail review-fail unresolved negative-review held escalated draft closed advanced; do
   export ADMISSION_CASE="${admission_case}"
@@ -904,6 +969,57 @@ assert_eq "select: StatusContext FAILURE => FAIL" \
   "$(train_select_ci_gate_state '[{"__typename":"StatusContext","context":"CI Gate","state":"FAILURE"}]')" "FAIL"
 assert_eq "select: recovery status supersedes failed CheckRun" \
   "$(train_select_ci_gate_state '[{"__typename":"CheckRun","name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"StatusContext","context":"CI Gate","state":"SUCCESS","startedAt":"2026-01-02T00:00:00Z"}]')" "SUCCESS"
+
+# Optional build reuse metadata is accepted only from one exact successful PR
+# Gate CheckRun whose Actions run remains canonical for the admitted head. A
+# miss never changes admission; it merely omits the shadow inputs.
+reuse_head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+disabled_lookup_marker="${SCRATCH}/unexpected-pr-gate-run-lookup"
+__disabled_pr_gate_run_json() {
+  : >"${disabled_lookup_marker}"
+  return 1
+}
+export disabled_lookup_marker
+export -f __disabled_pr_gate_run_json
+export TRAIN_PR_GATE_RUN_JSON_FOR_ID=__disabled_pr_gate_run_json
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW
+assert_eq "select: disabled shadow omits optional reuse metadata" \
+  "$(train_select_pr_gate_reuse_metadata \
+    '{"statusCheckRollup":[{"__typename":"CheckRun","name":"PR Gate","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://github.com/honua-io/honua-server/actions/runs/424242/job/7"}]}' \
+    "${reuse_head}")" '{}'
+[[ ! -e "${disabled_lookup_marker}" ]] \
+  && ok "select: disabled shadow avoids PR Gate run lookup" \
+  || bad "select: disabled shadow unexpectedly queried PR Gate run"
+unset -f __disabled_pr_gate_run_json
+export TRAIN_PR_GATE_BUILD_REUSE_SHADOW=true
+__pr_gate_run_json() {
+  local run_id="$1"
+  jq -nc --argjson id "${run_id}" --arg head "${reuse_head}" \
+    '{id:$id,status:"completed",conclusion:"success",event:"pull_request",
+      path:".github/workflows/pr-gate.yml",head_sha:$head,run_attempt:2}'
+}
+export reuse_head
+export -f __pr_gate_run_json
+export TRAIN_PR_GATE_RUN_JSON_FOR_ID=__pr_gate_run_json
+reuse_snapshot="$(jq -nc '{statusCheckRollup:[
+  {__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:"SUCCESS",
+   detailsUrl:"https://github.com/honua-io/honua-server/actions/runs/424242/job/7"}
+]}')"
+assert_eq "select: canonical PR Gate run enables optional reuse metadata" \
+  "$(train_select_pr_gate_reuse_metadata "${reuse_snapshot}" "${reuse_head}")" \
+  '{"prGateRunId":424242,"prGateRunAttempt":2}'
+assert_eq "select: head mismatch is an ordinary reuse miss" \
+  "$(train_select_pr_gate_reuse_metadata "${reuse_snapshot}" "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")" '{}'
+duplicate_reuse_snapshot="$(jq -c '.statusCheckRollup += [.statusCheckRollup[0]]' <<<"${reuse_snapshot}")"
+assert_eq "select: ambiguous successful PR Gate checks are a reuse miss" \
+  "$(train_select_pr_gate_reuse_metadata "${duplicate_reuse_snapshot}" "${reuse_head}")" '{}'
+assert_eq "select: absent PR Gate details URL is a reuse miss" \
+  "$(train_select_pr_gate_reuse_metadata \
+    '{"statusCheckRollup":[{"__typename":"CheckRun","name":"PR Gate","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
+    "${reuse_head}")" '{}'
+unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW TRAIN_PR_GATE_RUN_JSON_FOR_ID \
+  disabled_lookup_marker reuse_head reuse_snapshot duplicate_reuse_snapshot
+unset -f __pr_gate_run_json
 
 echo
 echo "== select: merge-through-flakes (FAILURE => FLAKE only when flake-only) =="

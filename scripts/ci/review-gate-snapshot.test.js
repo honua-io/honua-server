@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   collectPullRequestSnapshot,
+  stabilizePullRequestSnapshot,
   trainSnapshot,
 } = require('./review-gate-snapshot');
 
@@ -96,5 +97,35 @@ test('rejects a stalled cursor instead of looping', async () => {
   await assert.rejects(
     collectPullRequestSnapshot(async () => page({ threadPage: 0 })),
     /pagination cursor stalled/,
+  );
+});
+
+test('rejects a head change during pagination', async () => {
+  let request = 0;
+  await assert.rejects(
+    collectPullRequestSnapshot(async () => {
+      const value = page({
+        threadPage: request === 0 ? 0 : 1,
+        reviewsPage: request === 0 ? 0 : 1,
+        commentsPage: request === 0 ? 0 : 1,
+      });
+      request += 1;
+      if (request === 2) value.repository.pullRequest.headRefOid = 'def456';
+      return value;
+    }),
+    /pull request changed during pagination/,
+  );
+});
+
+test('requires two identical complete snapshots', async () => {
+  const first = await collectPullRequestSnapshot(async () =>
+    page({ threadPage: 1, reviewsPage: 1, commentsPage: 1 }));
+  const second = structuredClone(first);
+  second.reviewThreads.nodes[0].isResolved = false;
+  const snapshots = [first, second];
+
+  await assert.rejects(
+    stabilizePullRequestSnapshot(async () => snapshots.shift()),
+    /changed while taking its snapshot/,
   );
 });

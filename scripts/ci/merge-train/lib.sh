@@ -81,7 +81,8 @@ Test Suite Summary
 Docker Build & Integration Test
 Esri Leaflet Browser Tests
 JavaScript Integration Tests
-Python Integration Tests}"
+Python Integration Tests
+PR Gate Build Reuse Shadow}"
 
 # Labels (the train's vocabulary). The existing repo `hold` label is ALSO
 # honored as an opt-out (documented "merge-train opt-out") in addition to the

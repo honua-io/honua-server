@@ -1,112 +1,197 @@
-# Opportunistic server-test prebuild shadow
+# Server-test build evidence shadow
 
-Issue #3226 is the bounded follow-up to the same-run reuse result recorded by
-#3222. The same-run producer preserved correctness, but it did not improve the
-two required outcomes: p90 test start was slightly slower and rounded runner
-minutes increased from 13 to 21. Production server-test shards therefore remain
-independent and authoritative.
+Issue #3226 owns the bounded server-test build-reuse experiment under ADR-0074.
+Production server-test shards remain independent and authoritative. No artifact
+described here can satisfy review, `PR Gate`, `CI Gate`, CodeQL, generated-data,
+native-image, release, or merge authority.
 
-This experiment changes the timing, not the trust model. A read-only observer
-may restore and build at most two projects while an exact PR head is already
-waiting for review. Automatic PR observation ships disabled: manual dispatch is
-the initial A/B path, and only a successful A/B authorizes setting the repository
-variable `HONUA_SERVER_TEST_PREBUILD_SHADOW=true` for the 20-head shadow. A later
-manual verifier makes one artifact download attempt
-and never polls. A missing, late, expired, duplicate, stale-policy, wrong-runner,
-wrong-toolchain, wrong-head, malformed, oversized, path-unsafe, or digest-invalid
-artifact is a cache miss: partial `bin/Release` and `obj` output is removed and
-the verifier immediately performs the existing local restore/build.
+## Current decision (2026-08-15)
 
-## Security and identity boundary
+Two earlier producer topologies were measured and not promoted:
 
-The observer and benchmark are shadow workflows. They have read-only Actions,
-contents, package, and pull-request permissions; they publish no commit status,
-are not required checks, and cannot dispatch or join the merge train. The
-observer rejects forks and draft/closed PRs before executing the raw head. The
-benchmark is manual and rejects any producer unless all of these are true:
+- the original 144–158 MiB shared producer delayed time-to-first-test; and
+- the later opportunistic pre-review producer preserved parity but improved the
+  two hosted profiles by only 14.3% and 6.3% rounded runner-minutes, below the
+  ADR's 60% promotion threshold.
 
-- the current PR is open, ready, and still points to the receipt's full head
-  SHA in the same repository;
-- the producer is a completed successful run of the trusted-default
-  `.github/workflows/server-test-prebuild-observe.yml` workflow, and its policy
-  checkout is pinned to the immutable `github.workflow_sha` that GitHub
-  executed rather than a moving branch name;
-- the trusted observer's plan artifact binds repository, PR, source head,
-  producer run/attempt, and its actual policy SHA; that policy SHA is an
-  ancestor of current trusted trunk, and every execution-relevant policy input
-  has the same digest at both commits;
-- every exact artifact name is unique and unexpired;
-- the outer receipt binds repository, PR, source SHA/tree, producer run and
-  attempt, runner OS/architecture/image, trusted policy commit/tree and every
-  policy input digest;
-- the inner receipt binds the project, Release configuration, exact .NET SDK,
-  build inputs, manifest, archive size/digest, and a maximum 24-hour lifetime;
-  and
-- the existing restore boundary rechecks bounded archive size, digest, TTL,
-  safe relative paths, unpacked size, project assets, DLLs, and PDBs before a
-  no-build test command can run.
+The current shadow does not add another build to the causal path. `PR Gate`
+already performs the required full-solution Release build. After that build is
+green, it may package at most two registered test projects that the trusted
+shard plan says are each used by at least two selected shards. Packaging and
+upload are best-effort. Failure or absence is a cache miss and cannot change the
+required `PR Gate` conclusion.
 
-The receipt is evidence, not authorization. It cannot satisfy review, security,
-generated-artifact, image, branch-protection, or merge-tree requirements. Any
-production consumer must preserve this fail-closed validation plus local-build
-fallback.
+A trusted default-branch observer validates the small producer metadata before
+issuing a receipt. A one-member merge train may pass that exact successful PR
+Gate run identity to Smart CI. Smart CI then performs a report-only proof:
 
-## Cost and latency decision
+```text
+PR Gate Release build
+  -> bounded payload + metadata (untrusted evidence)
+  -> trusted default-branch metadata validation + receipt
+  -> exact one-PR train handoff
+  -> exact-tree payload validation + safe extraction + no-build proof test
+  -> retained shadow result
 
-The manual A/B workflow supports two profiles: two shards sharing Server.Tests,
-and a five-project hybrid with only the repeated Server.Tests project reused.
-Each baseline and candidate runs the same trusted proof filter and publishes a
-stable TRX identity/outcome digest. The summary uses complete GitHub-hosted job
-intervals, not partial shell timers.
+authoritative server shards
+  -> independent restore + build + test (unchanged)
+```
 
-Promotion to a 20-exact-head shadow requires, for every profile:
+Multi-PR batches, trunk-advanced batches, non-identical trees, forks, missing or
+ambiguous artifacts, policy changes, expired evidence, toolchain changes, and
+every validation error take the existing independent-build path immediately.
+The shadow never makes a consumer wait for an artifact.
 
-1. exact filter, test identity, count, and outcome parity;
-2. every repeated-project candidate accepting the exact prebuild rather than
-   falling back;
-3. the producer completing before candidate verification starts;
-4. lower p90 candidate test-command start;
-5. fewer rounded runner minutes after charging the candidate for the complete
-   observer plan and every producer job, including unused bounded work; and
-6. no more than the existing 5% wall-clock regression budget.
+## Kill switch and rollback
 
-A tie is a rejection. One passing A/B only authorizes the 20-head shadow. After
-that, production routing remains guarded and reversible until 30 post-enforcement
-observations confirm the latency and minute reductions. The current independent
-restore/build path remains the rollback authority throughout.
+The repository variable `HONUA_PR_GATE_BUILD_REUSE_SHADOW` is the only switch
+for this experiment. It must equal the lowercase string `true` to enable work.
+When it is false or absent:
 
-Automatic producer observations are availability evidence, not parity. After a
-successful exact-head PR Gate, the read-only
-`Server Test Prebuild Parity Observation` workflow may make one lookup for the
-already-completed observer artifact. For each bounded repeated project it runs
-the registered proof selection once from an independent restore/build and once
-from the validated prebuild, then compares stable filter, test identity, count,
-and outcome digests. It also records complete hosted producer, baseline, and
-candidate intervals. A missing or rejected artifact falls back locally and is
-reported as non-countable; the workflow never polls, publishes a status,
-dispatches another workflow, or changes the authoritative PR Gate result.
+- `PR Gate` does not package or upload build evidence;
+- merge-train selection does not query the source PR Gate run;
+- the train passes no reuse identity to `ci.yml`; and
+- the Smart CI shadow job is not instantiated.
 
-The 20-run promotion input counts only distinct representative exact heads whose
-parity artifact says `countable: true`. Producer-only, skipped, fallback,
-incomplete, duplicate, or contradictory observations do not advance the count.
+Unset the variable for immediate rollback. This changes no required context,
+branch-protection rule, shard filter, or merge authority. A later enforcement
+proposal must use a separately reviewed mode/contract; changing the meaning of
+the shadow switch is prohibited.
 
-## Hosted procedure
+## Trust and identity boundary
 
-After these workflows reach the default branch, leave
-`HONUA_SERVER_TEST_PREBUILD_SHADOW` unset during the initial A/B:
+### Producer
 
-1. choose an open same-repository PR whose targeted descriptor selects at least
-   two shards for a registered project;
-2. manually dispatch `Server Test Prebuild Observation` for that PR and use its
-   completed run ID;
-3. dispatch `Server Test Prebuild Benchmark` once for `two-same-project` and
-   once for `five-hybrid-project` before the receipt expires or policy moves;
-4. retain the plan, raw transfer/consumer/producer metrics, complete hosted job
-   intervals, TRX summaries, and decision report; and
-5. publish both run IDs and the go/no-go result on #3226 and ADR-0074; and
-6. set the enable variable only if both profiles are eligible, then collect the
-   predeclared 20 exact-head shadow observations.
+The producer runs in the ordinary unprivileged `pull_request` PR Gate after the
+Release build. Its payload is never trusted merely because GitHub stored it.
+The producer records the repository, PR, event-time base, source head, PR merge
+commit and tree, run/attempt, Release configuration, .NET SDK, runner
+OS/architecture/image, selected-shard descriptor, plan, manifests, sizes,
+digests, and TTL. Each project is allowlisted by
+`.github/server-test-artifact-projects.json` and must serve at least two selected
+shards.
 
-Do not rerun only a subset and combine attempts. A changed head, policy, runner
-image, toolchain, or expired receipt requires a new observer run and a new whole
-A/B observation.
+### Trusted observer
+
+`pr-gate-impact-observe.yml` executes the default-branch workflow definition
+with read-only Actions, checks, contents, and pull-request permissions. It:
+
+- resolves the unique GitHub-managed `PR Gate` check/run association;
+- requires a completed successful same-repository `pull_request` run at the
+  exact run id and attempt;
+- rechecks the open, non-draft PR's current base and head;
+- recomputes the merge tree and repeated-project plan from trusted policy;
+- requires every execution-relevant policy blob to match the producer tree;
+- checks the exact GitHub artifact id, name, size, and SHA-256 digest; and
+- emits only a bounded, seven-day receipt.
+
+It downloads metadata, not the large payload. It has no status, dispatch,
+branch-write, label, train, or merge permission.
+
+### Train handoff and consumer
+
+Selection accepts reuse metadata only from one canonical successful `PR Gate`
+CheckRun. The train carries it only when the admitted batch has exactly that one
+PR and valid full identities. Multi-member, attribution, malformed, or resumed
+state without complete metadata clears the optional inputs.
+
+The Smart CI shadow locates one trusted observer receipt and binds its observer
+run/attempt to the actual artifact-producing workflow. It then resolves one
+exact source payload by artifact id and rechecks its name, size, digest, source
+run, source attempt, repository, and head through the Actions API. Acceptance
+requires the consumer commit's complete Git tree to equal the producer merge
+tree. Different commit IDs are permitted only when their full trees are
+identical.
+
+Before extraction, the trusted contract rejects:
+
+- non-canonical JSON, duplicate keys, unknown/missing fields, or invalid names;
+- more than two projects or a project not repeated across selected shards;
+- receipts older than 24 hours or from a different SDK/runner/configuration;
+- changed workflow, action, router, registry, packager, validator, restore, or
+  train policy blobs;
+- archives above 256 MiB, total payload above 512 MiB, expansion above 512 MiB,
+  or more than 100,000 entries;
+- absolute paths, parent traversal, backslashes, controls, duplicate normalized
+  paths, symlinks, hardlinks, devices, and FIFOs; and
+- manifest, archive, tree, or GitHub artifact digest mismatches.
+
+Only after those checks does the shadow restore with owner/permission
+preservation disabled and run the registered proof filter with
+`--no-build --no-restore`. The result is retained as
+`honua.pr-gate-server-test-shadow/v1` with `mode: observe`, `mutation: none`,
+and `promotion_authority: none`. `CI Gate` does not depend on this job.
+
+## Measurement and promotion
+
+The new topology must be evaluated as a complete system. Charge all additional
+work, including:
+
+- PR Gate packaging, hashing, and upload for every qualifying head;
+- trusted observer metadata validation and receipt upload;
+- payload download, validation, extraction, toolchain setup, and proof tests;
+- work wasted on superseded or never-trained heads; and
+- storage and transfer failures that fall back.
+
+Compare that total with the shard-local restore/build work that enforcement
+would actually remove. Queue time and wall-clock are reported separately from
+rounded runner-minutes; neither may be hidden inside shell timers.
+
+Promotion remains forbidden until the current policy cohort has:
+
+1. at least 20 distinct representative exact-tree shadow observations with
+   unchanged discovery, filter, test identity, count, and outcome;
+2. at least 30 cost observations spanning the declared two- and five-shard
+   profiles;
+3. lower p90 post-review time-to-first-test and no more than 5% p90 workflow
+   wall-clock regression;
+4. at least 60% fewer rounded PR/train runner-minutes for the representative
+   workload after charging every producer and consumer cost;
+5. zero unsafe acceptance in fork, moved-head, attempt, artifact ambiguity,
+   policy, tree, toolchain, expiry, archive, and fallback fixtures; and
+6. an independently reviewed enforcement change that keeps exact-head review,
+   required contexts, generated-data checks, image evidence, and exact
+   merge-tree validation unchanged.
+
+A tie or incomplete sample is a rejection. Evidence from different policy
+digests is not combined. A repeated exact head counts once, using the highest
+valid run/attempt/artifact identity; a later observation may invalidate an
+earlier count but cannot manufacture another sample.
+
+## Prior hosted evidence
+
+The historical opportunistic producer remains useful negative evidence, not an
+enforcement authorization:
+
+- [Producer 31798013710](https://github.com/honua-io/honua-server/actions/runs/31798013710)
+  emitted one 173,196,743-byte `Honua.Server.Tests` payload.
+- [Two-shard A/B 31798575655](https://github.com/honua-io/honua-server/actions/runs/31798575655)
+  preserved parity and changed 14 to 12 rounded runner-minutes; p90
+  time-to-first-test changed from 383,382 ms to 108,622 ms.
+- [Five-project A/B 31799159098](https://github.com/honua-io/honua-server/actions/runs/31799159098)
+  preserved parity and changed 32 to 30 rounded runner-minutes; p90
+  time-to-first-test changed from 387,773 ms to 344,429 ms.
+
+Those 14.3% and 6.3% savings failed the 60% gate. The standalone observer may
+remain an availability measurement, but its output cannot be counted as current
+PR Gate reuse evidence.
+
+## Shadow rollout procedure
+
+1. Merge the reviewed report-only implementation while leaving
+   `HONUA_PR_GATE_BUILD_REUSE_SHADOW` unset.
+2. Confirm the hosted PR itself follows the ordinary independent path and that
+   required PR Gate, Review Gate, CodeQL, generated-data, and train checks pass.
+3. Set the variable to `true` and select same-repository PRs whose trusted plan
+   contains one or two repeated registered projects.
+4. Retain the source PR Gate payload/metadata, trusted observer receipt, exact
+   one-member train run, Smart CI shadow result/TRX, and authoritative shard
+   outcomes for each observation.
+5. Audit misses as data. Never rerun until acceptance or wait for a producer;
+   fix the contract or keep the independent path.
+6. Publish run IDs and complete cost intervals on #3226 and ADR-0074.
+7. Propose enforcement only after every promotion gate passes. Otherwise unset
+   the variable and record the no-go decision.
+
+Do not combine partial workflow attempts. A changed head, base, tree, policy,
+runner image, toolchain, or expired receipt starts a new observation.
