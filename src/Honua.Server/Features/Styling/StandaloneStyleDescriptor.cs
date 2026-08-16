@@ -100,6 +100,7 @@ internal static class StandaloneStyleDescriptor
                 continue;
             }
 
+            double? previousClassBreakMax = null;
             foreach (var info in infos.EnumerateArray())
             {
                 if (info.ValueKind != JsonValueKind.Object)
@@ -123,6 +124,15 @@ internal static class StandaloneStyleDescriptor
                     {
                         validationError = "drawingInfo.renderer.classBreakInfos classMaxValue values must be finite numbers.";
                         return false;
+                    }
+                    else if (previousClassBreakMax.HasValue && parsedMaxValue <= previousClassBreakMax.Value)
+                    {
+                        validationError = "drawingInfo.renderer.classBreakInfos classMaxValue values must be strictly ascending.";
+                        return false;
+                    }
+                    else
+                    {
+                        previousClassBreakMax = parsedMaxValue;
                     }
                 }
 

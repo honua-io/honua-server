@@ -787,6 +787,11 @@ internal static class MapLibreToGeoServicesConverter
             return false;
         }
 
+        if (TryParseMixedMatchImageExpression(expression, out field, out stops, out fallbackImage))
+        {
+            return true;
+        }
+
         var items = expression.EnumerateArray().ToArray();
 
         // Unwrap ["case", guard, matchExpr, fallback] null guard
@@ -845,6 +850,50 @@ internal static class MapLibreToGeoServicesConverter
             fallbackImage = items[^1].GetString();
         }
 
+        return stops.Count > 0;
+    }
+
+    private static bool TryParseMixedMatchImageExpression(
+        JsonElement expression,
+        out string field,
+        out List<ImageMatchStop> stops,
+        out string? fallbackImage)
+    {
+        field = string.Empty;
+        stops = new List<ImageMatchStop>();
+        fallbackImage = null;
+
+        var items = expression.EnumerateArray().ToArray();
+        if (items.Length != 4
+            || items[0].ValueKind != JsonValueKind.String
+            || !string.Equals(items[0].GetString(), "case", StringComparison.OrdinalIgnoreCase)
+            || items[1].ValueKind != JsonValueKind.Array
+            || items[2].ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        if (items[3].ValueKind == JsonValueKind.String
+            && TryParseMixedMatchImageExpression(items[2], out field, out stops, out fallbackImage)
+            && IsSupportedCaseGuard(items[1], "match", field))
+        {
+            fallbackImage = items[3].GetString();
+            return true;
+        }
+
+        if (items[3].ValueKind != JsonValueKind.Array
+            || !TryParseMatchImageExpression(items[2], out var numericField, out var numericStops, out var numericFallback)
+            || !TryParseMatchImageExpression(items[3], out var textualField, out var textualStops, out var textualFallback)
+            || !string.Equals(numericField, textualField, StringComparison.Ordinal)
+            || !IsSupportedCaseGuard(items[1], "step", numericField))
+        {
+            return false;
+        }
+
+        field = numericField;
+        stops.AddRange(numericStops);
+        stops.AddRange(textualStops);
+        fallbackImage = textualFallback ?? numericFallback;
         return stops.Count > 0;
     }
 
@@ -1240,6 +1289,11 @@ internal static class MapLibreToGeoServicesConverter
             return false;
         }
 
+        if (TryParseMixedMatchExpression(expression, out field, out stops, out fallbackColor))
+        {
+            return true;
+        }
+
         if (TryUnwrapKnownCaseExpression(expression, "match", out var innerExpression, out var caseFallback))
         {
             var innerResult = TryParseMatchExpression(innerExpression, out field, out stops, out fallbackColor);
@@ -1286,6 +1340,50 @@ internal static class MapLibreToGeoServicesConverter
             fallbackColor = fallback;
         }
 
+        return stops.Count > 0;
+    }
+
+    private static bool TryParseMixedMatchExpression(
+        JsonElement expression,
+        out string field,
+        out List<MatchStop> stops,
+        out StyleColor? fallbackColor)
+    {
+        field = string.Empty;
+        stops = new List<MatchStop>();
+        fallbackColor = null;
+
+        var items = expression.EnumerateArray().ToArray();
+        if (items.Length != 4
+            || items[0].ValueKind != JsonValueKind.String
+            || !string.Equals(items[0].GetString(), "case", StringComparison.OrdinalIgnoreCase)
+            || items[1].ValueKind != JsonValueKind.Array
+            || items[2].ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        if (StyleJsonUtilities.TryParseMapLibreColor(items[3], out var outerFallback)
+            && TryParseMixedMatchExpression(items[2], out field, out stops, out fallbackColor)
+            && IsSupportedCaseGuard(items[1], "match", field))
+        {
+            fallbackColor = outerFallback;
+            return true;
+        }
+
+        if (items[3].ValueKind != JsonValueKind.Array
+            || !TryParseMatchExpression(items[2], out var numericField, out var numericStops, out var numericFallback)
+            || !TryParseMatchExpression(items[3], out var textualField, out var textualStops, out var textualFallback)
+            || !string.Equals(numericField, textualField, StringComparison.Ordinal)
+            || !IsSupportedCaseGuard(items[1], "step", numericField))
+        {
+            return false;
+        }
+
+        field = numericField;
+        stops.AddRange(numericStops);
+        stops.AddRange(textualStops);
+        fallbackColor = textualFallback ?? numericFallback;
         return stops.Count > 0;
     }
 
