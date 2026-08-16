@@ -31,7 +31,7 @@ if [[ -z "${manifest}" || -z "${destination}" || -z "${expected_project}" || -z 
   usage
   exit 2
 fi
-for command in date jq sha256sum tar; do
+for command in date jq python3 sha256sum tar; do
   command -v "${command}" >/dev/null || { echo "::error::Required command '${command}' is unavailable." >&2; exit 2; }
 done
 verify_start_ns="$(date +%s%N)"
@@ -93,21 +93,16 @@ expected_digest="$(jq -r '.archive_sha256' "${manifest}")"
 actual_digest="$(sha256sum "${archive_path}" | cut -d' ' -f1)"
 [[ "${actual_digest}" == "${expected_digest}" ]] || { echo "::error::Artifact SHA-256 integrity check failed." >&2; exit 1; }
 
-# Refuse absolute or parent-traversal paths before extraction.
-while IFS= read -r entry; do
-  normalized="${entry#./}"
-  if [[ -z "${normalized}" ]]; then
-    continue
-  fi
-  if [[ "${normalized}" == /* || "/${normalized}/" == *"/../"* ]]; then
-    echo "::error::Artifact contains an unsafe archive path: ${entry}" >&2
-    exit 1
-  fi
-done < <(tar -tzf "${archive_path}")
+# Inspect every entry before extraction. Paths must be normalized and unique;
+# symlinks, hardlinks, devices, FIFOs, control characters, and expansion bombs
+# are rejected even when their archive digest is otherwise valid.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validate-server-test-archive.py" \
+  --archive "${archive_path}" \
+  --max-unpacked-bytes "${MAX_UNPACKED_BYTES}"
 
 verify_end_ns="$(date +%s%N)"
 unpack_start_ns="${verify_end_ns}"
-tar -xzf "${archive_path}" -C "${destination}"
+tar --no-same-owner --no-same-permissions -xzf "${archive_path}" -C "${destination}"
 unpack_end_ns="$(date +%s%N)"
 project_dir="${destination}/$(dirname "${expected_project}")"
 configuration="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"

@@ -176,16 +176,27 @@ def analyze_documentation(file_path: str, content: str) -> List[str]:
 
     def has_xml_doc(lines: List[str], index: int) -> bool:
         # Walk upward over blank lines and attributes to find the nearest meaningful line.
+        #
+        # An attribute is skipped by matching its closing "]" back to the "[" that opened
+        # it, rather than assuming one attribute per line: a MULTI-LINE attribute (e.g.
+        # [JsonSourceGenerationOptions(\n  PropertyNamingPolicy = ...,\n  ...)]) ends on a
+        # line that does not start with "[", which stopped the walk early and reported a
+        # documented type as undocumented (every source-generated JSON context in the repo
+        # hit this).
         cursor = index - 1
         while cursor >= 0:
             candidate = lines[cursor].strip()
             if not candidate:
                 cursor -= 1
                 continue
-            if candidate.startswith("[") and candidate.endswith("]"):
+            if candidate.startswith("///"):
+                return True
+            if candidate.endswith("]"):
+                while cursor >= 0 and not lines[cursor].strip().startswith("["):
+                    cursor -= 1
                 cursor -= 1
                 continue
-            return candidate.startswith("///")
+            return False
         return False
 
     # Check for public types without XML docs

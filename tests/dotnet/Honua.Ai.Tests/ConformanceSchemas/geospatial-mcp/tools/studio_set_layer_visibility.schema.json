@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/studio_set_layer_visibility.schema.json",
+  "title": "studio_set_layer_visibility inputSchema",
+  "description": "Argument shape for the Honua reference extension studio_set_layer_visibility. Persists a layer's visible state in a map/app-family Studio draft using optimistic concurrency.",
+  "type": "object",
+  "required": ["draftId", "generation", "layerId", "visible"],
+  "additionalProperties": false,
+  "properties": {
+    "draftId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Studio package draft id (map/app family)."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Expected current draft generation (optimistic concurrency)."
+    },
+    "layerId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Id of the layer to show or hide."
+    },
+    "visible": {
+      "type": "boolean",
+      "description": "Whether the layer is visible in the composition."
+    }
+  }
+}

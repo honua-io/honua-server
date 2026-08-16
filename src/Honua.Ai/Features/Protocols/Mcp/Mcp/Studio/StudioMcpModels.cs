@@ -233,6 +233,30 @@ internal sealed class McpStudioSetLayerStyleArgument
 }
 
 // -----------------------------------------------------------------------
+// honua_studio_set_layer_visibility
+// -----------------------------------------------------------------------
+
+/// <summary>Arguments for <c>honua_studio_set_layer_visibility</c>.</summary>
+internal sealed class McpStudioSetLayerVisibilityArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public string? LayerId { get; set; }
+
+    /// <summary>
+    /// The visibility to store. Required: an omitted/null <c>visible</c> is rejected rather than
+    /// defaulted, so an agent can never "toggle" a layer into a state it did not ask for.
+    /// </summary>
+    [JsonPropertyName("visible")]
+    public bool? Visible { get; set; }
+}
+
+// -----------------------------------------------------------------------
 // honua_studio_set_view
 // -----------------------------------------------------------------------
 
@@ -366,6 +390,73 @@ internal sealed class McpStudioRemoveInteractionArgument
 
     [JsonPropertyName("interactionId")]
     public string? InteractionId { get; set; }
+}
+
+// -----------------------------------------------------------------------
+// honua_studio_add_control / honua_studio_remove_control
+// (geospatial-mcp ADR-0031 add_control / remove_control)
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Control input shape for <c>honua_studio_add_control</c>. Mirrors the standard's
+/// <c>common/controls.schema.json#/$defs/control</c> — deliberately the same
+/// <c>{ id, kind, title?, sourceId?, config? }</c> shape as a widget entry, so agents
+/// author both collections the same way.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed class McpStudioControlInput
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("kind")]
+    public string? Kind { get; set; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("sourceId")]
+    public string? SourceId { get; set; }
+
+    [JsonPropertyName("config")]
+    public JsonElement Config { get; set; }
+}
+
+/// <summary>Arguments for <c>honua_studio_add_control</c>.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed class McpStudioAddControlArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("control")]
+    public McpStudioControlInput? Control { get; set; }
+}
+
+/// <summary>Arguments for <c>honua_studio_remove_control</c>.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed class McpStudioRemoveControlArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("controlId")]
+    public string? ControlId { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, interactions bound to <c>control:{controlId}</c> are
+    /// removed with the control. When omitted/false the call FAILS while any interaction
+    /// still references it, so a document never silently retains a dangling binding
+    /// (ADR-0031).
+    /// </summary>
+    [JsonPropertyName("cascadeInteractions")]
+    public bool? CascadeInteractions { get; set; }
 }
 
 // -----------------------------------------------------------------------

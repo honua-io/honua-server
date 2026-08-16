@@ -48,11 +48,9 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
-        var isEmpty = features.Length == 0;
-
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
 
-        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, isEmpty, runtimeFields, outFields);
+        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -81,7 +79,6 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         int srid,
         bool returnZ,
-        bool isEmpty,
         List<(string name, IArrowType type)> runtimeFields,
         string[]? outFields)
     {
@@ -128,7 +125,7 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ, isEmpty);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
@@ -524,8 +521,8 @@ internal sealed class GeoArrowQueryFormatter
     {
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // GeoArrow 0.2 (https://geoarrow.org/extension-types.html) supports only `crs`
-        // and optional `edges` in ARROW:extension:metadata:
+        // GeoArrow 0.2 (https://geoarrow.org/extension-types.html) supports only `crs`,
+        // `crs_type`, and optional `edges` in ARROW:extension:metadata:
         // - `crs` is emitted as the authoritative PROJJSON for the output SRID. GeoArrow has
         //   no default CRS (omission means "unknown"), so the known output CRS must always be
         //   declared. Coordinates stay (x, y) / (longitude, latitude) per the GeoArrow
@@ -541,15 +538,14 @@ internal sealed class GeoArrowQueryFormatter
             return null;
         }
 
-        return $@"{{""crs"":{projJson}}}";
+        return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
     private static Dictionary<string, string> BuildSchemaMetadata(
         MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
-        bool returnZ,
-        bool isEmpty)
+        bool returnZ)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!includeGeometry)
@@ -559,9 +555,10 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        var geometryTypesPart = isEmpty
-            ? "[]"
-            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
+        // The resource schema is authoritative even when a query returns no rows. Preserve
+        // its known geometry type so empty batches remain self-describing to consumers.
+        var geometryTypesPart =
+            $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
         var crsPart = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson)
             ? $@",""crs"":{projJson}"
             : string.Empty;

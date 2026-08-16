@@ -69,7 +69,15 @@ public enum ScheduledTickKind
     /// Alert digest flush (<c>DigestFlushBackgroundService.FlushAsync</c>). Cadence minutes.
     /// Idempotent via an atomic batch claim; a duplicate flush claims a different (or empty) batch.
     /// </summary>
-    DigestFlush
+    DigestFlush,
+
+    /// <summary>
+    /// Staged geoprocessing output orphan sweep
+    /// (<c>GeoprocessingOutputArtifactSweeper.SweepOnceAsync</c>, #3089). Cadence minutes-hours.
+    /// Idempotent: each pass re-evaluates job state, read leases, and retention holds against the
+    /// current store listing, so duplicate or concurrent sweeps delete nothing extra.
+    /// </summary>
+    GeoprocessingOutputSweep
 }
 
 /// <summary>

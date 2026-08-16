@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Server.Features.Collaboration.Checkpoints;
 using Xunit;
 
@@ -213,6 +214,158 @@ public sealed class SavedMapOperationPayloadValidatorTests
     }
 
     /// <summary>
+    /// The ADR-0031 controls collection has to be admitted here as well as at the composition
+    /// tool gate: an interaction bound to <c>control:{id}</c> only resolves when the same
+    /// document-replace payload carries the control.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData("""{"controls":{"id":"nav","kind":"navigation"}}""", "must be an array")]
+    [InlineData("""{"controls":[{"id":"sketch","kind":"draw"}]}""", "must be one of")]
+    [InlineData("""{"controls":[{"kind":"navigation"}]}""", "id")]
+    [InlineData("""{"controls":[{"id":"nav"}]}""", "kind")]
+    [InlineData("""{"controls":[{"id":"nav","kind":"navigation"},{"id":"nav","kind":"scale"}]}""", "unique")]
+    [InlineData("""{"controls":[{"id":"nav","kind":"navigation","config":"top-right"}]}""", "config")]
+    public void TryValidate_ReplacementControls_AreGatedLikeTheCompositionTools(string payload, string expected)
+    {
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain(expected);
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlTitle_EnforcesCompositionLimit()
+    {
+        var title = new string('t', StudioInteractionVocabulary.MaxControlTitleLength + 1);
+        var payload = $$"""{"controls":[{"id":"nav","kind":"navigation","title":"{{title}}"}]}""";
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain($"{StudioInteractionVocabulary.MaxControlTitleLength} characters or fewer");
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementInteractionBoundToADeclaredControl_IsAccepted()
+    {
+        // The control-ref flip, at the collaboration gate: the same binding is rejected when
+        // the payload declares no such control and accepted when it does.
+        const string binding =
+            """{"id":"i","on":{"ref":"control:year-slider","event":"change"},"do":{"ref":"map","verb":"setViewport"}}""";
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse($$"""{"interactions":[{{binding}}]}"""),
+            out var missingError)
+            .Should().BeFalse();
+        missingError.Should().Contain("does not resolve");
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse($$"""{"controls":[{"id":"year-slider","kind":"timeSlider"}],"interactions":[{{binding}}]}"""),
+            out var error)
+            .Should().BeTrue(because: error);
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlSourceId_ResolutionIsDeferredToCheckpointState()
+    {
+        // sourceBindings is a canonical package member preserved by the checkpoint applier,
+        // not part of this replacement projection. Admission therefore cannot classify a
+        // source absent from the payload as unresolved; the state-aware applier does so after
+        // combining the replacement with the preserved binding ids.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"layers":[{"id":"parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"parcel"}]}"""),
+            out var error)
+            .Should().BeTrue(because: error);
+
+        // A layer id resolves...
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"layers":[{"id":"parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"parcels"}]}"""),
+            out var byLayerId)
+            .Should().BeTrue(because: byLayerId);
+
+        // ...and so does the datasource that layer binds.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"layers":[{"id":"parcels","sourceId":"ds-parcels"}],"controls":[{"id":"f","kind":"filterSelect","sourceId":"ds-parcels"}]}"""),
+            out var bySourceId)
+            .Should().BeTrue(because: bySourceId);
+
+        // Presentation-only controls omit it entirely.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""{"controls":[{"id":"nav","kind":"navigation"}]}"""),
+            out var omitted)
+            .Should().BeTrue(because: omitted);
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlWithOversizedSourceId_IsRejected()
+    {
+        var sourceId = new string('s', StudioInteractionVocabulary.MaxControlSourceIdLength + 1);
+        var payload = $$"""{"controls":[{"id":"f","kind":"filterSelect","sourceId":"{{sourceId}}"}]}""";
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse(payload),
+            out var error).Should().BeFalse();
+
+        error.Should().Contain("sourceId");
+        error.Should().Contain("characters or fewer");
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementControlWithNonChangeEvent_IsRejected()
+    {
+        const string payload = """
+            {
+              "controls": [{ "id": "year", "kind": "timeSlider" }],
+              "interactions": [
+                { "id": "i", "on": { "ref": "control:year", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } }
+              ]
+            }
+            """;
+
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse(payload),
+            out var error).Should().BeFalse();
+
+        error.Should().Contain("does not emit");
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public void TryValidate_ReplacementLayoutItemReferencingAControl_IsRejected()
+    {
+        // Controls are chrome, not grid items (ADR-0031) — resolving is not the same as
+        // being placeable.
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument,
+            Parse("""
+                {
+                  "controls": [{ "id": "year-slider", "kind": "timeSlider" }],
+                  "layout": { "items": [{ "ref": "control:year-slider", "x": 0, "y": 0, "w": 3, "h": 2 }] }
+                }
+                """),
+            out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain("not grid items");
+    }
+
+    /// <summary>
     /// C# <c>required</c> only demands the JSON member be present; it does not make the value
     /// non-null or non-blank (honua-server#2999 review).
     /// </summary>
@@ -241,6 +394,7 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zom":12}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange","once":true},"do":{"ref":"map","verb":"setViewport"}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","x":0,"y":0,"w":1,"h":1,"order":0}]}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"controls":[{"id":"nav","kind":"navigation","postion":"top-right"}]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zom":12}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pich":30}""")]
     public void TryValidate_UnmappedNestedMember_IsRejected(SavedMapOperationKind kind, string payload)
@@ -258,6 +412,7 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pitch":30,"crs":"EPSG:3857"}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":8},"items":[{"ref":"map","x":0,"y":0,"w":8,"h":4}]}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"}],"controls":[{"id":"year-slider","kind":"timeSlider","title":"Year","sourceId":"parcels","config":{"field":"yearBuilt"}}]}""")]
     public void TryValidate_FullyMappedNestedMembers_AreAccepted(SavedMapOperationKind kind, string payload)
     {
         // The allowlists must cover every modelled member, or a legitimate client is refused.

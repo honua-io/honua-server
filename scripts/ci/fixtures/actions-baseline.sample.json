@@ -1,0 +1,136 @@
+{
+  "schema": "honua.actions-baseline.input/v1",
+  "repository": "honua-io/honua-server",
+  "created_after": "2026-08-01",
+  "sample_limit_per_workflow": 30,
+  "workflows": [
+    {
+      "workflow": "pr-gate.yml",
+      "name": "PR Gate",
+      "runs": [
+        {
+          "id": 101,
+          "run_attempt": 1,
+          "event": "pull_request",
+          "head_sha": "1111111111111111111111111111111111111111",
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-08-01T00:00:00Z",
+          "run_started_at": "2026-08-01T00:01:00Z",
+          "updated_at": "2026-08-01T00:11:00Z",
+          "jobs": [
+            {
+              "id": 1001,
+              "run_attempt": 1,
+              "name": "PR Gate",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-08-01T00:01:30Z",
+              "completed_at": "2026-08-01T00:10:30Z",
+              "labels": ["ubuntu-latest"]
+            },
+            {
+              "id": 1002,
+              "run_attempt": 1,
+              "name": "Skipped helper",
+              "status": "completed",
+              "conclusion": "skipped",
+              "started_at": "2026-08-01T00:01:00Z",
+              "completed_at": "2026-08-01T00:01:00Z",
+              "labels": ["ubuntu-latest"]
+            }
+          ]
+        },
+        {
+          "id": 102,
+          "run_attempt": 2,
+          "event": "pull_request",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "status": "completed",
+          "conclusion": "failure",
+          "created_at": "2026-08-02T00:00:00Z",
+          "run_started_at": "2026-08-02T00:02:00Z",
+          "updated_at": "2026-08-02T00:20:00Z",
+          "jobs": [
+            {
+              "id": 1003,
+              "run_attempt": 1,
+              "name": "PR Gate",
+              "status": "completed",
+              "conclusion": "failure",
+              "started_at": "2026-08-02T00:02:30Z",
+              "completed_at": "2026-08-02T00:12:00Z",
+              "labels": ["ubuntu-24.04"]
+            },
+            {
+              "id": 1004,
+              "run_attempt": 2,
+              "name": "PR Gate",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-08-02T00:13:00Z",
+              "completed_at": "2026-08-02T00:19:30Z",
+              "labels": ["ubuntu-24.04"]
+            }
+          ]
+        },
+        {
+          "id": 103,
+          "run_attempt": 1,
+          "event": "pull_request",
+          "head_sha": "3333333333333333333333333333333333333333",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-08-03T00:00:00Z",
+          "run_started_at": "2026-08-03T00:00:30Z",
+          "updated_at": "2026-08-03T00:05:00Z",
+          "jobs": [
+            {
+              "id": 1005,
+              "run_attempt": 1,
+              "name": "PR Gate",
+              "status": "completed",
+              "conclusion": "cancelled",
+              "started_at": "2026-08-03T00:01:00Z",
+              "completed_at": "2026-08-03T00:04:40Z",
+              "labels": ["ubuntu-latest"]
+            },
+            {
+              "id": 1006,
+              "run_attempt": 1,
+              "name": "Missing timestamp diagnostic",
+              "status": "completed",
+              "conclusion": "cancelled",
+              "started_at": null,
+              "completed_at": null,
+              "labels": ["ubuntu-latest"]
+            }
+          ]
+        },
+        {
+          "id": 104,
+          "run_attempt": 1,
+          "event": "pull_request",
+          "head_sha": "4444444444444444444444444444444444444444",
+          "status": "in_progress",
+          "conclusion": null,
+          "created_at": "2026-08-04T00:00:00Z",
+          "run_started_at": "2026-08-04T00:01:00Z",
+          "updated_at": "2026-08-04T00:03:00Z",
+          "jobs": [
+            {
+              "id": 1007,
+              "run_attempt": 1,
+              "name": "Completed job in active run",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-08-04T00:01:00Z",
+              "completed_at": "2026-08-04T00:03:00Z",
+              "labels": ["ubuntu-latest"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

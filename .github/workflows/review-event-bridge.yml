@@ -1,0 +1,25 @@
+name: Review Event Bridge
+
+# GitHub executes pull_request_review and pull_request_review_comment workflows
+# from the PR merge branch. Keep this bridge deliberately inert and read-only.
+# Its completion is only a latency hint: a PR can suppress its own bridge, so
+# the merge train independently re-reads review evidence at selection/pre-land.
+on:
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: github.event.pull_request.base.ref == 'trunk'
+    name: Notify trusted review gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record review event
+        run: |
+          echo "Review event received for PR #${{ github.event.pull_request.number }}."
+          echo "The trusted Review Gate may now re-read all evidence from GitHub."

@@ -78,24 +78,25 @@ internal static partial class GdalToolExecution
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(80, encodingPhase, cancellationToken).ConfigureAwait(false);
 
-        var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-        if (outputBytes.Length == 0)
+        var outputLength = new FileInfo(outputPath).Length;
+        if (outputLength == 0)
         {
             return JobExecutionResult.Failed($"{tool} produced an empty output.");
         }
 
-        if (outputBytes.Length > options.MaxArtifactBytes)
+        // Shared publication seam (#3089): staged reference above the inline ceiling
+        // when output staging is enabled, bounded inline publication otherwise.
+        var publishError = await GdalArtifactPublisher.PublishFileAsync(
+            context, options, logger, operationId, outputPath, contentType, artifactLabel, cancellationToken)
+            .ConfigureAwait(false);
+        if (publishError is not null)
         {
-            Log.ArtifactTooLarge(logger, operationId, tool, outputBytes.Length, options.MaxArtifactBytes);
-            return JobExecutionResult.Failed(
-                $"{artifactLabel} size {outputBytes.Length} bytes exceeds configured MaxArtifactBytes={options.MaxArtifactBytes}.");
+            return JobExecutionResult.Failed(publishError);
         }
 
-        var artifactUri = GdalDataUri.Build(contentType, outputBytes);
-        await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, completedPhase, cancellationToken).ConfigureAwait(false);
 
-        Log.ToolCompleted(logger, operationId, tool, outputBytes.Length);
+        Log.ToolCompleted(logger, operationId, tool, outputLength);
         return JobExecutionResult.Succeeded();
     }
 
@@ -108,10 +109,6 @@ internal static partial class GdalToolExecution
         [LoggerMessage(9291, LogLevel.Error,
             "GDAL tool {Tool} timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, string tool, TimeSpan timeout);
-
-        [LoggerMessage(9292, LogLevel.Warning,
-            "GDAL tool {Tool} refused job {OperationId}: artifact size {ActualBytes} exceeds limit {MaxBytes}")]
-        public static partial void ArtifactTooLarge(ILogger logger, string operationId, string tool, long actualBytes, long maxBytes);
 
         [LoggerMessage(9293, LogLevel.Information,
             "GDAL tool {Tool} completed job {OperationId}: bytes={Bytes}")]

@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 369,
-      "provingTestCount": 1005,
+      "provingTestCount": 1006,
       "maturity": {
         "implemented": 369
       },
@@ -115,7 +115,7 @@
       "category": "AI",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 76,
+      "provingTestCount": 81,
       "maturity": {
         "implemented": 4
       },
@@ -1223,10 +1223,10 @@
       "displayName": "Geoprocessing Task Execution",
       "category": "Process",
       "edition": "Community",
-      "entryCount": 13,
-      "provingTestCount": 77,
+      "entryCount": 14,
+      "provingTestCount": 86,
       "maturity": {
-        "implemented": 13
+        "implemented": 14
       },
       "noSurface": null,
       "cite": [],
@@ -1249,7 +1249,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 129,
+      "provingTestCount": 131,
       "maturity": {
         "implemented": 10
       },
@@ -2320,7 +2320,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 5,
-      "provingTestCount": 82,
+      "provingTestCount": 90,
       "maturity": {
         "implemented": 5
       },

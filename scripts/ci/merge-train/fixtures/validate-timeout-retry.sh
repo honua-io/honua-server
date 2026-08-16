@@ -105,7 +105,7 @@ saved_gh_before_scan="$(declare -f gh)"
 saved_run_log_text="${TRAIN_RUN_LOG_TEXT}"
 gh() {
   case "$*" in
-    *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\n12\tServer Tests (Migration)\n' ;;
+    *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\tfailure\n12\tServer Tests (Migration)\tfailure\n' ;;
     *"--job 11"*) printf 'Error: Process completed with exit code 124.\n' ;;
     *"--job 12"*) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget.\n::error::Server test shard 'Migration' timed out after 29 minute(s).\n" ;;
     *) printf '1\n' ;;
@@ -119,6 +119,29 @@ train_classify_timeout 123 0 || rc=$?
 if [[ -s "${record}" ]]; then fail "a later-job capacity exhaustion still consumed a rerun"; fi
 pass "capacity marker takes precedence over an earlier generic timeout"
 eval "${saved_gh_before_scan}"
+TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
+
+# GitHub reports a job-level timeout as conclusion=cancelled and often emits
+# only "The operation was canceled" instead of exit 124. The terminal
+# conclusion itself must reach the same single failed-job rerun path.
+: >"${record}"
+saved_gh_before_cancelled="$(declare -f gh)"
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '21\tPostgres Compatibility (postgis/postgis:16-3.4)\tcancelled\n' ;;
+    *"--json attempt"*) printf '1\n' ;;
+    *) printf '1\n' ;;
+  esac
+}
+unset TRAIN_RUN_LOG_TEXT
+train_classify_timeout 456 0 'Postgres Compatibility (postgis/postgis:16-3.4)' \
+  || fail "cancelled job did not enter the bounded timeout retry"
+grep -Fqx 'gh run rerun 456 --failed' "${record}" \
+  || fail "cancelled job retry did not target failed jobs only"
+[[ "${TRAIN_TIMEOUT_KIND}" == "hang" ]] \
+  || fail "cancelled job was not classified as a retryable timeout"
+pass "cancelled job-level timeout reaches bounded failed-job retry"
+eval "${saved_gh_before_cancelled}"
 TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
 
 # A timeout that stalled (suspected hang) keeps the existing one-rerun budget.
@@ -499,6 +522,57 @@ train_restore_retry_intent >/dev/null || rc=$?
 [[ "${rc}" == "2" ]] || fail "malformed nonempty retry state was treated as no retry"
 unset TRAIN_STATE_BODY_OVERRIDE
 pass "resume exact-head, descendant-base, and malformed-state guards"
+
+# Initial smart-CI uses the same immutable identity checks as retry recovery,
+# but resumes attempt 1 itself instead of dispatching a replacement workflow.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":456,"fwdfix_attempts":0,"flake_reruns":0,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}\n```'
+resume_identity_event=workflow_dispatch
+resume_identity_path=.github/workflows/ci.yml
+resume_identity_head="${fixture_batch_sha}"
+smart_gate_result=success
+gh() {
+  if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
+    printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json databaseId,attempt,event,headBranch,headSha,status,updatedAt,workflowName'* ]]; then
+    printf '{"databaseId":456,"attempt":1,"event":"workflow_dispatch","headBranch":"train/batch/abc/1","headSha":"%s","status":"completed","updatedAt":"2026-08-14T00:00:00Z","workflowName":"CI"}\n' "${fixture_batch_sha}"
+  elif [[ "$1" == "api" && "$*" == *'/actions/runs/456/jobs?filter=latest&per_page=100'* ]]; then
+    printf '[{"jobs":[]}]\n'
+  elif [[ "$*" == *'--json status --jq .status'* ]]; then
+    printf 'completed\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then
+    printf '%s\n' "${smart_gate_result}"
+  else
+    fail "smart-CI resume attempted unexpected gh operation: $*"
+  fi
+}
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+now_value=100
+smart_resumed_json="$(train_restore_smart_ci_intent)" || fail "initial smart-CI intent did not resume"
+[[ "$(jq -r '.resume_gate' <<<"${smart_resumed_json}")" == "SUCCESS" ]] \
+  || fail "initial smart-CI resume did not recover the exact gate"
+[[ "$(cat "${fixture_included}")" == $'101\t'"${fixture_member_sha}" ]] \
+  || fail "initial smart-CI resume did not reconstruct the exact member head"
+smart_gate_result=missing
+smart_missing_json="$(train_restore_smart_ci_intent)" \
+  || fail "terminal smart-CI without a CI Gate was treated as an identity mismatch"
+[[ "$(jq -r '.resume_gate' <<<"${smart_missing_json}")" == "MISSING" ]] \
+  || fail "terminal missing CI Gate did not reach common ci-incomplete routing"
+smart_gate_result=skipped
+smart_skipped_json="$(train_restore_smart_ci_intent)" \
+  || fail "terminal skipped CI Gate was treated as an identity mismatch"
+[[ "$(jq -r '.resume_gate' <<<"${smart_skipped_json}")" == "SKIPPED" ]] \
+  || fail "terminal skipped CI Gate did not reach common ci-incomplete routing"
+smart_gate_result=success
+resume_identity_event=push
+rc=0
+train_restore_smart_ci_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "initial smart-CI resume accepted a non-dispatch run"
+resume_identity_event=workflow_dispatch
+export TRAIN_STATE_BODY_OVERRIDE="${TRAIN_STATE_BODY_OVERRIDE//bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/dddddddddddddddddddddddddddddddddddddddd}"
+rc=0
+train_restore_smart_ci_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "initial smart-CI resume accepted a moved batch ref"
+pass "initial smart-CI exact-run recovery"
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"phase":"select"}}\n```'
 
 # Restore the simple attempt reader for the remaining classifier cases.
@@ -536,6 +610,40 @@ pass "main-loop classifier behavior"
 export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
 train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
+train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
+
+# End-to-end startup must route discovered smart-CI through exact-run recovery
+# before terminal cleanup or fresh selection.
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":456,"fwdfix_attempts":0,"flake_reruns":0,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}\n```'
+export TRAIN_RESUME_STARTUP_TEST_ONLY=1
+resume_identity_event=workflow_dispatch
+resume_identity_path=.github/workflows/ci.yml
+resume_identity_head="${fixture_batch_sha}"
+gh() {
+  if [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
+    printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json databaseId,attempt,event,headBranch,headSha,status,updatedAt,workflowName'* ]]; then
+    printf '{"databaseId":456,"attempt":1,"event":"workflow_dispatch","headBranch":"train/batch/abc/1","headSha":"%s","status":"completed","updatedAt":"2026-08-14T00:00:00Z","workflowName":"CI"}\n' "${fixture_batch_sha}"
+  elif [[ "$1" == "api" && "$*" == *'/actions/runs/456/jobs?filter=latest&per_page=100'* ]]; then
+    printf '[{"jobs":[]}]\n'
+  elif [[ "$*" == *'--json status --jq .status'* ]]; then
+    printf 'completed\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then
+    printf 'success\n'
+  else
+    fail "smart-CI startup attempted unexpected gh operation: $*"
+  fi
+}
+train_select() { fail "smart-CI startup recovery reached selection"; }
+: >"${record}"
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+now_value=100
+main || fail "main did not resume discovered initial smart-CI"
+[[ ! -s "${record}" ]] || fail "initial smart-CI startup mutated labels or dispatched replacement CI"
+pass "main resumes discovered initial smart-CI before selection"
+export TRAIN_RESUME_STARTUP_TEST_ONLY=0
+
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 : >"${record}"
 gh() { [[ "$*" == issue\ list* ]] && return 1; fail "state-list startup failure attempted unexpected gh operation: $*"; }
@@ -630,6 +738,7 @@ pass "branchless rebuild-assemble state releases and reselects"
 # a terminal one must actually clear state and let selection proceed. Without
 # this, a phase added to the schema alone re-creates the #3045 deadlock.
 for accepted_phase in "${TRAIN_STATE_PHASES[@]}"; do
+  [[ "${accepted_phase}" == "smart-ci" ]] && continue
   case "${TRAIN_PHASE_RECOVERY[${accepted_phase}]:-}" in
     escalate|release) ;;
     retry|post-land) continue ;;
@@ -658,6 +767,19 @@ for accepted_phase in "${TRAIN_STATE_PHASES[@]}"; do
   fi
 done
 pass "every accepted terminal phase recovers before selection"
+
+# A crash before dispatch discovery still has no run identity to resume, so it
+# releases the landing label and reselects instead of guessing a workflow run.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":null,"fwdfix_attempts":0,"flake_reruns":0}}\n```'
+: >"${record}"
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "pre-discovery smart-CI state did not release safely"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+  || fail "pre-discovery smart-CI state did not release its member"
+grep -Fqx 'selection-entered' "${record}" \
+  || fail "pre-discovery smart-CI state did not return to selection"
+pass "pre-discovery smart-CI crash releases for fresh assembly"
 
 # Retry-class phases are owned by train_restore_retry_intent. Terminal recovery
 # must defer to it — never release the batch or overwrite the retry intent.
@@ -984,10 +1106,18 @@ gh() {
   if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
   elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
-  elif [[ "$*" == *'--json jobs'* ]]; then printf 'failure\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then printf '%s\n' "${fixture_resume_gate:-failure}"
   else fail "resumed failure attempted unexpected gh operation: $*"
   fi
 }
+for fixture_resume_gate in cancelled timed_out startup_failure; do
+  resumed_terminal_state="$(train_restore_retry_intent)" \
+    || fail "restart rejected terminal ${fixture_resume_gate} retry result"
+  [[ "$(jq -r '.resume_gate' <<<"${resumed_terminal_state}")" == "${fixture_resume_gate^^}" ]] \
+    || fail "restart did not preserve terminal ${fixture_resume_gate} retry result"
+done
+fixture_resume_gate=failure
+pass "retry restoration accepts terminal non-success conclusions"
 train_ci_jobs_are_terminal() { [[ "$1" == "123" ]] || fail "failure classification lost resumed run id"; }
 train_expected_shards_are_classifiable() { [[ "$1" == "123" ]] || fail "shard classification lost resumed run id"; }
 train_failing_jobs() { [[ "$1" == "123" ]] || fail "failure reader lost resumed run id"; printf 'Server Tests (OData Core)\n'; }

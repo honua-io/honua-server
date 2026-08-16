@@ -1,0 +1,15 @@
+{
+  "contract": "honua.server-test-prebuild-promotion-policy/v1",
+  "receipt_retention_days": 30,
+  "minimum_countable_heads": 20,
+  "minimum_cost_heads": 30,
+  "required_profiles": [
+    "exact-head-shadow:two-shard",
+    "exact-head-shadow:multi-shard"
+  ],
+  "minimum_countable_heads_per_profile": 10,
+  "minimum_cost_heads_per_profile": 15,
+  "minimum_runner_minute_savings_percent": 60,
+  "require_p90_test_start_improvement": true,
+  "max_wall_clock_regression_percent": 5
+}
