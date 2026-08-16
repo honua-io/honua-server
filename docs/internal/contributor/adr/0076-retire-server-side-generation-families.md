@@ -64,42 +64,43 @@ Narrowed, validated authoring ops remove the untrusted-input condition rather
 than mitigating it. See [ADR-0075](0075-ui5-web-components-application-chrome.md)
 for the chart-grammar half of the same argument.
 
-### 4. The standard never asked for server-side generation — and requiring it made us non-conformant
+### 4. Our own spec already says inference belongs to the client — and our implementation ignores its own schema
 
-Two of the eight families back **standard** tools: `honua_create_map_package` and
-`honua_create_app_package` are bound in geospatial-mcp's `spec/schemas/index.json`
-to Build App v1's `create_map_package` / `create_app_package`, and the reference
-manifest declares FULL conformance on `base`. The obvious fear is that retiring
-them drops Honua below the level it advertises as the reference implementation.
+Two of the eight families back tools that also appear in geospatial-mcp:
+`honua_create_map_package` and `honua_create_app_package` are bound in
+`spec/schemas/index.json` to Build App v1's `create_map_package` /
+`create_app_package`.
 
-Verification says the opposite, on both halves.
+**This is not a conformance constraint.** We author geospatial-mcp, it has no
+external adopters, and the spec follows the implementation rather than binding
+it. Where the two disagree, the spec text is what changes. Conformance checks are
+useful as drift detection between our own artifacts, not as a gate on product
+decisions — and nothing in this ADR is motivated by preserving a conformance
+level.
 
-**The standard assigns inference to the client.** `spec/planning.md:755-759`:
+What the spec *is* useful for here is as a record of a design position we already
+took and then failed to implement. `spec/planning.md:755-759`:
 
 > Client-agent phrasing of `ClarificationRequest.prompt`, LLM selection,
 > prompt-engineering patterns, and natural-language rendering of options are
 > owned by the client agent. MCP defines the typed protocol only.
 
-Corroborated by `spec/taxonomy.md:562-564` ("MCP tools delegate to deterministic
-services; they do not reimplement service logic") and by `spec/conformance.md:438-444`,
-which declines to prescribe a planner algorithm at all — *how* a package is
-produced is unscoreable by construction.
+We wrote that, and then built the opposite. D5 closes the gap.
 
-**Neither tool schema has a natural-language input, or any required field.**
-`create_map_package.schema.json` accepts `templateId`, `sourceBindings`,
-`styleId`, `themeId`, `initialView`; `create_app_package.schema.json` accepts
-`templateId`, `targetSdk`, `mapPackageId`, `boundArtifactIds`, `runtimeConfig`.
-Every property is a structured identifier or geometry.
+The concrete implementation defects are worth fixing on their own merits,
+independent of any spec:
 
-**Honua's implementation is currently the divergent one.** `CreateMapPackageTool.cs:85-89`
-*throws* when `prompt` is missing — a Honua-local field riding on the schema's
-`additionalProperties: true` — so a standard-conformant client sending the
-standard's own fixture payload gets a hard validation error today. Meanwhile
-`sourceBindings`, the standard's primary composition input, is not accepted at
-all, and `initialView` is published in Honua's schema then dropped by the parser.
+- `CreateMapPackageTool.cs:85-89` **throws when `prompt` is missing** — a
+  Honua-local field neither schema defines. A caller who supplies fully
+  structured input and no prose gets a hard validation error, which is a bad API
+  regardless of what any document says.
+- **`sourceBindings` is not accepted at all**, despite being the primary
+  composition input in both our schema and any sensible design.
+- **`initialView` is published in the schema and then dropped by the parser** —
+  the tool advertises an input it silently ignores.
 
-Re-founding these tools deterministically is therefore not a conformance cost to
-be absorbed. It is the change that makes Honua conformant.
+A deterministic entry point fixes all three, because honoring structured input is
+the entire job once generation is gone.
 
 ## Decision
 
@@ -130,45 +131,51 @@ client's model drives.
 **A tool that returns `capability_unavailable` is not an acceptable end state.**
 
 This is the failure mode to design against, because it is the *cheap* version of
-this change and it is invisible to every gate we run. Both tools resolve their
+this change and nothing we run today would catch it. Both tools resolve their
 service through a nullable `httpContext.RequestServices.GetService<T>()`
 (`CreateMapPackageTool.cs:96`) rather than constructor injection. Deleting the two
-DI registrations alone therefore compiles cleanly, keeps `tools/list` intact, and
-keeps `check_manifest.py` reporting FULL — while making both tools permanently
-return an unavailable stub.
+DI registrations alone therefore **compiles cleanly and keeps the tools listed in
+`tools/list`**, while making them permanently return an unavailable stub. A
+half-done deletion looks identical to a finished one from outside.
 
-The manifest checker cannot catch this. It computes
-`implemented_std_tools − advertised_std_tools`, a set difference over names
-(`check_manifest.py:155`); it never opens a tool schema, never calls a server,
-and never inspects behaviour. `manifest.schema.json` has no field in which
-behaviour could even be declared.
-
-What that state would fail is the downstream rubric's result-projection axis
-(`spec/conformance.md:274`), for which no harness exists in either repo. So the
-guard has to be ours: **an integration test asserting each tool returns a
-package with a stable identifier**, not merely that the tool is listed.
+Tool-roster checks cannot catch it either — they compare names, not behaviour. So
+the guard has to be behavioural and ours: **an integration test asserting each
+tool returns a real package with a stable `map_…` / `app_…` identifier**, not
+merely that the tool is advertised.
 
 ### Extract before deleting
 
-The generation prompts encode cartographic and structural defaults — symbology,
-classification methods, class counts, palettes, layout conventions, validation
-bounds — that exist nowhere else in the codebase. Deleting them without capturing
-those defaults would regress output quality in a way that gets misattributed to
-the client model rather than to the deleted defaults.
+Every prompt, schema, and validation gate in the eight families was read before
+any of them was removed, on the expectation that they encoded hard-won
+cartographic defaults — palettes, classification methods, class counts, ramps —
+that existed nowhere else.
 
-**The extracted defaults are recorded before any family is removed**, and become
-deterministic templates and op presets. This ordering is not optional.
+**That expectation was mostly wrong, and saying so is part of the record.** Real
+cartography lives outside the delete boundary and is untouched: `ColorPalettes.cs`,
+`StyleSuggestionService.cs`, and the choropleth defaults in
+`AuthoringWorkflowNodeProvider.cs`. Across all eight families the only colour
+literal was a single example hex in one prompt. They were vocabulary-grounding
+and structural-validation layers, not cartographic ones — which is why the
+deletion is smaller in substance than in line count.
+
+What *is* unique, and is recorded in
+[generation-families-retained-knowledge.md](../generation-families-retained-knowledge.md)
+before removal: a measured A/B result showing a richer prompt prefill **regressed**
+quality on a local 7B model (41/43 for the lean baseline), the generation-vs-publish
+leniency contract, the query filter validation rules including a nesting cap of 4,
+the map extent/CRS conventions the deterministic entry point now has to honor, and
+three safety postures that must not regress.
+
+That document also records six defects found during extraction — including a rule
+both report and dashboard prompts state and **no validator enforces** — because
+deleting the code would otherwise delete the evidence.
 
 ## Consequences
 
 ### Preserved
 
-- FULL conformance on `base` holds, verified empirically: removing the two tools
-  from a scratch manifest produces `FAIL: standard tool 'create_map_package' …
-  is not advertised`; keeping them advertised produces
-  `FULL [reference implementation] (31 standard tools …)`. There is **zero
-  slack** — the index has exactly 31 `implemented` base tools and the manifest
-  advertises exactly 31, so any drop is an immediate strict failure.
+- Both tools stay registered, advertised, and functional — they change
+  implementation, not existence.
 - BYOM. Inference moves to the client; the capability is not removed.
 - The clarification envelope (ADR-0027, ADR-0061). It is a typed protocol, and
   the client fills it.
@@ -177,11 +184,16 @@ deterministic templates and op presets. This ordering is not optional.
 
 - Zero outbound LLM calls from the server becomes an architectural fact rather
   than a missing-key accident — a claim `honua-compliance` can attest.
-- Standard conformance improves in two concrete ways: the undefined `prompt`
-  requirement goes away, and `sourceBindings` / `initialView` start being honored.
+- The tool API stops lying: the undefined `prompt` requirement goes away, and
+  `sourceBindings` / `initialView` start being honored instead of rejected and
+  silently dropped.
 - GHSA-7f2v-3qq3-vvjf stops being reachable on the report and dashboard surfaces,
   because nothing renders model-authored raw Vega-Lite any more.
 - No server-side model key custody, and no server-side token spend.
+- The provider asymmetry disappears. Only Dashboard and Report implemented
+  Bedrock and Azure OpenAI paths, so a Bedrock-only deployment could generate
+  dashboards and reports but not maps, forms, apps, analyses, or queries. Moving
+  inference to the client removes the whole class of problem.
 
 ### Costs and risks
 
@@ -196,30 +208,31 @@ deterministic templates and op presets. This ordering is not optional.
   `IAppGenerationService` / `IMapGenerationService` into REST endpoints outside
   the MCP surface entirely.
 - **Scope by feature family, never by assembly.** `CapabilityManifestEmitter`
-  — the generator that produces the conformance manifest — lives at
+  — the generator that emits our published capability manifest — lives at
   `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Discovery/CapabilityManifestEmitter.cs`,
   inside the assembly being trimmed. Retiring `Honua.Ai` wholesale would take the
-  manifest generator and the conformance alignment tests with it, and the FULL
-  claim would lose its mechanical guard even though the tools survived. The
+  manifest generator and the alignment tests with it, so the manifest would stop
+  reflecting what the server actually offers even though the tools survived. The
   `CapabilityRegistry` roster itself is safe in `Honua.Core`.
-- **A cross-repo documentation change is required.** `index.json:50` and `:93`
-  state that the reference "routes through the canonical IMapGenerationService /
-  IAppGenerationService pipeline." That is published text in a public standards
-  repo which this decision makes false. The same stale text is vendored at
-  `tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/geospatial-mcp/index.json`.
-  While there, the standard's own fixtures for both tools still carry
-  `"deferred": true` with a note that the reference "does not yet ship
-  `create_map_package` as a discrete tool", contradicting `index.json`'s
-  `"implemented"` — worth correcting in the same pass.
+- **Spec text needs a follow-up edit, as housekeeping.** `index.json:50` and
+  `:93` say the reference "routes through the canonical IMapGenerationService /
+  IAppGenerationService pipeline", which this makes false. We own that text, so
+  it is a cheap correction rather than a negotiation — but it should be done, or
+  the spec starts describing a product that no longer exists. Same stale copy is
+  vendored at `tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/geospatial-mcp/index.json`.
+  While there: the fixtures for both tools still carry `"deferred": true` and a
+  note that the reference "does not yet ship `create_map_package` as a discrete
+  tool", contradicting `index.json`'s `"implemented"`. Both statements predate
+  this work and one of them was always wrong.
 
 ### Known pre-existing skew, surfaced but not caused here
 
-Honua's vendored `index.json` copy is dated 2026-07-06 while upstream is
-2026-08-11, and `CapabilityManifestEmitter` pins `SpecDate = "2026-04-19"`. The
-honua-side conformance test therefore grades against an older vocabulary than
-geospatial-mcp CI does, so a green test here is not proof the upstream gate
-passes. Unrelated to D5, but it should not be discovered during this work and
-mistaken for a regression it caused.
+The vendored `index.json` copy is dated 2026-07-06 while the source is
+2026-08-11, and `CapabilityManifestEmitter` pins `SpecDate = "2026-04-19"` — three
+different vintages of the same vocabulary in one repo. That is a drift-detection
+problem between our own artifacts and is worth cleaning up on its own schedule.
+Recorded here only so it is not discovered mid-deletion and mistaken for a
+regression this work caused.
 
 ## Non-goals
 
