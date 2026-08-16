@@ -135,6 +135,8 @@ internal static class StandaloneStyleDescriptor
 
         var fallbackGeometryType = GeometryType.None;
         string? fallbackSourceName = null;
+        var concreteGeometryType = GeometryType.None;
+        string? concreteSourceName = null;
 
         foreach (var layer in layers.EnumerateArray())
         {
@@ -173,11 +175,29 @@ internal static class StandaloneStyleDescriptor
             }
             else if (geometryType != GeometryType.None)
             {
-                return (geometryType, sourceName);
+                if (concreteGeometryType == GeometryType.None)
+                {
+                    concreteGeometryType = geometryType;
+                    concreteSourceName = sourceName;
+                    continue;
+                }
+
+                // Polygon styles commonly put a line outline before the fill it frames.
+                // Keep the first concrete source authoritative, but scan its remaining
+                // layers so that ordering the outline first cannot downgrade the style
+                // to line symbology.
+                if (concreteGeometryType == GeometryType.LineString
+                    && geometryType == GeometryType.Polygon
+                    && string.Equals(concreteSourceName, sourceName, StringComparison.Ordinal))
+                {
+                    concreteGeometryType = GeometryType.Polygon;
+                }
             }
         }
 
-        return (fallbackGeometryType, fallbackSourceName);
+        return concreteGeometryType != GeometryType.None
+            ? (concreteGeometryType, concreteSourceName)
+            : (fallbackGeometryType, fallbackSourceName);
     }
 
     /// <summary>

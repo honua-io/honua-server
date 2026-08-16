@@ -703,14 +703,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         if (TryParseMirroredStyleId(resolvedStyleId, out var reservedLayerId))
         {
-            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (snapshot.Index.ResourcesByStorageLayerId.ContainsKey(reservedLayerId))
-            {
-                return new OgcStyleCreateResult(
-                    OgcStyleCreateStatus.Conflict,
-                    null,
-                    $"Style identifier '{resolvedStyleId}' is reserved for layer {reservedLayerId}'s canonical mirror.");
-            }
+            return new OgcStyleCreateResult(
+                OgcStyleCreateStatus.Conflict,
+                null,
+                $"Style identifier '{resolvedStyleId}' is reserved for layer {reservedLayerId}'s canonical mirror.");
         }
 
         var (collidingResource, _, _) = await ResolveResourceAsync(resolvedStyleId, cancellationToken).ConfigureAwait(false);

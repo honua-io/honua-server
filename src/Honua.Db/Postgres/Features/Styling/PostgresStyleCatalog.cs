@@ -322,7 +322,7 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
             _ = await deleteCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return new StyleCatalogDeleteResult(
             StyleCatalogDeleteStatus.Deleted,
             associatedLayerIds.Distinct().ToArray());

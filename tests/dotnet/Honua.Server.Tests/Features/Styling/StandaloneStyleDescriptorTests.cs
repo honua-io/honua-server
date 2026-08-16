@@ -29,6 +29,28 @@ public sealed class StandaloneStyleDescriptorTests
     }
 
     [UnitTest]
+    public void FromMapLibre_LineOutlineBeforeFillForSameSource_PrefersPolygonGeometry()
+    {
+        const string style =
+            """
+            {
+              "version": 8,
+              "sources": { "layer-7": { "type": "vector", "tiles": ["/tiles/7/{z}/{x}/{y}.mvt"] } },
+              "layers": [
+                { "id": "parcel-outline", "type": "line", "source": "layer-7" },
+                { "id": "parcel-fill", "type": "fill", "source": "layer-7" }
+              ]
+            }
+            """;
+
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre("parcels", style);
+
+        Assert.Equal(7, descriptor.Id);
+        Assert.True(descriptor.IsBoundToStorageLayer);
+        Assert.Equal(MetadataV2GeometryType.Polygon, descriptor.GeometryType);
+    }
+
+    [UnitTest]
     public void FromMapLibre_OnlySymbolLayer_FallsBackToPointGeometry()
     {
         const string style = """{"version":8,"layers":[{"id":"places","type":"symbol"}]}""";

@@ -17332,6 +17332,7 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_NonObjectRoot_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_WithoutStyleIdHeader_AssignsServerGeneratedId",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.StylesList_ReflectsCreateAndDelete_ThroughOutputCacheEviction",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PostStyle_CanonicalMirrorIdForUnknownLayer_Returns409Conflict",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PostStyle_DuplicateId_Returns409Conflict",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PostStyle_IdOwnedByCollection_Returns409Conflict",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PostStyle_StrictFractionalVersion_Returns400",

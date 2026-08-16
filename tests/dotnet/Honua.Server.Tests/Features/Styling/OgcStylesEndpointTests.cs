@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -308,10 +309,19 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
 
-        // Exact style-layer-{id} identifiers are reserved even before that layer has a
-        // mirrored catalog row; otherwise an ordinary record becomes undeletable later.
-        const string reservedStyleId = "style-layer-1";
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/styles")]
+    public async Task PostStyle_CanonicalMirrorIdForUnknownLayer_Returns409Conflict()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        // Reserve exact mirror identifiers even before either the layer or its catalog
+        // mirror exists. Otherwise creating that layer later silently overwrites the
+        // caller-owned standalone style during mirror synchronization.
+        const string reservedStyleId = "style-layer-2147483647";
         using var reservedContent = new StringContent(
             BuildDefaultStyleJson(),
             Encoding.UTF8,
