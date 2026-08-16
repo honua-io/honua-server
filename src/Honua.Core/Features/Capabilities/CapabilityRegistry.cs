@@ -298,7 +298,6 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("jobs.runner", "jobs", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
-            ("ai.workflow-generation", "ai", FeatureCatalog.AiWorkflowGenerationKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("gitops.release-manifest", "gitops", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
             ("transport.grpc", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),

@@ -3,12 +3,8 @@
 
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
-using Honua.Core.Features.WorkflowPackages.Generation.Abstractions;
-using Honua.Core.Features.WorkflowPackages.Generation.Domain;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.WorkflowPackages;
@@ -99,18 +95,6 @@ internal static class WorkflowPackageEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status409Conflict);
 
-        group.MapGet("/workflow-generation/providers", HandleGetGenerationProviders)
-            .WithName("GetWorkflowGenerationProviders")
-            .WithSummary("List the configured natural-language workflow generation providers")
-            .Produces<ApiResponse<WorkflowGenerationProviders>>();
-
-        group.MapPost("/workflow-packages/generate", HandleGenerateWorkflow)
-            .WithName("GenerateWorkflowPackage")
-            .WithSummary("Generate or refine a workflow package graph from a natural-language prompt")
-            .Accepts<GenerateWorkflowPackageRequest>("application/json")
-            .Produces<ApiResponse<WorkflowGenerationResult>>()
-            .Produces(StatusCodes.Status400BadRequest);
-
         group.MapGet("/workflow-publications", HandleListPublications)
             .WithName("ListWorkflowPublications")
             .WithSummary("List workflow package publications")
@@ -134,53 +118,6 @@ internal static class WorkflowPackageEndpoints
         var snapshot = await registry.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
         context.Response.Headers.ETag = $"\"{snapshot.RegistryVersion}\"";
         return TypedResults.Ok(ApiResponse<WorkflowNodeRegistrySnapshot>.CreateSuccess(snapshot));
-    }
-
-    private static async Task<IResult> HandleGetGenerationProviders(
-        HttpContext context,
-        IWorkflowGenerationService generation,
-        CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var providers = await generation.GetProvidersAsync(cancellationToken).ConfigureAwait(false);
-        return TypedResults.Ok(ApiResponse<WorkflowGenerationProviders>.CreateSuccess(providers));
-    }
-
-    private static async Task<IResult> HandleGenerateWorkflow(
-        HttpContext context,
-        GenerateWorkflowPackageRequest request,
-        IWorkflowGenerationService generation,
-        CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
-        {
-            return TypedResults.BadRequest(
-                ApiResponse<WorkflowGenerationResult>.Failure("A non-empty 'prompt' is required."));
-        }
-
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context,
-            FeatureCatalog.AiWorkflowGenerationKey,
-            "AI workflow generation");
-        if (entitlementGate is not null)
-        {
-            return entitlementGate;
-        }
-
-        var result = await generation.GenerateAsync(
-            new WorkflowGenerationRequest
-            {
-                Prompt = request.Prompt,
-                ProviderId = request.Provider,
-                ModelOverride = request.Model,
-                CurrentGraph = request.Graph,
-                Conversation = request.Conversation,
-                Answers = request.Answers
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        return TypedResults.Ok(ApiResponse<WorkflowGenerationResult>.CreateSuccess(result));
     }
 
     private static async Task<IResult> HandleGetNode(

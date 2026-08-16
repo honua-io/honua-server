@@ -11,7 +11,14 @@ namespace Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 /// without an AWS account, while production resolves the real Converse-API-backed
 /// <see cref="BedrockChatClientAdapter"/>.
 /// </summary>
-public interface IBedrockChatClientFactory
+/// <remarks>
+/// Internal: the only reason this was public was that the retired Dashboard and Report
+/// generation services took it as a public constructor parameter from outside this feature
+/// (ADR-0076, honua-server#3255). With those gone the seam is consumed solely by
+/// <c>BedrockStudioAiProxyAdapter</c> inside this assembly and by the proxy's own tests
+/// through <c>InternalsVisibleTo</c>.
+/// </remarks>
+internal interface IBedrockChatClientFactory
 {
     /// <summary>
     /// Creates a chat client for the supplied model and region. <paramref name="apiKey"/> is an

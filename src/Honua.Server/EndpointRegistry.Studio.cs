@@ -27,7 +27,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
-        // NL-assisted map package generation (#1180).
+        // Deterministic map/app package draft creation (#1180; re-founded by ADR-0076 #3255).
         new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
         // Studio deliverable export: render a map/dashboard/report content item to PDF/PNG.
@@ -47,8 +47,6 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),
         new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
-        // NL-assisted report/dashboard content generation (#1183).
-        new("POST", "/api/v1/console/publications/generate"),
 
         // Provider-agnostic Studio AI proxy adapters (#3000): Bedrock/Anthropic/OpenAI-compatible
         // behind one streaming chat contract, plus capability discovery.

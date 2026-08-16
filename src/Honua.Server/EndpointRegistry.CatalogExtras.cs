@@ -84,9 +84,6 @@ public static partial class EndpointRegistry
         new("GET", "/v1/spec/artifact/{hash}"),
 
         // Analysis content HTTP surface (#1182, #1237).
-        // NL-assisted analysis-package and saved-query generation.
-        new("POST", "/api/v1/analysis/content/generate"),
-        new("POST", "/api/v1/analysis/content/queries/generate"),
         new("POST", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items/{itemId}"),

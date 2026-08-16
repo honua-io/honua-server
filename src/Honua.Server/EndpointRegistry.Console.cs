@@ -72,7 +72,5 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish"),
         new("GET", "/api/v1/console/workflow-publications"),
         new("POST", "/api/v1/console/workflow-publications/{publicationId}/runs"),
-        new("GET", "/api/v1/console/workflow-generation/providers"),
-        new("POST", "/api/v1/console/workflow-packages/generate"),
     ];
 }

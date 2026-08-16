@@ -62,10 +62,6 @@
          Mirrors the honua-devops agent's Bedrock provider. Confined to Honua.Ai so
          Honua.Core / Honua.Hosting / Honua.Server stay SDK-free (CloudSdkIsolationTests). -->
     <PackageReference Include="AWSSDK.BedrockRuntime" />
-    <!-- Azure.Identity supplies Entra Managed-Identity tokens (the preferred Azure auth) for the
-         Azure OpenAI / AI Foundry provider. Confined to Honua.Ai exactly like the Bedrock SDK
-         above, so Honua.Core / Honua.Hosting / Honua.Server stay SDK-free (CloudSdkIsolationTests). -->
-    <PackageReference Include="Azure.Identity" />
     <!-- Microsoft.Extensions.AI abstractions (IChatClient / ChatMessage / ChatResponseUpdate) are
          the provider-neutral chat surface the Studio AI proxy's Bedrock adapter bridges onto. -->
     <PackageReference Include="Microsoft.Extensions.AI" />
@@ -81,8 +77,6 @@
                       LogicalName="Honua.Ai.AiBuilder.Fixtures.spatial-query-contract-v1.json" />
     <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\operations-dashboard-contract-v1.json"
                       LogicalName="Honua.Ai.AiBuilder.Fixtures.operations-dashboard-contract-v1.json" />
-    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\workflow-generation-contract-v1.json"
-                      LogicalName="Honua.Ai.AiBuilder.Fixtures.workflow-generation-contract-v1.json" />
     <!-- Evidence-based feature catalog (#1946, ADR-0054). The committed,
          drift-gated artifact is embedded so the read-only MCP resource
          honua://catalog/features can serve it from a deployed server that has no

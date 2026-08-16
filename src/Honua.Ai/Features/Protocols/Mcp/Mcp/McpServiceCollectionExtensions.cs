@@ -45,14 +45,14 @@ internal static class McpServiceCollectionExtensions
 
         services.AddGroundingServices(configuration);
 
-        // PlanAnalysisTool resolves its IPlanAnalysisService config-driven:
-        // the live (Bedrock-backed) planner when WorkflowGeneration is enabled
-        // with a live default provider, otherwise the deterministic fixture
-        // replay. The fixture catalog is always registered as the fallback, so
-        // CI (no provider configured) stays AI-credit-free. Hosts can still call
+        // PlanAnalysisTool resolves its IPlanAnalysisService from the
+        // deterministic fixture replay. ADR-0076 (#3255) retired the live,
+        // provider-backed planner with the rest of the server-side inference
+        // surface, so there is no config-driven lane selection left and CI stays
+        // AI-credit-free by construction. Hosts can still call
         // services.Replace(...) after AddMcpDataAccessSurface to force a specific
         // implementation.
-        services.AddAiBuilderPlanAnalysis(configuration);
+        services.AddAiBuilderPlanAnalysis();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
