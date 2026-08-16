@@ -1,43 +1,45 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Geoprocessing;
-using Honua.Ai.AppGeneration;
 using Honua.Ai.Protocols.Mcp.Models;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
-/// MCP tool that authors an <c>AppPackage</c> (studio-app/v1) from a
-/// natural-language prompt through the canonical <see cref="IAppGenerationService"/>
-/// pipeline (#1951). Like <see cref="CreateMapPackageTool"/> it adapts the tool
-/// arguments onto an <see cref="AppGenerationRequest"/> rather than
-/// reimplementing app composition. The standard geospatial-mcp
-/// <c>create_app_package</c> fields (<c>templateId</c>, <c>targetSdk</c>,
-/// <c>mapPackageId</c>, <c>boundArtifactIds</c>) are accepted and woven into the
-/// generation prompt as explicit guidance. The returned
-/// <see cref="AppGenerationResult"/> is projected verbatim so the agent can
-/// branch on a generated package, a clarification round-trip, or an unavailable
-/// capability.
+/// MCP tool that creates an <c>AppPackage</c> draft deterministically from the
+/// structured geospatial-mcp <c>create_app_package</c> fields (ADR-0076,
+/// honua-server#3255).
 /// </summary>
+/// <remarks>
+/// The app-side counterpart to <see cref="CreateMapPackageTool"/>: it performs no
+/// model inference, requires no prompt, and delegates every validation and
+/// composition rule to the shared <see cref="IAppPackageDraftFactory"/> in
+/// <c>Honua.Core</c>. It starts honoring <c>runtimeConfig</c>, which the standard
+/// publishes and the previous implementation never parsed, and it inherits the
+/// factory's closed-by-default sharing posture.
+/// </remarks>
 internal sealed class CreateAppPackageTool : IMcpTool
 {
     /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_create_app_package";
 
     private readonly IGeoprocessingJobService _jobService;
+    private readonly IAppPackageDraftFactory _drafts;
     private readonly ILogger<CreateAppPackageTool> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="CreateAppPackageTool"/> class.</summary>
     public CreateAppPackageTool(
         IGeoprocessingJobService jobService,
+        IAppPackageDraftFactory drafts,
         ILogger<CreateAppPackageTool> logger)
     {
         _jobService = jobService;
+        _drafts = drafts;
         _logger = logger;
     }
 
@@ -52,10 +54,10 @@ internal sealed class CreateAppPackageTool : IMcpTool
     {
         Name = ToolName,
         Title = "Create app package",
-        Description = "Author an SDK-native AppPackage from a natural-language prompt through the canonical app-generation pipeline. "
-            + "Accepts the geospatial-mcp composition fields (templateId, targetSdk, mapPackageId, boundArtifactIds) and an optional prompt; "
-            + "returns a structured result: a generated package, a clarification envelope when the prompt is ambiguous, "
-            + "validation findings, or a capability-unavailable state when AI app generation is not configured.",
+        Description = "Create an SDK-native AppPackage draft deterministically from structured composition input "
+            + "(templateId, targetSdk, mapPackageId, boundArtifactIds, runtimeConfig). Performs no model inference and "
+            + "takes no natural-language input; returns a draft package with a stable app_… identifier, its "
+            + "honua://app-packages/{id} resource URI, and a closed-by-default share policy.",
         InputSchema = McpToolSchemas.CreateAppPackageArgumentSchema,
         OutputSchema = McpToolOutputSchemas.CreateAppPackageOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Create app package", destructive: false, idempotent: false)
@@ -76,70 +78,30 @@ internal sealed class CreateAppPackageTool : IMcpTool
             .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpCreateAppPackageArgument);
-        if (string.IsNullOrWhiteSpace(argument.Prompt))
+
+        var result = _drafts.CreateDraft(new AppPackageDraftRequest
         {
-            throw new GeoprocessingValidationException(
-                "App-package authoring requires a non-empty prompt describing the application to build.");
+            TemplateId = argument.TemplateId,
+            TargetSdk = argument.TargetSdk,
+            MapPackageId = argument.MapPackageId,
+            BoundArtifactIds = argument.BoundArtifactIds ?? [],
+            RuntimeConfig = argument.RuntimeConfig
+        });
+
+        if (result.Package is null)
+        {
+            throw new GeoprocessingValidationException(McpPackageDraftProjection.DescribeErrors(
+                "App-package draft input is invalid", result.Errors));
         }
 
-        var service = httpContext.RequestServices.GetService<IAppGenerationService>();
-        if (service is null)
+        var output = new McpPackageDraftOutput
         {
-            return McpToolHelpers.SuccessResult(
-                CapabilityUnavailable("AI app generation is not configured in this composition."),
-                AppGenerationApiJsonContext.Default.AppGenerationResult);
-        }
-
-        var request = new AppGenerationRequest
-        {
-            Prompt = ComposePrompt(argument),
-            Provider = argument.Provider,
-            Model = argument.Model
+            PackageId = result.Package.AppPackageId,
+            ResourceUri = McpResourceUris.AppPackageUri(result.Package.AppPackageId),
+            Package = JsonSerializer.SerializeToElement(result.Package, PackagingJsonContext.Default.AppPackage),
+            Warnings = McpPackageDraftProjection.MapFindings(result.Warnings)
         };
 
-        var result = await service.GenerateAsync(request, cancellationToken).ConfigureAwait(false);
-        return McpToolHelpers.SuccessResult(result, AppGenerationApiJsonContext.Default.AppGenerationResult);
+        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpPackageDraftOutput);
     }
-
-    /// <summary>
-    /// Folds the standard composition selectors into the generation prompt as
-    /// explicit guidance so the prompt-driven generation service honors them.
-    /// </summary>
-    private static string ComposePrompt(McpCreateAppPackageArgument argument)
-    {
-        var builder = new StringBuilder(argument.Prompt);
-
-        if (!string.IsNullOrWhiteSpace(argument.TemplateId))
-        {
-            builder.Append("\nUse the app template '").Append(argument.TemplateId).Append("'.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(argument.TargetSdk))
-        {
-            builder.Append("\nTarget the SDK '").Append(argument.TargetSdk).Append("'.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(argument.MapPackageId))
-        {
-            builder.Append("\nBind the map package '").Append(argument.MapPackageId).Append("'.");
-        }
-
-        if (argument.BoundArtifactIds is { Count: > 0 })
-        {
-            builder.Append("\nBind the artifacts: ").Append(string.Join(", ", argument.BoundArtifactIds)).Append('.');
-        }
-
-        return builder.ToString();
-    }
-
-    private static AppGenerationResult CapabilityUnavailable(string reason) => new()
-    {
-        Status = "capability_unavailable",
-        CapabilityState = new AppGenerationCapabilityState
-        {
-            Name = "app_generation",
-            State = "unavailable",
-            Reason = reason
-        }
-    };
 }

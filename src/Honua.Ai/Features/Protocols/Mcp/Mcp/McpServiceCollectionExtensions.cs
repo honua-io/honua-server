@@ -12,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Reporting.Abstractions;
+using Honua.Core.Features.Studio.Drafts;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -96,14 +97,26 @@ internal static class McpServiceCollectionExtensions
         // and returns a structured "unavailable" handle when none is composed.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishResultTool>());
 
-        // Authoring tools (#1951): create_map_package / create_app_package route
-        // through the canonical IMapGenerationService / IAppGenerationService
-        // generation pipelines. Those services are registered later in the host
-        // composition root than AddMcpDataAccessSurface, so the tools resolve them
-        // per-request (like PublishServiceTool resolves IOperationInvoker) and
-        // return a structured capability-unavailable result when no generation
-        // service is composed. Registered unconditionally so the catalog is
-        // transport-symmetric.
+        // Authoring tools (#1951, re-founded by ADR-0076 / #3255):
+        // create_map_package / create_app_package create draft packages
+        // deterministically from structured input through the shared
+        // IMapPackageDraftFactory / IAppPackageDraftFactory in Honua.Core. They
+        // make no model call and take no prompt.
+        //
+        // Both factories arrive by CONSTRUCTOR injection rather than a
+        // per-request RequestServices.GetService<T>() lookup, which is the point
+        // ADR-0076 argues at length: with a nullable service locator, removing a
+        // registration still compiles and leaves the tools advertised but
+        // permanently returning capability_unavailable — a half-finished deletion
+        // that looks identical to a finished one from outside. A constructor
+        // dependency turns the same mistake into a startup failure. The factories
+        // are stateless singletons, so a singleton tool can hold them safely
+        // (unlike the scoped Studio lifecycle service below).
+        //
+        // AddStudioDraftFactories is TryAdd-based and idempotent; it is composed
+        // here so the MCP surface is self-sufficient regardless of whether the
+        // host also composes the Studio slice.
+        services.AddStudioDraftFactories();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
 

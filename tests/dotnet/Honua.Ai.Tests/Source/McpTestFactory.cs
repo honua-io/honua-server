@@ -38,10 +38,13 @@ internal static class McpTestFactory
     /// Authenticated HTTP context whose <c>RequestServices</c> additionally
     /// registers <paramref name="configureServices"/> — for tools that resolve
     /// collaborators per-request from <c>httpContext.RequestServices</c>
-    /// instead of taking them as constructor dependencies (the pattern
-    /// <c>CreateMapPackageTool</c> and the Studio tools use for services
-    /// registered <c>Scoped</c>, to avoid a singleton tool capturing a scoped
-    /// service as a captive dependency; PR #3016 review).
+    /// instead of taking them as constructor dependencies (the pattern the
+    /// Studio tools use for services registered <c>Scoped</c>, to avoid a
+    /// singleton tool capturing a scoped service as a captive dependency;
+    /// PR #3016 review). Tools whose collaborators are stateless singletons —
+    /// <c>CreateMapPackageTool</c> and <c>CreateAppPackageTool</c> since
+    /// ADR-0076 — take them by constructor injection instead, so a missing
+    /// registration fails at startup rather than silently.
     /// </summary>
     public static DefaultHttpContext AuthenticatedHttpContextWithServices(
         Action<IServiceCollection> configureServices,

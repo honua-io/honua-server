@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Studio.Services;
 using Honua.Core.Features.Studio.Services.Bridging;
 using Microsoft.Extensions.Configuration;
@@ -33,6 +34,12 @@ public static class StudioServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(TimeProvider.System);
+
+        // ADR-0076 (honua-server#3255): the deterministic map/app draft factories
+        // that replaced the retired server-side generation families. Registered
+        // here so every host that composes the Studio slice can create drafts.
+        services.AddStudioDraftFactories();
+
         services.TryAddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
         // ADR-0069 (honua-server#3004): the catalog decides at resolve time which family
         // persistence bridges are available (native forms/analysis stores may be registered

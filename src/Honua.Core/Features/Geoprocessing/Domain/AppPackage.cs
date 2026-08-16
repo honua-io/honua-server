@@ -71,6 +71,20 @@ public sealed record AppPackage
     public JsonElement? RuntimeConfigSchema { get; init; }
 
     /// <summary>
+    /// Runtime configuration <em>values</em> supplied by the author and projected
+    /// into the generated application. Distinct from
+    /// <see cref="RuntimeConfigSchema"/>, which describes the shape those values
+    /// must take.
+    /// </summary>
+    public JsonElement? RuntimeConfig { get; init; }
+
+    /// <summary>
+    /// Sharing posture for the package. Closed by default
+    /// (<see cref="AppSharePolicy.Closed"/>).
+    /// </summary>
+    public AppSharePolicy? SharePolicy { get; init; }
+
+    /// <summary>
     /// Hints for downstream deployment and delivery.
     /// </summary>
     public DeliveryHints? DeliveryHints { get; init; }
@@ -109,6 +123,45 @@ public sealed record AppPackage
             MapPackageId = mapPackageId,
             CreatedAt = DateTimeOffset.UtcNow
         };
+}
+
+/// <summary>
+/// Sharing posture for an application package.
+/// </summary>
+/// <remarks>
+/// Closed by default. Recorded in
+/// <c>docs/internal/contributor/generation-families-retained-knowledge.md</c> §5
+/// as a safety posture that must not regress: an authored application starts
+/// private, non-embeddable, and unreviewed unless sharing is explicitly widened
+/// by a later, authorized operation.
+/// </remarks>
+public sealed record AppSharePolicy
+{
+    /// <summary>
+    /// Visibility tier: <c>private</c>, <c>workspace</c>, <c>organization</c>,
+    /// or <c>public</c>.
+    /// </summary>
+    public required string Visibility { get; init; }
+
+    /// <summary>
+    /// Whether the application may be embedded in a third-party page.
+    /// </summary>
+    public required bool Embed { get; init; }
+
+    /// <summary>
+    /// Whether the application has passed a sharing review.
+    /// </summary>
+    public required bool Reviewed { get; init; }
+
+    /// <summary>
+    /// The closed-by-default posture applied to newly created drafts.
+    /// </summary>
+    public static AppSharePolicy Closed { get; } = new()
+    {
+        Visibility = "private",
+        Embed = false,
+        Reviewed = false
+    };
 }
 
 /// <summary>

@@ -1,46 +1,57 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Geoprocessing;
-using Honua.Ai.MapGeneration;
 using Honua.Ai.Protocols.Mcp.Models;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
-/// MCP tool that authors a <c>MapPackage</c> from a natural-language prompt
-/// through the canonical <see cref="IMapGenerationService"/> pipeline (#1951).
-/// It does NOT reimplement map composition: it adapts the tool arguments onto a
-/// <see cref="MapGenerationRequest"/> and routes them through the shared
-/// generation service, which grounds the prompt, runs the configured workflow
-/// generation provider, and applies the generation-lenient structural validator.
-/// The standard geospatial-mcp <c>create_map_package</c> composition fields
-/// (<c>templateId</c>, <c>styleId</c>, <c>themeId</c>) are accepted and woven
-/// into the generation prompt as explicit guidance, so a standard-conformant
-/// client and a Honua-native prompt client both drive the same canonical
-/// pipeline. The returned <see cref="MapGenerationResult"/> is projected
-/// verbatim (status, package, rationale, clarifications, validation,
-/// capabilityState) so the agent can branch on a generated package, a
-/// clarification round-trip, or an unavailable capability.
+/// MCP tool that creates a <c>MapPackage</c> draft deterministically from the
+/// structured geospatial-mcp <c>create_map_package</c> selectors (ADR-0076,
+/// honua-server#3255).
 /// </summary>
+/// <remarks>
+/// <para>
+/// It performs no model inference: the tool is a thin protocol adapter that
+/// parses the wire arguments, maps them onto a canonical
+/// <see cref="MapPackageDraftRequest"/>, and delegates every validation and
+/// composition rule to the shared <see cref="IMapPackageDraftFactory"/> in
+/// <c>Honua.Core</c>. Three defects of the previous prompt-driven implementation
+/// are closed here: <c>prompt</c> is no longer required (or accepted),
+/// <c>sourceBindings</c> is parsed rather than rejected, and <c>initialView</c>
+/// is honored rather than advertised and silently dropped.
+/// </para>
+/// <para>
+/// The factory arrives by constructor injection, deliberately. ADR-0076 records
+/// why: the previous implementation resolved its collaborator through a nullable
+/// <c>RequestServices.GetService&lt;T&gt;()</c>, so removing the registration
+/// still compiled and left the tool advertised but permanently returning
+/// <c>capability_unavailable</c>. A constructor dependency turns that same
+/// mistake into a startup failure.
+/// </para>
+/// </remarks>
 internal sealed class CreateMapPackageTool : IMcpTool
 {
     /// <summary>The tool name published in <c>tools/list</c>.</summary>
     public const string ToolName = "honua_create_map_package";
 
     private readonly IGeoprocessingJobService _jobService;
+    private readonly IMapPackageDraftFactory _drafts;
     private readonly ILogger<CreateMapPackageTool> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="CreateMapPackageTool"/> class.</summary>
     public CreateMapPackageTool(
         IGeoprocessingJobService jobService,
+        IMapPackageDraftFactory drafts,
         ILogger<CreateMapPackageTool> logger)
     {
         _jobService = jobService;
+        _drafts = drafts;
         _logger = logger;
     }
 
@@ -55,15 +66,16 @@ internal sealed class CreateMapPackageTool : IMcpTool
     {
         Name = ToolName,
         Title = "Create map package",
-        Description = "Author a MapPackage from a natural-language prompt through the canonical map-generation pipeline. "
-            + "Accepts the geospatial-mcp composition fields (templateId, styleId, themeId, initialView) and an optional prompt; "
-            + "returns a structured result: a generated package, a clarification envelope when the prompt is ambiguous, "
-            + "validation findings, or a capability-unavailable state when AI map generation is not configured.",
+        Description = "Create a MapPackage draft deterministically from structured composition input "
+            + "(templateId, sourceBindings, styleId, themeId, initialView). Performs no model inference and takes no "
+            + "natural-language input; returns a draft package with a stable map_… identifier and its "
+            + "honua://map-packages/{id} resource URI, plus any deferred-resolution warnings.",
         InputSchema = McpToolSchemas.CreateMapPackageArgumentSchema,
         OutputSchema = McpToolOutputSchemas.CreateMapPackageOutputSchema,
         // Write tool: it authors a new MapPackage draft. Not destructive (it
-        // creates rather than destroys state) and not idempotent (generation is
-        // AI-assisted, so a replay can produce a different package).
+        // creates rather than destroys state) and not idempotent — the draft is
+        // a pure function of the input except for its freshly minted identity,
+        // so a replay yields an equivalent package under a new map_… id.
         Annotations = McpToolAnnotationSets.Write("Create map package", destructive: false, idempotent: false)
     };
 
@@ -82,70 +94,89 @@ internal sealed class CreateMapPackageTool : IMcpTool
             .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpCreateMapPackageArgument);
-        if (string.IsNullOrWhiteSpace(argument.Prompt))
+
+        var result = _drafts.CreateDraft(new MapPackageDraftRequest
         {
-            throw new GeoprocessingValidationException(
-                "Map-package authoring requires a non-empty prompt describing the map to build.");
+            TemplateId = argument.TemplateId,
+            StyleId = argument.StyleId,
+            ThemeId = argument.ThemeId,
+            SourceBindings = MapSourceBindings(argument.SourceBindings),
+            InitialView = MapInitialView(argument.InitialView)
+        });
+
+        if (result.Package is null)
+        {
+            throw new GeoprocessingValidationException(McpPackageDraftProjection.DescribeErrors(
+                "Map-package draft input is invalid", result.Errors));
         }
 
-        // Resolve the generation service per-request: it is registered in the
-        // host composition root after AddMcpDataAccessSurface, so a descriptor-list
-        // gate at registration time would miss it. When no service is composed
-        // (e.g. an isolated test container) return a structured
-        // capability-unavailable result rather than failing the call.
-        var service = httpContext.RequestServices.GetService<IMapGenerationService>();
-        if (service is null)
+        var output = new McpPackageDraftOutput
         {
-            return McpToolHelpers.SuccessResult(
-                CapabilityUnavailable("AI map generation is not configured in this composition."),
-                MapGenerationApiJsonContext.Default.MapGenerationResult);
-        }
-
-        var request = new MapGenerationRequest
-        {
-            Prompt = ComposePrompt(argument),
-            Provider = argument.Provider,
-            Model = argument.Model
+            PackageId = result.Package.MapPackageId,
+            ResourceUri = McpResourceUris.MapPackageUri(result.Package.MapPackageId),
+            Package = JsonSerializer.SerializeToElement(result.Package, PackagingJsonContext.Default.MapPackage),
+            Warnings = McpPackageDraftProjection.MapFindings(result.Warnings)
         };
 
-        var result = await service.GenerateAsync(request, cancellationToken).ConfigureAwait(false);
-        return McpToolHelpers.SuccessResult(result, MapGenerationApiJsonContext.Default.MapGenerationResult);
+        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpPackageDraftOutput);
+    }
+
+    private static List<SourceBindingInput> MapSourceBindings(
+        IReadOnlyList<McpSourceBindingArgument?>? bindings)
+    {
+        if (bindings is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        var mapped = new List<SourceBindingInput>(bindings.Count);
+        foreach (var binding in bindings)
+        {
+            mapped.Add(new SourceBindingInput
+            {
+                // The vendored standard fixture spells the identifier bindingId;
+                // the canonical SourceBinding spells it sourceId. Accept both.
+                SourceId = binding?.SourceId ?? binding?.BindingId,
+                Protocol = binding?.Protocol,
+                Url = binding?.Url,
+                ServiceId = binding?.ServiceId,
+                LayerId = binding?.LayerId,
+                Filter = binding?.Filter,
+                Metadata = binding?.Metadata
+            });
+        }
+
+        return mapped;
+    }
+
+    private static MapInitialViewInput? MapInitialView(McpInitialViewArgument? initialView)
+    {
+        if (initialView is null)
+        {
+            return null;
+        }
+
+        return new MapInitialViewInput
+        {
+            Bbox = initialView.Bbox,
+            Crs = NormalizeCrs(initialView.Crs)
+        };
     }
 
     /// <summary>
-    /// Folds the standard composition selectors into the generation prompt as
-    /// explicit guidance so the prompt-driven generation service honors them.
+    /// The standard declares <c>crs</c> as a string or an integer EPSG code.
+    /// Normalizing the integer spelling to <c>EPSG:&lt;code&gt;</c> is a
+    /// wire-shape concern and belongs in the adapter; the CRS grammar itself is
+    /// validated by the shared factory.
     /// </summary>
-    private static string ComposePrompt(McpCreateMapPackageArgument argument)
+    private static string? NormalizeCrs(JsonElement? crs) => crs?.ValueKind switch
     {
-        var builder = new StringBuilder(argument.Prompt);
+        JsonValueKind.String => crs.Value.GetString(),
+        JsonValueKind.Number when crs.Value.TryGetInt32(out var code) => "EPSG:" + code.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        JsonValueKind.Null or JsonValueKind.Undefined or null => null,
 
-        if (!string.IsNullOrWhiteSpace(argument.TemplateId))
-        {
-            builder.Append("\nUse the map template '").Append(argument.TemplateId).Append("'.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(argument.StyleId))
-        {
-            builder.Append("\nApply the style '").Append(argument.StyleId).Append("'.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(argument.ThemeId))
-        {
-            builder.Append("\nApply the theme '").Append(argument.ThemeId).Append("'.");
-        }
-
-        return builder.ToString();
-    }
-
-    private static MapGenerationResult CapabilityUnavailable(string reason) => new()
-    {
-        Status = "capability_unavailable",
-        CapabilityState = new MapGenerationCapabilityState
-        {
-            Name = "map_generation",
-            State = "unavailable",
-            Reason = reason
-        }
+        // Anything else is surfaced verbatim so the shared factory rejects it as
+        // an unsupported CRS rather than the adapter silently coercing it.
+        _ => crs.Value.GetRawText()
     };
 }
