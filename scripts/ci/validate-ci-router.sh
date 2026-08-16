@@ -803,6 +803,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Security and Authorization"
+assert_descriptor \
+  "hosting-authentication-includes-infrastructure-tests" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "targeted" \
+  "false" \
+  "Infrastructure and Control Plane"
 assert_excludes_shard \
   "hosting-authentication-excludes-featureserver" \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
@@ -815,6 +821,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Security and Authorization"
+assert_descriptor \
+  "hosting-security-includes-infrastructure-tests" \
+  "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
+  "targeted" \
+  "false" \
+  "Infrastructure and Control Plane"
 
 # Conservatism guards: the override must NOT widen run_all coverage. A NON-override
 # Startup file (DI/host bootstrap core) must STILL run_all, and a generic unmapped
