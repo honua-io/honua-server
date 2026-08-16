@@ -607,24 +607,70 @@ public static class OgcStylesEndpoints
                 // exclude that distinct vendor type when a wildcard accepts it.
                 if (mediaType == "application/json")
                 {
-                    if (quality > 0d)
+                    if (quality > 0d
+                        && TryMatchRepresentationParameters(
+                            media,
+                            OgcStyleEncoding.MapboxStyle,
+                            out var matchedParameterCount))
                     {
-                        RecordPreference(preferences, OgcStyleEncoding.MapboxStyle, specificity: 2, quality);
+                        RecordPreference(
+                            preferences,
+                            OgcStyleEncoding.MapboxStyle,
+                            specificity: 20 + matchedParameterCount,
+                            quality);
                     }
                     continue;
                 }
 
                 if (mediaType is "*/*" or "application/*")
                 {
-                    var wildcardSpecificity = mediaType == "application/*" ? 1 : 0;
+                    var wildcardSpecificity = mediaType == "application/*" ? 10 : 0;
                     foreach (var supportedEncoding in supportedEncodings)
                     {
-                        RecordPreference(preferences, supportedEncoding, wildcardSpecificity, quality);
+                        if (TryMatchRepresentationParameters(
+                                media,
+                                supportedEncoding,
+                                out var matchedParameterCount))
+                        {
+                            RecordPreference(
+                                preferences,
+                                supportedEncoding,
+                                wildcardSpecificity + matchedParameterCount,
+                                quality);
+                        }
                     }
                     continue;
                 }
 
-                if (TryMapMediaType(mediaType, media, out var mappedEncoding, out var mappedSpecificity))
+                if (mediaType == SldBaseMediaType)
+                {
+                    ReadOnlySpan<OgcStyleEncoding> sldEncodings =
+                    [
+                        OgcStyleEncoding.Sld10,
+                        OgcStyleEncoding.Sld11
+                    ];
+                    foreach (var sldEncoding in sldEncodings)
+                    {
+                        if (TryMatchRepresentationParameters(
+                                media,
+                                sldEncoding,
+                                out var matchedParameterCount))
+                        {
+                            RecordPreference(
+                                preferences,
+                                sldEncoding,
+                                specificity: 30 + matchedParameterCount,
+                                quality);
+                        }
+                    }
+                    continue;
+                }
+
+                if (TryMapMediaType(mediaType, out var mappedEncoding)
+                    && TryMatchRepresentationParameters(
+                        media,
+                        mappedEncoding,
+                        out var concreteParameterCount))
                 {
                     // A concrete emitted representation is more specific than the
                     // application/json compatibility alias. This lets an explicit
@@ -632,7 +678,11 @@ public static class OgcStylesEndpoints
                     // outranks application/* and */* ranges. An SLD version parameter
                     // further narrows the representation and must beat an unversioned
                     // range that maps to the same encoding.
-                    RecordPreference(preferences, mappedEncoding, mappedSpecificity, quality);
+                    RecordPreference(
+                        preferences,
+                        mappedEncoding,
+                        specificity: 30 + concreteParameterCount,
+                        quality);
                 }
             }
         }
@@ -667,37 +717,14 @@ public static class OgcStylesEndpoints
 
     private static bool TryMapMediaType(
         string mediaType,
-        MediaTypeHeaderValue media,
-        out OgcStyleEncoding encoding,
-        out int specificity)
+        out OgcStyleEncoding encoding)
     {
         encoding = OgcStyleEncoding.MapboxStyle;
-        specificity = 3;
         switch (mediaType)
         {
             case "application/vnd.mapbox.style+json":
                 encoding = OgcStyleEncoding.MapboxStyle;
                 return true;
-            case SldBaseMediaType:
-                var version = ReadSldVersion(media);
-                switch (version)
-                {
-                    case null:
-                        encoding = OgcStyleEncoding.Sld10;
-                        return true;
-                    case "1.0":
-                        encoding = OgcStyleEncoding.Sld10;
-                        specificity = 4;
-                        return true;
-                    case "1.1":
-                        encoding = OgcStyleEncoding.Sld11;
-                        specificity = 4;
-                        return true;
-                    default:
-                        // An unsupported version parameter matches neither emitted SLD
-                        // representation and must not include or exclude SLD 1.0 by alias.
-                        return false;
-                }
             case "application/vnd.esri.drawinginfo+json":
                 encoding = OgcStyleEncoding.EsriDrawingInfo;
                 return true;
@@ -706,11 +733,61 @@ public static class OgcStylesEndpoints
         }
     }
 
-    private static string? ReadSldVersion(MediaTypeHeaderValue media)
-        => media.Parameters
-            .Where(parameter => string.Equals(parameter.Name.Value, "version", StringComparison.OrdinalIgnoreCase))
-            .Select(parameter => parameter.Value.Value?.Trim('"'))
-            .FirstOrDefault();
+    private static bool TryMatchRepresentationParameters(
+        MediaTypeHeaderValue media,
+        OgcStyleEncoding encoding,
+        out int matchedParameterCount)
+    {
+        matchedParameterCount = 0;
+        var expectedSldVersion = encoding switch
+        {
+            OgcStyleEncoding.Sld10 => "1.0",
+            OgcStyleEncoding.Sld11 => "1.1",
+            _ => null
+        };
+        var sawVersion = false;
+        var sawCharset = false;
+
+        foreach (var parameter in media.Parameters)
+        {
+            var name = parameter.Name.Value;
+            if (string.Equals(name, "q", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = parameter.Value.Value?.Trim('"');
+            if (string.Equals(name, "version", StringComparison.OrdinalIgnoreCase))
+            {
+                if (sawVersion
+                    || expectedSldVersion is null
+                    || !string.Equals(value, expectedSldVersion, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                sawVersion = true;
+                matchedParameterCount++;
+                continue;
+            }
+
+            if (string.Equals(name, "charset", StringComparison.OrdinalIgnoreCase))
+            {
+                if (sawCharset || !string.Equals(value, "utf-8", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                sawCharset = true;
+                matchedParameterCount++;
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
 
     private static bool IsMapboxStyleContentType(string contentType)
     {

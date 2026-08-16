@@ -176,7 +176,8 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         }
 
         // A versioned SLD range is more specific than the same unversioned media type.
-        // Its q=0 exclusion therefore wins and the acceptable Esri representation is used.
+        // Its q=0 exclusion vetoes SLD 1.0 only; the unversioned range still accepts
+        // SLD 1.1, which outranks the lower-quality Esri representation.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
         {
             request.Headers.TryAddWithoutValidation(
@@ -184,7 +185,37 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
                 $"{SldMediaType};version=1.0;q=0, {SldMediaType};q=1, {EsriDrawingInfoMediaType};q=0.5");
             var response = await client.SendAsync(request);
             response.Be200Ok();
-            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+            response.Content.Headers.ContentType?.MediaType.Should().Be(SldMediaType);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("version=\"1.1.0\"");
+        }
+
+        // The symmetric exclusion leaves SLD 1.0 available through the generic range.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{SldMediaType};version=1.1;q=0, {SldMediaType};q=1");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            (await response.Content.ReadAsStringAsync()).Should().Contain("version=\"1.0.0\"");
+        }
+
+        // Parameters that are not present on an emitted representation do not match it.
+        // They cannot override an explicit exclusion of the actual representation.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{MapboxStyleMediaType};profile=unsupported;q=1, {MapboxStyleMediaType};q=0");
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+        }
+
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{EsriDrawingInfoMediaType};profile=unsupported;q=1, {EsriDrawingInfoMediaType};q=0");
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
         }
 
         // Unsupported SLD versions match neither emitted SLD representation. They do
