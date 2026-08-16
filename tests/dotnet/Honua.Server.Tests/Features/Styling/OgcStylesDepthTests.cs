@@ -175,6 +175,18 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
         }
 
+        // A versioned SLD range is more specific than the same unversioned media type.
+        // Its q=0 exclusion therefore wins and the acceptable Esri representation is used.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{SldMediaType};version=1.0;q=0, {SldMediaType};q=1, {EsriDrawingInfoMediaType};q=0.5");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        }
+
         // HTTP media type tokens are case-insensitive for both aliases and concrete
         // vendor representations.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))

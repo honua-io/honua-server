@@ -30,6 +30,8 @@ namespace Honua.Protocols.Ogc.Api.Styles;
 /// </summary>
 public static class OgcStylesEndpoints
 {
+    private const string SldBaseMediaType = "application/vnd.ogc.sld+xml";
+
     private static readonly ImmutableHashSet<string> MetadataQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
 
@@ -627,8 +629,14 @@ public static class OgcStylesEndpoints
                     // A concrete emitted representation is more specific than the
                     // application/json compatibility alias. This lets an explicit
                     // Mapbox q=0 exclusion veto the alias while a positive alias still
-                    // outranks application/* and */* ranges.
-                    RecordPreference(preferences, mappedEncoding, specificity: 3, quality);
+                    // outranks application/* and */* ranges. An SLD version parameter
+                    // further narrows the representation and must beat an unversioned
+                    // range that maps to the same encoding.
+                    var specificity = mediaType == SldBaseMediaType
+                        && ReadSldVersion(media) is not null
+                            ? 4
+                            : 3;
+                    RecordPreference(preferences, mappedEncoding, specificity, quality);
                 }
             }
         }
@@ -669,7 +677,7 @@ public static class OgcStylesEndpoints
             case "application/vnd.mapbox.style+json":
                 encoding = OgcStyleEncoding.MapboxStyle;
                 return true;
-            case "application/vnd.ogc.sld+xml":
+            case SldBaseMediaType:
                 encoding = ReadSldVersion(media) == "1.1"
                     ? OgcStyleEncoding.Sld11
                     : OgcStyleEncoding.Sld10;
