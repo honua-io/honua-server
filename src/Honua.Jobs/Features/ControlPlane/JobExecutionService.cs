@@ -360,9 +360,11 @@ internal sealed partial class JobExecutionService(
 
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
 
-        // Create execution context with heartbeat pump.
+        // Create execution context with heartbeat pump. The claimed attempt number
+        // fences artifact publication: a stale attempt cannot publish after requeue.
         using var context = new JobExecutionContext(
-            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger);
+            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
+            running.AttemptCount);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -698,18 +700,39 @@ internal sealed partial class JobExecutionService(
             return true;
         }
 
+        // Durable cancellation wins over a racing success (#3089): the artifact
+        // publication fence already refuses to publish once CancellationRequestedAt
+        // is stamped, so finalizing this record as Succeeded would durably expose a
+        // success with silently missing outputs and no repair path. Honour the stamp
+        // and finalize as Cancelled instead — consistent with every other path that
+        // observes the durable signal.
+        var effectiveStatus = result.Status;
+        if (result.Status == ExecutionJobStatus.Succeeded && job.CancellationRequestedAt.HasValue)
+        {
+            Log.FinalizeHonouredDurableCancellation(logger, operationId);
+            effectiveStatus = ExecutionJobStatus.Cancelled;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var final = job with
         {
-            Status = result.Status,
+            Status = effectiveStatus,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = result.Status == ExecutionJobStatus.Failed
-                ? SafeExecutionFailureMessage
-                : null,
+            ErrorMessage = effectiveStatus switch
+            {
+                ExecutionJobStatus.Failed => SafeExecutionFailureMessage,
+                ExecutionJobStatus.Cancelled => "Cancelled by operator (durable signal honoured at finalization).",
+                _ => null
+            },
             Warnings = result.Warnings,
-            PercentComplete = result.Status == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
-            CurrentPhase = result.Status == ExecutionJobStatus.Succeeded ? "Completed" : "Failed"
+            PercentComplete = effectiveStatus == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
+            CurrentPhase = effectiveStatus switch
+            {
+                ExecutionJobStatus.Succeeded => "Completed",
+                ExecutionJobStatus.Cancelled => "Cancelled",
+                _ => "Failed"
+            }
         };
 
         var finalized = partitionLeaseId is null
@@ -756,7 +779,7 @@ internal sealed partial class JobExecutionService(
         }
 
         await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
-        Log.JobExecutionCompleted(logger, operationId, result.Status.ToString());
+        Log.JobExecutionCompleted(logger, operationId, effectiveStatus.ToString());
         return true;
     }
 
@@ -1202,6 +1225,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9074, LogLevel.Warning, "Job executor returned failure: {OperationId}, Error={ErrorMessage}")]
         public static partial void JobExecutorReturnedFailure(ILogger logger, string operationId, string errorMessage);
+
+        [LoggerMessage(9077, LogLevel.Information, "Finalize honoured durable cancellation signal for job {OperationId}: success result finalized as Cancelled")]
+        public static partial void FinalizeHonouredDurableCancellation(ILogger logger, string operationId);
     }
 }
 
@@ -1210,6 +1236,12 @@ internal sealed partial class JobExecutionService(
 /// Mediates heartbeat pumping, progress reporting, log appending, and artifact publication.
 /// Serializes read-modify-write operations on the job record to prevent concurrent
 /// heartbeat, progress, and artifact writes from clobbering each other.
+/// <paramref name="claimedAttempt"/> carries the attempt number observed when the
+/// worker claimed the job; artifact publication is fenced on it so a stale attempt
+/// (a resurrected worker whose job was requeued and reclaimed) can never publish
+/// into a newer attempt's record (#3089, ADR-0071). Zero disables only the attempt
+/// comparison (test harness contexts); ownership, cancellation, and version fences
+/// always apply.
 /// </summary>
 internal sealed partial class JobExecutionContext(
     string operationId,
@@ -1218,7 +1250,8 @@ internal sealed partial class JobExecutionContext(
     IExecutionLogStore? logStore,
     JobHeartbeatPolicy heartbeatPolicy,
     CancellationTokenSource? durableCancellationCts,
-    ILogger logger) : IJobExecutionContext, IDisposable
+    ILogger logger,
+    int claimedAttempt = 0) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
@@ -1279,32 +1312,131 @@ internal sealed partial class JobExecutionContext(
         }
     }
 
+    /// <summary>
+    /// Durably appends an artifact reference under the publication fence (#3089):
+    /// the write is rejected when the job is no longer owned by this worker, when the
+    /// record's attempt no longer matches the claimed attempt (a retried attempt owns
+    /// the record now), or when durable cancellation was requested. Publication is
+    /// idempotent for typed raster output descriptors — republishing a descriptor for
+    /// an output name this attempt already published cannot produce a duplicate entry.
+    /// Legacy references keep append semantics (distinct outputs may be byte-identical).
+    /// Version conflicts are re-read and retried instead of being silently dropped.
+    /// </summary>
     public async Task PublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(artifactReference);
+        const int maxCasRetries = 10;
+
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job))
+            for (var attempt = 0; attempt < maxCasRetries; attempt++)
             {
-                return;
+                var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                if (job == null || !IsOwnedBy(job))
+                {
+                    return;
+                }
+
+                if (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
+                {
+                    // A stale attempt must never publish into a newer attempt's record.
+                    Log.ArtifactPublishFencedStaleAttempt(logger, operationId, claimedAttempt, job.AttemptCount);
+                    return;
+                }
+
+                if (job.CancellationRequestedAt.HasValue)
+                {
+                    // Durable cancellation wins: an attempt racing its own cancellation
+                    // cannot expose new output through the job record.
+                    Log.ArtifactPublishFencedCancellation(logger, operationId);
+                    return;
+                }
+
+                if (!TryAppendArtifactReference(job.ArtifactReferences, artifactReference, out var refs))
+                {
+                    // Identical publication already durable — retried publish is a no-op.
+                    return;
+                }
+
+                var updated = job with
+                {
+                    ArtifactReferences = refs,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    LastHeartbeatAt = DateTimeOffset.UtcNow
+                };
+                if (await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                // Version conflict (heartbeat/reconciler write raced this publish):
+                // re-read and re-evaluate the fence rather than dropping the artifact.
             }
 
-            var refs = new List<string>(job.ArtifactReferences) { artifactReference };
-            var updated = job with
-            {
-                ArtifactReferences = refs,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                LastHeartbeatAt = DateTimeOffset.UtcNow
-            };
-            await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"Failed to durably publish an artifact reference for job '{operationId}' after {maxCasRetries} "
+                + "version conflicts.");
         }
         finally
         {
             _writeLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Builds the updated reference list, returning <see langword="false"/> when the
+    /// publication is already durably present. Only typed raster output descriptors
+    /// dedupe — they carry an (attempt, output name) identity, so republishing the same
+    /// logical output within an attempt replaces its entry instead of appending a
+    /// duplicate. Legacy references (data URIs, provider links) keep strict append
+    /// semantics: two distinct outputs may legitimately have byte-identical payloads,
+    /// and collapsing them would shift the positional slot/kind mapping downstream.
+    /// </summary>
+    private static bool TryAppendArtifactReference(
+        IReadOnlyList<string> existing,
+        string artifactReference,
+        out List<string> updated)
+    {
+        updated = new List<string>(existing.Count + 1);
+
+        if (Honua.Core.Features.Geoprocessing.Raster.RasterOutputJson.TryDeserialize(
+                artifactReference, out var incoming))
+        {
+            var replaced = false;
+            foreach (var entry in existing)
+            {
+                if (!replaced
+                    && Honua.Core.Features.Geoprocessing.Raster.RasterOutputJson.TryDeserialize(entry, out var current)
+                    && current.AttemptNumber == incoming.AttemptNumber
+                    && string.Equals(current.OutputName, incoming.OutputName, StringComparison.Ordinal))
+                {
+                    if (string.Equals(entry, artifactReference, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    updated.Add(artifactReference);
+                    replaced = true;
+                    continue;
+                }
+
+                updated.Add(entry);
+            }
+
+            if (!replaced)
+            {
+                updated.Add(artifactReference);
+            }
+
+            return true;
+        }
+
+        updated.AddRange(existing);
+        updated.Add(artifactReference);
+        return true;
     }
 
     /// <summary>
@@ -1388,6 +1520,12 @@ internal sealed partial class JobExecutionContext(
     {
         [LoggerMessage(9064, LogLevel.Warning, "Heartbeat write failed for job {OperationId}; pump will retry on next interval")]
         public static partial void HeartbeatWriteFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9075, LogLevel.Warning, "Artifact publish fenced for job {OperationId}: claimed attempt {ClaimedAttempt} is stale (record attempt {RecordAttempt})")]
+        public static partial void ArtifactPublishFencedStaleAttempt(ILogger logger, string operationId, int claimedAttempt, int recordAttempt);
+
+        [LoggerMessage(9076, LogLevel.Information, "Artifact publish fenced for job {OperationId}: durable cancellation requested")]
+        public static partial void ArtifactPublishFencedCancellation(ILogger logger, string operationId);
     }
 
     public void Dispose() => _writeLock.Dispose();

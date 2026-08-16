@@ -158,25 +158,23 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding reprojected raster artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputLength = new FileInfo(outputPath).Length;
+            if (outputLength == 0)
             {
                 return JobExecutionResult.Failed("gdalwarp produced an empty output raster.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            var publishError = await GdalArtifactPublisher.PublishFileAsync(
+                context, opts, logger, job.OperationId, outputPath, GeoTiffContentType,
+                "Reprojected raster", cancellationToken).ConfigureAwait(false);
+            if (publishError is not null)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Reprojected raster size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+                return JobExecutionResult.Failed(publishError);
             }
 
-            var artifactUri = GdalDataUri.Build(GeoTiffContentType, outputBytes);
-            await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Reprojection completed", cancellationToken).ConfigureAwait(false);
 
-            Log.ReprojectionCompleted(logger, job.OperationId, targetSrs, outputBytes.Length);
+            Log.ReprojectionCompleted(logger, job.OperationId, targetSrs, outputLength);
             return JobExecutionResult.Succeeded();
         }
         finally
@@ -202,10 +200,6 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
         [LoggerMessage(9223, LogLevel.Error,
             "GDAL raster reproject executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
-
-        [LoggerMessage(9224, LogLevel.Warning,
-            "GDAL raster reproject executor refused job {OperationId}: artifact size {ActualBytes} exceeds limit {MaxBytes}")]
-        public static partial void ArtifactTooLarge(ILogger logger, string operationId, long actualBytes, long maxBytes);
 
         [LoggerMessage(9225, LogLevel.Information,
             "GDAL raster reproject executor completed job {OperationId}: targetSrs={TargetSrs}, bytes={Bytes}")]

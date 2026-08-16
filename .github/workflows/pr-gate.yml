@@ -1,11 +1,16 @@
 name: PR Gate
 
-# The branch-protection context produced by this workflow must remain a cheap,
-# unconditional per-PR floor. The authoritative broad matrix remains on the
-# merge train/nightly schedule, and native-AOT image assembly runs separately
-# in serving-image-boundary.yml so Docker work cannot stall this required gate.
-# Do not add a paths filter: a skipped required workflow leaves PRs permanently
-# waiting for a status that GitHub never creates (#2865).
+# This workflow is the required verification context. The trusted `Review Gate`
+# status is a separate required admission context, so PR-authored workflow code
+# cannot satisfy branch protection before exact-head review. In observe mode
+# this workflow records the review-first receipt while preserving eager behavior.
+# After the measured shadow period in #3216, changing REVIEW_FIRST_MODE to
+# `enforce` makes pull_request attempt 1 admission-only and fail-closed. The
+# trusted default-branch Review Gate workflow releases the same run exactly once
+# after exact-head review; attempt 2 performs the existing expensive gate.
+#
+# Do not rename the workflow/job or add a paths filter: either change silently
+# un-gates trunk or leaves pull requests waiting for a status that never exists.
 on:
   pull_request:
     branches: [trunk]
@@ -14,6 +19,8 @@ on:
 permissions:
   contents: read
   packages: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
   group: pr-gate-${{ github.event.pull_request.number || github.ref }}
@@ -23,10 +30,14 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
+  # Staged rollout: observe first, then flip this one audited value to enforce.
+  # Keep synchronized with review-gate.yml; the admission validator fails on
+  # drift. Rollback is the inverse one-line change back to `observe`.
+  REVIEW_FIRST_MODE: observe
 
 jobs:
   pr-gate:
-    # This exact string is the branch-protection required context. Changing it
+    # This exact string is the branch-protection verification context. Changing it
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate
     runs-on: ubuntu-latest
@@ -34,14 +45,65 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Verify review-first admission contract
+        run: scripts/ci/validate-review-first-dispatch.sh
+
       - name: Verify .NET base-image security inventory
         run: |
           scripts/ci/base-image-mirrors.sh --self-test
           scripts/ci/base-image-mirrors.sh --verify-inventory-doc docs/internal/security/code-scanning-2026-Q2-remediation.md
 
+      # The trusted dispatcher requires this exact successful step before it
+      # can release an enforced attempt 1. A failed admission never reaches it.
+      - name: Admission receipt
+        run: |
+          echo "mode=${REVIEW_FIRST_MODE}"
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "attempt=${GITHUB_RUN_ATTEMPT}"
+          echo "head=${GITHUB_SHA}"
+          {
+            echo "### PR Gate admission"
+            echo "- Mode: \`${REVIEW_FIRST_MODE}\`"
+            echo "- Attempt: \`${GITHUB_RUN_ATTEMPT}\`"
+            echo "- Head: \`${GITHUB_SHA}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # This intentional failure keeps the required context non-green until a
+      # trusted exact-head review releases the failed job as attempt 2.
+      - name: Await exact-head review
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        run: |
+          echo "Admission passed; exact-head review has not released verification yet."
+          exit 1
+
+      # Review evidence is mutable after the trusted dispatcher accepts the
+      # rerun. Check its SHA-bound status before spending runners and again
+      # immediately before the required verification context can become green. A
+      # dismissal, deleted clean result, or new unresolved thread therefore
+      # fails attempt 2 closed instead of relying only on its run number.
+      - name: Revalidate exact-head review before verification
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const head = context.payload.pull_request?.head?.sha;
+            if (!head || head !== '${{ github.event.pull_request.head.sha }}') {
+              core.setFailed('Attempt 2 has no trustworthy pull-request head.');
+              return;
+            }
+            const statuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              { ...context.repo, ref: head, per_page: 100 },
+            );
+            const reviewGate = statuses.find(status => status.context === 'Review Gate');
+            if (reviewGate?.state !== 'success') {
+              core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
+            }
+
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
       - name: Free disk space
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         run: |
           sudo rm -rf /usr/local/lib/android || true
           sudo rm -rf /usr/share/swift || true
@@ -50,19 +112,99 @@ jobs:
           df -h / || true
 
       - name: Setup .NET
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Lean gate (build + format + fast unit/architecture smoke)
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
+
+      # The lean gate has already paid for a full Release solution build. In
+      # shadow mode, retain only test projects used by two or more selected
+      # shards so a trusted default-branch observer can prove whether a
+      # single-PR merge tree can reuse these exact bytes. Failure to package or
+      # upload is only a cache miss; it never weakens or fails the required gate.
+      - id: pr-gate-build-evidence
+        name: Package bounded server-test build evidence
+        if: >-
+          github.event_name == 'pull_request' &&
+          vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true' &&
+          (env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1)
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          runner_image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
+          scripts/ci/package-pr-gate-build-evidence.sh \
+            --base-sha "${BASE_SHA}" \
+            --head-sha "${HEAD_SHA}" \
+            --merge-sha "${MERGE_SHA}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --pull-request "${PULL_REQUEST}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --runner-os "${RUNNER_OS}" \
+            --runner-arch "${RUNNER_ARCH}" \
+            --runner-image "${runner_image}" \
+            --output "${RUNNER_TEMP}/pr-gate-build-evidence"
+
+      - id: pr-gate-build-payload
+        name: Upload bounded server-test build payload
+        if: steps.pr-gate-build-evidence.outputs.has_evidence == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-server-test-binaries-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr-gate-build-evidence/payload/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+      - name: Upload bounded server-test build metadata
+        if: >-
+          steps.pr-gate-build-evidence.outputs.has_evidence == 'true' &&
+          steps.pr-gate-build-payload.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-server-test-metadata-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr-gate-build-evidence/metadata/
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 3
 
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
       # lanes apply this detector to the final production root filesystems.
       - name: Test serving-image boundary detector
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         run: |
           python3 scripts/ci/fixtures/validate-serving-image-boundary.py
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
+
+      - name: Revalidate exact-head review before success
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const head = context.payload.pull_request?.head?.sha;
+            if (!head || head !== '${{ github.event.pull_request.head.sha }}') {
+              core.setFailed('Attempt 2 has no trustworthy pull-request head.');
+              return;
+            }
+            const statuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              { ...context.repo, ref: head, per_page: 100 },
+            );
+            const reviewGate = statuses.find(status => status.context === 'Review Gate');
+            if (reviewGate?.state !== 'success') {
+              core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
+            }

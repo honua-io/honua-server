@@ -113,6 +113,23 @@ internal static class GdalJobInputReader
                     : $"typed raster input '{name}' requires bounded catalog dimensions before native execution";
                 return false;
 
+            case StagedArtifactRasterSourceDescriptor staged
+                when parameters.TryGetValue(
+                    GdalWorkerParameterKeys.HydratedStagedSourcePrefix + name,
+                    out var hydratedPath)
+                    && !string.IsNullOrWhiteSpace(hydratedPath)
+                    && staged.DeclaredDimensions is not null:
+                input = GdalRasterInput.Referenced(
+                    hydratedPath,
+                    staged.Version,
+                    staged.DeclaredDimensions,
+                    staged.DeclaredPixelScale);
+                return true;
+
+            case StagedArtifactRasterSourceDescriptor:
+                error = $"typed raster input '{name}' was not materialized from its staging store";
+                return false;
+
             default:
                 error = $"typed raster input '{name}' source type is not supported by the GDAL worker";
                 return false;

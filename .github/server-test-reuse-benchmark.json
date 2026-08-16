@@ -1,0 +1,45 @@
+{
+  "contract_version": 1,
+  "decision_thresholds": {
+    "max_wall_clock_regression_percent": 5,
+    "require_p90_test_start_improvement": true,
+    "require_rounded_runner_minutes_improvement": true,
+    "require_result_parity": true
+  },
+  "profiles": [
+    {
+      "name": "two-same-project",
+      "shards": ["server-a", "server-b"]
+    },
+    {
+      "name": "two-mixed-project",
+      "shards": ["server-a", "geoservices"]
+    },
+    {
+      "name": "five-hybrid-project",
+      "shards": ["server-a", "server-b", "geoservices", "odata", "ogc-api"]
+    }
+  ],
+  "shards": [
+    {
+      "name": "server-a",
+      "project": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+    },
+    {
+      "name": "server-b",
+      "project": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+    },
+    {
+      "name": "geoservices",
+      "project": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "odata",
+      "project": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj"
+    },
+    {
+      "name": "ogc-api",
+      "project": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj"
+    }
+  ]
+}

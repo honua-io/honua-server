@@ -62,7 +62,9 @@ runs:
 
     - name: Validate merge-train timeout policy
       shell: bash
-      run: scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+      run: |
+        scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+        scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
 
     # Cheap, service-free governance step (~1s): every OpenAPI document Honua
     # advertises must agree with EndpointRegistry, and every deliberate omission

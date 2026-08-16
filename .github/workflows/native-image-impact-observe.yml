@@ -1,0 +1,222 @@
+name: Native Image Impact Observation
+
+# Trusted, report-only shadow router for #3204 and ADR-0074. workflow_run
+# executes this default-branch policy after every canonical PR Gate completion.
+# It parses candidate repository data but never executes candidate code. Existing
+# serving/worker workflows remain authoritative until the documented evidence
+# and rollout thresholds pass. Fork heads are excluded from observation and keep
+# the full authoritative image workflows.
+on:
+  workflow_run:
+    workflows: [PR Gate]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed canonical PR Gate run to observe
+        required: true
+        type: string
+      run_attempt:
+        description: Exact completed attempt of the canonical PR Gate run
+        required: true
+        type: string
+      run_conclusion:
+        description: Exact terminal conclusion of that PR Gate attempt
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: native-image-impact-${{ github.event.workflow_run.id || inputs.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    name: Compare native-image impact routing
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted observer policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+          fetch-depth: 1
+
+      - id: collect
+        name: Resolve canonical exact-head PR Gate subject
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
+        with:
+          script: |
+            const crypto = require('crypto');
+            const {
+              resolveTrustedPullRequestWorkflowRun,
+            } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            const { data: repository } = await github.rest.repos.get(context.repo);
+            const trustedRef = `refs/heads/${repository.default_branch}`;
+            if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
+              throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
+            }
+            const resolved = await resolveTrustedPullRequestWorkflowRun({
+              github,
+              ...context.repo,
+              runId: process.env.SOURCE_RUN_ID,
+              runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+              runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+              workflowPath: '.github/workflows/pr-gate.yml',
+              workflowName: 'PR Gate',
+              defaultBranch: repository.default_branch,
+              repositoryId: repository.id,
+            });
+
+            const policyInputs = [
+              { path: 'scripts/ci/native-image-impact.py', output: 'policy_blob_sha', ref: context.sha },
+              { path: '.github/native-image-impact.json', output: 'routing_policy_blob_sha', ref: context.sha },
+              { path: '.github/workflows/pr-gate.yml', output: 'gate_workflow_blob_sha', ref: resolved.headSha },
+              { path: '.github/workflows/serving-image-boundary.yml', output: 'serving_workflow_blob_sha', ref: resolved.headSha },
+              { path: '.github/workflows/worker-gdal-image.yml', output: 'worker_workflow_blob_sha', ref: resolved.headSha },
+              { path: 'scripts/ci/trusted-pr-workflow-run.js', output: 'resolver_blob_sha', ref: context.sha },
+              { path: '.github/workflows/native-image-impact-observe.yml', output: 'observer_workflow_blob_sha', ref: context.sha },
+            ];
+            const policyManifest = [];
+            for (const input of policyInputs) {
+              const { data: file } = await github.rest.repos.getContent({
+                ...context.repo,
+                path: input.path,
+                ref: input.ref,
+              });
+              if (Array.isArray(file) || file.type !== 'file' ||
+                  !/^[0-9a-f]{40}$/.test(file.sha || '')) {
+                throw new Error(`trusted policy input is unavailable or malformed: ${input.path}`);
+              }
+              policyManifest.push({ path: input.path, blob_sha: file.sha });
+              core.setOutput(input.output, file.sha);
+            }
+            const policyInputsSha256 = crypto
+              .createHash('sha256')
+              .update(JSON.stringify(policyManifest))
+              .digest('hex');
+            core.setOutput('pr', String(resolved.pullRequestNumber));
+            core.setOutput('base_sha', resolved.baseSha);
+            core.setOutput('head_sha', resolved.headSha);
+            core.setOutput('head_repository', resolved.pullRequest.head.repo.full_name);
+            core.setOutput('run_id', String(resolved.run.id));
+            core.setOutput('run_attempt', String(resolved.run.run_attempt));
+            core.setOutput('run_conclusion', resolved.run.conclusion);
+            core.setOutput('policy_sha', context.sha);
+            core.setOutput('policy_inputs_sha256', policyInputsSha256);
+
+      - name: Checkout candidate tree as inert data
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.collect.outputs.head_repository }}
+          ref: ${{ steps.collect.outputs.head_sha }}
+          path: candidate
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Fetch and verify exact comparison commits
+        env:
+          BASE_SHA: ${{ steps.collect.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.collect.outputs.head_sha }}
+        run: |
+          test "$(git -C candidate rev-parse HEAD)" = "${HEAD_SHA}"
+          if ! git -C candidate cat-file -e "${BASE_SHA}^{commit}"; then
+            git -C candidate fetch --no-tags --depth=1 \
+              "https://github.com/${GITHUB_REPOSITORY}.git" "${BASE_SHA}"
+          fi
+          git -C candidate cat-file -e "${BASE_SHA}^{commit}"
+
+      - name: Validate trusted selector policy
+        run: |
+          python3 policy/scripts/ci/native-image-impact.py \
+            --policy policy/.github/native-image-impact.json validate
+          node --test policy/scripts/ci/trusted-pr-workflow-run.test.js
+          python3 -m unittest discover \
+            -s policy/tests/python/unit \
+            -p 'test_native_image_impact.py' \
+            -v
+
+      - name: Observe exact diff with trusted selector
+        run: |
+          python3 policy/scripts/ci/native-image-impact.py \
+            --policy policy/.github/native-image-impact.json \
+            observe \
+            --repo-root candidate \
+            --base '${{ steps.collect.outputs.base_sha }}' \
+            --head '${{ steps.collect.outputs.head_sha }}' \
+            --repository '${{ github.repository }}' \
+            --pr '${{ steps.collect.outputs.pr }}' \
+            --policy-sha '${{ steps.collect.outputs.policy_sha }}' \
+            --policy-blob-sha '${{ steps.collect.outputs.policy_blob_sha }}' \
+            --routing-policy-blob-sha '${{ steps.collect.outputs.routing_policy_blob_sha }}' \
+            --gate-workflow-blob-sha '${{ steps.collect.outputs.gate_workflow_blob_sha }}' \
+            --serving-workflow-blob-sha '${{ steps.collect.outputs.serving_workflow_blob_sha }}' \
+            --worker-workflow-blob-sha '${{ steps.collect.outputs.worker_workflow_blob_sha }}' \
+            --resolver-blob-sha '${{ steps.collect.outputs.resolver_blob_sha }}' \
+            --observer-workflow-blob-sha '${{ steps.collect.outputs.observer_workflow_blob_sha }}' \
+            --policy-inputs-sha256 '${{ steps.collect.outputs.policy_inputs_sha256 }}' \
+            --trusted-execution 'default-branch-workflow-run/v1' \
+            --gate-workflow-path '.github/workflows/pr-gate.yml' \
+            --gate-run-id '${{ steps.collect.outputs.run_id }}' \
+            --gate-run-attempt '${{ steps.collect.outputs.run_attempt }}' \
+            --gate-run-conclusion '${{ steps.collect.outputs.run_conclusion }}' \
+            --output native-image-impact-observation.json \
+            --markdown native-image-impact-summary.md
+          cat native-image-impact-summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Recheck exact PR identity before retaining evidence
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RUN_ID: ${{ steps.collect.outputs.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.collect.outputs.run_attempt }}
+          SOURCE_RUN_CONCLUSION: ${{ steps.collect.outputs.run_conclusion }}
+          EXPECTED_PR: ${{ steps.collect.outputs.pr }}
+          EXPECTED_BASE: ${{ steps.collect.outputs.base_sha }}
+          EXPECTED_HEAD: ${{ steps.collect.outputs.head_sha }}
+        with:
+          script: |
+            const {
+              resolveTrustedPullRequestWorkflowRun,
+            } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            const { data: repository } = await github.rest.repos.get(context.repo);
+            const resolved = await resolveTrustedPullRequestWorkflowRun({
+              github,
+              ...context.repo,
+              runId: process.env.SOURCE_RUN_ID,
+              runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+              runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+              workflowPath: '.github/workflows/pr-gate.yml',
+              workflowName: 'PR Gate',
+              defaultBranch: repository.default_branch,
+              repositoryId: repository.id,
+            });
+            if (String(resolved.pullRequestNumber) !== process.env.EXPECTED_PR ||
+                resolved.baseSha !== process.env.EXPECTED_BASE ||
+                resolved.headSha !== process.env.EXPECTED_HEAD) {
+              throw new Error('pull request identity moved during native-image observation');
+            }
+
+      - name: Retain trusted observation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}
+          path: |
+            native-image-impact-observation.json
+            native-image-impact-summary.md
+          if-no-files-found: error
+          retention-days: 7

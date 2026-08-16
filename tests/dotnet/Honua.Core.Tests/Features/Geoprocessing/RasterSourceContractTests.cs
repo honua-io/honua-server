@@ -51,6 +51,29 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Deserialize_LegacyVersionOneStagedDescriptor_RemainsReadableButNotExecutable()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Staged()))!.AsObject();
+        Assert.True(document.Remove("provider"));
+        Assert.True(document.Remove("storeReference"));
+        Assert.True(document.Remove("objectKey"));
+        Assert.True(document.Remove("declaredDimensions"));
+
+        var descriptor = Assert.IsType<StagedArtifactRasterSourceDescriptor>(
+            RasterSourceJson.Deserialize(document.ToJsonString()));
+        var validation = RasterSourceDescriptorValidator.Validate(descriptor);
+
+        Assert.Null(descriptor.Provider);
+        Assert.Null(descriptor.StoreReference);
+        Assert.Null(descriptor.ObjectKey);
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Field == "provider");
+        Assert.Contains(validation.Errors, error => error.Field == "storeReference");
+        Assert.Contains(validation.Errors, error => error.Field == "objectKey");
+        Assert.Contains(validation.Errors, error => error.Field == "declaredDimensions");
+    }
+
+    [Fact]
     public void Deserialize_SourceTypeAfterDescriptorProperties_IsAccepted()
     {
         var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
@@ -188,6 +211,18 @@ public sealed class RasterSourceContractTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsafeLocator);
+    }
+
+    [Fact]
+    public void Validate_StagedArtifactWithoutProducerDimensions_IsRejected()
+    {
+        var result = RasterSourceDescriptorValidator.Validate(
+            Staged() with { DeclaredDimensions = null });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.InvalidField
+            && error.Field == "declaredDimensions");
     }
 
     [Theory]
@@ -598,6 +633,10 @@ public sealed class RasterSourceContractTests
     {
         Version = "generation-3",
         ArtifactReference = "artifact-01JZZZZZZZZZZZZZZZZZZZZZZZ",
+        Provider = CloudStorageProvider.Local,
+        StoreReference = "gp-outputs",
+        ObjectKey = "gp/outputs/job-1/a1/output/result.tif",
+        DeclaredDimensions = new RasterSourceDimensions(64, 32, 1, 16),
         Content = Content(),
         SecurityContext = Security(),
     };

@@ -10,6 +10,37 @@
 # own PR runs (cancel-in-progress only cancels within the same group). This is
 # intentional: the train never disturbs member PRs' independent CI.
 
+# train_configure_pr_gate_build_reuse <selected-json> <included-csv>:
+# expose exact producer identity only for a one-member batch whose admitted PR
+# Gate CheckRun resolved to one canonical successful workflow run. Multi-PR,
+# attribution, resumed-without-metadata, or malformed batches clear the inputs
+# and therefore take the ordinary independent-build path.
+train_configure_pr_gate_build_reuse() {
+  local selected="${1:-[]}" included="${2:-}" item included_count
+  unset TRAIN_PR_GATE_REUSE_RUN_ID TRAIN_PR_GATE_REUSE_RUN_ATTEMPT \
+    TRAIN_PR_GATE_REUSE_PR TRAIN_PR_GATE_REUSE_HEAD
+  [[ "${TRAIN_PR_GATE_BUILD_REUSE_SHADOW:-false}" == "true" ]] || return 0
+  included_count="$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  [[ "${included_count}" == "1" ]] || return 0
+  if ! item="$(jq -ce 'if length == 1 then .[0] else empty end' <<<"${selected}" 2>/dev/null)"; then
+    return 0
+  fi
+  local pr head run_id run_attempt
+  pr="$(jq -r '.number // ""' <<<"${item}")"
+  head="$(jq -r '.headRefOid // ""' <<<"${item}")"
+  run_id="$(jq -r '.prGateRunId // ""' <<<"${item}")"
+  run_attempt="$(jq -r '.prGateRunAttempt // ""' <<<"${item}")"
+  if [[ "${included}" != "${pr}" || ! "${pr}" =~ ^[1-9][0-9]*$ ||
+        ! "${head}" =~ ^[0-9a-f]{40}$ || ! "${run_id}" =~ ^[1-9][0-9]*$ ||
+        ! "${run_attempt}" =~ ^[1-9][0-9]*$ ]]; then
+    return 0
+  fi
+  export TRAIN_PR_GATE_REUSE_PR="${pr}"
+  export TRAIN_PR_GATE_REUSE_HEAD="${head}"
+  export TRAIN_PR_GATE_REUSE_RUN_ID="${run_id}"
+  export TRAIN_PR_GATE_REUSE_RUN_ATTEMPT="${run_attempt}"
+}
+
 # train_smart_ci_shards <batch-branch>: emit the targeted-tests descriptor JSON
 # ({run_all,shards,reason}) for the batch's cumulative diff vs origin/<base>.
 # READ-ONLY; runs in both modes. This is what determines the smart-CI subset.
@@ -55,7 +86,9 @@ train_discover_dispatched_run() {
   done
 }
 
-# train_smart_ci_run <batch-branch>: live-mode push + dispatch + poll. In
+# train_smart_ci_run <batch-branch> [run-discovered-callback]: live-mode push +
+# dispatch + poll. The optional callback receives the exact batch branch and
+# Actions run id after discovery and before the first long poll. In
 # dry-run, logs the would-run actions and returns the shard descriptor only.
 # Emits the CI Gate conclusion on stdout in live mode (SUCCESS/FAILURE/...),
 # or "DRYRUN" in dry-run.
@@ -64,6 +97,7 @@ train_discover_dispatched_run() {
 # prints the CI Gate conclusion (so the poll loop is testable offline).
 train_smart_ci_run() {
   local batch="$1"
+  local run_discovered_callback="${2:-}"
   local descriptor
   # train/batch/* is the real batch namespace; train/attribute-probe/* is the
   # disposable bisection namespace train_attribute_probe_gate mints (via
@@ -78,10 +112,15 @@ train_smart_ci_run() {
   fi
   descriptor="$(train_smart_ci_shards "${batch}")"
   train_log "smart-ci shard descriptor: ${descriptor}"
+  export TRAIN_EARLY_FAILURE_SHARD_DESCRIPTOR="${descriptor}"
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
-    train_side_effect gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce=merge-train:dry-run
+    train_side_effect gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce=merge-train:dry-run \
+      -f pr_gate_run_id="${TRAIN_PR_GATE_REUSE_RUN_ID:-}" \
+      -f pr_gate_run_attempt="${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" \
+      -f pr_gate_pr="${TRAIN_PR_GATE_REUSE_PR:-}" \
+      -f pr_gate_head_sha="${TRAIN_PR_GATE_REUSE_HEAD:-}"
     echo "DRYRUN"
     return 0
   fi
@@ -116,12 +155,19 @@ train_smart_ci_run() {
     echo "FAILURE"
     return 0
   }
+  export TRAIN_EARLY_FAILURE_BATCH_BRANCH="${batch}"
+  export TRAIN_EARLY_FAILURE_BATCH_SHA="${expected_head}"
   dispatch_nonce="$(printf '%s:%s:%s:%s:%s' "${GITHUB_RUN_ID:-local}" "${GITHUB_RUN_ATTEMPT:-0}" \
     "$(date -u +%s%N)" "${RANDOM}" "$$" | sha256sum | cut -c1-32)"
   dispatch_identity="merge-train:${dispatch_nonce}"
   expected_title="CI ${dispatch_identity}"
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce="${dispatch_identity}" 1>&2
+  gh workflow run ci.yml --ref "${batch}" \
+    -f merge_train_nonce="${dispatch_identity}" \
+    -f pr_gate_run_id="${TRAIN_PR_GATE_REUSE_RUN_ID:-}" \
+    -f pr_gate_run_attempt="${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" \
+    -f pr_gate_pr="${TRAIN_PR_GATE_REUSE_PR:-}" \
+    -f pr_gate_head_sha="${TRAIN_PR_GATE_REUSE_HEAD:-}" 1>&2
 
   local run_id=""
   run_id="$(train_discover_dispatched_run "${batch}" "${expected_head}" "${pre_dispatch_runs}" "${expected_title}" || echo "")"
@@ -131,6 +177,12 @@ train_smart_ci_run() {
   fi
   train_log "smart-ci run id: ${run_id}"
   echo "${run_id}" >"${TRAIN_RUN_ID_FILE:-/dev/null}"
+  if [[ -n "${run_discovered_callback}" ]] \
+    && ! "${run_discovered_callback}" "${batch}" "${run_id}" 1>&2; then
+    train_err "could not durably journal smart-CI run ${run_id} for ${batch}; refusing to enter the long poll"
+    echo "JOURNAL_FAILURE"
+    return 0
+  fi
 
   # Poll until the CI Gate job completes. The 110-minute default accommodates
   # the observed 42-55 minute shards plus runner queueing and one failed-job
@@ -156,12 +208,51 @@ train_smart_ci_run() {
 train_wait_for_run_completion() {
   local run_id="$1"
   local poll_interval="${3:-${TRAIN_SMART_CI_POLL_SECONDS:-30}}"
-  local now status
+  local observation_interval="${TRAIN_EARLY_FAILURE_POLL_SECONDS:-120}"
+  local last_observation_epoch=0 observe_enabled=0
+  local now status snapshot run_snapshot
+  [[ "${observation_interval}" =~ ^[1-9][0-9]*$ ]] || observation_interval=120
+  if type -t train_early_failure_observe_snapshot >/dev/null 2>&1 &&
+     [[ "${TRAIN_EARLY_FAILURE_MODE:-off}" == "observe" ]] &&
+     [[ -n "${TRAIN_EARLY_FAILURE_FILE:-}" ]]; then
+    observe_enabled=1
+  fi
   while :; do
-    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
-    [[ "${status}" == "completed" ]] && return 0
-    train_init_controller_deadline || return 1
     now="$(train_now)"
+    snapshot=""
+    run_snapshot=""
+    # This status read is authoritative and is never replaced by observation.
+    # Failure of the optional richer jobs request must not change whether the
+    # controller sees the workflow reach its terminal state.
+    if (( observe_enabled == 1 )); then
+      # Reuse the mandatory run-status request for exact observer identity.
+      # The separately throttled, explicitly paginated jobs read remains the
+      # observer's only additional request.
+      run_snapshot="$(train_early_failure_run_snapshot "${run_id}" || echo '{}')"
+      status="$(jq -r '.status // empty' <<<"${run_snapshot}" 2>/dev/null || echo '')"
+    else
+      status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
+    fi
+    if (( observe_enabled == 1 )) && [[ ! -s "${TRAIN_EARLY_FAILURE_FILE}" ]] &&
+       (( last_observation_epoch == 0 || now - last_observation_epoch >= observation_interval )); then
+      # The exact job completion timestamp makes the measurement independent of
+      # polling delay. The optional jobs page is bounded to once per 120s by
+      # default and can never substitute for the authoritative status read.
+      snapshot="$(train_early_failure_attach_jobs "${run_id}" "${run_snapshot}" || echo '{}')"
+      train_early_failure_observe_snapshot "${run_id}" "${snapshot}" || true
+      last_observation_epoch="${now}"
+    fi
+    if [[ "${status}" == "completed" ]]; then
+      if (( observe_enabled == 1 )); then
+        if [[ -z "${snapshot}" ]]; then
+          snapshot="$(train_early_failure_attach_jobs "${run_id}" "${run_snapshot}" || echo '{}')"
+          train_early_failure_observe_snapshot "${run_id}" "${snapshot}" || true
+        fi
+        train_early_failure_finalize_snapshot "${run_id}" "${snapshot}" || true
+      fi
+      return 0
+    fi
+    train_init_controller_deadline || return 1
     [[ "${now}" -ge "${TRAIN_CONTROLLER_DEADLINE_EPOCH}" ]] && return 1
     sleep "${poll_interval}"
   done
@@ -192,11 +283,17 @@ train_wait_for_new_run_attempt() {
   done
 }
 
-# train_failing_jobs <run-id>: emit the names of the failing jobs (live).
+# train_failing_jobs <run-id>: emit every terminal, non-success job that the
+# retry/attribution loop must classify. GitHub reports a job-level timeout as
+# `cancelled` rather than `failure`, so failure-only selection strands an
+# otherwise complete batch before the bounded timeout retry can run.
 train_failing_jobs() {
   local run_id="$1"
   gh run view "${run_id}" --json jobs \
-    --jq '.jobs[] | select(.conclusion=="failure") | .name'
+    --jq '.jobs[]
+      | select(.conclusion=="failure" or .conclusion=="cancelled"
+               or .conclusion=="timed_out" or .conclusion=="startup_failure")
+      | .name'
 }
 
 # train_ci_jobs <run-id>: emit every job as "<conclusion>\t<name>". Tests may
@@ -212,9 +309,27 @@ train_ci_jobs() {
     --jq '.jobs[] | [.conclusion, .name] | @tsv'
 }
 
-# train_ci_jobs_are_terminal <run-id>: success/failure/skipped are the only
-# conclusions safe to classify. Any cancellation or incomplete conclusion
-# makes the entire run unusable as merge evidence.
+# train_retry_terminal_jobs <run-id>: emit jobs whose terminal conclusion has
+# no successful evidence and whose first recovery action is a bounded rerun.
+# Keeping this separate from ordinary failures prevents pre-existing-failure
+# subtraction and the optimistic non-blocking allowlist from erasing a
+# cancelled/timed-out job before the retry classifier sees it.
+train_retry_terminal_jobs() {
+  local run_id="$1" rows conclusion name
+  rows="$(train_ci_jobs "${run_id}")" || return 1
+  while IFS=$'\t' read -r conclusion name; do
+    [[ -n "${name}" ]] || continue
+    conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${conclusion}")"
+    case "${conclusion}" in
+      cancelled|timed_out|startup_failure) printf '%s\n' "${name}" ;;
+    esac
+  done <<<"${rows}"
+}
+
+# train_ci_jobs_are_terminal <run-id>: every job must have a terminal Actions
+# conclusion. cancelled/timed_out/startup_failure are terminal retry inputs,
+# never successful merge evidence. Pending/null/neutral conclusions remain
+# unusable and fail closed.
 train_ci_jobs_are_terminal() {
   local run_id="$1" rows conclusion name saw_gate=0
   rows="$(train_ci_jobs "${run_id}")" || return 1
@@ -224,7 +339,7 @@ train_ci_jobs_are_terminal() {
     [[ -n "${name}" ]] || return 1
     conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${conclusion}")"
     case "${conclusion}" in
-      success|failure|skipped) ;;
+      success|failure|skipped|cancelled|timed_out|startup_failure) ;;
       *) return 1 ;;
     esac
     [[ "${name}" == "CI Gate" ]] && saw_gate=1
@@ -234,8 +349,9 @@ train_ci_jobs_are_terminal() {
 }
 
 # train_expected_shards_are_classifiable <run-id> <shard-descriptor>
-# Every shard selected by the router must exist exactly once and conclude
-# SUCCESS or FAILURE. A missing or skipped selected shard is not evidence.
+# Every shard selected by the router must exist exactly once and either
+# succeed or reach a terminal failure-like conclusion that can enter bounded
+# retry/attribution. A missing or skipped selected shard is not evidence.
 train_expected_shards_are_classifiable() {
   local run_id="$1" descriptor="$2" rows shard expected matches conclusion
   jq -e '.shards | type == "array" and length > 0' <<<"${descriptor}" >/dev/null 2>&1 || return 1
@@ -247,7 +363,10 @@ train_expected_shards_are_classifiable() {
     matches="$(awk -F '\t' -v expected="${expected}" '$2 == expected { print $1 }' <<<"${rows}")"
     [[ "$(sed '/^$/d' <<<"${matches}" | wc -l | tr -d ' ')" == "1" ]] || return 1
     conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${matches}")"
-    [[ "${conclusion}" == "success" || "${conclusion}" == "failure" ]] || return 1
+    case "${conclusion}" in
+      success|failure|cancelled|timed_out|startup_failure) ;;
+      *) return 1 ;;
+    esac
   done < <(jq -r '.shards[]' <<<"${descriptor}")
 }
 

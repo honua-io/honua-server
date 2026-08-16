@@ -584,11 +584,99 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
-    /// Regression: artifact publication racing with a terminal or cancellation
-    /// write must skip the stale durable update instead of reviving the old claim.
+    /// #3089: artifact publication racing a terminal write must re-read after the
+    /// version conflict and skip once the record is no longer owned, instead of
+    /// silently dropping a publish that could still win.
     /// </summary>
     [UnitTest]
-    public async Task PublishArtifact_Skips_WhenTrySetConflicts()
+    public async Task PublishArtifact_RetriesConflict_ThenSkipsOnTerminalReRead()
+    {
+        var running = CreateProvisioningJob() with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var terminal = running with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            ClaimedBy = null
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(running, terminal);
+        jobStore.TrySetAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        using var context = new JobExecutionContext(
+            running.OperationId, running.ClaimedBy!, jobStore, null,
+            JobHeartbeatPolicy.Default,
+            null, NullLogger.Instance);
+
+        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+
+        // One conflicting write, then the terminal re-read stops the retry loop.
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.Status == ExecutionJobStatus.Running
+                && job.ArtifactReferences.Contains("s3://bucket/artifact.zip")),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// #3089 review: a durable cancellation stamp that lands while the executor is
+    /// finishing must win at finalization. The artifact publication fence already
+    /// refused to publish after the stamp, so finalizing Succeeded would durably
+    /// expose a success with silently missing outputs and no repair path.
+    /// </summary>
+    [UnitTest]
+    public async Task FinalizeJob_SuccessRacingDurableCancellation_FinalizesAsCancelled()
+    {
+        var provisioning = CreateProvisioningJob(claimedBy: "worker-test");
+        var runningWithCancel = provisioning with
+        {
+            Status = ExecutionJobStatus.Running,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        // Reads: initial, pre-Running re-read (no stamp yet), then the finalize
+        // re-read observes the durable cancellation that raced execution completion.
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning, provisioning, runningWithCancel);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, "worker-test");
+
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// #3089: persistent unexplained version conflicts must surface as an error
+    /// instead of silently losing the published artifact reference.
+    /// </summary>
+    [UnitTest]
+    public async Task PublishArtifact_Throws_AfterExhaustingConflictRetries()
     {
         var running = CreateProvisioningJob() with
         {
@@ -609,14 +697,8 @@ public sealed class JobExecutionServiceTests
             JobHeartbeatPolicy.Default,
             null, NullLogger.Instance);
 
-        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
-
-        await jobStore.Received(1).TrySetAsync(
-            Arg.Is<ExecutionJobRecord>(job =>
-                job.Status == ExecutionJobStatus.Running
-                && job.ArtifactReferences.Contains("s3://bucket/artifact.zip")),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<CancellationToken>());
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
     }
 
     /// <summary>

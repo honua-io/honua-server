@@ -156,15 +156,17 @@ Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci
 
 There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events run the cheap **`PR Gate`** (`.github/workflows/pr-gate.yml` — build + format + Fast unit + architecture smoke, one runner), CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The heavy ~45-job matrix runs only on the train's **batch CI** and the nightly schedule.
 
-**The required branch-protection check is `PR Gate`** (app id `15368`). The protection flip closed #2865 on 2026-07-17. `CI Gate` remains the batch-CI aggregator and is intentionally not a required per-PR context.
+**The required branch-protection checks are `PR Gate` and `Review Gate`.** `PR Gate` (app id `15368`) is the unprivileged verification context; `Review Gate` is the trusted, exact-head admission context published only by default-branch policy. Both are unfiltered and required. `CI Gate` remains the batch-CI aggregator and is intentionally not a required per-PR context.
 
 ### Normal landing path
 
-Keep a ready PR non-draft and allow `PR Gate` to complete. `pr-merge-train.yml` automatically squash-merges the oldest PR GitHub reports as `clean` and freshens green-but-behind PRs. Use a draft or the `hold` label to exclude a PR from this automatic lander.
+Keep a ready PR non-draft and allow required `PR Gate` and `Review Gate` to
+complete. The sole merge authority is `.github/workflows/merge-train.yml`; no
+automatic serial lander exists. Its schedule is observation-only, so an operator
+must explicitly dispatch `train_apply=true` to land. Use `hold`, `train:hold`, or
+`train:escalated` to exclude a PR.
 
-Do not use `train:hold` as the only exclusion for the automatic lander: `train:hold` is understood by the manual batch train, while `pr-merge-train.yml` honors `hold`.
-
-### Manual batch train
+### Live batch train
 
 Use the optimistic batch train when you intentionally want cumulative batch CI and batch landing:
 
@@ -176,9 +178,10 @@ gh workflow run merge-train.yml -f train_apply=true
 - **`train_apply` defaults to `false` — a bare `gh workflow run merge-train.yml` is a DRY RUN** that reports decisions and merges nothing. Scheduled invocations also remain dry-run-only.
 - The train lands the whole **batch**, not just the PR you are looking at. It excludes drafts and PRs labeled `train:hold`, `hold`, or `train:escalated`.
 - **`merge-train.yml` ("Merge Train")** assembles eligible PRs oldest-first on a `train/batch/<trunk-sha>/<id>` branch, selects the cumulative smart-CI shard subset, dispatches `ci.yml`, attributes failures, and lands a successful batch only during an explicit live dispatch.
-- **`pr-merge-train.yml` ("PR merge train")** is the active unattended serial lander for ordinary clean PRs.
 
-Do not admin-merge around either train. For a routine PR, let the automatic lander work; use the manual batch train only when cumulative batch validation or coordinated batch landing is intended.
+Do not admin-merge around the train. For an isolated routine PR, dispatch with
+`train_apply=true` and `max_batch=1`; use a larger batch only when cumulative
+batch validation and coordinated landing are intended.
 
 - **Batch failure ⇒ `train:escalated`.** When a batch fails, the train attributes the failure and labels the batch members `train:escalated`, which excludes them from future batches. If a later rerun of that same `train/batch/*` CI run turns green, `merge-train-rerun-recovery.yml` clears stale escalation labels and stamps `CI Gate` on member PR heads. If the failure is real, fix the root cause, remove the label, and re-dispatch with `train_apply=true`.
 - **Batch CI is stricter than local builds.** The Linux batch lane has analyzer rules that may not fire locally on Windows (e.g. `CA1873` on log-argument evaluation). A locally-clean warnings-as-errors build does not guarantee the batch build passes; read the batch log (`gh run view <id> --log-failed`) and fix on the PR branch.

@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema": "honua.ci.native-image-impact-policy/v1",
+  "mode": "observe",
+  "roots": {
+    "serving": "src/Honua.Server/Honua.Server.csproj",
+    "worker": "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
+  },
+  "global_projects": [
+    "src/Honua.Analyzers/Honua.Analyzers.csproj"
+  ],
+  "common_managed_patterns": [
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Packages.props",
+    "global.json",
+    "NuGet.config",
+    ".editorconfig",
+    "eng/**",
+    "scripts/docker/restore-dotnet-with-github-packages.sh"
+  ],
+  "serving_external_patterns": [
+    "docs/gis/data/feature-catalog.json",
+    "docs/developer/api-specs/admin-api.json",
+    "docs/api-specs/admin-api.json"
+  ],
+  "serving_shared_patterns": [
+    ".dockerignore",
+    "scripts/ci/verify-serving-image-boundary.py",
+    ".github/workflows/serving-image-boundary.yml",
+    ".github/workflows/release-bundle.yml",
+    ".github/workflows/deploy.yml",
+    ".github/workflows/deploy-platform-images.yml",
+    ".github/workflows/nightly-container-build.yml"
+  ],
+  "serving_variant_patterns": {
+    "generic": [
+      "docker/Dockerfile.aot"
+    ],
+    "lambda": [
+      "docker/Dockerfile.lambda.aot"
+    ],
+    "functions": [
+      "docker/Dockerfile.functions.aot",
+      "docker/cloud/azure-functions/**"
+    ]
+  },
+  "worker_native_patterns": [
+    ".dockerignore",
+    "docker/worker-gdal/**",
+    "scripts/ci/verify-serving-image-boundary.py",
+    ".github/workflows/worker-gdal-image.yml"
+  ],
+  "worker_vulnerability_patterns": [
+    ".trivyignore"
+  ],
+  "legacy": {
+    "serving_workflow": ".github/workflows/serving-image-boundary.yml",
+    "serving_common_patterns": [
+      "src/**",
+      "eng/**",
+      "samples/Honua.StacOpsDemo/**",
+      "docs/gis/data/feature-catalog.json",
+      "docs/developer/api-specs/admin-api.json",
+      "tests/fixtures/ai-builder/**",
+      "Honua.sln",
+      "global.json",
+      "Directory.Build.props",
+      "Directory.Build.targets",
+      "Directory.Packages.props",
+      "NuGet.config",
+      ".editorconfig",
+      ".dockerignore",
+      "scripts/docker/restore-dotnet-with-github-packages.sh",
+      "scripts/ci/verify-serving-image-boundary.py",
+      "scripts/ci/fixtures/validate-serving-image-boundary.py",
+      ".github/workflows/serving-image-boundary.yml",
+      ".github/workflows/release-bundle.yml",
+      ".github/workflows/deploy.yml",
+      ".github/workflows/deploy-platform-images.yml",
+      ".github/workflows/nightly-container-build.yml"
+    ],
+    "serving_variant_patterns": {
+      "generic": [
+        "docker/Dockerfile.aot"
+      ],
+      "lambda": [
+        "docker/Dockerfile.lambda.aot"
+      ],
+      "functions": [
+        "docker/Dockerfile.functions.aot",
+        "docker/cloud/azure-functions/**"
+      ]
+    },
+    "serving_patterns": [
+      "src/**",
+      "eng/**",
+      "samples/Honua.StacOpsDemo/**",
+      "docs/gis/data/feature-catalog.json",
+      "docs/developer/api-specs/admin-api.json",
+      "tests/fixtures/ai-builder/**",
+      "Honua.sln",
+      "global.json",
+      "Directory.Build.props",
+      "Directory.Build.targets",
+      "Directory.Packages.props",
+      "NuGet.config",
+      ".editorconfig",
+      ".dockerignore",
+      "docker/Dockerfile.aot",
+      "docker/Dockerfile.lambda.aot",
+      "docker/Dockerfile.functions.aot",
+      "docker/cloud/azure-functions/**",
+      "scripts/docker/restore-dotnet-with-github-packages.sh",
+      "scripts/ci/verify-serving-image-boundary.py",
+      "scripts/ci/fixtures/validate-serving-image-boundary.py",
+      ".github/workflows/serving-image-boundary.yml",
+      ".github/workflows/release-bundle.yml",
+      ".github/workflows/deploy.yml",
+      ".github/workflows/deploy-platform-images.yml",
+      ".github/workflows/nightly-container-build.yml"
+    ],
+    "worker_workflow": ".github/workflows/worker-gdal-image.yml",
+    "worker_patterns": [
+      "docker/worker-gdal/**",
+      "src/Honua.Worker.Gdal/**",
+      "src/Honua.Analyzers/**",
+      "src/Honua.Geoprocessing/**",
+      "src/Honua.Jobs/**",
+      "src/Honua.Core/**",
+      "src/Honua.Core.Abstractions/**",
+      "src/Honua.Geometry/**",
+      "src/Honua.Hosting/**",
+      "src/Honua.ServiceDefaults/**",
+      "Honua.sln",
+      "global.json",
+      "Directory.Build.props",
+      "Directory.Build.targets",
+      "Directory.Packages.props",
+      "NuGet.config",
+      ".editorconfig",
+      ".dockerignore",
+      "eng/**",
+      "scripts/docker/restore-dotnet-with-github-packages.sh",
+      "scripts/ci/verify-serving-image-boundary.py",
+      ".github/workflows/worker-gdal-image.yml"
+    ]
+  }
+}

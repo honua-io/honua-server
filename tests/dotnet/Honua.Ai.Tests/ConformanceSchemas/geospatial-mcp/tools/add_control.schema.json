@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/add_control.schema.json",
+  "title": "add_control inputSchema",
+  "description": "Argument shape for add_control (composition profile, ADR-0031). Adds or replaces (by control id) one control in a composition document's `controls` collection. The standard-level target is a composition document (mapPackageId or appPackageId). The reference implementation authors compositions through a draft lifecycle; its optimistic-concurrency draft spelling (draftId + generation) is admitted as x-honua-reference-shape, consistent with ADR-0030's bind_interaction and ADR-0029's admission of reference spellings. Validation gate: control.id must be unique within the document, control.kind must be a member of the closed vocabulary, and a control.sourceId must resolve to a layer or datasource declared in the target document. See docs/adr/0031-composition-controls.md and common/controls.schema.json.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["control"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target MapPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "appPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target AppPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "control": {
+      "$ref": "../common/controls.schema.json#/$defs/control",
+      "description": "The control to add or replace. Replacement matches on control.id."
+    }
+  }
+}

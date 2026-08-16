@@ -1,0 +1,103 @@
+name: Server Test Prebuild Evidence Ledger
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 13 * * *"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: server-test-prebuild-evidence-ledger
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit retained parity receipts
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted ledger policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - id: policy
+        name: Bind the current measurement policy cohort
+        run: |
+          python3 scripts/ci/audit-server-test-prebuild-evidence.py policy-digest \
+            --policy-root . --policy-sha '${{ github.sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
+          python3 scripts/ci/audit-server-test-prebuild-evidence.py retention-window \
+            --policy .github/server-test-prebuild-promotion.json \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Validate ledger fixtures
+        run: python3 scripts/ci/audit-server-test-prebuild-evidence.test.py
+
+      - name: Discover successful parity workflow shells
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/catalog evidence/archives
+          gh api --method GET --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/server-test-prebuild-parity.yml/runs" \
+            -f status=success \
+            -f "created=${{ steps.policy.outputs.receipt_created_filter }}" \
+            -F per_page=100 \
+            > evidence/run-pages.json
+          jq -r '.[] | .workflow_runs[]? | .id' evidence/run-pages.json | sort -nu \
+            | while read -r run_id; do
+                gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                  > "evidence/catalog/${run_id}.json"
+              done
+          python3 scripts/ci/audit-server-test-prebuild-evidence.py discover \
+            --runs evidence/run-pages.json \
+            --catalog evidence/catalog \
+            --default-branch '${{ github.event.repository.default_branch }}' \
+            --output evidence/index.json
+
+      - name: Download only exact retained receipt artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -r '.artifacts[].artifact_id' evidence/index.json \
+            | while read -r artifact_id; do
+                gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+                  > "evidence/archives/${artifact_id}.zip"
+              done
+
+      - id: ledger
+        name: Validate receipts and compute readiness
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/audit-server-test-prebuild-evidence.py summarize \
+            --index evidence/index.json \
+            --receipts evidence/archives \
+            --policy .github/server-test-prebuild-promotion.json \
+            --policy-digest '${{ steps.policy.outputs.measurement_policy_digest }}' \
+            --output evidence/ledger.json \
+            --markdown evidence/ledger.md
+          cat evidence/ledger.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Retain the report-only ledger
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: server-test-prebuild-evidence-ledger-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/index.json
+            evidence/ledger.json
+            evidence/ledger.md
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Fail closed on malformed trusted evidence
+        if: steps.ledger.outcome != 'success'
+        run: exit 1

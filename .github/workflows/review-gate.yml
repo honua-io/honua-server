@@ -4,127 +4,182 @@ on:
   pull_request_target:
     branches: [trunk]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled, closed]
-  pull_request_review:
-    types: [submitted, dismissed, edited]
-  pull_request_review_comment:
-    types: [created, edited, deleted]
   issue_comment:
     types: [created, edited, deleted]
+  # Trusted operator/automation recovery after resolving a review thread. Unlike
+  # workflow_dispatch, repository_dispatch always uses default-branch workflow
+  # code and cannot select a PR-authored ref.
+  repository_dispatch:
+    types: [review-gate-reattest]
   workflow_run:
-    workflows: ["PR Gate"]
+    # Review events execute PR merge-branch workflow code, so the unprivileged
+    # bridge converts them into a trusted default-branch workflow_run event.
+    workflows: ["PR Gate", "Review Event Bridge"]
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: Pull request number to re-attest
-        required: true
-        type: string
 
 permissions:
+  actions: write
   contents: read
   pull-requests: read
   statuses: write
 
-concurrency:
-  group: review-gate-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.event.inputs.pr }}
-  cancel-in-progress: true
+env:
+  # Keep synchronized with pr-gate.yml. Observe mode records the exact decision
+  # but performs no Actions mutation; #3216 owns the measured flip to enforce.
+  REVIEW_FIRST_MODE: observe
 
 jobs:
-  attest:
+  resolve:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request
-    name: Publish SHA-bound Codex review attestation
+    name: Resolve pull request identity
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.target.outputs.result }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          # Untrusted PR events always evaluate the default-branch policy. A manual
-          # workflow_dispatch may intentionally validate a reviewed policy fix at
-          # its selected ref, which provides the bootstrap path when the default
-          # policy itself cannot recognize the connector's clean-result shape.
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - name: Attest current PR head
+      - name: Resolve every event to one pull request
+        id: target
         uses: actions/github-script@v9
         with:
+          result-encoding: string
           script: |
-            const { evaluateCodexEvidence, isCodex } = require('./scripts/ci/review-gate-evidence');
-            const { fetchPullRequestSnapshot } = require('./scripts/ci/review-gate-snapshot');
-            // workflow_run only carries pull_requests for same-repo PRs; GitHub
-            // leaves it empty for fork PRs. Fall back to a head-SHA search (same
-            // pattern as ci-failure-triage.yml) so fork PRs still get re-attested
-            // when PR Gate completes, instead of failing before publishing status.
             let prNumber = Number(
               context.payload.pull_request?.number ||
               context.payload.issue?.number ||
               context.payload.workflow_run?.pull_requests?.[0]?.number ||
-              '${{ github.event.inputs.pr }}'
+              context.payload.client_payload?.pr
             );
             if (!prNumber && context.payload.workflow_run) {
               const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
                 ...context.repo, commit_sha: context.payload.workflow_run.head_sha,
               });
-              const openPr = assocPrs.find(p => p.state === 'open');
-              if (openPr) prNumber = openPr.number;
+              const openPrs = assocPrs.filter(candidate => candidate.state === 'open');
+              if (openPrs.length === 1) prNumber = openPrs[0].number;
             }
             if (!prNumber) {
-              core.setFailed('Event does not identify a pull request.');
-              return;
+              core.setFailed('Event does not identify exactly one open pull request.');
+              return '';
             }
+            return String(prNumber);
 
-            const pr = await fetchPullRequestSnapshot(
-              github, context.repo.owner, context.repo.repo, prNumber);
-            if (!pr) {
+  attest:
+    needs: resolve
+    if: needs.resolve.outputs.pr != ''
+    name: Publish SHA-bound Codex review attestation
+    runs-on: ubuntu-latest
+    concurrency:
+      # Resolve first so fork workflow_run events (whose pull_requests array is
+      # empty) serialize with review/comment events under the same PR identity.
+      group: review-gate-${{ needs.resolve.outputs.pr }}
+      # Never interrupt this trusted workflow between accepting a rerun and
+      # recording the result. The next event observes the serialized result.
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Pin the exact trusted commit containing this workflow. A moving
+          # default branch must not change policy halfway through attestation.
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - id: policy
+        name: Bind the immutable review-first measurement policy
+        run: |
+          node scripts/ci/review-first-evidence-ledger.js policy-digest \
+            --root . \
+            --policy-sha '${{ github.workflow_sha }}' \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Attest current PR head
+        id: attest
+        uses: actions/github-script@v9
+        env:
+          REVIEW_FIRST_POLICY_DIGEST: ${{ steps.policy.outputs.measurement_policy_digest }}
+          REVIEW_FIRST_POLICY_SHA: ${{ steps.policy.outputs.policy_sha }}
+          REVIEW_FIRST_PRODUCER_EVENT: ${{ github.event_name }}
+          REVIEW_FIRST_PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
+          REVIEW_FIRST_PRODUCER_RUN_ID: ${{ github.run_id }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { evaluateCodexEvidence, isCodex } = require('./scripts/ci/review-gate-evidence');
+            const { fetchPullRequestSnapshot } = require('./scripts/ci/review-gate-snapshot');
+            const {
+              evaluateReviewFirstDispatch,
+              selectExactAdmissionRun,
+              stabilizeReviewFirstEvaluation,
+            } = require('./scripts/ci/review-first-dispatch');
+            const {
+              createReviewFirstObservation,
+            } = require('./scripts/ci/review-first-evidence-ledger');
+            const prNumber = Number('${{ needs.resolve.outputs.pr }}');
+
+            const evaluateCurrentReview = async () => {
+              const pr = await fetchPullRequestSnapshot(
+                github, context.repo.owner, context.repo.repo, prNumber);
+              if (!pr) return null;
+
+              const head = pr.headRefOid;
+              const labels = new Set(pr.labels.nodes.map(label => label.name));
+              const reasons = [];
+              if (pr.state !== 'OPEN') reasons.push('pull request is not open');
+              if (pr.isDraft) reasons.push('pull request is draft');
+              for (const label of ['hold', 'train:hold', 'train:escalated']) {
+                if (labels.has(label)) reasons.push(`blocked by ${label}`);
+              }
+              const snapshotTruncated = pr.labels.pageInfo.hasNextPage ||
+                  pr.reviews.pageInfo.hasNextPage ||
+                  pr.comments.pageInfo.hasNextPage ||
+                  pr.reviewThreads.pageInfo.hasNextPage ||
+                  pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage);
+              if (snapshotTruncated) {
+                reasons.push('bounded review query truncated');
+              }
+
+              const unresolved = pr.reviewThreads.nodes.filter(thread =>
+                !thread.isResolved && thread.comments.nodes.some(comment =>
+                  isCodex(comment.author?.login) && comment.commit?.oid === head));
+              if (unresolved.length) {
+                reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
+              }
+
+              const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
+                if (!isCodex(comment.author?.login)) return comment;
+                const matches = [...(comment.body || '').matchAll(
+                  /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
+                )];
+                if (matches.length !== 1) return comment;
+                const ref = matches[0][1];
+                if (ref.length === 40) return { ...comment, resolvedCommitOid: ref };
+                try {
+                  const { data: commit } = await github.rest.repos.getCommit({
+                    ...context.repo, ref,
+                  });
+                  return { ...comment, resolvedCommitOid: commit.sha };
+                } catch (error) {
+                  core.warning(`Could not uniquely resolve reviewed commit ${ref}: ${error.message}`);
+                  return comment;
+                }
+              }));
+
+              const { exactReview, exactCleanComment } = evaluateCodexEvidence({
+                reviews: pr.reviews.nodes, cleanComments,
+                unresolvedCount: unresolved.length, head,
+              });
+              if (!exactReview && !exactCleanComment) {
+                reasons.push('no exact-head Codex review evidence');
+              }
+              return { head, reasons, snapshotTruncated };
+            };
+
+            const initialReview = await evaluateCurrentReview();
+            if (!initialReview) {
               core.setFailed(`PR #${prNumber} not found.`);
               return;
             }
-            const head = pr.headRefOid;
-            const labels = new Set(pr.labels.nodes.map(label => label.name));
-            const reasons = [];
-            if (pr.state !== 'OPEN') reasons.push('pull request is not open');
-            if (pr.isDraft) reasons.push('pull request is draft');
-            for (const label of ['hold', 'train:hold', 'train:escalated']) {
-              if (labels.has(label)) reasons.push(`blocked by ${label}`);
-            }
-            if (pr.labels.pageInfo.hasNextPage || pr.reviews.pageInfo.hasNextPage ||
-                pr.comments.pageInfo.hasNextPage ||
-                pr.reviewThreads.pageInfo.hasNextPage ||
-                pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage)) {
-              reasons.push('bounded review query truncated');
-            }
-
-            const unresolved = pr.reviewThreads.nodes.filter(thread =>
-              !thread.isResolved && thread.comments.nodes.some(comment =>
-                isCodex(comment.author?.login) && comment.commit?.oid === head));
-            if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
-
-            const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
-              if (!isCodex(comment.author?.login)) return comment;
-              const matches = [...(comment.body || '').matchAll(
-                /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
-              )];
-              if (matches.length !== 1) return comment;
-              const ref = matches[0][1];
-              if (ref.length === 40) return { ...comment, resolvedCommitOid: ref };
-              try {
-                const { data: commit } = await github.rest.repos.getCommit({
-                  ...context.repo, ref,
-                });
-                return { ...comment, resolvedCommitOid: commit.sha };
-              } catch (error) {
-                core.warning(`Could not uniquely resolve reviewed commit ${ref}: ${error.message}`);
-                return comment;
-              }
-            }));
-
-            const { exactReview, exactCleanComment } = evaluateCodexEvidence({
-              reviews: pr.reviews.nodes, cleanComments,
-              unresolvedCount: unresolved.length, head,
-            });
-
-            if (!exactReview && !exactCleanComment) {
-              reasons.push('no exact-head Codex review evidence');
-            }
+            const { head, reasons } = initialReview;
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
               ? 'Codex reviewed this exact head'
@@ -133,4 +188,217 @@ jobs:
               ...context.repo, sha: head, state, context: 'Review Gate', description,
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
             });
-            if (state !== 'success') core.setFailed(description);
+            if (state !== 'success') {
+              core.setFailed(description);
+              return;
+            }
+
+            // The trusted default-branch workflow is the only review-first
+            // transition authority. It never checks out the PR head and never
+            // executes PR-authored code. It merely releases the already-created,
+            // read-only pull_request workflow run for this immutable head.
+            const evaluateCurrentAdmission = async review => {
+              const { data: runPage } = await github.request(
+                'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                  ...context.repo,
+                  workflow_id: 'pr-gate.yml',
+                  event: 'pull_request',
+                  head_sha: review.head,
+                  per_page: 100,
+                });
+              if (runPage.total_count > runPage.workflow_runs.length) {
+                throw new Error('Exact-head PR Gate run query exceeded its bounded page.');
+              }
+
+              const { data: associatedPulls } = await github.request(
+                'GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls', {
+                  ...context.repo, commit_sha: review.head, per_page: 100,
+                });
+              if (associatedPulls.length >= 100) {
+                throw new Error('Exact-head pull request association query reached its bound.');
+              }
+              const associatedPullNumbers = associatedPulls
+                .filter(candidate =>
+                  candidate.state === 'open' && candidate.head?.sha === review.head)
+                .map(candidate => candidate.number)
+                .sort((left, right) => left - right);
+
+              const selection = selectExactAdmissionRun({
+                runs: runPage.workflow_runs,
+                prNumber,
+                head: review.head,
+                associatedPullNumbers,
+              });
+              let jobs = [];
+              if (selection.action === 'selected' &&
+                  selection.run.status === 'completed' &&
+                  Number(selection.run.run_attempt) === 1) {
+                const { data: jobPage } = await github.request(
+                  'GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
+                    ...context.repo,
+                    run_id: selection.run.id,
+                    filter: 'latest',
+                    per_page: 100,
+                  });
+                if (jobPage.total_count > jobPage.jobs.length) {
+                  throw new Error('Exact-head PR Gate job query exceeded its bounded page.');
+                }
+                jobs = jobPage.jobs;
+              }
+
+              const decision = evaluateReviewFirstDispatch({
+                mode: process.env.REVIEW_FIRST_MODE,
+                reviewReady: review.reasons.length === 0,
+                snapshotTruncated: review.snapshotTruncated,
+                runs: runPage.workflow_runs,
+                jobs,
+                prNumber,
+                head: review.head,
+                associatedPullNumbers,
+              });
+              return { associatedPullNumbers, decision, jobs, runPage };
+            };
+
+            const reportDecision = async decision => {
+              const runUrl = decision.runId
+                ? `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                  `/actions/runs/${decision.runId}`
+                : 'n/a';
+              core.info(`Review-first decision: ${decision.action}: ${decision.reason}`);
+              await core.summary
+                .addHeading('Review-first PR verification')
+                .addTable([
+                  [{ data: 'Field', header: true }, { data: 'Value', header: true }],
+                  ['Mode', process.env.REVIEW_FIRST_MODE],
+                  ['PR / head', `#${prNumber} / ${head}`],
+                  ['Decision', decision.action],
+                  ['Reason', decision.reason],
+                  ['PR Gate run', runUrl],
+                ])
+                .write();
+            };
+
+            const failFinalRevalidation = async description => {
+              await github.rest.repos.createCommitStatus({
+                ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
+                description: description.slice(0, 140),
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                  `/pull/${prNumber}`,
+              });
+              core.setFailed(description);
+            };
+
+            const initialAdmission = await evaluateCurrentAdmission(initialReview);
+            if (initialAdmission.decision.action === 'block') {
+              await reportDecision(initialAdmission.decision);
+              core.setFailed(
+                `Review-first dispatch blocked: ${initialAdmission.decision.reason}`);
+              return;
+            }
+            if (!['observe', 'rerun'].includes(initialAdmission.decision.action)) {
+              await reportDecision(initialAdmission.decision);
+              return;
+            }
+
+            // Take the complete review snapshot and canonical admission state
+            // together twice. Only two identical joint evaluations may reach
+            // the irreversible receipt/rerun boundary.
+            let finalState;
+            try {
+              finalState = await stabilizeReviewFirstEvaluation(async () => {
+                const review = await evaluateCurrentReview();
+                if (!review || review.reasons.length !== 0) {
+                  return { review, admission: null };
+                }
+                return { review, admission: await evaluateCurrentAdmission(review) };
+              });
+            } catch (error) {
+              await failFinalRevalidation(error.message);
+              return;
+            }
+            const { review: finalReview, admission: finalAdmission } = finalState;
+            if (!finalReview || finalReview.head !== head) {
+              await failFinalRevalidation('PR state/head changed before dispatch.');
+              return;
+            }
+            if (finalReview.reasons.length !== 0) {
+              const finalDescription = finalReview.reasons.join('; ').slice(0, 140);
+              await failFinalRevalidation(`Final review revalidation failed: ${finalDescription}`);
+              return;
+            }
+            if (!finalAdmission) {
+              await failFinalRevalidation('Final admission snapshot is missing.');
+              return;
+            }
+            const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
+            if (decision.action === 'block') {
+              await reportDecision(decision);
+              core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
+              return;
+            }
+            if (!['observe', 'rerun'].includes(decision.action)) {
+              await reportDecision(decision);
+              return;
+            }
+
+            if (decision.action === 'observe') {
+              const producerRunId = Number(process.env.REVIEW_FIRST_PRODUCER_RUN_ID);
+              const producerRunAttempt = Number(
+                process.env.REVIEW_FIRST_PRODUCER_RUN_ATTEMPT);
+              const observation = createReviewFirstObservation({
+                measurementPolicyDigest: process.env.REVIEW_FIRST_POLICY_DIGEST,
+                policySha: process.env.REVIEW_FIRST_POLICY_SHA,
+                producerRunId,
+                producerRunAttempt,
+                producerEvent: process.env.REVIEW_FIRST_PRODUCER_EVENT,
+                observedAt: new Date().toISOString(),
+                prNumber,
+                head,
+                associatedPullNumbers,
+                runs: runPage.workflow_runs,
+                jobs,
+                decision,
+                reviewRevalidated: true,
+                admissionRevalidated: true,
+              });
+              fs.mkdirSync('review-first-evidence', { recursive: true });
+              fs.writeFileSync(
+                'review-first-evidence/review-first-observation.json',
+                `${JSON.stringify(observation, null, 2)}\n`,
+                'utf8');
+              core.setOutput('receipt_present', 'true');
+              await reportDecision(decision);
+              return;
+            }
+
+            try {
+              await github.request(
+                'POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs', {
+                ...context.repo, run_id: decision.runId,
+              });
+              await reportDecision(decision);
+              core.notice(`Released PR Gate run ${decision.runId} as attempt 2.`);
+            } catch (error) {
+              // A burst of review/comment events may serialize immediately
+              // behind the accepted request. Re-read before deciding whether
+              // this was an idempotent duplicate or a real dispatch failure.
+              const { data: refreshed } = await github.request(
+                'GET /repos/{owner}/{repo}/actions/runs/{run_id}', {
+                ...context.repo, run_id: decision.runId,
+              });
+              if (Number(refreshed.run_attempt) > 1 || refreshed.status !== 'completed') {
+                await reportDecision(decision);
+                core.info(`Rerun already accepted for ${decision.runId}; duplicate event is a no-op.`);
+                return;
+              }
+              throw error;
+            }
+
+      - name: Retain immutable review-first observation
+        if: always() && steps.attest.outputs.receipt_present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: review-first-observation-v1
+          path: review-first-evidence/review-first-observation.json
+          retention-days: 30
+          if-no-files-found: error

@@ -50,6 +50,7 @@ public static partial class EndpointRegistry
         .. MapServerEndpoints,
         .. VectorTileServerEndpoints,
         .. ImageServerEndpoints,
+        .. GeoprocessingEndpoints,
         .. ODataEndpoints,
         .. OgcApiEndpoints,
         .. GeometryServerEndpoints,

@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.FileStorage;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
@@ -131,6 +132,30 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
         services.TryAddSingleton<GeoprocessingJobArtifactService>();
+
+        // Referenced raster outputs (#3089): opt-in staged output store, the
+        // idempotent post-success COG-catalog registrar, and the orphan sweeper that
+        // reconciles staged-but-unpublished and expired staging. The sweeper follows
+        // the WorkspaceCleanup dual-mode pattern: its idempotent tick handler is
+        // registered whenever the staging store and job store exist, while the
+        // in-process timer is hosted only under TriggerMode=Poll — so event-triggered
+        // (serverless) deployments still reclaim staged outputs via the scheduled
+        // tick dispatcher.
+        services.AddGeoprocessingOutputStaging(configuration);
+        services.TryAddSingleton<GeoprocessingRasterOutputRegistrar>();
+        // RedisExecutionJobStore is registered above before this check whenever
+        // IConnectionMultiplexer is present. AddJobOrchestration later composes the
+        // queue/log services around that existing store; it does not add the store.
+        if (services.Any(d => d.ServiceType == typeof(IGeoprocessingOutputObjectStore))
+            && services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
+        {
+            services.TryAddSingleton<GeoprocessingOutputArtifactSweeper>();
+            services.AddSingleton<IScheduledTickHandler, GeoprocessingOutputArtifactSweeperScheduledTickHandler>();
+            if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+            {
+                services.AddHostedService(sp => sp.GetRequiredService<GeoprocessingOutputArtifactSweeper>());
+            }
+        }
 
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();

@@ -78,11 +78,14 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_add_layer",
         "honua_studio_remove_layer",
         "honua_studio_set_layer_style",
+        "honua_studio_set_layer_visibility",
         "honua_studio_set_view",
         "honua_studio_add_widget",
         "honua_studio_remove_widget",
         "honua_studio_bind_interaction",
         "honua_studio_remove_interaction",
+        "honua_studio_add_control",
+        "honua_studio_remove_control",
         "honua_studio_propose_publication"
     };
 
@@ -299,6 +302,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_studio_add_layer"] = (Destructive: false, Idempotent: false),
             ["honua_studio_remove_layer"] = (Destructive: true, Idempotent: false),
             ["honua_studio_set_layer_style"] = (Destructive: false, Idempotent: true),
+            ["honua_studio_set_layer_visibility"] = (Destructive: false, Idempotent: true),
             ["honua_studio_set_view"] = (Destructive: false, Idempotent: true),
             ["honua_studio_add_widget"] = (Destructive: false, Idempotent: false),
             ["honua_studio_remove_widget"] = (Destructive: true, Idempotent: false),
@@ -307,6 +311,11 @@ public sealed partial class McpTaxonomyAlignmentTests
             // binding drops composed wiring, so it is destructive.
             ["honua_studio_bind_interaction"] = (Destructive: false, Idempotent: true),
             ["honua_studio_remove_interaction"] = (Destructive: true, Idempotent: false),
+            // Composition controls (geospatial-mcp ADR-0031): adding by id is
+            // add-or-replace, so re-sending the same control is idempotent; removing one
+            // drops composed chrome (and, when cascading, its bindings), so it is destructive.
+            ["honua_studio_add_control"] = (Destructive: false, Idempotent: true),
+            ["honua_studio_remove_control"] = (Destructive: true, Idempotent: false),
             ["honua_studio_propose_publication"] = (Destructive: false, Idempotent: true),
         };
 
@@ -819,11 +828,14 @@ public sealed partial class McpTaxonomyAlignmentTests
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
             new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
             new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
             new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
             new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
             new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
+            new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
+            new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
             new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance)
         ];
     }

@@ -553,7 +553,9 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("FeatureStreaming:MaxSubscriptionsPerSession", "FeatureStreaming__MaxSubscriptionsPerSession", "integer",
                     "Maximum number of concurrent subscriptions a single WebSocket session may hold", 64),
                 BuildProperty("FeatureStreaming:MaxSubscriptionIdLength", "FeatureStreaming__MaxSubscriptionIdLength", "integer",
-                    "Maximum length of a client-supplied subscription identifier", 128)
+                    "Maximum length of a client-supplied subscription identifier", 128),
+                BuildProperty("FeatureStreaming:MaxSnapshotBytes", "FeatureStreaming__MaxSnapshotBytes", "integer",
+                    "Maximum serialized and transport-framing bytes emitted by one baseline snapshot", 4 * 1024 * 1024)
             ]
         };
     }
