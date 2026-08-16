@@ -80,13 +80,25 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         document.RootElement.TryGetProperty("openapi", out _).Should().BeTrue();
-        document.RootElement
-            .GetProperty("paths")
-            .GetProperty("/ogc/styles/{styleId}")
+        var paths = document.RootElement.GetProperty("paths");
+        paths.GetProperty("/ogc/styles/{styleId}")
             .GetProperty("delete")
             .GetProperty("responses")
             .TryGetProperty("403", out _)
             .Should().BeTrue("the public OpenAPI document must advertise protected default styles");
+
+        var createdResponse = paths.GetProperty("/ogc/styles")
+            .GetProperty("post")
+            .GetProperty("responses")
+            .GetProperty("201");
+        createdResponse.GetProperty("headers").TryGetProperty("Location", out _).Should().BeTrue();
+        createdResponse
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString()
+            .Should().Be("#/components/schemas/StyleEntry");
     }
 
     [IntegrationTest]

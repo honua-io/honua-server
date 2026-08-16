@@ -35,7 +35,20 @@
           }
         },
         "responses": {
-          "201": { "description": "Style created" },
+          "201": {
+            "description": "Style created",
+            "headers": {
+              "Location": {
+                "description": "Absolute URL of the created style",
+                "schema": { "type": "string", "format": "uri" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StyleEntry" }
+              }
+            }
+          },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "409": { "$ref": "#/components/responses/Conflict" },
           "413": { "$ref": "#/components/responses/PayloadTooLarge" },
@@ -166,6 +179,30 @@
       }
     },
     "schemas": {
+      "StyleEntry": {
+        "type": "object",
+        "required": ["id", "links"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string", "nullable": true },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "Link": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {
+          "href": { "type": "string", "format": "uri-reference" },
+          "rel": { "type": "string" },
+          "type": { "type": "string" },
+          "templated": { "type": "boolean" },
+          "hreflang": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
