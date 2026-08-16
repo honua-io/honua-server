@@ -118,8 +118,8 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   - **Shared auth/security feature areas** —
     `src/Honua.Hosting/Features/Authentication/` and
     `src/Honua.Hosting/Features/Security/` — route to the auth/security shards
-    (Security and Authorization, Admin & Infrastructure, OData Core), not
-    every server shard.
+    (Infrastructure and Control Plane, Security and Authorization, Admin &
+    Infrastructure, OData Core), not every server shard.
 
   Safety rests on the **always-on architecture/governance guards**: the `build`
   job runs `Honua.Architecture.Tests` on every PR, which includes the
