@@ -9,6 +9,8 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
 using Honua.TestKit;
@@ -17,6 +19,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Styling;
 
@@ -131,5 +134,94 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
         public Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException(
                 $"Simulated metadata-v2 graph synchronization failure for layer {layerId}.");
+    }
+}
+
+public sealed class OgcStyleProjectionGraphSyncTests
+{
+    [UnitTest]
+    public async Task UpdateStyle_WhenFirstAssociationSyncFails_ContinuesRemainingAssociations()
+    {
+        const string styleId = "shared-style";
+        const string mapLibreStyle =
+            """
+            {
+              "version": 8,
+              "layers": [ { "id": "roads", "type": "line" } ]
+            }
+            """;
+        var existing = new StyleCatalogRecord
+        {
+            StyleId = styleId,
+            Title = "Shared style",
+            MapLibreStyleJson = mapLibreStyle,
+            StyleVersion = 1,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch
+        };
+
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(styleId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<StyleCatalogRecord?>(existing));
+        catalog.UpdateStyleAsync(
+                styleId,
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<StyleCatalogRecord?>(existing with { StyleVersion = 2 }));
+        catalog.ListAssociationsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<StyleLayerAssociation>>(
+            [
+                new StyleLayerAssociation(11, styleId, 0),
+                new StyleLayerAssociation(22, styleId, 0)
+            ]));
+
+        var graphSync = new FirstLayerThrowingGraphSync(11);
+        var projection = new OgcStyleProjection(
+            new EmptyGraphProvider(),
+            Substitute.For<ILayerStyleService>(),
+            Substitute.For<ILayerStyleCatalog>(),
+            Substitute.For<IGeoServicesStyleConverter>(),
+            catalog,
+            graphSync);
+
+        var result = await projection.UpdateStyleAsync(styleId, mapLibreStyle, strict: false);
+
+        result.Status.Should().Be(OgcStyleUpdateStatus.Updated);
+        graphSync.Calls.Should().Equal(11, 22);
+    }
+
+    private sealed class FirstLayerThrowingGraphSync(int failingLayerId) : IMetadataV2StyleGraphSync
+    {
+        public List<int> Calls { get; } = [];
+
+        public Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(layerId);
+            return layerId == failingLayerId
+                ? Task.FromException(new InvalidOperationException("Simulated graph conflict."))
+                : Task.CompletedTask;
+        }
+    }
+
+    private sealed class EmptyGraphProvider : IMetadataV2GraphProvider
+    {
+        private static readonly MetadataV2GraphSnapshot Snapshot = new(
+            new MetadataV2Graph(),
+            "\"empty\"",
+            DateTimeOffset.UnixEpoch);
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(
+            CancellationToken cancellationToken = default)
+            => new(Snapshot);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => new((MetadataV2GraphSnapshot?)null);
     }
 }

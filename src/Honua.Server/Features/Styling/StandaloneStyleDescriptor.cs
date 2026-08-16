@@ -36,7 +36,7 @@ internal static class StandaloneStyleDescriptor
             var root = document.RootElement;
             if (root.ValueKind == JsonValueKind.Object)
             {
-                var (symbolizingGeometryType, sourceName) = ReadSymbolizingLayer(root);
+                var (symbolizingGeometryType, sourceName, _) = ReadSymbolizingLayer(root);
                 geometryType = symbolizingGeometryType;
                 layerId = ResolveStorageLayerId(root, sourceName);
             }
@@ -126,17 +126,19 @@ internal static class StandaloneStyleDescriptor
     /// geometry type because the conversion has to be bound to the layer that was actually
     /// selected, not to whichever source happens to be declared first.
     /// </summary>
-    private static (GeometryType GeometryType, string? SourceName) ReadSymbolizingLayer(JsonElement root)
+    private static (GeometryType GeometryType, string? SourceName, string? SourceLayer) ReadSymbolizingLayer(JsonElement root)
     {
         if (!root.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array)
         {
-            return (GeometryType.None, null);
+            return (GeometryType.None, null, null);
         }
 
         var fallbackGeometryType = GeometryType.None;
         string? fallbackSourceName = null;
+        string? fallbackSourceLayer = null;
         var concreteGeometryType = GeometryType.None;
         string? concreteSourceName = null;
+        string? concreteSourceLayer = null;
 
         foreach (var layer in layers.EnumerateArray())
         {
@@ -161,6 +163,10 @@ internal static class StandaloneStyleDescriptor
                 && sourceElement.ValueKind == JsonValueKind.String
                     ? sourceElement.GetString()
                     : null;
+            var sourceLayer = layer.TryGetProperty("source-layer", out var sourceLayerElement)
+                && sourceLayerElement.ValueKind == JsonValueKind.String
+                    ? sourceLayerElement.GetString()
+                    : null;
 
             // A symbol layer is commonly a label overlay for a concrete fill/line/circle
             // layer later in the document. Remember it only as a fallback so labels do not
@@ -171,6 +177,7 @@ internal static class StandaloneStyleDescriptor
                 {
                     fallbackGeometryType = geometryType;
                     fallbackSourceName = sourceName;
+                    fallbackSourceLayer = sourceLayer;
                 }
             }
             else if (geometryType != GeometryType.None)
@@ -179,6 +186,7 @@ internal static class StandaloneStyleDescriptor
                 {
                     concreteGeometryType = geometryType;
                     concreteSourceName = sourceName;
+                    concreteSourceLayer = sourceLayer;
                     continue;
                 }
 
@@ -188,7 +196,8 @@ internal static class StandaloneStyleDescriptor
                 // to line symbology.
                 if (concreteGeometryType == GeometryType.LineString
                     && geometryType == GeometryType.Polygon
-                    && string.Equals(concreteSourceName, sourceName, StringComparison.Ordinal))
+                    && string.Equals(concreteSourceName, sourceName, StringComparison.Ordinal)
+                    && string.Equals(concreteSourceLayer, sourceLayer, StringComparison.Ordinal))
                 {
                     concreteGeometryType = GeometryType.Polygon;
                 }
@@ -196,8 +205,8 @@ internal static class StandaloneStyleDescriptor
         }
 
         return concreteGeometryType != GeometryType.None
-            ? (concreteGeometryType, concreteSourceName)
-            : (fallbackGeometryType, fallbackSourceName);
+            ? (concreteGeometryType, concreteSourceName, concreteSourceLayer)
+            : (fallbackGeometryType, fallbackSourceName, fallbackSourceLayer);
     }
 
     /// <summary>

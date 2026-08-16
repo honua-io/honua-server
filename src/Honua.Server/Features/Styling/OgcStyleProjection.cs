@@ -605,21 +605,12 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             // client retry would apply a second revision of an edit that already landed.
             // Best-effort, mirroring LayerStyleService's own catalog/graph sync — log it and
             // let StyleResourceIds lag until the next publish.
+            IReadOnlyList<StyleLayerAssociation> associations;
             try
             {
-                var associations = await _independentStyleCatalog
+                associations = await _independentStyleCatalog
                     .ListAssociationsAsync(cancellationToken)
                     .ConfigureAwait(false);
-                foreach (var layerId in associations
-                             .Where(association => string.Equals(
-                                 association.StyleId,
-                                 existing.StyleId,
-                                 StringComparison.Ordinal))
-                             .Select(association => association.LayerId)
-                             .Distinct())
-                {
-                    await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
-                }
             }
             // Intentional broad catch: a post-commit synchronization failure must not be
             // reported as a failed edit. Cancellation still propagates so a shutdown or an
@@ -627,6 +618,27 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
             {
                 LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
+                associations = [];
+            }
+
+            foreach (var layerId in associations
+                         .Where(association => string.Equals(
+                             association.StyleId,
+                             existing.StyleId,
+                             StringComparison.Ordinal))
+                         .Select(association => association.LayerId)
+                         .Distinct())
+            {
+                try
+                {
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                {
+                    // Each layer is an independent public projection. A conflict on one
+                    // must not leave every later association stale.
+                    LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
+                }
             }
         }
 

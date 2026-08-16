@@ -37,8 +37,8 @@ public sealed class StandaloneStyleDescriptorTests
               "version": 8,
               "sources": { "layer-7": { "type": "vector", "tiles": ["/tiles/7/{z}/{x}/{y}.mvt"] } },
               "layers": [
-                { "id": "parcel-outline", "type": "line", "source": "layer-7" },
-                { "id": "parcel-fill", "type": "fill", "source": "layer-7" }
+                { "id": "parcel-outline", "type": "line", "source": "layer-7", "source-layer": "parcels" },
+                { "id": "parcel-fill", "type": "fill", "source": "layer-7", "source-layer": "parcels" }
               ]
             }
             """;
@@ -48,6 +48,28 @@ public sealed class StandaloneStyleDescriptorTests
         Assert.Equal(7, descriptor.Id);
         Assert.True(descriptor.IsBoundToStorageLayer);
         Assert.Equal(MetadataV2GeometryType.Polygon, descriptor.GeometryType);
+    }
+
+    [UnitTest]
+    public void FromMapLibre_LineAndFillForDifferentSourceLayers_KeepsFirstConcreteGeometry()
+    {
+        const string style =
+            """
+            {
+              "version": 8,
+              "sources": { "layer-7": { "type": "vector", "tiles": ["/tiles/7/{z}/{x}/{y}.mvt"] } },
+              "layers": [
+                { "id": "roads", "type": "line", "source": "layer-7", "source-layer": "roads" },
+                { "id": "parcels", "type": "fill", "source": "layer-7", "source-layer": "parcels" }
+              ]
+            }
+            """;
+
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre("mixed", style);
+
+        Assert.Equal(7, descriptor.Id);
+        Assert.True(descriptor.IsBoundToStorageLayer);
+        Assert.Equal(MetadataV2GeometryType.LineString, descriptor.GeometryType);
     }
 
     [UnitTest]
