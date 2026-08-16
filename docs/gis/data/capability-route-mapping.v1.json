@@ -250,11 +250,6 @@
     },
     {
       "family": "Admin API",
-      "routePrefix": "/api/v1/console/workflow-packages/generate",
-      "capability": "ai.workflow-generation"
-    },
-    {
-      "family": "Admin API",
       "capability": "admin.control-plane"
     },
     {

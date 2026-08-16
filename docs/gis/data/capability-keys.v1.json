@@ -54,13 +54,6 @@
       "description": "Read-only retrieval of executable spec artifacts by content hash. Applying a spec plan remains Pro-gated (ai.spec-apply)."
     },
     {
-      "key": "ai.workflow-generation",
-      "displayName": "AI Workflow and Content Generation",
-      "category": "AI",
-      "edition": "Pro",
-      "description": "Generate or refine workflows, maps, apps, forms, reports, dashboards, saved queries, and analysis packages from natural-language prompts."
-    },
-    {
       "key": "alerts.dwell",
       "displayName": "Dwell Trigger",
       "category": "Alerts",
