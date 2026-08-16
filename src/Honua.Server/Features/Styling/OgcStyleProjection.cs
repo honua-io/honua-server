@@ -537,7 +537,13 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 "The bound layer's geometry type could not be determined, so an Esri drawingInfo update cannot be converted safely.");
         }
 
-        var rendererGeometryType = StandaloneStyleDescriptor.InferGeometryType(drawingInfo);
+        if (!StandaloneStyleDescriptor.TryInferConsistentGeometryType(drawingInfo, out var rendererGeometryType))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The renderer mixes symbols for incompatible geometry types. Submit a renderer whose symbols all match the bound layer's geometry type.");
+        }
+
         if (rendererGeometryType != MetadataV2GeometryType.None
             && !UsesSameGeometryFamily(geometryType, rendererGeometryType))
         {

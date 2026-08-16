@@ -634,6 +634,26 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
 
         mismatchedResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+        foreach (var mixedDrawingInfo in new[]
+                 {
+                     "{\"renderer\":{\"type\":\"uniqueValue\",\"defaultSymbol\":{\"type\":\"esriSFS\"},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\"}}]}}",
+                     "{\"renderer\":{\"type\":\"uniqueValue\",\"defaultSymbol\":{\"type\":\"esriSMS\"},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\"}},{\"value\":\"b\",\"symbol\":{\"type\":\"esriSFS\"}}]}}"
+                 })
+        {
+            using var mixedContent = new StringContent(
+                mixedDrawingInfo,
+                Encoding.UTF8,
+                EsriDrawingInfoMediaType);
+            using var mixedRequest = new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+            {
+                Content = mixedContent
+            };
+
+            (await client.SendAsync(mixedRequest)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
         var drawingInfo = JsonSerializer.Serialize(
             StyleDefaults.BuildDefaultDrawingInfo(MetadataV2GeometryType.Point));
         using var content = new StringContent(drawingInfo, Encoding.UTF8, EsriDrawingInfoMediaType);

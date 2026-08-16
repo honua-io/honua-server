@@ -61,24 +61,27 @@ internal static class StandaloneStyleDescriptor
     }
 
     /// <summary>
-    /// Infers the geometry type a GeoServices <c>drawingInfo</c> renderer symbolizes, from
-    /// the Esri symbol type of its simple symbol or of its first unique-value / class-break
-    /// info.
+    /// Infers the geometry type a GeoServices <c>drawingInfo</c> renderer symbolizes and
+    /// verifies that every recognized renderer symbol belongs to the same geometry family.
     /// </summary>
     /// <param name="drawingInfo">Parsed <c>drawingInfo</c> document.</param>
-    /// <returns>The inferred geometry type, or <see cref="GeometryType.None"/> when unknown.</returns>
-    public static GeometryType InferGeometryType(JsonElement drawingInfo)
+    /// <param name="geometryType">The inferred geometry type, or <see cref="GeometryType.None"/> when unknown.</param>
+    /// <returns><see langword="false"/> when recognized symbols use different geometry families.</returns>
+    public static bool TryInferConsistentGeometryType(JsonElement drawingInfo, out GeometryType geometryType)
     {
+        geometryType = GeometryType.None;
+
         if (drawingInfo.ValueKind != JsonValueKind.Object
             || !drawingInfo.TryGetProperty("renderer", out var renderer)
             || renderer.ValueKind != JsonValueKind.Object)
         {
-            return GeometryType.None;
+            return true;
         }
 
-        if (TryReadSymbolGeometry(renderer, "symbol", out var geometryType))
+        if (!TryMergeSymbolGeometry(renderer, "symbol", ref geometryType)
+            || !TryMergeSymbolGeometry(renderer, "defaultSymbol", ref geometryType))
         {
-            return geometryType;
+            return false;
         }
 
         foreach (var infosProperty in new[] { "uniqueValueInfos", "classBreakInfos" })
@@ -88,19 +91,36 @@ internal static class StandaloneStyleDescriptor
                 continue;
             }
 
-            var inferredGeometryType = infos.EnumerateArray()
-                .Where(info => info.ValueKind == JsonValueKind.Object)
-                .Select(info => TryReadSymbolGeometry(info, "symbol", out var inferred)
-                    ? inferred
-                    : GeometryType.None)
-                .FirstOrDefault(candidate => candidate != GeometryType.None);
-            if (inferredGeometryType != GeometryType.None)
+            foreach (var info in infos.EnumerateArray())
             {
-                return inferredGeometryType;
+                if (info.ValueKind == JsonValueKind.Object
+                    && !TryMergeSymbolGeometry(info, "symbol", ref geometryType))
+                {
+                    return false;
+                }
             }
         }
 
-        return GeometryType.None;
+        return true;
+    }
+
+    private static bool TryMergeSymbolGeometry(
+        JsonElement owner,
+        string propertyName,
+        ref GeometryType geometryType)
+    {
+        if (!TryReadSymbolGeometry(owner, propertyName, out var candidate))
+        {
+            return true;
+        }
+
+        if (geometryType == GeometryType.None)
+        {
+            geometryType = candidate;
+            return true;
+        }
+
+        return geometryType == candidate;
     }
 
     private static bool TryReadSymbolGeometry(JsonElement owner, string propertyName, out GeometryType geometryType)
