@@ -87,8 +87,21 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             .TryGetProperty("403", out _)
             .Should().BeTrue("the public OpenAPI document must advertise protected default styles");
 
-        var createdResponse = paths.GetProperty("/ogc/styles")
-            .GetProperty("post")
+        var createOperation = paths.GetProperty("/ogc/styles").GetProperty("post");
+        var createParameters = createOperation.GetProperty("parameters")
+            .EnumerateArray()
+            .Select(parameter => parameter.GetProperty("$ref").GetString())
+            .ToArray();
+        createParameters.Should().Contain("#/components/parameters/requestedStyleId");
+        createParameters.Should().Contain("#/components/parameters/validate");
+        createParameters.Should().Contain("#/components/parameters/prefer");
+        createOperation.GetProperty("requestBody")
+            .GetProperty("content")
+            .EnumerateObject()
+            .Select(content => content.Name)
+            .Should().Contain([MapboxStyleMediaType, "application/json"]);
+
+        var createdResponse = createOperation
             .GetProperty("responses")
             .GetProperty("201");
         createdResponse.GetProperty("headers").TryGetProperty("Location", out _).Should().BeTrue();
@@ -99,6 +112,17 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             .GetProperty("$ref")
             .GetString()
             .Should().Be("#/components/schemas/StyleEntry");
+
+        var updateOperation = paths.GetProperty("/ogc/styles/{styleId}").GetProperty("put");
+        updateOperation.GetProperty("requestBody")
+            .GetProperty("content")
+            .EnumerateObject()
+            .Select(content => content.Name)
+            .Should().Contain([MapboxStyleMediaType, "application/json", EsriDrawingInfoMediaType]);
+        updateOperation.GetProperty("parameters")
+            .EnumerateArray()
+            .Select(parameter => parameter.GetProperty("$ref").GetString())
+            .Should().Contain(["#/components/parameters/validate", "#/components/parameters/prefer"]);
     }
 
     [IntegrationTest]

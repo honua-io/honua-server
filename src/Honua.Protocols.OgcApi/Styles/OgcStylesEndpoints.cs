@@ -110,7 +110,7 @@ public static class OgcStylesEndpoints
             .WithName("CreateStyle")
             .WithSummary("Create a standalone style (manage-styles)")
             .WithDescription("Validates and stores a MapLibre stylesheet as a new standalone style in the independent style catalog (ADR-0048 Phase 2). The new style's stable identifier is returned in the Location header. Honors Prefer: handling=strict and ?validate.")
-            .Produces(StatusCodes.Status201Created)
+            .Produces<StyleEntry>(StatusCodes.Status201Created, MediaTypes.Json)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status409Conflict)
             .Produces(StatusCodes.Status413PayloadTooLarge)
