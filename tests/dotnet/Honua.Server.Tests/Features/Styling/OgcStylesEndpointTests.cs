@@ -687,7 +687,10 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         foreach (var malformedClassificationDrawingInfo in new[]
                  {
                      "{\"renderer\":{\"type\":\"uniqueValue\",\"field1\":\"category\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}",
-                     "{\"renderer\":{\"type\":\"classBreaks\",\"field\":\"score\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"classBreakInfos\":[{\"classMaxValue\":10,\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"classMaxValue\":\"invalid\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}"
+                     "{\"renderer\":{\"type\":\"uniqueValue\",\"field1\":\"category\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"value\":null,\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}",
+                     "{\"renderer\":{\"type\":\"uniqueValue\",\"field1\":\"category\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"value\":{},\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}",
+                     "{\"renderer\":{\"type\":\"classBreaks\",\"field\":\"score\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"classBreakInfos\":[{\"classMaxValue\":10,\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"classMaxValue\":\"invalid\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}",
+                     "{\"renderer\":{\"type\":\"classBreaks\",\"field\":\"score\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"classBreakInfos\":[{\"classMaxValue\":10,\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"classMaxValue\":\"NaN\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}"
                  })
         {
             using var malformedClassificationContent = new StringContent(

@@ -67,14 +67,17 @@ internal static class StandaloneStyleDescriptor
     /// <param name="drawingInfo">Parsed <c>drawingInfo</c> document.</param>
     /// <param name="geometryType">The inferred geometry type, or <see cref="GeometryType.None"/> when unknown.</param>
     /// <param name="hasUnsupportedContent">Whether declared renderer content is incomplete or unsupported.</param>
+    /// <param name="validationError">A non-recoverable renderer error, when validation fails.</param>
     /// <returns><see langword="false"/> when recognized symbols use different geometry families.</returns>
     public static bool TryInferConsistentGeometryType(
         JsonElement drawingInfo,
         out GeometryType geometryType,
-        out bool hasUnsupportedContent)
+        out bool hasUnsupportedContent,
+        out string? validationError)
     {
         geometryType = GeometryType.None;
         hasUnsupportedContent = false;
+        validationError = null;
 
         if (drawingInfo.ValueKind != JsonValueKind.Object
             || !drawingInfo.TryGetProperty("renderer", out var renderer)
@@ -86,6 +89,7 @@ internal static class StandaloneStyleDescriptor
         if (!TryMergeSymbolGeometry(renderer, "symbol", ref geometryType, ref hasUnsupportedContent)
             || !TryMergeSymbolGeometry(renderer, "defaultSymbol", ref geometryType, ref hasUnsupportedContent))
         {
+            validationError = "The renderer mixes symbols for incompatible geometry types. Submit a renderer whose symbols all match the bound layer's geometry type.";
             return false;
         }
 
@@ -105,12 +109,21 @@ internal static class StandaloneStyleDescriptor
 
                 if (infosProperty == "uniqueValueInfos")
                 {
-                    hasUnsupportedContent |= !info.TryGetProperty("value", out _);
+                    hasUnsupportedContent |= !info.TryGetProperty("value", out var value)
+                        || !IsSupportedUniqueValue(value);
                 }
                 else
                 {
-                    hasUnsupportedContent |= !info.TryGetProperty("classMaxValue", out var classMaxValue)
-                        || !StyleParsingHelpers.TryGetDouble(classMaxValue, out _);
+                    if (!info.TryGetProperty("classMaxValue", out var classMaxValue)
+                        || !StyleParsingHelpers.TryGetDouble(classMaxValue, out var parsedMaxValue))
+                    {
+                        hasUnsupportedContent = true;
+                    }
+                    else if (!double.IsFinite(parsedMaxValue))
+                    {
+                        validationError = "drawingInfo.renderer.classBreakInfos classMaxValue values must be finite numbers.";
+                        return false;
+                    }
                 }
 
                 if (!TryMergeSymbolGeometry(
@@ -120,6 +133,7 @@ internal static class StandaloneStyleDescriptor
                         ref hasUnsupportedContent,
                         required: true))
                 {
+                    validationError = "The renderer mixes symbols for incompatible geometry types. Submit a renderer whose symbols all match the bound layer's geometry type.";
                     return false;
                 }
             }
@@ -127,6 +141,14 @@ internal static class StandaloneStyleDescriptor
 
         return true;
     }
+
+    private static bool IsSupportedUniqueValue(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.String or JsonValueKind.True or JsonValueKind.False => true,
+            JsonValueKind.Number => value.TryGetDouble(out var number) && double.IsFinite(number),
+            _ => false
+        };
 
     private static bool TryMergeSymbolGeometry(
         JsonElement owner,

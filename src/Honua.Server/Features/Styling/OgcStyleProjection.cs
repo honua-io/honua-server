@@ -540,11 +540,12 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         if (!StandaloneStyleDescriptor.TryInferConsistentGeometryType(
                 drawingInfo,
                 out var rendererGeometryType,
-                out var hasUnsupportedRendererContent))
+                out var hasUnsupportedRendererContent,
+                out var rendererValidationError))
         {
             return new OgcStyleUpdateResult(
                 OgcStyleUpdateStatus.Invalid,
-                "The renderer mixes symbols for incompatible geometry types. Submit a renderer whose symbols all match the bound layer's geometry type.");
+                rendererValidationError ?? "The renderer is invalid.");
         }
 
         if (rendererGeometryType != MetadataV2GeometryType.None
