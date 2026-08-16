@@ -166,6 +166,27 @@ automatic serial lander exists. Its schedule is observation-only, so an operator
 must explicitly dispatch `train_apply=true` to land. Use `hold`, `train:hold`, or
 `train:escalated` to exclude a PR.
 
+### Base every PR on `trunk` — do not stack (#3248)
+
+**A PR's base branch must be `trunk`.** Stacking a PR on another feature branch
+is how reviewed, tested, nominally-merged work disappears: the stacked PR merges
+into its base, GitHub marks it **MERGED**, the linked issue often auto-closes,
+CI was green — and if the base branch itself never lands, the payload is not in
+the product and *nothing* signals it. This cost roughly 3,800 insertions across
+#3116, #3113 and #2835 in five weeks.
+
+- If you must stack while a base is in review, **re-target the stack member at
+  `trunk` the moment its base merges** — `gh pr edit <N> --base trunk` — and
+  rebase. Never merge a PR into a base branch that has already landed or been
+  deleted.
+- **The MERGED badge is not evidence.** The authoritative test that a PR's work
+  is in the product is
+  `git merge-base --is-ancestor <mergeCommitSha> origin/trunk`.
+- `.github/workflows/stranded-merge-audit.yml` runs that test daily over the
+  recent merged PRs (`scripts/ci/audit-merged-pr-landing.py`) and also flags open
+  PRs stacked on a base that already landed. Findings open/refresh a tracking
+  issue and fail the job.
+
 ### Live batch train
 
 Use the optimistic batch train when you intentionally want cumulative batch CI and batch landing:

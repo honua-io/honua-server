@@ -1,0 +1,123 @@
+name: Stranded Merge Audit
+
+# #3248: a MERGED pull request whose merge commit never became an ancestor of
+# `trunk` shipped nothing. That happens when a PR targets a stack base branch
+# and the base itself never lands — GitHub still shows MERGED, the linked issue
+# often auto-closes, and CI was green, so nothing signals the loss. It happened
+# three times in five weeks (#3116, #3113, #2835). This job makes the check
+# mechanical instead of a periodic manual sweep.
+#
+# The authoritative test is one command per PR:
+#     git merge-base --is-ancestor <mergeCommitSha> origin/trunk
+
+on:
+  schedule:
+    # Daily, after the nightly lanes have settled.
+    - cron: '25 6 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many recent PRs to sweep'
+        required: false
+        default: '400'
+  pull_request:
+    # Changing the detector must re-run its own unit tests.
+    paths:
+      - 'scripts/ci/audit-merged-pr-landing.py'
+      - 'scripts/ci/audit-merged-pr-landing.test.py'
+      - '.github/workflows/stranded-merge-audit.yml'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: stranded-merge-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Merged PRs Are Ancestors Of Trunk
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: `git merge-base --is-ancestor` needs the merge commits
+          # of every PR in the sweep window, not just the recent tip.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Unit-test the detector
+        run: python3 scripts/ci/audit-merged-pr-landing.test.py
+
+      - name: Fetch trunk
+        run: git fetch --no-tags origin trunk
+
+      # On pull_request the job only proves the detector still works; the live
+      # sweep runs on schedule/dispatch so PR authors are not blocked by a
+      # pre-existing stranded PR they did not create.
+      - name: Audit merged PRs against trunk
+        if: github.event_name != 'pull_request'
+        id: audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          status=0
+          python3 scripts/ci/audit-merged-pr-landing.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --limit "${{ github.event.inputs.limit || '400' }}" \
+            --repo-root . \
+            --json stranded-merge-audit.json \
+            | tee stranded-merge-audit.md || status=$?
+          cat stranded-merge-audit.md >> "${GITHUB_STEP_SUMMARY}"
+          echo "status=${status}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload audit report
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stranded-merge-audit
+          path: |
+            stranded-merge-audit.json
+            stranded-merge-audit.md
+          if-no-files-found: ignore
+
+      - name: Open or update the tracking issue
+        if: github.event_name != 'pull_request' && steps.audit.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: 'chore: merged PRs are not on trunk (stranded merge audit)'
+        run: |
+          set -euo pipefail
+          {
+            echo "The scheduled stranded-merge audit found merged pull requests whose"
+            echo "merge commit is **not** an ancestor of \`trunk\`, and/or open pull"
+            echo "requests stacked on a base that has already landed."
+            echo
+            cat stranded-merge-audit.md
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > issue-body.md
+
+          existing="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open \
+            --search "\"${TITLE}\" in:title" --json number --jq '.[0].number // empty')"
+          if [[ -n "${existing}" ]]; then
+            gh issue comment "${existing}" --repo "${GITHUB_REPOSITORY}" \
+              --body-file issue-body.md
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" \
+              --body-file issue-body.md \
+              --label slice/release-plumbing --label state/needs-grooming
+          fi
+
+      - name: Fail when work is stranded
+        if: github.event_name != 'pull_request' && steps.audit.outputs.status != '0'
+        run: |
+          echo "::error::Stranded merged PR(s) detected — see the job summary and the tracking issue (#3248)."
+          exit 1
