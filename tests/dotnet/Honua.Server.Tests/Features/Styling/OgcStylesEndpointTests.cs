@@ -17,8 +17,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Microsoft.AspNetCore.Http.Metadata;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -82,25 +80,13 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         document.RootElement.TryGetProperty("openapi", out _).Should().BeTrue();
-
-        // The OGC endpoint may serve a packaged protocol document (or its minimal
-        // fallback). ASP.NET endpoint metadata is the direct authority for the
-        // response contract declared by .Produces(...), so verify the manage-styles
-        // DELETE declaration there without assuming a generated OpenAPI route is hosted.
-        var deleteEndpoint = _fixture.Services
-            .GetServices<EndpointDataSource>()
-            .SelectMany(source => source.Endpoints)
-            .OfType<RouteEndpoint>()
-            .Single(endpoint =>
-                string.Equals(
-                    endpoint.RoutePattern.RawText?.TrimStart('/'),
-                    "ogc/styles/{styleId}",
-                    StringComparison.OrdinalIgnoreCase)
-                && endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods
-                    .Contains(HttpMethod.Delete.Method, StringComparer.OrdinalIgnoreCase) == true);
-        deleteEndpoint.Metadata
-            .OfType<IProducesResponseTypeMetadata>()
-            .Should().Contain(metadata => metadata.StatusCode == (int)HttpStatusCode.Forbidden);
+        document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/ogc/styles/{styleId}")
+            .GetProperty("delete")
+            .GetProperty("responses")
+            .TryGetProperty("403", out _)
+            .Should().BeTrue("the public OpenAPI document must advertise protected default styles");
     }
 
     [IntegrationTest]
