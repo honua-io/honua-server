@@ -836,20 +836,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
             if (strict)
             {
-                if (!root.TryGetProperty("version", out var version)
-                    || version.ValueKind != JsonValueKind.Number
-                    || !version.TryGetInt32(out var versionNumber)
-                    || versionNumber != 8)
+                if (!MapLibreStyleNormalizer.TryValidateStandalone(root, out error))
                 {
-                    error = "MapLibre style must include version 8.";
-                    return false;
-                }
-
-                if (!root.TryGetProperty("layers", out var layers)
-                    || layers.ValueKind != JsonValueKind.Array
-                    || layers.GetArrayLength() == 0)
-                {
-                    error = "MapLibre style must include at least one layer.";
                     return false;
                 }
             }

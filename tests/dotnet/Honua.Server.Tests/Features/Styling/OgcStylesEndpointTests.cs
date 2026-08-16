@@ -266,10 +266,11 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     public async Task PutStyle_WithInvalidMapLibre_StrictHandling_Returns400()
     {
         var client = _fixture.CreateAdminClient();
-        var styleId = await SeedAndResolveStyleIdAsync(client);
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
 
-        // Missing version/layers -> normalizer rejects.
-        const string invalid = "{\"name\":\"broken\"}";
+        // A non-empty layers array is not sufficient: every layer must have the same
+        // structural validity required by the shared MapLibre normalizer.
+        const string invalid = "{\"version\":8,\"layers\":[null]}";
         using var content = new StringContent(invalid, Encoding.UTF8, MapboxStyleMediaType);
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
         {
@@ -280,6 +281,11 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var unchanged = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        unchanged.Be200Ok();
+        using var document = JsonDocument.Parse(await unchanged.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("layers")[0].ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     [IntegrationTest]

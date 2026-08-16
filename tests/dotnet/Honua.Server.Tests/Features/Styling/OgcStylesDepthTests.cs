@@ -151,6 +151,18 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
         }
 
+        // A positive exact JSON alias outranks a lower-quality application wildcard.
+        // The wildcard must not overwrite the alias before the Esri candidate is ranked.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"application/json;q=1, application/*;q=0.1, {EsriDrawingInfoMediaType};q=0.5");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        }
+
         // HTTP media type tokens are case-insensitive for both aliases and concrete
         // vendor representations.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))

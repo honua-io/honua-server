@@ -607,7 +607,7 @@ public static class OgcStylesEndpoints
                 {
                     if (quality > 0d)
                     {
-                        RecordPreference(preferences, OgcStyleEncoding.MapboxStyle, specificity: 0, quality);
+                        RecordPreference(preferences, OgcStyleEncoding.MapboxStyle, specificity: 2, quality);
                     }
                     continue;
                 }
