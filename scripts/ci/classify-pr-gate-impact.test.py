@@ -111,8 +111,8 @@ for case in full_cases:
     assert classified["rollout"] == "observe", case
     assert classified["authoritative_gate"] == "full", case
 
-# Lean-gate governed documents: markdown whose content a lean-gate step asserts.
-# A docs-only route would skip that step, so these must never be candidates even
+# Gate-governed documents: markdown whose content a gate step asserts. A
+# docs-only route would skip that step, so these must never be candidates even
 # though they satisfy the docs/internal/**.md shape.
 assert MODULE.LEAN_GATE_GOVERNED_DOCS, "the governed-document denylist must not be empty"
 for governed in sorted(MODULE.LEAN_GATE_GOVERNED_DOCS):
@@ -133,10 +133,23 @@ for governed in sorted(MODULE.LEAN_GATE_GOVERNED_DOCS):
     assert mixed["mode"] == "full", governed
     assert mixed["reason"] == "lean-gate-governed-doc", governed
 
-assert not (MODULE.LEAN_GATE_GOVERNED_DOCS & MODULE.LEAN_GATE_REFERENCED_DOCS), (
+# Documents that gate sources only *mention* in prose, doc comments, or assertion
+# messages. They stay eligible for the docs-only class; they are enumerated so
+# the drift guard can tell "reviewed and safe" apart from "never looked at".
+# This list lives here rather than in the classifier so that curating it never
+# changes the classifier blob that observation receipts bind.
+REFERENCE_ONLY_DOCS = frozenset(
+    {
+        "docs/internal/admin-api/studio-package-lifecycle.md",
+        "docs/internal/contributor/adr/0041-core-abstractions-extraction.md",
+        "docs/internal/contributor/entitlement-sweep-known-gaps.md",
+    }
+)
+
+assert not (MODULE.LEAN_GATE_GOVERNED_DOCS & REFERENCE_ONLY_DOCS), (
     "a document cannot be both governed and reference-only"
 )
-for referenced in sorted(MODULE.LEAN_GATE_REFERENCED_DOCS):
+for referenced in sorted(REFERENCE_ONLY_DOCS):
     classified = MODULE.classify(payload([{"filename": referenced, "status": "modified"}]))
     assert classified["mode"] == "docs-only", referenced
     assert classified["reason"] == "internal-markdown-only", referenced
@@ -165,37 +178,126 @@ for status in ("removed", "renamed", "copied", "changed", "unchanged", ""):
     assert classified["mode"] == "full", status
     assert classified["reason"] == "rename-delete-or-unknown-status", status
 
-# Drift guard: every `docs/internal/**.md` literal reachable from a lean-gate
-# source must be explicitly classified as governed or reference-only. Without
-# this, a new content-asserting test would silently widen the docs-only class.
-LEAN_GATE_DOC_PATTERN = re.compile(r"docs/internal/[A-Za-z0-9_./-]+\.md")
+
+# ---------------------------------------------------------------------------
+# Drift guard
+#
+# Every `docs/internal/**.md` reference reachable from a gate input must be
+# explicitly classified as governed or reference-only. Without this, a new
+# content assertion silently widens the docs-only class.
+#
+# The guard reads both spellings that appear in this repository: a whole-path
+# literal, and a path assembled segment-by-segment through
+# `ArchitectureTestHelpers.CombinePath`, `Path.Combine`, or `Path.Join`, which is
+# the prevailing style in the architecture tests. A path whose segments are not
+# adjacent string literals (a variable, a loop, a runtime concatenation) is out
+# of reach; the governed list, not this scan, is the contract.
+# ---------------------------------------------------------------------------
+
+# Sources read by a gate step the docs-only route would skip, plus the always-on
+# PR Gate steps whose governed inputs must stay visible to this scan. Adding a
+# gate step means adding its source here.
+GATE_INPUT_SOURCE_GLOBS = (
+    "tests/dotnet/Honua.Architecture.Tests/**/*.cs",
+    "tests/dotnet/Honua.Server.Tests/**/*.cs",
+    "tests/dotnet/Honua.Ai.Tests/**/*.cs",
+    ".github/actions/lean-gate/action.yml",
+    ".github/workflows/pr-gate.yml",
+    "scripts/ci/base-image-mirrors.sh",
+    "scripts/ci/fixtures/validate-lean-gate.py",
+    "scripts/ci/check-markdown-command-policy.ps1",
+    "scripts/ci/openapi-drift-check.py",
+    "scripts/ci/merge-train/fixtures/validate-timeout-retry.sh",
+    "scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh",
+)
+
+LITERAL_DOC_PATTERN = re.compile(
+    r"docs/internal/[A-Za-z0-9_.+\-]+(?:/[A-Za-z0-9_.+\-]+)*\.md"
+)
+SEGMENT_HEAD_PATTERN = re.compile(r'"docs"\s*,\s*"internal"|"docs/internal"')
+SEGMENT_NEXT_PATTERN = re.compile(r'\s*,\s*"([A-Za-z0-9_.+\-]+)"')
+
+
+def read_source(path: Path) -> str:
+    """Read a gate input as UTF-8, naming the file/byte/offset on failure.
+
+    Skipping an undecodable source would fail the guard *open*: the file could
+    be exactly the one introducing a new content assertion.
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        byte = error.object[error.start : error.start + 1]
+        raise AssertionError(
+            f"{path}: gate input is not valid UTF-8 -- byte 0x{byte.hex()} at offset "
+            f"{error.start} ({error.reason}). The drift guard cannot read it, so it cannot "
+            "prove the docs-only class is sound; re-save the file as UTF-8."
+        ) from error
+
+
+def document_references(text: str) -> set[str]:
+    references = set(LITERAL_DOC_PATTERN.findall(text))
+    for head in SEGMENT_HEAD_PATTERN.finditer(text):
+        segments: list[str] = []
+        cursor = head.end()
+        while True:
+            following = SEGMENT_NEXT_PATTERN.match(text, cursor)
+            if following is None:
+                break
+            segments.append(following.group(1))
+            cursor = following.end()
+            if following.group(1).endswith(".md"):
+                references.add("docs/internal/" + "/".join(segments))
+                break
+    return references
+
+
+# The guard must see the two spellings it exists for, whatever the repository
+# currently contains.
+assert document_references('File.ReadAllText("docs/internal/ci/gate-model.md")') == {
+    "docs/internal/ci/gate-model.md"
+}
+assert document_references(
+    'CombinePath(root,\n  "docs",\n  "internal",\n  "spikes",\n  "sample.md")'
+) == {"docs/internal/spikes/sample.md"}
+assert document_references('Path.Combine(root, "docs/internal", "ci", "sample.md")') == {
+    "docs/internal/ci/sample.md"
+}
+assert document_references('ReadJson(root, "docs", "internal", "developer", "data.json")') == set()
+
 REPOSITORY_ROOT = SCRIPT.resolve().parents[2]
 discovered: dict[str, set[str]] = {}
-for glob in MODULE.LEAN_GATE_SOURCE_GLOBS:
+scanned = 0
+for glob in GATE_INPUT_SOURCE_GLOBS:
     for path in sorted(REPOSITORY_ROOT.glob(glob)):
         if not path.is_file() or path.resolve() == SCRIPT.resolve():
             continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for reference in LEAN_GATE_DOC_PATTERN.findall(text):
+        scanned += 1
+        for reference in document_references(read_source(path)):
             discovered.setdefault(reference, set()).add(
-                str(path.relative_to(REPOSITORY_ROOT).as_posix())
+                path.relative_to(REPOSITORY_ROOT).as_posix()
             )
 
-classified_docs = MODULE.LEAN_GATE_GOVERNED_DOCS | MODULE.LEAN_GATE_REFERENCED_DOCS
+assert scanned > 0, "the drift guard scanned no gate inputs; its globs are stale"
+classified_docs = MODULE.LEAN_GATE_GOVERNED_DOCS | REFERENCE_ONLY_DOCS
 unclassified = sorted(set(discovered) - classified_docs)
 assert not unclassified, (
-    "lean-gate sources reference internal documents that the PR Gate impact classifier has "
-    "never been told about. Decide, for each, whether the lean gate asserts its CONTENT "
-    "(add to LEAN_GATE_GOVERNED_DOCS) or only mentions it (add to LEAN_GATE_REFERENCED_DOCS): "
+    "gate inputs reference internal documents that the PR Gate impact classifier has never "
+    "been told about. Decide, for each, whether a gate step asserts its CONTENT (add to "
+    "LEAN_GATE_GOVERNED_DOCS in classify-pr-gate-impact.py) or only mentions it (add to "
+    "REFERENCE_ONLY_DOCS here): "
     + ", ".join(f"{name} <- {sorted(discovered[name])}" for name in unclassified)
 )
-stale = sorted(classified_docs - set(discovered))
-assert not stale, (
-    "these documents are classified for the lean gate but no lean-gate source references them "
-    "any more; prune them from classify-pr-gate-impact.py: " + ", ".join(stale)
-)
 
-print("pr-gate-impact-classifier=ok mode=observe")
+# Advisory only. A governed document that stops being asserted is merely
+# over-conservative, and failing here would push maintainers to prune correct
+# entries -- which also resets any observation cohort bound to the classifier.
+unreferenced = sorted(classified_docs - set(discovered))
+if unreferenced:
+    print(
+        "pr-gate-impact-classifier: note: no gate input references "
+        + ", ".join(unreferenced)
+        + " any more (safe to keep; prune only deliberately)"
+    )
+
+print(f"pr-gate-impact-classifier=ok mode=observe gate-inputs-scanned={scanned}")

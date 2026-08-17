@@ -27,15 +27,6 @@ def main() -> None:
         good.write_text("clean — text\n", encoding="utf-8")
         assert MODULE.read_text(good) == "clean — text\n"
 
-        binary = Path(directory, "fixture.bin")
-        binary.write_bytes(b"\x00\x01\x97\xff")
-        try:
-            MODULE.read_text(binary)
-        except AssertionError as error:
-            assert "fixture.bin" in str(error), str(error)
-        else:  # pragma: no cover - defensive
-            raise SystemExit("a non-UTF-8 fixture was accepted as text")
-
         bad = Path(directory, "cp1252.md")
         bad.write_bytes(b"scan \x97 manifest\n")
         try:

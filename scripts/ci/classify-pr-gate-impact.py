@@ -15,61 +15,50 @@ CONTRACT = "honua.pr-gate-impact-observation/v3"
 MAX_FILES = 3_000
 DOCS_PREFIX = "docs/internal/"
 
-# Markdown under `docs/internal/` whose *content* is asserted by a step the
-# docs-only route would skip (the lean gate: Architecture/Server-governance
-# tests plus the merge-train fixture validators). Editing one of these files
-# alone can turn the authoritative gate red, so the docs-only class must never
-# claim them. The 2026-08-16 promotion audit (#3235) found these while the
-# shadow cohort was still open; without this list an enforced docs-only route
-# would have skipped real, reachable failures.
+# Markdown under `docs/internal/` whose *content* is asserted by a gate step the
+# docs-only route would skip. Editing one of these files alone can turn the
+# authoritative gate red, so the docs-only class must never claim them.
 #
-# `scripts/ci/classify-pr-gate-impact.test.py` rescans the lean-gate sources and
-# fails when a `docs/internal/**.md` literal appears that is in neither this set
-# nor LEAN_GATE_REFERENCED_DOCS, so the list cannot silently rot.
+# This is the only routing policy in this module; the test file owns the
+# reference-only allowlist and the source globs it scans, so that curating those
+# lists never changes this file's blob and never resets an observation cohort
+# that binds it.
+#
+# `scripts/ci/classify-pr-gate-impact.test.py` rescans the gate's own inputs --
+# including paths built segment-by-segment through `CombinePath`/`Path.Combine`,
+# which is the house style -- and fails when a `docs/internal/**.md` reference is
+# neither listed here nor listed as reference-only, so this set cannot silently
+# fall behind the gate.
 LEAN_GATE_GOVERNED_DOCS = frozenset(
     {
         # AuditCoverageMatrixDriftTests joins the documented auth-route rows
         # against DefaultAuditActionResolver in both directions.
         "docs/internal/operator/audit-coverage-matrix.md",
+        # ModuleDependencyPolicyTests.MatrixAndAdr_ShouldCrossReference_EachOther
+        # requires the ADR to exist and to contain "ModuleDependencyPolicyTests"
+        # and "Dependency direction matrix".
+        "docs/internal/contributor/adr/0047-module-dependency-policy.md",
         # ServingImageBoundaryTests asserts exact sentences about which tags a
         # GA promotion may move.
         "docs/internal/contributor/release-bundle.md",
         # PublicInterfaceProofLedgerTests uses this document as on-disk proof
         # evidence; treat it as governed rather than reason about its parser.
         "docs/internal/contributor/public-interface-quality-model.md",
+        # DocumentationMatrixDriftTests.GeocodeServerMatrix_... compares the
+        # documented GeocodeServer route roster against feature-catalog.json in
+        # both directions.
+        "docs/internal/spikes/geocode-server-matrix.md",
         # validate-early-failure-observe.sh (a lean-gate step) greps this file
         # for two exact phrases.
         "docs/internal/ci/merge-train-early-failure-observe.md",
+        # base-image-mirrors.sh --verify-inventory-doc parses this inventory in
+        # the always-on "Verify .NET base-image security inventory" step. That
+        # step is guarded to stay unconditional, but the document is listed here
+        # as well so the class stays sound if the gate is ever restructured.
+        "docs/internal/security/code-scanning-2026-Q2-remediation.md",
     }
 )
 
-# Markdown under `docs/internal/` that lean-gate sources only *mention* in prose,
-# doc comments, or assertion messages. These stay eligible for the docs-only
-# class; they are enumerated so the drift guard can tell "reviewed and safe"
-# apart from "never looked at".
-LEAN_GATE_REFERENCED_DOCS = frozenset(
-    {
-        "docs/internal/admin-api/studio-package-lifecycle.md",
-        "docs/internal/contributor/adr/0041-core-abstractions-extraction.md",
-        "docs/internal/contributor/adr/0047-module-dependency-policy.md",
-        "docs/internal/contributor/entitlement-sweep-known-gaps.md",
-    }
-)
-
-# Files read by lean-gate steps, relative to the repository root. The drift
-# guard scans exactly this set; adding a lean-gate step means adding its source
-# here.
-LEAN_GATE_SOURCE_GLOBS = (
-    "tests/dotnet/Honua.Architecture.Tests/**/*.cs",
-    "tests/dotnet/Honua.Server.Tests/**/*.cs",
-    "tests/dotnet/Honua.Ai.Tests/**/*.cs",
-    ".github/actions/lean-gate/action.yml",
-    "scripts/ci/fixtures/validate-lean-gate.py",
-    "scripts/ci/check-markdown-command-policy.ps1",
-    "scripts/ci/openapi-drift-check.py",
-    "scripts/ci/merge-train/fixtures/validate-timeout-retry.sh",
-    "scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh",
-)
 EXPECTED_REPOSITORY = "honua-io/honua-server"
 ALLOWED_GATE_CONCLUSIONS = {
     "success",

@@ -1,6 +1,9 @@
 # Impact-routing evidence ledger
 
-Status: report-only. Tracking: #3204, #3235, and umbrella #3213.
+Status: report-only. Tracking: #3204 and umbrella #3213. The docs-only PR
+Gate experiment (#3235) was closed as not planned on 2026-08-17 UTC; its
+cohort thresholds below are retained only as the standard the native-image
+stream is still measured against. See the audit at the end of this document.
 
 Workflow-run counts are not promotion evidence. A trusted observer can complete
 successfully while producing no relevant candidate, while using a superseded
@@ -83,16 +86,23 @@ legacy routes authoritative, preserve the ledger artifact, and fix or version
 the producer contract. Never waive a missing image outcome or combine receipts
 from different policy cohorts to reach a threshold.
 
-## Docs-only promotion audit, 2026-08-16 (#3235)
+## Docs-only promotion audit, 2026-08-16/17 UTC (#3235)
 
-The docs-only PR Gate route is **not promoted**. Two independent problems block
-it, and only one of them is a matter of waiting.
+All dates in this section are UTC.
 
-### The shadow cohort is an order of magnitude short
+**Outcome: #3235 was closed as not planned on 2026-08-17.** The docs-only route
+is not implemented and is not being pursued. What survives is the classifier's
+soundness: `scripts/ci/classify-pr-gate-impact.py` still runs in the trusted
+observer, still reports `authoritative_gate: full`, and must not describe a
+class of change as harmless when it is not. This section records the numbers
+that produced the decision and the defect that the numbers alone would never
+have shown.
+
+### The shadow cohort was an order of magnitude short
 
 Receipts harvested from the 100 most recent `PR Gate Impact Observation` runs
-(2026-08-13 through 2026-08-17): 82 runs completed successfully and 80 retained a
-current-contract receipt.
+(2026-08-13 through 2026-08-17 UTC): 82 runs completed successfully and 80
+retained a current-contract receipt.
 
 | Classification | Receipts | Distinct heads |
 |---|---:|---:|
@@ -109,51 +119,76 @@ counted `1` of the required `20` docs-only heads inside its seven-day
 head-deduplicated window, with `0` docs-only gate failures and `5`
 receipt-integrity failures (four native, one superseded PR Gate policy).
 
-The observed candidate rate is 2 of 80 receipts. At the observed workload
-(roughly twenty PR Gate runs per day) the cohort needs about six more weeks of
-observation, and any change to the classifier restarts it because the ledger
-binds the classifier blob.
+The observed candidate rate was 2 of 80 receipts. At roughly twenty PR Gate runs
+per day the cohort needed about six more weeks, for a route that would have
+avoided about 2.5% of gate runs.
 
 ### The docs-only class was unsound as written
 
 The audit also asked the inverse question: for a head the classifier calls
-docs-only, could the skipped lean gate have failed? For four documents the
-answer was yes, because a lean-gate step asserts their *content*:
+docs-only, could the skipped gate have failed? For seven documents the answer is
+yes, because a gate step asserts their *content*:
 
-| Document | Asserted by | Lean-gate step |
+| Document | Asserted by | Gate step |
 |---|---|---|
 | `docs/internal/operator/audit-coverage-matrix.md` | `AuditCoverageMatrixDriftTests` | Architecture tests |
+| `docs/internal/contributor/adr/0047-module-dependency-policy.md` | `ModuleDependencyPolicyTests.MatrixAndAdr_ShouldCrossReference_EachOther` | Architecture tests |
 | `docs/internal/contributor/release-bundle.md` | `ServingImageBoundaryTests` | Architecture tests |
 | `docs/internal/contributor/public-interface-quality-model.md` | `PublicInterfaceProofLedgerTests` | Architecture tests |
+| `docs/internal/spikes/geocode-server-matrix.md` | `DocumentationMatrixDriftTests.GeocodeServerMatrix_RoutesAndImplementedParametersMatchCode` | Architecture tests |
 | `docs/internal/ci/merge-train-early-failure-observe.md` | `validate-early-failure-observe.sh` | Merge-train timeout policy |
+| `docs/internal/security/code-scanning-2026-Q2-remediation.md` | `base-image-mirrors.sh --verify-inventory-doc` | Base-image security inventory |
 
 None of the observed docs-only heads touched one of these, so the shadow sample
 could never have exposed the gap; only reading the gate's own inputs could.
-`scripts/ci/classify-pr-gate-impact.py` now routes them to the full gate with
-reason `lean-gate-governed-doc`, and `classify-pr-gate-impact.test.py` rescans
-every lean-gate source so a new content assertion cannot silently widen the
-class again: an unclassified `docs/internal/**.md` literal fails the guard with
-the referencing file named.
+`scripts/ci/classify-pr-gate-impact.py` routes all seven to the full gate with
+reason `lean-gate-governed-doc`.
 
-Two further documents, `docs/internal/ci/gate-model.md` and
-`docs/internal/ci/workflow-inventory.md`, are read by
-`validate-review-first-dispatch.py`. They stay eligible only because that step
-runs unconditionally, before any routing decision;
-`scripts/ci/validate-pr-gate-impact.sh` now fails if that step ever acquires a
-condition.
+Two documents are deliberately *not* on that list.
+`docs/internal/ci/gate-model.md` and `docs/internal/ci/workflow-inventory.md`
+are parsed by `validate-review-first-dispatch.py`, which runs in the always-on
+`Verify review-first admission contract` step, before any routing decision.
+`scripts/ci/fixtures/validate-pr-gate-always-on-steps.py` asserts structurally
+that this step and `Verify .NET base-image security inventory` never acquire an
+`if` or `continue-on-error`, that the `pr-gate` job itself is never conditional,
+and that each step still runs its script; it proves each of those rejections
+fires before reporting success.
 
-### What remains before enforcement
+One further constraint is worth stating plainly rather than leaving in prose:
+`scripts/ci/check-markdown-command-policy.ps1` content-asserts **every** `*.md`
+file in the repository, including every file the docs-only class would claim. It
+is a step of the `lean-gate` composite action. Any future docs-only route must
+therefore either re-run that step on the docs-only path or split it out of the
+composite; it cannot be skipped along with the .NET work.
 
-1. Twenty distinct docs-only candidate heads under the current classifier blob,
-   with zero docs-only full-gate failures and an integrity-clean ledger.
-2. Fixture coverage for rename, deletion, fork, moved head, truncated file
-   lists, and policy-input changes. Rename/deletion/status, truncation,
-   duplicate records, unsafe paths, generated data assets, and the governed-doc
-   class are covered by `classify-pr-gate-impact.test.py`; fork and moved-head
-   admission remain enforced by the trusted resolver rather than by fixtures.
-3. The in-gate route itself: an early classifier step inside the existing
-   `PR Gate` job, the heavy steps conditioned on its output, a docs-only path
-   that still runs admission, the base-image inventory check, the Markdown
-   command policy, and exact-head review revalidation, plus a labelled escape
-   hatch and a one-line rollback switch. None of that is implemented; the
-   required gate is unchanged and fully authoritative.
+### Keeping the exclusion list honest
+
+`scripts/ci/classify-pr-gate-impact.test.py` rescans the gate's own inputs and
+fails when a `docs/internal/**.md` reference is neither governed nor listed as
+reference-only, naming the referencing file. It reads both spellings used here:
+a whole-path literal, and a path assembled segment-by-segment through
+`ArchitectureTestHelpers.CombinePath`, `Path.Combine`, or `Path.Join` -- the
+prevailing style in the architecture tests, and how two of the seven governed
+documents are referenced. A path whose segments are not adjacent string literals
+is out of reach of any scan; the governed list, not the scan, is the contract.
+An undecodable gate input fails the guard rather than being skipped, because the
+unreadable file could be the one introducing a new assertion. The reverse
+direction -- a governed document no longer referenced by any gate input -- is
+advisory only: it is over-conservative rather than unsound, and failing on it
+would push maintainers to prune correct entries.
+
+The reference-only allowlist and the scanned globs live in the test file, not in
+the classifier, so curating them never changes the classifier blob that
+observation receipts bind.
+
+Placement: this guard runs in batch CI through
+`scripts/ci/validate-ci-router.sh` (the `CI Router Validation` job) and not in
+`PR Gate`, so a new content assertion is caught on the merge train rather than
+on the pull request that introduces it. The whole of
+`scripts/ci/validate-pr-gate-impact.sh` measures about 1.9 s locally, of which
+the classifier test scanning 940 gate inputs is about 0.35 s, so moving it into
+the `lean-gate` composite would be affordable. It is deliberately not moved
+here: with #3235 closed, the classifier has no routing authority, a
+one-merge-train delay on a list that only matters to a report-only observer is
+acceptable, and the required gate should not grow steps for a shelved
+experiment.
