@@ -618,26 +618,8 @@ assert_exact_shards \
   "zarr-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
   '["Server Features Misc"]'
-assert_excludes_shard \
-  "zarr-server-source-excludes-data-sharing" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Data and Sharing"
-assert_excludes_shard \
-  "zarr-server-source-excludes-collaboration-content" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Collaboration Mobile and Identity"
-assert_excludes_shard \
-  "zarr-server-source-excludes-studio-feature-store" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Studio and Feature Store"
-assert_excludes_shard \
-  "zarr-server-source-excludes-analytics-export-reporting" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Analytics Export and Reporting"
-assert_excludes_shard \
-  "zarr-server-source-excludes-spec-printing-staticmap" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Spec Printing and Static Maps"
+# The exact-set assertion above already pins the single owner, so the former
+# per-shard exclusion assertions for this path were redundant and are gone (#3229).
 
 # Representative cumulative diff from #2702: shared raster changes retain the
 # ImageServer/coverage/WCS owners, while the server Zarr registrar adds only its
@@ -658,13 +640,28 @@ assert_descriptor \
   "src/Honua.Server/Features/DataEnrichment/DataEnrichmentServiceCollectionExtensions.cs" \
   "targeted" \
   "false" \
-  "Server Features Data and Sharing"
-# Capacity rebalance: Streaming is class-balanced across the existing Data and
-# Sharing and Misc shards. A source change must wake both executable owners.
+  "Server Features Data Enrichment and Sharing"
+# Capacity rebalance (#2422, re-split in #3229): Streaming SOURCE is
+# class-balanced across three executable owners - the Misc catch-all (heavy
+# FeatureStreamEndpointsTests), the dedicated Streaming Snapshot and Conformance
+# shard, and the Data Enrichment and Sharing child, whose Capabilities tests bind
+# FeatureStreamOptions. A source change must wake all three.
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data and Sharing","Server Features Misc"]'
+  '["Server Features Data Enrichment and Sharing","Server Features Misc","Server Features Streaming Snapshot and Conformance"]'
+# A Streaming TEST change, by contrast, must reach the shard that runs those
+# classes and must NOT wake the 25-minute Data Enrichment and Sharing child,
+# which runs no Streaming class. #3229 narrowed that child off the broad
+# tests/dotnet/Honua.Server.Tests/Features/ prefix to make this true.
+assert_exact_shards \
+  "streaming-test-exact-owners" \
+  "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
+  '["Server Features Misc","Server Features Spec Printing and Static Maps","Server Features Streaming Snapshot and Conformance"]'
+assert_excludes_shard \
+  "streaming-test-excludes-data-enrichment-sharing" \
+  "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
+  "Server Features Data Enrichment and Sharing"
 # Root Admin tests share the already-running Admin Operations shard after the
 # legacy Admin & Infrastructure runner exhausted its test budget.
 assert_exact_shards \
@@ -872,7 +869,7 @@ assert_descriptor \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
-  "Server Features Data and Sharing"
+  "Server Features Data Enrichment and Sharing"
 assert_descriptor \
   "core-capability-registry-includes-admin-governance" \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \

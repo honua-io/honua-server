@@ -242,8 +242,11 @@ removed parent filter is retained in `.github/ci-shards.json` under
 evaluates that parent and every child per discovered test class. It fails if a
 parent class is claimed by zero or multiple children, if a child claims a class
 outside the parent, if the parent remains active, or if a child is missing or
-reused. This makes the four #3059 Server Features splits mechanically exact
-while allowing their paths and runtime budgets to be independently narrowed.
+reused. This makes every declared split mechanically exact while allowing the
+children's paths and runtime budgets to be narrowed independently. The
+invariant started with the #3059 Server Features splits and now covers each
+subsequent capacity split as it lands, so treat `shard_partitions` in
+`.github/ci-shards.json` as the current list rather than enumerating it here.
 
 The `targeted-shards` job then projects the selected shard names into a
 `matrix_include` JSON array by joining against the rich shard records in
