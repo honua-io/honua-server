@@ -144,6 +144,22 @@ independent exact-head PR Gate corroborates a no-op, or authoritative drift
 checks pass on the subsequent normalized head. Reproducibility and provenance
 are necessary admission signals, not mutation authority.
 
+The 2026-08-16 shadow audit closed that evidence requirement: 61 validated
+envelopes over 16 pull requests produced 29 independently corroborated heads,
+two byte-exact would-change candidates, and zero false positives
+(`docs/internal/ci/derived-artifact-normalization.md`). The Git-object
+compare-and-swap transition is therefore implemented and covered by fixtures,
+gated behind `NORMALIZATION_MODE: enforce` plus a per-run GitHub App token
+minted immediately before the mutation. The workflow `GITHUB_TOKEN` keeps
+`contents: read` in every mode; the repository token cannot be the write
+credential because a push made with it produces no `pull_request` events and
+would strand the normalized head without its required contexts. The swap is the
+GraphQL `updateRefs` mutation with `beforeOid` — REST `updateRef` with
+`force: false` only guarantees a fast-forward from the ref's value at update
+time and would silently reinstate a commit dropped by a concurrent backward
+force-push. Because the commit voids exact-head review evidence, the consumer
+re-requests review from both attesting lanes as part of the mutation.
+
 Review is requested only after normalization reaches a stable head. Generated
 drift remains independently checked in `verify` and `train`; early
 normalization changes when the error is found, not whether it is enforced.
@@ -403,14 +419,19 @@ The complete checkpoint and decision are also recorded on
 2. Completed in observe mode: review-first transition receipts and trusted
    dispatch fixtures (#3216).
 3. Completed in observe mode: data-only normalization envelope and trusted
-   allowlist validator (#3219).
+   allowlist validator (#3219). Its 20-head shadow audit passed on 2026-08-16
+   and the credential-gated enforce transition is implemented; activation waits
+   only on the scoped normalization App credential.
 4. Rejected the standalone producer for insufficient savings; shadow the sunk-
    cost PR Gate build-evidence topology under #3226.
 4a. Completed: producer-free attempt-1 reads of the already-written shard-local
    exact-head payload in `ci.yml` (see "Producer-free attempt-1 reuse" above).
    This is the only build-reuse slice currently enforced in production.
 5. Promote deterministic-failure cancellation and focused attribution only
-   after #3224's retained observations pass.
+   after #3224's retained observations pass. The 2026-08-16 audit found 0 of the
+   required 20 countable samples across 149 train runs (23 live batch-CI
+   dispatches, all without a failing selected server shard), so cancellation
+   stays disabled and `TRAIN_EARLY_FAILURE_MODE` remains `observe`.
 6. Promote native-image routing/evidence reuse under #3204 after its impact
    ledger passes.
 7. Do not pursue docs-only PR Gate routing. #3235 was closed as not planned on

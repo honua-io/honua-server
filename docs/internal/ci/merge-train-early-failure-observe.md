@@ -85,6 +85,63 @@ Any later enforcement change requires a separate reviewed PR, a recoverable
 persisted state, and fail-closed behavior for stale runs, pagination, missing
 logs, retries, cancellation races, and resume.
 
+## Shadow audit 2026-08-16
+
+Window: every `merge-train.yml` run that published a `merge-train-metrics`
+artifact from 2026-08-14T08:07Z (the first run after the observer landed)
+through 2026-08-17T06:00Z. The audit read `early_failure_observation` out of
+each retained metrics artifact.
+
+| Measure | Result |
+|---|---:|
+| Train runs with a retained metrics artifact | 149 |
+| Dry-run / observation-only runs | 123 |
+| Live dispatches | 26 |
+| Live dispatches that dispatched batch CI (`shard_count` >= 1) | 23 |
+| Live outcomes: `landed` / `ci-incomplete` / `nothing-ready` | 20 / 3 / 3 |
+| Runs with a non-null `early_failure_observation` | **0** |
+| Countable promotion samples (of the 20 required) | **0** |
+| Contradictions | 0 |
+
+**Cancellation stays disabled.** The gate requires at least 20 countable live
+runs; the sample is empty, so `TRAIN_EARLY_FAILURE_MODE` remains `observe`.
+
+The observer is wired and healthy — `merge-train.yml` exports
+`TRAIN_EARLY_FAILURE_MODE`, `TRAIN_EARLY_FAILURE_RAW_OUT`, and the 120-second
+poll interval on every run, `smart-ci.sh` exports the batch branch/SHA and the
+selected-shard descriptor, and
+`scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh` passes. The
+sample is empty because no qualifying event occurred, not because observation
+failed:
+
+- Batches in this window were assembled with `max_batch=1`, so a batch carries
+  one PR and one selected shard in almost every dispatch (`shard_count` was 1 in
+  22 of 23 dispatches and 8 once).
+- Twenty of those batches were green, so no selected shard ever completed with a
+  `failure` conclusion for the observer to classify.
+- The three `ci-incomplete` dispatches failed outside the observed set. The
+  representative case, train run `31917895755` / batch CI `31918177505`, failed
+  `CI Router Validation` after about 68 seconds and `CI Gate` two seconds later.
+  Neither is a router-declared server shard, so the observer correctly recorded
+  nothing — and a run that is already terminal in under two minutes is not the
+  cost that early cancellation exists to avoid.
+
+Nothing in the classifier or the envelope needs fixing. What remains is arrival
+rate: the sample can only grow when a live batch's *selected server shard*
+fails while siblings keep running. At the observed rate (23 live dispatches and
+0 qualifying failures in about 70 hours), 20 countable samples will not accrue
+from single-PR green batches. The realistic paths are larger `max_batch`
+dispatches, which raise both shard fan-out and the chance of a deterministic
+member failure, and simply leaving the observer running across a period with
+genuine batch failures. Re-run this audit before proposing enforcement again;
+`merge-train-metrics` artifacts are retained for 30 days, so the countable
+window is bounded by that retention.
+
+The metrics record already distinguishes the three cases an auditor needs —
+`mode`, `outcome`, and `smart_ci.shard_count` separate "no batch CI" from "batch
+CI with no qualifying failure" from a real observation — so no additional
+telemetry was added.
+
 Even in enforcement, early evidence may only stop a doomed run. A canceled or
 otherwise incomplete workflow can never become merge evidence and can never
 authorize landing.
