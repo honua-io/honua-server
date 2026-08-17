@@ -64,6 +64,9 @@ on:
 
 permissions:
   contents: read
+  # Geospatial.Grpc resolves from the authenticated github-honua feed (NuGet.config
+  # packageSourceMapping), so restore 403s without this.
+  packages: read
 
 concurrency:
   group: capability-matrix-aggregation-${{ github.ref }}

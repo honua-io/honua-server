@@ -17,6 +17,9 @@ env:
 
 permissions:
   contents: read
+  # Geospatial.Grpc resolves from the authenticated github-honua feed (NuGet.config
+  # packageSourceMapping), so restore 403s without this.
+  packages: read
 
 concurrency:
   group: nightly-migration-evidence-${{ github.ref }}
