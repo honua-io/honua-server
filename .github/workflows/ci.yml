@@ -1874,9 +1874,18 @@ jobs:
             echo "::error::no TRX produced for the Category=GDAL subset"
             exit 1
           fi
-          passed=$(grep -o 'outcome="Passed"' "${trx}" | wc -l)
-          failed=$(grep -o 'outcome="Failed"' "${trx}" | wc -l)
-          skipped=$(grep -o 'outcome="NotExecuted"' "${trx}" | wc -l)
+          # `|| true` on each grep is load-bearing under `set -euo pipefail`:
+          # grep exits 1 when it matches nothing, and on the healthy path BOTH
+          # the Failed and NotExecuted counts are zero. Without it the step dies
+          # before printing the summary — and reports failure for a green run.
+          # (warehouse-nightly.yml uses the bare idiom because it does not set
+          # pipefail.)
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
           {
             echo '### Real-GDAL coverage'
             echo
