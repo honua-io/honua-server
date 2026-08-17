@@ -55,6 +55,54 @@ odata_key="$(sed -n 's/^cache_key=//p' <<<"${odata}")"
 [[ "${odata_key}" != "${writer_key}" ]]
 [[ "${odata_key}" == *-odata-* ]]
 
+# Attempt-1 opportunistic reuse routing (#3213).
+attempt1_default="$(plan attempt1-default --shard z-second --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --run-attempt 1 --attempt1-reuse true)"
+grep -qx 'restore_mode=opportunistic' <<<"${attempt1_default}"
+grep -qx 'restore_enabled=true' <<<"${attempt1_default}"
+
+attempt1_writer="$(plan attempt1-writer --shard a-writer --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --run-attempt 1 --attempt1-reuse true)"
+grep -qx 'restore_enabled=true' <<<"${attempt1_writer}"
+grep -qx 'cache_writer=true' <<<"${attempt1_writer}"
+
+attempt1_off="$(plan attempt1-off --shard z-second --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --run-attempt 1 --attempt1-reuse false)"
+grep -qx 'restore_mode=disabled' <<<"${attempt1_off}"
+grep -qx 'restore_enabled=false' <<<"${attempt1_off}"
+
+# A malformed switch must degrade to the build-locally path, never to a hard error.
+attempt1_garbage="$(plan attempt1-garbage --shard z-second --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --run-attempt 1 --attempt1-reuse 'TRUE')"
+grep -qx 'restore_mode=disabled' <<<"${attempt1_garbage}"
+
+# A malformed attempt counter must be read as attempt 1, not as a rerun.
+attempt_garbage="$(plan attempt-garbage --shard z-second --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --run-attempt 'x9' --attempt1-reuse false)"
+grep -qx 'restore_mode=disabled' <<<"${attempt_garbage}"
+
+# Reruns keep reading regardless of the attempt-1 switch.
+rerun_off="$(plan rerun-off --shard z-second --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --run-attempt 2 --attempt1-reuse false)"
+grep -qx 'restore_mode=rerun' <<<"${rerun_off}"
+grep -qx 'restore_enabled=true' <<<"${rerun_off}"
+
+# Defaults (no flags) must stay on the pre-#3213 rerun-only behaviour so a caller
+# that never opts in cannot be silently changed.
+legacy_default="$(plan legacy-default --shard z-second --project "${SERVER_PROJECT}" \
+  --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301)"
+grep -qx 'restore_mode=disabled' <<<"${legacy_default}"
+
+# The attempt-1 read must not change WHO writes: exactly one writer per project.
+[[ "$(sed -n 's/^cache_writer=//p' <<<"${attempt1_default}")" == "false" ]]
+[[ "$(sed -n 's/^cache_key=//p' <<<"${attempt1_default}")" == "${writer_key}" ]]
+
 fallback_matrix='[{"shard_name":"fallback","csproj":""}]'
 fallback="$(plan fallback --shard fallback --project '' --matrix-json "${fallback_matrix}" \
   --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301)"
@@ -96,6 +144,19 @@ grep -Eq 'actions/cache/save@v[0-9]+' "${workflow}"
 grep -q 'github.run_attempt > 1' "${workflow}"
 grep -Fq "steps.shard-cache-materialize.outputs.restored != 'true'" "${workflow}"
 grep -Fq "steps.shard-cache-plan.outputs.cache_writer == 'true' || github.run_attempt > 1" "${workflow}"
+# Attempt-1 opportunistic reads are routed by the plan step, gated by a
+# repository-variable kill switch, and never fail a shard on a cache-service
+# error. Exactly one shard per project still writes on attempt 1.
+grep -Fq "steps.shard-cache-plan.outputs.restore_enabled == 'true'" "${workflow}"
+grep -Fq "vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE == 'false'" "${workflow}"
+if ! awk '/name: Restore exact-head shard cache/,/fail-on-cache-miss/' "${workflow}" | grep -q 'continue-on-error: true'; then
+  echo "::error::Attempt-1 shard cache reads must be fail-open (continue-on-error)." >&2
+  exit 1
+fi
+if grep -q 'if: github.run_attempt > 1' "${workflow}"; then
+  echo "::error::Shard cache reads must be routed by the plan step, not by run_attempt directly." >&2
+  exit 1
+fi
 if grep -A8 'Restore exact-head shard cache' "${workflow}" | grep -q 'restore-keys:'; then
   echo "::error::Shard cache restore must not use fallback keys." >&2
   exit 1

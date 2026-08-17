@@ -7,6 +7,11 @@ honua-server#3213 and its cross-repository children. Existing gates remain
 authoritative until a shadowed replacement satisfies the promotion criteria in
 this ADR.
 
+One slice has left shadow: producer-free attempt-1 reuse of the shard-local
+exact-head server-test payload is live in `ci.yml` (see section 5). Every other
+build-reuse topology in this ADR — shared producer jobs and PR Gate build
+evidence — remains report-only and unpromoted.
+
 ## Context
 
 Honua's CI has accumulated useful local optimizations without changing the
@@ -197,6 +202,41 @@ returns to optimization rather than becoming policy by assertion.
 This is one build per repeated project fingerprint, not one oversized solution
 artifact and not one build per logical shard.
 
+#### Producer-free attempt-1 reuse (live, 2026-08-16)
+
+One narrow slice of "build once" is now live in `ci.yml`, because it needs no
+producer and adds no wait. Since PR #2750 the single lexicographically-first
+selected shard for each project already packages and saves its exact-head
+payload on attempt 1, before it runs tests. Until now no shard was permitted to
+*read* that payload before attempt 2, so the same project was rebuilt in every
+sibling shard even when a valid, digest-verified, identical-tree payload already
+existed in the run's own cache scope.
+
+`Server Tests (<shard>)` now performs exactly one bounded cache lookup for its
+own exact key on attempt 1 as well. The lookup is single-shot: a shard that
+reaches it before the writer has published simply misses and takes the unchanged
+restore/build path. Nothing polls, nothing waits, no job-level `needs` edge is
+added, and no additional runner is instantiated — so the same-run fan-out
+regression measured in run 31768277005 (13 -> 21 rounded runner-minutes) cannot
+recur. The write volume is unchanged; only reads increase.
+
+Every existing safety property is retained verbatim: exact key with no prefix
+fallback, manifest binding to contract/project/source SHA/SDK, 24-hour validity,
+size/digest/archive-entry validation, and partial-output cleanup on rejection.
+The read path is additionally fail-open at two levels — a cache-service error
+cannot fail the step (`continue-on-error`), and a rejected payload emits
+`restored=false` so the shard restores and builds locally as before. Both
+outcomes are recorded in the job step summary.
+
+Rollback is the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`,
+which restores rerun-only reads without touching branch protection, required
+contexts, shard names, filters, or merge authority.
+
+This promotion is deliberately narrower than the shadowed producer designs. It
+does not authorize a shared producer job, PR Gate payload consumption, or any
+cross-head/content-addressed key; those remain gated on the promotion criteria
+above and on the #3226 ledger.
+
 The current shadow candidate reuses a sunk build rather than adding a producer
 dependency. The required `PR Gate` already performs the full Release solution
 build after exact-head review. Once that gate is green, a best-effort step may
@@ -379,6 +419,9 @@ The complete checkpoint and decision are also recorded on
    allowlist validator (#3219).
 4. Rejected the standalone producer for insufficient savings; shadow the sunk-
    cost PR Gate build-evidence topology under #3226.
+4a. Completed: producer-free attempt-1 reads of the already-written shard-local
+   exact-head payload in `ci.yml` (see "Producer-free attempt-1 reuse" above).
+   This is the only build-reuse slice currently enforced in production.
 5. Promote deterministic-failure cancellation and focused attribution only
    after #3224's retained observations pass.
 6. Promote native-image routing/evidence reuse under #3204 after its impact

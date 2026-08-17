@@ -1538,6 +1538,15 @@ jobs:
           SHARD_NAME: ${{ matrix.shard_name }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
           SELECTED_SHARDS_JSON: ${{ needs.targeted-shards.outputs.matrix_include }}
+          # Attempt-1 opportunistic reuse (#3213). The exact-head payload is
+          # already SAVED on attempt 1 by the single designated writer shard;
+          # this switch controls whether siblings are also allowed to READ it on
+          # attempt 1 instead of rebuilding the same project up to ~20 times.
+          # Set repository variable HONUA_SERVER_TEST_ATTEMPT1_REUSE to the
+          # string 'false' for an immediate rollback to rerun-only reads. No
+          # branch protection, required context, shard name, filter, or merge
+          # authority changes with it.
+          ATTEMPT1_REUSE: ${{ vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE == 'false' && 'false' || 'true' }}
         run: |
           scripts/ci/server-test-shard-cache.sh plan \
             --shard "${SHARD_NAME}" \
@@ -1545,17 +1554,24 @@ jobs:
             --matrix-json "${SELECTED_SHARDS_JSON}" \
             --source-sha '${{ github.sha }}' \
             --runner-os '${{ runner.os }}' \
-            --sdk "$(dotnet --version)"
+            --sdk "$(dotnet --version)" \
+            --run-attempt '${{ github.run_attempt }}' \
+            --attempt1-reuse "${ATTEMPT1_REUSE}"
 
       - name: Start exact-head cache restore timer
-        if: github.run_attempt > 1
+        if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-restore-start
         shell: bash
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
 
       - name: Restore exact-head shard cache
-        if: github.run_attempt > 1
+        # Fail-open: a cache-service error, throttle, or timeout must never turn
+        # a shard red. The action is best-effort; an empty `cache-hit` output is
+        # treated as a miss and the shard takes the unchanged restore/build path.
+        # Nothing here waits for the writer shard to publish.
+        if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-download
+        continue-on-error: true
         uses: actions/cache/restore@v6
         with:
           path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
@@ -1563,7 +1579,7 @@ jobs:
           fail-on-cache-miss: false
 
       - name: Record exact-head cache restore duration
-        if: always() && github.run_attempt > 1
+        if: always() && steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-restore-elapsed
         shell: bash
         run: echo "milliseconds=$(( $(date +%s%3N) - ${{ steps.shard-cache-restore-start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
@@ -1644,6 +1660,8 @@ jobs:
         shell: bash
         env:
           CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
+          RESTORE_MODE: ${{ steps.shard-cache-plan.outputs.restore_mode }}
+          DOWNLOAD_OUTCOME: ${{ steps.shard-cache-download.outcome }}
           CACHE_WRITER: ${{ steps.shard-cache-plan.outputs.cache_writer }}
           CACHE_WRITER_SHARD: ${{ steps.shard-cache-plan.outputs.cache_writer_shard }}
           CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
@@ -1666,9 +1684,13 @@ jobs:
             echo
             echo "- Key: \`${CACHE_KEY:-unavailable}\`"
             echo "- Attempt: \`${{ github.run_attempt }}\`"
+            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (lookup outcome \`${DOWNLOAD_OUTCOME:-skipped}\`)"
             echo "- Decision: \`${REASON:-not_evaluated}\`"
             echo "- Exact cache hit: \`${CACHE_HIT:-false}\`"
             echo "- Materialized without build: \`${MATERIALIZED:-false}\`"
+            if [[ "${MATERIALIZED:-false}" != 'true' ]]; then
+              echo "- Fallback: this shard restored and built \`${PROJECT_SUFFIX}\` locally (unchanged path)."
+            fi
             echo "- Attempt-1 writer: \`${CACHE_WRITER:-false}\` (\`${CACHE_WRITER_SHARD:-unknown}\`)"
             echo "- Transfer / integrity / unpack: \`${TRANSFER_MS:-0} / ${INTEGRITY_MS:-0} / ${UNPACK_MS:-0} ms\`"
             echo "- Package / save: \`${package_ms} / ${SAVE_MS:-0} ms\`"

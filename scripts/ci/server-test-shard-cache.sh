@@ -27,6 +27,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   server-test-shard-cache.sh plan --shard NAME --project CSPROJ --matrix-json JSON --source-sha SHA --runner-os OS --sdk VERSION
+                                  [--run-attempt N] [--attempt1-reuse true|false]
   server-test-shard-cache.sh restore --project CSPROJ --source-sha SHA --payload DIR --cache-hit true|false
 EOF
 }
@@ -43,6 +44,8 @@ runner_os=""
 sdk=""
 payload=""
 cache_hit="false"
+run_attempt="1"
+attempt1_reuse="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,6 +57,8 @@ while [[ $# -gt 0 ]]; do
     --sdk) sdk="${2:-}"; shift 2 ;;
     --payload) payload="${2:-}"; shift 2 ;;
     --cache-hit) cache_hit="${2:-}"; shift 2 ;;
+    --run-attempt) run_attempt="${2:-}"; shift 2 ;;
+    --attempt1-reuse) attempt1_reuse="${2:-}"; shift 2 ;;
     *) usage; exit 2 ;;
   esac
 done
@@ -82,6 +87,9 @@ case "${mode}" in
       echo "::error::Runner/toolchain cache-key inputs are invalid." >&2
       exit 2
     fi
+    # A malformed attempt counter must not redden a shard: fall back to the
+    # first-attempt reading, which is the conservative build-locally path.
+    [[ "${run_attempt}" =~ ^[0-9]+$ ]] || run_attempt=1
     jq -e 'type == "array" and length > 0 and all(.[]; (.shard_name | type == "string" and length > 0))' \
       <<<"${matrix_json}" >/dev/null || { echo "::error::Selected shard matrix is invalid." >&2; exit 2; }
     jq -e --arg shard "${shard}" 'any(.[]; .shard_name == $shard)' <<<"${matrix_json}" >/dev/null || {
@@ -108,6 +116,29 @@ case "${mode}" in
     emit payload_dir "${payload_dir}"
     emit cache_writer "$([[ "${shard}" == "${writer}" ]] && echo true || echo false)"
     emit cache_writer_shard "${writer}"
+
+    # Attempt-1 opportunistic reuse (#3213).
+    #
+    # The exact-head payload is already written on attempt 1 by the single
+    # designated writer shard, but until now no shard was allowed to READ it
+    # before attempt 2. Reading it on attempt 1 costs one bounded cache lookup
+    # and never blocks: a shard that starts before the writer has finished
+    # simply misses and takes the unchanged restore/build path. No producer job,
+    # no `needs:` edge, and no polling are introduced, so the same-run fan-out
+    # regression measured in run 31768277005 cannot recur.
+    #
+    # Anything other than the exact lowercase string `true` disables the
+    # opportunistic read, so a malformed switch degrades to today's behaviour
+    # (build locally) instead of failing a shard.
+    if (( run_attempt > 1 )); then
+      restore_mode="rerun"
+    elif [[ "${attempt1_reuse}" == "true" ]]; then
+      restore_mode="opportunistic"
+    else
+      restore_mode="disabled"
+    fi
+    emit restore_mode "${restore_mode}"
+    emit restore_enabled "$([[ "${restore_mode}" == "disabled" ]] && echo false || echo true)"
     ;;
 
   restore)
