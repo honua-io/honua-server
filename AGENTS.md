@@ -154,7 +154,7 @@ Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci
 
 ## Merge Train (how PRs actually land)
 
-There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events run the cheap **`PR Gate`** (`.github/workflows/pr-gate.yml` — build + format + Fast unit + architecture smoke, one runner), CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The heavy ~45-job matrix runs only on the train's **batch CI** and the nightly schedule.
+There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events run the cheap **`PR Gate`** (`.github/workflows/pr-gate.yml` — build + format + Fast unit + architecture smoke, one runner), CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The full CI matrix (every server-test shard in `.github/ci-shards.json` plus the AOT/Docker/browser/MCP/provider lanes) runs only on the train's **batch CI** and the nightly schedule.
 
 **The required branch-protection checks are `PR Gate` and `Review Gate`.** `PR Gate` (app id `15368`) is the unprivileged verification context; `Review Gate` is the trusted, exact-head admission context published only by default-branch policy. Both are unfiltered and required. `CI Gate` remains the batch-CI aggregator and is intentionally not a required per-PR context.
 
@@ -165,6 +165,38 @@ complete. The sole merge authority is `.github/workflows/merge-train.yml`; no
 automatic serial lander exists. Its schedule is observation-only, so an operator
 must explicitly dispatch `train_apply=true` to land. Use `hold`, `train:hold`, or
 `train:escalated` to exclude a PR.
+
+### Base every PR on `trunk` — do not stack (#3248)
+
+**A PR's base branch must be `trunk`.** Stacking a PR on another feature branch
+is how reviewed, tested, nominally-merged work disappears: the stacked PR merges
+into its base, GitHub marks it **MERGED**, the linked issue often auto-closes,
+CI was green — and if the base branch itself never lands, the payload is not in
+the product and *nothing* signals it. It happened three times in five weeks
+(#3116, #3113, #2835).
+
+- If you must stack while a base is in review, **re-target the stack member at
+  `trunk` the moment its base merges** — `gh pr edit <N> --base trunk` — and
+  rebase. Never merge a PR into a base branch that has already landed or been
+  deleted.
+- **The MERGED badge is not evidence — and neither is
+  `git merge-base --is-ancestor <mergeCommitSha> origin/trunk` on its own.** That
+  is a *commit-identity* test: a squash, a cherry-pick or an independent re-land
+  puts the content on `trunk` under a different SHA and still reads as stranded.
+  Use it to find candidates, then check the content. (The first #3248 sweep filed
+  three false positives out of four this way, including a "~3,800 insertions lost"
+  headline that per-file comparison refuted.)
+- The scheduled stranded-merge detector (#3248, #3316) does exactly that —
+  `scripts/ci/detect-stranded-merges.py`, run weekly by
+  `.github/workflows/stranded-merge-detector.yml`. It adjudicates each candidate
+  by patch identity first, then blob equality, then added-line presence; splits
+  `stranded` (files absent) from `edits-missing` (files present, the PR's lines
+  are not), `superseded`, `landed`, and `indeterminate` (could not be checked —
+  usually a force-pushed or deleted stack base, which is treated as actionable,
+  never as a pass); and separately warns about **open** PRs whose base has
+  already been merged or deleted, with the `gh pr edit` remedy. It is the
+  backstop, not the control: re-target the stack member yourself when its base
+  lands.
 
 ### Live batch train
 

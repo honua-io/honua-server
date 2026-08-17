@@ -21,6 +21,18 @@ namespace Honua.Worker.Gdal.Tests;
 internal static class GdalCli
 {
     /// <summary>
+    /// Gets a value indicating whether the environment requires the GDAL CLI to be
+    /// present, so a missing tool must fail the test instead of skipping it.
+    /// </summary>
+    /// <remarks>
+    /// Set by the GDAL-capable CI job. See <see cref="GdalCliFactAttribute"/>.
+    /// </remarks>
+    public static bool RequireCli => string.Equals(
+        Environment.GetEnvironmentVariable(GdalCliFactAttribute.RequireEnvironmentVariable),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Returns whether the given GDAL CLI tool is reachable on PATH.
     /// </summary>
     public static bool Available(string tool)
@@ -132,21 +144,43 @@ internal static class GdalCli
 
 /// <summary>
 /// Fact attribute for real-GDAL integration tests that skip when the requested
-/// GDAL CLI tool is not available on the host.
+/// GDAL CLI tool is not available on the host — unless the environment demands
+/// the tooling, in which case the test runs and fails.
 /// </summary>
+/// <remarks>
+/// Skipping is the right default on a dev box, but it made these cases invisible
+/// in CI: the tool was absent, every case reported "skipped", and
+/// <c>dotnet test</c> still exited 0, so the only coverage of the real
+/// <c>gdaldem</c> / <c>ogr2ogr</c> command lines was green-by-absence (#3271).
+/// Setting <c>HONUA_REQUIRE_GDAL_CLI=true</c> — as the GDAL-capable CI job does —
+/// suppresses the skip, so a runner that lost its GDAL install fails loudly
+/// instead of silently dropping the coverage. This mirrors the TestKit
+/// <c>RequiredEnvironmentFactAttribute</c> / <c>CloudTestAttribute</c> pattern of
+/// letting the environment decide whether a gated case skips.
+/// </remarks>
 [TraitDiscoverer("Honua.Worker.Gdal.Tests.GdalCliFactDiscoverer", "Honua.Worker.Gdal.Tests")]
 public sealed class GdalCliFactAttribute : FactAttribute, ITraitAttribute
 {
+    /// <summary>
+    /// Environment variable that turns "GDAL CLI missing" from a skip into a failure.
+    /// </summary>
+    public const string RequireEnvironmentVariable = "HONUA_REQUIRE_GDAL_CLI";
+
     /// <summary>
     /// Initializes a new instance of the <see cref="GdalCliFactAttribute"/> class.
     /// </summary>
     /// <param name="tool">The GDAL CLI tool required by the test.</param>
     public GdalCliFactAttribute(string tool)
     {
-        if (!GdalCli.Available(tool))
+        ArgumentException.ThrowIfNullOrWhiteSpace(tool);
+
+        if (GdalCli.Available(tool) || GdalCli.RequireCli)
         {
-            Skip = $"GDAL CLI tool '{tool}' is not available on PATH.";
+            return;
         }
+
+        Skip = $"GDAL CLI tool '{tool}' is not available on PATH. "
+            + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
     }
 }
 

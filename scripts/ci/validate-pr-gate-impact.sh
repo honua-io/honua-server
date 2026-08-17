@@ -124,6 +124,12 @@ if grep -Eq '^    paths(-ignore)?:' "${required_workflow}"; then
   exit 1
 fi
 
+# The always-on PR Gate steps are what keep docs/internal/ci/gate-model.md,
+# workflow-inventory.md, and the code-scanning inventory outside the blast radius
+# of a docs-only route. Assert that structurally, and prove the assertion fails.
+"${python_bin}" scripts/ci/fixtures/validate-pr-gate-always-on-steps.py \
+  "${required_workflow}" --self-test
+
 lean_gate_block="$(awk '
   /^      - name: Lean gate \(build \+ format \+ fast unit\/architecture smoke\)$/ { found=1 }
   found { print }

@@ -12,7 +12,17 @@ HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Real-gate job names: a CI Gate failure caused by ANY of these is never a flake
 # (a human must fix it), so the whole PR stays FAIL even under merge-through. The
 # pattern is matched with grep -E against each failing leaf job's name.
-: "${TRAIN_REAL_GATE_JOB_REGEX:=Build & Format|Analyze C#|\.NET Foundation Tests|Architecture|CI Router|OpenAPI|drift}"
+#
+# Anything NOT listed here (and not an aggregator or a TRAIN_NONBLOCKING_JOBS
+# entry) is treated as a shard: its failure is downgraded to FLAKE when the log
+# matches TRAIN_FLAKE_REGEX. That check is run-wide, because train_select_job_log
+# falls back to `gh run view --log-failed` for the WHOLE run — so one unrelated
+# 40P01 shard deadlock in the same batch would launder an unlisted job's real
+# failure into a flake. Every foundation-class (non-shard, non-flaky) job must
+# therefore be listed. `Worker GDAL Tests` (#3271) is one: it was carved out of
+# `.NET Foundation Tests`, which is listed, and a gdaldem/ogr2ogr regression is
+# never environmental.
+: "${TRAIN_REAL_GATE_JOB_REGEX:=Build & Format|Analyze C#|\.NET Foundation Tests|Worker GDAL Tests|Architecture|CI Router|OpenAPI|drift}"
 # Aggregator-only job names: these are roll-ups (the required "CI Gate" check and
 # the shard fan-in summary). When the ONLY failing jobs are aggregators, a shard
 # was cancelled/flaked underneath them — treat that as a flake, not a real break.
@@ -241,6 +251,29 @@ train_pr_admission_snapshot() {
     --repo "${GITHUB_REPOSITORY}" --pr "${pr}"
 }
 
+# train_attesting_logins_json: the reviewer identity set, read from the SAME
+# source the gate evaluates with (scripts/ci/review-gate-evidence.js
+# --print-logins) instead of restating logins here. This function recomputes
+# unresolvedCount and train_publish_review_gate_status WRITES the required
+# `Review Gate` status, so a login set that drifted from the evaluator's could
+# stamp the gate green while a reviewer's threads sat unresolved
+# (honua-server#3314 review finding 1).
+train_attesting_logins_json() {
+  local logins
+  logins="$(node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}" --print-logins \
+    | jq -R -s 'split("\n") | map(select(length > 0))')" || return 1
+  # Fail closed explicitly rather than relying on the caller having set pipefail.
+  # Without this, a node crash yields `[]` from jq with exit 0, and an empty
+  # login set makes every unresolved thread invisible -- the train would then
+  # stamp Review Gate green on a head with open reviewer findings. That is the
+  # same failure this function exists to prevent, one layer down.
+  jq -e 'type == "array" and length > 0' >/dev/null 2>&1 <<<"${logins}" || {
+    train_warn "attesting reviewer login set is empty or unreadable"
+    return 1
+  }
+  printf '%s' "${logins}"
+}
+
 train_publish_review_gate_status() {
   local pr="$1" head="$2" state="$3" description="$4"
   if [[ -n "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER:-}" ]]; then
@@ -253,7 +286,10 @@ train_publish_review_gate_status() {
 }
 
 train_resolve_clean_comment_commits() {
-  local comments="$1" comment login referenced resolved annotated output='[]'
+  # $2 is passed explicitly rather than read from the caller's `local` via bash
+  # dynamic scoping: an implicit cross-function contract is the same coupling
+  # that produced the hardcoded-login drift this function was fixed for.
+  local comments="$1" attesting_logins="$2" comment login referenced resolved annotated output='[]'
   while IFS= read -r comment; do
     [[ -z "${comment}" ]] && continue
     login="$(jq -r '.author.login // ""' <<<"${comment}")"
@@ -263,9 +299,7 @@ train_resolve_clean_comment_commits() {
       catch ""
     ' <<<"${comment}")"
     resolved="$(jq -r '.resolvedCommitOid // ""' <<<"${comment}")"
-    if [[ -z "${resolved}" &&
-          ("${login}" == "chatgpt-codex-connector" ||
-           "${login}" == "chatgpt-codex-connector[bot]") ]]; then
+    if [[ -z "${resolved}" ]] && jq -e --arg l "${login}" 'index($l)' >/dev/null 2>&1 <<<"${attesting_logins}"; then
       if [[ "${#referenced}" == "40" ]]; then
         resolved="${referenced}"
       elif [[ -n "${referenced}" ]]; then
@@ -288,9 +322,11 @@ train_resolve_clean_comment_commits() {
 # publish the result so branch protection and subsequent controllers see it.
 train_refresh_review_gate() {
   local pr="$1" head="$2" snapshot="$3" unresolved clean_comments payload result state description
-  unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
-    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
-  clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")")" || return 1
+  local attesting_logins
+  attesting_logins="$(train_attesting_logins_json)" || return 1
+  unresolved="$(jq --argjson bots "${attesting_logins}" --arg head "${head}" \
+    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login as $l | $bots | index($l)) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
+  clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")" "${attesting_logins}")" || return 1
   # Keep review history off the process argument vector. Busy PRs can carry
   # enough paginated review evidence to exceed Linux ARG_MAX when injected
   # through --argjson, even though jq can process the same data via stdin.
@@ -356,6 +392,38 @@ train_open_pr_queue() {
   jq -sc '[.[].data.repository.pullRequests.nodes[] | .labels = (.labels.nodes // [])]' <<<"${pages}"
 }
 
+# GitHub computes `mergeable` asynchronously after trunk or a PR head moves.
+# The first GraphQL snapshot immediately after a successful land can therefore
+# report every otherwise-ready PR as UNKNOWN. Treating that transient value as
+# terminal made the continuous drain stop until the schedule/operator prompted
+# it again. Refresh the complete immutable queue snapshot a few times, then
+# retain the conservative UNKNOWN result if GitHub still has not decided.
+#
+# The bounds are deliberately small: this is freshness convergence, not a wait
+# loop. Tests pass zero delay and an offline queue-pages command.
+train_refresh_unknown_mergeability_queue() {
+  local pr_list="$1" attempt=0
+  local max_attempts="${TRAIN_MERGEABILITY_REFRESH_ATTEMPTS:-3}"
+  local delay_seconds="${TRAIN_MERGEABILITY_REFRESH_DELAY_SECONDS:-2}"
+  if [[ ! "${max_attempts}" =~ ^[0-9]+$ ]] \
+    || [[ ! "${delay_seconds}" =~ ^[0-9]+$ ]]; then
+    train_error "mergeability refresh bounds must be non-negative integers"
+    return 1
+  fi
+
+  while jq -e 'any(.[]; .mergeable == "UNKNOWN")' <<<"${pr_list}" >/dev/null \
+    && [[ "${attempt}" -lt "${max_attempts}" ]]; do
+    attempt=$((attempt + 1))
+    train_log "mergeability UNKNOWN; refreshing queue (${attempt}/${max_attempts})"
+    if [[ "${delay_seconds}" -gt 0 ]]; then
+      sleep "${delay_seconds}"
+    fi
+    pr_list="$(train_open_pr_queue)" || return 1
+  done
+
+  printf '%s\n' "${pr_list}"
+}
+
 # train_select: emit the selected batch as JSON lines (one object per PR):
 #   {number, headRefOid, createdAt, gate}
 # Honors MAX_BATCH. Caller pipes through `jq -s .` if it wants an array.
@@ -368,6 +436,7 @@ train_select() {
     pr_list="${TRAIN_PR_LIST_JSON}"
   else
     pr_list="$(train_open_pr_queue)"
+    pr_list="$(train_refresh_unknown_mergeability_queue "${pr_list}")"
   fi
 
   # Oldest createdAt first.

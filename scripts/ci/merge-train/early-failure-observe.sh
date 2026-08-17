@@ -96,8 +96,18 @@ train_early_failure_snapshot_matches_expected() {
 
 train_early_failure_classify_log() {
   local text="$1"
-  if grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"${text}"; then
+  # Use lib.sh's shared, anchored marker predicates rather than a local
+  # `grep -F` for the bare token: the unanchored form also matched job logs that
+  # merely PRINT the token (the merge train's own warning text does, so every
+  # CI Router Validation log contains it) and mislabelled them as capacity.
+  if train_log_is_capacity_exhaustion "${text}"; then
     printf 'capacity\n'
+  elif train_log_is_shard_killed "${text}"; then
+    # An OOM/external kill is infrastructure, not a deterministic candidate the
+    # observer should ever propose cancelling a run for.
+    printf 'shard-killed\n'
+  elif train_log_is_shard_hang "${text}"; then
+    printf 'timeout\n'
   elif train_log_is_timeout "${text}"; then
     printf 'timeout\n'
   elif train_log_is_flake "${text}"; then
@@ -110,11 +120,17 @@ train_early_failure_classify_log() {
 }
 
 train_early_failure_log() {
-  local job_id="$1"
+  local job_id="$1" annotations
   if [[ -n "${TRAIN_EARLY_FAILURE_LOG_READER:-}" ]]; then
     "${TRAIN_EARLY_FAILURE_LOG_READER}" "${job_id}"
   else
-    gh run view --job "${job_id}" --log 2>/dev/null
+    if annotations="$(train_read_job_annotations "${job_id}")" \
+      && { train_log_is_capacity_exhaustion "${annotations}" \
+        || train_log_is_timeout "${annotations}"; }; then
+      printf '%s\n' "${annotations}"
+      return 0
+    fi
+    train_read_job_log "${job_id}"
   fi
 }
 

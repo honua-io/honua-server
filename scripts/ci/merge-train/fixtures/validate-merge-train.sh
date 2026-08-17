@@ -320,6 +320,18 @@ CI_JOBS_CASE=blocking-skipped train_expected_shards_are_classifiable 6 "${TWO_SH
 unset TRAIN_CI_JOBS_READER CI_JOBS_CASE SAFE_DESCRIPTOR TWO_SHARD_DESCRIPTOR
 
 echo "== Case 5: real-test-fail (attribute + drop; 0-suspect escalates) =="
+# Removing the sole member is a valid empty-batch result, not a `set -e`
+# failure. Dropped members must also lose the transient in-flight label in the
+# same mutation sequence so a controller exit cannot strand both labels.
+assert_eq "attribute cleanup: sole CSV member removes cleanly" \
+  "$(train_csv_remove_exact '3197' '3197')" ""
+assert_eq "attribute cleanup: exact CSV removal preserves peers" \
+  "$(train_csv_remove_exact '3197,3260' '3197')" "3260"
+drop_log="$(train_drop_pr 3197 'fixture failure' 2>&1)"
+assert_contains "attribute cleanup: drop adds escalation" "${drop_log}" \
+  "gh pr edit 3197 --add-label train:escalated"
+assert_contains "attribute cleanup: drop clears landing" "${drop_log}" \
+  "gh pr edit 3197 --remove-label train:landing"
 # Build a 2-PR batch where pr401 touches a FeatureServer path and pr402 an OGC
 # path; a failing "FeatureServer Endpoints" shard must attribute to pr401 only.
 : >"${INC}"
@@ -891,6 +903,39 @@ export -f __queue_pages
 export TRAIN_PR_QUEUE_PAGES_CMD=__queue_pages
 assert_eq "select: paginated queue includes entries beyond first 100" "$(train_open_pr_queue | jq length)" "101"
 unset TRAIN_PR_QUEUE_PAGES_CMD
+
+# GitHub reports mergeable=UNKNOWN briefly after trunk advances. The selector
+# refreshes that live snapshot within a strict bound so the drain does not stop
+# and wait for another schedule/operator prompt.
+mergeability_refresh_record="${SCRATCH}/mergeability-refresh"; : >"${mergeability_refresh_record}"
+__resolved_queue_pages() {
+  printf 'refresh\n' >>"${mergeability_refresh_record}"
+  jq -nc '{data:{repository:{pullRequests:{nodes:[{number:1200,headRefOid:"resolved",isDraft:false,mergeable:"MERGEABLE",labels:{nodes:[]},createdAt:"2026-01-03T00:00:00Z",author:{login:"c"}}],pageInfo:{hasNextPage:false,endCursor:null}}}}}'
+}
+export -f __resolved_queue_pages
+export TRAIN_PR_QUEUE_PAGES_CMD=__resolved_queue_pages
+export TRAIN_MERGEABILITY_REFRESH_ATTEMPTS=3 TRAIN_MERGEABILITY_REFRESH_DELAY_SECONDS=0
+unknown_queue='[{"number":1200,"headRefOid":"pending","isDraft":false,"mergeable":"UNKNOWN","labels":[],"createdAt":"2026-01-03T00:00:00Z"}]'
+resolved_queue="$(train_refresh_unknown_mergeability_queue "${unknown_queue}")"
+assert_eq "select: transient UNKNOWN refreshes to MERGEABLE" "$(jq -r '.[0].mergeable' <<<"${resolved_queue}")" "MERGEABLE"
+assert_eq "select: transient UNKNOWN needs one bounded refresh" "$(wc -l <"${mergeability_refresh_record}" | tr -d ' ')" "1"
+
+: >"${mergeability_refresh_record}"
+__unknown_queue_pages() {
+  printf 'refresh\n' >>"${mergeability_refresh_record}"
+  jq -nc '{data:{repository:{pullRequests:{nodes:[{number:1201,headRefOid:"pending",isDraft:false,mergeable:"UNKNOWN",labels:{nodes:[]},createdAt:"2026-01-04T00:00:00Z",author:{login:"d"}}],pageInfo:{hasNextPage:false,endCursor:null}}}}}'
+}
+export -f __unknown_queue_pages
+export TRAIN_PR_QUEUE_PAGES_CMD=__unknown_queue_pages TRAIN_MERGEABILITY_REFRESH_ATTEMPTS=2
+still_unknown="$(train_refresh_unknown_mergeability_queue "${unknown_queue}")"
+assert_eq "select: persistent UNKNOWN remains fail-closed" "$(jq -r '.[0].mergeable' <<<"${still_unknown}")" "UNKNOWN"
+assert_eq "select: persistent UNKNOWN stops at refresh bound" "$(wc -l <"${mergeability_refresh_record}" | tr -d ' ')" "2"
+
+export TRAIN_MERGEABILITY_REFRESH_ATTEMPTS=invalid
+train_refresh_unknown_mergeability_queue "${unknown_queue}" >/dev/null 2>&1 \
+  && bad "select: invalid mergeability refresh bounds must fail closed" \
+  || ok "select: invalid mergeability refresh bounds fail closed"
+unset TRAIN_PR_QUEUE_PAGES_CMD TRAIN_MERGEABILITY_REFRESH_ATTEMPTS TRAIN_MERGEABILITY_REFRESH_DELAY_SECONDS
 export TRAIN_PR_LIST_JSON='[
   {"number":10,"headRefOid":"aaa","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-02T00:00:00Z"},
   {"number":11,"headRefOid":"bbb","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-01T00:00:00Z"},
@@ -1037,6 +1082,7 @@ __sel_failed_jobs() {  # <run-id>
     cancelshard) printf 'cancelled\tServer Tests (Server Features Misc)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     shard_flake) printf 'failure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     foundation)  printf 'failure\t.NET Foundation Tests\nfailure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    workergdal) printf 'failure\tWorker GDAL Tests\nfailure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     buildfmt)    printf 'failure\tBuild & Format\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     shard_real)  printf 'failure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     nojobs)      : ;;
@@ -1047,6 +1093,11 @@ __sel_job_log() {  # <run-id> <job-name>
   case "${SEL_CASE:-}" in
     shard_flake) printf 'ERROR 40P01: deadlock detected during seed\n' ;;
     shard_real)  printf 'Assert.Equal() Failure: expected 3 actual 4\n' ;;
+    # The live train_select_job_log ignores its job argument and returns the
+    # WHOLE run's `--log-failed` output, so an unrelated shard deadlock in the
+    # same batch is visible to every job's flake check. That is exactly what
+    # would launder an unlisted real-gate job's failure into a FLAKE (#3271).
+    workergdal)  printf 'ERROR 40P01: deadlock detected during seed\nGDAL CLI tool gdaldem produced a wrong slope raster\n' ;;
     *) : ;;
   esac
 }
@@ -1064,6 +1115,12 @@ assert_eq "select(flake): cancelled shard => FLAKE" \
 # (c) real-gate job (.NET Foundation Tests) failed => FAIL (skip).
 assert_eq "select(flake): .NET Foundation Tests failed => FAIL" \
   "$(SEL_CASE=foundation train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
+# (c2) #3271: `Worker GDAL Tests` was carved out of `.NET Foundation Tests`. It
+# must stay a real gate — otherwise a genuine gdaldem/ogr2ogr regression is
+# downgraded to FLAKE whenever any shard in the same run hits a 40P01 deadlock,
+# because the log lookup is run-wide. The log fixture above contains BOTH.
+assert_eq "select(flake): Worker GDAL Tests failed alongside a 40P01 => FAIL" \
+  "$(SEL_CASE=workergdal train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
 # (d) real-gate job (Build & Format) failed => FAIL.
 assert_eq "select(flake): Build & Format failed => FAIL" \
   "$(SEL_CASE=buildfmt train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"

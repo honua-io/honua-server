@@ -1,0 +1,348 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Honua OGC API Styles",
+    "description": "OGC API Styles adapter over Honua layer and standalone style storage",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/ogc/styles": {
+      "get": {
+        "summary": "List styles",
+        "parameters": [
+          { "$ref": "#/components/parameters/metadataFormat" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available styles and service links",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "406": { "$ref": "#/components/responses/NotAcceptable" }
+        }
+      },
+      "post": {
+        "summary": "Create a standalone style",
+        "security": [
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/requestedStyleId" },
+          { "$ref": "#/components/parameters/validate" },
+          { "$ref": "#/components/parameters/prefer" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/vnd.mapbox.style+json": {
+              "schema": { "type": "object" }
+            },
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Style created",
+            "headers": {
+              "Location": {
+                "description": "Absolute URL of the created style",
+                "schema": { "type": "string", "format": "uri" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StyleEntry" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/PayloadTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" }
+        }
+      }
+    },
+    "/ogc/styles/conformance": {
+      "get": {
+        "summary": "Get OGC API Styles conformance classes",
+        "responses": {
+          "200": {
+            "description": "Conformance declaration",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/styles/openapi.json": {
+      "get": {
+        "summary": "Get the OGC API Styles OpenAPI document",
+        "parameters": [
+          { "$ref": "#/components/parameters/openApiFormat" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "406": { "$ref": "#/components/responses/NotAcceptable" }
+        }
+      }
+    },
+    "/ogc/styles/{styleId}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/styleId" }
+      ],
+      "get": {
+        "summary": "Get a stylesheet",
+        "responses": {
+          "200": {
+            "description": "Stylesheet",
+            "content": {
+              "application/vnd.mapbox.style+json": { "schema": { "type": "object" } },
+              "application/vnd.ogc.sld+xml;version=1.0": { "schema": { "type": "string" } },
+              "application/vnd.ogc.sld+xml;version=1.1": { "schema": { "type": "string" } },
+              "application/vnd.esri.drawinginfo+json": { "schema": { "type": "object" } }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "406": { "$ref": "#/components/responses/NotAcceptable" }
+        }
+      },
+      "put": {
+        "summary": "Update an existing style",
+        "security": [
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/validate" },
+          { "$ref": "#/components/parameters/prefer" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/vnd.mapbox.style+json": { "schema": { "type": "object" } },
+            "application/json": { "schema": { "type": "object" } },
+            "application/vnd.esri.drawinginfo+json": { "schema": { "type": "object" } }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Style updated",
+            "headers": {
+              "X-Style-Unsupported-Symbolizers": {
+                "description": "Lossy Esri symbolizer conversions that did not block storage",
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "413": { "$ref": "#/components/responses/PayloadTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a standalone style",
+        "description": "Deletes an ordinary standalone style. Canonical per-layer default styles are protected.",
+        "security": [
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
+        "responses": {
+          "204": { "description": "Style deleted" },
+          "403": {
+            "description": "The requested style is a protected per-layer default style",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/ogc/styles/{styleId}/metadata": {
+      "parameters": [
+        { "$ref": "#/components/parameters/styleId" }
+      ],
+      "get": {
+        "summary": "Get style metadata",
+        "parameters": [
+          { "$ref": "#/components/parameters/metadataFormat" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Style metadata and links",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "406": { "$ref": "#/components/responses/NotAcceptable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "styleId": {
+        "name": "styleId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "requestedStyleId": {
+        "name": "X-Style-Id",
+        "in": "header",
+        "required": false,
+        "description": "Optional stable identifier requested for the new style; the server generates one when omitted",
+        "schema": { "type": "string" }
+      },
+      "validate": {
+        "name": "validate",
+        "in": "query",
+        "required": false,
+        "description": "Request strict stylesheet validation",
+        "schema": {
+          "type": "string",
+          "enum": ["true", "yes", "strict"]
+        }
+      },
+      "prefer": {
+        "name": "Prefer",
+        "in": "header",
+        "required": false,
+        "description": "Use handling=strict to request strict stylesheet validation",
+        "schema": { "type": "string", "example": "handling=strict" }
+      },
+      "metadataFormat": {
+        "name": "f",
+        "in": "query",
+        "required": false,
+        "description": "Metadata response format",
+        "schema": { "type": "string", "enum": ["json", "html"] }
+      },
+      "openApiFormat": {
+        "name": "f",
+        "in": "query",
+        "required": false,
+        "description": "OpenAPI response format",
+        "schema": { "type": "string", "enum": ["json"] }
+      }
+    },
+    "schemas": {
+      "StyleEntry": {
+        "type": "object",
+        "required": ["id", "links"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string", "nullable": true },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "Link": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {
+          "href": { "type": "string", "format": "uri-reference" },
+          "rel": { "type": "string" },
+          "type": { "type": "string" },
+          "templated": { "type": "boolean" },
+          "hreflang": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "format": "uri-reference" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string", "format": "uri-reference" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "NotFound": {
+        "description": "Style or document not found",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "NotAcceptable": {
+        "description": "No acceptable representation is available",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "Conflict": {
+        "description": "A style with the requested identifier already exists",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "The stylesheet exceeds the configured size limit",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "The stylesheet media type is not supported",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

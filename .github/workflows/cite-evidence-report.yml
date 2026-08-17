@@ -168,6 +168,9 @@ jobs:
         with:
           path: artifacts/cite-evidence
 
+      # Every failure branch must say WHICH condition tripped. The suite runners
+      # interleave their own per-suite "Tests failed: 0" lines into this job's
+      # log, so a bare non-zero exit here reads as "failed with zero failures".
       - name: Fail on conformance issues
         if: always()
         env:
@@ -175,14 +178,62 @@ jobs:
         run: |
           set -euo pipefail
 
-          printf '%s\n' "$EXIT_CODES" > "$RUNNER_TEMP/cite-exit-codes.txt"
-          if grep -Ev '=0$' "$RUNNER_TEMP/cite-exit-codes.txt"; then
-            echo "One or more CITE runner scripts exited non-zero."
-            cat "$RUNNER_TEMP/cite-exit-codes.txt"
+          codes="$RUNNER_TEMP/cite-exit-codes.txt"
+          printf '%s\n' "$EXIT_CODES" | sed '/^$/d' > "$codes"
+          if [[ ! -s "$codes" ]]; then
+            echo "::error::CITE runners published no exit-code inventory; the suite step did not run to completion."
+            exit 1
+          fi
+          malformed="$(grep -Ev '^[^=]+=[0-9]+$' "$codes" || true)"
+          if [[ -n "$malformed" ]]; then
+            echo "::error::CITE exit-code inventory has malformed entries: $(tr '\n' ' ' <<<"$malformed")"
+            echo 'Full inventory:'
+            cat "$codes"
+            exit 1
+          fi
+          nonzero="$(grep -Ev '=0$' "$codes" || true)"
+          if [[ -n "$nonzero" ]]; then
+            echo "::error::CITE runner scripts exited non-zero: $(tr '\n' ' ' <<<"$nonzero")"
+            echo 'Full inventory:'
+            cat "$codes"
             exit 1
           fi
 
-          jq -e '.totals.allPassed == true' artifacts/cite-evidence/conformance-summary.json >/dev/null
+          summary=artifacts/cite-evidence/conformance-summary.json
+          if [[ ! -f "$summary" ]]; then
+            echo "::error::Every CITE runner exited 0 but $summary was not produced; conformance results are missing."
+            exit 1
+          fi
+          # One jq pass emits the verdict, the totals, and exactly the suites
+          # that fail the allPassed predicate in build-cite-evidence.sh. The
+          # `blocking` filter is that predicate's exact negation, so the list
+          # under the error can never come out empty.
+          report="$RUNNER_TEMP/cite-verdict.txt"
+          if ! jq -r '
+                def blocking:
+                  .status != "passed" or .totalTests == 0 or .passed != .totalTests
+                  or .failed != 0 or .skipped != 0 or .cantTell != 0;
+                "verdict=\(.totals.allPassed)",
+                "totals=\(.totals.passed)/\(.totals.totalTests) tests across \(.totals.suites) suite(s); failed=\(.totals.failed) skipped=\(.totals.skipped) cantTell=\(.totals.cantTell)",
+                (.suites[] | select(blocking)
+                  | "  - \(.name): status=\(.status) total=\(.totalTests) passed=\(.passed) failed=\(.failed) skipped=\(.skipped) cantTell=\(.cantTell)")
+              ' "$summary" > "$report"; then
+            echo "::error::$summary is present but could not be read as a conformance summary."
+            exit 1
+          fi
+          verdict="$(sed -n '1s/^verdict=//p' "$report")"
+          totals="$(sed -n '2s/^totals=//p' "$report")"
+          if [[ "$verdict" != true ]]; then
+            echo "::error::CITE evidence reports at least one suite that is not fully passing ($totals)."
+            if [[ "$(wc -l < "$report")" -gt 2 ]]; then
+              echo 'Suites that block a clean report:'
+              tail -n +3 "$report"
+            else
+              echo "No individual suite is blocking, so .totals.allPassed disagrees with .suites; inspect $summary."
+            fi
+            exit 1
+          fi
+          echo "All CITE suites passed: $totals."
 
       - name: Assert CITE status freshness
         if: always()

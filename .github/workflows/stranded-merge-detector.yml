@@ -1,0 +1,182 @@
+name: Stranded Merge Detector
+
+# Two sweeps over one repository (#3248, #3316, honua-sdk-js#1317).
+#
+# Post-mortem: merged PRs whose payload never reached the default branch. A PR
+# opened against a stack base is merged into that base; if the base is never
+# merged, GitHub still reports MERGED and the payload sits on a branch nobody
+# watches. Detection is by *content*, not by commit identity -- the identity test
+# alone produced three false positives out of four on the first #3248 sweep.
+#
+# Preventive: open PRs stacked on a base that has already been merged or
+# deleted. Those strand their payload the moment they merge, and the remedy is
+# one `gh pr edit` away, which is the point of running this on a schedule.
+#
+# Reusable on purpose: honua-sdk-js hit the identical failure, and both issues
+# ask for one mechanism rather than two implementations. Callers pass their own
+# default branch; the script and its tests live here. No external consumer is
+# wired up yet, so the `workflow_call` inputs are exercised only from this repo.
+#
+# JSON contract: findings.json carries `schemaVersion`. Version 2 renamed the
+# classifications (`payload-missing` -> `stranded`, `content-present` ->
+# `landed`) and added `edits-missing`, `superseded`, `indeterminate` and the
+# `openFindings` array. Anything parsing this output must branch on
+# `schemaVersion`; `--fail-on payload-missing` remains accepted as an alias.
+
+on:
+  workflow_dispatch:
+    inputs:
+      default-branch:
+        description: Default branch to sweep against (blank uses the repository default)
+        type: string
+        default: ""
+      limit:
+        description: How many merged PRs to sweep
+        type: number
+        default: 250
+      open-limit:
+        description: How many open PRs to check for a stale base
+        type: number
+        default: 200
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_call:
+    inputs:
+      default-branch:
+        description: Default branch of the calling repository
+        type: string
+        default: trunk
+      limit:
+        description: How many merged PRs to sweep
+        type: number
+        default: 250
+      open-limit:
+        description: How many open PRs to check for a stale base
+        type: number
+        default: 200
+      tooling-ref:
+        description: honua-server ref holding the detector script
+        type: string
+        default: trunk
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: stranded-merge-detector-${{ github.repository }}
+  cancel-in-progress: true
+
+env:
+  DETECTOR_LABEL: stranded-merge-detector
+
+jobs:
+  sweep:
+    name: Sweep merged and open PRs for stranded payload
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # fetch-depth: 0 is required three times over: merge-base --is-ancestor
+      # needs full history on both sides, the content pass reads blobs out of the
+      # stranded merge commits themselves, and the open-PR pass resolves base
+      # branches from local remote-tracking refs rather than over the network
+      # (this checkout is credential-free, so an authenticated git fetch is not
+      # available to it).
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # When called from another repository the script is not in the caller's
+      # tree, so fetch it. Same-repo runs already have it and skip this.
+      - name: Checkout detector tooling
+        if: github.repository != 'honua-io/honua-server'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.tooling-ref || 'trunk' }}
+          path: .stranded-merge-tooling
+          persist-credentials: false
+
+      - name: Validate detector against recorded fixtures
+        run: |
+          root="."
+          if [ "${{ github.repository }}" != "honua-io/honua-server" ]; then
+            root=".stranded-merge-tooling"
+          fi
+          echo "DETECTOR_ROOT=${root}" >> "${GITHUB_ENV}"
+          python3 "${root}/scripts/ci/detect-stranded-merges.test.py"
+
+      # One sweep, one set of API calls. The markdown report is rendered from the
+      # same findings.json the gate below reads, so the report and the gate can
+      # never disagree.
+      - id: sweep
+        name: Sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ inputs.default-branch || github.event.repository.default_branch }}
+          LIMIT: ${{ inputs.limit || 250 }}
+          OPEN_LIMIT: ${{ inputs.open-limit || 200 }}
+        run: |
+          set -o pipefail
+          python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
+            --default-branch "${DEFAULT_BRANCH}" \
+            --limit "${LIMIT}" \
+            --open-limit "${OPEN_LIMIT}" \
+            --json > findings.json
+          python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
+            --from-json findings.json | tee "${GITHUB_STEP_SUMMARY}" > report.md
+          actionable=$(python3 -c "import json; print(json.load(open('findings.json'))['actionable'])")
+          echo "actionable=${actionable}" >> "${GITHUB_OUTPUT}"
+
+      # Only actionable findings file an issue: payload that is absent, payload
+      # whose edits never landed, payload that could not be adjudicated at all,
+      # and open PRs pointing at a dead base. A stranded merge whose content
+      # re-landed elsewhere is real but harmless, and filing it would train
+      # everyone to ignore the detector -- three of the first four findings across
+      # both repos were exactly that case.
+      - name: File or update the tracking issue
+        if: steps.sweep.outputs.actionable != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          title="chore: PR payload that never reached the default branch"
+          legacy_title="chore: merged PRs whose payload never reached the default branch"
+          body_file=issue-body.md
+          {
+            echo "Found by \`.github/workflows/stranded-merge-detector.yml\` on $(date -u +%Y-%m-%d)."
+            echo
+            cat report.md
+            echo
+            echo "**Merged rows are a signal to diff the payload**, not proof that a feature is gone."
+            echo "Recovery is a cherry-pick or a rebase of the stack base; abandonment is fine too,"
+            echo "as long as it is written down on the issue the PR was for."
+            echo
+            echo "**Open rows are cheap to fix right now** -- run the remedy in the table before the"
+            echo "PR merges and it never becomes a merged row."
+          } > "${body_file}"
+
+          # Identity is the label, not the title: a title match breaks the moment
+          # anyone edits the heading. The legacy-title lookup is a one-time bridge
+          # for an issue filed before the label existed.
+          gh label create "${DETECTOR_LABEL}" --repo "${REPO}" --color ededed \
+            --description "Filed by the stranded-merge detector" 2>/dev/null || true
+
+          existing=$(gh issue list --repo "${REPO}" --state open --label "${DETECTOR_LABEL}" \
+            --json number --jq '.[0].number // empty')
+          if [ -z "${existing}" ]; then
+            existing=$(gh issue list --repo "${REPO}" --state open --search "\"${legacy_title}\" in:title" \
+              --json number --jq '.[0].number // empty')
+          fi
+
+          if [ -n "${existing}" ]; then
+            gh issue edit "${existing}" --repo "${REPO}" --title "${title}" \
+              --add-label "${DETECTOR_LABEL}" --body-file "${body_file}"
+            echo "updated https://github.com/${REPO}/issues/${existing}"
+          else
+            gh issue create --repo "${REPO}" --title "${title}" \
+              --label "${DETECTOR_LABEL}" --body-file "${body_file}"
+          fi

@@ -67,7 +67,7 @@ jobs:
   attest:
     needs: resolve
     if: needs.resolve.outputs.pr != ''
-    name: Publish SHA-bound Codex review attestation
+    name: Publish SHA-bound review attestation
     runs-on: ubuntu-latest
     concurrency:
       # Resolve first so fork workflow_run events (whose pull_requests array is
@@ -104,7 +104,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const { evaluateCodexEvidence, isCodex } = require('./scripts/ci/review-gate-evidence');
+            const { evaluateCodexEvidence, isAttestingReviewer } = require('./scripts/ci/review-gate-evidence');
             const { fetchPullRequestSnapshot } = require('./scripts/ci/review-gate-snapshot');
             const {
               evaluateReviewFirstDispatch,
@@ -140,13 +140,14 @@ jobs:
 
               const unresolved = pr.reviewThreads.nodes.filter(thread =>
                 !thread.isResolved && thread.comments.nodes.some(comment =>
-                  isCodex(comment.author?.login) && comment.commit?.oid === head));
+                  isAttestingReviewer(comment.author?.login, comment.author?.__typename) &&
+                  comment.commit?.oid === head));
               if (unresolved.length) {
-                reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
+                reasons.push(`${unresolved.length} unresolved reviewer thread(s)`);
               }
 
               const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
-                if (!isCodex(comment.author?.login)) return comment;
+                if (!isAttestingReviewer(comment.author?.login, comment.author?.__typename)) return comment;
                 const matches = [...(comment.body || '').matchAll(
                   /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
                 )];
@@ -169,7 +170,7 @@ jobs:
                 unresolvedCount: unresolved.length, head,
               });
               if (!exactReview && !exactCleanComment) {
-                reasons.push('no exact-head Codex review evidence');
+                reasons.push('no exact-head review evidence from an attesting reviewer (Codex or Claude)');
               }
               return { head, reasons, snapshotTruncated };
             };
@@ -182,7 +183,7 @@ jobs:
             const { head, reasons } = initialReview;
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
-              ? 'Codex reviewed this exact head'
+              ? 'An attesting reviewer reviewed this exact head'
               : reasons.join('; ').slice(0, 140);
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: head, state, context: 'Review Gate', description,

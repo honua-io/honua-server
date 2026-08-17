@@ -87,6 +87,17 @@ public sealed class OpenApiDriftTests
             "OGC API Processes",
             processesSpecEndpoints,
             processesRegistryEndpoints);
+
+        var stylesSpecEndpoints = LoadOpenApiEndpoints(ResolveOpenApiPath("ogc-styles-openapi.json"));
+        var stylesRegistryEndpoints = EndpointRegistry.All
+            .Where(endpoint => endpoint.Path.StartsWith("/ogc/styles", StringComparison.OrdinalIgnoreCase))
+            .Select(endpoint => FormatKey(endpoint.Method, endpoint.Path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        AssertSpecMatchesRegistry(
+            "OGC API Styles",
+            stylesSpecEndpoints,
+            stylesRegistryEndpoints);
     }
 
     /// <summary>

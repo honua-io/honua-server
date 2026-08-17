@@ -21,6 +21,13 @@ HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # names to shard NAMES in ci-shards.json. The server-tests matrix job names are
 # the shard `shard_name`/`name`; we match by substring so "server-tests (Core)"
 # style names resolve. Emits unique shard names.
+#
+# Non-shard jobs deliberately resolve to NOTHING here. `.NET Foundation Tests`,
+# `Build & Format Check` and `Worker GDAL Tests` (#3271) are whole-repo jobs with
+# no `paths` entry to reverse, so train_attribute sees 0 suspects and returns
+# ESCALATE_BATCH — a human looks at the batch instead of the train guessing a
+# culprit from an unroutable failure. That is the intended outcome for every
+# foundation-class job, not a gap.
 train_failing_shards_from_jobs() {
   local failing="$1" config="${2:-${TRAIN_SHARDS_CONFIG}}"
   local shard
@@ -93,8 +100,10 @@ train_attribute() {
 train_drop_pr() {
   local pr="$1" reason="$2"
   train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}"
+  train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
   train_side_effect gh pr comment "${pr}" --body \
     "Merge train dropped this PR from the batch: ${reason}. Rebuild the batch will exclude it until the ${TRAIN_LABEL_ESCALATED} label is removed."
+  train_decision "DROP #${pr}: labeled ${TRAIN_LABEL_ESCALATED}, removed ${TRAIN_LABEL_LANDING}"
 }
 
 # train_escalate_batch <included-csv> <reason>: the loop-bug fix. When the train

@@ -115,6 +115,77 @@ train_log()  { _train_emit INFO "$*"; }
 train_warn() { _train_emit WARN "$*"; }
 train_err()  { _train_emit ERROR "$*"; }
 
+# train_has_content <text>: 0 when the text holds at least one non-whitespace
+# character; 1 when it is empty or whitespace-only.
+#
+# ALWAYS use this instead of `[[ -n "${text//[[:space:]]/}" ]]`. Bash's pattern
+# substitution builds a new string one match at a time and is QUADRATIC in the
+# input, which is invisible on a job-name list and ruinous on a job log. Measured
+# on a realistic shard log (timestamped test lines): 84 KB 0.14s, 170 KB 0.56s,
+# 342 KB 2.1s, 686 KB 8.4s — ~4x per doubling, so a real multi-MB 47k-line shard
+# log costs MINUTES of pure CPU per emptiness check. The merge train performs one
+# of these per failing job on every classification pass. The regex form stops at
+# the first non-whitespace byte and measured 3-9ms across that whole range.
+train_has_content() {
+  [[ "$1" =~ [^[:space:]] ]]
+}
+
+# train_read_job_log <job-id>: read one completed Actions job log without
+# depending on the parent workflow having finished publishing its aggregate
+# log archive. `gh run view --job --log` can remain unavailable for minutes
+# after the job itself is terminal (observed on Smart CI run 31940825557),
+# while the job-log REST endpoint is already readable. Read the exact job REST
+# resource first so an unavailable aggregate archive cannot block terminal
+# classification, retaining the familiar CLI surface only as fallback. Tests
+# may inject TRAIN_JOB_LOG_READER.
+train_read_job_log() {
+  local job_id="$1" text
+  if [[ -n "${TRAIN_JOB_LOG_READER:-}" ]]; then
+    "${TRAIN_JOB_LOG_READER}" "${job_id}"
+    return
+  fi
+  if text="$(gh api "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/jobs/${job_id}/logs" 2>/dev/null)" \
+    && train_has_content "${text}"; then
+    printf '%s\n' "${text}"
+    return 0
+  fi
+  if text="$(gh run view --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" \
+      --job "${job_id}" --log 2>/dev/null)" \
+    && train_has_content "${text}"; then
+    printf '%s\n' "${text}"
+    return 0
+  fi
+  return 1
+}
+
+# train_read_job_annotations <job-id>: read the small, paginated annotation set
+# attached to an exact Actions check/job. Timeout and capacity markers are
+# emitted with workflow commands and therefore appear here without downloading
+# a multi-megabyte console log. Tests may inject TRAIN_JOB_ANNOTATION_READER.
+train_read_job_annotations() {
+  local job_id="$1"
+  if [[ -n "${TRAIN_JOB_ANNOTATION_READER:-}" ]]; then
+    "${TRAIN_JOB_ANNOTATION_READER}" "${job_id}"
+    return
+  fi
+  gh api --paginate \
+    "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/check-runs/${job_id}/annotations?per_page=100" \
+    --jq '.[] | [(.message // ""), (.raw_details // "")] | @tsv' \
+    2>/dev/null
+}
+
+# train_csv_remove_exact <csv> <value>: remove an exact non-empty member from
+# a comma-separated list. `grep -v` returns 1 when it removes the sole member;
+# under `set -e -o pipefail` that aborted the train before all-dropped cleanup,
+# metrics, and state persistence. jq always emits the resulting CSV, including
+# the legitimate empty string.
+train_csv_remove_exact() {
+  local csv="$1" value="$2"
+  jq -Rr --arg value "${value}" \
+    'split(",") | map(select(length > 0 and . != $value)) | join(",")' \
+    <<<"${csv}"
+}
+
 # Publish the one authoritative cross-step proof that this controller observed
 # its exact batch on trunk and persisted the matching post-land journal. The
 # workflow consumes this output to permit at most one immediate reconciliation
@@ -257,6 +328,64 @@ train_require() {
     if ! train_have "$c"; then train_err "missing required command: $c"; missing=1; fi
   done
   [[ "${missing}" -eq 0 ]]
+}
+
+# --- shard-terminal marker classification (pure, testable) -------------------
+# scripts/ci/run-server-test-shard.sh ends a shard that could not finish with
+# exactly one of these annotations, all in the same shape:
+#   ::error::HONUA_SHARD_<KIND> shard='<name>' ...
+#   * CAPACITY_EXHAUSTED  burned its whole CONFIGURED budget while still
+#                         producing test output. Over capacity; a rerun just
+#                         reproduces it at full runner cost.
+#   * HANG_SUSPECTED      hit the same cap after going silent. A genuine hang,
+#                         and the one shape that still earns a bounded rerun.
+#   * KILLED              SIGKILLed before the runner's own kill deadline, so
+#                         not a timeout at all — suspect an OOM kill.
+# None of the three is a comparable failure CAUSE: the shard never finished
+# executing its tests, so it produced no verdict the pre-existing-failure filter
+# may compare against trunk. These predicates therefore gate the retry budget
+# (classify-timeout.sh), the pre-existing-failure subtraction (preexisting.sh)
+# and the early-failure observer, which is why they live here in lib.sh as the
+# single shared definition.
+#
+# MATCHING IS ANCHORED ON PURPOSE. An unanchored `grep -F` for the bare token
+# also matches prose that merely NAMES the token: the merge train's own warning
+# text does, so `validate-timeout-retry.sh` prints it and every `CI Router
+# Validation` job log contains it. That made a router failure permanently
+# non-subtractable and escalated whole batches for a failure trunk already had.
+# A real marker is the first token of its line — after an optional log timestamp
+# and the `::error::`/`##[error]` workflow-command prefix (GitHub renders the
+# former as the latter in downloaded logs, and the check-run annotation API
+# strips it entirely) — and is immediately followed by ` shard=`.
+train_log_has_shard_marker() {
+  local marker="$1" text="$2"
+  grep -Eq "(^|[[:space:]])((##\[error\]|::error::)[[:space:]]*)?${marker}[[:space:]]+shard=" \
+    <<<"${text}"
+}
+
+# train_log_is_capacity_exhaustion <log-text>: the shard was over capacity.
+train_log_is_capacity_exhaustion() {
+  train_log_has_shard_marker HONUA_SHARD_CAPACITY_EXHAUSTED "$1"
+}
+
+# train_log_is_shard_hang <log-text>: the shard stalled and was capped.
+train_log_is_shard_hang() {
+  train_log_has_shard_marker HONUA_SHARD_HANG_SUSPECTED "$1"
+}
+
+# train_log_is_shard_killed <log-text>: the shard's test host was SIGKILLed.
+train_log_is_shard_killed() {
+  train_log_has_shard_marker HONUA_SHARD_KILLED "$1"
+}
+
+# train_join_job_names <newline-separated-jobs>: a human-readable, comma-joined
+# job list for escalation comments, or a neutral phrase when none are known. An
+# escalation that cannot name what failed is not actionable.
+train_join_job_names() {
+  local joined
+  joined="$(printf '%s\n' "$1" | sed '/^$/d' | paste -sd ',' - | sed 's/,/, /g')"
+  [[ -n "${joined}" ]] || joined="the selected server-test shard"
+  printf '%s' "${joined}"
 }
 
 # --- flake classification (pure, testable) -----------------------------------

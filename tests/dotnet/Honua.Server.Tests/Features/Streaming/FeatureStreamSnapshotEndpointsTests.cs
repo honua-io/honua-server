@@ -1216,6 +1216,118 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_BaselineExceedingPayloadBudget_StaysWithinTheAdvertisedBudget()
+    {
+        // The degenerate case above (an envelope that cannot fit at all) is not the shape that
+        // took demo.honua.io down. There the envelope fit and the FEATURES overran: a 5000-row
+        // polygon baseline serialized to ~6.6 MB, the buffering serverless response path capped
+        // at 6 MB discarded the over-large 200, and the client saw an untyped
+        // {"message":"Internal Server Error"} the server never wrote. So the load-bearing
+        // guarantee is not merely "truncation is reported" but "the bytes actually written stay
+        // inside the advertised budget", which is what keeps the response under the ceiling a
+        // downstream hop enforces. Asserted on the wire, in the same UTF-8 SSE framing the
+        // server charges against MaxSnapshotBytes (#3181 REQ-001).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+
+        // Measure the unconstrained baseline first so the budget is derived from the seed
+        // rather than hardcoded — a seed whose rows change size must not silently turn this
+        // into a no-op that admits everything.
+        using var fullRequest = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+        using var fullResponse = await _client.SendAsync(fullRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        fullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        MeasuredBaseline full;
+        using (var fullStream = await fullResponse.Content.ReadAsStreamAsync(cts.Token))
+        using (var fullReader = new StreamReader(fullStream, Encoding.UTF8))
+        {
+            full = await ReadMeasuredBaselineAsync(fullReader, cts.Token);
+        }
+
+        // Assert the baseline was actually read to snapshot-end before reading into it. A
+        // premature close or an expired CTS returns a partial MeasuredBaseline whose End is a
+        // default JsonElement, and GetProperty would then throw InvalidOperationException
+        // instead of naming what went wrong.
+        full.Frames.End.ValueKind.Should().Be(JsonValueKind.Object,
+            "the reference baseline must reach snapshot-end; a partial read means the stream closed early");
+        full.Frames.End.GetProperty("complete").GetBoolean().Should().BeTrue(
+            "the unconstrained baseline is the reference this test truncates against");
+        full.Frames.Features.Count.Should().BeGreaterThanOrEqualTo(2,
+            "a budget between the envelope and the whole baseline only exists when more than one feature is emitted");
+
+        // A budget that admits the mandatory envelope plus roughly half the feature payload:
+        // big enough to open the baseline, too small to finish it.
+        var featureBytes = full.TotalBytes - full.EnvelopeBytes;
+        var budget = full.EnvelopeBytes + (featureBytes / 2);
+        budget.Should().BeLessThan(full.TotalBytes);
+
+        var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
+        {
+            ["FeatureStreaming:MaxSnapshotBytes"] = budget.ToString(CultureInfo.InvariantCulture)
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            using var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            // Still a 200 carrying a real baseline: a bounded baseline is a served snapshot,
+            // not a failure.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var bounded = await ReadMeasuredBaselineAsync(reader, cts.Token);
+
+            bounded.Frames.Begin.ValueKind.Should().Be(JsonValueKind.Object,
+                "the baseline must open rather than be refused");
+            bounded.Frames.End.ValueKind.Should().Be(JsonValueKind.Object,
+                "a bounded baseline still terminates with snapshot-end");
+
+            bounded.TotalBytes.Should().BeLessThanOrEqualTo(budget,
+                "the bytes written must stay inside maxSnapshotBytes — overrunning it is what a "
+                + "buffering intermediary converts into an untyped 500");
+
+            // Bound the truncation on BOTH sides. Without the lower bound this test can silently
+            // degenerate into the envelope-only case the previous test already covers: if the
+            // seed's rows ever grow so that half the feature payload is smaller than a single
+            // feature frame, the budget admits zero features and every other assertion here
+            // still passes. Feature sizes are unequal, so `full.Features >= 2` does not rule
+            // that out. Emitting at least one feature is what makes this the "features overran"
+            // shape rather than "the envelope did not fit".
+            bounded.Frames.Features.Count.Should().BeGreaterThan(0,
+                "the budget admits the envelope plus part of the payload, so the baseline must carry "
+                + "features — zero would silently reduce this to the envelope-only case");
+            bounded.Frames.Features.Count.Should().BeLessThan(full.Frames.Features.Count,
+                "the budget is below the whole baseline, so it must drop features");
+            bounded.Frames.End.GetProperty("featureCount").GetInt64()
+                .Should().Be(bounded.Frames.Features.Count);
+            bounded.Frames.End.GetProperty("complete").GetBoolean().Should().BeFalse(
+                "a baseline the budget truncated is not authoritative");
+
+            // A truncated baseline is never a resumable checkpoint: the features it dropped did
+            // not change, so no later delta would ever carry them.
+            bounded.Frames.EventIds.Should().OnlyContain(id => id == null,
+                "no frame of an incomplete baseline may publish a resumable SSE id");
+
+            // And the client is told which advertised bound truncated it, rather than being left
+            // to infer it from a silent close (#3181 REQ-002).
+            var terminal = await ReadUntilEventAsync(reader, "status", cts.Token);
+            terminal.Should().NotBeNull();
+            var terminalValue = terminal.GetValueOrDefault();
+            terminalValue.GetProperty("status").GetString().Should().Be("error");
+            terminalValue.GetProperty("message").GetString().Should().Contain("maxSnapshotBytes");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // ── #3181 REQ-002: an unservable snapshot is a typed problem, never a 500 ───
 
     [IntegrationTest]
@@ -1811,6 +1923,124 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
 
         return new BaselineFrames(begin, features, end, sequences, eventIds);
+    }
+
+    /// <summary>
+    /// A baseline together with the number of UTF-8 bytes its snapshot frames occupied on the
+    /// wire. <paramref name="EnvelopeBytes"/> is the mandatory <c>snapshot-begin</c> +
+    /// <c>snapshot-end</c> pair; <paramref name="TotalBytes"/> adds every
+    /// <c>snapshot-feature</c> frame between them.
+    /// </summary>
+    private readonly record struct MeasuredBaseline(
+        BaselineFrames Frames,
+        int EnvelopeBytes,
+        int TotalBytes);
+
+    /// <summary>
+    /// Reads a baseline like <see cref="ReadBaselineAsync"/> while charging each snapshot frame
+    /// the exact bytes it occupied, so a test can compare the response against the server's
+    /// <c>MaxSnapshotBytes</c> budget. The accounting mirrors the SSE framing the server writes
+    /// — an optional <c>id:</c> line, an <c>event:</c> line, and a <c>data:</c> line followed by
+    /// the blank line that terminates the frame — because a budget the server honors in its own
+    /// units but overruns on the wire is exactly the failure this measurement exists to catch.
+    /// Non-snapshot frames (the status handshake) are excluded: the budget bounds the baseline.
+    /// <para>The count is scoped to those three SSE field types, which is the complete set the
+    /// snapshot writer emits today. A line of any other kind (an SSE comment/keepalive, or a
+    /// <c>retry:</c> field) would be skipped rather than charged, so if the writer ever emits
+    /// one inside a baseline this must charge it too or the measurement would undercount.</para>
+    /// </summary>
+    private static async Task<MeasuredBaseline> ReadMeasuredBaselineAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
+    {
+        JsonElement begin = default;
+        JsonElement end = default;
+        var features = new List<JsonElement>();
+        var sequences = new List<long>();
+        var eventIds = new List<string?>();
+        var envelopeBytes = 0;
+        var totalBytes = 0;
+
+        string? eventName = null;
+        string? id = null;
+        var headerBytes = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+
+            // ReadLineAsync consumes the '\n' the server wrote; charge it back.
+            var lineBytes = Encoding.UTF8.GetByteCount(line) + 1;
+
+            if (line.StartsWith("id: ", StringComparison.Ordinal))
+            {
+                id = line["id: ".Length..];
+                headerBytes += lineBytes;
+                continue;
+            }
+
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                eventName = line["event: ".Length..];
+                headerBytes += lineBytes;
+                continue;
+            }
+
+            if (!line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                // The frame-terminating blank line is charged with its data line below.
+                continue;
+            }
+
+            // '+ 1' is that blank line.
+            var frameBytes = headerBytes + lineBytes + 1;
+            headerBytes = 0;
+
+            using var document = JsonDocument.Parse(line["data: ".Length..]);
+            var data = document.RootElement.Clone();
+            var frameName = eventName ?? "message";
+            var frameId = id;
+            eventName = null;
+            id = null;
+
+            switch (frameName)
+            {
+                case SnapshotBegin:
+                    begin = data;
+                    sequences.Add(data.GetProperty("sequence").GetInt64());
+                    eventIds.Add(frameId);
+                    envelopeBytes += frameBytes;
+                    totalBytes += frameBytes;
+                    break;
+                case SnapshotFeature:
+                    features.Add(data);
+                    sequences.Add(data.GetProperty("sequence").GetInt64());
+                    eventIds.Add(frameId);
+                    totalBytes += frameBytes;
+                    break;
+                case SnapshotEnd:
+                    end = data;
+                    sequences.Add(data.GetProperty("sequence").GetInt64());
+                    eventIds.Add(frameId);
+                    envelopeBytes += frameBytes;
+                    totalBytes += frameBytes;
+                    return new MeasuredBaseline(
+                        new BaselineFrames(begin, features, end, sequences, eventIds),
+                        envelopeBytes,
+                        totalBytes);
+                default:
+                    break;
+            }
+        }
+
+        return new MeasuredBaseline(
+            new BaselineFrames(begin, features, end, sequences, eventIds),
+            envelopeBytes,
+            totalBytes);
     }
 
     private static async Task<JsonElement?> ReadUntilEventAsync(

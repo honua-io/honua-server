@@ -32,7 +32,7 @@ internal static class MapLibreToGeoServicesConverter
                 return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultDrawingInfo(layer));
             }
 
-            if (!TrySelectLayers(layersElement, layer.GeometryType, out var primaryLayer, out var outlineLayer))
+            if (!TrySelectLayers(layersElement, layer, out var primaryLayer, out var outlineLayer))
             {
                 return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultDrawingInfo(layer));
             }
@@ -394,29 +394,29 @@ internal static class MapLibreToGeoServicesConverter
 
     private static bool TrySelectLayers(
         JsonElement layersElement,
-        GeometryType geometryType,
+        StyleLayerDescriptor descriptor,
         out JsonElement primaryLayer,
         out JsonElement? outlineLayer)
     {
         outlineLayer = null;
         primaryLayer = default;
 
-        switch (geometryType)
+        switch (descriptor.GeometryType)
         {
             case GeometryType.Point:
             case GeometryType.MultiPoint:
-                if (!TryFindLayer(layersElement, "circle", out primaryLayer))
+                if (!TryFindLayer(layersElement, "circle", descriptor, out primaryLayer))
                 {
-                    return TryFindLayer(layersElement, "symbol", out primaryLayer);
+                    return TryFindLayer(layersElement, "symbol", descriptor, out primaryLayer);
                 }
                 return true;
             case GeometryType.LineString:
             case GeometryType.MultiLineString:
-                return TryFindLayer(layersElement, "line", out primaryLayer);
+                return TryFindLayer(layersElement, "line", descriptor, out primaryLayer);
             case GeometryType.Polygon:
             case GeometryType.MultiPolygon:
             case GeometryType.GeometryCollection:
-                if (!TryFindLayer(layersElement, "fill", out primaryLayer))
+                if (!TryFindLayer(layersElement, "fill", descriptor, out primaryLayer))
                 {
                     return false;
                 }
@@ -428,7 +428,11 @@ internal static class MapLibreToGeoServicesConverter
         }
     }
 
-    private static bool TryFindLayer(JsonElement layersElement, string type, out JsonElement layer)
+    private static bool TryFindLayer(
+        JsonElement layersElement,
+        string type,
+        StyleLayerDescriptor descriptor,
+        out JsonElement layer)
     {
         foreach (var element in layersElement.EnumerateArray())
         {
@@ -438,7 +442,9 @@ internal static class MapLibreToGeoServicesConverter
             }
 
             if (element.TryGetProperty("type", out var typeElement)
-                && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase))
+                && typeElement.ValueKind == JsonValueKind.String
+                && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase)
+                && MatchesSelectedSource(element, descriptor))
             {
                 layer = element;
                 return true;
@@ -447,6 +453,17 @@ internal static class MapLibreToGeoServicesConverter
 
         layer = default;
         return false;
+    }
+
+    private static bool MatchesSelectedSource(JsonElement layer, StyleLayerDescriptor descriptor)
+    {
+        if (descriptor.SourceName is null)
+        {
+            return true;
+        }
+
+        return string.Equals(GetLayerString(layer, "source"), descriptor.SourceName, StringComparison.Ordinal)
+            && string.Equals(GetLayerString(layer, "source-layer"), descriptor.SourceLayer, StringComparison.Ordinal);
     }
 
     private static bool TryGetLayerType(JsonElement layer, out string? type)
@@ -486,6 +503,7 @@ internal static class MapLibreToGeoServicesConverter
             }
 
             if (!element.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String
                 || !string.Equals(typeElement.GetString(), "line", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -769,6 +787,11 @@ internal static class MapLibreToGeoServicesConverter
             return false;
         }
 
+        if (TryParseMixedMatchImageExpression(expression, out field, out stops, out fallbackImage))
+        {
+            return true;
+        }
+
         var items = expression.EnumerateArray().ToArray();
 
         // Unwrap ["case", guard, matchExpr, fallback] null guard
@@ -827,6 +850,50 @@ internal static class MapLibreToGeoServicesConverter
             fallbackImage = items[^1].GetString();
         }
 
+        return stops.Count > 0;
+    }
+
+    private static bool TryParseMixedMatchImageExpression(
+        JsonElement expression,
+        out string field,
+        out List<ImageMatchStop> stops,
+        out string? fallbackImage)
+    {
+        field = string.Empty;
+        stops = new List<ImageMatchStop>();
+        fallbackImage = null;
+
+        var items = expression.EnumerateArray().ToArray();
+        if (items.Length != 4
+            || items[0].ValueKind != JsonValueKind.String
+            || !string.Equals(items[0].GetString(), "case", StringComparison.OrdinalIgnoreCase)
+            || items[1].ValueKind != JsonValueKind.Array
+            || items[2].ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        if (items[3].ValueKind == JsonValueKind.String
+            && TryParseMixedMatchImageExpression(items[2], out field, out stops, out fallbackImage)
+            && IsSupportedCaseGuard(items[1], "match", field))
+        {
+            fallbackImage = items[3].GetString();
+            return true;
+        }
+
+        if (items[3].ValueKind != JsonValueKind.Array
+            || !TryParseMatchImageExpression(items[2], out var numericField, out var numericStops, out var numericFallback)
+            || !TryParseMatchImageExpression(items[3], out var textualField, out var textualStops, out var textualFallback)
+            || !string.Equals(numericField, textualField, StringComparison.Ordinal)
+            || !IsSupportedCaseGuard(items[1], "step", numericField))
+        {
+            return false;
+        }
+
+        field = numericField;
+        stops.AddRange(numericStops);
+        stops.AddRange(textualStops);
+        fallbackImage = textualFallback ?? numericFallback;
         return stops.Count > 0;
     }
 
@@ -1222,6 +1289,11 @@ internal static class MapLibreToGeoServicesConverter
             return false;
         }
 
+        if (TryParseMixedMatchExpression(expression, out field, out stops, out fallbackColor))
+        {
+            return true;
+        }
+
         if (TryUnwrapKnownCaseExpression(expression, "match", out var innerExpression, out var caseFallback))
         {
             var innerResult = TryParseMatchExpression(innerExpression, out field, out stops, out fallbackColor);
@@ -1268,6 +1340,50 @@ internal static class MapLibreToGeoServicesConverter
             fallbackColor = fallback;
         }
 
+        return stops.Count > 0;
+    }
+
+    private static bool TryParseMixedMatchExpression(
+        JsonElement expression,
+        out string field,
+        out List<MatchStop> stops,
+        out StyleColor? fallbackColor)
+    {
+        field = string.Empty;
+        stops = new List<MatchStop>();
+        fallbackColor = null;
+
+        var items = expression.EnumerateArray().ToArray();
+        if (items.Length != 4
+            || items[0].ValueKind != JsonValueKind.String
+            || !string.Equals(items[0].GetString(), "case", StringComparison.OrdinalIgnoreCase)
+            || items[1].ValueKind != JsonValueKind.Array
+            || items[2].ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        if (StyleJsonUtilities.TryParseMapLibreColor(items[3], out var outerFallback)
+            && TryParseMixedMatchExpression(items[2], out field, out stops, out fallbackColor)
+            && IsSupportedCaseGuard(items[1], "match", field))
+        {
+            fallbackColor = outerFallback;
+            return true;
+        }
+
+        if (items[3].ValueKind != JsonValueKind.Array
+            || !TryParseMatchExpression(items[2], out var numericField, out var numericStops, out var numericFallback)
+            || !TryParseMatchExpression(items[3], out var textualField, out var textualStops, out var textualFallback)
+            || !string.Equals(numericField, textualField, StringComparison.Ordinal)
+            || !IsSupportedCaseGuard(items[1], "step", numericField))
+        {
+            return false;
+        }
+
+        field = numericField;
+        stops.AddRange(numericStops);
+        stops.AddRange(textualStops);
+        fallbackColor = textualFallback ?? numericFallback;
         return stops.Count > 0;
     }
 

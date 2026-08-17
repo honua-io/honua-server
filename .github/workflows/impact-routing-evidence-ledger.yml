@@ -47,7 +47,7 @@ jobs:
           PRODUCER_RUN_CUTOFF: ${{ steps.policy.outputs.producer_run_cutoff }}
           IMAGE_RUN_CUTOFF: ${{ steps.policy.outputs.image_run_cutoff }}
           MAXIMUM_PAGES: ${{ steps.policy.outputs.maximum_pages_per_query }}
-          MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
+          MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_producer_run_catalogs }}
         run: |
           set -euo pipefail
           mkdir -p evidence/runs/{pr-gate,native,serving,worker} \
@@ -89,7 +89,13 @@ jobs:
               page=$((page + 1))
             done
             if [[ "${complete}" != true ]]; then
-              echo "${collection} catalog exceeded the bounded page budget" >&2
+              # Fail closed and say exactly what to change. A truncated catalog
+              # cannot degrade gracefully here: `discover`/`summarize` count
+              # observed heads and reconcile authoritative image outcomes
+              # against these pages, so silently dropping the tail would turn a
+              # collection shortfall into fabricated integrity/outcome failures.
+              printf '::error::%s catalog needs more than %s page(s) of 100 (declared total %s). Raise maximum_pages_per_query in .github/impact-routing-promotion.json or shorten receipt_retention_days.\n' \
+                "${collection}" "${MAXIMUM_PAGES}" "${expected_total}" >&2
               exit 1
             fi
           }
@@ -104,29 +110,38 @@ jobs:
             workflow_runs evidence/runs/native \
             -f status=completed -f "created=${created_filter}"
 
+          # Only a SUCCESSFUL observer run can have uploaded a receipt or a
+          # skip marker, so only those need an artifact catalog. Non-success
+          # runs stay in the run catalog above so `discover` keeps reporting
+          # them as observer-run-<conclusion> exclusions.
           {
-            jq -r '.workflow_runs[].id' evidence/runs/pr-gate/*.json
-            jq -r '.workflow_runs[].id' evidence/runs/native/*.json
+            jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
+              evidence/runs/pr-gate/*.json
+            jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
+              evidence/runs/native/*.json
           } | sort -nu > evidence/producer-run-ids.txt
           producer_count="$(wc -l < evidence/producer-run-ids.txt | tr -d '[:space:]')"
           [[ "${producer_count}" =~ ^[0-9]+$ && "${MAXIMUM_CATALOGS}" =~ ^[1-9][0-9]*$ ]] || exit 1
           if (( producer_count > MAXIMUM_CATALOGS )); then
-            echo "observer runs exceeded the bounded artifact-catalog budget" >&2
+            printf '::error::%s successful observer runs exceed the %s artifact-catalog budget. Raise maximum_producer_run_catalogs in .github/impact-routing-promotion.json or shorten receipt_retention_days.\n' \
+              "${producer_count}" "${MAXIMUM_CATALOGS}" >&2
             exit 1
           fi
 
           collect_run_artifacts() {
-            local run_root="$1"
-            local output_root="$2"
-            jq -r '.workflow_runs[].id' "${run_root}"/*.json | sort -nu \
-              | while read -r run_id; do
-                  [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
-                  gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
-                    > "${output_root}/${run_id}.json"
-                done
+            local output_root="$1"
+            while read -r run_id; do
+              [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                > "${output_root}/${run_id}.json"
+            done
           }
-          collect_run_artifacts evidence/runs/pr-gate evidence/artifacts/pr-gate
-          collect_run_artifacts evidence/runs/native evidence/artifacts/native
+          jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
+            evidence/runs/pr-gate/*.json | sort -nu \
+            | collect_run_artifacts evidence/artifacts/pr-gate
+          jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
+            evidence/runs/native/*.json | sort -nu \
+            | collect_run_artifacts evidence/artifacts/native
           image_created_filter=">=${IMAGE_RUN_CUTOFF}"
           collect_pages \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/serving-image-boundary.yml/runs" \
@@ -159,7 +174,8 @@ jobs:
           count="$(jq -er '.artifacts | arrays | length' evidence/index.json)"
           [[ "${count}" =~ ^[0-9]+$ && "${MAXIMUM_DOWNLOADS}" =~ ^[1-9][0-9]*$ ]] || exit 1
           if (( count > MAXIMUM_DOWNLOADS )); then
-            echo "observation receipts exceeded the bounded download budget" >&2
+            printf '::error::%s indexed receipts exceed the %s download budget. Raise maximum_receipt_downloads in .github/impact-routing-promotion.json or shorten receipt_retention_days.\n' \
+              "${count}" "${MAXIMUM_DOWNLOADS}" >&2
             exit 1
           fi
           jq -r '.artifacts[].artifact_id' evidence/index.json \
