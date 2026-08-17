@@ -201,6 +201,135 @@ def test_repository_shard_filters_all_select_at_least_one_test() -> None:
     assert result["dead_positive"] == [], result["dead_positive"]
 
 
+# --- --assert-owner / --assert-route contract (#3317) -------------------------
+
+ASSERT_SHARDS = [
+    {"name": "Raster", "filter": "FullyQualifiedName~Ns.Raster"},
+    {"name": "Misc", "filter": "FullyQualifiedName~Ns.", "csproj": OTHER},
+]
+
+
+def assert_owner(fqn: str, csproj: str, shard: str, classes: dict[str, dict],
+                 *, runnable: bool = True) -> MODULE.AssertionResult:
+    parsed = {s["name"]: MODULE._FilterParser(s["filter"]).parse() for s in ASSERT_SHARDS}
+    csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in ASSERT_SHARDS}
+    return MODULE.evaluate_assertion(
+        fqn, csproj, shard,
+        require_runnable=runnable,
+        parsed=parsed,
+        shard_csproj=csprojs,
+        all_classes=classes,
+    )
+
+
+def test_assert_owner_passes_for_a_claimed_runnable_class() -> None:
+    classes = inventory(("Ns.Raster.ZarrTests", KNOWN, ("Runs",)))
+    result = assert_owner("Ns.Raster.ZarrTests", KNOWN, "Raster", classes)
+    assert result.code == 0, result.message
+    assert result.message.startswith("Owner assertion passed")
+
+
+def test_assert_owner_rejects_a_class_that_does_not_exist() -> None:
+    classes = inventory(("Ns.Raster.ZarrTests", KNOWN, ("Runs",)))
+    result = assert_owner("Ns.Raster.TypoTests", KNOWN, "Raster", classes)
+    assert result.code == 1
+    assert "not declared in any test project" in result.message
+
+
+def test_assert_owner_rejects_a_class_declaring_no_recognised_test_method() -> None:
+    """#3317: `claimed` and `runnable` are different properties.
+
+    A helper/fixture class matches the filter string just as well as a test
+    class does, so an assertion over one used to pass while proving nothing
+    about what CI executes.
+    """
+    classes = inventory(("Ns.Raster.ZarrTestFixture", KNOWN, ()))
+    result = assert_owner("Ns.Raster.ZarrTestFixture", KNOWN, "Raster", classes)
+    assert result.code == 1
+    assert "declares no test method" in result.message
+
+
+def test_assert_owner_rejects_a_class_in_another_assembly() -> None:
+    classes = inventory(("Ns.Raster.ZarrTests", OTHER, ("Runs",)))
+    result = assert_owner("Ns.Raster.ZarrTests", KNOWN, "Raster", classes)
+    assert result.code == 1
+    assert "lives in" in result.message
+
+
+def test_assert_owner_rejects_a_shard_that_targets_another_project() -> None:
+    classes = inventory(("Ns.Raster.ZarrTests", KNOWN, ("Runs",)))
+    result = assert_owner("Ns.Raster.ZarrTests", KNOWN, "Misc", classes)
+    assert result.code == 1
+    assert "not asserted project" in result.message
+
+
+def test_assert_owner_rejects_a_filter_that_does_not_select_the_class() -> None:
+    classes = inventory(("Ns.Other.OtherTests", KNOWN, ("Runs",)))
+    result = assert_owner("Ns.Other.OtherTests", KNOWN, "Raster", classes)
+    assert result.code == 1
+    assert "does not select" in result.message
+
+
+def test_assert_owner_rejects_an_unknown_shard_name_as_a_config_error() -> None:
+    classes = inventory(("Ns.Raster.ZarrTests", KNOWN, ("Runs",)))
+    result = assert_owner("Ns.Raster.ZarrTests", KNOWN, "Nope", classes)
+    assert result.code == 2
+
+
+def test_assert_route_keeps_its_weaker_synthetic_contract() -> None:
+    """--assert-route must still work for a name that does not exist."""
+    classes = inventory(("Ns.Raster.ZarrTests", KNOWN, ("Runs",)))
+    result = assert_owner(
+        "Ns.Raster.SomeFutureNamespaceTests", KNOWN, "Raster", classes,
+        runnable=False,
+    )
+    assert result.code == 0, result.message
+    assert result.message.startswith("Route assertion passed")
+
+
+def test_declared_and_test_inventories_come_from_one_walk() -> None:
+    """The delta must be measured, not assumed (#3317 acceptance criterion)."""
+    every = MODULE.enumerate_classes()
+    runnable = MODULE.enumerate_test_classes()
+    declared = MODULE.enumerate_declared_classes()
+    assert set(declared) == set(every)
+    assert set(runnable) <= set(declared)
+    assert runnable == {
+        fqn: entry for fqn, entry in every.items() if entry["methods"]
+    }
+    # Non-test classes exist (fixtures, helpers, DTOs), so the two inventories
+    # are genuinely different sizes — the assertion above is not vacuous.
+    assert len(declared) > len(runnable) > 1000
+    for fqn, entry in runnable.items():
+        assert declared[fqn] == entry["csproj"], fqn
+
+
+def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
+    """Regression lock for #3271: Cog/Zarr/Coverages have exactly one owner."""
+    config = json.loads(
+        (REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8")
+    )
+    shard_defs = config["shards"]
+    parsed = {s["name"]: MODULE._FilterParser(s["filter"]).parse() for s in shard_defs}
+    csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in shard_defs}
+    classes = MODULE.enumerate_test_classes()
+    raster = [
+        fqn for fqn in classes
+        if fqn.startswith((
+            "Honua.Server.Tests.Features.Protocols.Cog.",
+            "Honua.Server.Tests.Features.Protocols.Zarr.",
+            "Honua.Server.Tests.Features.Protocols.Coverages.",
+        ))
+    ]
+    assert len(raster) >= 7, raster
+    for fqn in raster:
+        owners = [
+            name for name, node in parsed.items()
+            if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, fqn)
+        ]
+        assert owners == ["Raster Serving"], (fqn, owners)
+
+
 test_clause_flattening_and_selection_pool()
 test_dead_clause_inside_a_live_or_is_flagged()
 test_whole_shard_filter_selecting_nothing_is_flagged()
@@ -213,4 +342,14 @@ test_exact_match_operator_resolves_against_method_fqns()
 test_exact_class_name_is_not_treated_as_a_runnable_test()
 test_test_attribute_inventory_covers_testkit_fact_subtypes()
 test_repository_shard_filters_all_select_at_least_one_test()
+test_assert_owner_passes_for_a_claimed_runnable_class()
+test_assert_owner_rejects_a_class_that_does_not_exist()
+test_assert_owner_rejects_a_class_declaring_no_recognised_test_method()
+test_assert_owner_rejects_a_class_in_another_assembly()
+test_assert_owner_rejects_a_shard_that_targets_another_project()
+test_assert_owner_rejects_a_filter_that_does_not_select_the_class()
+test_assert_owner_rejects_an_unknown_shard_name_as_a_config_error()
+test_assert_route_keeps_its_weaker_synthetic_contract()
+test_declared_and_test_inventories_come_from_one_walk()
+test_raster_serving_shard_owns_the_raster_serving_namespaces()
 print("shard-filter-dangling-guard=ok")

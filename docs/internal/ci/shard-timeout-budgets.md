@@ -540,3 +540,22 @@ TODO: file a rebalance issue for `Server Features Admin Operations` and one for
 `Server Features Collaboration Mobile and Identity`, and link them here. Both
 need a 20-run sample of their own before a cap or a split is chosen; neither is
 on the batch critical path today, so neither blocks #3229.
+
+## #3271 `Raster Serving` baseline
+
+#3271 adds a `Raster Serving` shard for the raster-serving protocol adapters
+(`Features.Protocols.Cog`, `Features.Protocols.Zarr`,
+`Features.Protocols.Coverages`), which previously ran inside `Cloud & Contract`
+and the `Server Features Misc` catch-all. It is a new matrix entry, so it has no
+measured p90 yet; its budget is inherited from the two donor/sibling raster
+buckets rather than guessed upward:
+
+| Shard | Inner cap | Job cap | Gap | Basis |
+|---|---:|---:|---:|---|
+| Raster Serving | 20 | 30 | 10 | Same budget as `Cloud & Contract` (p90 1.5 min, 8%) and `Raster & Scene Analysis` (p90 5.0 min, 25%), the two shards it takes work from and sits next to. Seven endpoint/resolver classes. |
+
+The donor shards keep their existing budgets: `Cloud & Contract` sheds three COG
+classes from a shard already at 8% utilisation, and `Server Features Misc` sheds
+four from a 61% shard, so neither needs a re-base. Fold the observed
+`server-tests-raster-serving` p90 into the table above at the next audit
+(`scripts/ci/audit-shard-headroom.py`).
