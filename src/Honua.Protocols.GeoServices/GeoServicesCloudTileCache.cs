@@ -58,9 +58,9 @@ internal static class GeoServicesCloudTileCache
         var hit = await TryReadCoreAsync(
             storage,
             objectKey,
-            cancellationToken,
             keyIndex,
-            tenantScope).ConfigureAwait(false);
+            tenantScope,
+            cancellationToken).ConfigureAwait(false);
 
         var tags = new TagList { { "protocol", "geoservices" } };
         if (hit is null)
@@ -78,9 +78,9 @@ internal static class GeoServicesCloudTileCache
     private static async Task<Hit?> TryReadCoreAsync(
         ICloudFileStorage storage,
         string objectKey,
-        CancellationToken cancellationToken,
         ITileCacheKeyIndex? keyIndex,
-        string? tenantScope)
+        string? tenantScope,
+        CancellationToken cancellationToken)
     {
         try
         {
