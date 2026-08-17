@@ -1,0 +1,127 @@
+name: Stranded Merge Detector
+
+# Flags merged PRs whose merge commit never reached the default branch (#3248,
+# honua-sdk-js#1317). A PR opened against a stack base is merged into that base;
+# if the base is never merged, GitHub still reports MERGED and the payload sits
+# on a branch nobody watches.
+#
+# Reusable on purpose: honua-sdk-js hit the identical failure, and both issues
+# ask for one mechanism rather than two implementations. Callers pass their own
+# default branch; the script and its tests live here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: How many merged PRs to sweep
+        type: number
+        default: 250
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_call:
+    inputs:
+      default-branch:
+        description: Default branch of the calling repository
+        type: string
+        default: trunk
+      limit:
+        description: How many merged PRs to sweep
+        type: number
+        default: 250
+      tooling-ref:
+        description: honua-server ref holding the detector script
+        type: string
+        default: trunk
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: stranded-merge-detector-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  sweep:
+    name: Sweep merged PRs for stranded merge commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # fetch-depth: 0 is required: merge-base --is-ancestor needs the full
+      # history on both sides, and a shallow clone answers it wrongly.
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # When called from another repository the script is not in the caller's
+      # tree, so fetch it. Same-repo runs already have it and skip this.
+      - name: Checkout detector tooling
+        if: github.repository != 'honua-io/honua-server'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.tooling-ref || 'trunk' }}
+          path: .stranded-merge-tooling
+          persist-credentials: false
+
+      - name: Validate detector fixtures
+        run: |
+          root="."
+          if [ "${{ github.repository }}" != "honua-io/honua-server" ]; then
+            root=".stranded-merge-tooling"
+          fi
+          echo "DETECTOR_ROOT=${root}" >> "${GITHUB_ENV}"
+          python3 "${root}/scripts/ci/detect-stranded-merges.test.py"
+
+      - id: sweep
+        name: Sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ inputs.default-branch || github.event.repository.default_branch }}
+          LIMIT: ${{ inputs.limit || 250 }}
+        run: |
+          set -o pipefail
+          python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
+            --default-branch "${DEFAULT_BRANCH}" \
+            --limit "${LIMIT}" \
+            --json > findings.json
+          python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
+            --default-branch "${DEFAULT_BRANCH}" \
+            --limit "${LIMIT}" \
+            | tee "${GITHUB_STEP_SUMMARY}" > report.md
+          missing=$(python3 -c "import json,sys; d=json.load(open('findings.json')); print(sum(1 for f in d['findings'] if f['classification']=='payload-missing'))")
+          echo "missing=${missing}" >> "${GITHUB_OUTPUT}"
+
+      # Only payload-missing files an issue. A stranded merge whose content
+      # re-landed elsewhere is real but harmless, and filing it would train
+      # everyone to ignore the detector -- three of the first four findings
+      # across both repos were exactly that case.
+      - name: File or update the tracking issue
+        if: steps.sweep.outputs.missing != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          title="chore: merged PRs whose payload never reached the default branch"
+          body_file=issue-body.md
+          {
+            echo "Found by \`.github/workflows/stranded-merge-detector.yml\` on $(date -u +%Y-%m-%d)."
+            echo
+            cat report.md
+            echo
+            echo "Each row is a signal to **diff the payload**, not proof that a feature is gone."
+            echo "Recovery is a cherry-pick or a rebase of the stack base; abandonment is fine too,"
+            echo "as long as it is written down on the issue the PR was for."
+          } > "${body_file}"
+
+          existing=$(gh issue list --repo "${REPO}" --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            gh issue edit "${existing}" --repo "${REPO}" --body-file "${body_file}"
+            echo "updated https://github.com/${REPO}/issues/${existing}"
+          else
+            gh issue create --repo "${REPO}" --title "${title}" --body-file "${body_file}"
+          fi
