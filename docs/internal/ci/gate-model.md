@@ -118,53 +118,82 @@ These workflows run on schedule and can be dispatched manually:
 ## Attesting reviewers
 
 `Review Gate` goes green only on exact-head review evidence from a bot identity
-that is distinct from the PR author. `scripts/ci/review-gate-evidence.js` owns
-that identity set — it is the single source of truth, exported as
-`ATTESTING_LOGINS` and read by `scripts/ci/merge-train/select.sh` via
-`--print-logins`, so nothing else may restate the logins.
+distinct from the PR author. `scripts/ci/review-gate-evidence.js` owns that
+identity set and is the single source of truth: it exports `ATTESTING_LOGINS`,
+`scripts/ci/merge-train/select.sh` reads it via `--print-logins`, and the
+`.github/workflows/claude-review.yml` lane reads its body template through
+`scripts/ci/claude-review-body.js`. Nothing else may restate a login or a
+marker — including this document, which describes the registry rather than
+duplicating it.
 
-| Reviewer | Accepted login(s) | Review marker | "No findings" phrasing |
-|---|---|---|---|
-| Codex | `chatgpt-codex-connector`, `chatgpt-codex-connector[bot]` | `Codex Review` / `Reviewed commit` | `Codex Review: Didn't find any major issues.` |
-| Claude | `claude[bot]` | `Claude Review` / `Reviewed commit` | `Claude Review: No major issues found.` |
+Two identities are accepted today: **Codex** (`chatgpt-codex-connector`) and
+**Claude** (`claude`). Either alone can attest, which is the point: when Codex is
+rate-limited ("You have reached your Codex usage limits for code reviews") the
+gate would otherwise deadlock and nothing could land. GitHub Copilot code review
+is deliberately **not** accepted; the reasoning is in the block comment in
+`review-gate-evidence.js`.
 
-Either identity alone can attest, which is the point: when Codex is rate-limited
-("You have reached your Codex usage limits for code reviews") the gate would
-otherwise deadlock and nothing could land. A `CHANGES_REQUESTED`/`DISMISSED`
-verdict still blocks, and it can only be withdrawn by the identity that raised
-it — a second reviewer cannot paper over the first one's objection.
+### Identity spelling is load-bearing
 
-GitHub Copilot code review (`github-code-quality[bot]`) is deliberately **not**
-accepted; the reasoning is in the block comment in `review-gate-evidence.js`.
+Evidence reaches the evaluator in two shapes that spell bot logins differently:
+REST reports `claude[bot]`, GraphQL reports `claude`. **The gate reads GraphQL**
+(`review-gate-snapshot.js`), so the suffix-less spelling is the one that appears
+in production — a registry that accepted only `claude[bot]` would make every
+review the lane posts invisible to the gate.
+
+`claude` is also a real GitHub User, and a User can hold a PAT, so it is accepted
+only when GitHub additionally types the author as a `Bot`. That is why every
+`author` selection in the snapshot query carries `__typename`, and why
+`reviewerFor(login, typename)` takes two arguments. Dropping `__typename` from
+the query silently disables the Claude identity.
 
 ### The Claude lane
 
-`.github/workflows/claude-review.yml` produces the `claude[bot]` half. It runs
-`anthropics/claude-code-action@v1` on `pull_request` (`opened`, `synchronize`,
-`reopened`, `ready_for_review`) against `trunk`, and on an `issue_comment`
-containing **`@claude review`** for re-requests (mirroring `@codex review`). It
-skips drafts and fork PRs, and its concurrency group cancels in progress —
-a review of a superseded head can never attest.
+`.github/workflows/claude-review.yml` produces the `claude` half.
 
-The action posts exactly one review per head via
-`POST /repos/{owner}/{repo}/pulls/{n}/reviews` with an explicit `commit_id`
-(`gh pr review` cannot pin a commit):
+**It never runs from the pull request it reviews.** It triggers on `workflow_run`
+(completed `PR Gate`) and on `issue_comment`, both of which execute the
+default-branch copy, so the workflow, the prompt and the `CLAUDE.md` the reviewer
+follows all come from trunk. A `pull_request` trigger would hand a candidate its
+own reviewer definition plus the secrets and `id-token: write` — enough to attest
+to itself and to exfiltrate the credentials. `review-gate.yml` uses
+`pull_request_target` + `github.workflow_sha` for the same reason. The PR is
+resolved through `scripts/ci/trusted-pr-workflow-run.js`, which binds the PR and
+its exact head to the immutable GitHub-managed check association and fails closed
+once the PR has moved. The PR tree is checked out into `pr/` as data, with its
+`CLAUDE.md` / `AGENTS.md` / `.claude` / `.github` deleted first so a candidate
+cannot smuggle reviewer instructions through a nested memory file. The diff is
+still untrusted text; the tool allowlist is the control that contains it.
 
-- clean → `event: COMMENT`, body starting `Claude Review: No major issues found.`
-- findings → `event: REQUEST_CHANGES`, body starting `Claude Review: <n> finding(s).`
+**It cannot merge, push, or edit a workflow.** The action authenticates as the
+Claude GitHub App, whose org installation carries write scopes, so the reviewer
+gets read-only analysis tools plus exactly two append-only publishing tools
+(`gh pr comment` and inline review comments) — no `gh api`, no general Bash, no
+git. `validate-single-merge-authority.sh` cannot see runtime API calls, so this
+allowlist is the control, and `scripts/ci/claude-review-lane.test.js` asserts it.
+The workflow's own `GITHUB_TOKEN` stays read-only.
 
-Both bodies carry ``**Reviewed commit:** `<40-char head sha>` `` so the same text
-also satisfies the stricter clean-comment path. The exact strings are pinned by
-fixtures in `scripts/ci/review-gate-evidence.test.js`.
+**It only ever posts comments — never a review verdict.** A
+`CHANGES_REQUESTED` is identity-scoped and is cleared only by a *newer positive
+from the same identity*; an optional reviewer that later stops running (secret
+revoked, App uninstalled, API outage) would leave such a PR blocked permanently,
+with no operator override short of editing the evaluator on trunk. So:
 
-**No `github_token` input is passed to the action.** The default path exchanges
-the workflow's OIDC token (hence `id-token: write`) for a Claude GitHub App
-installation token. That is load-bearing twice over: the review author becomes
-`claude[bot]` rather than `github-actions[bot]`, and the resulting
-`pull_request_review` event still triggers workflows — so `review-event-bridge.yml`
-fires and `review-gate.yml` re-evaluates through its existing
-`workflow_run: ["Review Event Bridge"]` edge. No additional `workflow_run` edge
-is needed, and the bridge does not filter by reviewer login.
+- no blocking findings → one comment carrying the generated clean body, which
+  attests through the clean-comment path;
+- blocking findings → inline review comments only. Those become review threads
+  and hold the gate red through `unresolvedCount` until a human resolves them.
+
+Note the honest limitation, which the lane shares with Codex: `unresolvedCount`
+is **head-scoped** — a thread is counted only while its comment sits on the
+current head, so findings threads drop out of the gate's view on the next push
+and the new head is judged on its own evidence.
+
+A `@claude review` comment re-runs the lane; it is gated on a human commenter
+with `OWNER`/`MEMBER`/`COLLABORATOR` association, because the action hard-fails
+its own permission check otherwise and would turn a courtesy trigger into a red
+check. Re-review is suppressed only by an existing clean attestation *for the
+same head*, so a prior findings run never blocks a re-request.
 
 **Enabling the lane (repository owner only).** Add **one** repository secret:
 
@@ -174,7 +203,10 @@ is needed, and the bridge does not filter by reviewer login.
 
 Until one exists the job exits 0 with a `::notice::` naming the secrets; it never
 fails a PR. The `claude` GitHub App must stay installed on the org with
-`pull_requests: write`.
+`pull_requests: write`. The lane is **not** merge-blocking itself and publishes
+no check context — it only feeds evidence to `Review Gate` — but it does
+consume one runner per PR-Gate completion, which is why it is documented here
+rather than treated as a silent addition (rule 4).
 
 ## Adding New Checks
 
