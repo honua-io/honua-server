@@ -249,16 +249,27 @@ jobs:
           steps.parse-results.outputs.canttell_tests != '0'
         run: |
           if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
-            echo "${{ inputs.display-name }} CITE conformance results were not produced"
+            echo "::error::${{ inputs.display-name }} CITE conformance results were not produced (no summary file); the runner did not finish"
             exit 1
           fi
 
+          # Name the exact condition. "conformance tests failed" printed next to
+          # "Failed tests: 0" is unreadable when the real trip was a zero-test
+          # run, a skipped assertion, or a CantTell result.
           if [[ "${{ steps.run-suite.outputs.timed_out }}" == "true" ]]; then
-            echo "${{ inputs.display-name }} CITE conformance tests timed out"
+            echo "::error::${{ inputs.display-name }} CITE conformance tests timed out"
           elif [[ "${{ steps.run-suite.outputs.exit_code }}" != "0" ]]; then
-            echo "${{ inputs.display-name }} CITE runner exited with status ${{ steps.run-suite.outputs.exit_code }}"
+            echo "::error::${{ inputs.display-name }} CITE runner exited with status ${{ steps.run-suite.outputs.exit_code }}"
+          elif [[ "${{ steps.parse-results.outputs.total_tests }}" == "0" ]]; then
+            echo "::error::${{ inputs.display-name }} CITE produced a summary with zero executed tests"
+          elif [[ "${{ steps.parse-results.outputs.failed_tests }}" != "0" ]]; then
+            echo "::error::${{ inputs.display-name }} CITE reported ${{ steps.parse-results.outputs.failed_tests }} failed test(s)"
+          elif [[ "${{ steps.parse-results.outputs.skipped_tests }}" != "0" ]]; then
+            echo "::error::${{ inputs.display-name }} CITE reported no failures but ${{ steps.parse-results.outputs.skipped_tests }} skipped test(s); the profile must execute every applicable test"
+          elif [[ "${{ steps.parse-results.outputs.canttell_tests }}" != "0" ]]; then
+            echo "::error::${{ inputs.display-name }} CITE reported no failures but ${{ steps.parse-results.outputs.canttell_tests }} CantTell result(s); the assertion could not be evaluated"
           else
-            echo "${{ inputs.display-name }} CITE conformance tests failed"
+            echo "::error::${{ inputs.display-name }} CITE conformance step tripped without a recognized failure condition; inspect the uploaded results"
           fi
 
           echo "Total tests: ${{ steps.parse-results.outputs.total_tests }}"

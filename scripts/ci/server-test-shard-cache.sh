@@ -27,6 +27,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   server-test-shard-cache.sh plan --shard NAME --project CSPROJ --matrix-json JSON --source-sha SHA --runner-os OS --sdk VERSION
+                                  [--run-id ID] [--run-attempt N] [--attempt1-reuse SWITCH]
   server-test-shard-cache.sh restore --project CSPROJ --source-sha SHA --payload DIR --cache-hit true|false
 EOF
 }
@@ -43,6 +44,9 @@ runner_os=""
 sdk=""
 payload=""
 cache_hit="false"
+run_attempt="1"
+run_id="${GITHUB_RUN_ID:-}"
+attempt1_reuse=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,6 +58,9 @@ while [[ $# -gt 0 ]]; do
     --sdk) sdk="${2:-}"; shift 2 ;;
     --payload) payload="${2:-}"; shift 2 ;;
     --cache-hit) cache_hit="${2:-}"; shift 2 ;;
+    --run-attempt) run_attempt="${2:-}"; shift 2 ;;
+    --run-id) run_id="${2:-}"; shift 2 ;;
+    --attempt1-reuse) attempt1_reuse="${2:-}"; shift 2 ;;
     *) usage; exit 2 ;;
   esac
 done
@@ -82,24 +89,40 @@ case "${mode}" in
       echo "::error::Runner/toolchain cache-key inputs are invalid." >&2
       exit 2
     fi
+    # A malformed attempt counter must not redden a shard: fall back to the
+    # first-attempt reading, which is the conservative build-locally path.
+    [[ "${run_attempt}" =~ ^[0-9]+$ ]] || run_attempt=1
     jq -e 'type == "array" and length > 0 and all(.[]; (.shard_name | type == "string" and length > 0))' \
       <<<"${matrix_json}" >/dev/null || { echo "::error::Selected shard matrix is invalid." >&2; exit 2; }
     jq -e --arg shard "${shard}" 'any(.[]; .shard_name == $shard)' <<<"${matrix_json}" >/dev/null || {
       echo "::error::Current shard '${shard}' is absent from the selected matrix." >&2
       exit 2
     }
+    # First selected shard in MATRIX (dispatch) order, not lexicographic order.
+    # See "Writer selection" in docs/internal/ci/server-test-binary-artifacts.md.
     writer="$(jq -r --arg project "${project}" --arg fallback "${DEFAULT_PROJECT}" '
       [ .[]
         | select((if ((.csproj // "") == "") then $fallback else .csproj end) == $project)
         | .shard_name ]
-      | sort | first
+      | first
     ' <<<"${matrix_json}")"
     [[ -n "${writer}" && "${writer}" != "null" ]] || {
       echo "::error::Selected matrix has no writer for '${project}'." >&2
       exit 2
     }
     registry_hash="$(sha256sum "${REGISTRY}" | cut -d' ' -f1)"
-    cache_key="honua-server-test-v${CONTRACT_VERSION}-${runner_os}-${source_sha,,}-${sdk}-${suffix}-${registry_hash}"
+
+    # The run id is part of the key so an aged payload cannot poison every later
+    # run of an unchanged SHA. See "Run-scoped keys" in
+    # docs/internal/ci/server-test-binary-artifacts.md.
+    if [[ "${run_id}" =~ ^[0-9]+$ ]]; then
+      run_scope="${run_id}"
+    else
+      # No trustworthy run identity (local invocation): keep the key namespaced
+      # so it can never collide with a hosted entry, and never read from it.
+      run_scope="local"
+    fi
+    cache_key="honua-server-test-v${CONTRACT_VERSION}-${runner_os}-${source_sha,,}-${sdk}-${suffix}-run${run_scope}-${registry_hash}"
     payload_dir="${RUNNER_TEMP:-/tmp}/honua-server-test-cache/${suffix}"
 
     emit project "${project}"
@@ -108,6 +131,49 @@ case "${mode}" in
     emit payload_dir "${payload_dir}"
     emit cache_writer "$([[ "${shard}" == "${writer}" ]] && echo true || echo false)"
     emit cache_writer_shard "${writer}"
+
+    # Attempt-1 opportunistic reuse (#3213). Contract, kill switch and fail-open
+    # rules: docs/internal/ci/server-test-binary-artifacts.md.
+    #
+    # The one switch rule lives here and nowhere else: reuse is ON unless the
+    # raw value is exactly `false`. The value is echoed back for the job summary,
+    # sanitised so free text cannot forge extra output lines.
+    if [[ -z "${attempt1_reuse}" ]]; then
+      attempt1_switch="unset"
+    elif [[ "${attempt1_reuse}" =~ ^[A-Za-z0-9._-]{1,32}$ ]]; then
+      attempt1_switch="${attempt1_reuse}"
+    else
+      attempt1_switch="unprintable"
+    fi
+    emit attempt1_switch "${attempt1_switch}"
+
+    if [[ "${run_scope}" == "local" ]]; then
+      # Without a run identity the key is not run-scoped, so reading it could
+      # cross runs. Build locally instead.
+      restore_mode="disabled"
+    elif (( run_attempt > 1 )); then
+      # The kill switch governs ATTEMPT-1 reuse only. It must never withdraw the
+      # pre-existing #2735 failed-rerun read, so this branch is checked first.
+      restore_mode="rerun"
+    elif [[ "${attempt1_reuse}" == "false" ]]; then
+      restore_mode="disabled"
+    else
+      restore_mode="opportunistic"
+    fi
+    emit restore_mode "${restore_mode}"
+    emit restore_enabled "$([[ "${restore_mode}" == "disabled" ]] && echo false || echo true)"
+
+    # Single place that parses the attempt counter. The designated writer
+    # publishes on attempt 1; on a rerun any shard that had to rebuild may
+    # publish for the remaining attempts of the same run.
+    if [[ "${run_scope}" == "local" ]]; then
+      package_enabled=false
+    elif [[ "${shard}" == "${writer}" ]] || (( run_attempt > 1 )); then
+      package_enabled=true
+    else
+      package_enabled=false
+    fi
+    emit package_enabled "${package_enabled}"
     ;;
 
   restore)

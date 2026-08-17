@@ -5,19 +5,24 @@
 
 TRAIN_TIMEOUT_TAB="$(printf '\tX')"; TRAIN_TIMEOUT_TAB="${TRAIN_TIMEOUT_TAB%X}"
 
+# Guard state, initialized at source time so `set -u` is safe on every path.
+# TRAIN_GUARD_KIND is the classification the ordering guard reached;
+# TRAIN_GUARD_SCAN_* is its single-reuse evidence memo (see the guard).
+TRAIN_GUARD_KIND=""
+TRAIN_GUARD_SCAN_ARMED=0
+TRAIN_GUARD_SCAN_KEY=""
+TRAIN_GUARD_SCAN_RC=""
+TRAIN_GUARD_SCAN_KIND=""
+
 train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
 }
 
 # #3054: a shard that ran out of its CONFIGURED budget while still executing
-# tests is a capacity failure, not a hang. scripts/ci/run-server-test-shard.sh
-# emits HONUA_SHARD_CAPACITY_EXHAUSTED for that case and
-# HONUA_SHARD_HANG_SUSPECTED when the shard had gone silent before the cap
-# fired. Rerunning a capacity failure just reproduces it at full runner cost,
-# so it must never consume a retry.
-train_log_is_capacity_exhaustion() {
-  grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"$1"
-}
+# tests is a capacity failure, not a hang. The marker predicate itself lives in
+# lib.sh (train_log_is_capacity_exhaustion) because the pre-existing-failure
+# filter and the early-failure observer must agree with this classifier on what
+# counts as capacity evidence.
 
 # train_wait_for_rerun_visibility <run-id> <base-attempt>: bounded grace for an
 # asynchronously accepted request to expose attempt > base.
@@ -141,7 +146,9 @@ train_request_failed_job_rerun() {
     return 0
   fi
 
-  base="$(gh run view "${run_id}" --json attempt --jq '.attempt' 2>/dev/null || echo "")"
+  base="$(gh run view "${run_id}" \
+    --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" \
+    --json attempt --jq '.attempt' 2>/dev/null || echo "")"
   if [[ ! "${base}" =~ ^[0-9]+$ ]]; then
     if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
       base=1
@@ -184,21 +191,38 @@ train_request_failed_job_rerun() {
   return 0
 }
 
-# train_match_timeout_text <log-text>: 0 when the text is a timeout, and sets
-# TRAIN_TIMEOUT_KIND to capacity or hang for the caller.
+# train_match_timeout_text <log-text>: 0 when the text shows the shard could not
+# finish executing its tests, and sets TRAIN_TIMEOUT_KIND for the caller:
+#   capacity  over its configured budget       (terminal, never rerun)
+#   killed    SIGKILLed test host, e.g. OOM    (terminal, not a timeout at all)
+#   hang      stalled shard or generic exit-124/timeout text (bounded rerun)
+# The explicit HONUA_SHARD_* markers are checked BEFORE the generic timeout
+# regex: `killed` reports exit 137 and no timeout wording at all, so a
+# text-only test would classify it as an ordinary product failure and let it
+# reach the pre-existing filter and per-PR attribution (#3213).
 train_match_timeout_text() {
   local text="$1"
+  TRAIN_TIMEOUT_KIND=""
+  if train_log_is_capacity_exhaustion "${text}"; then TRAIN_TIMEOUT_KIND=capacity; return 0; fi
+  if train_log_is_shard_killed "${text}"; then TRAIN_TIMEOUT_KIND=killed; return 0; fi
+  if train_log_is_shard_hang "${text}"; then TRAIN_TIMEOUT_KIND=hang; return 0; fi
   train_log_is_timeout "${text}" || return 1
-  if train_log_is_capacity_exhaustion "${text}"; then
-    TRAIN_TIMEOUT_KIND=capacity
-  else
-    TRAIN_TIMEOUT_KIND=hang
-  fi
+  TRAIN_TIMEOUT_KIND=hang
   return 0
+}
+
+# train_timeout_kind_is_terminal <kind>: kinds that must never be rerun and are
+# never attributable to a batch member.
+train_timeout_kind_is_terminal() {
+  [[ "$1" == "capacity" || "$1" == "killed" ]]
 }
 
 # train_run_logs_match_timeout <run-id> [failing-job-names]
 # Sets TRAIN_TIMEOUT_KIND to capacity|hang on a match (empty otherwise).
+# Returns 2 when any selected failing job's log is unavailable. Missing failure
+# evidence must never fall through to per-PR attribution: without the log we
+# cannot distinguish product failure, timeout, capacity exhaustion, or runner
+# loss. Capacity still wins immediately when another readable log proves it.
 # Test override: TRAIN_RUN_LOG_TEXT supplies the log text directly.
 train_run_logs_match_timeout() {
   local run_id="$1" failing_names="${2:-}"
@@ -208,8 +232,9 @@ train_run_logs_match_timeout() {
     return $?
   fi
 
-  local rows jid name conclusion saw_job=0 saw_timeout=0
-  rows="$(gh run view "${run_id}" --json jobs \
+  local rows jid name conclusion text annotations saw_job=0 saw_timeout=0 logs_complete=1
+  rows="$(gh run view "${run_id}" \
+    --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --json jobs \
     --jq '.jobs[]
       | select(.conclusion=="failure" or .conclusion=="cancelled"
                or .conclusion=="timed_out" or .conclusion=="startup_failure")
@@ -235,45 +260,164 @@ train_run_logs_match_timeout() {
         continue
         ;;
     esac
-    if train_match_timeout_text "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
-      saw_timeout=1
-      if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
-        return 0
+    # Workflow `::error::` markers are exact-job annotations. Read that small,
+    # paginated surface first so capacity classification does not wait on or
+    # download a 20 MB aggregate log. A complete generic timeout annotation is
+    # also sufficient for the existing bounded hang retry.
+    if annotations="$(train_read_job_annotations "${jid}")"; then
+      if train_match_timeout_text "${annotations}"; then
+        train_timeout_kind_is_terminal "${TRAIN_TIMEOUT_KIND}" && return 0
+        saw_timeout=1
+        continue
       fi
+    fi
+    if text="$(train_read_job_log "${jid}")"; then
+      if train_match_timeout_text "${text}"; then
+        saw_timeout=1
+        train_timeout_kind_is_terminal "${TRAIN_TIMEOUT_KIND}" && return 0
+      fi
+    else
+      logs_complete=0
     fi
   done <<<"${rows}"
 
+  if [[ "${logs_complete}" != "1" ]]; then
+    TRAIN_TIMEOUT_KIND=""
+    return 2
+  fi
   if [[ "${saw_timeout}" == "1" ]]; then
     TRAIN_TIMEOUT_KIND=hang
     return 0
   fi
 
   if [[ "${saw_job}" == "0" ]]; then
-    train_match_timeout_text "$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
-    return $?
+    if text="$(gh run view "${run_id}" \
+      --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --log-failed 2>/dev/null)"; then
+      train_match_timeout_text "${text}"
+      return $?
+    fi
+    return 2
   fi
   TRAIN_TIMEOUT_KIND=""
   return 1
 }
 
+# train_classify_capacity_guard <run-id> [failing-job-names]
+# #3213 ORDERING GUARD, and the single evidence-reading entrypoint for a failed
+# batch. It answers one question for the whole failing set BEFORE any other step
+# is allowed to reinterpret it: did these jobs produce a comparable failure
+# CAUSE at all?
+#
+# Sets TRAIN_GUARD_KIND and returns:
+#   0  ordinary comparable failures            (TRAIN_GUARD_KIND="")
+#   7  terminal and NOT attributable to a PR   (capacity | shard-killed)
+#   8  no readable failure evidence            (evidence-unavailable)
+#   9  shard-terminal but retryable            (shard-timeout: stall/exit-124)
+#
+# rc 7 and rc 8 stop the batch outright. rc 9 does NOT stop it, but the shard
+# still never finished executing its tests, so its failure may not be subtracted
+# as pre-existing either — the caller must bypass that filter and let the
+# bounded hang rerun decide.
+#
+# Transient Actions read failures are retried with backoff before concluding
+# evidence-unavailable: a single flaky `gh run view` would otherwise convert a
+# batch that should have landed into a whole-batch escalation with sticky
+# train:escalated labels. Only a persistently unreadable surface returns 8.
+# READ-ONLY: never requests a rerun and never mutates state.
+train_classify_capacity_guard() {
+  local run_id="$1" failing_names="${2:-}"
+  local attempt=1 max="${TRAIN_EVIDENCE_READ_RETRIES:-3}"
+  local delay="${TRAIN_EVIDENCE_READ_BACKOFF_SECONDS:-5}" scan_rc=0
+  TRAIN_GUARD_KIND=""
+  # Single-reuse evidence memo. train_classify_timeout delegates here, so the
+  # same annotations and job logs were downloaded twice per failed batch: once
+  # by the ordering guard and once by the retry classifier (#3213). The memo is
+  # OPT-IN — train.sh arms it once per ci-gate iteration — because a stale reuse
+  # would be far worse than a duplicate read: any caller that reuses a run id
+  # with different evidence (every focused fixture does) must always rescan.
+  # It is consumed on first reuse, so a later attempt's evidence is never served
+  # from an earlier scan even within an armed iteration.
+  if [[ "${TRAIN_GUARD_SCAN_ARMED:-0}" == "1" && -n "${TRAIN_GUARD_SCAN_KEY}" \
+    && "${TRAIN_GUARD_SCAN_KEY}" == "${run_id}|${failing_names}" ]]; then
+    scan_rc="${TRAIN_GUARD_SCAN_RC}"
+    TRAIN_TIMEOUT_KIND="${TRAIN_GUARD_SCAN_KIND}"
+    train_guard_scan_reset
+    train_log "reusing this pass's evidence scan for run ${run_id}"
+  else
+    while :; do
+      scan_rc=0
+      train_run_logs_match_timeout "${run_id}" "${failing_names}" || scan_rc=$?
+      [[ "${scan_rc}" == "2" && "${attempt}" -lt "${max}" ]] || break
+      train_warn "failed-job evidence for run ${run_id} was unreadable (attempt ${attempt}/${max}); backing off ${delay}s before concluding it is unavailable"
+      sleep "${delay}"
+      attempt=$(( attempt + 1 )); delay=$(( delay * 2 ))
+    done
+    if [[ "${TRAIN_GUARD_SCAN_ARMED:-0}" == "1" ]]; then
+      TRAIN_GUARD_SCAN_KEY="${run_id}|${failing_names}"
+      TRAIN_GUARD_SCAN_RC="${scan_rc}"
+      TRAIN_GUARD_SCAN_KIND="${TRAIN_TIMEOUT_KIND}"
+    fi
+  fi
+
+  if [[ "${scan_rc}" == "2" ]]; then
+    TRAIN_GUARD_KIND=evidence-unavailable
+    return 8
+  fi
+  [[ "${scan_rc}" == "0" ]] || return 0
+  case "${TRAIN_TIMEOUT_KIND}" in
+    capacity) TRAIN_GUARD_KIND=capacity; return 7 ;;
+    killed)   TRAIN_GUARD_KIND=shard-killed; return 7 ;;
+    *)        TRAIN_GUARD_KIND=shard-timeout; return 9 ;;
+  esac
+}
+
+# train_guard_scan_reset: drop the memoized guard scan without disarming.
+train_guard_scan_reset() {
+  TRAIN_GUARD_SCAN_KEY=""
+  TRAIN_GUARD_SCAN_RC=""
+  TRAIN_GUARD_SCAN_KIND=""
+}
+
+# train_guard_scan_arm: allow ONE downstream reuse of the next guard scan, and
+# drop anything memoized by an earlier iteration. train.sh calls this once per
+# ci-gate iteration; every other caller stays unarmed and always rescans.
+train_guard_scan_arm() {
+  TRAIN_GUARD_SCAN_ARMED=1
+  train_guard_scan_reset
+}
+
 # train_classify_timeout <run-id> <retry-count> [failing-job-names]
-# Returns 0 after issuing a retry, 1 when this is not a timeout, 2 when a
-# timeout persisted past the cap and must be handled as a real failure, and
-# 7 (#3054) when a shard exhausted its configured budget while still running
-# tests, which is a CI-capacity failure rather than anything a batch member did.
+# Returns 0 after issuing a retry, 1 when this is not a shard-terminal failure,
+# 2 when a timeout persisted past the cap and must be handled as a real failure,
+# 7 (#3054/#3213) when the shard could not finish for a reason no batch member
+# caused — over capacity, or its test host was SIGKILLed — and 8 when required
+# failure-log evidence is unavailable. The evidence read itself is delegated to
+# train_classify_capacity_guard so the two classifiers cannot disagree and the
+# logs are read once.
 train_classify_timeout() {
   local run_id="$1" retry_count="${2:-0}" failing_names="${3:-}" callback="${4:-}"
-  train_run_logs_match_timeout "${run_id}" "${failing_names}" || return 1
-  if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
-    # #3054: the shard was still executing tests when its configured budget
-    # expired. A rerun burns another full shard's worth of runner time and
-    # reproduces the same exhaustion, so this never consumes a retry. It is
-    # also NOT attributable to one PR, so it must bypass autofix/attribution
-    # (which would drop or escalate an arbitrary batch member) and escalate the
-    # batch as a whole instead.
-    train_warn "shard capacity exhausted (HONUA_SHARD_CAPACITY_EXHAUSTED): the test step used its whole configured budget while still running tests; this is not a hang and not attributable to one PR. Raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json instead of rerunning."
-    return 7
-  fi
+  local guard_rc=0
+  train_classify_capacity_guard "${run_id}" "${failing_names}" || guard_rc=$?
+  case "${guard_rc}" in
+    8) return 8 ;;
+    0) return 1 ;;
+    7)
+      # The shard was still executing tests when its configured budget expired,
+      # or its host was killed outright. A rerun burns another full shard's
+      # worth of runner time and reproduces the same condition, so this never
+      # consumes a retry. It is also NOT attributable to one PR, so it must
+      # bypass autofix/attribution (which would drop or escalate an arbitrary
+      # batch member) and escalate the batch as a whole instead.
+      if [[ "${TRAIN_GUARD_KIND}" == "shard-killed" ]]; then
+        train_warn "shard test host killed (HONUA_SHARD_KILLED): the shard was SIGKILLed before the runner's own kill deadline, so it is not a timeout and not attributable to one PR. Suspect an out-of-memory kill or an external cancellation and check the runner size in .github/ci-shards.json."
+      else
+        train_warn "shard capacity exhausted (HONUA_SHARD_CAPACITY_EXHAUSTED): the test step used its whole configured budget while still running tests; this is not a hang and not attributable to one PR. Raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json instead of rerunning."
+      fi
+      return 7
+      ;;
+  esac
+  # guard_rc == 9: a stalled shard or generic exit-124. This is the one
+  # shard-terminal shape that still earns the historical bounded rerun.
   if [[ "${retry_count}" -ge "${TRAIN_TIMEOUT_RERUN_CAP}" ]]; then
     train_warn "timeout/exit-124 failure persisted after ${TRAIN_TIMEOUT_RERUN_CAP} failed-job retry; treating as real"
     return 2
@@ -290,8 +434,11 @@ train_classify_timeout() {
 # 3=pre-request failure, 4=ambiguous requesting state preserved, 5=definitive
 # API rejection persisted for terminal recovery, 6=rejection known but terminal
 # state persistence failed (cleanup is unauthorized and must not run),
-# 7=shard capacity exhausted (#3054): a CI-configuration failure that must skip
-# autofix and per-PR attribution entirely.
+# 7=the shard could not finish for a reason no batch member caused (#3054/#3213)
+# — over capacity, or its test host was SIGKILLed — which must skip autofix and
+# per-PR attribution entirely; 8=required failure evidence was not readable,
+# which also must skip attribution and fail closed. TRAIN_GUARD_KIND carries the
+# exact kind for 7 and 8 so the caller can report the right remediation.
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
   local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
@@ -301,7 +448,7 @@ train_classify_retry_candidate() {
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
-    3|4|5|6|7) return "${rc}" ;;
+    3|4|5|6|7|8) return "${rc}" ;;
   esac
 
   rc=0

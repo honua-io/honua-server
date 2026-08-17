@@ -50,3 +50,23 @@ public sealed record StyleCatalogRecord
 /// <param name="StyleId">Catalog style identifier.</param>
 /// <param name="Ordinal">Zero-based reference ordinal; 0 is primary.</param>
 public sealed record StyleLayerAssociation(int LayerId, string StyleId, int Ordinal);
+
+/// <summary>Atomic catalog deletion outcome, including associations captured before cascade.</summary>
+/// <param name="Status">Whether the record was deleted, missing, or protected.</param>
+/// <param name="AssociatedLayerIds">Layer ids associated with the style immediately before deletion.</param>
+public sealed record StyleCatalogDeleteResult(
+    StyleCatalogDeleteStatus Status,
+    IReadOnlyList<int> AssociatedLayerIds);
+
+/// <summary>Outcome of an atomic style-catalog deletion.</summary>
+public enum StyleCatalogDeleteStatus
+{
+    /// <summary>The style and its associations were deleted.</summary>
+    Deleted,
+
+    /// <summary>No style with the requested identifier exists.</summary>
+    NotFound,
+
+    /// <summary>The style is protected canonical layer state.</summary>
+    Protected
+}

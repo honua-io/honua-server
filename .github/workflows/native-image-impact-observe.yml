@@ -38,9 +38,13 @@ concurrency:
 jobs:
   observe:
     name: Compare native-image impact routing
+    # A cancelled source run is a superseded push: its head is already stale, so
+    # there is nothing observable and the trusted resolver would correctly refuse
+    # it. Never schedule the job at all rather than manufacture a red run.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion != 'cancelled' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -63,16 +67,27 @@ jobs:
         with:
           script: |
             const crypto = require('crypto');
+            const fs = require('fs');
+            const path = require('path');
             const {
-              resolveTrustedPullRequestWorkflowRun,
+              resolveForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            const runnerTemp = process.env.RUNNER_TEMP;
+            if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
             const { data: repository } = await github.rest.repos.get(context.repo);
             const trustedRef = `refs/heads/${repository.default_branch}`;
             if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
               throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
             }
-            const resolved = await resolveTrustedPullRequestWorkflowRun({
+            // Observation only. resolveForObservation downgrades ONLY a
+            // superseded source (cancelled run, moved head, closed PR) to a
+            // recorded skip; misconfiguration and API drift still throw.
+            const resolved = await resolveForObservation({
               github,
+              core,
+              fs,
+              label: 'native-image-impact',
+              markerPath: path.join(runnerTemp, 'observation-skipped.json'),
               ...context.repo,
               runId: process.env.SOURCE_RUN_ID,
               runAttempt: process.env.SOURCE_RUN_ATTEMPT,
@@ -82,6 +97,7 @@ jobs:
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
             });
+            if (!resolved) return;
 
             const policyInputs = [
               { path: 'scripts/ci/native-image-impact.py', output: 'policy_blob_sha', ref: context.sha },
@@ -120,7 +136,20 @@ jobs:
             core.setOutput('policy_sha', context.sha);
             core.setOutput('policy_inputs_sha256', policyInputsSha256);
 
+      # A stable-name marker so the evidence ledger can classify this run as
+      # observation-skipped:<code> instead of counting it as a receipt-emission
+      # regression. Read from the artifact catalog; never downloaded.
+      - name: Retain observation skip marker
+        if: steps.collect.outputs.skip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-image-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Checkout candidate tree as inert data
+        if: steps.collect.outputs.skip != 'true'
         uses: actions/checkout@v7
         with:
           repository: ${{ steps.collect.outputs.head_repository }}
@@ -130,10 +159,14 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch and verify exact comparison commits
+        id: trees
+        if: steps.collect.outputs.skip != 'true'
         env:
           BASE_SHA: ${{ steps.collect.outputs.base_sha }}
           HEAD_SHA: ${{ steps.collect.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.collect.outputs.pr }}
         run: |
+          set -euo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "${HEAD_SHA}"
           if ! git -C candidate cat-file -e "${BASE_SHA}^{commit}"; then
             git -C candidate fetch --no-tags --depth=1 \
@@ -141,7 +174,39 @@ jobs:
           fi
           git -C candidate cat-file -e "${BASE_SHA}^{commit}"
 
+          # Both authoritative image workflows check out the pull_request merge
+          # ref, so the image-input content address must be taken over the merge
+          # tree, not the head tree. The merge ref is mutable, so it only counts
+          # when its parents are exactly the observed base and head commits.
+          tree_kind=head
+          tree_sha="${HEAD_SHA}"
+          # No --depth here: a shallow fetch grafts the merge commit as a root,
+          # which hides its parents from rev-list and would silently downgrade
+          # every observation to the head tree. Both parents are already present
+          # from the full candidate checkout, so this transfers almost nothing.
+          if git -C candidate fetch --no-tags \
+               "https://github.com/${GITHUB_REPOSITORY}.git" \
+               "+refs/pull/${PR_NUMBER}/merge:refs/honua/observed-merge" 2>/dev/null; then
+            merge_sha="$(git -C candidate rev-parse refs/honua/observed-merge)"
+            # Read the raw commit header rather than rev-list, so the parent
+            # check cannot be fooled by any pre-existing shallow boundary.
+            parents="$(git -C candidate cat-file commit refs/honua/observed-merge \
+              | awk '/^parent /{printf "%s ", $2} /^$/{exit}')"
+            if [[ "${parents}" == "${BASE_SHA} ${HEAD_SHA} " ]]; then
+              tree_kind=merge
+              tree_sha="${merge_sha}"
+            else
+              echo "merge ref parents are ${parents:-none}, expected ${BASE_SHA} ${HEAD_SHA};" \
+                   "falling back to the head tree" >&2
+            fi
+          else
+            echo "no fetchable merge ref; falling back to the head tree" >&2
+          fi
+          echo "image_input_tree=${tree_kind}" >> "${GITHUB_OUTPUT}"
+          echo "image_input_tree_sha=${tree_sha}" >> "${GITHUB_OUTPUT}"
+
       - name: Validate trusted selector policy
+        if: steps.collect.outputs.skip != 'true'
         run: |
           python3 policy/scripts/ci/native-image-impact.py \
             --policy policy/.github/native-image-impact.json validate
@@ -152,6 +217,7 @@ jobs:
             -v
 
       - name: Observe exact diff with trusted selector
+        if: steps.collect.outputs.skip != 'true'
         run: |
           python3 policy/scripts/ci/native-image-impact.py \
             --policy policy/.github/native-image-impact.json \
@@ -175,11 +241,14 @@ jobs:
             --gate-run-id '${{ steps.collect.outputs.run_id }}' \
             --gate-run-attempt '${{ steps.collect.outputs.run_attempt }}' \
             --gate-run-conclusion '${{ steps.collect.outputs.run_conclusion }}' \
+            --image-input-tree '${{ steps.trees.outputs.image_input_tree }}' \
+            --image-input-tree-sha '${{ steps.trees.outputs.image_input_tree_sha }}' \
             --output native-image-impact-observation.json \
             --markdown native-image-impact-summary.md
-          cat native-image-impact-summary.md >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Recheck exact PR identity before retaining evidence
+      - id: recheck
+        name: Recheck exact PR identity before retaining evidence
+        if: steps.collect.outputs.skip != 'true'
         uses: actions/github-script@v9
         env:
           SOURCE_RUN_ID: ${{ steps.collect.outputs.run_id }}
@@ -194,6 +263,9 @@ jobs:
               resolveTrustedPullRequestWorkflowRun,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
             const { data: repository } = await github.rest.repos.get(context.repo);
+            // The retention invariant is "never retain evidence for a moved pull
+            // request"; discarding satisfies it exactly as well as failing the
+            // job. Warn loudly, then withhold both the artifact and the summary.
             const resolved = await resolveTrustedPullRequestWorkflowRun({
               github,
               ...context.repo,
@@ -204,17 +276,33 @@ jobs:
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
+              unresolved: 'skip',
             });
-            if (String(resolved.pullRequestNumber) !== process.env.EXPECTED_PR ||
-                resolved.baseSha !== process.env.EXPECTED_BASE ||
-                resolved.headSha !== process.env.EXPECTED_HEAD) {
-              throw new Error('pull request identity moved during native-image observation');
+            const moved = resolved.skipped
+              ? resolved.reason
+              : (String(resolved.pullRequestNumber) !== process.env.EXPECTED_PR ||
+                 resolved.baseSha !== process.env.EXPECTED_BASE ||
+                 resolved.headSha !== process.env.EXPECTED_HEAD)
+                ? 'pull request identity moved during observation'
+                : '';
+            if (moved) {
+              core.warning(`Discarding native-image observation: ${moved}.`);
+              core.setOutput('retain', 'false');
+              return;
             }
+            core.setOutput('retain', 'true');
+
+      # Published only after the recheck, so a discarded observation is never
+      # presented in the job summary as if it were evidence.
+      - name: Publish retained observation summary
+        if: steps.recheck.outputs.retain == 'true'
+        run: cat native-image-impact-summary.md >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Retain trusted observation evidence
+        if: steps.recheck.outputs.retain == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}
+          name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}
           path: |
             native-image-impact-observation.json
             native-image-impact-summary.md
