@@ -5785,6 +5785,7 @@
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_CarriesTheLabelNamesTheContractPromises",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_DoesNotReintroduceTheUnitSuffixedSeriesNames",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_ExportsEverySeriesNamedByTheSloMetricContract",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.ServingDenominator_ExcludesHealthProbesAndTheMetricsScrape",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_ReturnsPrometheusTextExposition",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_WithoutAuthentication_ReturnsUnauthorized"
       ],
