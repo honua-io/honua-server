@@ -52,6 +52,7 @@ jobs:
        github.event.workflow_run.event == 'pull_request_target')
     runs-on: ubuntu-latest
     outputs:
+      skip: ${{ steps.target.outputs.skip }}
       base_sha: ${{ steps.target.outputs.base_sha }}
       head_sha: ${{ steps.target.outputs.head_sha }}
       policy_sha: ${{ steps.policy.outputs.sha }}
@@ -76,21 +77,39 @@ jobs:
           SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
         with:
           script: |
+            const runnerTemp = process.env.RUNNER_TEMP;
+            if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
             const { data: repository } = await github.rest.repos.get(context.repo);
             const trustedRef = `refs/heads/${repository.default_branch}`;
             if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
               throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
             }
 
+            const fs = require('fs');
+            const path = require('path');
             const {
-              resolveTrustedPullRequestWorkflowRun,
+              recordObservationSkip,
+              resolveForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
-            const resolved = await resolveTrustedPullRequestWorkflowRun({
-              github,
-              ...context.repo,
+            const source = {
               runId: process.env.SOURCE_RUN_ID,
               runAttempt: process.env.SOURCE_RUN_ATTEMPT,
               runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+            };
+            const skip = {
+              core,
+              fs,
+              label: 'server-test-prebuild',
+              markerPath: path.join(runnerTemp, 'observation-skipped.json'),
+            };
+            // Observation only. resolveForObservation downgrades ONLY a
+            // superseded source (cancelled run, moved head, closed PR) to a
+            // recorded skip; misconfiguration and API drift still throw.
+            const resolved = await resolveForObservation({
+              github,
+              ...skip,
+              ...context.repo,
+              ...source,
               workflowPath: '.github/workflows/review-gate.yml',
               workflowName: 'Review Gate Attestation',
               workflowEvent: 'pull_request_target',
@@ -100,8 +119,15 @@ jobs:
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
             });
+            if (!resolved) return;
             if (resolved.pullRequest.draft) {
-              throw new Error('Prebuild observation requires a ready pull request.');
+              recordObservationSkip({
+                ...skip,
+                source,
+                code: 'pull-request-draft',
+                reason: 'the pull request is not ready for review',
+              });
+              return;
             }
             core.setOutput('pr', String(resolved.pullRequestNumber));
             core.setOutput('head_sha', resolved.headSha);
@@ -113,11 +139,22 @@ jobs:
             core.setOutput('source_run_head_sha', resolved.workflowSha);
             core.setOutput('source_run_sha_role', resolved.workflowShaRole);
 
+      - name: Retain observation skip marker
+        if: steps.target.outputs.skip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-skipped-${{ steps.target.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
+
       - id: policy
         name: Bind trusted policy commit
+        if: steps.target.outputs.skip != 'true'
         run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout raw pull-request head
+        if: steps.target.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.repository }}
@@ -128,6 +165,7 @@ jobs:
 
       - id: plan
         name: Select only repeated registered projects
+        if: steps.target.outputs.skip != 'true'
         env:
           BASE_SHA: ${{ steps.target.outputs.base_sha }}
           HEAD_SHA: ${{ steps.target.outputs.head_sha }}
@@ -151,6 +189,7 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
 
       - name: Bind plan to trusted workflow provenance
+        if: steps.target.outputs.skip != 'true'
         run: |
           jq \
             --arg repository '${{ github.repository }}' \
@@ -179,6 +218,7 @@ jobs:
           mv prebuild-plan.bound.json prebuild-plan.json
 
       - name: Retain immutable shadow plan
+        if: steps.target.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: server-test-prebuild-plan-${{ steps.target.outputs.pr }}-${{ steps.target.outputs.head_sha }}-attempt-${{ github.run_attempt }}
@@ -191,7 +231,7 @@ jobs:
   producer:
     name: Prebuild repeated project / ${{ matrix.identity }}
     needs: plan
-    if: needs.plan.outputs.has_producers == 'true'
+    if: needs.plan.outputs.skip != 'true' && needs.plan.outputs.has_producers == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:

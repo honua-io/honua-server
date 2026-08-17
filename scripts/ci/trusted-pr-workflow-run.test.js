@@ -4,9 +4,25 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  SKIP_CODE,
+  UnresolvedTrustedWorkflowRunError,
   parseRunId,
+  recordObservationSkip,
+  resolveForObservation,
   resolveTrustedPullRequestWorkflowRun,
 } = require('./trusted-pr-workflow-run');
+
+function recordingCore() {
+  const outputs = {};
+  const notices = [];
+  return {
+    outputs,
+    notices,
+    setOutput: (name, value) => { outputs[name] = value; },
+    notice: (message) => notices.push(message),
+    warning: (message) => notices.push(message),
+  };
+}
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -95,19 +111,28 @@ function fixtures(overrides = {}) {
   return { github };
 }
 
-function resolve(github, { runAttempt = '2', runConclusion = 'success' } = {}) {
-  return resolveTrustedPullRequestWorkflowRun({
+function options(github, overrides = {}) {
+  return {
     github,
     owner: 'honua-io',
     repo: 'honua-server',
     runId: '123',
-    runAttempt,
-    runConclusion,
+    runAttempt: '2',
+    runConclusion: 'success',
     workflowPath: '.github/workflows/pr-gate.yml',
     workflowName: 'PR Gate',
     defaultBranch: 'trunk',
     repositoryId: 1,
-  });
+    ...overrides,
+  };
+}
+
+function resolve(github, overrides = {}) {
+  return resolveTrustedPullRequestWorkflowRun(options(github, overrides));
+}
+
+function skipResolve(github, overrides = {}) {
+  return resolveTrustedPullRequestWorkflowRun(options(github, { unresolved: 'skip', ...overrides }));
 }
 
 function reviewGateFixtures({ runSha = HEAD, baseSha = BASE } = {}) {
@@ -307,5 +332,184 @@ test('accepts only positive safe integer workflow run ids', () => {
   assert.equal(parseRunId('123'), 123);
   for (const value of ['', '0', '-1', '1.5', '01', '9007199254740992', true]) {
     assert.throws(() => parseRunId(value), /workflow run id/);
+  }
+});
+
+// Observation-only consumers (pr-gate-impact-observe, native-image-impact-observe,
+// server-test-prebuild-observe) wake on EVERY completed source run, including the
+// cancelled/superseded ones a fresh push produces. Fail-closed is still correct,
+// but for them the correct fail-closed outcome is a clean skip, not ~93 red runs.
+// Only the superseded class may be downgraded, and each shape reports its code.
+test('skip mode downgrades exactly the superseded-source shapes', async () => {
+  const supersededAssociation = {
+    number: 42,
+    base: { ref: 'trunk', sha: BASE, repo: { id: 1 } },
+    head: { sha: 'e'.repeat(40), repo: { id: 1 } },
+  };
+  const cases = [
+    // A cancelled source never reached the terminal job the caller pinned.
+    ['source-run-job-absent', { jobs: [] },
+      /exactly one canonical workflow job/],
+    // A cancelled check run routinely retains no pull-request association.
+    ['no-pull-request-association', { checkRun: { pull_requests: [] } },
+      /exactly one pull request/],
+    // The run head is outside the association: the push was superseded.
+    ['pull-request-identity-superseded',
+      { checkRun: { pull_requests: [supersededAssociation] } },
+      /identity is inconsistent/],
+    // The pull request advanced while the observer was waking.
+    ['pull-request-moved', {
+      pullRequest: {
+        head: { sha: 'd'.repeat(40), repo: { id: 1, full_name: 'honua-io/honua-server' } },
+      },
+    }, /moved after/],
+    // The pull request closed before the observer ran.
+    ['pull-request-moved', { pullRequest: { state: 'closed' } }, /moved after/],
+  ];
+  for (const [code, overrides, pattern] of cases) {
+    const { github } = fixtures(overrides);
+    await assert.rejects(resolve(github), pattern, code);
+    const skipped = await skipResolve(github);
+    assert.equal(skipped.skipped, true, code);
+    assert.equal(skipped.code, code);
+    assert.match(skipped.reason, pattern, code);
+    assert.match(skipped.code, SKIP_CODE);
+  }
+});
+
+test('skip mode never silences misconfiguration or API drift', async () => {
+  const twoAssociations = [
+    { number: 41, base: { ref: 'trunk', sha: BASE, repo: { id: 1 } }, head: { sha: HEAD, repo: { id: 1 } } },
+    { number: 42, base: { ref: 'trunk', sha: BASE, repo: { id: 1 } }, head: { sha: HEAD, repo: { id: 1 } } },
+  ];
+  const duplicateJob = {
+    id: 458,
+    run_id: 123,
+    run_attempt: 2,
+    workflow_name: 'PR Gate',
+    name: 'PR Gate',
+    head_sha: HEAD,
+    status: 'completed',
+    conclusion: 'success',
+  };
+  const cases = [
+    // Wrong workflow identity / fork head / dispatch-input mismatch.
+    [{ run: { path: '.github/workflows/lookalike.yml' } }, {}, /completed canonical/],
+    [{ run: { name: 'Lookalike' } }, {}, /completed canonical/],
+    [{ run: { event: 'workflow_dispatch' } }, {}, /completed canonical/],
+    [{ run: { head_repository: { id: 2, full_name: 'contributor/honua-server' } } }, {},
+      /completed canonical/],
+    [{}, { runAttempt: '1' }, /completed canonical/],
+    [{}, { runConclusion: 'failure' }, /completed canonical/],
+    // Ambiguous job / check-run shape drift / ambiguous association.
+    [{ jobs: [{ ...duplicateJob, id: 456 }, duplicateJob] }, {}, /exactly one canonical/],
+    [{ checkRun: { head_sha: 'c'.repeat(40) } }, {}, /check identity is inconsistent/],
+    [{ checkRun: { pull_requests: twoAssociations } }, {}, /exactly one pull request/],
+    // Cross-repository association identity.
+    [{ checkRun: { pull_requests: [{
+      number: 42,
+      base: { ref: 'trunk', sha: BASE, repo: { id: 99 } },
+      head: { sha: HEAD, repo: { id: 1 } },
+    }] } }, {}, /identity is inconsistent/],
+    [{ pullRequest: {
+      head: { sha: HEAD, repo: { id: 99, full_name: 'contributor/honua-server' } },
+    } }, {}, /moved after/],
+  ];
+  for (const [overrides, callOverrides, pattern] of cases) {
+    const { github } = fixtures(overrides);
+    await assert.rejects(skipResolve(github, callOverrides), pattern);
+    await assert.rejects(
+      skipResolve(github, callOverrides),
+      (error) => !(error instanceof UnresolvedTrustedWorkflowRunError),
+    );
+  }
+});
+
+test('skip mode never masks malformed caller input or a resolved success', async () => {
+  const { github } = fixtures();
+  await assert.rejects(skipResolve(github, { runConclusion: 'in_progress' }), /workflow run conclusion/);
+  await assert.rejects(skipResolve(github, { runId: '0' }), /workflow run id/);
+  await assert.rejects(skipResolve(github, { defaultBranch: '' }), /input is incomplete/);
+  await assert.rejects(resolve(github, { unresolved: 'ignore' }), /unresolved-source behavior/);
+  const resolved = await skipResolve(github);
+  assert.equal(resolved.skipped, false);
+  assert.equal(resolved.pullRequestNumber, 42);
+});
+
+test('the default behavior stays fail-closed for trusted callers', async () => {
+  const { github } = fixtures({ checkRun: { pull_requests: [] } });
+  await assert.rejects(resolve(github), UnresolvedTrustedWorkflowRunError);
+});
+
+test('resolveForObservation records one skip and returns null', async () => {
+  const { github } = fixtures({ checkRun: { pull_requests: [] } });
+  const core = recordingCore();
+  const written = {};
+  const result = await resolveForObservation({
+    ...options(github),
+    core,
+    label: 'pr-gate-impact',
+    markerPath: '/tmp/marker.json',
+    fs: { writeFileSync: (path, body) => { written[path] = body; } },
+  });
+  assert.equal(result, null);
+  assert.equal(core.outputs.skip, 'true');
+  assert.equal(core.outputs.skip_code, 'no-pull-request-association');
+  assert.match(core.outputs.skip_reason, /exactly one pull request/);
+  assert.equal(core.notices.length, 1);
+  const marker = JSON.parse(written['/tmp/marker.json']);
+  assert.equal(marker.contract, 'honua.ci.observation-skipped/v1');
+  assert.equal(marker.code, 'no-pull-request-association');
+  assert.equal(marker.observer, 'pr-gate-impact');
+  assert.equal(marker.source_run_conclusion, 'success');
+});
+
+test('resolveForObservation passes a resolved source straight through', async () => {
+  const { github } = fixtures();
+  const core = recordingCore();
+  const result = await resolveForObservation({
+    ...options(github),
+    core,
+    label: 'pr-gate-impact',
+  });
+  assert.equal(result.pullRequestNumber, 42);
+  assert.equal(core.outputs.skip, 'false');
+  assert.deepEqual(core.notices, []);
+});
+
+test('resolveForObservation still throws drift and requires its own inputs', async () => {
+  const { github } = fixtures({ run: { name: 'Lookalike' } });
+  const core = recordingCore();
+  await assert.rejects(
+    resolveForObservation({ ...options(github), core, label: 'pr-gate-impact' }),
+    /completed canonical/,
+  );
+  assert.equal(core.outputs.skip, undefined);
+  await assert.rejects(
+    resolveForObservation({ ...options(github), label: 'pr-gate-impact' }),
+    /requires core and a label/,
+  );
+});
+
+test('recordObservationSkip mirrors the resolver skip surface and bounds its code', () => {
+  const core = recordingCore();
+  const written = {};
+  recordObservationSkip({
+    core,
+    label: 'server-test-prebuild',
+    markerPath: '/tmp/draft.json',
+    fs: { writeFileSync: (path, body) => { written[path] = body; } },
+    code: 'pull-request-draft',
+    reason: 'the pull request is a draft',
+    source: { runId: '123', runAttempt: '1', runConclusion: 'success' },
+  });
+  assert.equal(core.outputs.skip, 'true');
+  assert.equal(core.outputs.skip_code, 'pull-request-draft');
+  assert.equal(JSON.parse(written['/tmp/draft.json']).code, 'pull-request-draft');
+  for (const code of ['', 'Not Bounded', 'a'.repeat(49), '-leading']) {
+    assert.throws(
+      () => recordObservationSkip({ core, label: 'x', code, reason: 'r' }),
+      /bounded code/,
+    );
   }
 });

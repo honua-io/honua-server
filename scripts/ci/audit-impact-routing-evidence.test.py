@@ -31,6 +31,7 @@ def policy(**overrides: object) -> dict:
         "receipt_retention_days": 30,
         "image_outcome_lookback_hours": 24,
         "maximum_pages_per_query": 3,
+        "maximum_producer_run_catalogs": 40,
         "maximum_receipt_downloads": 20,
         "minimum_docs_only_heads": 1,
         "minimum_native_heads": 2,
@@ -254,6 +255,10 @@ def test_policy_and_discovery() -> None:
     for invalid in (
         policy(receipt_retention_days=91),
         policy(maximum_pages_per_query=11),
+        policy(maximum_producer_run_catalogs=1201),
+        # The catalog bound must never be tighter than the download bound, or
+        # it silently becomes the binding cap on window size again.
+        policy(maximum_producer_run_catalogs=19),
         policy(image_outcome_lookback_hours=49),
         policy(require_zero_integrity_failures=False),
     ):
@@ -303,6 +308,65 @@ def test_policy_and_discovery() -> None:
             item["reason"] == "observation-receipt-not-emitted"
             for item in old_name["exclusions"]
         )
+
+        # A recorded skip of a superseded source must NOT be counted as a
+        # receipt-emission regression: that count is the only signal for a real
+        # producer break.
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, "pr-gate-impact-skipped-pull-request-moved-attempt-1")
+        ])
+        skipped = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, tzinfo=timezone.utc),
+        )
+        assert skipped["integrity_failures"] == []
+        reasons = [item["reason"] for item in skipped["exclusions"]]
+        assert "observation-skipped:pull-request-moved" in reasons
+        assert "observation-receipt-not-emitted" not in reasons
+        assert MODULE.skipped_by_code(skipped["exclusions"]) == {"pull-request-moved": 1}
+
+        # Two different skip codes on one attempt is producer ambiguity.
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, "pr-gate-impact-skipped-pull-request-moved-attempt-1"),
+            artifact(13, pr_run, "pr-gate-impact-skipped-pull-request-draft-attempt-1"),
+        ])
+        ambiguous_skip = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, tzinfo=timezone.utc),
+        )
+        assert any(
+            item["reason"] == "observation-skip-marker-ambiguous"
+            for item in ambiguous_skip["integrity_failures"]
+        )
+
+        # A marker for a different attempt must not mask a missing receipt.
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, "pr-gate-impact-skipped-pull-request-moved-attempt-2")
+        ])
+        stale_skip = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, tzinfo=timezone.utc),
+        )
+        assert any(
+            item["reason"] == "observation-receipt-not-emitted"
+            for item in stale_skip["exclusions"]
+        )
+
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, artifact_name(MODULE.PR_GATE_STREAM))
+        ])
 
         artifact_catalog(root / "pr-artifacts", pr_run, [
             artifact(11, pr_run, artifact_name(MODULE.PR_GATE_STREAM)),

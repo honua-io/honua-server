@@ -5,6 +5,9 @@ name: PR Gate Impact Observation
 # change the collector, its input, or the produced evidence. The full PR Gate
 # remains authoritative throughout the shadow period in #3235. Fork heads are
 # explicitly outside the observation denominator and always retain the full gate.
+# A cancelled source run is a superseded push: its head is already stale, so
+# there is nothing observable and the trusted resolver correctly refuses it. The
+# observe job filters those out instead of manufacturing a red run.
 on:
   workflow_run:
     workflows: [PR Gate]
@@ -42,6 +45,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion != 'cancelled' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -75,19 +79,34 @@ jobs:
             }
 
             const {
-              resolveTrustedPullRequestWorkflowRun,
+              recordObservationSkip,
+              resolveForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
-            const resolved = await resolveTrustedPullRequestWorkflowRun({
-              github,
-              ...context.repo,
+            const source = {
               runId: process.env.SOURCE_RUN_ID,
               runAttempt: process.env.SOURCE_RUN_ATTEMPT,
               runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+            };
+            const skip = {
+              core,
+              fs,
+              label: 'pr-gate-impact',
+              markerPath: path.join(runnerTemp, 'observation-skipped.json'),
+            };
+            // Observation only. resolveForObservation downgrades ONLY a
+            // superseded source (cancelled run, moved head, closed PR) to a
+            // recorded skip; misconfiguration and API drift still throw.
+            const resolved = await resolveForObservation({
+              github,
+              ...skip,
+              ...context.repo,
+              ...source,
               workflowPath: '.github/workflows/pr-gate.yml',
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
             });
+            if (!resolved) return;
             const gateRun = resolved.run;
             const pr = resolved.pullRequest;
             const number = resolved.pullRequestNumber;
@@ -103,7 +122,13 @@ jobs:
               pull_number: number,
             });
             if (currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead) {
-              throw new Error('pull request moved while paginating changed files');
+              recordObservationSkip({
+                ...skip,
+                source,
+                code: 'pull-request-moved',
+                reason: 'the pull request moved while paginating changed files',
+              });
+              return;
             }
 
             const runArtifacts = await github.paginate(
@@ -207,8 +232,21 @@ jobs:
               core.notice('No unique current-contract PR Gate build artifact pair is available; reuse remains a cache miss.');
             }
 
+      # A stable-name marker so the evidence ledger can classify this run as
+      # observation-skipped:<code> instead of counting it as a receipt-emission
+      # regression. Read from the artifact catalog; never downloaded.
+      - name: Retain observation skip marker
+        if: steps.collect.outputs.skip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
+
       - id: classify
         name: Classify non-authoritative PR Gate impact
+        if: steps.collect.outputs.skip != 'true'
         run: |
           python3 "${RUNNER_TEMP}/trusted-classify-pr-gate-impact.py" \
             --input "${RUNNER_TEMP}/pr-gate-impact-input.json" \
@@ -229,6 +267,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload trusted PR Gate impact observation
+        if: steps.collect.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-${{ github.run_attempt }}
@@ -338,7 +377,7 @@ jobs:
           retention-days: 7
 
       - name: Report PR Gate build evidence decision
-        if: always()
+        if: always() && steps.collect.outputs.skip != 'true'
         shell: bash
         run: |
           {
