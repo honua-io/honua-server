@@ -197,6 +197,16 @@ the product and *nothing* signals it. It happened three times in five weeks
   already been merged or deleted, with the `gh pr edit` remedy. It is the
   backstop, not the control: re-target the stack member yourself when its base
   lands.
+- **Write the decision down in `scripts/ci/stranded-merge-dispositions.json`.**
+  A stranded payload stays stranded whether or not anyone intends to recover it,
+  so an undecided finding is reported truthfully every week forever — which is
+  how a detector trains everyone to ignore it. Record `abandoned` (deliberately
+  not coming back) or `landed-elsewhere` (content reached `trunk` by another
+  route) and the finding moves to an *Adjudicated* table, out of the actionable
+  count; record `recovering` with the recovery PR and it stays actionable until
+  that PR lands. Every entry needs a `reason` and the exact `paths` it covers —
+  a decision cannot absorb a path it never adjudicated, so a file later deleted
+  from `trunk` re-opens the finding instead of hiding behind an old waiver.
 
 ### Live batch train
 
