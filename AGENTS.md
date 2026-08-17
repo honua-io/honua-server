@@ -172,18 +172,27 @@ must explicitly dispatch `train_apply=true` to land. Use `hold`, `train:hold`, o
 is how reviewed, tested, nominally-merged work disappears: the stacked PR merges
 into its base, GitHub marks it **MERGED**, the linked issue often auto-closes,
 CI was green — and if the base branch itself never lands, the payload is not in
-the product and *nothing* signals it. This cost roughly 3,800 insertions across
-#3116, #3113 and #2835 in five weeks.
+the product and *nothing* signals it. It happened three times in five weeks
+(#3116, #3113, #2835).
 
 - If you must stack while a base is in review, **re-target the stack member at
   `trunk` the moment its base merges** — `gh pr edit <N> --base trunk` — and
   rebase. Never merge a PR into a base branch that has already landed or been
   deleted.
-- **The MERGED badge is not evidence.** The authoritative test that a PR's work
-  is in the product is
-  `git merge-base --is-ancestor <mergeCommitSha> origin/trunk`.
-- The scheduled stranded-merge detector (#3248) runs that test over the recent
-  merged PRs and raises a tracking issue on findings. It is the backstop, not
+- **The MERGED badge is not evidence — and neither is
+  `git merge-base --is-ancestor <mergeCommitSha> origin/trunk` on its own.** That
+  is a *commit-identity* test: a squash, a cherry-pick or an independent re-land
+  puts the content on `trunk` under a different SHA and still reads as stranded.
+  Use it to find candidates, then check the content. (The first #3248 sweep filed
+  three false positives out of four this way, including a "~3,800 insertions lost"
+  headline that per-file comparison refuted.)
+- The scheduled stranded-merge detector (#3248, #3316) does exactly that —
+  `scripts/ci/detect-stranded-merges.py`, run weekly by
+  `.github/workflows/stranded-merge-detector.yml`. It adjudicates each candidate
+  by blob equality and added-line presence, splits `stranded` (files absent) from
+  `edits-missing` (files present, the PR's lines are not) and `landed`
+  /`superseded`, and separately warns about **open** PRs whose base has already
+  landed or been deleted, with the `gh pr edit` remedy. It is the backstop, not
   the control: re-target the stack member yourself when its base lands.
 
 ### Live batch train

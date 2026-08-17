@@ -1,0 +1,484 @@
+{
+  "_comment": [
+    "Recorded facts for the six merged PRs in honua-server#3248 plus the open-PR cases",
+    "from #3316. Every fact the classifier needs is pre-resolved here, so the tests run",
+    "with no gh call, no network and no git repository.",
+    "Merged-PR verdicts were produced by running the live detector against honua-server",
+    "trunk at aa894e148 (2026-08-16); see the issue for the manual adjudication that",
+    "agrees with them."
+  ],
+  "defaultBranch": "trunk",
+  "defaultRef": "origin/trunk",
+  "merged": [
+    {
+      "number": 3119,
+      "title": "fix(gp): layer authz",
+      "baseRefName": "fix/3046-gp-layer-authz",
+      "mergeCommit": {
+        "oid": "ab38e2749c0000000000000000000000000000aa"
+      },
+      "mergedAt": "2026-08-03T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/3119",
+      "onDefaultBranch": true
+    },
+    {
+      "number": 2974,
+      "title": "ci: single merge authority",
+      "baseRefName": "ci/single-merge-authority",
+      "mergeCommit": {
+        "oid": "a5f21e8e0c0000000000000000000000000000bb"
+      },
+      "mergedAt": "2026-07-23T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/2974",
+      "onDefaultBranch": true
+    },
+    {
+      "number": 2836,
+      "title": "feat(raster): compute tie points",
+      "baseRefName": "feat/2667-computetiepoints",
+      "mergeCommit": {
+        "oid": "a7dfbaa17c0000000000000000000000000000cc"
+      },
+      "mergedAt": "2026-07-15T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/2836",
+      "onDefaultBranch": true
+    },
+    {
+      "number": 3113,
+      "title": "fix(config): restore source-generated option binding (#3055)",
+      "baseRefName": "fix/2997-2998-entitlement-gates",
+      "mergeCommit": {
+        "oid": "f3889461dda188267d159465302b3ccf97c31ead"
+      },
+      "mergedAt": "2026-08-04T00:41:01Z",
+      "url": "https://github.com/honua-io/honua-server/pull/3113",
+      "onDefaultBranch": false,
+      "paths": [
+        {
+          "path": "Directory.Build.props",
+          "verdict": "identical"
+        },
+        {
+          "path": "docs/guides/deploy/upgrade-and-rollback.md",
+          "verdict": "partial",
+          "addedLinesProbed": 14,
+          "addedLinesFound": 9,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "docs/internal/contributor/source-generator-inventory.md",
+          "verdict": "partial",
+          "addedLinesProbed": 40,
+          "addedLinesFound": 27,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Core.Abstractions/Features/Security/Domain/AccessPolicy.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 4,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Core/Configuration/GeometryValidationOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Configuration/MigrationSafetyOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Configuration/SecureConfigurationOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Features/Alerts/Domain/AlertOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Features/AuditLog/AuditChainVerificationOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Features/AuditLog/Export/AuditExportDispatcher.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Features/Import/Domain/ImportLimits.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 20,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Core/Features/Infrastructure/Domain/QueryCacheOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Core/Features/Tiles/TileOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Geometry/Features/Spec/Services/SpecCostEstimator.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Geoprocessing/Features/Geoprocessing/WorkspaceOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Hosting/Features/Alerts/AlertDeliveryOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Hosting/Features/Services/TemporaryFileService.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/DeploymentOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/Federation/FederationSourceOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "src/Honua.Server/Features/Mobile/FieldCollection/Automations/FieldCollectionAutomationOptions.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "tests/dotnet/Honua.Architecture.Tests/ConfigurationBindingShapeTests.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 196,
+          "addedLinesFound": 164,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertOptionsBindingTests.cs",
+          "verdict": "identical"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Configuration/ConfigurationBindingRoundTripTests.cs",
+          "verdict": "present"
+        }
+      ]
+    },
+    {
+      "number": 3116,
+      "title": "feat(gp): add raster engine capability registry (#3091)",
+      "baseRefName": "feat/rast-003-raster-source-contract",
+      "mergeCommit": {
+        "oid": "31fb09f27a2ba46b64a5f8c93bcb0ff6a4a4d0ff"
+      },
+      "mergedAt": "2026-08-03T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/3116",
+      "onDefaultBranch": false,
+      "paths": [
+        {
+          "path": "src/Honua.Core/Features/Geoprocessing/Domain/ProcessDefinition.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 8,
+          "addedLinesFound": 2,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilities.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 17,
+          "addedLinesFound": 1,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 28,
+          "addedLinesFound": 1,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Worker.Gdal/Execution/GdalDispatchJobExecutor.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 7,
+          "addedLinesFound": 2,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Worker.Gdal/Execution/GdalHardeningOptions.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 6,
+          "addedLinesFound": 1,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Worker.Gdal/Execution/GdalRasterFormatConvertJobExecutor.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 2,
+          "addedLinesFound": 0,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Worker.Gdal/Execution/GdalWorkerOptions.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 5,
+          "addedLinesFound": 1,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Worker.Gdal/GdalWorkerServiceCollectionExtensions.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 84,
+          "addedLinesFound": 10,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "tests/dotnet/Honua.Core.Tests/Features/Geoprocessing/RasterEngineCapabilityRegistryTests.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "tests/dotnet/Honua.Geoprocessing.Testing.Tests/RasterEngineCapabilityRegistrationTests.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/RasterEngineCapabilityCatalogTests.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalProcessExecutorModeRegistrationTests.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 59,
+          "addedLinesFound": 9,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 2,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 2,
+          "addedLinesFound": 0,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerOptionsConfigBindingTests.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 25,
+          "addedLinesFound": 8,
+          "supersededOnDefault": true
+        }
+      ]
+    },
+    {
+      "number": 2835,
+      "title": "feat(tiles): bounded generated tile-cache expire/delete + inventory (#2661)",
+      "baseRefName": "feat/2661-tilecache-checkpoint",
+      "mergeCommit": {
+        "oid": "485952be5d1e7bd8bcb2a2e0f1cf2c0a0d3f9a11"
+      },
+      "mergedAt": "2026-07-15T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/2835",
+      "onDefaultBranch": false,
+      "paths": [
+        {
+          "path": "docs/gis/data/feature-catalog.json",
+          "verdict": "partial",
+          "addedLinesProbed": 12,
+          "addedLinesFound": 7,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Server/EndpointRegistry.AdminOperations.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 1,
+          "addedLinesFound": 0,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/GeneratedTileCacheKey.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileCacheExecutionSpecBuilder.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 22,
+          "addedLinesFound": 3,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileCacheJobParameterKeys.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 4,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileCacheJobService.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 6,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationExecutionCore.Lifecycle.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationExecutionCore.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 9,
+          "addedLinesFound": 0,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationJobService.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 22,
+          "addedLinesFound": 2,
+          "supersededOnDefault": true
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationLog.cs",
+          "verdict": "missing",
+          "addedLinesProbed": 6,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 30,
+          "addedLinesFound": 2,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationsEndpoints.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 84,
+          "addedLinesFound": 9,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/TileCacheExecutionSpecBuilderTests.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 42,
+          "addedLinesFound": 12,
+          "supersededOnDefault": false
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/TileCacheLifecycleExecutionTests.cs",
+          "verdict": "absent"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/TileOperationsEndpointsTests.cs",
+          "verdict": "partial",
+          "addedLinesProbed": 24,
+          "addedLinesFound": 10,
+          "supersededOnDefault": false
+        }
+      ]
+    },
+    {
+      "number": 9001,
+      "title": "chore: merge-train batch that was escalated and never landed",
+      "baseRefName": "train/batch/deadbeef/7",
+      "mergeCommit": {
+        "oid": "1111111111111111111111111111111111111111"
+      },
+      "mergedAt": "2026-08-05T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/9001",
+      "onDefaultBranch": false,
+      "paths": [
+        {
+          "path": "src/Anything.cs",
+          "verdict": "absent"
+        }
+      ]
+    }
+  ],
+  "open": [
+    {
+      "number": 3310,
+      "title": "fix(publishing): persist package drafts (#3262) [stacked on #3264]",
+      "baseRefName": "feat/3255-retire-server-generation",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/3310"
+    },
+    {
+      "number": 9101,
+      "title": "feat: stacked on a base that has already landed",
+      "baseRefName": "feat/already-landed",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9101"
+    },
+    {
+      "number": 9102,
+      "title": "feat: stacked on a base branch that was deleted",
+      "baseRefName": "feat/deleted-base",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9102"
+    },
+    {
+      "number": 9103,
+      "title": "feat: ordinary PR against the default branch",
+      "baseRefName": "trunk",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9103"
+    },
+    {
+      "number": 9104,
+      "title": "chore: merge-train batch branch",
+      "baseRefName": "train/batch/deadbeef/8",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9104"
+    },
+    {
+      "number": 9105,
+      "title": "feat: base branch not resolvable in this clone",
+      "baseRefName": "feat/unresolvable-base",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9105"
+    }
+  ],
+  "bases": {
+    "feat/3255-retire-server-generation": {
+      "exists": true,
+      "landed": false
+    },
+    "feat/already-landed": {
+      "exists": true,
+      "landed": true
+    },
+    "feat/deleted-base": {
+      "exists": false,
+      "landed": null
+    },
+    "feat/unresolvable-base": {
+      "exists": true,
+      "landed": null
+    }
+  }
+}

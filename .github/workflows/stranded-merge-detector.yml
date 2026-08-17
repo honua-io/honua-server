@@ -1,9 +1,16 @@
 name: Stranded Merge Detector
 
-# Flags merged PRs whose merge commit never reached the default branch (#3248,
-# honua-sdk-js#1317). A PR opened against a stack base is merged into that base;
-# if the base is never merged, GitHub still reports MERGED and the payload sits
-# on a branch nobody watches.
+# Two sweeps over one repository (#3248, #3316, honua-sdk-js#1317).
+#
+# Post-mortem: merged PRs whose payload never reached the default branch. A PR
+# opened against a stack base is merged into that base; if the base is never
+# merged, GitHub still reports MERGED and the payload sits on a branch nobody
+# watches. Detection is by *content*, not by commit identity -- the identity test
+# alone produced three false positives out of four on the first #3248 sweep.
+#
+# Preventive: open PRs stacked on a base that has already landed or been
+# deleted. Those strand their payload the moment they merge, and the remedy is
+# one `gh pr edit` away, which is the point of running this on a schedule.
 #
 # Reusable on purpose: honua-sdk-js hit the identical failure, and both issues
 # ask for one mechanism rather than two implementations. Callers pass their own
@@ -28,6 +35,10 @@ on:
         description: How many merged PRs to sweep
         type: number
         default: 250
+      open-limit:
+        description: How many open PRs to check for a stale base
+        type: number
+        default: 200
       tooling-ref:
         description: honua-server ref holding the detector script
         type: string
@@ -44,12 +55,13 @@ concurrency:
 
 jobs:
   sweep:
-    name: Sweep merged PRs for stranded merge commits
+    name: Sweep merged and open PRs for stranded payload
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # fetch-depth: 0 is required: merge-base --is-ancestor needs the full
-      # history on both sides, and a shallow clone answers it wrongly.
+      # fetch-depth: 0 is required twice over: merge-base --is-ancestor needs
+      # full history on both sides, and the content pass reads blobs out of the
+      # stranded merge commits themselves. A shallow clone answers both wrongly.
       - name: Checkout repository under test
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -67,7 +79,7 @@ jobs:
           path: .stranded-merge-tooling
           persist-credentials: false
 
-      - name: Validate detector fixtures
+      - name: Validate detector against recorded fixtures
         run: |
           root="."
           if [ "${{ github.repository }}" != "honua-io/honua-server" ]; then
@@ -82,45 +94,57 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ inputs.default-branch || github.event.repository.default_branch }}
           LIMIT: ${{ inputs.limit || 250 }}
+          OPEN_LIMIT: ${{ inputs.open-limit || 200 }}
         run: |
           set -o pipefail
           python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
             --default-branch "${DEFAULT_BRANCH}" \
             --limit "${LIMIT}" \
+            --open-limit "${OPEN_LIMIT}" \
             --json > findings.json
           python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
             --default-branch "${DEFAULT_BRANCH}" \
             --limit "${LIMIT}" \
+            --open-limit "${OPEN_LIMIT}" \
             | tee "${GITHUB_STEP_SUMMARY}" > report.md
-          missing=$(python3 -c "import json,sys; d=json.load(open('findings.json')); print(sum(1 for f in d['findings'] if f['classification']=='payload-missing'))")
-          echo "missing=${missing}" >> "${GITHUB_OUTPUT}"
+          actionable=$(python3 -c "import json; print(json.load(open('findings.json'))['actionable'])")
+          echo "actionable=${actionable}" >> "${GITHUB_OUTPUT}"
 
-      # Only payload-missing files an issue. A stranded merge whose content
-      # re-landed elsewhere is real but harmless, and filing it would train
-      # everyone to ignore the detector -- three of the first four findings
+      # Only actionable findings file an issue: payload that is absent or whose
+      # edits never landed, and open PRs pointing at a dead base. A stranded merge
+      # whose content re-landed elsewhere is real but harmless, and filing it would
+      # train everyone to ignore the detector -- three of the first four findings
       # across both repos were exactly that case.
       - name: File or update the tracking issue
-        if: steps.sweep.outputs.missing != '0'
+        if: steps.sweep.outputs.actionable != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          title="chore: merged PRs whose payload never reached the default branch"
+          title="chore: PR payload that never reached the default branch"
+          legacy_title="chore: merged PRs whose payload never reached the default branch"
           body_file=issue-body.md
           {
             echo "Found by \`.github/workflows/stranded-merge-detector.yml\` on $(date -u +%Y-%m-%d)."
             echo
             cat report.md
             echo
-            echo "Each row is a signal to **diff the payload**, not proof that a feature is gone."
+            echo "**Merged rows are a signal to diff the payload**, not proof that a feature is gone."
             echo "Recovery is a cherry-pick or a rebase of the stack base; abandonment is fine too,"
             echo "as long as it is written down on the issue the PR was for."
+            echo
+            echo "**Open rows are cheap to fix right now** -- run the remedy in the table before the"
+            echo "PR merges and it never becomes a merged row."
           } > "${body_file}"
 
-          existing=$(gh issue list --repo "${REPO}" --state open --search "\"${title}\" in:title" \
-            --json number --jq '.[0].number // empty')
+          existing=""
+          for candidate in "${title}" "${legacy_title}"; do
+            existing=$(gh issue list --repo "${REPO}" --state open --search "\"${candidate}\" in:title" \
+              --json number --jq '.[0].number // empty')
+            [ -n "${existing}" ] && break
+          done
           if [ -n "${existing}" ]; then
-            gh issue edit "${existing}" --repo "${REPO}" --body-file "${body_file}"
+            gh issue edit "${existing}" --repo "${REPO}" --title "${title}" --body-file "${body_file}"
             echo "updated https://github.com/${REPO}/issues/${existing}"
           else
             gh issue create --repo "${REPO}" --title "${title}" --body-file "${body_file}"
