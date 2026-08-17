@@ -6,23 +6,18 @@ It is separate from the `arcgis-stub` REST lane: the stub proves Honua serves
 the ArcGIS REST request pattern, while this lane is reserved for licensed
 ArcGIS Pro / ArcPy automation.
 
-Ordinary PR gates do not depend on ArcGIS Pro. This repository retains the
-runner contract, artifact guardrails, an ArcPy script that emits standard
-`.cert.json` envelopes, a headless layout/map-frame screenshot fallback for
-ProPy runs, and a strict artifact validator for licensed runs. Scheduled
-licensed execution is maintained in
-[`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat), avoiding a
-nightly workflow here that cannot run without dedicated self-hosted capacity.
+This slice does not make ordinary PR gates depend on ArcGIS Pro. It adds the
+runner contract, a manual execution entry point, artifact guardrails,
+an ArcPy script that emits standard `.cert.json` envelopes, a headless
+layout/map-frame screenshot fallback for ProPy runs, and a strict artifact
+validator for licensed runs.
 A successful licensed run still needs to be executed and linked before #1019
 can be closed.
 
-## Execution
+## Manual execution entry point
 
-The maintained licensed workflow lives in
-[`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat). This
-repository intentionally has no scheduled ArcGIS Pro workflow; the local
-scripts remain the evidence-production contract used by that harness and by
-manual operator runs.
+The licensed lane is executed locally or through ad-hoc runner automation using
+[`scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py`](../../../scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py). The dedicated GitHub Actions workflow entry point is intentionally not enabled by default.
 
 The licensed job runs only on a self-hosted Windows runner with labels:
 
@@ -34,18 +29,18 @@ Required runner state:
 - ArcGIS Pro installed and licensed.
 - ArcGIS Pro Python available through `propy.bat` or the `arcgispro-py3`
   Python executable.
-- A runner-local blank `.aprx` template path supplied through the workflow
-  input `project_template_path` or repository variable
+- A runner-local blank `.aprx` template path supplied via script argument
+  `--project-template` or repository variable
   `ARCGIS_PRO_PROJECT_TEMPLATE`.
 - For reliable headless render evidence, the `.aprx` template should contain a
-  layout with a map frame. Use workflow inputs or repository variables
+  layout with a map frame. Use script arguments or repository variables
   `ARCGIS_PRO_LAYOUT_NAME` and `ARCGIS_PRO_MAP_FRAME_NAME` when the template has
   multiple layouts or frames. If the script is run inside an open ArcGIS Pro UI,
   it can still export the active view first.
 - Network access to a seeded Honua service.
 
 Required target service:
-- `HONUA_BASE_URL` / workflow input `honua_base_url` points to Honua.
+- `HONUA_BASE_URL` / execution argument `--base-url` points to Honua.
 - Default service and layers match `tests/seed/browser-compat.yaml`:
   `browser_compat` layers `2000` (point), `2001` (line), and `2002`
   (polygon).
@@ -94,7 +89,7 @@ python scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py \
 
 ## Artifact Contract
 
-The workflow uploads:
+The manual lane uploads:
 
 ```text
 artifacts/arcgis-pro-desktop/<run-id>/
@@ -121,9 +116,8 @@ They must not be renamed to `arcgis-stub`; that lane remains REST-only.
 
 ## Guardrails
 
-- The workflow has no `pull_request` trigger.
-- The scheduled self-hosted job is skipped unless
-  `ARCGIS_PRO_EVIDENCE_ENABLED=true`.
+- The dedicated workflow entrypoint is not enabled by default; execution is by
+  operator action or scheduled local runner orchestration.
 - Uploaded evidence uses the shared `upload-ci-evidence` action with nightly
   retention, currently 30 days.
 - The runner redacts known secret environment values, URL credentials,
@@ -160,7 +154,7 @@ The Portal facade lets ArcGIS Pro "Add Portal" and Field Maps bind through Porta
 items + tokens instead of raw `/rest/services` URLs. The unlicensed automated
 proof is the `arcgis-stub` `portal` protocol lane (CERT-PRTL-\*, see the
 [certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#arcgis-portal-facade-lane-arcgis-stub-portal-protocol));
-the **licensed** proof — the real-client gate for the epic acceptance criteria —
+the **licensed** proof � the real-client gate for the epic acceptance criteria �
 is an operator-provisioned run on the self-hosted Windows ArcGIS Pro runner:
 
 1. Deploy a Portal-enabled Honua seeded with
@@ -168,8 +162,8 @@ is an operator-provisioned run on the self-hosted Windows ArcGIS Pro runner:
    (`identity.portal-sharing` + `identity.portal-token` entitlements active; over
    HTTPS so `RequireHttps` stays on). See
    [`PORTAL_FACADE_SEED_CONTRACT.md`](../../gis/PORTAL_FACADE_SEED_CONTRACT.md).
-2. **ArcGIS Pro:** *Add Portal* → `<base>/sharing/rest` → sign in with a named
-   user (OAuth2) → confirm the `portal_public`/`portal_org` items are discoverable
+2. **ArcGIS Pro:** *Add Portal* ? `<base>/sharing/rest` ? sign in with a named
+   user (OAuth2) ? confirm the `portal_public`/`portal_org` items are discoverable
    and open to their FeatureServer URLs; `portal_private` is hidden unless the
    user holds `portal-admin`.
 3. **Field Maps:** sign in via the OAuth2 named-user flow and confirm content
@@ -179,7 +173,7 @@ is an operator-provisioned run on the self-hosted Windows ArcGIS Pro runner:
    evidence doc.
 
 The full CERT-PRTL slice (including the token/OAuth2 IDs, formerly committed
-`skip`) is baselined `pass` from a containerized-lane capture of the stub —
+`skip`) is baselined `pass` from a containerized-lane capture of the stub �
 that substantiates the wire contract, **not** the real-client behavior; the
 licensed operator run above remains the epic's acceptance gate. This linkage is
 tracked on #1372 (real-client gate) and #1096 (runner provisioning).
