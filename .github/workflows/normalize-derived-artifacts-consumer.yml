@@ -5,8 +5,9 @@ on:
     workflows: ["Derived Artifact Normalization"]
     types: [completed]
 
-# Observe mode deliberately has no contents:write permission or write secret.
-# Enforce mode is a later reviewed change after #3219's 20-head shadow audit.
+# The workflow GITHUB_TOKEN stays read-only in every mode. Enforce mode writes
+# only through a separately scoped normalization credential that is exposed to
+# the single mutation step, never to validation or artifact parsing.
 permissions:
   actions: read
   contents: read
@@ -16,6 +17,10 @@ concurrency:
   group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
+# The #3219 shadow audit (docs/internal/ci/derived-artifact-normalization.md)
+# passed on 2026-08-16. Enforcement is implemented and credential-gated; the
+# mode stays `observe` until the scoped NORMALIZATION_TOKEN App credential is
+# provisioned. Rollback is the inverse one-value change back to `observe`.
 env:
   NORMALIZATION_MODE: observe
 
@@ -24,9 +29,11 @@ jobs:
     if: >
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
-    name: Validate normalization envelope (observe only)
+    name: Validate normalization envelope
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      NORMALIZATION_CREDENTIAL_PRESENT: ${{ secrets.NORMALIZATION_TOKEN != '' }}
     steps:
       - name: Checkout trusted default-branch policy
         uses: actions/checkout@v7
@@ -138,6 +145,7 @@ jobs:
             --plan "${RUNNER_TEMP}/normalization-plan.json"
 
       - name: Compare prospective blobs without checking out PR code
+        id: compare
         uses: actions/github-script@v9
         env:
           HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
@@ -225,6 +233,9 @@ jobs:
             }
 
             const fork = process.env.SAME_REPOSITORY !== 'true';
+            core.setOutput('changes', JSON.stringify(changes.map(change => change.path)));
+            core.setOutput('change_count', String(changes.length));
+            core.setOutput('head_ref', pr.head.ref);
             await core.summary
               .addHeading('Untrusted derived-artifact normalization candidate')
               .addRaw('This validated candidate is not canonical evidence and publishes no commit status. ' +
@@ -238,5 +249,137 @@ jobs:
                 ['Paths', changes.map(change => change.path).join(', ') || 'none'],
                 ['Envelope bytes', String(plan.total_output_bytes)],
                 ['Audit authority', 'candidate only; independent PR Gate required'],
+              ])
+              .write();
+
+      # Enforce mode only. The scoped credential is referenced by this step
+      # alone, so envelope download, archive parsing, and blob comparison never
+      # execute with a write token. Forks and empty deltas never mutate.
+      - name: Advance the same-repository head with validated blobs
+        if: >
+          env.NORMALIZATION_MODE == 'enforce' &&
+          steps.artifact.outputs.same_repository == 'true' &&
+          steps.compare.outputs.change_count != '0'
+        uses: actions/github-script@v9
+        env:
+          CHANGED_PATHS: ${{ steps.compare.outputs.changes }}
+          HEAD_REF: ${{ steps.compare.outputs.head_ref }}
+          HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.artifact.outputs.pr_number }}
+          PRODUCER_ATTEMPT: ${{ steps.artifact.outputs.run_attempt }}
+          PRODUCER_RUN_ID: ${{ steps.artifact.outputs.run_id }}
+          SAME_REPOSITORY: ${{ steps.artifact.outputs.same_repository }}
+        with:
+          github-token: ${{ secrets.NORMALIZATION_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const {
+              buildNormalizationCommitMessage,
+              planNormalizationMutation,
+            } = require('./scripts/ci/normalization-mutation');
+
+            const plan = JSON.parse(
+              fs.readFileSync(`${process.env.RUNNER_TEMP}/normalization-plan.json`, 'utf8'));
+            const changedPaths = JSON.parse(process.env.CHANGED_PATHS);
+            const prNumber = Number(process.env.PR_NUMBER);
+
+            // Re-read the exact head immediately before mutating. Everything the
+            // decision consumes is trusted API state or default-branch policy.
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: prNumber,
+            });
+            const { data: headCommit } = await github.rest.git.getCommit({
+              ...context.repo, commit_sha: process.env.HEAD_SHA,
+            });
+
+            const outputs = new Map(plan.outputs.map(output => [output.path, output]));
+            const changes = changedPaths.map(path => {
+              const output = outputs.get(path);
+              if (!output) throw new Error(`${path} is not part of the validated envelope.`);
+              return { path, sha256: output.sha256 };
+            });
+
+            const decision = planNormalizationMutation({
+              mode: process.env.NORMALIZATION_MODE,
+              credentialPresent: process.env.NORMALIZATION_CREDENTIAL_PRESENT === 'true',
+              sameRepository: process.env.SAME_REPOSITORY === 'true',
+              pullRequest: {
+                state: pr.state,
+                draft: pr.draft,
+                headSha: pr.head.sha,
+                headRef: pr.head.ref,
+              },
+              envelopeSourceSha: plan.source.sha,
+              planTreeSha: plan.source.tree_sha,
+              headCommit: {
+                sha: headCommit.sha,
+                treeSha: headCommit.tree.sha,
+                message: headCommit.message,
+              },
+              changes,
+            });
+            if (decision.action === 'fail') {
+              throw new Error(`Normalization mutation refused: ${decision.reason}.`);
+            }
+            if (decision.action !== 'commit') {
+              core.info(`Normalization mutation skipped: ${decision.reason}.`);
+              return;
+            }
+            if (pr.head.ref !== process.env.HEAD_REF) {
+              throw new Error('PR head ref changed between comparison and mutation.');
+            }
+
+            const entries = [];
+            for (const change of decision.changes) {
+              const { data: blob } = await github.rest.git.createBlob({
+                ...context.repo,
+                content: outputs.get(change.path).content_base64,
+                encoding: 'base64',
+              });
+              entries.push({ path: change.path, mode: '100644', type: 'blob', sha: blob.sha });
+            }
+            const { data: tree } = await github.rest.git.createTree({
+              ...context.repo, base_tree: headCommit.tree.sha, tree: entries,
+            });
+            if (tree.sha === headCommit.tree.sha) {
+              core.info('Normalization produced an identical tree; no commit created.');
+              return;
+            }
+
+            const { data: commit } = await github.rest.git.createCommit({
+              ...context.repo,
+              message: buildNormalizationCommitMessage({
+                changes: decision.changes,
+                sourceSha: plan.source.sha,
+                runId: process.env.PRODUCER_RUN_ID,
+                runAttempt: process.env.PRODUCER_ATTEMPT,
+              }),
+              tree: tree.sha,
+              parents: [process.env.HEAD_SHA],
+            });
+
+            // Compare-and-swap: the ref must still be the envelope source, and
+            // a non-force update can only fast-forward from that exact parent.
+            const { data: ref } = await github.rest.git.getRef({
+              ...context.repo, ref: `heads/${pr.head.ref}`,
+            });
+            if (ref.object.sha !== process.env.HEAD_SHA) {
+              throw new Error('PR head moved before the normalization ref update; no overwrite.');
+            }
+            await github.rest.git.updateRef({
+              ...context.repo, ref: `heads/${pr.head.ref}`, sha: commit.sha, force: false,
+            });
+
+            await core.summary
+              .addHeading('Derived-artifact normalization commit')
+              .addRaw('Only validated derived blobs were written. Exact-head review restarts on ' +
+                'the normalized head, and the independent drift gates still decide correctness.\n\n')
+              .addTable([
+                [{ data: 'Field', header: true }, { data: 'Value', header: true }],
+                ['Mode', process.env.NORMALIZATION_MODE],
+                ['PR', `#${prNumber}`],
+                ['Source head', process.env.HEAD_SHA],
+                ['Normalized head', commit.sha],
+                ['Paths', decision.changes.map(change => change.path).join(', ')],
               ])
               .write();

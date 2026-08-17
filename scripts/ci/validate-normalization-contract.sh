@@ -13,3 +13,9 @@ fi
 
 "${python_bin}" scripts/ci/normalization-envelope.test.py
 "${python_bin}" scripts/ci/fixtures/validate-normalization-workflows.py
+
+if command -v node >/dev/null 2>&1; then
+  node --test scripts/ci/normalization-mutation.test.js
+else
+  echo "⚠️  Skipping normalization mutation fixtures (no Node.js)."
+fi

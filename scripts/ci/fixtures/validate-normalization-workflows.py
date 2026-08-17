@@ -95,7 +95,14 @@ def main() -> None:
         raise AssertionError("untrusted producer must receive no secret or trusted event")
 
     require(consumer, 'workflows: ["Derived Artifact Normalization"]', "consumer workflow_run identity changed")
-    require(consumer, "  NORMALIZATION_MODE: observe", "normalization must remain in observe mode")
+    mode_lines = [
+        line for line in consumer.splitlines() if line.startswith("  NORMALIZATION_MODE: ")
+    ]
+    if len(mode_lines) != 1:
+        raise AssertionError("normalization mode must be declared exactly once")
+    mode = mode_lines[0].split(": ", 1)[1].strip()
+    if mode not in {"observe", "enforce"}:
+        raise AssertionError(f"normalization mode must be observe or enforce; got {mode}")
     require(consumer, "  actions: read", "consumer needs bounded artifact read permission")
     require(consumer, "  contents: read", "observe consumer must not have contents: write")
     if "statuses: write" in consumer or "createCommitStatus" in consumer:
@@ -162,8 +169,63 @@ def main() -> None:
         raise AssertionError("consumer must reject oversized artifacts before download")
     if "actions/download-artifact" in consumer:
         raise AssertionError("trusted consumer must inspect the zip before any extraction")
-    if "secrets." in consumer or "contents: write" in consumer:
-        raise AssertionError("observe consumer must have no write secret or contents mutation permission")
+    # The workflow GITHUB_TOKEN never gains write permission. Enforcement uses a
+    # separately scoped credential referenced by the single mutation step.
+    if "contents: write" in consumer or "pull-requests: write" in consumer:
+        raise AssertionError("consumer GITHUB_TOKEN must never gain a write permission")
+    allowed_secrets = {"secrets.NORMALIZATION_TOKEN", "secrets.GITHUB_TOKEN"}
+    used_secrets = set(re.findall(r"secrets\.[A-Z0-9_]+", consumer))
+    if not used_secrets <= allowed_secrets:
+        raise AssertionError(
+            f"consumer may only use the scoped normalization credential; got {sorted(used_secrets)}")
+
+    mutation_marker = "      - name: Advance the same-repository head with validated blobs\n"
+    require(consumer, mutation_marker, "the enforce transition step is missing")
+    validation_block, mutation_block = consumer.split(mutation_marker, 1)
+    presence_input = "NORMALIZATION_CREDENTIAL_PRESENT: ${{ secrets.NORMALIZATION_TOKEN != '' }}"
+    if "secrets." in validation_block.replace(presence_input, ""):
+        raise AssertionError("envelope download, validation, and comparison must run without a secret")
+    require(
+        mutation_block,
+        "github-token: ${{ secrets.NORMALIZATION_TOKEN || secrets.GITHUB_TOKEN }}",
+        "the mutation step must use the scoped normalization credential",
+    )
+    require(consumer, "NORMALIZATION_CREDENTIAL_PRESENT: ${{ secrets.NORMALIZATION_TOKEN != '' }}",
+            "credential presence must be an explicit fail-closed input")
+    for condition in (
+        "env.NORMALIZATION_MODE == 'enforce'",
+        "steps.artifact.outputs.same_repository == 'true'",
+        "steps.compare.outputs.change_count != '0'",
+    ):
+        require(mutation_block, condition, f"the mutation step must be gated on {condition}")
+    require(
+        mutation_block,
+        "require('./scripts/ci/normalization-mutation')",
+        "mutation must use the default-branch decision module",
+    )
+    require(mutation_block, "planNormalizationMutation({", "mutation must evaluate the trusted decision")
+    require(mutation_block, "decision.action === 'fail'", "an inadmissible decision must fail the run")
+    require(mutation_block, "if (decision.action !== 'commit')", "only a commit decision may mutate")
+    decision_index = mutation_block.index("planNormalizationMutation({")
+    blob_index = mutation_block.index("github.rest.git.createBlob")
+    if blob_index < decision_index:
+        raise AssertionError("no Git object may be written before the trusted decision")
+    require(mutation_block, "base_tree: headCommit.tree.sha", "the commit must extend the exact head tree")
+    require(mutation_block, "mode: '100644', type: 'blob'", "only regular file blobs may be written")
+    require(
+        mutation_block,
+        "if (tree.sha === headCommit.tree.sha)",
+        "an identical tree must emit no commit",
+    )
+    require(mutation_block, "parents: [process.env.HEAD_SHA]",
+            "the normalization commit must be a child of the exact envelope source")
+    require(mutation_block, "if (ref.object.sha !== process.env.HEAD_SHA)",
+            "the ref update must compare-and-swap against the exact source head")
+    require(mutation_block, "force: false", "the ref update must never force")
+    if "force: true" in consumer:
+        raise AssertionError("consumer must never force-update a ref")
+    require(mutation_block, "buildNormalizationCommitMessage({",
+            "the commit must carry the auditable normalization marker")
     require(
         consumer,
         "candidate only; independent PR Gate required",
@@ -186,7 +248,7 @@ def main() -> None:
         "normalization validator must accept the router's interpreter",
     )
 
-    print("normalization-workflows=ok mode=observe")
+    print(f"normalization-workflows=ok mode={mode}")
 
 
 if __name__ == "__main__":

@@ -84,16 +84,124 @@ success alone never counts. Only then may a separate reviewed change add the
 narrow write credential and Git-object compare-and-swap transition described in
 #3219.
 
-## Enforce-mode requirements and rollback
+## Shadow audit 2026-08-16
 
-Enforcement must never check out the PR under a write token or promote the
-observe-mode candidate directly. A future consumer
-may create only the three validated Git blobs/tree entries and a child commit,
-then advance a same-repository PR ref non-force only when it still equals the
-envelope source SHA. An empty tree delta creates no commit. Forks never mutate.
+Window: producer runs `31766587889` (2026-08-14T03:22Z) through `31992987252`
+(2026-08-17T04:00Z), reconstructed from the retained envelope artifacts rather
+than from consumer job summaries. For every successful producer run the audit
+re-downloaded the envelope, re-verified each output's SHA-256 against its
+base64 payload, converted the payload to a Git blob SHA-1, and compared it with
+the exact PR tree at the envelope's source commit.
 
-Rollback disables the consumer mutation and returns the mode to `observe`;
-producer evidence and the independent drift gates stay enabled for diagnosis.
-If an unexpected normalization commit occurs, put the PR on hold, disable write
-mode, retain the producer artifact/run IDs, and compare its envelope digests to
-the committed tree before resuming.
+| Measure | Result |
+|---|---:|
+| Producer runs in window | 70 |
+| Validated envelopes (one per distinct head) | 61 |
+| Distinct pull requests | 16 |
+| Cancelled / skipped / failed producer runs (no envelope) | 9 |
+| Consumer runs that failed envelope validation | 0 |
+| Observations: no-op | 59 |
+| Observations: would-change | 2 |
+| Observations that touched a non-allowlisted path | 0 |
+| Countable accuracy set (independently corroborated) | 29 |
+
+Countable evidence, using the rule above:
+
+- 27 no-op heads across 14 pull requests (#3159, #3176, #3197, #3207, #3208,
+  #3221, #3237, #3243, #3258, #3261, #3264, #3308, #3309, #3313) are
+  corroborated by an exact-head `PR Gate` success, whose governance step runs
+  the authoritative `CommittedCatalog EqualsFreshlyGeneratedOutput` drift test.
+  The remaining no-op heads are inconclusive rather than contradictory: 31 had
+  only cancelled `PR Gate` runs (superseded heads), and one (`8e7af43a`, #3320)
+  failed `PR Gate` at `Verify review-first admission contract` with a
+  `UnicodeDecodeError` unrelated to derived artifacts.
+- Both would-change observations are corroborated byte-for-byte:
+  - `1e5c4a85` (#3322) proposed only `capability-matrix.v1.json`. Re-running
+    `scripts/ci/generate-capability-matrix.py` locally at that exact commit
+    produced SHA-256 `e87748a6…`, identical to the envelope. The independent
+    `Generate and validate capability-matrix.v1.json` check failed on that head
+    with `docs/gis/data/capability-matrix.v1.json is stale`, and the PR's later
+    head is still stale — normalization would have removed a live red check.
+  - `e00ffe66` (#3309) proposed `feature-catalog.json` and
+    `capability-matrix.v1.json`; `PR Gate` failed on that exact head. The
+    author's later regeneration produced bytes identical to all three envelope
+    digests at the merged head `a2fb9bee`, and that head's `PR Gate` and
+    capability-matrix checks passed.
+- No observation proposed a change to a file that the authoritative gates
+  already considered canonical, so the shadow period recorded zero false
+  positives. Chained generation is visible and correct: at `e00ffe66` the
+  envelope's matrix reflects the freshly generated catalog, which is why a
+  matrix-only local regeneration from the stale committed catalog differs.
+- Determinism held: the producer replays all three generators and refuses a
+  non-identical second pass, and the one failed producer run (`31925348141`)
+  failed closed inside `Regenerate governed projections` without publishing an
+  envelope.
+
+This is the failure class the audit is meant to remove. The same seven-day
+window contains roughly 48 `PR Gate` failures on
+`Failed CommittedCatalog EqualsFreshlyGeneratedOutput` and 26
+`Capability Matrix Aggregation` failures on a stale
+`docs/gis/data/capability-matrix.v1.json` — the single largest real (non-flake)
+per-PR failure cause, each paid for after minutes of build time.
+
+The audit therefore satisfies the documented promotion criteria: at least 20
+independently corroborated heads, every would-change candidate byte-identical
+to canonical output, and every no-op empty.
+
+## Enforce mode
+
+Enforcement is implemented in the consumer and is inert until both switches are
+set. It never checks out the PR under a write token and never promotes the
+observe-mode candidate directly:
+
+1. `NORMALIZATION_MODE` must be `enforce`. It appears exactly once in
+   `normalize-derived-artifacts-consumer.yml`;
+   `scripts/ci/fixtures/validate-normalization-workflows.py` rejects drift.
+2. A scoped `NORMALIZATION_TOKEN` App credential must exist. The workflow
+   `GITHUB_TOKEN` keeps `contents: read` in every mode, and the credential is
+   referenced only by the mutation step, so envelope download, archive
+   validation, and blob comparison never execute with a write token.
+   `NORMALIZATION_CREDENTIAL_PRESENT` is an explicit fail-closed input: enforce
+   mode without the credential refuses the mutation instead of silently
+   observing. The repository `GITHUB_TOKEN` is deliberately not an acceptable
+   substitute — a push made with it creates no `pull_request` events, so the
+   normalized head would never receive the required `PR Gate` and `Review Gate`
+   contexts.
+
+The mutation itself is decided by `scripts/ci/normalization-mutation.js`, a pure
+default-branch module covered by `scripts/ci/normalization-mutation.test.js`
+(clean/no-op, one-file, three-file, fork, moved head, closed/draft PR, unsafe
+ref, non-allowlisted path, duplicate path, missing digest, replayed
+normalization commit, and missing credential). Only a `commit` decision may
+write, and only then are Git blobs created. The consumer then builds a tree from
+`base_tree` = the exact head tree with `100644` blob entries, emits no commit
+when the resulting tree equals the head tree, creates a child commit whose only
+parent is the envelope source SHA, re-reads the ref, and updates it non-force
+only while it still equals that SHA. A moved head is a failure, never an
+overwrite. Forks are always read-only; their drift stays enforced by `PR Gate`
+and the capability-matrix aggregation check.
+
+Loop prevention is primarily tree equality: the normalized head reproduces the
+committed outputs, so the next producer/consumer pass observes an empty delta
+and stops. The `Normalization-Source-Sha:` commit trailer is the auditable
+defense in depth — a normalization commit that still produces a delta is treated
+as non-converging generation and fails closed instead of chaining a second
+commit.
+
+### Ordering against review-first
+
+A normalization commit moves the head SHA and therefore invalidates exact-head
+Codex evidence, which is the intended ADR-0074 ordering: normalization runs from
+the `pull_request` producer immediately after a push, so it settles the head
+before review is requested, and `Review Gate` re-reads exact-head evidence on
+the normalized head. Enforcement never publishes a status of its own and never
+substitutes for `PR Gate`, `Review Gate`, or the merge train.
+
+## Rollback
+
+Rollback is the inverse one-value change of `NORMALIZATION_MODE` back to
+`observe`; removing the credential also disables mutation while leaving
+validation intact. Producer evidence and the independent drift gates stay
+enabled for diagnosis. If an unexpected normalization commit occurs, put the PR
+on hold, return the mode to `observe`, retain the producer artifact/run IDs, and
+compare the envelope digests with the committed tree before resuming.
