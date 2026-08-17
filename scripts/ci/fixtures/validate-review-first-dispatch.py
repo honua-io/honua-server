@@ -454,6 +454,20 @@ def main() -> None:
                 f"{retired} was retired as unreachable; re-adding it needs a live trigger and a review"
             )
 
+    # The inventory is only useful if it is COMPLETE. It had silently rotted to
+    # 44 of 79 workflows before anything noticed, and the tables are edited by
+    # several concurrent PRs at once, so a bad conflict resolution is the most
+    # likely way a row disappears. Assert every workflow file has a row.
+    inventory = WORKFLOW_INVENTORY.read_text(encoding="utf-8")
+    documented = set(re.findall(r"^\| `([a-z0-9._-]+\.ya?ml)`", inventory, re.MULTILINE))
+    present = {path.name for path in WORKFLOW_DIR.glob("*.yml")}
+    undocumented = sorted(present - documented)
+    if undocumented:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md is missing a row for: "
+            + ", ".join(undocumented)
+        )
+
     print(f"review-first-dispatch=ok mode={pr_mode}")
 
 

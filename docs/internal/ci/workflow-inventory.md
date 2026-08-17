@@ -21,6 +21,11 @@
 > PY
 > ```
 
+> **Completeness is enforced.** `scripts/ci/fixtures/validate-review-first-dispatch.py`
+> (run by `scripts/ci/validate-ci-router.sh`) fails if any file in
+> `.github/workflows/` has no row below. Adding a workflow means adding a row;
+> resolving a conflict in these tables means keeping every row.
+
 **Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged
 verification plus trusted exact-head admission. `CI Gate` remains train-only and
 is deliberately not a per-PR required context. Nothing else in this inventory is

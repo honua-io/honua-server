@@ -31,16 +31,45 @@ evicted queued recovery runs — 12 of 15 consecutive recovery runs were
 
 Recovery now uses its own per-source-run group
 (`merge-train-recovery-<workflow_run id>`), so distinct recoveries queue
-independently instead of cancelling each other, and it takes the train's
-exclusion through the durable **Merge Train State** issue rather than through
-the Actions concurrency group: it refuses to act unless the state issue's
-`active_batch` still names the same batch branch, the same CI run id, and a
-recoverable phase (`ci-incomplete`, `land`, or `requeue`). Landing itself is an
-FF-CAS against current trunk (`train_land` returns 10 and re-queues when
-admission or the fast-forward target moved), and PR closes are gated on
-`gh pr merge --match-head-commit`. A recovery that cannot prove it is still the
-active batch writes the `select` phase and dispatches one live train run instead
-of acting itself.
+independently instead of cancelling each other.
+
+### What makes concurrent execution safe
+
+The shared Actions concurrency group was never the safety mechanism, and the
+idle-wait that replaced it is **best-effort contention avoidance only**. Recovery
+lands directly (`recovery.sh` calls `train_land`), so it is worth being precise
+about what actually holds:
+
+| Guarantee | Where |
+|---|---|
+| A scheduled or `workflow_run` train is hard-coded `TRAIN_APPLY=0`, and every train mutation goes through `train_side_effect`, which in dry-run logs and returns without executing. `train_state_write` uses it for both the edit and the create path. **A dry-run train writes nothing at all** — no state issue, no labels, no push. | `resolve-mode.sh:20-22`, `lib.sh:268-305`, `state.sh:162-177` |
+| The plain (never forced) fast-forward push is the atomic landing boundary, enforced by the git server rather than by Actions. Two actors pushing the same batch SHA make the second a no-op; different SHAs make the loser non-fast-forward, which becomes `rc=10` and a re-assemble. **Double-landing is structurally impossible.** | `land.sh:177-206` |
+| Every member's mutable admission is re-attested immediately before the CAS, and trunk must still equal the assembly base. | `land.sh:154-174` |
+| Recovery's PR closes are gated on `gh pr merge --match-head-commit`, so a head that moved after validation can never be merged. | `recovery.sh:52-61` |
+| Recovery refuses to act unless the state issue still names this exact batch branch, this exact CI run id, and a recoverable phase (`ci-incomplete`, `land`, `requeue`). A train that has moved on fails it closed. | `recovery.sh:211-214` |
+| Post-land reconciliation is driven by trunk ancestry, not by the journal, and terminal recovery refuses to overwrite a land-family phase rather than clearing it. | `land.sh:119-139`, `train.sh:464,470` |
+
+**Residual risk, and why the wait is kept.** The state issue is written with a
+plain `gh issue edit --body-file` and has no compare-and-swap (`state.sh:168`),
+so two concurrent writers are last-writer-wins and an interleave can drop a
+journal entry. That cannot strand a batch — the land-family phases reconcile
+against trunk ancestry — but it is untidy, so the recovery job waits for any
+**live** train before acting. It waits only on `workflow_dispatch` runs, because
+a scheduled train is provably dry-run and waiting behind the 15-minute cadence
+would be pure delay. On expiry the job fails loudly with the state untouched,
+so a dropped recovery is visible and rerunnable rather than silently cancelled.
+
+**Why recovery does not simply re-dispatch the train.** It is the obvious
+design, and it is not currently available: the train's own startup recovery
+classifies `ci-incomplete` as `escalate` (`train.sh:380`), which labels every
+member `train:escalated` and clears the batch — the opposite of landing it. The
+fact that makes landing correct ("that same CI run has since been rerun green")
+arrives only in this workflow's `workflow_run` payload; `merge-train.yml` has no
+`workflow_run` trigger and its `recovery_key` input is a bare idempotency
+string, not a batch identity. Handing off would therefore need a new train input
+carrying the green run identity plus a new recovery phase and class, with drift-
+guard coverage in `fixtures/validate-timeout-retry.sh`. That is a merge-train
+design change, tracked separately from this workflow's concurrency fix.
 
 ## Recovering a stuck merge train (never hand-edit the state issue)
 

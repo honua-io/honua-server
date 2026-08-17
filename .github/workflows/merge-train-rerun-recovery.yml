@@ -18,11 +18,36 @@ permissions:
 # a queued recovery was evicted before its job ever evaluated (12 of 15
 # consecutive recovery runs were `cancelled`). Each recovery now gets its own
 # group keyed by the source CI run, so distinct recoveries queue independently
-# and none is cancelled by the train's cadence. Exclusion against a live train is
-# re-established explicitly below (the wait step) and durably by the Merge Train
-# State issue, which recovery refuses to act on unless it still names this exact
-# batch branch, CI run id, and a recoverable phase. See
-# docs/internal/contributor/merge-coordination-runbook.md.
+# and none is cancelled by the train's cadence.
+#
+# WHAT ACTUALLY MAKES OVERLAP SAFE — the Actions concurrency group never did.
+# Correctness here does not depend on the wait step below, which is best-effort
+# contention avoidance only:
+#   * A scheduled/`workflow_run` train is hard-coded TRAIN_APPLY=0
+#     (scripts/ci/merge-train/resolve-mode.sh:20-22) and every mutation in the
+#     train routes through `train_side_effect`, which in dry-run logs and returns
+#     without executing (lib.sh:268-305). `train_state_write` uses it for both
+#     the edit and create paths (state.sh:162-177). A dry-run train therefore
+#     writes NOTHING — no state issue, no labels, no push.
+#   * The plain (never forced) fast-forward push in `train_land` is the atomic
+#     landing boundary (land.sh:184), enforced by the git server. Two actors
+#     pushing the SAME batch SHA make the second a no-op; different SHAs make the
+#     loser non-fast-forward, which land.sh:186-204 turns into rc=10 and a
+#     re-assemble. Double-landing is structurally impossible.
+#   * `train_land` re-attests every member's mutable admission immediately before
+#     the CAS (land.sh:154-163) and requires trunk to still equal the assembly
+#     base (land.sh:165-174), and this workflow's PR closes are gated on
+#     `gh pr merge --match-head-commit` (recovery.sh:52-61).
+#   * Recovery refuses to act unless the Merge Train State issue still names this
+#     exact batch branch, this exact CI run id, and a recoverable phase
+#     (recovery.sh:211-214), so a train that has moved on fails it closed.
+#   * Post-land reconciliation is driven by trunk ancestry, not by the journal
+#     (land.sh:120,129), and terminal recovery refuses to overwrite a land-family
+#     phase (train.sh:464,470), so a lost write cannot strand a batch.
+# The residual is that the state issue is a plain `gh issue edit` with no CAS
+# (state.sh:168): interleaved writers are last-writer-wins and can drop a journal
+# entry. That is why the wait exists and why it is worth keeping.
+# See docs/internal/contributor/merge-coordination-runbook.md.
 concurrency:
   group: merge-train-recovery-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
@@ -47,14 +72,21 @@ jobs:
           git config --global user.name "Mike McDougall"
           git config --global user.email "mike@honua.io"
 
-      # Explicit replacement for the concurrency group this workflow used to
-      # share with the train. Recovery mutates the same state issue and
-      # fast-forwards the same trunk, so it must not overlap a train run that is
-      # assembling or landing. Waiting (rather than sharing a group) means a
-      # recovery is delayed, never discarded. If the train is still busy at the
-      # cap the job fails loudly with the state left untouched, so an operator
-      # sees a red recovery instead of a silently cancelled one and can rerun it.
-      - name: Wait for the merge train to be idle
+      # Best-effort contention avoidance, NOT the safety mechanism (see the
+      # header). It exists because the state issue has no compare-and-swap, so
+      # two concurrent writers can drop a journal entry.
+      #
+      # Only `workflow_dispatch` runs are waited on. A scheduled train is
+      # PROVABLY dry-run — resolve-mode.sh sets apply=1 only when
+      # `EVENT_NAME == workflow_dispatch && DISPATCH_APPLY == true` — so it
+      # cannot write anything and waiting behind the 15-minute cadence would be
+      # pure delay that could push a legitimate recovery past the cap.
+      #
+      # On expiry the job fails loudly with the state untouched: an operator sees
+      # a red recovery instead of a silently cancelled one and can rerun it. That
+      # is rare by construction, because a live train long enough to exhaust the
+      # cap has almost certainly reassembled, which makes recovery skip anyway.
+      - name: Wait out any live merge-train dispatch
         env:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -64,22 +96,22 @@ jobs:
           set -euo pipefail
           deadline=$(( $(date +%s) + WAIT_SECONDS ))
           while :; do
-            busy=0
-            for state in in_progress queued; do
-              count="$(gh api \
-                "repos/${GH_REPO}/actions/workflows/merge-train.yml/runs?status=${state}&per_page=1" \
-                --jq '.total_count')"
-              busy=$(( busy + count ))
-            done
+            # Count every non-completed dispatch run, rather than querying one
+            # `status=` at a time: GitHub has several pre-terminal statuses
+            # (queued, waiting, requested, pending) and enumerating them by name
+            # silently misses whichever one is omitted.
+            busy="$(gh api \
+              "repos/${GH_REPO}/actions/workflows/merge-train.yml/runs?event=workflow_dispatch&per_page=50" \
+              --jq '[.workflow_runs[] | select(.status != "completed")] | length')"
             if [[ "${busy}" -eq 0 ]]; then
-              echo "Merge train is idle; proceeding with recovery."
+              echo "No live merge-train dispatch in flight; proceeding with recovery."
               break
             fi
             if [[ "$(date +%s)" -ge "${deadline}" ]]; then
-              echo "::error::Merge train still has ${busy} active run(s) after ${WAIT_SECONDS}s; refusing to recover concurrently. Rerun this workflow run once the train is idle."
+              echo "::error::${busy} merge-train dispatch run(s) still in flight after ${WAIT_SECONDS}s; refusing to recover alongside a live train. Rerun this workflow run once the train is idle."
               exit 1
             fi
-            echo "Merge train busy (${busy} active run(s)); re-checking in ${POLL_SECONDS}s."
+            echo "Live merge-train dispatch in flight (${busy}); re-checking in ${POLL_SECONDS}s."
             sleep "${POLL_SECONDS}"
           done
 
