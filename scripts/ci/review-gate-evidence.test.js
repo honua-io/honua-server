@@ -252,7 +252,8 @@ test('a genuinely LATER review from the OBJECTING reviewer is accepted', () => {
 });
 test('the exported login set matches the registry', () => {
   const m = require('./review-gate-evidence');
-  assert.deepEqual(m.ATTESTING_LOGINS, ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]', 'claude[bot]']);
+  assert.deepEqual(m.ATTESTING_LOGINS,
+    ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]', 'claude[bot]', 'claude']);
   assert.equal(m.isAttestingReviewer('github-code-quality[bot]'), false);
 });
 
@@ -420,51 +421,81 @@ test('an edited clean comment does not withdraw, even when other head evidence e
   }).exactCleanComment, false);
 });
 
-// --- The exact bodies `.github/workflows/claude-review.yml` posts.
-//
-// The lane's prompt reproduces these byte for byte, so a drift in either the
-// prompt or the markers above breaks a test here rather than silently
-// producing evidence the gate refuses to read. The clean COMMENT body is
-// already covered on the comment path by `claudeCleanComment` above (test
-// 'unedited Claude clean comment for exact head attests') -- it is the same
-// string; what is new below is the REVIEW path and the findings body.
-const LANE_CLEAN_BODY =
-  `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${claudeHead}\``;
-const LANE_FINDINGS_BODY =
-  `Claude Review: 2 finding(s).\n\n**Reviewed commit:** \`${claudeHead}\`\n\n` +
-  '1. src/Honua.Server/Foo.cs:12 - leaks the connection string into the problem detail.\n' +
-  '2. src/Honua.Core/Bar.cs:44 - sync-over-async `.Result` on the query path.';
 
-test('the review the Claude lane posts for a clean head attests', () => {
+// --- The GraphQL identity shape the gate ACTUALLY reads (#3213).
+//
+// review-gate.yml grades evidence from review-gate-snapshot.js, i.e. GraphQL,
+// and GraphQL reports bot logins WITHOUT the `[bot]` suffix. Verified live:
+// a Claude App review is `{login: "claude", __typename: "Bot"}` on
+// anthropics/claude-code-action#1650, while REST reports `claude[bot]`.
+// Every fixture below therefore uses the GraphQL shape; the REST-shaped
+// fixtures earlier in this file continue to cover the other spelling.
+const graphqlClaudeReview = (state, submittedAt = '2026-01-02T00:00:00Z', typename = 'Bot') => ({
+  author: { login: 'claude', __typename: typename },
+  body: '### Claude Review\nReviewed commit',
+  submittedAt, updatedAt: submittedAt, commit: { oid: claudeHead }, state,
+});
+
+test('a GraphQL-shaped Claude review attests', () => {
+  // The regression that made the whole lane dead evidence: `claude` was not an
+  // accepted login, so nothing the lane posted was ever visible to the gate.
+  assert.equal(ev({ reviews: [graphqlClaudeReview('COMMENTED')] }).exactReview, true);
+});
+test('the bare `claude` User still cannot attest', () => {
+  // `claude` is a real GitHub User. Accepting it on login alone would let a PAT
+  // holder attest, breaking the bot-distinct-from-author property.
+  assert.equal(ev({ reviews: [graphqlClaudeReview('COMMENTED', '2026-01-02T00:00:00Z', 'User')] }).exactReview, false);
+  const noTypename = { ...graphqlClaudeReview('COMMENTED') };
+  delete noTypename.author.__typename;
+  assert.equal(ev({ reviews: [{ ...noTypename, author: { login: 'claude' } }] }).exactReview, false);
+});
+test('a GraphQL-shaped Claude objection still suppresses', () => {
+  assert.equal(ev({
+    reviews: [graphqlClaudeReview('CHANGES_REQUESTED', '2026-01-09T00:00:00Z')],
+    cleanComments: [claudeCleanComment()],
+  }).exactCleanComment, false);
+});
+test('a GraphQL-shaped Codex review attests', () => {
   assert.equal(ev({
     reviews: [{
-      author: { login: 'claude[bot]' },
-      body: LANE_CLEAN_BODY,
+      author: { login: 'chatgpt-codex-connector', __typename: 'Bot' },
+      body: '### Codex Review\nReviewed commit',
       submittedAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
       commit: { oid: claudeHead }, state: 'COMMENTED',
     }],
   }).exactReview, true);
 });
-test('the findings review the Claude lane posts blocks instead of attesting', () => {
-  // REQUEST_CHANGES is a negative verdict, and the findings body must not
-  // match `cleanMarker` -- if it did, the same text could attest via a comment.
+
+// --- The body the Claude lane posts is generated, not transcribed.
+//
+// `claude-review-body.js` reads the template AND the grading marker from the
+// same registry entry that decides whether the text attests, so these tests
+// fail if either half drifts.
+const { buildCleanCommentBody } = require('./claude-review-body');
+
+test('the generated clean body attests in the GraphQL shape the gate reads', () => {
+  const body = buildCleanCommentBody(claudeHead);
   assert.equal(ev({
-    reviews: [{
-      author: { login: 'claude[bot]' },
-      body: LANE_FINDINGS_BODY,
-      submittedAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
-      commit: { oid: claudeHead }, state: 'CHANGES_REQUESTED',
+    cleanComments: [{
+      author: { login: 'claude', __typename: 'Bot' },
+      body,
+      createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+      includesCreatedEdit: false,
     }],
-  }).exactReview, false);
+  }).exactCleanComment, true);
+});
+test('the generated clean body cannot attest for a different head', () => {
+  const body = buildCleanCommentBody('d'.repeat(40));
   assert.equal(ev({
-    cleanComments: [claudeCleanComment({ body: LANE_FINDINGS_BODY })],
+    cleanComments: [{
+      author: { login: 'claude', __typename: 'Bot' },
+      body,
+      createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+      includesCreatedEdit: false,
+    }],
   }).exactCleanComment, false);
 });
-test('the clean sentence without the reviewed-commit line cannot attest', () => {
-  // The clean phrasing alone is not evidence: the comment path needs exactly
-  // one reviewed SHA resolving to the head, so a body that drops the
-  // `**Reviewed commit:**` line is unbound and must be refused.
-  assert.equal(ev({
-    cleanComments: [claudeCleanComment({ body: 'Claude Review: No major issues found.' })],
-  }).exactCleanComment, false);
+test('the body builder refuses anything that would not attest', () => {
+  assert.throws(() => buildCleanCommentBody('abc123'), /40-character/);
+  assert.throws(() => buildCleanCommentBody(claudeHead, 'codex'), /no clean-comment template/);
 });
