@@ -95,6 +95,30 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
         associations.Count(a => a.StyleId == styleId).Should().BeGreaterThanOrEqualTo(1);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task UpdateCatalogStyle_UpdatesOnlyAnExistingRecord()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+
+        var missing = await catalog.UpdateStyleAsync(
+            $"missing-{Guid.NewGuid():N}",
+            BuildDefaultStyleJson());
+        missing.Should().BeNull();
+
+        var styleId = $"update-{Guid.NewGuid():N}";
+        var created = await catalog.CreateStyleAsync(styleId, BuildDefaultStyleJson(), title: "Original");
+        created.Should().NotBeNull();
+
+        var updated = await catalog.UpdateStyleAsync(styleId, BuildDefaultStyleJson(), title: "Updated");
+
+        updated.Should().NotBeNull();
+        updated!.Title.Should().Be("Updated");
+        updated.StyleVersion.Should().Be(created!.StyleVersion + 1);
+    }
+
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)
     {
         var request = new LayerStyleUpdateRequest

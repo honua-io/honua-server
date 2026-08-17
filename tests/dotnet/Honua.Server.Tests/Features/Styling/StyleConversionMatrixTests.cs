@@ -803,10 +803,11 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
-    public void GeoServicesToMapLibre_NumericUniqueValues_EmitsStringStops()
+    public void GeoServicesToMapLibre_NumericUniqueValues_PreservesNumericStops()
     {
-        // Regression: numeric/boolean unique-value stop tokens must be emitted as
-        // strings so that match(to-string(get(field)), ...) can match them.
+        // Numeric labels must remain numeric. Stringifying them in .NET can produce
+        // a different token than MapLibre's runtime to-string conversion (for example,
+        // 1E-07 versus 1e-7), causing a valid category to silently miss.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
@@ -814,7 +815,7 @@ public class StyleConversionMatrixTests
             "type": "uniqueValue",
             "field1": "zone_code",
             "uniqueValueInfos": [
-              { "value": 1, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [255, 0, 0, 255], "size": 8 } },
+              { "value": 1e-7, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [255, 0, 0, 255], "size": 8 } },
               { "value": 2, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [0, 255, 0, 255], "size": 8 } },
               { "value": 3, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [0, 0, 255, 255], "size": 8 } }
             ]
@@ -835,18 +836,16 @@ public class StyleConversionMatrixTests
         var matchExpr = outerItems[2];
         var items = matchExpr.EnumerateArray().ToArray();
 
-        // Verify coercion wrapper inside the match
+        // Numeric labels use the native field value, without lossy string coercion.
         Assert.Equal("match", items[0].GetString());
-        Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
+        Assert.Equal("get", items[1].EnumerateArray().First().GetString());
 
-        // Verify stop values are strings, not numbers
-        // items layout: ["match", coercion, stop1, color1, stop2, color2, stop3, color3, fallback]
-        Assert.Equal(JsonValueKind.String, items[2].ValueKind);
-        Assert.Equal("1", items[2].GetString());
-        Assert.Equal(JsonValueKind.String, items[4].ValueKind);
-        Assert.Equal("2", items[4].GetString());
-        Assert.Equal(JsonValueKind.String, items[6].ValueKind);
-        Assert.Equal("3", items[6].GetString());
+        Assert.Equal(JsonValueKind.Number, items[2].ValueKind);
+        Assert.Equal(1e-7, items[2].GetDouble());
+        Assert.Equal(JsonValueKind.Number, items[4].ValueKind);
+        Assert.Equal(2, items[4].GetInt32());
+        Assert.Equal(JsonValueKind.Number, items[6].ValueKind);
+        Assert.Equal(3, items[6].GetInt32());
 
         // Round-trip back to GeoServices preserves the field
         var geoServicesJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
@@ -854,6 +853,11 @@ public class StyleConversionMatrixTests
         var renderer = gsDoc.RootElement.GetProperty("renderer");
         Assert.Equal("uniqueValue", renderer.GetProperty("type").GetString());
         Assert.Equal("zone_code", renderer.GetProperty("field1").GetString());
+        var roundTripValues = renderer.GetProperty("uniqueValueInfos").EnumerateArray()
+            .Select(info => info.GetProperty("value"))
+            .ToArray();
+        Assert.Equal(JsonValueKind.Number, roundTripValues[0].ValueKind);
+        Assert.Equal(1e-7, roundTripValues[0].GetDouble());
     }
 
     [Fact]
@@ -893,7 +897,56 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
-    public void GeoServicesToMapLibre_PictureMarkerNumericUniqueValues_EmitsStringStops()
+    public void GeoServicesToMapLibre_MixedUniqueValues_UsesTypedBranchesAndRoundTrips()
+    {
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              { "value": 1e-7, "symbol": { "type": "esriSMS", "color": [255, 0, 0, 255], "size": 8 } },
+              { "value": "active", "symbol": { "type": "esriSMS", "color": [0, 255, 0, 255], "size": 8 } },
+              { "value": true, "symbol": { "type": "esriSMS", "color": [0, 0, 255, 255], "size": 8 } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var circleLayer = FindLayer(mapLibreDoc.RootElement, "circle");
+        var outerCase = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
+        var typedCase = outerCase[2].EnumerateArray().ToArray();
+        Assert.Equal("case", typedCase[0].GetString());
+        Assert.Equal("match", typedCase[2][0].GetString());
+        Assert.Equal("get", typedCase[2][1][0].GetString());
+        Assert.Equal(JsonValueKind.Number, typedCase[2][2].ValueKind);
+        Assert.Equal("match", typedCase[3][0].GetString());
+        Assert.Equal("to-string", typedCase[3][1][0].GetString());
+
+        var geoServicesJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
+        using var roundTripDocument = JsonDocument.Parse(geoServicesJson);
+        var values = roundTripDocument.RootElement.GetProperty("renderer").GetProperty("uniqueValueInfos")
+            .EnumerateArray()
+            .Select(info => info.GetProperty("value"))
+            .ToArray();
+        Assert.Collection(
+            values,
+            value =>
+            {
+                Assert.Equal(JsonValueKind.Number, value.ValueKind);
+                Assert.Equal(1e-7, value.GetDouble());
+            },
+            value => Assert.Equal("active", value.GetString()),
+            value => Assert.Equal("true", value.GetString()));
+    }
+
+    [Fact]
+    public void GeoServicesToMapLibre_PictureMarkerNumericUniqueValues_PreservesNumericStops()
     {
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
@@ -902,7 +955,7 @@ public class StyleConversionMatrixTests
             "type": "uniqueValue",
             "field1": "priority",
             "uniqueValueInfos": [
-              { "value": 1, "symbol": { "type": "esriPMS", "url": "https://example.com/low.png", "width": 16, "height": 16 } },
+              { "value": 1e-7, "symbol": { "type": "esriPMS", "url": "https://example.com/low.png", "width": 16, "height": 16 } },
               { "value": 2, "symbol": { "type": "esriPMS", "url": "https://example.com/med.png", "width": 16, "height": 16 } },
               { "value": 3, "symbol": { "type": "esriPMS", "url": "https://example.com/high.png", "width": 16, "height": 16 } }
             ]
@@ -922,17 +975,15 @@ public class StyleConversionMatrixTests
         Assert.Equal("case", outerItems[0].GetString());
         var items = outerItems[2].EnumerateArray().ToArray();
 
-        // Verify coercion wrapper inside the match
         Assert.Equal("match", items[0].GetString());
-        Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
+        Assert.Equal("get", items[1].EnumerateArray().First().GetString());
 
-        // Verify stop values are strings, not numbers
-        Assert.Equal(JsonValueKind.String, items[2].ValueKind);
-        Assert.Equal("1", items[2].GetString());
-        Assert.Equal(JsonValueKind.String, items[4].ValueKind);
-        Assert.Equal("2", items[4].GetString());
-        Assert.Equal(JsonValueKind.String, items[6].ValueKind);
-        Assert.Equal("3", items[6].GetString());
+        Assert.Equal(JsonValueKind.Number, items[2].ValueKind);
+        Assert.Equal(1e-7, items[2].GetDouble());
+        Assert.Equal(JsonValueKind.Number, items[4].ValueKind);
+        Assert.Equal(2, items[4].GetInt32());
+        Assert.Equal(JsonValueKind.Number, items[6].ValueKind);
+        Assert.Equal(3, items[6].GetInt32());
     }
 
     [Fact]

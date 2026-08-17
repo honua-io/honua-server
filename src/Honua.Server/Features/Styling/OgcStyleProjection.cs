@@ -7,8 +7,11 @@ using System.Xml.Linq;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.Styling.Sld;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Features.Styling;
 
@@ -27,19 +30,25 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private readonly ILayerStyleCatalog _styleCatalog;
     private readonly IGeoServicesStyleConverter _geoServicesConverter;
     private readonly IStyleCatalog? _independentStyleCatalog;
+    private readonly IMetadataV2StyleGraphSync? _styleGraphSync;
+    private readonly ILogger _logger;
 
     public OgcStyleProjection(
         IMetadataV2GraphProvider graphProvider,
         ILayerStyleService styleService,
         ILayerStyleCatalog styleCatalog,
         IGeoServicesStyleConverter geoServicesConverter,
-        IStyleCatalog? independentStyleCatalog = null)
+        IStyleCatalog? independentStyleCatalog = null,
+        IMetadataV2StyleGraphSync? styleGraphSync = null,
+        ILogger<OgcStyleProjection>? logger = null)
     {
+        _logger = logger ?? NullLogger<OgcStyleProjection>.Instance;
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _styleService = styleService ?? throw new ArgumentNullException(nameof(styleService));
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _geoServicesConverter = geoServicesConverter ?? throw new ArgumentNullException(nameof(geoServicesConverter));
         _independentStyleCatalog = independentStyleCatalog;
+        _styleGraphSync = styleGraphSync;
     }
 
     /// <inheritdoc />
@@ -49,6 +58,19 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var summaries = new List<OgcStyleSummary>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        IReadOnlyList<StyleCatalogRecord> catalogStyles = [];
+        if (_independentStyleCatalog is not null)
+        {
+            catalogStyles = await _independentStyleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var style in catalogStyles.Where(style => !TryParseMirroredStyleId(style.StyleId, out _)))
+            {
+                seen.Add(style.StyleId);
+                summaries.Add(new OgcStyleSummary(
+                    style.StyleId,
+                    string.IsNullOrWhiteSpace(style.Title) ? style.StyleId : style.Title!));
+            }
+        }
+
         var candidates = new List<(string StyleId, MetadataV2Resource Resource, int StorageLayerId)>();
         foreach (var resource in snapshot.Graph.Resources)
         {
@@ -94,7 +116,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         // represented as a Phase 1 collection-keyed style.
         if (_independentStyleCatalog is not null)
         {
-            var catalogStyles = await _independentStyleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
             foreach (var style in catalogStyles)
             {
                 if (!seen.Add(style.StyleId))
@@ -183,6 +204,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStylesheet(style.MapLibreStyleJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
         }
 
+        if (encoding == OgcStyleEncoding.EsriDrawingInfo)
+        {
+            // ADR-0002: the canonical document is the stored MapLibre style, so the Esri
+            // renderer is always back-generated from it here rather than served from the
+            // catalog's cached drawingInfo column — a cache written by an earlier edit must
+            // never shadow the canonical style a later MapLibre PUT replaced it with.
+            var descriptor = StandaloneStyleDescriptor.FromMapLibre(style.StyleId, style.MapLibreStyleJson!);
+            var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(style.MapLibreStyleJson!, descriptor);
+            return new OgcStylesheet(
+                drawingInfoJson,
+                OgcStyleMediaTypes.EsriDrawingInfo,
+                OgcStyleEncoding.EsriDrawingInfo);
+        }
+
         return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding);
     }
 
@@ -254,10 +289,18 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentNullException.ThrowIfNull(mapLibreStyleJson);
 
-        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+            // Phase 2: the styleId may identify a catalog style rather than a collection-keyed
+            // one. Keep PUT symmetric with POST/DELETE, which already reach the catalog.
+            var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+            if (bound is null)
+            {
+                return await UpdateCatalogStyleAsync(styleId, mapLibreStyleJson, strict, cancellationToken).ConfigureAwait(false);
+            }
+
+            (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
         JsonElement parsed;
@@ -293,12 +336,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentNullException.ThrowIfNull(drawingInfoJson);
 
-        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
-        if (resource is null || !storageLayerId.HasValue)
-        {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
-        }
-
         JsonElement drawingInfo;
         try
         {
@@ -308,6 +345,27 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         catch (JsonException ex)
         {
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"drawingInfo is not valid JSON: {ex.Message}");
+        }
+
+        if (!TryValidateDrawingInfoShape(drawingInfo, out var shapeError))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                shapeError);
+        }
+
+        var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (resource is null || !storageLayerId.HasValue)
+        {
+            // Phase 2: catalog styles accept the negotiated Esri encoding on write too, so
+            // the console's drawingInfo authoring mode reaches them.
+            var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+            if (bound is null)
+            {
+                return await UpdateCatalogStyleFromDrawingInfoAsync(styleId, drawingInfo, strict, cancellationToken).ConfigureAwait(false);
+            }
+
+            (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
         // Convert Esri drawingInfo -> canonical MapLibre server-side (ADR-0002), capturing lossy symbolizers.
@@ -354,6 +412,312 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         };
     }
 
+    // A catalog style whose id is not a collection name may be a mirrored layer default. These
+    // per-layer defaults are stored as "style-layer-{id}" at ordinal zero and listed
+    // through this surface. Only that reserved mirror writes through to the canonical per-layer
+    // store; ordinary associated styles remain independently editable catalog records.
+    private async Task<(MetadataV2Resource Resource, int StorageLayerId)?> ResolveMirroredLayerStyleAsync(
+        string styleId,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null
+            || !TryParseMirroredStyleId(styleId, out var storageLayerId))
+        {
+            return null;
+        }
+
+        var associations = await _independentStyleCatalog.ListAssociationsAsync(cancellationToken).ConfigureAwait(false);
+        if (!associations.Any(candidate =>
+                candidate.LayerId == storageLayerId
+                && candidate.Ordinal == 0
+                && string.Equals(candidate.StyleId, styleId, StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource) && resource is not null
+            ? (resource, storageLayerId)
+            : null;
+    }
+
+    private static bool TryParseMirroredStyleId(string styleId, out int storageLayerId)
+    {
+        const string mirroredStylePrefix = "style-layer-";
+        storageLayerId = 0;
+        return styleId.StartsWith(mirroredStylePrefix, StringComparison.Ordinal)
+            && int.TryParse(
+                styleId.AsSpan(mirroredStylePrefix.Length),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out storageLayerId)
+            && string.Equals(
+                styleId,
+                mirroredStylePrefix + storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+    }
+
+    // Phase 2 write path: update a standalone catalog style from a MapLibre document.
+    // Applies the same validation POST does — a standalone style has no layer binding, so
+    // the per-layer normalizer (which requires a Honua tile source) cannot be used.
+    private async Task<OgcStyleUpdateResult> UpdateCatalogStyleAsync(
+        string styleId,
+        string mapLibreStyleJson,
+        bool strict,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        var existing = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        if (!TryValidateStandaloneMapLibre(mapLibreStyleJson, strict, out var error))
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, error);
+        }
+
+        var updated = await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return updated
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null)
+            : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+    }
+
+    // Phase 2 write path: update a standalone catalog style from an Esri drawingInfo
+    // renderer. The renderer is converted server-side (ADR-0002) and only the resulting
+    // canonical MapLibre style is stored, so MapLibre stays the single source of truth and
+    // the Esri encoding is re-derived on read.
+    private async Task<OgcStyleUpdateResult> UpdateCatalogStyleFromDrawingInfoAsync(
+        string styleId,
+        JsonElement drawingInfo,
+        bool strict,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        var existing = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        // Both converters are geometry-driven. Resolve geometry from the bound resource;
+        // trusting the submitted renderer could replace a point layer's canonical style
+        // with a polygon fill (or another incompatible symbolizer family).
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre(styleId, existing.MapLibreStyleJson);
+        if (!descriptor.IsBoundToStorageLayer)
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The stored style is not bound to a Honua layer, so an Esri drawingInfo update cannot preserve its source. Submit a MapLibre style document instead.");
+        }
+
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.StorageBindingsByStorageLayerId.ContainsKey(descriptor.Id)
+            || !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(descriptor.Id, out var resource))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The stored style references a source that is not an existing Honua layer, so an Esri drawingInfo update cannot preserve its source. Submit a MapLibre style document instead.");
+        }
+
+        var geometryType = resource.ReadGeometryType();
+        if (geometryType == MetadataV2GeometryType.None)
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The bound layer's geometry type could not be determined, so an Esri drawingInfo update cannot be converted safely.");
+        }
+
+        if (!StandaloneStyleDescriptor.TryInferConsistentGeometryType(
+                drawingInfo,
+                out var rendererGeometryType,
+                out var hasUnsupportedRendererContent,
+                out var rendererValidationError))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                rendererValidationError ?? "The renderer is invalid.");
+        }
+
+        if (rendererGeometryType != MetadataV2GeometryType.None
+            && !UsesSameGeometryFamily(geometryType, rendererGeometryType))
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                $"The renderer symbolizes {rendererGeometryType}, but the bound layer uses {geometryType}. Submit a renderer for the bound layer's geometry type.");
+        }
+
+        var conversion = _geoServicesConverter.Convert(drawingInfo, descriptor.Id, styleId, geometryType);
+
+        var warningList = conversion.Unsupported
+            .Select(u => $"{u.Code} ({u.SymbolizerType}): {u.Guidance}")
+            .ToList();
+        if (hasUnsupportedRendererContent)
+        {
+            warningList.Add("unsupported-renderer-content (renderer): Renderer content is incomplete or uses an unsupported Esri symbol type.");
+        }
+
+        var warnings = warningList.Count == 0 ? null : warningList.ToArray();
+
+        // Strict: never persist a lossy conversion — reject so the operator can adjust the renderer.
+        if (strict && warnings is { Length: > 0 })
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The renderer uses features the canonical MapLibre style cannot represent. Resubmit without strict handling to accept the lossy conversion.",
+                warnings);
+        }
+
+        var updated = await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return updated
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings)
+            : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+    }
+
+    private static bool UsesSameGeometryFamily(
+        MetadataV2GeometryType resourceGeometryType,
+        MetadataV2GeometryType rendererGeometryType)
+        => resourceGeometryType switch
+        {
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint =>
+                rendererGeometryType is MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint,
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString =>
+                rendererGeometryType is MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString,
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon =>
+                rendererGeometryType is MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon,
+            _ => resourceGeometryType == rendererGeometryType
+        };
+
+    // Replaces the canonical MapLibre document of an existing catalog style, keeping its
+    // descriptive metadata and letting the store increment style_version. The cached
+    // drawingInfo column is rewritten in the same statement from the document being
+    // stored, so it can never outlive the canonical style it mirrors. Reads still derive
+    // the Esri encoding from the canonical style rather than trusting that cache.
+    private async Task<bool> PersistCatalogStyleAsync(
+        StyleCatalogRecord existing,
+        string mapLibreStyleJson,
+        CancellationToken cancellationToken)
+    {
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre(existing.StyleId, mapLibreStyleJson);
+        var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreStyleJson, descriptor);
+        var updated = await _independentStyleCatalog!
+            .UpdateStyleAsync(
+                existing.StyleId,
+                mapLibreStyleJson,
+                existing.Title,
+                existing.Description,
+                drawingInfoJson,
+                revisedBy: null,
+                changeSummary: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (updated is null)
+        {
+            return false;
+        }
+
+        if (_styleGraphSync is not null)
+        {
+            // The catalog write above has already committed and incremented style_version, so
+            // this mirror into the metadata-v2 graph is strictly post-commit. Reporting a
+            // failure here would surface a successful edit as a 500: the endpoint would skip
+            // its output-cache eviction (serving the stale list for the whole TTL) and a
+            // client retry would apply a second revision of an edit that already landed.
+            // Best-effort, mirroring LayerStyleService's own catalog/graph sync — log it and
+            // let StyleResourceIds lag until the next publish. Request cancellation can no
+            // longer abort this path: the write is already durable, and the endpoint still
+            // has to observe Updated so it can evict its output cache.
+            var postCommitToken = CancellationToken.None;
+            IReadOnlyList<StyleLayerAssociation> associations;
+            try
+            {
+                associations = await _independentStyleCatalog
+                    .ListAssociationsAsync(postCommitToken)
+                    .ConfigureAwait(false);
+            }
+            // Intentional broad catch: a post-commit synchronization failure must not be
+            // reported as a failed edit, including cancellation raised by a dependency.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
+                associations = [];
+            }
+
+            foreach (var layerId in associations
+                         .Where(association => string.Equals(
+                             association.StyleId,
+                             existing.StyleId,
+                             StringComparison.Ordinal))
+                         .Select(association => association.LayerId)
+                         .Distinct())
+            {
+                try
+                {
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, postCommitToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // Each layer is an independent public projection. A conflict on one
+                    // must not leave every later association stale.
+                    LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
+    {
+        if (drawingInfo.ValueKind != JsonValueKind.Object)
+        {
+            error = "drawingInfo must be a JSON object.";
+            return false;
+        }
+
+        if (!drawingInfo.TryGetProperty("renderer", out var renderer)
+            || renderer.ValueKind != JsonValueKind.Object)
+        {
+            error = "drawingInfo.renderer must be a JSON object.";
+            return false;
+        }
+
+        if (!renderer.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(type.GetString()))
+        {
+            error = "drawingInfo.renderer.type must be a non-empty string.";
+            return false;
+        }
+
+        foreach (var propertyName in new[] { "uniqueValueInfos", "classBreakInfos" })
+        {
+            if (!renderer.TryGetProperty(propertyName, out var infos)
+                || infos.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            if (infos.EnumerateArray().Any(info => info.ValueKind != JsonValueKind.Object))
+            {
+                error = $"drawingInfo.renderer.{propertyName} entries must be JSON objects.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     /// <inheritdoc />
     public async Task<OgcStyleCreateResult> CreateStyleAsync(
         string? styleId,
@@ -379,6 +743,23 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var resolvedStyleId = string.IsNullOrWhiteSpace(styleId)
             ? $"style-{Guid.NewGuid():N}"
             : styleId.Trim();
+
+        if (TryParseMirroredStyleId(resolvedStyleId, out var reservedLayerId))
+        {
+            return new OgcStyleCreateResult(
+                OgcStyleCreateStatus.Conflict,
+                null,
+                $"Style identifier '{resolvedStyleId}' is reserved for layer {reservedLayerId}'s canonical mirror.");
+        }
+
+        var (collidingResource, _, _) = await ResolveResourceAsync(resolvedStyleId, cancellationToken).ConfigureAwait(false);
+        if (collidingResource is not null)
+        {
+            return new OgcStyleCreateResult(
+                OgcStyleCreateStatus.Conflict,
+                null,
+                $"Style identifier '{resolvedStyleId}' is already owned by a collection.");
+        }
 
         var created = await _independentStyleCatalog
             .CreateStyleAsync(resolvedStyleId, mapLibreStyleJson, title: resolvedStyleId, cancellationToken: cancellationToken)
@@ -409,10 +790,52 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 "Standalone style deletion requires the independent style catalog, which is not configured.");
         }
 
-        var deleted = await _independentStyleCatalog.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
-        return deleted
-            ? new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null)
-            : new OgcStyleDeleteResult(OgcStyleDeleteStatus.NotFound, $"Style '{styleId}' not found.");
+        int? protectedLayerId = null;
+        if (TryParseMirroredStyleId(styleId, out var mirroredLayerId))
+        {
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot.Index.ResourcesByStorageLayerId.ContainsKey(mirroredLayerId))
+            {
+                protectedLayerId = mirroredLayerId;
+            }
+        }
+
+        var deleteResult = await _independentStyleCatalog
+            .DeleteStyleAsync(styleId, protectedLayerId, cancellationToken)
+            .ConfigureAwait(false);
+        if (deleteResult.Status == StyleCatalogDeleteStatus.Protected)
+        {
+            return new OgcStyleDeleteResult(
+                OgcStyleDeleteStatus.Forbidden,
+                $"Style '{styleId}' is a layer's mirrored default style and cannot be deleted through this surface.");
+        }
+
+        if (deleteResult.Status == StyleCatalogDeleteStatus.NotFound)
+        {
+            return new OgcStyleDeleteResult(OgcStyleDeleteStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        if (_styleGraphSync is not null)
+        {
+            // The catalog delete has committed and cascaded its associations. Reconcile the
+            // layers captured before that cascade so their StyleResourceIds no longer expose
+            // the deleted record. As with updates, this post-commit mirror is best-effort and
+            // detached from request cancellation so the endpoint can evict its output cache.
+            var postCommitToken = CancellationToken.None;
+            foreach (var layerId in deleteResult.AssociatedLayerIds)
+            {
+                try
+                {
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, postCommitToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, styleId, ex);
+                }
+            }
+        }
+
+        return new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null);
     }
 
     // Lightweight validation for a standalone (not-yet-layer-bound) MapLibre style.
@@ -434,19 +857,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
             if (strict)
             {
-                if (!root.TryGetProperty("version", out var version)
-                    || version.ValueKind != JsonValueKind.Number
-                    || version.GetInt32() != 8)
+                if (!MapLibreStyleNormalizer.TryValidateStandalone(root, out error))
                 {
-                    error = "MapLibre style must include version 8.";
-                    return false;
-                }
-
-                if (!root.TryGetProperty("layers", out var layers)
-                    || layers.ValueKind != JsonValueKind.Array
-                    || layers.GetArrayLength() == 0)
-                {
-                    error = "MapLibre style must include at least one layer.";
                     return false;
                 }
             }
@@ -489,9 +901,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             layers = !document.RootElement.TryGetProperty("layers", out var layersElement)
                 || layersElement.ValueKind != JsonValueKind.Array
                 ? Array.Empty<MapLibreStyleLayer>()
-                : JsonSerializer.Deserialize(
-                    layersElement.GetRawText(),
-                    MapLibreStyleJsonContext.Default.MapLibreStyleLayerArray) ?? Array.Empty<MapLibreStyleLayer>();
+                : DeserializeSupportedSldLayers(layersElement);
         }
 
         var export = MapLibreToSldConverter.Export(layers, layerName);
@@ -504,6 +914,39 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         }
 
         return new OgcStylesheet(sldXml, OgcStyleMediaTypes.Sld10, OgcStyleEncoding.Sld10);
+    }
+
+    private static MapLibreStyleLayer[] DeserializeSupportedSldLayers(JsonElement layersElement)
+    {
+        var layers = new List<MapLibreStyleLayer>();
+        foreach (var layerElement in layersElement.EnumerateArray())
+        {
+            if (layerElement.ValueKind != JsonValueKind.Object
+                || !layerElement.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            try
+            {
+                var layer = JsonSerializer.Deserialize(
+                    layerElement.GetRawText(),
+                    MapLibreStyleJsonContext.Default.MapLibreStyleLayer);
+                if (layer is not null)
+                {
+                    layers.Add(layer);
+                }
+            }
+            catch (JsonException)
+            {
+                // Standalone styles deliberately tolerate unsupported MapLibre members.
+                // Keep SLD projection equally tolerant by omitting only the malformed
+                // layer instead of turning a previously accepted style into a 500.
+            }
+        }
+
+        return [.. layers];
     }
 
     private static string RewriteSldVersion(string sldXml, string version)
@@ -543,7 +986,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private async Task<(MetadataV2Resource? Resource, int? StorageLayerId, MetadataV2GraphSnapshot Snapshot)> ResolveStyledResourceAsync(
         string styleId,
         CancellationToken cancellationToken)
-        => await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+    {
+        var resolved = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (_independentStyleCatalog is null || TryParseMirroredStyleId(styleId, out _))
+        {
+            return resolved;
+        }
+
+        var catalogStyle = await _independentStyleCatalog
+            .GetStyleAsync(styleId, cancellationToken)
+            .ConfigureAwait(false);
+        return catalogStyle is null
+            ? resolved
+            : (null, null, resolved.Snapshot);
+    }
 
     private static string ResolveTitle(MetadataV2Resource resource)
         => resource.Metadata.Title

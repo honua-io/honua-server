@@ -1093,7 +1093,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
-      "_paths_comment": "Capacity split of the former Infra and Security shard. This child isolates the cache, file-storage, and style endpoint/integration suites that previously shared one 39-minute budget with the control-plane and security suites.",
+      "_paths_comment": "Capacity split of the former Infra and Security shard. This child isolates the cache, file-storage, and style endpoint/integration suites that previously shared one 39-minute budget with the control-plane and security suites. The OGC API - Styles protocol slice (src/Honua.Protocols.OgcApi/Styles/) maps here too: its /ogc/styles integration tests live under tests/.../Features/Styling, which this shard's filter selects (#3188).",
       "paths": [
         "src/Honua.Server/Features/Caching/",
         "src/Honua.Core/Features/Caching/",
@@ -1102,6 +1102,7 @@
         "src/Honua.Server/Features/Styling/",
         "src/Honua.Core/Features/Styling/",
         "src/Honua.Db/Postgres/Features/Styling/",
+        "src/Honua.Protocols.OgcApi/Styles/",
         "tests/dotnet/Honua.Server.Tests/Features/Caching/",
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
         "tests/dotnet/Honua.Server.Tests/Features/Styling/",
