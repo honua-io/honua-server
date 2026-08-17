@@ -1159,13 +1159,23 @@ assert_descriptor \
   "Core"
 
 # ---------------------------------------------------------------------------
-# #1899 guard: every Honua.Server.Tests class must be claimed by at least one
-# shard filter (in the correct test assembly) or it never runs in CI. This is
-# the anti-regression check for the coverage hole — a new test class in an
-# unmapped namespace fails CI here instead of silently never running.
+# #1899 guard, BOTH directions:
+#
+#   1. Every Honua.Server.Tests class must be claimed by at least one shard
+#      filter (in the correct test assembly) or it never runs in CI. A new test
+#      class in an unmapped namespace fails CI here instead of silently never
+#      running.
+#   2. Every shard filter — and every individual clause inside it — must select
+#      at least one test. `dotnet test --filter` exits 0 when nothing matches,
+#      so a filter naming a renamed/moved/deleted namespace runs ZERO tests and
+#      PASSES: CI stays green while that coverage silently disappears. Because
+#      filters are typically an OR of many clauses, one dead clause is invisible
+#      at shard level, so the check is clause-level. Filters that cannot be
+#      resolved statically are reported as failures, never passed by default.
 # ---------------------------------------------------------------------------
 if [[ -n "${PYTHON_BIN}" ]]; then
-echo "Checking server-test shard coverage (no orphaned test classes)..."
+echo "Checking shard filter/test-class coverage in both directions..."
+"${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
@@ -1345,7 +1355,7 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "FileImport"
 else
-  echo "⚠️  Skipping server-test shard coverage check (no working Python 3: tried python3/python/py)"
+  echo "⚠️  Skipping shard filter/test-class coverage checks (no working Python 3: tried python3/python/py)"
 fi
 
 echo "CI router validation passed."
