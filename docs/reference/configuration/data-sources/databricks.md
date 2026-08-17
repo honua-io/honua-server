@@ -81,6 +81,13 @@ under `Databricks:Layers` maps a Honua layer id to a physical table:
 
 ```jsonc
 {
+  // Required opt-in (#2436). Without it the provider is never registered, and
+  // "Databricks:Enabled": true throws at startup.
+  "Experimental": {
+    "Features": {
+      "DatabricksProvider": true
+    }
+  },
   "Databricks": {
     "Host": "https://dbc-abc123.cloud.databricks.com",
     "WarehouseId": "1234567890abcdef",

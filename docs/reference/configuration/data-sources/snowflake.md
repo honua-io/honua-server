@@ -85,6 +85,7 @@ backend; layers are routed to it by their secure connection's provider name, not
 ```json
 {
   "DataSource": { "Provider": "postgres" },
+  "Experimental": { "Features": { "SnowflakeProvider": true } },
   "Snowflake": {
     "Enabled": true,
     "ConnectionString": "account=xy12345.us-east-1;user=honua;password=...;db=ANALYTICS;schema=PUBLIC;warehouse=COMPUTE_WH;role=ANALYST",

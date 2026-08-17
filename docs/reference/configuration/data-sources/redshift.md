@@ -59,6 +59,7 @@ selected per-layer based on the layer's `DataConnection` provider name.
 ```json
 {
   "DataSource": { "Provider": "postgres" },
+  "Experimental": { "Features": { "RedshiftProvider": true } },
   "Redshift": {
     "Enabled": true,
     "ConnectionString": "Host=my-cluster.abc123.us-east-1.redshift.amazonaws.com;Port=5439;Database=geo;Username=honua;Password=...;SSL Mode=Require",
