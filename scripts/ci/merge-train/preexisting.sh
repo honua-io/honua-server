@@ -14,9 +14,10 @@ HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 #
 # Cause signatures are job-scoped and built from the most stable evidence in CI
 # logs, in priority order:
-#   * a run-scoped capacity-exhaustion signature when the WHOLE job log carries
-#     HONUA_SHARD_CAPACITY_EXHAUSTED: the shard never finished executing its
-#     tests, so it has no comparable cause and can never be subtracted (#3213).
+#   * a run-scoped shard-terminal signature when the WHOLE job log carries any
+#     HONUA_SHARD_{CAPACITY_EXHAUSTED,KILLED,HANG_SUSPECTED} marker: the shard
+#     never finished executing its tests, so it has no comparable cause and can
+#     never be subtracted (#3213).
 #   * failing test FQNs from the existing surgical retry parser.
 #   * normalized compiler/error/assertion/exception/format-drift lines.
 #   * an opaque run-scoped fallback when no cause can be extracted, which is
@@ -94,7 +95,12 @@ train_run_job_log() {
   fi
   [[ -z "${run_id}" ]] && return 0
   if [[ -n "${job_id}" ]]; then
-    gh run view --job "${job_id}" --log 2>/dev/null || true
+    # Delegate to lib.sh's reader, which tries the exact job-log REST resource
+    # before `gh run view --job --log`. GitHub can expose a terminal job and its
+    # REST log while the parent run's aggregate archive is still unavailable
+    # (lib.sh:118-121); reading CLI-only saw '' in that window and downgraded a
+    # real failure cause to an opaque, never-subtractable signature (#3213).
+    train_read_job_log "${job_id}" 2>/dev/null || true
   else
     gh run view "${run_id}" --log-failed 2>/dev/null || true
   fi
@@ -148,26 +154,43 @@ train_extract_failure_signatures() {
         line = normalize($0)
         lower = tolower(line)
         if (line == "") next
+        # A PASSING or SKIPPED test line is not a failure cause, but its NAME
+        # routinely collides with these heuristics: `...ReturnsFailed...`,
+        # `...IsCaseAndWhitespaceInsensitive`, `...Expected: 200`. On a shard
+        # log those lines vastly outnumber real ones, so they used to fill the
+        # bounded window with green noise and starve it of the actual cause
+        # (#3213 — verified on job 95149717187, whose sampled window was almost
+        # entirely `Passed ...` lines).
+        if (line ~ /^(Passed|Skipped)[[:space:]]/) next
+        # Structured (Serilog/JSON) log records carry a per-run `@t` timestamp,
+        # so they never match across runs and only consume the window.
+        if (line ~ /"@t"[[:space:]]*:/) next
         prefix = ""
         if (line ~ /error[[:space:]]+(CS|CA|NETSDK|NU|MSB|BC|FS)[0-9]+[: ]/) {
           prefix = "compiler"
-        } else if (lower ~ /formatted code file|format verification failed|format.*(failed|would)|whitespace/) {
+        } else if (lower ~ /formatted code file|format verification failed|format.*(failed|would)|error whitespace|whitespace formatting/) {
           prefix = "format"
         } else if (lower ~ /assert\.[a-z]+|assertion failed|expected:|actual:|xunit\.sdk\./) {
           prefix = "assert"
         } else if (line ~ /[A-Za-z0-9_.]+Exception(:|[[:space:]])/) {
           prefix = "exception"
-        } else if (lower ~ /(^| )error(:| )|failed(:| )|fatal(:| )/) {
+        } else if (lower ~ /(^| )error(:| )|(^| )failed(:| )|(^| )fatal(:| )/) {
           prefix = "error"
         } else {
           next
         }
-        # Bounded to the first 40 causes, but WITHOUT `exit`: exiting mid-pipe
-        # SIGPIPEs the upstream printf, and under `set -o pipefail` that turned
-        # a ~47k-line shard log into a nondeterministic 141 from the whole
-        # filter (#3213). Keep draining stdin once the cap is reached.
+        signature = prefix ":" line
+        # Dedupe BEFORE the cap. A repeated line (the same connection error
+        # thousands of times) is one cause, and letting it consume 40 slots
+        # hid every other cause in the job.
+        if (signature in seen) next
+        seen[signature] = 1
+        # Bounded to the first 40 DISTINCT causes, but WITHOUT `exit`: exiting
+        # mid-pipe SIGPIPEs the upstream printf, and under `set -o pipefail`
+        # that turned a ~47k-line shard log into a nondeterministic 141 from the
+        # whole filter (#3213). Keep draining stdin once the cap is reached.
         if (count < 40) {
-          print prefix ":" line
+          print signature
           count += 1
         }
       }
@@ -180,21 +203,27 @@ train_extract_failure_signatures() {
 # is run-scoped so an unparseable failure never incorrectly matches a different
 # run just because the job name is the same.
 train_emit_job_failure_signatures() {
-  local run_id="$1" job="$2" job_id="${3:-}" log sigs sig
+  local run_id="$1" job="$2" job_id="${3:-}" log sigs sig terminal_marker
   [[ -z "${job}" ]] && return 0
   log="$(train_run_job_log "${run_id}" "${job}" "${job_id}")"
-  # #3213: a shard that burned its whole configured budget emits
-  # HONUA_SHARD_CAPACITY_EXHAUSTED as its LAST error, far past the bounded
-  # head-of-log window train_extract_failure_signatures scans, so the marker
-  # never became a signature while the head-of-log noise it shares with trunk
-  # (postgres `FATAL: role "root"` lines and friends) did. Scan the WHOLE log
-  # for the marker and, when present, emit a single run-scoped signature: the
-  # shard never finished executing its tests, so it produced no comparable
-  # failure cause and must never cancel against trunk's latest run. The train
-  # classifies this case before the filter ever runs (train.sh capacity guard);
-  # this keeps the filter itself correct in isolation.
+  # #3213: a shard that could not finish executing its tests produced NO
+  # comparable failure cause, so it must never cancel against trunk's latest
+  # run no matter how similar the rest of its log looks. All three
+  # shard-terminal markers are emitted as the shard's LAST error, far outside
+  # the bounded window train_extract_failure_signatures samples, so scan the
+  # WHOLE log for them and emit a single run-scoped signature instead. The
+  # train classifies these before the filter ever runs (train.sh ordering
+  # guard); this keeps the filter correct in isolation too.
+  terminal_marker=""
   if train_log_is_capacity_exhaustion "${log}"; then
-    printf '%s\tcapacity-exhausted:%s:%s\n' "${job}" "${run_id:-unknown-run}" "${job}"
+    terminal_marker=capacity-exhausted
+  elif train_log_is_shard_killed "${log}"; then
+    terminal_marker=shard-killed
+  elif train_log_is_shard_hang "${log}"; then
+    terminal_marker=shard-hang
+  fi
+  if [[ -n "${terminal_marker}" ]]; then
+    printf '%s\t%s:%s:%s\n' "${job}" "${terminal_marker}" "${run_id:-unknown-run}" "${job}"
     return 0
   fi
   sigs="$(train_extract_failure_signatures "${job}" "${log}")"

@@ -66,32 +66,40 @@ dry-run.
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
    drift, compile/test failures) ESCALATES, never auto-patched.
-5. **capacity / evidence ordering guard** (BEFORE the pre-existing-failure
+5. **shard-terminal / evidence ordering guard** (BEFORE the pre-existing-failure
    filter, and therefore before every other classifier) — for EVERY failing job
-   the train first asks whether the job produced a comparable failure cause at
-   all. Two answers are disqualifying: a server-test shard that emitted
-   `HONUA_SHARD_CAPACITY_EXHAUSTED` burned its whole configured budget while
-   still executing tests, so it never finished them; and a terminal failed job
-   whose log is unreadable has no evidence of any kind. Neither may be
-   subtracted as pre-existing, retried, autofixed, or attributed to a member
-   diff. Both stop the batch at a shared terminal outcome
-   (`ci-shard-capacity-exhausted` / `ci-failure-evidence-unavailable`) that
-   escalates the batch as a whole, naming the shard, and clears `active_batch`
-   so the queue can progress once the budget is re-based.
+   the train first asks whether the job produced a comparable failure CAUSE at
+   all. A shard that could not finish executing its tests did not: `run-server-
+   test-shard.sh` ends it with `HONUA_SHARD_CAPACITY_EXHAUSTED` (over its
+   configured budget), `HONUA_SHARD_HANG_SUSPECTED` (stalled), or
+   `HONUA_SHARD_KILLED` (test host SIGKILLed, suspect OOM). Neither does a
+   terminal failed job whose log stays unreadable across the guard's bounded
+   retries. **None of these may ever be subtracted as pre-existing.** Capacity,
+   killed and evidence-unavailable are additionally terminal and never
+   attributable: they stop the batch at one shared outcome
+   (`ci-shard-capacity-exhausted` / `ci-shard-killed` /
+   `ci-failure-evidence-unavailable`) that escalates the batch as a whole,
+   **naming the offending jobs**, and clears `active_batch` so the queue can
+   progress once the budget is re-based or the runner resized. A stalled shard
+   keeps the historical bounded rerun (step 6) — it just reaches it without
+   passing through subtraction.
 
    **The ordering is the guarantee, not an optimization.** The pre-existing
    filter subtracts a batch failure whose job-scoped log signatures also appear
-   on trunk's latest CI, and it builds those signatures from a bounded window at
-   the HEAD of each job log. A capacity-exhausted shard puts its marker at the
-   TAIL — job 95149717187 of run 31940825557 carried it on line 47296 of 47298 —
-   while the head carried the same environmental noise (postgres
-   `FATAL: role "root"` lines) as trunk's own red shard. Filtering first could
-   therefore cancel the shard as "already failing on trunk" and LAND a batch on
-   tests that never ran. `scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh`
-   reproduces that exact shape and asserts the order structurally; the
-   signature builder additionally scans the WHOLE log for the marker and emits a
-   run-scoped signature that can never cancel, so the filter stays correct in
-   isolation.
+   on trunk's latest CI, and it samples those signatures from a bounded window
+   of each job log. The shard markers are emitted as the shard's LAST error —
+   job 95149717187 of run 31940825557 carried its marker on line 47296 of 47298,
+   far outside that window — while the window itself fills with per-run noise
+   (passing-test lines, structured log records) that a red shard on trunk
+   produces too. Filtering first could therefore cancel the shard as "already
+   failing on trunk" and LAND a batch on tests that never ran.
+   `scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh` reproduces
+   that shape for all three markers and asserts the order structurally. Two
+   further protections back it up: the signature builder scans the WHOLE log for
+   the markers and emits a run-scoped signature that can never cancel, and the
+   marker predicates are ANCHORED to the emitted `::error::`/annotation form, so
+   a job log that merely PRINTS a marker token (every `CI Router Validation` log
+   does) stays an ordinary, subtractable failure.
 
 6. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. GitHub job-level timeouts may surface as terminal `cancelled`, `timed_out`, or `startup_failure` conclusions instead of an exit code; those conclusions enter the same bounded retry path and cannot be removed by the non-blocking allowlist or pre-existing-failure subtraction. Pending, skipped selected-shard, missing, and neutral evidence still fail closed. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
    `40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)`

@@ -86,35 +86,56 @@ is readable, classification stops with a distinct evidence-unavailable result
 and escalates the batch without per-PR attribution. Job-name routing alone is
 never sufficient evidence that a member caused the failure.
 
-### Ordering guarantee: capacity is classified before the pre-existing filter
+### Ordering guarantee: shard-terminal markers are classified before the pre-existing filter
 
-Capacity and evidence-unavailable classification runs for **every** failing job
-**before** the merge train's pre-existing-failure filter is allowed to subtract
-anything (`train_classify_capacity_guard` in `classify-timeout.sh`, called from
-the ci-gate loop in `train.sh` ahead of `train_preexisting_filter`).
+`train_classify_capacity_guard` (`classify-timeout.sh`) runs for **every**
+failing job **before** the merge train's pre-existing-failure filter is allowed
+to subtract anything — the ci-gate loop in `train.sh` calls it ahead of
+`train_preexisting_filter`.
 
 That filter exists to stop the train escalating PRs for a failure trunk already
-carries, and it decides equivalence from job-scoped signatures taken out of a
-bounded window at the **head** of each job log. A capacity-exhausted shard puts
-`HONUA_SHARD_CAPACITY_EXHAUSTED` at the **tail**: in job 95149717187 of run
-31940825557 it was line 47296 of 47298, while the head of that log was the same
-postgres `FATAL: role "root"` noise trunk's own red shard carried. Classifying
-after the filter therefore risked subtracting the shard as "already failing on
-trunk" and **landing a batch on tests that never finished running**.
+carries, and it decides equivalence from job-scoped signatures sampled out of a
+**bounded window** of each job log. All three shard markers are emitted as the
+shard's **last** error: in job 95149717187 of run 31940825557 the marker was
+line 47296 of 47298, far outside the sampled window, and the window itself was
+filled with passing-test lines and per-run structured log records — exactly the
+noise a red shard on trunk produces too. Classifying after the filter therefore
+risked subtracting the shard as "already failing on trunk" and **landing a batch
+on tests that never finished running**.
 
-Two independent protections now hold:
+The guard routes each shape to what it deserves:
 
-* the guard runs first, so a capacity/evidence-unavailable job can never reach
-  the filter, the bounded retry, autofix, or per-PR attribution; and
-* the signature builder (`preexisting.sh`) scans the **whole** job log for the
-  marker and, when it is present, emits a single run-scoped signature that can
-  never cancel against another run — so the filter is correct in isolation too.
+| Evidence | Guard | Route |
+|---|---|---|
+| `HONUA_SHARD_CAPACITY_EXHAUSTED` | rc 7, kind `capacity` | terminal; escalate batch, never rerun |
+| `HONUA_SHARD_KILLED` | rc 7, kind `shard-killed` | terminal; escalate batch (suspect OOM, not a timeout) |
+| `HONUA_SHARD_HANG_SUSPECTED` / generic exit-124 | rc 9, kind `shard-timeout` | bounded hang rerun, but **never** subtracted on the way |
+| no readable log after bounded retries | rc 8, kind `evidence-unavailable` | terminal; escalate batch, no attribution |
+| anything else | rc 0 | ordinary comparable failure; filter proceeds as before |
+
+Three independent protections hold:
+
+* the guard runs first, so no shard-terminal or evidence-unavailable job can
+  reach subtraction, autofix, or per-PR attribution;
+* the signature builder (`preexisting.sh`) scans the **whole** job log for all
+  three markers and, when one is present, emits a single run-scoped signature
+  that can never cancel against another run — so the filter is correct in
+  isolation too; and
+* marker detection is **anchored** to the emitted `::error::`/`##[error]`
+  annotation form followed by ` shard=`. An unanchored token search also matched
+  job logs that merely *name* the marker — the merge train's own warning text
+  does, so every `CI Router Validation` log contains it — which would have made
+  a router failure permanently non-subtractable.
+
+Transient Actions read failures are retried with backoff before the guard
+concludes `evidence-unavailable`, so one flaky `gh run view` cannot convert a
+landable batch into a whole-batch escalation with sticky `train:escalated`
+labels.
 
 `scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh` reproduces the
-production shape (marker at the tail of a large noisy log, the same noise on the
-"trunk latest" side) and fails if either protection or the ordering regresses,
-while a control fixture proves a genuine pre-existing failure is still
-subtracted.
+production shape for every marker and fails if any protection or the ordering
+regresses, while a control fixture proves a genuine pre-existing failure is
+still subtracted.
 
 ## Re-basing the budgets
 

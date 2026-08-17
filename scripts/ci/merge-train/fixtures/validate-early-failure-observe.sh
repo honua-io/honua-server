@@ -43,7 +43,7 @@ export TRAIN_EARLY_FAILURE_CLOCK=fixture_clock
 fake_log() {
   case "$1" in
     101) printf 'Failed! Expected: 200 Actual: 500\n' ;;
-    102) printf 'HONUA_SHARD_CAPACITY_EXHAUSTED timeout after 39 minutes\n' ;;
+    102) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Infra and Security' hit its 39m test budget while still producing output 2s ago.\n" ;;
     *) printf 'runner disappeared\n' ;;
   esac
 }
@@ -193,7 +193,12 @@ export TRAIN_TIMINGS_FILE="${fixture}/timings.kv"
 train_metrics_render '2026-08-14T00:12:00Z' LIVE 'a' '' failed '{}' \
   | jq -e '.early_failure_observation.schema == "honua.merge-train.early-failure-observation/v2"' >/dev/null
 
-[[ "$(train_early_failure_classify_log 'HONUA_SHARD_CAPACITY_EXHAUSTED timeout')" == capacity ]]
+[[ "$(train_early_failure_classify_log "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Core' hit its 20m test budget.")" == capacity ]]
+[[ "$(train_early_failure_classify_log "::error::HONUA_SHARD_KILLED shard='Core' was SIGKILLed after 900s.")" == shard-killed ]]
+[[ "$(train_early_failure_classify_log "::error::HONUA_SHARD_HANG_SUSPECTED shard='Core' hit its 20m test budget after producing no output for 900s.")" == timeout ]]
+# Prose that merely names the marker is NOT capacity evidence (the merge train's
+# own warning text says it, so every CI Router Validation job log contains it).
+[[ "$(train_early_failure_classify_log '[train][WARN] shard capacity exhausted (HONUA_SHARD_CAPACITY_EXHAUSTED): raise the budget')" != capacity ]]
 [[ "$(train_early_failure_classify_log 'process completed with exit code 124')" == timeout ]]
 
 rm -f "${TRAIN_EARLY_FAILURE_FILE}"

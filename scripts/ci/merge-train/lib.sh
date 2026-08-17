@@ -315,19 +315,62 @@ train_require() {
   [[ "${missing}" -eq 0 ]]
 }
 
-# --- capacity classification (pure, testable) --------------------------------
-# train_log_is_capacity_exhaustion <log-text>: returns 0 when the text carries
-# the shard capacity-exhaustion marker. scripts/ci/run-server-test-shard.sh
-# emits HONUA_SHARD_CAPACITY_EXHAUSTED when a shard burned its whole CONFIGURED
-# budget while still executing tests, and HONUA_SHARD_HANG_SUSPECTED when the
-# shard had gone silent before the cap fired. Rerunning a capacity failure just
-# reproduces it at full runner cost, and a shard that never finished its tests
-# produced no comparable failure cause, so this predicate gates both the retry
-# budget (classify-timeout.sh) and the pre-existing-failure subtraction
-# (preexisting.sh). It lives in lib.sh because those two steps, the early-failure
-# observer, and their fixtures all need the same single definition.
+# --- shard-terminal marker classification (pure, testable) -------------------
+# scripts/ci/run-server-test-shard.sh ends a shard that could not finish with
+# exactly one of these annotations, all in the same shape:
+#   ::error::HONUA_SHARD_<KIND> shard='<name>' ...
+#   * CAPACITY_EXHAUSTED  burned its whole CONFIGURED budget while still
+#                         producing test output. Over capacity; a rerun just
+#                         reproduces it at full runner cost.
+#   * HANG_SUSPECTED      hit the same cap after going silent. A genuine hang,
+#                         and the one shape that still earns a bounded rerun.
+#   * KILLED              SIGKILLed before the runner's own kill deadline, so
+#                         not a timeout at all — suspect an OOM kill.
+# None of the three is a comparable failure CAUSE: the shard never finished
+# executing its tests, so it produced no verdict the pre-existing-failure filter
+# may compare against trunk. These predicates therefore gate the retry budget
+# (classify-timeout.sh), the pre-existing-failure subtraction (preexisting.sh)
+# and the early-failure observer, which is why they live here in lib.sh as the
+# single shared definition.
+#
+# MATCHING IS ANCHORED ON PURPOSE. An unanchored `grep -F` for the bare token
+# also matches prose that merely NAMES the token: the merge train's own warning
+# text does, so `validate-timeout-retry.sh` prints it and every `CI Router
+# Validation` job log contains it. That made a router failure permanently
+# non-subtractable and escalated whole batches for a failure trunk already had.
+# A real marker is the first token of its line — after an optional log timestamp
+# and the `::error::`/`##[error]` workflow-command prefix (GitHub renders the
+# former as the latter in downloaded logs, and the check-run annotation API
+# strips it entirely) — and is immediately followed by ` shard=`.
+train_log_has_shard_marker() {
+  local marker="$1" text="$2"
+  grep -Eq "(^|[[:space:]])((##\[error\]|::error::)[[:space:]]*)?${marker}[[:space:]]+shard=" \
+    <<<"${text}"
+}
+
+# train_log_is_capacity_exhaustion <log-text>: the shard was over capacity.
 train_log_is_capacity_exhaustion() {
-  grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"$1"
+  train_log_has_shard_marker HONUA_SHARD_CAPACITY_EXHAUSTED "$1"
+}
+
+# train_log_is_shard_hang <log-text>: the shard stalled and was capped.
+train_log_is_shard_hang() {
+  train_log_has_shard_marker HONUA_SHARD_HANG_SUSPECTED "$1"
+}
+
+# train_log_is_shard_killed <log-text>: the shard's test host was SIGKILLed.
+train_log_is_shard_killed() {
+  train_log_has_shard_marker HONUA_SHARD_KILLED "$1"
+}
+
+# train_join_job_names <newline-separated-jobs>: a human-readable, comma-joined
+# job list for escalation comments, or a neutral phrase when none are known. An
+# escalation that cannot name what failed is not actionable.
+train_join_job_names() {
+  local joined
+  joined="$(printf '%s\n' "$1" | sed '/^$/d' | paste -sd ',' - | sed 's/,/, /g')"
+  [[ -n "${joined}" ]] || joined="the selected server-test shard"
+  printf '%s' "${joined}"
 }
 
 # --- flake classification (pure, testable) -----------------------------------
