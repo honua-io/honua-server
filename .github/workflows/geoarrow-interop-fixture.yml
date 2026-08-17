@@ -28,6 +28,9 @@ on:
 
 permissions:
   contents: read
+  # Geospatial.Grpc resolves from the authenticated github-honua feed (NuGet.config
+  # packageSourceMapping), so restore 403s without this.
+  packages: read
 
 concurrency:
   group: geoarrow-interop-fixture-${{ github.event.pull_request.number || github.ref }}

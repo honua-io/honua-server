@@ -65,6 +65,9 @@ on:
 permissions:
   contents: read
   id-token: write   # OIDC for aws-actions/configure-aws-credentials (no-op when no role is set)
+  # Geospatial.Grpc resolves from the authenticated github-honua feed (NuGet.config
+  # packageSourceMapping), so restore 403s without this.
+  packages: read
 
 env:
   DOTNET_VERSION: '10.0.x'
