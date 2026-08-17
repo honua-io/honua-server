@@ -296,7 +296,7 @@ jobs:
           steps.build-source-checkout.outcome == 'success'
         id: build-metadata-download
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.collect.outputs.metadata_artifact_id }}
           path: ${{ runner.temp }}/pr-gate-build-metadata
