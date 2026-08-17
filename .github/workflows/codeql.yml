@@ -1,21 +1,22 @@
 name: CodeQL
 
 on:
-  # Tier: PR gate + weekly full scan.
-  # - pull_request: uses C# no-build extraction and the default high-precision
-  #   query suite to keep the required security gate on the PR critical path.
-  # - schedule: performs a full instrumented build with security-extended
-  #   queries to catch lower-confidence findings and dependency churn.
-  pull_request:
-    branches: [trunk]
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'Directory.Packages.props'
-      - 'Directory.Build.props'
-      - 'Honua.sln'
-      - '.github/codeql/**'
-      - '.github/workflows/codeql.yml'
+  # Tier: weekly deep scan only.
+  #
+  # PR-time and push-time CodeQL for this repository is provided by GitHub code
+  # scanning DEFAULT SETUP (`dynamic/github-code-scanning/codeql`, active since
+  # 2026-07-12), enrolled through the org-level "Honua public (advanced CodeQL)"
+  # security configuration. That setup analyses actions, csharp, javascript,
+  # javascript-typescript, python, and typescript on every PR and trunk push —
+  # a strict superset of the C#-only, path-filtered no-build lane this workflow
+  # used to add, and it ran ~15 minutes per PR on top of it.
+  #
+  # What default setup does NOT do is a full instrumented build with the
+  # `security-extended` query suite, so that is all this workflow keeps: one
+  # weekly deep scan (plus manual dispatch). Do not re-add a `pull_request`
+  # trigger here — it re-creates the duplicate C# analysis, not extra coverage.
+  # Repository code-security settings are org-enforced and are not changed by
+  # this file.
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'
@@ -33,7 +34,6 @@ concurrency:
 jobs:
   analyze:
     name: Analyze C#
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     # The scheduled manual-build scan remains the upper bound for this job.
     timeout-minutes: 90
@@ -47,9 +47,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # The scheduled instrumented build needs more disk than the PR no-build lane.
       - name: Free disk space
-        if: ${{ github.event_name != 'pull_request' }}
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
@@ -60,22 +58,11 @@ jobs:
           swap-storage: true
 
       - name: Setup .NET
-        if: ${{ github.event_name != 'pull_request' }}
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Initialize CodeQL (pull request)
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: github/codeql-action/init@v4
-        with:
-          languages: csharp
-          config-file: ./.github/codeql/codeql-config.yml
-          build-mode: none
-          dependency-caching: true
-
       - name: Initialize CodeQL (full scan)
-        if: ${{ github.event_name != 'pull_request' }}
         uses: github/codeql-action/init@v4
         with:
           languages: csharp
@@ -84,11 +71,9 @@ jobs:
           queries: security-extended
 
       - name: Restore dependencies
-        if: ${{ github.event_name != 'pull_request' }}
         run: dotnet restore Honua.sln
 
       - name: Build
-        if: ${{ github.event_name != 'pull_request' }}
         run: dotnet build Honua.sln --no-restore --configuration Release
 
       - name: Perform CodeQL Analysis

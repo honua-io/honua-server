@@ -201,7 +201,6 @@ if GITHUB_OUTPUT="${fixture}/invalid.out" "${HELPER}" plan --shard absent --proj
 fi
 
 workflow="${REPO_ROOT}/.github/workflows/ci.yml"
-proof_workflow="${REPO_ROOT}/.github/workflows/server-test-shard-cache-proof.yml"
 grep -Fq 'name: Server Tests (${{ matrix.shard_name }})' "${workflow}"
 # Major-version-agnostic on purpose: this proves the shard cache still uses the
 # restore/save actions; a Dependabot major bump must not fail router validation.
@@ -278,12 +277,4 @@ if grep -A10 '^  server-tests:' "${workflow}" | grep -qE 'producer|needs:.*build
   echo "::error::Server-test shards must remain independent of shared producers/build jobs." >&2
   exit 1
 fi
-grep -Fq 'ci/2735-shard-local-rerun-cache' "${proof_workflow}"
-grep -Fq "matrix.identity != 'a-writer' && github.run_attempt == 1" "${proof_workflow}"
-grep -Fq 'if .=="" then 0 else tonumber end' "${proof_workflow}"
-if grep -qE 'pull_request:|schedule:' "${proof_workflow}"; then
-  echo "::error::Hosted cache proof must remain opt-in and outside production triggers." >&2
-  exit 1
-fi
-
 echo "Server-test shard cache validation passed."

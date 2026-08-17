@@ -13,9 +13,10 @@ REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
 REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
 EVIDENCE_LEDGER = ROOT / ".github/workflows/review-first-evidence-ledger.yml"
 PROMOTION_POLICY = ROOT / ".github/review-first-promotion.json"
-AUTO_RERUN = ROOT / ".github/workflows/auto-rerun-flaky.yml"
-FAILURE_TRIAGE = ROOT / ".github/workflows/ci-failure-triage.yml"
-PREBUILD_BENCHMARK = ROOT / ".github/workflows/server-test-prebuild-benchmark.yml"
+WORKFLOW_DIR = ROOT / ".github/workflows"
+PREBUILD_BENCHMARK = WORKFLOW_DIR / "server-test-prebuild-benchmark.yml"
+PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
+PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
@@ -31,7 +32,7 @@ def read_text(path: Path) -> str:
     traceback that took a local reproduction to diagnose (#3320, #3321).
     """
     try:
-        return path.read_text(encoding="utf-8")
+        return read_text(path)
     except UnicodeDecodeError as error:
         byte = error.object[error.start : error.start + 1]
         raise AssertionError(
@@ -59,11 +60,16 @@ def main() -> None:
     review_bridge = read_text(REVIEW_BRIDGE)
     evidence_ledger = read_text(EVIDENCE_LEDGER)
     promotion_policy = read_text(PROMOTION_POLICY)
+    # Trusted default-branch script workflows. `auto-rerun-flaky.yml` and
+    # `ci-failure-triage.yml` used to be listed here; both were retired as
+    # unreachable (their `workflow_run.event == 'pull_request'` guard can never
+    # match a `ci.yml` that has no `pull_request` trigger), and the retirement is
+    # asserted below so they cannot quietly come back.
     action_workflows = {
         REVIEW_GATE: review_gate,
-        AUTO_RERUN: read_text(AUTO_RERUN),
-        FAILURE_TRIAGE: read_text(FAILURE_TRIAGE),
         PREBUILD_BENCHMARK: read_text(PREBUILD_BENCHMARK),
+        PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
+        PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
     train_select = read_text(TRAIN_SELECT)
     train_land = read_text(TRAIN_LAND)
@@ -434,8 +440,19 @@ def main() -> None:
             raise AssertionError(
                 f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
             )
-    if "pr-merge-train.yml" in read_text(AGENTS):
+    agents = read_text(AGENTS)
+    if "pr-merge-train.yml" in agents:
         raise AssertionError("AGENTS.md must not instruct operators to wait for the deleted lander")
+    for retired in (
+        "auto-rerun-flaky.yml",
+        "ci-failure-triage.yml",
+        "server-test-shard-cache-proof.yml",
+        "server-test-transfer-benchmark.yml",
+    ):
+        if (WORKFLOW_DIR / retired).exists():
+            raise AssertionError(
+                f"{retired} was retired as unreachable; re-adding it needs a live trigger and a review"
+            )
 
     print(f"review-first-dispatch=ok mode={pr_mode}")
 

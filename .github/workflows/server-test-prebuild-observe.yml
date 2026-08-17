@@ -9,6 +9,17 @@ on:
   workflow_run:
     workflows: [Review Gate Attestation]
     types: [completed]
+    # Review Gate also fires on `issue_comment`, `repository_dispatch`, and its
+    # own `workflow_run` bridges. Those all execute on the default branch, so
+    # their run records carry `head_branch: trunk` — and the observer's `if:`
+    # below rejects every one of them (`workflow_run.event == 'pull_request_target'`).
+    # A `workflow_run` trigger still MATERIALISES a skipped run for each, which
+    # was over half of this workflow's ~230 daily run records. `branches-ignore`
+    # is the only filter GitHub offers on this event and it removes exactly that
+    # set: a `pull_request_target` run always carries the PR's head branch, never
+    # `trunk`. Semantics are unchanged — the observer still wakes on the same
+    # pre-review Review Gate identity runs it woke on before.
+    branches-ignore: [trunk]
   workflow_dispatch:
     inputs:
       run_id:

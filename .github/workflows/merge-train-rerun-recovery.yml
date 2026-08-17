@@ -12,8 +12,19 @@ permissions:
   pull-requests: write
   statuses: write
 
+# NOT `group: merge-train`. Sharing the train's group looked like mutual
+# exclusion but was a recovery shredder: GitHub keeps at most ONE pending run per
+# concurrency group, and `merge-train.yml` enters that group every 15 minutes, so
+# a queued recovery was evicted before its job ever evaluated (12 of 15
+# consecutive recovery runs were `cancelled`). Each recovery now gets its own
+# group keyed by the source CI run, so distinct recoveries queue independently
+# and none is cancelled by the train's cadence. Exclusion against a live train is
+# re-established explicitly below (the wait step) and durably by the Merge Train
+# State issue, which recovery refuses to act on unless it still names this exact
+# batch branch, CI run id, and a recoverable phase. See
+# docs/internal/contributor/merge-coordination-runbook.md.
 concurrency:
-  group: merge-train
+  group: merge-train-recovery-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +34,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       startsWith(github.event.workflow_run.head_branch, 'train/batch/')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -35,11 +47,51 @@ jobs:
           git config --global user.name "Mike McDougall"
           git config --global user.email "mike@honua.io"
 
+      # Explicit replacement for the concurrency group this workflow used to
+      # share with the train. Recovery mutates the same state issue and
+      # fast-forwards the same trunk, so it must not overlap a train run that is
+      # assembling or landing. Waiting (rather than sharing a group) means a
+      # recovery is delayed, never discarded. If the train is still busy at the
+      # cap the job fails loudly with the state left untouched, so an operator
+      # sees a red recovery instead of a silently cancelled one and can rerun it.
+      - name: Wait for the merge train to be idle
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          WAIT_SECONDS: '1800'
+          POLL_SECONDS: '20'
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + WAIT_SECONDS ))
+          while :; do
+            busy=0
+            for state in in_progress queued; do
+              count="$(gh api \
+                "repos/${GH_REPO}/actions/workflows/merge-train.yml/runs?status=${state}&per_page=1" \
+                --jq '.total_count')"
+              busy=$(( busy + count ))
+            done
+            if [[ "${busy}" -eq 0 ]]; then
+              echo "Merge train is idle; proceeding with recovery."
+              break
+            fi
+            if [[ "$(date +%s)" -ge "${deadline}" ]]; then
+              echo "::error::Merge train still has ${busy} active run(s) after ${WAIT_SECONDS}s; refusing to recover concurrently. Rerun this workflow run once the train is idle."
+              exit 1
+            fi
+            echo "Merge train busy (${busy} active run(s)); re-checking in ${POLL_SECONDS}s."
+            sleep "${POLL_SECONDS}"
+          done
+
       - name: Recover active immutable batch from green rerun
         env:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           TRAIN_APPLY: 1
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           set -euo pipefail
           . scripts/ci/merge-train/lib.sh
@@ -48,7 +100,7 @@ jobs:
           . scripts/ci/merge-train/state.sh
           . scripts/ci/merge-train/recovery.sh
           train_recover_green_batch_rerun \
-            "${{ github.event.workflow_run.id }}" \
-            "${{ github.event.workflow_run.head_branch }}" \
-            "${{ github.event.workflow_run.head_sha }}" \
-            "${{ github.event.workflow_run.html_url }}"
+            "${SOURCE_RUN_ID}" \
+            "${SOURCE_HEAD_BRANCH}" \
+            "${SOURCE_HEAD_SHA}" \
+            "${SOURCE_RUN_URL}"

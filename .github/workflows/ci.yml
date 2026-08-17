@@ -31,9 +31,10 @@ on:
   # DO NOT "simplify" that by adding a `pull_request` trigger to THIS workflow.
   # The heavy jobs below guard on `event_name != 'pull_request' || <not
   # dependabot>`, which is TRUE for an ordinary PR — the trigger alone would fan
-  # the whole ~45-job matrix out per PR and rebuild the exact runner storm this
-  # header exists to prevent. Three gates, three distinct contexts, none
-  # interchangeable: `PR Gate` (per-PR) / `Merge Queue Gate` (per-batch,
+  # the full CI matrix — every server-test shard in `.github/ci-shards.json`
+  # plus the AOT/Docker/browser/MCP/provider lanes — out per PR and rebuild the
+  # exact runner storm this header exists to prevent. Three gates, three
+  # distinct contexts, none interchangeable: `PR Gate` (per-PR) / `Merge Queue Gate` (per-batch,
   # dormant) / `CI Gate` (the train's batch CI).
   #
   # SELECTIVE BATCHES: a train/batch/* dispatch is gated like a PR diffed against
@@ -45,9 +46,10 @@ on:
   # per-batch rerun of already-green shards is eliminated. `-f full_ci=true`
   # (or a schedule/non-train dispatch) forces the full lane.
   # Merge queue (LEAN gate): GitHub batches approved PRs and runs CI once on
-  # the combined commit before fast-forwarding trunk. The full ~45-job matrix
-  # (AOT, docker, the 30+-shard Server Tests fanout, browser/MCP lanes) already
-  # gated each PR on its own `pull_request` run BEFORE it entered the queue, so
+  # the combined commit before fast-forwarding trunk. The full CI matrix (every
+  # server-test shard in `.github/ci-shards.json` plus the AOT, Docker, browser,
+  # MCP and provider lanes) already gated each PR on its own `pull_request` run
+  # BEFORE it entered the queue, so
   # re-running that matrix on every batch is pure waste — and at batch sizes of
   # 5 it caused runner starvation, ejected the front PR, reformed the group,
   # spawned zombie runs, and spiralled (merge queue disabled 2026-06-18,

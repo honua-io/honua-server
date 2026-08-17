@@ -95,8 +95,10 @@ jq -e '
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
+# The one-off #2722 hosted transfer benchmark that used to be validated here was
+# retired with its workflow; its measured result is retained in
+# docs/internal/ci/server-test-transfer-benchmark.md and ADR-0074.
 scripts/ci/validate-server-test-binary-artifacts.sh
-scripts/ci/validate-server-test-transfer-benchmark.sh
 scripts/ci/validate-server-test-shard-cache.sh
 scripts/ci/validate-server-test-reuse-benchmark.sh
 scripts/ci/validate-server-test-prebuild.sh

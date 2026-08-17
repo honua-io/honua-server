@@ -1,62 +1,68 @@
 # CI Workflow Inventory
 
-> Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-08-17
+> Canonical inventory of **every** workflow in `.github/workflows/` in this
+> repository (76 files). Other Honua repositories keep their own inventories;
+> this page no longer mirrors the SDK repos, because a copy here could not be
+> verified against their trees and had already drifted.
+>
+> Last updated: 2026-08-17.
+>
+> To re-derive the file/name/trigger columns after adding or removing a
+> workflow:
+>
+> ```bash
+> python3 - <<'PY'
+> import pathlib, yaml
+> for f in sorted(pathlib.Path('.github/workflows').glob('*.yml')):
+>     d = yaml.safe_load(f.read_text())
+>     on = d.get(True, d.get('on'))
+>     triggers = on if isinstance(on, list) else ([on] if isinstance(on, str) else list(on))
+>     print(f"{f.name} | {d.get('name','')} | {', '.join(triggers)}")
+> PY
+> ```
 
-## honua-server
+**Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged
+verification plus trusted exact-head admission. `CI Gate` remains train-only and
+is deliberately not a per-PR required context. Nothing else in this inventory is
+a required context — the merge train selects on `mergeable`, not on
+`mergeStateStatus`, so a red advisory check does not by itself block landing.
+PR-time CodeQL comes from GitHub code scanning **default setup**
+(`dynamic/github-code-scanning/codeql`, enrolled through the org security
+configuration), not from `codeql.yml`.
 
-| Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
-|---|---|---|---|---|---|
-| `pr-gate.yml` | PR Gate | PR | `pull_request` (base `trunk`), `workflow_dispatch` | Yes — required verification context | The cheap per-PR gate added by #2865, publishing `PR Gate` (never `CI Gate`). A single service-free ubuntu-latest runner performs the whole-solution build, format, Fast smoke, and architecture enforcement. In review-first enforce mode, attempt 1 stops before these expensive steps and the trusted reviewer releases attempt 2 exactly once. It is deliberately un-path-filtered. When `HONUA_PR_GATE_BUILD_REUSE_SHADOW=true`, a best-effort post-gate step packages at most two repeated registered test projects from that already-paid Release build; packaging/upload remains non-authoritative and any failure is a cache miss. |
-| `review-event-bridge.yml` | Review Event Bridge | PR | `pull_request_review`, `pull_request_review_comment` | No | Best-effort latency hint only. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
-| `review-gate.yml` | Review Gate Attestation | PR | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, PR Gate/bridge `workflow_run` | Yes — required admission context | Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. It serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
-| `claude-review.yml` | Claude Review | PR evidence | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | No | Trusted default-branch lane that publishes `claude` review evidence for `Review Gate`, so a PR can still land while Codex is rate-limited. Never triggered by `pull_request`; read-only `GITHUB_TOKEN`; posts comments and inline threads only, never a review verdict. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
-| `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | Maintenance | daily schedule, `workflow_dispatch` | No | Read-only default-branch audit of retained Review Gate observation receipts. Replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness; it cannot change mode, status, labels, workflow runs, train state, or merge state. |
-| `pr-gate-impact-observe.yml` | PR Gate Impact Observation | PR evidence | completed `PR Gate` `workflow_run`, `workflow_dispatch` | No | Trusted default-branch, read-only classification of the exact gate-time diff. It retains bounded docs-only/full receipts and, when present, validates PR Gate build metadata plus exact payload artifact identity before emitting a small tree/policy-bound build receipt. It never downloads or executes the large payload; the full required PR Gate remains authoritative. |
-| `native-image-impact-observe.yml` | Native Image Impact Observation | PR evidence | completed `PR Gate` `workflow_run`, `workflow_dispatch` | No | Trusted default-branch, read-only comparison of graph-derived image inputs with legacy path triggers. Existing Serving/GDAL image workflows remain authoritative in observe mode. |
-| `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | Maintenance | daily schedule, `workflow_dispatch` | No | Read-only default-branch audit of attempt-bound PR Gate and native-image impact receipts. Selects only each producer run's current attempt, counts only current trusted policy and distinct candidate heads, reconciles native decisions with successful exact-head Serving/GDAL image outcomes, and reports cohort readiness without changing routing, statuses, workflows, or merge state. |
-| `serving-image-boundary.yml` | Serving Image Boundary | PR evidence | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | No | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Authoritative pre-merge final-rootfs evidence; the same boundary is re-proved by `nightly-container-build.yml`, `deploy.yml`, `deploy-platform-images.yml`, and `release-bundle.yml` before any publication. |
-| `worker-gdal-image.yml` | GDAL Worker Image | PR evidence | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | No | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head. Re-proved on the nightly security and release/deploy lanes. |
-| `merge-train.yml` | Merge Train | Batch | schedule, workflow dispatch | Sole merge authority | Requires exact-head `PR Gate` + `Review Gate` at selection and immediately before compare-and-swap landing. With the build-reuse shadow enabled, only an exact one-member batch may carry the canonical successful PR Gate run/attempt/PR/head identity into Smart CI; multi-member or incomplete state omits it and follows the existing path. |
-| `ci.yml` | CI | nightly + train batch CI (no `pull_request` trigger) | `schedule`, `merge_group`, `workflow_dispatch` | Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch — it never appears on a PR head SHA (#2865) | Core build, test, architecture gate, CI router validation, JavaScript typecheck, and baseline Postgres compatibility; the `pr-template-check` job runs first and `pr-readiness` (and therefore every downstream test job) depends on it, so a malformed PR body short-circuits the pipeline before heavy runners are provisioned; per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the shards a diff exercises and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)` so routine PRs only instantiate runners for selected shards. The full configured shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. With the PR Gate build-reuse shadow enabled and exact one-member identity present, a separate non-gating job validates the trusted receipt, requires complete producer/consumer tree equality, safely restores the bounded payload, and runs registered proof tests with `--no-build --no-restore`; authoritative server shards still restore/build independently and `CI Gate` does not depend on the shadow. Separately from that shadow, `server-tests` shards opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait), rolled back with the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false` — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics over normal-verbosity test logs, writes a `.timing.json` artifact, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. PR shards therefore skip `[EmulatorTest]` / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods and do not rerun Fast tests already covered by the foundation lane. Expensive Python, browser, MCP, AOT, Docker/security, and expanded Postgres lanes run only in full CI (`schedule`, `workflow_dispatch`, or `ci/full`). |
-| `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `workflow_dispatch` | Yes | Path-scoped to API surface |
-| `control-plane-sdk-governance.yml` | Control Plane SDK Governance | PR + release | `pull_request`, `workflow_dispatch`, `release` | Yes (PR jobs) | PR governance separate from release publishing |
-| `import-fidelity-scorecard-governance.yml` | Import Fidelity Scorecard Governance | PR | `pull_request`, `workflow_dispatch` | Yes | Path-scoped to parity/baseline/perf-budget assets; smoke-tests the perf-parity gate (#1249) via pass/fail fixtures |
-| `trunk-sanity.yml` | Trunk Sanity | PR-adjacent sanity | `push` (trunk), `workflow_dispatch` | No | Cheap post-merge restore/build only; heavy CI does not run on merge-to-trunk pushes |
-| `cite-conformance.yml` | OGC CITE Conformance (Features) | nightly | `schedule`, `workflow_dispatch` | No | Weekly Monday 6am UTC |
-| `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Tuesday 6am UTC |
-| `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Monday 3am UTC |
-| `cite-wms-conformance.yml` | OGC WMS CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Wednesday 6am UTC |
-| `cite-wmts-conformance.yml` | OGC WMTS CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Thursday 6am UTC |
-| `ogc-maps-conformance.yml` | OGC API Maps Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Friday 6am UTC |
-| `cite-kml22-conformance.yml` | OGC KML 2.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Friday 3am UTC |
-| `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 6am UTC |
-| `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 3am UTC |
-| `cite-evidence-report.yml` | CITE Evidence Report | weekly + manual | `schedule`, `workflow_dispatch` | No | Runs the public CITE suite set and builds `artifacts/cite-evidence/` with summary JSON, badge SVG, static index, and full TeamEngine HTML reports; optional GitHub Pages deployment gives the website a stable evidence URL. Weekly Friday 08:00 UTC (#2944), after the Wed/Thu per-suite crons; also asserts `docs/cite-status.md` freshness (fails + opens/updates an issue when the reviewed snapshot is >14 days stale) |
-| `geoservices-import-fidelity-external.yml` | GeoServices Import Fidelity (External, On-Demand) | on-demand | `workflow_dispatch` | No | External parity vs live Esri services; run manually (upstream data drifts). Enforces both the correctness regression gate and the perf-parity latency gate (#1249) over the measured scorecard. Also runs `GeoservicesGeoportalImportIntegrationTests` (#2943), which previously matched no workflow filter. Renamed from `geoservices-import-fidelity-nightly.yml` (#2943) — it never ran on a schedule, so the filename now matches the deliberately on-demand-only reality (honua-server#1570) |
-| `routing-nightly.yml` | Routing Nightly (pgRouting) | weekly | `schedule`, `workflow_dispatch` | No | Weekly Sunday 5:00 UTC (#2943); runs `Category=Routing` (`PgRoutingProviderIntegrationTests`, `NAServerPgRoutingEndToEndTests`) with `HONUA_ROUTING_TEST=1` — `PgRoutingFixture` manages its own Testcontainers `pgrouting/pgrouting` image, previously had no execution path anywhere |
-| `warehouse-nightly.yml` | Warehouse Providers Nightly (Creds-Gated) | weekly | `schedule`, `workflow_dispatch` | No | Weekly Sunday 6:00 UTC (#2943); matrix over Honua.Snowflake/Redshift/Databricks/SqlServer.Tests, consuming optional repository secrets; surfaces passed/failed/skipped counts in the run summary so a missing secret reads as "not configured" rather than "silently absent from CI" |
-| `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers via the Test-environment `/__test/cross-server-consume/proxy` endpoint, uploads TRX/report artifacts, and best-effort commits the refreshed gap report (warns instead of failing if push is blocked) |
-| `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; full CERT-\* matrix (18 test cases × 4 protocol lanes: FeatureServer, OGC Features, MapServer, OData) with per-protocol `.cert.json` envelopes under `certification/`, plus `overall-summary.json`, per-lane transcripts, and `pack/`; supports `--profile smoke` (11-check MVP) and `--profile full` (default) |
-| `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:30am UTC; PyQGIS desktop client compatibility using real QGIS providers against `client-compat-v1.sql`; produces `desktop-qgis-ogc-features.cert.json` and `desktop-qgis-wfs.cert.json` envelopes |
-| `sdk-server-compatibility.yml` | SDK Server Compatibility | nightly | `schedule`, `workflow_dispatch` | No | Manifest-driven last-3 server refs x last-3 SDK sets matrix from `docs/developer/sdk-compatibility-versions.json`; manual dispatch can pin `server_current_ref` for release-candidate evidence; checks out `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`, copies them to `$RUNNER_TEMP/sdk-compat`, and runs live compatibility smoke checks from the isolated copies so server repo build policy does not affect SDK source builds; records package versions/server commit/seed profile/surfaces/migration automation status/diagnostics in per-cell JSON evidence, and publishes `sdk-compatibility-matrix-<run-id>` with supported-cell regression failure |
-| `client-interop-nightly.yml` | Real-Client Interop Matrix (Nightly) | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs the docker/client-compat matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`) via Docker harnesses, diffs the per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails strict mode on any baseline `pass`→non-`pass` regression, missing current envelope, missing expected-pair, missing committed baseline, or new `fail` in an unbaselined case. Lane artifacts include `lane-exit-code.txt` and `compose.log` when a lane exits non-zero; workflow-dispatch subsets are scoped by `--client-lanes`. Promote to PR-blocking once 30 consecutive nightly passes are observed (#806) |
-| `gdal-driver-e2e.yml` | GDAL Driver End-to-End | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:45am UTC; runs `ogrinfo` + `ogr2ogr` against honua-server using GDAL's built-in `OAPIF:` stand-in driver. Tracks ADR-0034; swaps to `HONUA:` once the `honua-gdal` plugin ships |
-| `load-soak-nightly.yml` | Load/Soak Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled load/soak tests |
-| `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | nightly | `schedule`, `workflow_dispatch` | No | Daily 4:00am UTC; runs `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, and `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack S3 + Azurite are provisioned exclusively by `EmulatorFixture` (Testcontainers); Postgres comes from a GitHub Actions service container. Asserts `HONUA_TEST_DB_URL` before dispatch so a missing connection string fails loudly. The Scale/Cloud/External slow subfamilies (`[ScaleTest]`, `[CloudTest]`, `[ExternalServiceTest]`) need dedicated fixtures (multi-node compose, real cloud credentials, Esri Geoportal) and are tracked as separate workflows. ADR-0037 |
-| `flaky-detection.yml` | Flaky Test Detection | nightly | `schedule`, `workflow_dispatch` | No | Daily 5:00am UTC; re-runs `--filter "Tier=Integration&Tier!=Slow"` three times against a fresh runner, parses TRX output, and uploads `flaky-detection-report` (JSON + per-iteration TRX) plus a `$GITHUB_STEP_SUMMARY` table of inconsistent tests. Always exits 0 — flake detection is a reporting concern, not a gate. ADR-0037 |
-| `security-nightly.yml` | Security Nightly | nightly | `schedule`, `workflow_dispatch` | No | Consolidated NuGet vulnerability scan, Trivy filesystem scan, and container security scan (Hadolint, Trivy, structure tests, runtime constraints) |
-| `codeql.yml` | CodeQL | nightly | `schedule` | No | Weekly security analysis |
-| `nightly-container-build.yml` | Nightly Container Build | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container build |
-| `nuget-publish.yml` | NuGet Publish | release | `push`, `workflow_dispatch` | No | Release-only publishing |
-| `deploy.yml` | Build & Publish Images | deploy | `push` (tags), `workflow_dispatch` | No | Builds and publishes multi-arch (and AOT) container images on `v*` tags. After `publish-manifests` succeeds on a tag, the `dispatch-geobench` job sends a `repository_dispatch` (`honua-server-release`) to `honua-io/geobench` carrying the release tag and `ghcr.io/honua-io/honua-server:<tag>` so the per-release benchmark suite (latency p50/p95/p99, RPS, error rate, cold-start) runs against the tagged image and flags regressions. Requires the `GEOBENCH_DISPATCH_TOKEN` secret (PAT with `repository_dispatch` on geobench); the step skips with a notice when the secret is absent (#1596) |
-| `deploy-platform-images.yml` | Deploy Platform Images | deploy | `push` (tags), `workflow_dispatch` | No | Platform image deployment |
-| `reusable-sdk-pr-gate.yml` | SDK PR Gate | PR | `workflow_call` | Yes (via caller) | Reusable gate for honua-sdk-js, honua-sdk-dotnet, and honua-sdk-python |
-| `cloud-post-apply-validation.yml` | Cloud Post-Apply Validation | deploy | `workflow_call`, `workflow_dispatch` | No | Post-deploy validation |
-| `stranded-merge-detector.yml` | Stranded Merge Detector | Maintenance | weekly `schedule`, `workflow_dispatch`, `workflow_call` | No | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs` rather than calling this, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
+## Required PR lane
 
-Branch protection requires `PR Gate` and `Review Gate` together: unprivileged
-verification plus trusted exact-head admission. `CI Gate` remains train-only.
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context (#2865). One service-free ubuntu-latest runner: whole-solution warnings-as-errors build, `dotnet format --verify-no-changes`, `Tier=Fast` smoke, architecture enforcement, and the Server governance/drift tests (one ephemeral Testcontainers Postgres for the `EndpointRegistry` drift check, #2882). Deliberately un-path-filtered. In review-first enforce mode, attempt 1 stops before the expensive steps and the trusted reviewer releases attempt 2 exactly once. When `HONUA_PR_GATE_BUILD_REUSE_SHADOW=true`, a best-effort post-gate step packages at most two repeated registered test projects from that already-paid Release build; packaging/upload is non-authoritative and any failure is a cache miss. Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. |
+| `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
+| `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
+| `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
+
+## Merge and landing
+
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `merge-train.yml` | Merge Train | `schedule` (`*/15`, dry-run), `workflow_dispatch` | **Sole merge authority** (ADR-0055). Requires exact-head `PR Gate` + `Review Gate` at selection and again immediately before the compare-and-swap land. Automatic triggers are dry-run-only; landing needs an explicit `train_apply=true` dispatch. With the build-reuse shadow enabled, only an exact one-member batch may carry the canonical successful PR Gate run/attempt/PR/head identity into Smart CI. `scripts/ci/validate-single-merge-authority.sh` proves no second workflow can merge. |
+| `merge-train-rerun-recovery.yml` | Merge Train Rerun Recovery | `workflow_run` [CI] | Resumes the active immutable batch when a failed batch CI is rerun green. Uses its **own** per-source-run concurrency group (sharing the train's group made GitHub evict queued recoveries — 12 of 15 consecutive runs were `cancelled`); exclusion against a live train is re-established by an explicit idle wait plus the durable Merge Train State issue. See `docs/internal/contributor/merge-coordination-runbook.md`. |
+| `ci.yml` | CI | `schedule` (09:00 UTC), `merge_group`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch, so it never appears on a PR head SHA (#2865). Core build, test, architecture gate, CI-router validation, JS typecheck, and Postgres compatibility. Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. Separately from that shadow, `server-tests` shards opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait), rolled back with the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false` — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The `merge_group` event runs only the lean `Merge Queue Gate` (the queue itself is disabled, ruleset 17808547). `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
+
+## PR-triggered (advisory, not required)
+
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `openapi-contract-governance.yml` | OpenAPI Contract Governance | `pull_request`, `workflow_dispatch` | Path-scoped to the API surface; enforces the breaking-change policy (`OPENAPI_ALLOW_BREAKING_CHANGES` is the deliberate escape). |
+| `openapi-drift.yml` | OpenAPI Drift Check | `pull_request`, `workflow_dispatch` | Regenerates the OpenAPI document and fails on drift from the committed contract. |
+| `control-plane-sdk-governance.yml` | Control Plane SDK Governance | `pull_request`, `workflow_dispatch`, `release` | PR governance for the control-plane SDK surface, separate from release publishing. |
+| `import-fidelity-scorecard-governance.yml` | Import Fidelity Scorecard Governance | `pull_request`, `workflow_dispatch` | Path-scoped to parity/baseline/perf-budget assets; smoke-tests the perf-parity gate (#1249) with pass/fail fixtures. |
+| `capability-impact-comparison.yml` | Capability Impact Comparison | `pull_request`, `workflow_dispatch` | Capability-graph completeness plus a report-only comparison of ADR-0037 shard routing against the capability selector. |
+| `capability-matrix-aggregation.yml` | Capability Matrix Aggregation | `pull_request`, `push` (trunk), weekly `schedule`, `workflow_dispatch` | Joins `feature-catalog.json`, `docs/cite-status.md`, the GeoServices REST parity index, capability crosswalks, and committed client-compat envelopes into `docs/gis/data/capability-matrix.v1.json` (#2892/#2893). |
+| `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Authoritative pre-merge final-rootfs evidence; the same boundary is re-proved by `nightly-container-build.yml`, `deploy.yml`, `deploy-platform-images.yml`, and `release-bundle.yml` before any publication. Deliberately isolated from the required lean `PR Gate`. |
+| `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head; publishes SARIF. Re-proved on the nightly security and release/deploy lanes. |
+| `geoarrow-interop-fixture.yml` | GeoArrow Interop Fixture | `pull_request`, `workflow_dispatch` | Produces the GeoArrow 0.2 interop fixture. |
+| `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). |
+| `release-bundle-tooling.yml` | Release Bundle Tooling | `pull_request`, `push` (trunk), `workflow_dispatch` | Verifies the deterministic, locally-runnable core of the release-bundle orchestrator (manifest generator, evidence collector, dispatch helper, suite registry). |
+| `issue-capability-check.yml` | Issue Capability Key Check | `issues` | Advisory comment when a bug/feature issue's capability key is missing or unrecognized (#2896). Never labels or fails. |
 
 ### Native-image evidence placement and measured savings (#3204)
 
@@ -105,38 +111,106 @@ observation receipt now carries per-image content digests over the merge tree
 the images are actually built from, so reuse eligibility is measured before
 anything is enforced; see `native-image-impact-routing.md`.
 
-## honua-sdk-js
+## Trusted observers and evidence ledgers (read-only)
 
-| Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
-|---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` | Yes | Core SDK PR gate |
-| `integration.yml` | Integration | integration | `workflow_dispatch` / configured repo target | No | Repo-local Honua Server integration lane for `honua-sdk-js#39`; uploads integration metadata when a real server target is configured |
-| `quickstart-staging.yml` | Quickstart Staging | integration | `workflow_dispatch` / staging | No | Staging quickstart smoke against Honua Server |
-| `publish-js-sdk.yml` | Publish JS SDK | release | `workflow_dispatch`, `push` | No | Release-only |
-| `publish-mcp-server.yml` | Publish MCP Server | release | `workflow_dispatch`, `push` | No | Release-only |
-| `release-please.yml` | Release Please | maintenance | `push` | No | Version automation |
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `pr-gate-impact-observe.yml` | PR Gate Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Trusted default-branch, read-only classification of the exact gate-time diff. Retains bounded docs-only/full receipts and validates PR Gate build metadata plus exact payload artifact identity without downloading or executing the payload. |
+| `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
+| `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
+| `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
+| `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
+| `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
+| `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
+| `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Observe mode deliberately holds no `contents: write` and no write secret. |
+| `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
-## honua-sdk-dotnet
+## Nightly and scheduled test lanes
 
-| Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
-|---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` | Yes | Core SDK PR gate |
-| `staging-integration.yml` | Staging Integration | integration | `workflow_dispatch` / staging | No | Repo-local Honua Server integration lane for `honua-sdk-dotnet#31` |
-| `publish-dotnet-sdk.yml` | Publish .NET SDK | release | `workflow_dispatch`, `push` | No | Release-only |
-| `release-please.yml` | Release Please | maintenance | `push` | No | Version automation |
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Reports only; it never gates. |
+| `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
+| `load-soak-nightly.yml` | Load/Soak Nightly | daily `schedule` (03:00 UTC), `workflow_dispatch` | Scheduled load/soak tests. |
+| `security-nightly.yml` | Security Nightly | daily `schedule` (02:00 UTC), `workflow_dispatch` | Consolidated NuGet vulnerability scan, Trivy filesystem scan, and container security scan (Hadolint, Trivy, structure tests, runtime constraints). |
+| `nightly-container-build.yml` | Nightly Container Build | daily `schedule` (06:00 UTC), `workflow_dispatch` | Scheduled container build. |
+| `nightly-migration-evidence.yml` | Nightly Migration Evidence Pack | daily `schedule` (07:15 UTC), `workflow_dispatch` | Drives the fixture-based GeoServer migration apply path end-to-end (#1015) and uploads the deterministic evidence pack. |
+| `provider-http-smoke.yml` | Provider HTTP-Stack Smoke | daily `schedule` (06:30 UTC), `workflow_dispatch` | Interface-level smoke that boots a real host per secondary provider (DuckDB in-process; MySQL and SQL Server via Testcontainers) over FeatureServer/OGC API Features/OData/tiles, plus the gated Oracle real-database lane (#2947). |
+| `cloud-integration-harness.yml` | Cloud Integration Harness | daily `schedule` (05:00 UTC), `workflow_dispatch` | Docker-backed cloud-integration tests (#2163) against emulated backends (kind, LocalStack). `Category=CloudIntegration` only; excluded from every PR run. |
+| `real-aws-certification.yml` | Real AWS Certification | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | `Category=RealAwsCertification` against a LIVE AWS account. Gated on a maintainer OIDC role variable, budgeted, teardown-guaranteed. |
+| `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | daily `schedule` (07:00 UTC), `workflow_dispatch` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers; best-effort commits the refreshed gap report. |
+| `client-interop-nightly.yml` | Real-Client Interop Matrix | daily `schedule` (07:00 UTC), `workflow_dispatch` | `docker/client-compat` matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` and fails strict mode on any baseline regression. Promote to PR-blocking only after 30 consecutive nightly passes (#806). |
+| `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | daily `schedule` (07:15 UTC), `workflow_dispatch` | Full CERT-\* matrix (18 cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes, `overall-summary.json`, transcripts, and `pack/`. |
+| `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | daily `schedule` (07:30 UTC), `workflow_dispatch` | PyQGIS desktop compatibility using real QGIS providers against `client-compat-v1.sql`. |
+| `gdal-driver-e2e.yml` | GDAL Driver End-to-End | daily `schedule` (07:45 UTC), `workflow_dispatch` | `ogrinfo` + `ogr2ogr` against honua-server via GDAL's `OAPIF:` stand-in driver (ADR-0034). |
+| `routing-nightly.yml` | Routing Nightly (pgRouting) | weekly `schedule` (Sun 05:00 UTC), `workflow_dispatch` | `Category=Routing` with `HONUA_ROUTING_TEST=1`; `PgRoutingFixture` manages its own `pgrouting/pgrouting` Testcontainers image. |
+| `warehouse-nightly.yml` | Warehouse Providers Nightly (Creds-Gated) | weekly `schedule` (Sun 06:00 UTC), `workflow_dispatch` | Matrix over Snowflake/Redshift/Databricks/SqlServer test projects using optional repository secrets; a missing secret reads as "not configured", not "absent from CI". |
+| `sdk-server-compatibility.yml` | SDK Server Compatibility | weekly `schedule` (Mon 08:35 UTC), `workflow_dispatch` | Manifest-driven last-3-servers × last-3-SDK-sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs SDK sources from an isolated `$RUNNER_TEMP` copy and publishes `sdk-compatibility-matrix-<run-id>`. |
+| `codeql.yml` | CodeQL | weekly `schedule` (Mon 00:00 UTC), `workflow_dispatch` | Weekly **deep** scan only: full instrumented build with the `security-extended` query suite. PR/push CodeQL is provided by GitHub code scanning default setup, which analyses more languages than this C#-only lane; the duplicate `pull_request` trigger was removed rather than paying for both. |
+| `geoservices-import-fidelity-external.yml` | GeoServices Import Fidelity (External) | `workflow_dispatch` | External parity against live Esri services; deliberately on-demand because upstream data drifts. Enforces the correctness regression gate and the perf-parity latency gate (#1249). |
 
-## honua-sdk-python
+## OGC CITE / conformance
 
-| Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
-|---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` | Yes | Core SDK PR gate |
-| `staging-integration.yml` | Staging Integration | integration | `workflow_dispatch` / staging | No | Repo-local Honua Server integration lane for `honua-sdk-python#21` |
-| `publish-python-sdk.yml` | Publish Python SDK | release | `workflow_dispatch`, `push` | No | Release-only |
-| `release-please.yml` | Release Please | maintenance | `push` | No | Version automation |
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `cite-conformance-common.yml` | CITE Conformance (reusable) | `workflow_call` | Shared checkout/build/run/parse/upload/fail skeleton for single-suite CITE runs. |
+| `cite-conformance.yml` | OGC CITE Conformance Tests (Features) | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | |
+| `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | weekly `schedule` (Tue 06:00 UTC), `workflow_dispatch` | |
+| `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | weekly `schedule` (Mon 03:00 UTC), `workflow_dispatch` | Standalone (not the reusable wrapper) because of suite-specific setup. |
+| `cite-wms-conformance.yml` | OGC WMS CITE Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch` | WMS 1.3. |
+| `cite-wms11-conformance.yml` | OGC WMS 1.1.1 CITE Conformance | weekly `schedule` (Thu 06:00 UTC), `workflow_dispatch` | |
+| `cite-wmts-conformance.yml` | OGC WMTS CITE Conformance | weekly `schedule` (Thu 06:00 UTC), `workflow_dispatch` | |
+| `cite-wcs20-conformance.yml` | OGC WCS 2.0 CITE Conformance | weekly `schedule` (Wed 07:30 UTC), `workflow_dispatch` | |
+| `cite-wps20-conformance.yml` | WPS 2.0 CITE Conformance | weekly `schedule` (Wed 07:00 UTC), `workflow_dispatch` | |
+| `cite-kml22-conformance.yml` | OGC KML 2.2 CITE Conformance | weekly `schedule` (Fri 03:00 UTC), `workflow_dispatch` | |
+| `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | weekly `schedule` (Sat 06:00 UTC), `workflow_dispatch` | |
+| `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | weekly `schedule` (Sat 03:00 UTC), `workflow_dispatch` | |
+| `ogc-maps-conformance.yml` | OGC API Maps Conformance | weekly `schedule` (Fri 06:00 UTC), `workflow_dispatch` | |
+| `cng-conformance.yml` | Cloud-Native-Geospatial Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch` | COG/GeoParquet/PMTiles-class CNG conformance. |
+| `cite-classic-conformance.yml` | Classic OGC CITE Conformance | `workflow_dispatch` | On-demand combined WMS 1.3 + WFS 2.0 classic lane. |
+| `cite-evidence-report.yml` | CITE Evidence Report | weekly `schedule` (Fri 08:00 UTC), `workflow_dispatch` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and opens/updates an issue when the reviewed snapshot is >14 days stale (#2944). |
 
-## Changes Made in This Audit (Ticket #485)
+## Release and deploy
 
-### Conformance workflows moved off PR path
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `deploy.yml` | Build & Publish Images | `push` (`v*` tags), `workflow_dispatch` | Multi-arch (and AOT) images. After `publish-manifests`, `dispatch-geobench` sends a `repository_dispatch` to `honua-io/geobench` with the tag and image ref; skips with a notice when `GEOBENCH_DISPATCH_TOKEN` is absent (#1596). |
+| `deploy-platform-images.yml` | Build & Publish Platform Images | `push` (`v*` tags), weekly `schedule`, `workflow_dispatch` | Platform image deployment. |
+| `nuget-publish.yml` | Publish Honua.Core Package | `push` (`honua-core-v*`, `v*.*.*`), `workflow_dispatch` | Release-only publishing. |
+| `release-bundle.yml` | Release Bundle (Compatibility Train) | `workflow_dispatch` | Foundation-first release-train orchestrator: one Native AOT RC image, integration/conformance and Esri-SDK evidence against that exact digest, every SDK cut against the same candidate (dry-run by default), then the release-train manifest plus the honua-devops validator. |
+| `release-migration-performance.yml` | Release Migration Performance Evidence | `release`, daily `schedule`, `workflow_dispatch` | Runs the migration performance harness against the fixture-driven baseline (#1033) and uploads the website-linkable evidence artifact. |
+| `geobench-release-trigger.yml` | Trigger Geobench Release Benchmarks | `release`, `workflow_dispatch` | `repository_dispatch` to the geobench repo on every published release. |
+| `cloud-post-apply-validation.yml` | Cloud Post-Apply Validation | `workflow_call`, `workflow_dispatch` | Post-deploy validation. |
+| `notify-evidence.yml` | Notify honua-evidence | `push` (trunk) | `repository_dispatch` (`producer-updated`) to `honua-io/honua-evidence` when the capability-matrix/keys snapshots or CITE status change, so aggregation does not wait for its daily fallback. |
+
+## Maintenance, reusable, and manual benchmarks
+
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `trunk-sanity.yml` | Trunk Sanity | `push` (trunk), `workflow_dispatch` | Cheap post-merge restore/build only; heavy CI does not run on merge-to-trunk pushes. |
+| `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
+| `reusable-sdk-pr-gate.yml` | SDK PR Gate | `workflow_call` | Reusable gate consumed by `honua-sdk-js`, `honua-sdk-dotnet`, and `honua-sdk-python`. |
+| `server-test-reuse-benchmark.yml` | Server Test Reuse Benchmark | `workflow_dispatch` | Bounded A/B of an overlapped reuse producer against independent baselines. Manual, read-only, publishes no status. |
+| `server-test-prebuild-benchmark.yml` | Server Test Prebuild Benchmark | `workflow_dispatch` | Manual read-only A/B proof for #3226; cannot affect branch protection or the train. |
+
+## Recently retired
+
+| Workflow file | Retired | Why |
+|---|---|---|
+| `pr-merge-train.yml` | 2026-07-21 (`d2afeb9d5`) | Second merge authority. `merge-train.yml` is the only lander; `scripts/ci/validate-single-merge-authority.sh` enforces it. |
+| `auto-rerun-flaky.yml` | 2026-08-16 | Job guarded on `workflow_run.event == 'pull_request'`, which `ci.yml` has not emitted since #2865 removed its `pull_request` trigger. Every run for months was `skipped`. Bounded flake reruns live in the train (`scripts/ci/merge-train/classify-flake.sh`). |
+| `ci-failure-triage.yml` | 2026-08-16 | Same dead guard. Its deterministic classifier (`scripts/ci/ci-failure-classifier.js`) and Bedrock helper (`scripts/ci/bedrock-triage.js`) had no other consumer and were removed with it; the train owns attribution (`attribute.sh`) and timeout classification (`classify-timeout.sh`). |
+| `server-test-shard-cache-proof.yml` | 2026-08-16 | One-off hosted proof for the #2735 shard-local cache, triggered only by pushes to a merged experiment branch. The shipped cache lives in `ci.yml` and is still guarded by `scripts/ci/validate-server-test-shard-cache.sh`; the recorded proof stays in `server-test-binary-artifacts.md`. |
+| `server-test-transfer-benchmark.yml` | 2026-08-16 | One-off #2722 benchmark whose design ADR-0074 rejected, triggered only by pushes to `ci/2722-hosted-transfer-benchmark`. Its config and evaluator went with it; the measured result stays in `server-test-transfer-benchmark.md`. Later producer designs are measured by `server-test-reuse-benchmark.yml` and `server-test-prebuild-benchmark.yml`. |
+
+## Historical change log
+
+The sections below record why earlier workflow changes were made. They are
+history, not a description of the current tree — the tables above are.
+
+### Changes Made in This Audit (Ticket #485)
+
+#### Conformance workflows moved off PR path
 
 The following workflows had `pull_request` and `push` triggers removed, leaving only `schedule` and `workflow_dispatch`:
 
@@ -150,23 +224,23 @@ Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment
 
 **Rationale**: Conformance suites are external, heavyweight, and non-deterministic. They belong in the nightly certification lane, not the PR-blocking path. Regressions are caught by the weekly schedule and can be tested on-demand via `workflow_dispatch`.
 
-### CodeQL moved off PR path
+#### CodeQL moved off PR path
 
 `codeql.yml` no longer triggers on `pull_request` or merge-to-trunk push. It runs on a weekly schedule. This avoids adding a slow, non-deterministic security scan to routine PR or merge cycles.
 
-### PR template and validation redesigned
+#### PR template and validation redesigned
 
-The PR template now includes explicit sections for gate impact, docs/contract impact, release/deploy impact, and breaking changes. The `pr-template-check` job at the top of `ci.yml` validates these sections directly; it replaces the previous standalone `pr-validation.yml` workflow and gates every downstream CI job through `pr-readiness`, so a malformed PR body no longer burns the full test matrix.
+The PR template now includes explicit sections for gate impact, docs/contract impact, release/deploy impact, and breaking changes. The `pr-template-check` job at the top of `ci.yml` validates these sections directly and replaced the previous standalone `pr-validation.yml` workflow. (It no longer gates the downstream graph — `pr-readiness` was decoupled from it — and since `ci.yml` lost its `pull_request` trigger both jobs short-circuit to success on every event that still reaches them.)
 
-### Issue templates redesigned
+#### Issue templates redesigned
 
 All issue forms now require acceptance criteria, affected repos, gate-tier impact, and release/deploy impact. This ensures grooming inputs match the workflow contract.
 
-### Reusable SDK PR gate added
+#### Reusable SDK PR gate added
 
 `reusable-sdk-pr-gate.yml` provides a shared `workflow_call` contract for SDK repo PR gates. It accepts repo-specific build/test/lint commands and follows the toolchain and artifact conventions in `config-conventions.md`.
 
-### Composite actions extracted
+#### Composite actions extracted
 
 Five composite actions were added to `.github/actions/` for shared CI setup and evidence handling:
 
@@ -176,15 +250,15 @@ Five composite actions were added to `.github/actions/` for shared CI setup and 
 - `upload-ci-evidence` — artifact upload with standard naming and tier-based retention *(active)*
 - `run-conformance-stack` — Docker bootstrap/teardown for CITE workflows *(future: conformance workflows)*
 
-## Changes Made in Workflow Refactor (2026-04-25)
+### Changes Made in Workflow Refactor (2026-04-25)
 
-### Security workflows consolidated
+#### Security workflows consolidated
 
 `container-security.yml` and `trivy-nightly.yml` were folded into `security-nightly.yml`. The consolidated nightly now owns NuGet vulnerability scanning, Trivy filesystem scanning, and container security validation in one security lane.
 
 **Rationale**: The previous split created three scheduled security workflows with overlapping vulnerability-scan responsibilities and separate artifact conventions. One workflow keeps the security lane easier to monitor while preserving separate jobs for dependency, filesystem, and container concerns.
 
-### CITE wrappers normalized
+#### CITE wrappers normalized
 
 `cite-conformance.yml` and `cite-tiles-conformance.yml` now call `cite-conformance-common.yml`, matching the single-suite CITE wrappers for GML, GeoPackage, KML, WMS, and WMTS.
 
