@@ -62,6 +62,7 @@ Run locally / in CI:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import sys
@@ -196,42 +197,92 @@ TEST_METHOD_ATTR = _build_test_method_attr_re(TEST_METHOD_ATTR_NAMES)
 NAMESPACE_RE = re.compile(r"^\s*namespace\s+([A-Za-z0-9_.]+)\s*;?\s*(\{)?", re.M)
 # A method declaration: the first `Name(` that follows a test attribute once any
 # further attribute blocks ([InlineData(...)], [Trait(...)]) have been skipped.
-_ATTR_BLOCK_RE = re.compile(r"\s*\[[^\]]*\]")
+#
+# `\[[^\]]*\]` stopped at the FIRST `]`, so a nested bracket —
+# `[InlineData(new[] { 1, 2 })]` is the common shape — ended the block early, the
+# method name failed to resolve, and the class silently lost its `methods` entry.
+# _skip_attribute_blocks() below counts bracket depth instead.
+_ATTR_BLOCK_OPEN_RE = re.compile(r"\s*\[")
 _METHOD_DECL_RE = re.compile(
     r"[^;{}()]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^<>()]*>)?\s*\("
 )
-# class / record class declarations (incl. partial, abstract, sealed, generics).
+# class / record declarations (incl. partial, abstract, sealed, generics).
+# `record struct X` / `record class X` must yield `X`; the old
+# `(?:class\s+)?` only skipped the `class` form, so `record struct LogCall(...)`
+# was recorded as a phantom class literally named `struct`.
 CLASS_RE = re.compile(
     r"(?:public|internal|private|protected|\s)*"
-    r"(?:abstract\s+|sealed\s+|static\s+|partial\s+)*"
-    r"(?:class|record)\s+(?:class\s+)?([A-Za-z_][A-Za-z0-9_]*)"
+    r"(?:abstract\s+|sealed\s+|static\s+|partial\s+|readonly\s+)*"
+    r"(?:class|record)\s+(?:class\s+|struct\s+)?([A-Za-z_][A-Za-z0-9_]*)"
 )
 
-# Comment / string strippers so braces inside them don't perturb depth tracking.
-_LINE_COMMENT = re.compile(r"//[^\n]*")
-_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-_STRING_LIT = re.compile(r"\"(?:\\.|[^\"\\\n])*\"|@\"(?:\"\"|[^\"])*\"|'(?:\\.|[^'\\])'")
+# Comment / string strippers so braces, semicolons and brackets inside them don't
+# perturb the depth tracking below.
+#
+# These MUST be one left-to-right alternation, not three sequential passes. The
+# old code stripped comments first, so a `//` or `/*` inside a STRING literal was
+# treated as a comment and everything after it on the line (or up to the next
+# `*/`) was deleted — taking the real braces with it and corrupting the depth
+# tracking for the rest of the file. Two real test classes disappeared from the
+# inventory that way: InputValidationODataIntegrationTests (a filter string
+# containing `'%/*%'`) and ShareExportRunPersistFailureTests (a
+# `https://example.invalid/...` URL). Scanning once means whichever construct
+# STARTS first wins, which is what the C# lexer does.
+#
+# Order inside the alternation matters for overlapping prefixes: raw strings
+# (`"""..."""`) before plain ones, verbatim (`@"..."`) before plain.
+_NOISE = re.compile(
+    r'"""(?:[^"]|"(?!""))*"""'      # raw string literal (C# 11)
+    r'|@"(?:""|[^"])*"'             # verbatim string literal
+    r'|"(?:\\.|[^"\\\n])*"'          # regular string literal
+    r"|'(?:\\.|[^'\\])'"            # char literal
+    r"|/\*.*?\*/"                   # block comment
+    r"|//[^\n]*",                   # line comment
+    re.S,
+)
 
 
 def _strip_noise(text: str) -> str:
-    text = _BLOCK_COMMENT.sub(" ", text)
-    text = _LINE_COMMENT.sub(" ", text)
-    text = _STRING_LIT.sub('""', text)
-    return text
+    """Blank out literals and comments, preserving everything else verbatim."""
+    return _NOISE.sub(
+        lambda m: " " if m.group(0)[0] == "/" else '""', text
+    )
+
+
+def _skip_attribute_blocks(text: str, index: int) -> int:
+    """Return the offset just past the run of `[...]` blocks starting at `index`.
+
+    Bracket-depth aware, so nested brackets inside an attribute argument
+    (`[InlineData(new[] { 1, 2 })]`) do not terminate the block early.
+    """
+    pos = index
+    while True:
+        opening = _ATTR_BLOCK_OPEN_RE.match(text, pos)
+        if not opening:
+            return pos
+        depth = 0
+        i = opening.end() - 1
+        n = len(text)
+        while i < n:
+            if text[i] == "[":
+                depth += 1
+            elif text[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if i >= n:
+            return pos  # unterminated attribute: give up rather than run away
+        pos = i + 1
 
 
 def _method_name_after(text: str, index: int) -> str | None:
     """Return the test method name declared after the attribute at `index`."""
-    pos = index
-    while True:
-        block = _ATTR_BLOCK_RE.match(text, pos)
-        if not block:
-            break
-        pos = block.end()
-    decl = _METHOD_DECL_RE.match(text, pos)
+    decl = _METHOD_DECL_RE.match(text, _skip_attribute_blocks(text, index))
     return decl.group(1) if decl else None
 
 
+@functools.cache
 def enumerate_classes() -> dict[str, dict]:
     """Return {fully_qualified_class_name: {"csproj", "src", "methods"}} for
     EVERY top-level class in the test projects.
@@ -247,12 +298,11 @@ def enumerate_classes() -> dict[str, dict]:
     `methods` is the set of recognised test methods the class declares, and it
     is what separates the two views built on top of this walk:
 
-      - enumerate_test_classes() keeps only classes with a non-empty `methods`
-        set. Those are the classes a shard filter can actually route, so they
-        are the basis for the orphan and dangling-filter halves of the guard.
-      - enumerate_declared_classes() keeps every class regardless. A class that
-        exists but declares no recognised test method is not an orphan (it runs
-        nothing), yet asserting ownership of one is still a mistake worth
+      - runnable_classes() keeps only classes with `has_tests`. Those are the
+        classes a shard filter can actually route, so they are the basis for the
+        orphan and dangling-filter halves of the guard.
+      - the full map keeps every class. A class that exists but runs nothing is
+        not an orphan, yet asserting ownership of one is still a mistake worth
         catching — see the assertion contract in main().
 
     Both views come from ONE walk on purpose (#3317): they used to be two
@@ -284,6 +334,7 @@ def enumerate_classes() -> dict[str, dict]:
             current_top_class_depth = -1
             declared: list[str] = []
             test_methods: dict[str, set[str]] = {}
+            attribute_seen: set[str] = set()
             i = 0
             n = len(text)
             while i < n:
@@ -300,6 +351,23 @@ def enumerate_classes() -> dict[str, dict]:
                     depth -= 1
                     i += 1
                     continue
+                if (
+                    ch == ";"
+                    and current_top_class is not None
+                    and depth == current_top_class_depth
+                ):
+                    # A BODYLESS declaration — a namespace-level positional
+                    # record such as `internal sealed record LogCall(string N);`.
+                    # Its body never opens, so without this it stayed "current"
+                    # forever and swallowed every following top-level class in
+                    # the file (MockCacheHealthChecker, GeoTiffFuzzCorpus and
+                    # EntitlementProbeRegistry all vanished this way). Depth is
+                    # still the declaration depth here, because entering a body
+                    # would have incremented it.
+                    current_top_class = None
+                    current_top_class_depth = -1
+                    i += 1
+                    continue
                 # Detect a top-level class declaration starting here.
                 if current_top_class is None and depth == ns_body_depth:
                     m = CLASS_RE.match(text, i)
@@ -314,46 +382,64 @@ def enumerate_classes() -> dict[str, dict]:
                 if has_test_attr and ch == "[":
                     am = TEST_METHOD_ATTR.match(text, i)
                     if am and current_top_class is not None:
+                        # Record the ATTRIBUTE sighting separately from the
+                        # resolved method name. "Does this class run tests?" is
+                        # answered by the attribute; the method name is a bonus
+                        # used for method-level filter clauses, and a shape
+                        # _method_name_after cannot parse must not silently
+                        # remove the class from the orphan/dangling checks.
+                        attribute_seen.add(current_top_class)
                         method = _method_name_after(text, i)
-                        test_methods.setdefault(current_top_class, set())
                         if method:
-                            test_methods[current_top_class].add(method)
+                            test_methods.setdefault(current_top_class, set()).add(method)
                 i += 1
 
             rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
             for cls in declared:
                 fqn = f"{namespace}.{cls}"
                 entry = classes.setdefault(
-                    fqn, {"csproj": csproj, "src": [], "methods": set()}
+                    fqn,
+                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False},
                 )
                 if rel not in entry["src"]:
                     entry["src"].append(rel)
                 entry["methods"].update(test_methods.get(cls, ()))
+                entry["has_tests"] = entry["has_tests"] or cls in attribute_seen
     return classes
 
 
-def enumerate_test_classes() -> dict[str, dict]:
-    """Return only the classes that declare at least one recognised test method.
+def runnable_classes(all_classes: dict[str, dict]) -> dict[str, dict]:
+    """Return only the classes that carry at least one recognised test attribute.
 
     These are the classes a shard `filter` can route, so they are the inventory
-    the orphan check and the dangling-filter check both work from.
+    the orphan check and the dangling-filter check both work from. Pure, so the
+    caller decides when the (cached) walk happens.
+
+    Selection is on `has_tests` — the ATTRIBUTE sighting — not on a non-empty
+    `methods` set. Those differ when _method_name_after cannot parse the
+    declaration that follows the attribute; keying on `methods` would drop such a
+    class from the guard entirely, which is the opposite of what a coverage guard
+    should do with something it does not understand. assert_methods_resolved()
+    turns any such class into a loud failure instead.
     """
-    return {
-        fqn: entry
-        for fqn, entry in enumerate_classes().items()
-        if entry["methods"]
-    }
+    return {fqn: entry for fqn, entry in all_classes.items() if entry["has_tests"]}
 
 
-def enumerate_declared_classes() -> dict[str, str]:
-    """Return {fully_qualified_class_name: csproj} for EVERY top-level class in
-    the test projects, whether or not it declares a recognised test method.
+def enumerate_test_classes() -> dict[str, dict]:
+    """Convenience wrapper: the runnable view of the cached full walk."""
+    return runnable_classes(enumerate_classes())
 
-    Used by `--assert-owner` to tell "this class does not exist" apart from
-    "this class exists but runs nothing" — two different authoring mistakes that
-    deserve two different error messages.
+
+def unresolved_method_classes(all_classes: dict[str, dict]) -> list[str]:
+    """Classes carrying a test attribute whose method name never resolved.
+
+    Non-empty means the enumerator saw a declaration shape it cannot read, so
+    method-level filter clauses could be judged dead against an incomplete pool.
     """
-    return {fqn: entry["csproj"] for fqn, entry in enumerate_classes().items()}
+    return sorted(
+        fqn for fqn, entry in all_classes.items()
+        if entry["has_tests"] and not entry["methods"]
+    )
 
 
 
@@ -631,7 +717,7 @@ def evaluate_assertion(
                 f"{entry['csproj']!r}, not in asserted project {csproj!r}; "
                 f"shard {shard_name!r} could never discover it",
             )
-        if not entry["methods"]:
+        if not entry["has_tests"]:
             return AssertionResult(
                 1,
                 f"::error::asserted class {fqn!r} exists but declares no test "
@@ -776,9 +862,21 @@ def main() -> int:
             return result.code
         print(result.message)
 
-    classes = {
-        fqn: entry for fqn, entry in all_classes.items() if entry["methods"]
-    }
+    classes = runnable_classes(all_classes)
+    unresolved = unresolved_method_classes(all_classes)
+    if unresolved:
+        # These classes carry a test attribute the enumerator recognises but no
+        # method name it could parse, so selection_pool() has no runnable FQN for
+        # them and a live method-level filter clause could be misreported as
+        # dead. That is a defect in THIS script, not in the shard map, so it
+        # fails as a tool error rather than a coverage error.
+        print(f"::error::{len(unresolved)} class(es) carry a test attribute whose "
+              "method declaration this script could not parse — fix "
+              "_method_name_after/_skip_attribute_blocks before trusting the "
+              "dangling-filter half:", file=sys.stderr)
+        for fqn in unresolved:
+            print(f"  - {fqn} ({', '.join(all_classes[fqn]['src'])})", file=sys.stderr)
+        return 2
     if not classes:
         print("::error::no test classes discovered — enumerator is broken or "
               "test sources moved", file=sys.stderr)
@@ -913,7 +1011,7 @@ def main() -> int:
     # total, the runnable total and their delta every run keeps that number a
     # measured fact instead of an assumption.
     print(f"Class inventory: {len(all_classes)} top-level classes declared, "
-          f"{len(classes)} declare a test method this guard recognises "
+          f"{len(classes)} carry a test attribute this guard recognises "
           f"(delta {len(all_classes) - len(classes)} non-test classes); "
           f"{len(TEST_METHOD_ATTR_NAMES)} test attribute(s) discovered from the "
           "sources.")

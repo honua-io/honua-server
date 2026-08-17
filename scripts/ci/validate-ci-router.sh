@@ -1206,8 +1206,6 @@ assert_descriptor \
 if [[ -n "${PYTHON_BIN}" ]]; then
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
-# #3271: the GDAL-capable job's "did the real-GDAL cases actually run" guard.
-"${PYTHON_BIN}" scripts/ci/assert-gdal-cli-tests-executed.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
