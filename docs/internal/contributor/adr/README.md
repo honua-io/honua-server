@@ -77,7 +77,9 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0069](0069-studio-persistence-bridge-forms-analysis.md) | Bridge Forms and Analysis Persistence into the Studio Package Lifecycle | Accepted | 2026-07 |
 | [0071](0071-raster-execution-boundary.md) | Raster Execution Boundary — Single GDAL-Worker Engine, PostGIS as Serving/Storage Plane | Accepted | 2026-08 |
 | [0073](0073-dedicated-photogrammetry-worker.md) | Dedicated Photogrammetry Worker and Qualified Orthomosaic Engine | Accepted | 2026-08 |
+
 | [0074](0074-evidence-driven-ci-pipeline.md) | Evidence-Driven CI Pipeline | Proposed | 2026-08 |
+| [0075](0075-ui5-web-components-application-chrome.md) | UI5 Web Components for Application Chrome, Vega-Lite for Charting | Accepted | 2026-08 |
 
 ## Template
 
