@@ -94,11 +94,16 @@ across 3 distinct input sets. The independent run sample agrees: 19 successful
 serving runs across 11 branches and 22 successful worker runs across 10
 branches.
 
+The worker figure is a build-time bound only: the GDAL worker's Trivy scan is
+enforcing and its verdict depends on the vulnerability database at scan time, so
+it is re-run on every head and is never reusable.
+
 Evidence placement therefore stays as-is (pre-merge boundary/worker evidence on
 the PR, re-proved on nightly/release/deploy before publication) and the expected
-savings move to exact-input reuse rather than path narrowing. The observation
-receipt now carries per-image content digests so reuse eligibility is measured
-before anything is enforced; see `native-image-impact-routing.md`.
+savings move to exact-input build reuse rather than path narrowing. The
+observation receipt now carries per-image content digests over the merge tree
+the images are actually built from, so reuse eligibility is measured before
+anything is enforced; see `native-image-impact-routing.md`.
 
 ## honua-sdk-js
 

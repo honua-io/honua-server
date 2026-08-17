@@ -319,9 +319,12 @@ managed change selects all three serving variants. Re-push churn does: 60% of
 serving-impacted heads and 71% of worker-impacted heads repeat an input set
 already built on the same pull request, against a median 140-minute serving
 build. The router therefore stays in observe mode and the promotion savings gate
-accepts either narrowing/avoidance or exact-input reuse, with the observation
-receipt (`.../v3`) binding one content digest per image class so reuse
-eligibility is measured before anything is enforced. See
+accepts either narrowing/avoidance or exact-input build reuse, with the
+observation receipt (`.../v3`) binding one content digest per image class over
+the merge tree the images are actually built from, so reuse eligibility is
+measured before anything is enforced. The ledger names the substantiated
+mechanism, because a reuse-only sample does not authorize promoting the router.
+Vulnerability scanning is never reused. See
 `docs/internal/ci/native-image-impact-routing.md`.
 
 The JavaScript SDK follows honua-sdk-js#1286. One immutable build feeds

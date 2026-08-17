@@ -160,6 +160,8 @@ def native_receipt(
     legacy_serving: dict[str, bool] | None = None,
     legacy_worker: bool = True,
     image_inputs: dict[str, str] | None = None,
+    tree: str = "merge",
+    gate_run_id: int | None = None,
 ) -> dict:
     if serving is None:
         serving = {"generic": True, "lambda": False, "functions": False}
@@ -192,7 +194,7 @@ def native_receipt(
         "policy_inputs_sha256": blobs["native_policy_inputs_sha256"],
         "trusted_execution": "default-branch-workflow-run/v1",
         "gate_workflow_path": ".github/workflows/pr-gate.yml",
-        "gate_run_id": 901 + pr,
+        "gate_run_id": gate_run_id if gate_run_id is not None else 901 + pr,
         "gate_run_attempt": 1,
         "gate_run_head_sha": head,
         "gate_run_conclusion": "success",
@@ -203,6 +205,8 @@ def native_receipt(
         "mode": "observe",
         "mutation": "none",
         "image_input_digests": image_inputs,
+        "image_input_tree": tree,
+        "image_input_tree_sha": head if tree == "head" else ("9" * 39 + head[-1]),
         "legacy": {
             "serving_trigger": any(legacy_serving.values()),
             "serving_variants": legacy_serving,
@@ -238,6 +242,8 @@ def image_run(
     pr: int,
     conclusion: str = "success",
     base: str = BASE,
+    started: str = "2026-08-16T00:00:00Z",
+    completed: str = "2026-08-16T00:02:00Z",
 ) -> dict:
     return {
         "id": run_id,
@@ -247,8 +253,9 @@ def image_run(
         "conclusion": conclusion,
         "path": workflow,
         "head_sha": head,
-        "created_at": "2026-08-16T00:00:00Z",
-        "updated_at": "2026-08-16T00:02:00Z",
+        "created_at": started,
+        "run_started_at": started,
+        "updated_at": completed,
         "pull_requests": [
             {
                 "number": pr,
@@ -593,93 +600,265 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     )
 
 
-def test_exact_input_reuse_counts_when_routing_never_narrows() -> None:
-    """#3204: identical image inputs on a later head are reuse-eligible evidence."""
-    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
-    all_variants = {"generic": True, "lambda": True, "functions": True}
-    shared = {
-        name: hashlib.sha256(f"{name}:shared".encode("utf-8")).hexdigest()
+ALL_VARIANTS = {"generic": True, "lambda": True, "functions": True}
+
+
+def shared_digests(tag: str = "shared") -> dict:
+    return {
+        name: hashlib.sha256(f"{name}:{tag}".encode("utf-8")).hexdigest()
         for name in MODULE.IMAGE_INPUT_CLASSES
     }
+
+
+def reuse_ledger(
+    receipts: list[dict],
+    serving_runs: list[dict],
+    worker_runs: list[dict],
+    root: Path,
+) -> dict:
+    archives = root / "archives"
+    entries = []
+    for offset, receipt in enumerate(receipts):
+        item = entry(MODULE.NATIVE_STREAM, 102 + offset, 2 + offset)
+        item["producer_head_sha"] = BASE
+        entries.append(item)
+        archive(archives, 102 + offset, MODULE.NATIVE_STREAM, receipt)
+    pages(root / "serving", "workflow_runs", serving_runs)
+    pages(root / "worker", "workflow_runs", worker_runs)
+    index = {
+        "contract": MODULE.INDEX_CONTRACT,
+        "repository": MODULE.REPOSITORY,
+        "cutoff": "2026-08-15T00:00:00Z",
+        "artifacts": entries,
+        "exclusions": [],
+        "integrity_failures": [],
+    }
+    return MODULE.summarize(
+        index, archives, root / "serving", root / "worker", policy(), REPOSITORY_ROOT
+    )
+
+
+def test_exact_input_reuse_counts_when_routing_never_narrows() -> None:
+    """#3204: identical merge-tree inputs on a later push are reuse-eligible."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    shared = shared_digests()
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        archives = root / "archives"
-        entries = [
-            entry(MODULE.NATIVE_STREAM, 102, 2),
-            entry(MODULE.NATIVE_STREAM, 103, 3),
-        ]
-        entries[0]["producer_head_sha"] = BASE
-        entries[1]["producer_head_sha"] = BASE
-        for artifact_id, head in ((102, HEAD_B), (103, HEAD_C)):
-            archive(
-                archives,
-                artifact_id,
-                MODULE.NATIVE_STREAM,
+        ledger = reuse_ledger(
+            [
                 native_receipt(
-                    blobs,
-                    pr=11,
-                    head=head,
-                    worker=True,
-                    serving=all_variants,
-                    legacy_serving=all_variants,
-                    image_inputs=shared,
-                ),
-            )
-        pages(root / "serving", "workflow_runs", [
-            image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11),
-            image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11),
-        ])
-        pages(root / "worker", "workflow_runs", [
-            image_run(203, MODULE.WORKER_WORKFLOW, HEAD_B, 11),
-            image_run(204, MODULE.WORKER_WORKFLOW, HEAD_C, 11),
-        ])
-        index = {
-            "contract": MODULE.INDEX_CONTRACT,
-            "repository": MODULE.REPOSITORY,
-            "cutoff": "2026-08-15T00:00:00Z",
-            "artifacts": entries,
-            "exclusions": [],
-            "integrity_failures": [],
-        }
-        ledger = MODULE.summarize(
-            index, archives, root / "serving", root / "worker", policy(), REPOSITORY_ROOT
+                    blobs, pr=11, head=head, worker=True, serving=ALL_VARIANTS,
+                    legacy_serving=ALL_VARIANTS, image_inputs=shared, gate_run_id=gate,
+                )
+                for head, gate in ((HEAD_B, 1000), (HEAD_C, 1001))
+            ],
+            [
+                image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11,
+                          started="2026-08-16T00:00:00Z", completed="2026-08-16T00:30:00Z"),
+                image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11,
+                          started="2026-08-16T01:00:00Z", completed="2026-08-16T01:30:00Z"),
+            ],
+            [
+                image_run(203, MODULE.WORKER_WORKFLOW, HEAD_B, 11,
+                          started="2026-08-16T00:00:00Z", completed="2026-08-16T00:10:00Z"),
+                image_run(204, MODULE.WORKER_WORKFLOW, HEAD_C, 11,
+                          started="2026-08-16T01:00:00Z", completed="2026-08-16T01:10:00Z"),
+            ],
+            root,
         )
         assert ledger["counts"]["serving_narrowed_heads"] == 0
         assert ledger["counts"]["worker_avoided_heads"] == 0
         assert ledger["counts"]["serving_reuse_eligible_heads"] == 1
         assert ledger["counts"]["worker_reuse_eligible_heads"] == 1
-        assert ledger["gates"]["serving_savings_sample_ready"]
-        assert ledger["gates"]["worker_savings_sample_ready"]
         assert ledger["reuse_eligible"]["serving"][0]["head_sha"] == HEAD_C
         assert ledger["reuse_eligible"]["worker"][0]["reused_from"]["worker"] == HEAD_B
+        assert ledger["gates"]["serving_savings_sample_ready"]
+        assert ledger["signals"]["serving_reuse_ready"]
+        assert not ledger["signals"]["serving_narrowing_ready"]
+        assert ledger["savings_mechanism"]["serving"] == ["exact-input-build-reuse"]
+        assert ledger["savings_mechanism"]["worker"] == ["exact-input-build-reuse"]
 
 
-def test_missing_or_malformed_image_digests_fail_closed() -> None:
+def test_reuse_requires_the_attestation_to_exist_when_the_head_starts() -> None:
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    shared = shared_digests()
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        archives = root / "archives"
-        entries = [entry(MODULE.NATIVE_STREAM, 102, 2)]
-        entries[0]["producer_head_sha"] = BASE
-        broken = native_receipt(blobs, pr=11, head=HEAD_B, worker=True)
-        del broken["image_input_digests"]
-        archive(archives, 102, MODULE.NATIVE_STREAM, broken)
-        pages(root / "serving", "workflow_runs", [])
-        pages(root / "worker", "workflow_runs", [])
-        index = {
-            "contract": MODULE.INDEX_CONTRACT,
-            "repository": MODULE.REPOSITORY,
-            "cutoff": "2026-08-15T00:00:00Z",
-            "artifacts": entries,
-            "exclusions": [],
-            "integrity_failures": [],
-        }
-        ledger = MODULE.summarize(
-            index, archives, root / "serving", root / "worker", policy(), REPOSITORY_ROOT
+        ledger = reuse_ledger(
+            [
+                native_receipt(
+                    blobs, pr=11, head=head, worker=False, serving=ALL_VARIANTS,
+                    legacy_serving=ALL_VARIANTS, legacy_worker=False,
+                    image_inputs=shared, gate_run_id=gate,
+                )
+                for head, gate in ((HEAD_B, 1000), (HEAD_C, 1001))
+            ],
+            [
+                # Overlapping builds: HEAD_C started before HEAD_B's evidence existed.
+                image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11,
+                          started="2026-08-16T00:00:00Z", completed="2026-08-16T02:20:00Z"),
+                image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11,
+                          started="2026-08-16T00:10:00Z", completed="2026-08-16T02:30:00Z"),
+            ],
+            [],
+            root,
         )
-        assert ledger["counts"]["native_countable_heads"] == 0
-        assert not ledger["gates"]["integrity_clean"]
-        assert "image input digests" in ledger["integrity_failures"][0]["reason"]
+        assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
+
+
+def test_reuse_ordering_is_independent_of_observer_run_id() -> None:
+    """A re-observation of an older head must not reorder the cohort."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    shared = shared_digests()
+    counts = set()
+    for gate_a, gate_b in ((1000, 1001), (5000, 1001)):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger = reuse_ledger(
+                [
+                    native_receipt(
+                        blobs, pr=11, head=HEAD_B, worker=False, serving=ALL_VARIANTS,
+                        legacy_serving=ALL_VARIANTS, legacy_worker=False,
+                        image_inputs=shared, gate_run_id=gate_a,
+                    ),
+                    native_receipt(
+                        blobs, pr=11, head=HEAD_C, worker=False, serving=ALL_VARIANTS,
+                        legacy_serving=ALL_VARIANTS, legacy_worker=False,
+                        image_inputs=shared, gate_run_id=gate_b,
+                    ),
+                ],
+                [
+                    image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11,
+                              started="2026-08-16T00:00:00Z", completed="2026-08-16T00:30:00Z"),
+                    image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11,
+                              started="2026-08-16T01:00:00Z", completed="2026-08-16T01:30:00Z"),
+                ],
+                [],
+                root,
+            )
+            counts.add(ledger["counts"]["serving_reuse_eligible_heads"])
+            if ledger["reuse_eligible"]["serving"]:
+                assert ledger["reuse_eligible"]["serving"][0]["head_sha"] == HEAD_C
+    assert counts == {1}
+
+
+def test_reuse_only_credits_variants_the_workflow_actually_built() -> None:
+    """Legacy case arms gate each variant, so an unbuilt variant is not evidence."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    shared = shared_digests()
+    generic_only = {"generic": True, "lambda": False, "functions": False}
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        ledger = reuse_ledger(
+            [
+                # Legacy built generic only, even though the candidate wanted all three.
+                native_receipt(
+                    blobs, pr=11, head=HEAD_B, worker=False, serving=ALL_VARIANTS,
+                    legacy_serving=generic_only, legacy_worker=False,
+                    image_inputs=shared, gate_run_id=1000,
+                ),
+                native_receipt(
+                    blobs, pr=11, head=HEAD_C, worker=False, serving=ALL_VARIANTS,
+                    legacy_serving=ALL_VARIANTS, legacy_worker=False,
+                    image_inputs=shared, gate_run_id=1001,
+                ),
+            ],
+            [
+                image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11,
+                          started="2026-08-16T00:00:00Z", completed="2026-08-16T00:30:00Z"),
+                image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11,
+                          started="2026-08-16T01:00:00Z", completed="2026-08-16T01:30:00Z"),
+            ],
+            [],
+            root,
+        )
+        assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
+
+
+def test_reuse_keys_are_scoped_per_variant() -> None:
+    """A collapsed variant digest must not credit one variant's build to another."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    collapsed = dict(shared_digests())
+    collapsed["serving_functions"] = collapsed["serving_lambda"]
+    lambda_only = {"generic": False, "lambda": True, "functions": False}
+    functions_only = {"generic": False, "lambda": False, "functions": True}
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        ledger = reuse_ledger(
+            [
+                native_receipt(
+                    blobs, pr=11, head=HEAD_B, worker=False, serving=lambda_only,
+                    legacy_serving=lambda_only, legacy_worker=False,
+                    image_inputs=collapsed, gate_run_id=1000,
+                ),
+                native_receipt(
+                    blobs, pr=11, head=HEAD_C, worker=False, serving=functions_only,
+                    legacy_serving=functions_only, legacy_worker=False,
+                    image_inputs=collapsed, gate_run_id=1001,
+                ),
+            ],
+            [
+                image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11,
+                          started="2026-08-16T00:00:00Z", completed="2026-08-16T00:30:00Z"),
+                image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11,
+                          started="2026-08-16T01:00:00Z", completed="2026-08-16T01:30:00Z"),
+            ],
+            [],
+            root,
+        )
+        assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
+
+
+def test_head_tree_receipts_are_never_reuse_evidence() -> None:
+    """The images build the merge ref, so a head-tree digest cannot key reuse."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    shared = shared_digests()
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        ledger = reuse_ledger(
+            [
+                native_receipt(
+                    blobs, pr=11, head=head, worker=False, serving=ALL_VARIANTS,
+                    legacy_serving=ALL_VARIANTS, legacy_worker=False,
+                    image_inputs=shared, gate_run_id=gate, tree="head",
+                )
+                for head, gate in ((HEAD_B, 1000), (HEAD_C, 1001))
+            ],
+            [
+                image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11,
+                          started="2026-08-16T00:00:00Z", completed="2026-08-16T00:30:00Z"),
+                image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11,
+                          started="2026-08-16T01:00:00Z", completed="2026-08-16T01:30:00Z"),
+            ],
+            [],
+            root,
+        )
+        assert ledger["counts"]["native_countable_heads"] == 2
+        assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
+
+
+def test_malformed_image_input_evidence_fails_closed() -> None:
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    broken_receipts = []
+    missing = native_receipt(blobs, pr=11, head=HEAD_B, worker=True)
+    del missing["image_input_digests"]
+    broken_receipts.append(("image input digests", missing))
+    newline = native_receipt(blobs, pr=11, head=HEAD_B, worker=True)
+    newline["image_input_digests"]["worker"] += "\n"
+    broken_receipts.append(("worker input digest", newline))
+    mistyped = native_receipt(blobs, pr=11, head=HEAD_B, worker=True, tree="head")
+    mistyped["image_input_tree_sha"] = "1" * 40
+    broken_receipts.append(("image input tree identity", mistyped))
+    unknown = native_receipt(blobs, pr=11, head=HEAD_B, worker=True)
+    unknown["image_input_tree"] = "worktree"
+    broken_receipts.append(("image input tree kind", unknown))
+    for expected, receipt in broken_receipts:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger = reuse_ledger([receipt], [], [], root)
+            assert ledger["counts"]["native_countable_heads"] == 0
+            assert not ledger["gates"]["integrity_clean"]
+            assert expected in ledger["integrity_failures"][0]["reason"], expected
 
 
 test_policy_and_discovery()
@@ -687,5 +866,10 @@ test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
 test_workflows_are_read_only_and_attempt_bound()
 test_exact_input_reuse_counts_when_routing_never_narrows()
-test_missing_or_malformed_image_digests_fail_closed()
+test_reuse_requires_the_attestation_to_exist_when_the_head_starts()
+test_reuse_ordering_is_independent_of_observer_run_id()
+test_reuse_only_credits_variants_the_workflow_actually_built()
+test_reuse_keys_are_scoped_per_variant()
+test_head_tree_receipts_are_never_reuse_evidence()
+test_malformed_image_input_evidence_fails_closed()
 print("impact-routing-evidence-ledger=ok mode=report-only")
