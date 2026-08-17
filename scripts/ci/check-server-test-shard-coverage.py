@@ -125,32 +125,21 @@ EXEMPT_NAMESPACE_PREFIXES = [
 # guard hard. Every run prints the list so the gap stays visible instead of
 # silently sitting inside a regex. Delete entries as shard ownership is assigned
 # in #3259, which tracks this list to zero.
-UNCLAIMED_PENDING_OWNERSHIP = [
-    # Honua.Ai.Tests assembly — only the MCP shard targets it, and its filter
-    # covers Mcp/AiBuilder/Reporting/Providers/WorkflowGeneration only.
-    "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests",
-    "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests",
-    "Honua.Server.Tests.Features.AnalysisGeneration.AnalysisGenerationServiceTests",
-    "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.AnthropicStudioAiProxyAdapterTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.BedrockStudioAiProxyAdapterTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.OpenAiCompatibleStudioAiProxyAdapterTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiChatRequestMapperTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyConfigurationTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyJsonContextReflectionSafetyTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyLatencyTests",
-    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests",
-    # Honua.Protocols.GeoServices.Tests assembly.
-    "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests",
-    "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests",
-    # Honua.Server.Tests assembly.
-    "Honua.Server.Tests.Features.Alerts.AlertNotificationRateLimiterTests",
-    "Honua.Server.Tests.Import.AwsS3ShapefileImportTests",
-    "Honua.Server.Tests.Import.AwsS3UploadProgressTests",
-    "Honua.Server.Tests.Import.AzureBlobShapefileImportTests",
-    "Honua.Server.Tests.Import.ImportValidationErrorMessageTests",
-    "Honua.Server.Tests.Import.RedisJobQueueFallbackTests",
-]
+#
+# EMPTY, and it must stay that way unless a genuinely unclaimed class appears.
+# It previously held 20 FQNs, every one of which had since been claimed by a
+# shard while sitting in here. That is worse than a stale comment, because
+# `is_exempt()` is consulted BEFORE the claim check (see the `continue` in the
+# orphan loop): an entry here is not "documented as uncovered", it is
+# *unconditionally skipped*. So each stale entry both over-reported the gap in
+# the run summary and disarmed the guard for that class — if one of them later
+# stopped matching its shard, the tool that exists to catch exactly that would
+# have said nothing.
+#
+# Verified empty by running the guard with the list cleared: all 1198 classes
+# are claimed and it exits 0. Adding an entry costs real coverage; prefer
+# assigning shard ownership.
+UNCLAIMED_PENDING_OWNERSHIP: list[str] = []
 
 # xUnit test-method attributes. [Fact]/[Theory] plus every subtype declared under
 # tests/ (TestKit's [IntegrationTest], [UnitTest], [CloudTest], [EmulatorTest],
