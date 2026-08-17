@@ -619,9 +619,13 @@ assert_exact_shards \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
   '["Server Features Misc"]'
 assert_excludes_shard \
-  "zarr-server-source-excludes-data-sharing" \
+  "zarr-server-source-excludes-data-enrichment-sharing" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Data and Sharing"
+  "Server Features Data Enrichment and Sharing"
+assert_excludes_shard \
+  "zarr-server-source-excludes-streaming-snapshot-conformance" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Streaming Snapshot and Conformance"
 assert_excludes_shard \
   "zarr-server-source-excludes-collaboration-content" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
@@ -658,13 +662,27 @@ assert_descriptor \
   "src/Honua.Server/Features/DataEnrichment/DataEnrichmentServiceCollectionExtensions.cs" \
   "targeted" \
   "false" \
-  "Server Features Data and Sharing"
-# Capacity rebalance: Streaming is class-balanced across the existing Data and
-# Sharing and Misc shards. A source change must wake both executable owners.
+  "Server Features Data Enrichment and Sharing"
+# Capacity rebalance (#2422, re-split in #3229): Streaming is class-balanced
+# across the Misc catch-all (heavy FeatureStreamEndpointsTests) and the
+# dedicated Streaming Snapshot and Conformance shard. A source change must wake
+# both executable owners, and must NOT wake the Data Enrichment and Sharing
+# child, which no longer runs any Streaming class.
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data and Sharing","Server Features Misc"]'
+  '["Server Features Misc","Server Features Streaming Snapshot and Conformance"]'
+assert_excludes_shard \
+  "streaming-source-excludes-data-enrichment-sharing" \
+  "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
+  "Server Features Data Enrichment and Sharing"
+# A Streaming TEST change must also reach the shard that runs those classes.
+assert_descriptor \
+  "streaming-test-retains-streaming-owner" \
+  "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Streaming Snapshot and Conformance"
 # Root Admin tests share the already-running Admin Operations shard after the
 # legacy Admin & Infrastructure runner exhausted its test budget.
 assert_exact_shards \
@@ -872,7 +890,7 @@ assert_descriptor \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
-  "Server Features Data and Sharing"
+  "Server Features Data Enrichment and Sharing"
 assert_descriptor \
   "core-capability-registry-includes-admin-governance" \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \

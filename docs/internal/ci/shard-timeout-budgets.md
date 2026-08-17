@@ -260,6 +260,163 @@ and the resulting batch critical path. A child reaching the 80% warning line
 must be rebalanced or split again rather than silently receiving another cap
 increase.
 
+#### Multi-run confirmation (#3229)
+
+The single-run check above was widened to the five most recent successful
+`server-test-results-infra-security` artifacts (`31691645087`, `31732911300`,
+`31761102448`, `31931541793`, `31939301584`). Pre-split, that sample ran the
+parent at 33.2–39.05 minutes against its 39-minute inner cap (85–100%), and run
+`31940825557` exhausted it outright.
+
+Replaying each run's TRX class intervals through the three children's filters
+gives their **union active wall time** — the parent shard runs several
+collections concurrently, so per-class intervals must be unioned rather than
+summed:
+
+| Child | Tests | p50 (min) | p90 (min) | Cap | p90 / cap |
+|---|---:|---:|---:|---:|---:|
+| Infrastructure and Control Plane | 948 | 8.8 | 9.7 | 30 | 32% |
+| Security and Authorization | 151 | 12.9 | 13.5 | 30 | 45% |
+| Caching File Storage and Styling | 186 | 14.5 | 16.3 | 30 | 54% |
+
+The three children's unions (35.3 min summed) reproduce the parent's whole-run
+union (34.1 min), so the concurrency is *within* families, not across them, and
+the split is close to additive. Every child is well inside the 70% target on
+this five-run sample. Both capacity failures the merge train mis-attributed to
+#3197 — runs `31931541793` (06:36Z) and `31940825557` (10:22Z) — predate the
+split commit `7e83d9da5` (2026-08-16 12:42Z), so no further change to this
+family is required. Post-split child artifacts still need collecting before
+this section can be restated as an observed child baseline.
+
+## Data and Sharing capacity split (2026-08-16, #3229)
+
+`Server Features Data and Sharing` was the merge-train batch wall-clock floor.
+The six-PR run [`31777846581`](https://github.com/honua-io/honua-server/actions/runs/31777846581)
+completed only when this shard did: its test step ran 07:00:35Z–07:44:38Z
+(44.05 min) against a 48-minute inner cap while every other required job had
+already finished.
+
+### Evidence
+
+Nine `*.timing.json` artifacts from the most recent batch and scheduled runs
+that executed the shard (`gh run download <id> -n
+server-test-results-server-features-data-sharing`):
+
+| Run | Test step (min) | `capacity_status` |
+|---|---:|---|
+| `31691645087` | 41.05 | low_headroom |
+| `31732911300` | 42.05 | low_headroom |
+| `31761102448` | 33.03 | ok |
+| `31774376922` | 45.55 | low_headroom |
+| `31777846581` | 44.05 | low_headroom |
+| `31921511274` | 43.63 | low_headroom |
+| `31931541793` | **48.05** | **capacity_exhausted** (exit 124) |
+| `31939301584` | 37.70 | ok |
+| `31940825557` | 43.88 | low_headroom |
+
+`scripts/ci/audit-shard-headroom.py --timings-dir <collected> --config
+<pre-split ci-shards.json>` scores that sample **p50 43.6 min, p90 48.0 min,
+100% of cap, `over_capacity`**, with a recommended cap of 69 minutes — i.e. the
+audit's only lever is raising the timeout, which #3229 rules out.
+
+### Cause: stable serial workload, not a hang or contention
+
+The eight successful runs' TRX files give per-class wall intervals
+(`UnitTestResult/@startTime..@endTime`). Two facts fall out:
+
+1. **The shard is strictly serial.** The sum of the per-class intervals
+   reproduces the whole test step to within 4–11 seconds on every run, so there
+   is no parallel slack to recover and no idle gap to explain. Class placement
+   is therefore directly additive: moving a class moves its whole interval.
+2. **Three Streaming classes are 45% of it.** Per-class medians across the eight
+   runs:
+
+| Class group | p50 (min) | p90 (min) | Share |
+|---|---:|---:|---:|
+| `Streaming.*` (3 classes) | 18.0 | 20.7 | 45% |
+| — of which `FeatureStreamSnapshotEndpointsTests` | 12.3 | 14.2 | 31% |
+| `Sharing.*` (7 classes) | 15.4 | 17.5 | 37% |
+| `DataEnrichment.*` (7 classes) | 3.6 | 5.1 | 9% |
+| `Capabilities.*` (6 classes) | 1.9 | 2.3 | 5% |
+| `Grounding.*` (10 classes) | 1.5 | 1.8 | 4% |
+| `Orchestration.*` (7 classes) | 0.1 | 0.1 | <1% |
+
+The growth is real workload: the `#3038` controlled-conformance mutation
+workflow landed `FeatureStreamConformanceEndpointsTests` and grew
+`FeatureStreamSnapshotEndpointsTests`, which is why the 2026-07-29 row above
+(p90 22.0 min, 46% of cap) no longer describes this shard. That row is
+superseded by the table in this section.
+
+### The split
+
+| Child | Test surface | p50 / p90 (min) | Inner / outer cap | p90 / cap |
+|---|---|---:|---:|---:|
+| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests`, `…CursorDurabilityTests` | 18.0 / 20.7 | 30 / 40 | 69% |
+| Server Features Data Enrichment and Sharing | `DataEnrichment.*`, `Orchestration.*`, `Sharing.*`, `Grounding.*`, `Capabilities.*` | 23.6 / 25.3 | 38 / 48 | 67% |
+
+Both children are at or below the 70% target, and both job caps clear their
+inner cap by the required 10 minutes.
+
+Two children rather than three: each shard pays a full restore+build of
+`Honua.Server.Tests`, and the next batch tail after this split is
+`Server Features Misc` at 25.9–28.4 minutes of test step (measured on runs
+`31940825557`, `31939301584`, `31777846581`). Splitting `Sharing.*` off as a
+third child would drop this family's tail to 20.7 minutes but buy no batch
+wall-clock, because `Server Features Misc` would still gate the batch.
+
+`FeatureStreamEndpointsTests` deliberately stays in `Server Features Misc`. It
+is the single heaviest class in the suite (median 12.2 min of that shard's 26.6
+min); folding it into the new Streaming child would produce a ~33-minute shard
+and recreate the tail this change removes.
+
+### Expected before/after
+
+* **Batch critical path (this family):** 44.05 min test / 51.1 min job →
+  ~25.3 min test / ~32 min job at p90. With `Server Features Misc` at ~28.4 min
+  test, the batch `server-tests` tail moves from ~51 min to ~36 min of job wall
+  clock.
+* **Runner minutes:** one additional job. GitHub bills whole minutes per job, so
+  the family goes from one ~51-minute job to a ~32-minute and a ~28-minute job
+  running in parallel: roughly +9 rounded runner minutes on a full run, and
+  fewer than that on targeted runs where only one child is selected (a
+  `src/Honua.Server/Features/Streaming/` change now wakes the Streaming child
+  and `Server Features Misc`, not the enrichment/sharing child).
+* **Censored-timeout risk:** the `capacity_exhausted` sample that escalated a
+  whole batch on run `31931541793` had no attributable owner. Neither child's
+  p90 is within 10 minutes of its cap.
+
+### Rollback
+
+Delete both children from `.github/ci-shards.json`, delete the
+`Server Features Data and Sharing` entry from `shard_partitions`, and restore a
+single shard named `Server Features Data and Sharing` with `artifact_suffix`
+`server-features-data-sharing`, `log_name`
+`server-tests-server-features-data-sharing`, `timeout_minutes` 60,
+`test_timeout_minutes` 48, `src/Honua.Server/Features/Streaming/` back in its
+`paths`, and the filter recorded verbatim as that partition's parent filter.
+Then revert the four `Server Features Data and Sharing` fixtures in
+`scripts/ci/validate-ci-router.sh`.
+
+### Follow-up (not done here)
+
+The shard's wall clock is dominated by fixture work, not assertions. Summing
+TRX test-body durations gives only ~16.4 CPU-minutes against ~42.4 minutes of
+class intervals, so roughly 60% of the shard is per-test host/fixture setup
+inside serialized collections. `FeatureStreamSnapshotEndpointsTests` is the
+clearest case: 34 tests, 322 s of test-body duration, 779 s of wall interval.
+A shared/pooled fixture for the streaming and sharing collections would cut the
+shard far more than any further re-partitioning. That is a test-code change and
+is deliberately out of scope for this CI-config PR.
+
+Two other shards are over the 80% warn line on the same evidence pass
+(`audit-shard-headroom.py` over runs `31939301584` and `31921511274`) and need
+their own tickets rather than a scope grab here:
+
+| Shard | p50 | p90 | Cap | p90 / cap |
+|---|---:|---:|---:|---:|
+| Server Features Admin Operations | 29.2 | 29.2 | 35 | 83% |
+| Server Features Collaboration Mobile and Identity | 16.5 | 17.7 | 22 | 80% |
+
 ### Findings
 
 * **Nine shards were at or above 75% of their inner cap**, five of which had
