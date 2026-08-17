@@ -676,7 +676,7 @@ jobs:
         if: steps.receipt-artifact.outputs.artifact_id != ''
         id: receipt-download
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.receipt-artifact.outputs.artifact_id }}
           path: ${{ runner.temp }}/pr-gate-build-receipt
@@ -745,7 +745,7 @@ jobs:
         if: steps.payload-artifact.outputs.artifact_id != ''
         id: payload-download
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.payload-artifact.outputs.artifact_id }}
           path: ${{ runner.temp }}/pr-gate-build-payload
