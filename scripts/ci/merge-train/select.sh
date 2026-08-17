@@ -12,7 +12,17 @@ HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Real-gate job names: a CI Gate failure caused by ANY of these is never a flake
 # (a human must fix it), so the whole PR stays FAIL even under merge-through. The
 # pattern is matched with grep -E against each failing leaf job's name.
-: "${TRAIN_REAL_GATE_JOB_REGEX:=Build & Format|Analyze C#|\.NET Foundation Tests|Architecture|CI Router|OpenAPI|drift}"
+#
+# Anything NOT listed here (and not an aggregator or a TRAIN_NONBLOCKING_JOBS
+# entry) is treated as a shard: its failure is downgraded to FLAKE when the log
+# matches TRAIN_FLAKE_REGEX. That check is run-wide, because train_select_job_log
+# falls back to `gh run view --log-failed` for the WHOLE run — so one unrelated
+# 40P01 shard deadlock in the same batch would launder an unlisted job's real
+# failure into a flake. Every foundation-class (non-shard, non-flaky) job must
+# therefore be listed. `Worker GDAL Tests` (#3271) is one: it was carved out of
+# `.NET Foundation Tests`, which is listed, and a gdaldem/ogr2ogr regression is
+# never environmental.
+: "${TRAIN_REAL_GATE_JOB_REGEX:=Build & Format|Analyze C#|\.NET Foundation Tests|Worker GDAL Tests|Architecture|CI Router|OpenAPI|drift}"
 # Aggregator-only job names: these are roll-ups (the required "CI Gate" check and
 # the shard fan-in summary). When the ONLY failing jobs are aggregators, a shard
 # was cancelled/flaked underneath them — treat that as a flake, not a real break.

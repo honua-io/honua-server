@@ -14,6 +14,51 @@ from typing import Any
 CONTRACT = "honua.pr-gate-impact-observation/v3"
 MAX_FILES = 3_000
 DOCS_PREFIX = "docs/internal/"
+
+# Markdown under `docs/internal/` whose *content* is asserted by a gate step the
+# docs-only route would skip. Editing one of these files alone can turn the
+# authoritative gate red, so the docs-only class must never claim them.
+#
+# This is the only routing policy in this module; the test file owns the
+# reference-only allowlist and the source globs it scans, so that curating those
+# lists never changes this file's blob and never resets an observation cohort
+# that binds it.
+#
+# `scripts/ci/classify-pr-gate-impact.test.py` rescans the gate's own inputs --
+# including paths built segment-by-segment through `CombinePath`/`Path.Combine`,
+# which is the house style -- and fails when a `docs/internal/**.md` reference is
+# neither listed here nor listed as reference-only, so this set cannot silently
+# fall behind the gate.
+LEAN_GATE_GOVERNED_DOCS = frozenset(
+    {
+        # AuditCoverageMatrixDriftTests joins the documented auth-route rows
+        # against DefaultAuditActionResolver in both directions.
+        "docs/internal/operator/audit-coverage-matrix.md",
+        # ModuleDependencyPolicyTests.MatrixAndAdr_ShouldCrossReference_EachOther
+        # requires the ADR to exist and to contain "ModuleDependencyPolicyTests"
+        # and "Dependency direction matrix".
+        "docs/internal/contributor/adr/0047-module-dependency-policy.md",
+        # ServingImageBoundaryTests asserts exact sentences about which tags a
+        # GA promotion may move.
+        "docs/internal/contributor/release-bundle.md",
+        # PublicInterfaceProofLedgerTests uses this document as on-disk proof
+        # evidence; treat it as governed rather than reason about its parser.
+        "docs/internal/contributor/public-interface-quality-model.md",
+        # DocumentationMatrixDriftTests.GeocodeServerMatrix_... compares the
+        # documented GeocodeServer route roster against feature-catalog.json in
+        # both directions.
+        "docs/internal/spikes/geocode-server-matrix.md",
+        # validate-early-failure-observe.sh (a lean-gate step) greps this file
+        # for two exact phrases.
+        "docs/internal/ci/merge-train-early-failure-observe.md",
+        # base-image-mirrors.sh --verify-inventory-doc parses this inventory in
+        # the always-on "Verify .NET base-image security inventory" step. That
+        # step is guarded to stay unconditional, but the document is listed here
+        # as well so the class stays sound if the gate is ever restructured.
+        "docs/internal/security/code-scanning-2026-Q2-remediation.md",
+    }
+)
+
 EXPECTED_REPOSITORY = "honua-io/honua-server"
 ALLOWED_GATE_CONCLUSIONS = {
     "success",
@@ -180,6 +225,8 @@ def classify(payload: object) -> dict[str, Any]:
             return full("rename-delete-or-unknown-status", count=changed_files, digest=digest)
         if not filename.startswith(DOCS_PREFIX) or not filename.endswith(".md"):
             return full("path-requires-full-gate", count=changed_files, digest=digest)
+        if filename in LEAN_GATE_GOVERNED_DOCS:
+            return full("lean-gate-governed-doc", count=changed_files, digest=digest)
 
     return {
         "contract": CONTRACT,

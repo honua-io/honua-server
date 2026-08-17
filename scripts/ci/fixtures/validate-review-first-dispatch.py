@@ -13,14 +13,33 @@ REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
 REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
 EVIDENCE_LEDGER = ROOT / ".github/workflows/review-first-evidence-ledger.yml"
 PROMOTION_POLICY = ROOT / ".github/review-first-promotion.json"
-AUTO_RERUN = ROOT / ".github/workflows/auto-rerun-flaky.yml"
-FAILURE_TRIAGE = ROOT / ".github/workflows/ci-failure-triage.yml"
-PREBUILD_BENCHMARK = ROOT / ".github/workflows/server-test-prebuild-benchmark.yml"
+WORKFLOW_DIR = ROOT / ".github/workflows"
+PREBUILD_BENCHMARK = WORKFLOW_DIR / "server-test-prebuild-benchmark.yml"
+PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
+PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
 TRAIN_SELECT = ROOT / "scripts/ci/merge-train/select.sh"
 TRAIN_LAND = ROOT / "scripts/ci/merge-train/land.sh"
+
+
+def read_text(path: Path) -> str:
+    """Read UTF-8 text, naming the file, byte, and offset on a decode failure.
+
+    A bare ``UnicodeDecodeError`` from ``read_text`` names neither the file nor
+    the cause, so a branch that saved documentation as Windows-1252 produced a
+    traceback that took a local reproduction to diagnose (#3320, #3321).
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        byte = error.object[error.start : error.start + 1]
+        raise AssertionError(
+            f"{path}: not valid UTF-8 -- byte 0x{byte.hex()} at offset {error.start} "
+            f"({error.reason}). Re-save the file as UTF-8; a Windows-1252 round trip also "
+            "replaces unrepresentable characters with a literal '?' that cannot be recovered."
+        ) from error
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -36,19 +55,24 @@ def mode(source: str, path: Path) -> str:
 
 
 def main() -> None:
-    pr_gate = PR_GATE.read_text(encoding="utf-8")
-    review_gate = REVIEW_GATE.read_text(encoding="utf-8")
-    review_bridge = REVIEW_BRIDGE.read_text(encoding="utf-8")
-    evidence_ledger = EVIDENCE_LEDGER.read_text(encoding="utf-8")
-    promotion_policy = PROMOTION_POLICY.read_text(encoding="utf-8")
+    pr_gate = read_text(PR_GATE)
+    review_gate = read_text(REVIEW_GATE)
+    review_bridge = read_text(REVIEW_BRIDGE)
+    evidence_ledger = read_text(EVIDENCE_LEDGER)
+    promotion_policy = read_text(PROMOTION_POLICY)
+    # Trusted default-branch script workflows. `auto-rerun-flaky.yml` and
+    # `ci-failure-triage.yml` used to be listed here; both were retired as
+    # unreachable (their `workflow_run.event == 'pull_request'` guard can never
+    # match a `ci.yml` that has no `pull_request` trigger), and the retirement is
+    # asserted below so they cannot quietly come back.
     action_workflows = {
         REVIEW_GATE: review_gate,
-        AUTO_RERUN: AUTO_RERUN.read_text(encoding="utf-8"),
-        FAILURE_TRIAGE: FAILURE_TRIAGE.read_text(encoding="utf-8"),
-        PREBUILD_BENCHMARK: PREBUILD_BENCHMARK.read_text(encoding="utf-8"),
+        PREBUILD_BENCHMARK: read_text(PREBUILD_BENCHMARK),
+        PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
+        PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
-    train_select = TRAIN_SELECT.read_text(encoding="utf-8")
-    train_land = TRAIN_LAND.read_text(encoding="utf-8")
+    train_select = read_text(TRAIN_SELECT)
+    train_land = read_text(TRAIN_LAND)
 
     pr_mode = mode(pr_gate, PR_GATE)
     review_mode = mode(review_gate, REVIEW_GATE)
@@ -411,13 +435,57 @@ def main() -> None:
     )
 
     for policy_file in (AGENTS, GATE_MODEL, WORKFLOW_INVENTORY):
-        policy = policy_file.read_text(encoding="utf-8")
+        policy = read_text(policy_file)
         if "`PR Gate` and `Review Gate`" not in policy:
             raise AssertionError(
                 f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
             )
-    if "pr-merge-train.yml" in AGENTS.read_text(encoding="utf-8"):
+    agents = read_text(AGENTS)
+    if "pr-merge-train.yml" in agents:
         raise AssertionError("AGENTS.md must not instruct operators to wait for the deleted lander")
+    # The inventory is only useful if it is COMPLETE and HONEST. It had silently
+    # rotted to 44 of 79 workflows before anything noticed, and the tables are
+    # edited by several concurrent PRs at once, so a bad conflict resolution is
+    # the most likely way a row disappears.
+    #
+    # Both directions are derived from the document itself rather than from a
+    # second hardcoded list here: a duplicated list is just a second thing to
+    # forget to update. Rows under "Recently retired" name workflows that must
+    # NOT exist; every other row names a workflow that must exist.
+    inventory = read_text(WORKFLOW_INVENTORY)
+    retired_section = re.search(
+        r"^## Recently retired$(?P<body>.*?)(?=^## |\Z)", inventory, re.MULTILINE | re.DOTALL
+    )
+    if not retired_section:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md must keep a '## Recently retired' section"
+        )
+    row = re.compile(r"^\| `([a-z0-9._-]+\.ya?ml)`", re.MULTILINE)
+    retired = set(row.findall(retired_section.group("body")))
+    if not retired:
+        raise AssertionError("the 'Recently retired' section lists no workflow rows")
+    documented = set(row.findall(inventory)) - retired
+    present = {path.name for path in WORKFLOW_DIR.glob("*.yml")}
+
+    resurrected = sorted(retired & present)
+    if resurrected:
+        raise AssertionError(
+            "workflow-inventory.md lists these as retired but they exist in "
+            f".github/workflows/: {', '.join(resurrected)}. Re-adding one needs a live "
+            "trigger, a review, and its row moved out of 'Recently retired'."
+        )
+    undocumented = sorted(present - documented)
+    if undocumented:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md is missing a row for: "
+            + ", ".join(undocumented)
+        )
+    phantom = sorted(documented - present)
+    if phantom:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md documents workflows that do not "
+            f"exist: {', '.join(phantom)}. Move them to 'Recently retired' or delete the row."
+        )
 
     print(f"review-first-dispatch=ok mode={pr_mode}")
 

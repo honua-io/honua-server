@@ -11,8 +11,8 @@ description: >
 
   NOT included, on purpose: AOT, the Server Tests shard matrix, the browser/MCP
   lanes, cross-provider Postgres coverage, and every other integration suite.
-  Those are the ~45-job matrix whose per-PR fan-out caused the 2026-06-18
-  runner-starvation spiral. This action must stay cheap: ONE runner, no GitHub
+  Those are the full CI matrix (every server-test shard in `.github/ci-shards.json` plus the AOT/Docker/browser/MCP/provider lanes) whose per-PR fan-out
+  caused the 2026-06-18 runner-starvation spiral. This action must stay cheap: ONE runner, no GitHub
   `services:` orchestration, no matrix.
 
   ONE bounded exception (#2882): the "Server Governance/Drift" step boots
@@ -71,6 +71,7 @@ runs:
       shell: bash
       run: |
         scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+        scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh
         scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
 
     # Cheap, service-free governance step (~1s): every OpenAPI document Honua

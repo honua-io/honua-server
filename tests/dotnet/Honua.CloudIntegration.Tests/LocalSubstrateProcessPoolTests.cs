@@ -154,30 +154,92 @@ public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrat
     }
 
     [Fact]
-    public async Task ProcessPool_DeclaresCurrentRasterSourceContractVersion()
+    public async Task ProcessPool_WithoutWorkerAttestation_DeclaresBaselineContractVersion()
     {
         // The serving↔worker job-contract gate (ADR-0060 principle #3b) is enforced by the shared
-        // dispatcher, which consults the backend's MaxSupportedContractVersion. This asserts the local
-        // process backend declares the upgraded raster-source contract so registered COG jobs can
-        // dispatch through this substrate after the serving and worker code are upgraded together.
+        // dispatcher, which consults the backend's MaxSupportedContractVersion. This backend spawns an
+        // arbitrary operator-supplied executable, so it cannot know what contract that binary speaks: an
+        // unattested pool declares the baseline (v1) and the gate refuses a raster-source (v2) job during
+        // a rolling version step rather than launching a worker that would mis-read the spec.
         using var context = CreateBackend(maxConcurrent: 1);
 
         var capabilities = await context.Backend.GetCapabilitiesAsync();
-        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.MinimumSupportedVersion);
 
-        // Both the baseline and the current raster-source contract are admitted by this backend.
-        (1 > capabilities.MaxSupportedContractVersion).Should().BeFalse();
-        (RasterSourceContract.JobContractVersion > capabilities.MaxSupportedContractVersion).Should().BeFalse();
+        // A v1 job runs on this backend; a raster-source job exceeds its declared contract and is gated.
+        (RasterSourceContract.MinimumSupportedVersion > capabilities.MaxSupportedContractVersion).Should().BeFalse();
+        (RasterSourceContract.JobContractVersion > capabilities.MaxSupportedContractVersion).Should().BeTrue();
     }
 
-    private BackendContext CreateBackend(int maxConcurrent)
+    [SkippableFact]
+    public async Task ProcessPool_WithAttestedWorker_DeclaresAndRunsRasterSourceContractVersion()
+    {
+        Skip.IfNot(_helper.Available, "The GP process helper could not be compiled/launched.");
+
+        // Once the operator attests the exact worker identity (muxer + the argument prefix that selects
+        // the worker artifact) as raster-source capable, the pool advertises that contract and a
+        // registered COG job dispatches and runs through this substrate.
+        using var context = CreateBackend(
+            maxConcurrent: 1,
+            workerContracts:
+            [
+                new LocalProcessWorkerContractOptions
+                {
+                    Executable = _helper.DotnetMuxerPath,
+                    ArgumentPrefix = [_helper.HelperDllPath],
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]);
+
+        var capabilities = await context.Backend.GetCapabilitiesAsync();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
+        (RasterSourceContract.JobContractVersion > capabilities.MaxSupportedContractVersion).Should().BeFalse();
+
+        var baseJob = CreateJob(context, "raster-contract", "--exit", "0");
+        var job = baseJob with
+        {
+            Spec = baseJob.Spec with { ContractVersion = RasterSourceContract.JobContractVersion }
+        };
+
+        var submission = await context.Backend.StartAsync(job);
+        submission.Status.Should().Be(ExecutionJobStatus.Running, "the attested worker admits the raster-source contract");
+
+        var terminal = await PollUntilTerminalAsync(context.Backend, job with { ProviderOperationId = submission.ProviderOperationId });
+        terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [SkippableFact]
+    public async Task ProcessPool_UnattestedWorker_RejectsRasterSourceContractJob()
+    {
+        Skip.IfNot(_helper.Available, "The GP process helper could not be compiled/launched.");
+
+        // The declared capability and the launch path agree: without an attestation the backend refuses
+        // the raster-source job at admission instead of spawning a worker that predates the contract.
+        using var context = CreateBackend(maxConcurrent: 1);
+
+        var baseJob = CreateJob(context, "raster-contract-unattested", "--exit", "0");
+        var job = baseJob with
+        {
+            Spec = baseJob.Spec with { ContractVersion = RasterSourceContract.JobContractVersion }
+        };
+
+        var submission = await context.Backend.StartAsync(job);
+
+        submission.Status.Should().Be(ExecutionJobStatus.Failed);
+        submission.Message.Should().Contain("version 1").And.Contain("requires version 2");
+    }
+
+    private static BackendContext CreateBackend(
+        int maxConcurrent,
+        List<LocalProcessWorkerContractOptions>? workerContracts = null)
     {
         var workingRoot = Directory.CreateTempSubdirectory("honua-ls-gp-run").FullName;
         var backend = new LocalProcessPoolBatchComputeBackend(
             Options.Create(new LocalProcessPoolOptions
             {
                 MaxConcurrentProcesses = maxConcurrent,
-                WorkingRoot = workingRoot
+                WorkingRoot = workingRoot,
+                WorkerContracts = workerContracts ?? []
             }),
             NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
 

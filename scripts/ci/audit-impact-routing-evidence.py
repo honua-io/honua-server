@@ -15,15 +15,18 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v1"
+POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v2"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v1"
-LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v1"
+LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v2"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
-NATIVE_CONTRACT = "honua.ci.native-image-impact-observation/v2"
+NATIVE_CONTRACT = "honua.ci.native-image-impact-observation/v3"
 REPOSITORY = "honua-io/honua-server"
 DEFAULT_BRANCH = "trunk"
 PR_GATE_STREAM = "pr_gate"
 NATIVE_STREAM = "native"
+IMAGE_INPUT_CLASSES = ("serving_generic", "serving_lambda", "serving_functions", "worker")
+IMAGE_INPUT_TREES = ("merge", "head")
+SERVING_VARIANTS = ("generic", "lambda", "functions")
 PR_GATE_WORKFLOW = ".github/workflows/pr-gate-impact-observe.yml"
 NATIVE_WORKFLOW = ".github/workflows/native-image-impact-observe.yml"
 SERVING_WORKFLOW = ".github/workflows/serving-image-boundary.yml"
@@ -32,7 +35,17 @@ PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-docs-only-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
 NATIVE_ARTIFACT = re.compile(
-    r"^native-image-impact-observation-v2-attempt-(?P<attempt>[1-9][0-9]*)$"
+    r"^native-image-impact-observation-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
+# A successful observer that deliberately skipped a superseded source uploads a
+# stable-name marker. Recognising it from the catalog alone (never downloading
+# it) keeps "observation-receipt-not-emitted" meaning ONLY a real
+# receipt-emission regression.
+PR_GATE_SKIP_ARTIFACT = re.compile(
+    r"^pr-gate-impact-skipped-(?P<code>[a-z][a-z0-9-]{0,47})-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
+NATIVE_SKIP_ARTIFACT = re.compile(
+    r"^native-image-impact-skipped-(?P<code>[a-z][a-z0-9-]{0,47})-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
 PR_GATE_RECEIPT = "pr-gate-impact-observation.json"
 NATIVE_RECEIPT = "native-image-impact-observation.json"
@@ -119,8 +132,16 @@ def load_policy(value: object) -> dict[str, Any]:
         raise ValueError("image outcome lookback exceeds the policy bound")
     pages = positive_int(value.get("maximum_pages_per_query"), "maximum pages per query")
     downloads = positive_int(value.get("maximum_receipt_downloads"), "maximum downloads")
-    if pages > 10 or downloads > 500:
-        raise ValueError("GitHub query or download bound is unsafe")
+    # Listing one run's artifact catalog is a cheap paged GET; downloading a
+    # receipt is a real archive transfer. Conflating the two made the download
+    # bound the binding cap on how many observer runs could exist in the window.
+    catalogs = positive_int(
+        value.get("maximum_producer_run_catalogs"), "maximum producer run catalogs"
+    )
+    if pages > 10 or downloads > 500 or catalogs > 1200:
+        raise ValueError("GitHub query, catalog, or download bound is unsafe")
+    if catalogs < downloads:
+        raise ValueError("catalog bound must not be smaller than the download bound")
     for field in (
         "minimum_docs_only_heads",
         "minimum_native_heads",
@@ -128,6 +149,8 @@ def load_policy(value: object) -> dict[str, Any]:
         "minimum_worker_impacted_heads",
         "minimum_serving_narrowed_heads",
         "minimum_worker_avoided_heads",
+        "minimum_serving_reuse_heads",
+        "minimum_worker_reuse_heads",
     ):
         positive_int(value.get(field), field.replace("_", " "))
     for field in (
@@ -279,6 +302,7 @@ def _discover_stream(
     workflow: str,
     artifact_pattern: re.Pattern[str],
     cutoff: datetime,
+    skip_pattern: re.Pattern[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
@@ -319,6 +343,31 @@ def _discover_stream(
             ):
                 matches.append(artifact)
         if not matches:
+            # A deliberate, recorded skip of a superseded source is not a
+            # receipt-emission regression; classify it by its own code so the
+            # remaining "not emitted" count keeps its diagnostic value.
+            skip_codes = sorted({
+                skip.group("code")
+                for artifact in by_run.get(run_id, [])
+                for skip in [skip_pattern.fullmatch(str(artifact.get("name", "")))]
+                if skip
+                and int(skip.group("attempt")) == run["run_attempt"]
+                and artifact.get("expired") is False
+            })
+            if len(skip_codes) == 1:
+                exclusions.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": f"observation-skipped:{skip_codes[0]}",
+                })
+                continue
+            if skip_codes:
+                failures.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": "observation-skip-marker-ambiguous",
+                })
+                continue
             exclusions.append({
                 "stream": stream,
                 "producer_run_id": run_id,
@@ -364,7 +413,8 @@ def _discover_stream(
         })
     for run_id, values in by_run.items():
         if run_id not in seen_runs and any(
-            artifact_pattern.fullmatch(str(item.get("name", "")))
+            (artifact_pattern.fullmatch(str(item.get("name", "")))
+             or skip_pattern.fullmatch(str(item.get("name", ""))))
             and parse_time(item.get("created_at"), "artifact creation") >= cutoff
             for item in values
         ):
@@ -387,13 +437,21 @@ def discover(
     policy = load_policy(policy_value)
     cutoff = receipt_cutoff(policy, now)
     streams = (
-        (PR_GATE_STREAM, pr_gate_runs, pr_gate_artifacts, PR_GATE_WORKFLOW, PR_GATE_ARTIFACT),
-        (NATIVE_STREAM, native_runs, native_artifacts, NATIVE_WORKFLOW, NATIVE_ARTIFACT),
+        (
+            PR_GATE_STREAM, pr_gate_runs, pr_gate_artifacts, PR_GATE_WORKFLOW,
+            PR_GATE_ARTIFACT, PR_GATE_SKIP_ARTIFACT,
+        ),
+        (
+            NATIVE_STREAM, native_runs, native_artifacts, NATIVE_WORKFLOW,
+            NATIVE_ARTIFACT, NATIVE_SKIP_ARTIFACT,
+        ),
     )
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    for stream, runs_root, artifacts_root, workflow, artifact_pattern in streams:
+    for (
+        stream, runs_root, artifacts_root, workflow, artifact_pattern, skip_pattern,
+    ) in streams:
         found, omitted, invalid = _discover_stream(
             stream,
             flatten_pages(runs_root, "workflow_runs"),
@@ -401,6 +459,7 @@ def discover(
             workflow,
             artifact_pattern,
             cutoff,
+            skip_pattern,
         )
         entries.extend(found)
         exclusions.extend(omitted)
@@ -565,6 +624,19 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     positive_int(value.get("gate_run_attempt"), "native-image gate run attempt")
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
         raise ValueError("native-image gate result identity is invalid")
+    digests = value.get("image_input_digests")
+    if not isinstance(digests, dict) or set(digests) != set(IMAGE_INPUT_CLASSES):
+        raise ValueError("native-image image input digests are invalid")
+    digests = {
+        name: exact_digest(digests[name], f"native-image {name} input digest")
+        for name in IMAGE_INPUT_CLASSES
+    }
+    tree_kind = value.get("image_input_tree")
+    if tree_kind not in IMAGE_INPUT_TREES:
+        raise ValueError("native-image image input tree kind is invalid")
+    tree_sha = exact_sha(value.get("image_input_tree_sha"), "native-image image input tree")
+    if (tree_kind == "head") != (tree_sha == head):
+        raise ValueError("native-image image input tree identity does not replay")
     legacy = value.get("legacy")
     candidate = value.get("candidate")
     comparison = value.get("comparison")
@@ -572,7 +644,7 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         raise ValueError("native-image routing decision is invalid")
     serving = candidate.get("serving_variants")
     legacy_serving_variants = legacy.get("serving_variants")
-    variant_names = {"generic", "lambda", "functions"}
+    variant_names = set(SERVING_VARIANTS)
     if not isinstance(serving, dict) or set(serving) != variant_names:
         raise ValueError("native-image serving decision is invalid")
     if (
@@ -607,6 +679,7 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         "base_sha": base,
         "head_sha": head,
         "gate_conclusion": value["gate_run_conclusion"],
+        "gate_run_id": value["gate_run_id"],
         "legacy_serving": legacy_serving,
         "legacy_serving_count": sum(
             1 for item in legacy_serving_variants.values() if item
@@ -614,7 +687,16 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         "legacy_worker": legacy["worker_trigger"],
         "candidate_serving": candidate_serving,
         "candidate_serving_count": sum(1 for item in serving.values() if item),
+        "candidate_serving_variants": {name: bool(serving[name]) for name in sorted(serving)},
         "candidate_worker": candidate["worker_build"],
+        "image_input_digests": dict(sorted(digests.items())),
+        "image_input_tree": tree_kind,
+        "image_input_tree_sha": tree_sha,
+        # The workflow builds the variants its own legacy case arms selected, so
+        # only those variants actually produce reusable image evidence.
+        "legacy_serving_variants": {
+            name: bool(legacy_serving_variants[name]) for name in sorted(legacy_serving_variants)
+        },
         "producer_run_id": entry["producer_run_id"],
         "artifact_id": entry["artifact_id"],
     }
@@ -649,12 +731,35 @@ def _image_outcome(
         elif isinstance(run.get("id"), int):
             rejected_ids.append(run["id"])
     success = [run for run in matches if run.get("status") == "completed" and run.get("conclusion") == "success"]
+    started = [
+        value for value in (_run_time(run, "run_started_at", "created_at") for run in matches)
+        if value is not None
+    ]
+    completed = [
+        value for value in (_run_time(run, "updated_at") for run in success) if value is not None
+    ]
     return {
         "success": bool(success),
         "run_ids": sorted(run.get("id") for run in matches if isinstance(run.get("id"), int)),
         "conclusions": sorted({str(run.get("conclusion")) for run in matches}),
         "identity_mismatch_run_ids": sorted(rejected_ids),
+        # Attestation timing. ``started_at`` is when this head's own image work
+        # began; ``completed_at`` is when its evidence became available to a
+        # later head. Missing timestamps degrade to "unusable as a source".
+        "started_at": min(started).isoformat() if started else None,
+        "completed_at": max(completed).isoformat() if len(completed) == len(success) and completed else None,
     }
+
+
+def _run_time(run: dict[str, Any], *fields: str) -> datetime | None:
+    for field in fields:
+        value = run.get(field)
+        if isinstance(value, str):
+            try:
+                return parse_time(value, field)
+            except ValueError:
+                return None
+    return None
 
 
 def _deduplicate(observations: list[dict[str, Any]], failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -668,6 +773,101 @@ def _deduplicate(observations: list[dict[str, Any]], failures: list[dict[str, An
             continue
         result.append(max(values, key=lambda item: (item["producer_run_id"], item["artifact_id"])))
     return sorted(result, key=lambda item: item["head_sha"])
+
+
+def _built_classes(observation: dict[str, Any]) -> list[str]:
+    """The image classes the authoritative workflows actually build for a head.
+
+    The Serving Image Boundary workflow gates each variant on its own legacy
+    case arm, so a variant the candidate selected but legacy did not is never
+    built and never produces reusable evidence. The worker workflow is
+    all-or-nothing on its legacy trigger.
+    """
+    classes = [
+        f"serving_{variant}"
+        for variant in SERVING_VARIANTS
+        if observation["legacy_serving_variants"].get(variant)
+    ]
+    if observation["legacy_worker"]:
+        classes.append("worker")
+    return classes
+
+
+def _reuse_cohorts(
+    native_countable: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Heads whose image inputs were already built successfully by an earlier push.
+
+    Measured routing evidence for #3204 shows the candidate selector never
+    narrows or avoids an image build, so exact-input reuse is the only savings
+    mechanism the observation can still substantiate.
+
+    A head counts only when, for every image class the authoritative workflows
+    would build for it, an attestation for byte-identical inputs already
+    existed **when this head's own image work started**. Heads whose receipt
+    could not address the merge tree the images are built from are excluded
+    from both sides: they can neither consume nor produce a reuse attestation.
+    """
+    reuse: dict[str, list[dict[str, Any]]] = {"serving": [], "worker": []}
+    # Keyed by (image class, digest): a collapsed variant pattern must never let
+    # one variant's build satisfy another variant's head.
+    attested: dict[tuple[str, str], tuple[datetime, str]] = {}
+    ordered = sorted(native_countable, key=_reuse_order_key)
+    for item in ordered:
+        if item["image_input_tree"] != "merge":
+            continue
+        digests = item["image_input_digests"]
+        classes = _built_classes(item)
+        for stream, required in (
+            ("serving", [name for name in classes if name.startswith("serving_")]),
+            ("worker", [name for name in classes if name == "worker"]),
+        ):
+            if not required:
+                continue
+            started = _reuse_timestamp(item, stream, "started_at")
+            matched = {}
+            for name in required:
+                source = attested.get((name, digests[name]))
+                if source is not None and started is not None and source[0] <= started:
+                    matched[name] = source[1]
+            if len(matched) == len(required):
+                reuse[stream].append({
+                    "pull_request": item["pull_request"],
+                    "head_sha": item["head_sha"],
+                    "image_classes": sorted(required),
+                    "reused_from": matched,
+                })
+            outcome = item[f"{stream}_outcome"]
+            completed = _reuse_timestamp(item, stream, "completed_at")
+            if outcome["success"] and completed is not None:
+                for name in required:
+                    attested.setdefault((name, digests[name]), (completed, item["head_sha"]))
+    return reuse["serving"], reuse["worker"]
+
+
+def _reuse_timestamp(observation: dict[str, Any], stream: str, field: str) -> datetime | None:
+    value = observation[f"{stream}_outcome"].get(field)
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_time(value, field)
+    except ValueError:
+        return None
+
+
+def _reuse_order_key(observation: dict[str, Any]) -> tuple[str, int, str]:
+    """Order by when the head's own image work started, not by observer run id.
+
+    A ``workflow_dispatch`` re-observation or a PR Gate rerun of an older head
+    gets a newer observer run id, which would otherwise reorder it after newer
+    heads and change both the reuse source and the eligible count. ``gate_run_id``
+    is push-monotone and breaks ties deterministically.
+    """
+    started = [
+        observation[f"{stream}_outcome"].get("started_at") for stream in ("serving", "worker")
+    ]
+    earliest = sorted(value for value in started if isinstance(value, str))
+    return (earliest[0] if earliest else "", observation["gate_run_id"], observation["head_sha"])
 
 
 def summarize(
@@ -751,6 +951,31 @@ def summarize(
         item for item in native_countable
         if item["legacy_worker"] and not item["candidate_worker"]
     ]
+    serving_reuse, worker_reuse = _reuse_cohorts(native_countable)
+    signals = {
+        "serving_narrowing_ready": len(serving_narrowed) >= policy["minimum_serving_narrowed_heads"],
+        "serving_reuse_ready": len(serving_reuse) >= policy["minimum_serving_reuse_heads"],
+        "worker_avoidance_ready": len(worker_avoided) >= policy["minimum_worker_avoided_heads"],
+        "worker_reuse_ready": len(worker_reuse) >= policy["minimum_worker_reuse_heads"],
+    }
+    savings_mechanism = {
+        "serving": sorted(
+            name
+            for name, ready in (
+                ("narrowing", signals["serving_narrowing_ready"]),
+                ("exact-input-build-reuse", signals["serving_reuse_ready"]),
+            )
+            if ready
+        ),
+        "worker": sorted(
+            name
+            for name, ready in (
+                ("avoidance", signals["worker_avoidance_ready"]),
+                ("exact-input-build-reuse", signals["worker_reuse_ready"]),
+            )
+            if ready
+        ),
+    }
     gates = {
         "integrity_clean": not failures,
         "docs_only_sample_ready": len(docs_success) >= policy["minimum_docs_only_heads"],
@@ -758,8 +983,12 @@ def summarize(
         "native_sample_ready": len(native_countable) >= policy["minimum_native_heads"],
         "serving_impacted_sample_ready": len(serving_impacted) >= policy["minimum_serving_impacted_heads"],
         "worker_impacted_sample_ready": len(worker_impacted) >= policy["minimum_worker_impacted_heads"],
-        "serving_narrowed_sample_ready": len(serving_narrowed) >= policy["minimum_serving_narrowed_heads"],
-        "worker_avoided_sample_ready": len(worker_avoided) >= policy["minimum_worker_avoided_heads"],
+        "serving_savings_sample_ready": (
+            signals["serving_narrowing_ready"] or signals["serving_reuse_ready"]
+        ),
+        "worker_savings_sample_ready": (
+            signals["worker_avoidance_ready"] or signals["worker_reuse_ready"]
+        ),
         "authoritative_image_outcomes_clean": not image_failures,
     }
     eligible = all(gates.values())
@@ -769,6 +998,10 @@ def summarize(
         "mutation": "none",
         "promotion_authority": "none",
         "recommendation": "eligible-for-human-promotion-review" if eligible else "observe-more",
+        # Which mechanism the evidence actually substantiated. Promotion of the
+        # path router requires a narrowing/avoidance mechanism; a reuse-only
+        # sample authorizes reviewing build-evidence reuse, nothing else.
+        "savings_mechanism": savings_mechanism,
         "policy": policy,
         "current_policy_blobs": blobs,
         "counts": {
@@ -782,10 +1015,22 @@ def summarize(
             "worker_impacted_heads": len(worker_impacted),
             "serving_narrowed_heads": len(serving_narrowed),
             "worker_avoided_heads": len(worker_avoided),
+            "serving_reuse_eligible_heads": len(serving_reuse),
+            "worker_reuse_eligible_heads": len(worker_reuse),
             "authoritative_image_outcome_failures": len(image_failures),
             "integrity_failures": len(failures),
+            "observations_skipped": sum(
+                1 for item in index_value.get("exclusions", [])
+                if str(item.get("reason", "")).startswith("observation-skipped:")
+            ),
+            "observation_receipts_not_emitted": sum(
+                1 for item in index_value.get("exclusions", [])
+                if item.get("reason") == "observation-receipt-not-emitted"
+            ),
         },
+        "skipped_observations_by_code": skipped_by_code(index_value.get("exclusions", [])),
         "gates": gates,
+        "signals": signals,
         "docs_only_failures": docs_failures,
         "image_outcome_failures": image_failures,
         "integrity_failures": failures,
@@ -793,8 +1038,23 @@ def summarize(
             "docs_only": docs_success,
             "native": native_countable,
         },
+        "reuse_eligible": {
+            "serving": serving_reuse,
+            "worker": worker_reuse,
+        },
         "exclusions": index_value.get("exclusions", []),
     }
+
+
+def skipped_by_code(exclusions: list[dict[str, Any]]) -> dict[str, int]:
+    """Count recorded observation skips per bounded code, newest schema first."""
+    counts: dict[str, int] = {}
+    for item in exclusions:
+        reason = str(item.get("reason", ""))
+        if reason.startswith("observation-skipped:"):
+            code = reason.split(":", 1)[1]
+            counts[code] = counts.get(code, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def markdown(ledger: dict[str, Any]) -> str:
@@ -811,15 +1071,33 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Native exact heads: `{counts['native_countable_heads']}` / `{policy['minimum_native_heads']}`",
         f"- Serving impacted/narrowed heads: `{counts['serving_impacted_heads']}` / `{counts['serving_narrowed_heads']}`",
         f"- Worker impacted/avoided heads: `{counts['worker_impacted_heads']}` / `{counts['worker_avoided_heads']}`",
+        "- Exact-input build-reuse-eligible heads (serving/worker): "
+        f"`{counts['serving_reuse_eligible_heads']}` / `{counts['worker_reuse_eligible_heads']}`",
+        "- Substantiated savings mechanism: "
+        f"serving `{', '.join(ledger['savings_mechanism']['serving']) or 'none'}`, "
+        f"worker `{', '.join(ledger['savings_mechanism']['worker']) or 'none'}`",
         f"- Docs-only gate failures: `{counts['docs_only_failure_heads']}`",
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
+        f"- Observations skipped (superseded source): `{counts['observations_skipped']}`"
+        + (
+            " — " + ", ".join(
+                f"`{code}`: `{value}`"
+                for code, value in ledger.get("skipped_observations_by_code", {}).items()
+            )
+            if ledger.get("skipped_observations_by_code") else ""
+        ),
+        f"- Successful observers with no receipt and no skip marker: "
+        f"`{counts['observation_receipts_not_emitted']}`",
         "",
         "| Gate | Passed |",
         "|---|---|",
         rows,
         "",
         "A successful observer shell without one exact stable-name receipt is never counted. ",
+        "Reuse is *build* reuse only: the GDAL worker's Trivy scan is re-run on every head "
+        "because its verdict depends on the vulnerability database at scan time, never on a "
+        "previous head's attestation.",
         "Native decisions are countable only when every required exact-head legacy image workflow has a successful outcome.",
         "",
     ])
@@ -865,6 +1143,7 @@ def main() -> int:
             ).isoformat().replace("+00:00", "Z"),
             "image_run_cutoff": image_cutoff,
             "maximum_pages_per_query": policy["maximum_pages_per_query"],
+            "maximum_producer_run_catalogs": policy["maximum_producer_run_catalogs"],
             "maximum_receipt_downloads": policy["maximum_receipt_downloads"],
         }
         if args.github_output:

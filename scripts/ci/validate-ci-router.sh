@@ -95,8 +95,10 @@ jq -e '
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
+# The one-off #2722 hosted transfer benchmark that used to be validated here was
+# retired with its workflow; its measured result is retained in
+# docs/internal/ci/server-test-transfer-benchmark.md and ADR-0074.
 scripts/ci/validate-server-test-binary-artifacts.sh
-scripts/ci/validate-server-test-transfer-benchmark.sh
 scripts/ci/validate-server-test-shard-cache.sh
 scripts/ci/validate-server-test-reuse-benchmark.sh
 scripts/ci/validate-server-test-prebuild.sh
@@ -611,37 +613,52 @@ assert_descriptor \
   "Core"
 
 # #2709: the four shards carved from the former Server Features Misc shard
-# retained a shared source-path list after their filters diverged. Zarr tests
-# remain executable only in the Misc catch-all, so route the Zarr registrar to
-# that real owner instead of paying for three filters that cannot discover it.
+# retained a shared source-path list after their filters diverged, so the Zarr
+# registrar was routed to the one shard whose filter could actually discover its
+# tests — then the Misc catch-all. #3271 gave Zarr (with COG and Coverages) a
+# real owner, `Raster Serving`; the exclusions below still pin the carved shards
+# out, and the exact-owner assertion now names the raster shard.
 assert_exact_shards \
   "zarr-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  '["Server Features Misc"]'
+  '["Raster Serving"]'
+# Per-shard exclusion assertions for this path were dropped in #3229 as redundant
+# against the exact-set assertion above; the same reasoning applies to the raster
+# owners added below.
+
+# #3271: the three raster-SERVING protocol adapters route to one owning shard.
+# COG used to land in `Cloud & Contract` (a cloud-provider/contract bucket) and
+# Coverages in the Misc catch-all, so a raster-serving regression surfaced
+# somewhere unrelated or inside a 60-minute shard. Coverages also carried the
+# same #2709 leftover as Zarr — shards carved out of Misc kept its source path
+# after their filters diverged — which the exact-set assertions below now pin.
+assert_exact_shards \
+  "cog-server-source-exact-owner" \
+  "src/Honua.Server/Features/Protocols/Cog/CogEndpoints.cs" \
+  '["Raster Serving"]'
+assert_exact_shards \
+  "coverages-server-source-exact-owner" \
+  "src/Honua.Server/Features/Protocols/Coverages/Multidimensional/MultidimensionalCoverageEndpoints.cs" \
+  '["Raster Serving"]'
+# The test file itself also sits under the broad tests/.../Features/ prefix that
+# the Misc catch-all family claims, so an exact-set assertion does not apply:
+# assert INCLUSION of the new owner plus the exclusion that actually moved —
+# Cloud & Contract no longer runs COG.
+assert_descriptor \
+  "cog-test-source-includes-raster-serving" \
+  "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "Raster Serving"
 assert_excludes_shard \
-  "zarr-server-source-excludes-data-sharing" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Data and Sharing"
-assert_excludes_shard \
-  "zarr-server-source-excludes-collaboration-content" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Collaboration Mobile and Identity"
-assert_excludes_shard \
-  "zarr-server-source-excludes-studio-feature-store" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Studio and Feature Store"
-assert_excludes_shard \
-  "zarr-server-source-excludes-analytics-export-reporting" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Analytics Export and Reporting"
-assert_excludes_shard \
-  "zarr-server-source-excludes-spec-printing-staticmap" \
-  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Spec Printing and Static Maps"
+  "cog-test-source-excludes-cloud-contract" \
+  "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs" \
+  "Cloud & Contract"
 
 # Representative cumulative diff from #2702: shared raster changes retain the
 # ImageServer/coverage/WCS owners, while the server Zarr registrar adds only its
-# executable Misc owner.
+# executable owner — the `Raster Serving` shard since #3271 (previously the Misc
+# catch-all).
 assert_exact_shards \
   "zarr-point-slice-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s\n%s' \
@@ -650,7 +667,7 @@ assert_exact_shards \
       'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Server Features Misc","WFS"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving","WFS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -658,13 +675,28 @@ assert_descriptor \
   "src/Honua.Server/Features/DataEnrichment/DataEnrichmentServiceCollectionExtensions.cs" \
   "targeted" \
   "false" \
-  "Server Features Data and Sharing"
-# Capacity rebalance: Streaming is class-balanced across the existing Data and
-# Sharing and Misc shards. A source change must wake both executable owners.
+  "Server Features Data Enrichment and Sharing"
+# Capacity rebalance (#2422, re-split in #3229): Streaming SOURCE is
+# class-balanced across three executable owners - the Misc catch-all (heavy
+# FeatureStreamEndpointsTests), the dedicated Streaming Snapshot and Conformance
+# shard, and the Data Enrichment and Sharing child, whose Capabilities tests bind
+# FeatureStreamOptions. A source change must wake all three.
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data and Sharing","Server Features Misc"]'
+  '["Server Features Data Enrichment and Sharing","Server Features Misc","Server Features Streaming Snapshot and Conformance"]'
+# A Streaming TEST change, by contrast, must reach the shard that runs those
+# classes and must NOT wake the 25-minute Data Enrichment and Sharing child,
+# which runs no Streaming class. #3229 narrowed that child off the broad
+# tests/dotnet/Honua.Server.Tests/Features/ prefix to make this true.
+assert_exact_shards \
+  "streaming-test-exact-owners" \
+  "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
+  '["Server Features Misc","Server Features Spec Printing and Static Maps","Server Features Streaming Snapshot and Conformance"]'
+assert_excludes_shard \
+  "streaming-test-excludes-data-enrichment-sharing" \
+  "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
+  "Server Features Data Enrichment and Sharing"
 # Root Admin tests share the already-running Admin Operations shard after the
 # legacy Admin & Infrastructure runner exhausted its test budget.
 assert_exact_shards \
@@ -872,7 +904,7 @@ assert_descriptor \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
-  "Server Features Data and Sharing"
+  "Server Features Data Enrichment and Sharing"
 assert_descriptor \
   "core-capability-registry-includes-admin-governance" \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
@@ -1159,13 +1191,29 @@ assert_descriptor \
   "Core"
 
 # ---------------------------------------------------------------------------
-# #1899 guard: every Honua.Server.Tests class must be claimed by at least one
-# shard filter (in the correct test assembly) or it never runs in CI. This is
-# the anti-regression check for the coverage hole — a new test class in an
-# unmapped namespace fails CI here instead of silently never running.
+# #1899 guard, BOTH directions:
+#
+#   1. Every Honua.Server.Tests class must be claimed by at least one shard
+#      filter (in the correct test assembly) or it never runs in CI. A new test
+#      class in an unmapped namespace fails CI here instead of silently never
+#      running.
+#   2. Every shard filter — and every individual clause inside it — must select
+#      at least one test. `dotnet test --filter` exits 0 when nothing matches,
+#      so a filter naming a renamed/moved/deleted namespace runs ZERO tests and
+#      PASSES: CI stays green while that coverage silently disappears. Because
+#      filters are typically an OR of many clauses, one dead clause is invisible
+#      at shard level, so the check is clause-level. Filters that cannot be
+#      resolved statically are reported as failures, never passed by default.
 # ---------------------------------------------------------------------------
 if [[ -n "${PYTHON_BIN}" ]]; then
-echo "Checking server-test shard coverage (no orphaned test classes)..."
+echo "Checking flake-hunt report contract..."
+# The nightly flake hunt reads the same shard definitions; its summarizer decides
+# what counts as a flake candidate and whether the evidence is complete enough to
+# report at all. Untested, it silently emits an empty green report.
+"${PYTHON_BIN}" scripts/ci/summarize-flaky-detection.test.py
+
+echo "Checking shard filter/test-class coverage in both directions..."
+"${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
@@ -1195,14 +1243,6 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Misc" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Misc" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1343,9 +1383,28 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAzureBlobCloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport"
+    "FileImport" \
+  `# #3271 Raster Serving: the three raster-serving namespaces are pinned to the` \
+  `# shard that now owns them, so a rename back into the Misc catch-all or the` \
+  `# Cloud & Contract bucket fails here rather than silently re-hiding them.` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Raster Serving" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Raster Serving" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Raster Serving" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Raster Serving"
 else
-  echo "⚠️  Skipping server-test shard coverage check (no working Python 3: tried python3/python/py)"
+  echo "⚠️  Skipping shard filter/test-class coverage checks (no working Python 3: tried python3/python/py)"
 fi
 
 echo "CI router validation passed."

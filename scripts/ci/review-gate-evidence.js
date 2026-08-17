@@ -13,21 +13,48 @@ const NEGATIVE_REVIEW_STATES = new Set(['CHANGES_REQUESTED', 'DISMISSED']);
 // `reviewMarker` recognises a review body as a review at all; `cleanMarker`
 // recognises the reviewer's specific "no findings" phrasing. The phrasings are
 // per-reviewer on purpose: a generic match would let unrelated prose attest.
+//
+// IDENTITY SHAPES. Evidence reaches this evaluator in two shapes and they spell
+// bot logins differently:
+//   * REST (`.user.login`)    -> `claude[bot]`, `chatgpt-codex-connector[bot]`
+//   * GraphQL (`author.login`) -> `claude`,      `chatgpt-codex-connector`
+// The gate reads GraphQL (review-gate-snapshot.js), so the suffix-less spelling
+// is the one that actually shows up in production. `logins` matches on the login
+// alone; `botLogins` matches ONLY when GitHub also types the author as a `Bot`.
+// That distinction is load-bearing for Claude: `claude` is a real GitHub User
+// too, and a User can hold a PAT, which would break the
+// bot-distinct-from-author property this list depends on.
 const ATTESTING_REVIEWERS = [
   {
     id: 'codex',
+    // Both spellings are accepted unconditionally: no `chatgpt-codex-connector`
+    // User exists, so the suffix-less form cannot be impersonated by a PAT.
     logins: ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]'],
+    botLogins: [],
     reviewMarker: /Codex Review|Reviewed commit/i,
     cleanMarker: /Codex Review:\s+Didn't find any major issues\./i,
   },
   {
-    // `claude[bot]` only -- the bare `claude` account is a real GitHub User and
-    // a User can hold a PAT, which would break the bot-distinct-from-author
-    // property this list depends on.
     id: 'claude',
+    // REST spelling. The bare `claude` account is a real GitHub User, so it is
+    // NEVER accepted on login alone -- only via `botLogins` below, which
+    // additionally requires GitHub to type the author as a Bot.
     logins: ['claude[bot]'],
+    // GraphQL spelling. Verified live: a review posted by the Claude GitHub App
+    // comes back from GraphQL as `{login: "claude", __typename: "Bot"}`
+    // (anthropics/claude-code-action#1650) while REST reports `claude[bot]`.
+    // Without this entry every review the Claude lane posts is invisible to the
+    // gate, because review-gate.yml reads the GraphQL shape.
+    botLogins: ['claude'],
     reviewMarker: /Claude Review|Reviewed commit/i,
     cleanMarker: /Claude Review:\s+No major issues found\./i,
+    // THE canonical body `.github/workflows/claude-review.yml` posts for a clean
+    // head, kept here so the lane cannot drift from the marker that grades it.
+    // `cleanCommentBody(head)` must satisfy `cleanMarker` and the reviewed-commit
+    // parser below; review-gate-evidence.test.js asserts exactly that by feeding
+    // the generated body back through `evaluateCodexEvidence`.
+    cleanCommentBody: head =>
+      `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${head}\``,
   },
 ];
 
@@ -48,13 +75,19 @@ const ATTESTING_REVIEWERS = [
 // Accepting it would need the unresolved filter to stop being head-scoped for
 // verdict-less reviewers. Until that exists, this identity stays out.
 
-function reviewerFor(login) {
+// `typename` is GitHub's GraphQL `__typename` for the author (`Bot` / `User`),
+// or undefined for REST-shaped input. A `botLogins` entry matches only when it
+// is exactly `'Bot'`, so an undefined/`User` author can never reach a
+// suffix-less bot identity.
+function reviewerFor(login, typename) {
   if (!login) return null;
-  return ATTESTING_REVIEWERS.find(reviewer => reviewer.logins.includes(login)) || null;
+  return ATTESTING_REVIEWERS.find(reviewer =>
+    reviewer.logins.includes(login) ||
+    (typename === 'Bot' && (reviewer.botLogins || []).includes(login))) || null;
 }
 
-function isAttestingReviewer(login) {
-  return reviewerFor(login) !== null;
+function isAttestingReviewer(login, typename) {
+  return reviewerFor(login, typename) !== null;
 }
 
 // Retained name: review-gate.yml and any external caller import `isCodex`.
@@ -62,7 +95,7 @@ function isAttestingReviewer(login) {
 const isCodex = isAttestingReviewer;
 
 function cleanCommentMatchesHead(comment, head) {
-  const reviewer = reviewerFor(comment.author?.login);
+  const reviewer = reviewerFor(comment.author?.login, comment.author?.__typename);
   // Defensive: a reviewer without a cleanMarker cannot attest via a comment at
   // all. This path exists to accept an explicit "no findings" statement, and a
   // reviewer with no such phrasing makes no such statement. Every current entry
@@ -89,7 +122,7 @@ function cleanCommentMatchesHead(comment, head) {
 function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, head }) {
   const attestingReviews = reviews
     .filter(review => {
-      const reviewer = reviewerFor(review.author?.login);
+      const reviewer = reviewerFor(review.author?.login, review.author?.__typename);
       return reviewer !== null && reviewer.reviewMarker.test(review.body || '');
     })
     .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
@@ -102,7 +135,8 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // would attest. An objection counts whatever its wording; only POSITIVE
   // evidence has to be well-formed.
   const negatives = reviews.filter(review =>
-    reviewerFor(review.author?.login) !== null && NEGATIVE_REVIEW_STATES.has(review.state));
+    reviewerFor(review.author?.login, review.author?.__typename) !== null &&
+    NEGATIVE_REVIEW_STATES.has(review.state));
   const negativeAt = negatives.reduce(
     (max, review) => Math.max(max, Date.parse(review.updatedAt || review.submittedAt)), 0);
 
@@ -122,7 +156,7 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // a negative that never enters the map only if it also never blocks -- so
   // undated negatives are recorded as Infinity, which nothing can supersede).
   const newestByReviewer = (entries, timeOf, undatedValue = null) => entries.reduce((acc, entry) => {
-    const reviewer = reviewerFor(entry.author?.login);
+    const reviewer = reviewerFor(entry.author?.login, entry.author?.__typename);
     if (!reviewer) return acc;
     const at = timeOf(entry);
     const value = Number.isFinite(at) ? at : undatedValue;
@@ -189,7 +223,15 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
 // in its own jq -- it recomputes unresolvedCount and then WRITES the required
 // `Review Gate` status, so if its login set drifted from this one it could stamp
 // the gate green while a reviewer's threads sat unresolved.
-const ATTESTING_LOGINS = ATTESTING_REVIEWERS.flatMap(reviewer => reviewer.logins);
+// Includes the suffix-less GraphQL spellings: select.sh counts unresolved
+// reviewer threads with jq over the GraphQL snapshot, so omitting `claude` there
+// would hide every unresolved Claude thread and let the train stamp the gate
+// green over open findings. jq cannot see `__typename`, so this set is the
+// permissive one; the direction is fail-safe (a stray bare-`claude` User thread
+// only makes the train MORE conservative), and positive evidence is still graded
+// by `reviewerFor`, which does enforce the Bot check.
+const ATTESTING_LOGINS = ATTESTING_REVIEWERS.flatMap(
+  reviewer => [...reviewer.logins, ...(reviewer.botLogins || [])]);
 
 if (require.main === module) {
   if (process.argv.includes('--print-logins')) {

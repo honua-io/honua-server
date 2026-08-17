@@ -1082,6 +1082,7 @@ __sel_failed_jobs() {  # <run-id>
     cancelshard) printf 'cancelled\tServer Tests (Server Features Misc)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     shard_flake) printf 'failure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     foundation)  printf 'failure\t.NET Foundation Tests\nfailure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
+    workergdal) printf 'failure\tWorker GDAL Tests\nfailure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     buildfmt)    printf 'failure\tBuild & Format\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     shard_real)  printf 'failure\tServer Tests (STAC and API Governance)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n' ;;
     nojobs)      : ;;
@@ -1092,6 +1093,11 @@ __sel_job_log() {  # <run-id> <job-name>
   case "${SEL_CASE:-}" in
     shard_flake) printf 'ERROR 40P01: deadlock detected during seed\n' ;;
     shard_real)  printf 'Assert.Equal() Failure: expected 3 actual 4\n' ;;
+    # The live train_select_job_log ignores its job argument and returns the
+    # WHOLE run's `--log-failed` output, so an unrelated shard deadlock in the
+    # same batch is visible to every job's flake check. That is exactly what
+    # would launder an unlisted real-gate job's failure into a FLAKE (#3271).
+    workergdal)  printf 'ERROR 40P01: deadlock detected during seed\nGDAL CLI tool gdaldem produced a wrong slope raster\n' ;;
     *) : ;;
   esac
 }
@@ -1109,6 +1115,12 @@ assert_eq "select(flake): cancelled shard => FLAKE" \
 # (c) real-gate job (.NET Foundation Tests) failed => FAIL (skip).
 assert_eq "select(flake): .NET Foundation Tests failed => FAIL" \
   "$(SEL_CASE=foundation train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
+# (c2) #3271: `Worker GDAL Tests` was carved out of `.NET Foundation Tests`. It
+# must stay a real gate — otherwise a genuine gdaldem/ogr2ogr regression is
+# downgraded to FLAKE whenever any shard in the same run hits a 40P01 deadlock,
+# because the log lookup is run-wide. The log fixture above contains BOTH.
+assert_eq "select(flake): Worker GDAL Tests failed alongside a 40P01 => FAIL" \
+  "$(SEL_CASE=workergdal train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"
 # (d) real-gate job (Build & Format) failed => FAIL.
 assert_eq "select(flake): Build & Format failed => FAIL" \
   "$(SEL_CASE=buildfmt train_select_ci_gate_state "${GATE_FAIL}")" "FAIL"

@@ -162,6 +162,55 @@ train_classify_timeout 31940825557 0 'Server Tests (Infra and Security)' || rc=$
 [[ "${rc}" == "7" ]] || fail "REST job-log fallback lost capacity classification (rc=${rc})"
 pass "REST job-log fallback preserves capacity classification"
 
+# Production shape of batch CI 31940825557 and 31931541793: 'Infra and Security'
+# burned its whole 39m budget, so HONUA_SHARD_CAPACITY_EXHAUSTED is the LAST
+# error of a 47298-line job log full of unrelated `FATAL:`/`error` noise, the
+# exact-check annotations are unavailable, and the aggregate
+# `gh run view --job --log` surface is unavailable too. Both merge-train runs
+# (31940583968 / 31931259882) fell through to attribution and dropped an
+# arbitrary member (#3197). No bounded head-of-log read may be reintroduced.
+#
+# The fixture reproduces the SHAPE at 1/20 scale on purpose. train_read_job_log
+# tests emptiness with `${text//[[:space:]]/}`, which bash evaluates
+# quadratically: 125 KB costs ~2s, 250 KB ~6s, 1 MB ~79s, and a true 3 MB replay
+# takes minutes of CPU per read. 2000 noise lines already sit far beyond any
+# plausible head-of-log bound, which is the property under test.
+noise_lines=2000
+noisy_capacity_log="$(mktemp)"
+{
+  awk -v n="${noise_lines}" 'BEGIN { for (i = 1; i <= n; i++)
+    printf "2026-08-16T10:%02d:00Z  FATAL:  role \"root\" does not exist (%d)\n", i % 60, i }'
+  printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Infra and Security' hit its 39m test budget while still producing output 2s ago.\n"
+  printf '::error::Process completed with exit code 124.\n'
+} >"${noisy_capacity_log}"
+[[ "$(grep -n 'HONUA_SHARD_CAPACITY_EXHAUSTED' "${noisy_capacity_log}" | cut -d: -f1)" \
+  -gt "${noise_lines}" ]] \
+  || fail "the capacity marker must sit past every noise line for this fixture to mean anything"
+: >"${record}"
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '95149717187	Server Tests (Infra and Security)	failure
+95155797523	Test Suite Summary	failure
+' ;;
+    *"check-runs/"*"/annotations"*) return 1 ;;
+    *"api repos/honua-io/honua-server/actions/jobs/95149717187/logs"*) cat "${noisy_capacity_log}" ;;
+    *"api repos/honua-io/honua-server/actions/jobs/95155797523/logs"*) printf 'Test Suite Summary aggregated a failing shard.\n' ;;
+    *"--job "*) return 1 ;;
+    *) return 1 ;;
+  esac
+}
+unset TRAIN_RUN_LOG_TEXT
+rc=0
+train_classify_timeout 31940825557 0 'Server Tests (Infra and Security)' || rc=$?
+[[ "${rc}" == "7" ]] || fail "tail-of-log capacity marker was missed; the batch would be attributed to a member diff (rc=${rc})"
+[[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected capacity"
+if [[ -s "${record}" ]]; then fail "tail-of-log capacity exhaustion consumed a rerun"; fi
+rc=0
+train_classify_retry_candidate 31940825557 0 0 'Server Tests (Infra and Security)' || rc=$?
+[[ "${rc}" == "7" ]] || fail "orchestration policy folded tail-of-log capacity into attribution (rc=${rc})"
+rm -f "${noisy_capacity_log}"
+pass "capacity marker at the tail of a large noisy job log is never attributed to a member diff"
+
 # If neither log surface is readable, the train must fail closed before flake
 # or per-PR attribution. Job-name routing alone is not failure evidence.
 gh() {

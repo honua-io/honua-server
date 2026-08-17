@@ -59,6 +59,7 @@ selected per-layer based on the layer's `DataConnection` provider name.
 ```json
 {
   "DataSource": { "Provider": "postgres" },
+  "Experimental": { "Features": { "RedshiftProvider": true } },
   "Redshift": {
     "Enabled": true,
     "ConnectionString": "Host=my-cluster.abc123.us-east-1.redshift.amazonaws.com;Port=5439;Database=geo;Username=honua;Password=...;SSL Mode=Require",
@@ -69,6 +70,7 @@ selected per-layer based on the layer's `DataConnection` provider name.
 
 | Setting | Default | Description |
 |---|---|---|
+| `Experimental:Features:RedshiftProvider` | `false` | **Required opt-in (PA-181).** Setting `Redshift:Enabled=true` without this throws at startup. |
 | `Redshift:Enabled` | `true` | Set to `false` to skip provider registration even if the assembly is referenced. |
 | `Redshift:ConnectionString` | _none_ | Default connection string used when a layer's secure connection is unavailable. Prefer secret-store references in production. |
 | `Redshift:CommandTimeoutSeconds` | `60` | Per-command timeout in seconds. Must be positive. |

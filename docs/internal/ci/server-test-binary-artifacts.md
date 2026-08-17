@@ -46,33 +46,147 @@ The fast fixture used by CI router validation is:
 scripts/ci/validate-server-test-binary-artifacts.sh
 ```
 
-## Shard-local failed-rerun cache
+## Shard-local exact-head cache
 
-Production `Server Tests (<shard>)` jobs keep their independent attempt-1
-restore/build path. For each selected project, the lexicographically first
-selected shard is the only attempt-1 cache writer; siblings still build and test
-independently but do not package duplicate project payloads. The writer packages
-and saves its exact project payload after build and before tests, so a test
-failure cannot prevent reuse.
+For each selected project, the lexicographically first selected shard is the
+only cache writer on attempt 1; siblings do not package duplicate project
+payloads. The writer packages and saves its exact project payload after build
+and before tests, so a test failure cannot prevent reuse.
 
-On workflow attempts after the first, a failed shard requests exactly one cache
-key containing the full commit SHA, resolved .NET SDK, archive contract version,
-project identity, runner OS, and artifact-registry digest. There are no prefix
-fallback keys. A valid hit is verified and unpacked before the unchanged
-`--no-build --no-restore` shard test command. A miss or rejected/expired payload
-cleans partial test-project output and safely executes the normal restore/build
-path. A rebuilding rerun may save the exact key for a subsequent attempt.
+Every shard requests exactly one cache key containing the full commit SHA,
+resolved .NET SDK, archive contract version, project identity, runner OS, and
+artifact-registry digest. There are no prefix fallback keys. A valid hit is
+verified and unpacked before the unchanged `--no-build --no-restore` shard test
+command. A miss or rejected/expired payload cleans partial test-project output
+and safely executes the normal restore/build path. A rebuilding rerun may save
+the exact key for a subsequent attempt.
 
-Every job reports the hit/miss/rejection reason plus transfer, integrity,
-unpack, package, and save timings in its step summary. Cache save contention or
-service failure is non-gating; test/build failures keep their existing
-attribution and advisory semantics. The deterministic contract fixture is:
+### Attempt-1 opportunistic reads (#3213)
 
-```bash
-scripts/ci/validate-server-test-shard-cache.sh
-```
+This section is the single contract for attempt-1 reuse. `ci.yml`, the plan
+script and ADR-0074 point here rather than restating it.
 
-Hosted proof [run 29167891150](https://github.com/honua-io/honua-server/actions/runs/29167891150)
+Reads happen on attempt 1 as well as on reruns. This is the only build-reuse
+slice promoted out of shadow, and it is promoted precisely because it adds no
+producer job and no wait:
+
+- the payload it reads is already written today, by the same writer shard, on
+  the same attempt — only the read was previously gated on `run_attempt > 1`;
+- the lookup is single-shot. A shard that starts alongside or ahead of the
+  writer misses and takes the unchanged restore/build path. A shard that starts
+  later — the common case once the 65-shard matrix queues behind the runner
+  concurrency limit — skips its duplicate build of the same project;
+- nothing polls and no `needs:` edge is introduced, so the same-run producer
+  fan-out regression measured in run 31768277005 cannot recur;
+- cache write volume is unchanged, so the repository cache quota is unaffected.
+
+#### Run-scoped keys
+
+The key includes the workflow run id. Cache keys are immutable and a payload is
+valid for 24 hours, so a key scoped only to the commit SHA becomes permanently
+poisoned once its payload ages out: every later run of that unchanged head — a
+Saturday scheduled full matrix, a manual dispatch — would download up to 256 MiB
+in every one of ~65 shards, reject it on TTL (`rejected_cache_evidence`),
+rebuild, and then fail to re-save because the immutable key already exists. That
+repeats on every future run of that SHA. Before attempt-1 reads this could only
+bite an explicit rerun more than 24 hours later; making reads unconditional
+would have made it routine.
+
+Binding the run id makes evidence at most as old as the run that produced it,
+which is the only window shards actually consume: sibling shards share the run
+id, and a rerun keeps the same run id across attempts, so both the attempt-1
+sibling read and the #2735 failed-rerun read are preserved. Cross-run reuse at
+an identical SHA is deliberately given up; it never worked before this contract.
+When no trustworthy run identity is available the key is namespaced `runlocal`
+and reads are disabled entirely.
+
+#### Writer selection
+
+The writer is the first selected shard for the project **in matrix order**, not
+in lexicographic order. Actions dispatches matrix entries in declaration order,
+so a lexicographic writer can sit behind siblings that therefore miss by
+construction. On the current full matrix the lexicographic writer sat at index
+15 for GeoServices (first sibling at 12), 29 for OGC Classic (20), 26 for OData
+(23) and 3 for Server (0) — 18 shards that could never win a read. Matrix order
+costs nothing and is never worse.
+
+*Deferred (follow-up, not in this contract):* first-builder-wins, where every
+shard that had to build probes the key with `lookup-only` after its build and
+publishes if it is still absent. That removes the remaining ordering dependency,
+but in the first dispatch wave many shards would probe "absent" simultaneously
+and each pay archive staging (~370 MiB staged, ~145 MiB archive) before losing
+the reservation. The Server Features shards have a history of exhausting hosted
+runner disk (#1899, #2943), so this needs its own disk-headroom measurement.
+
+#### Kill switch
+
+`ci.yml` forwards the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE`
+verbatim. Exactly one rule interprets it, in `server-test-shard-cache.sh plan`:
+**attempt-1 reuse is on unless the value is exactly the string `false`.** Unset
+is on. The raw value is echoed back as `attempt1_switch` (sanitised to a bounded
+character set so it cannot forge extra output lines) and printed in the job
+summary, so a run states whether the switch was unset or set and to what.
+
+The switch governs attempt-1 reads only. It never withdraws the pre-existing
+#2735 failed-rerun read, which stays on regardless.
+
+Rollback therefore reverts reads to rerun-only. Nothing else changes: no branch
+protection, required context, shard name, filter, timeout, service, result
+attribution, or merge authority depends on this switch.
+
+#### Fail-open
+
+Fail-open is enforced at three levels and every outcome is printed in the job
+step summary (read mode, switch value, lookup outcome, decision, and — only when
+a build actually succeeded — an explicit "restored and built locally" line):
+
+1. the `actions/cache/restore` step is `continue-on-error`, so a cache-service
+   error, throttle, or timeout is a miss rather than a red shard;
+2. `restore-server-test-binaries.sh` stays fail-closed on evidence (contract,
+   project, source SHA, SDK, size, digest, TTL, archive entry safety) and
+   `server-test-shard-cache.sh restore` converts any rejection into
+   `restored=false` plus cleanup of partial output;
+3. `server-test-shard-cache.sh plan` treats a malformed switch, attempt counter
+   or run identity as "no read", i.e. build locally.
+
+#### Trust boundary
+
+The key binds the exact commit SHA and run id, so a payload is only ever
+readable by other jobs of that same run. A fork pull request cannot write into
+the base repository's default-branch cache scope, and its own scope is keyed to
+a SHA and run no other head shares, so attempt-1 reads grant no cross-head or
+cross-fork authority. A PR author reusing a payload built from their own head
+gains nothing they did not already have by controlling that head.
+
+#### Accepted limitation: NuGet cache save on materialized shards
+
+`setup-dotnet-ci` wraps `~/.nuget/packages` in `actions/cache@v5` with a
+prefix `restore-keys` fallback, and its post-job save is unconditional. A shard
+that materializes the binary payload never runs `dotnet restore`, so when a
+`*.csproj`/`packages.lock.json` change produces a new exact key, a fast
+materialized shard can claim that key with the folder it prefix-restored — which
+may be missing the newly added packages.
+
+This is a cache-warmth issue, not a correctness one: a later job that exact-hits
+that entry still runs `dotnet restore`, which downloads only the missing
+packages. It is also bounded to the first run after a dependency change. Fixing
+it properly means splitting the composite into `actions/cache/restore` plus a
+late conditional `actions/cache/save`, which changes behaviour for every caller
+of `setup-dotnet-ci` and belongs in its own change rather than here.
+
+#### Hosted proof coverage
+
+`server-test-shard-cache-proof.yml` was the opt-in hosted lane for this
+contract. It exercised the **rerun** path only (it gated its own restore steps
+on `run_attempt > 1` and never passed the attempt-1 flags), so the attempt-1
+read has fixture and local end-to-end coverage but never had a hosted proof run.
+Rather than extend a lane whose only non-dispatch trigger was a push to the
+merged `ci/2735-shard-local-rerun-cache` branch, #3332 retired it; the deterministic
+fixture `scripts/ci/validate-server-test-shard-cache.sh` remains the guard on
+the live `ci.yml` behaviour.
+
+Its recorded result stands as evidence. Hosted proof
+[run 29167891150](https://github.com/honua-io/honua-server/actions/runs/29167891150)
 used three independent jobs over the 46.4 MiB geoprocessing CLI project cache.
 Attempt 1 built all three shards in parallel; the sole writer completed in
 145.3 seconds versus 144.9 seconds for its non-writer sibling (0.27% delta).

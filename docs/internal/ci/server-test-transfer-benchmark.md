@@ -1,5 +1,16 @@
 # Server-test hosted transfer benchmark
 
+> **Retired.** This page is retained evidence, not a runnable lane. The
+> `server-test-transfer-benchmark.yml` workflow, its
+> `.github/server-test-transfer-benchmark.json` threshold config, and the
+> `summarize-server-test-transfer-benchmark.py` evaluator were deleted once the
+> decision below was recorded in ADR-0074: the branch trigger pointed at a
+> merged experiment branch and nothing else could reach the lane. The measured
+> result and the decision it produced are unchanged. Later producer designs are
+> measured by `server-test-reuse-benchmark.yml` and
+> `server-test-prebuild-benchmark.yml`, which share
+> `scripts/ci/benchmark-server-test-transfer.sh`.
+
 Issue #2722 is the decision gate between the bounded project payload contract
 in #2721 and any production orchestration change in #2708. The benchmark is an
 isolated workflow; it does not run for pull requests, merge-train batches,
@@ -46,20 +57,14 @@ producer, and consumer jobs on attempt 1 while the failed consumers reuse the
 same-run artifact or exact-head cache on attempt 2 without a build. Job names
 remain per-shard so attribution is not collapsed.
 
-## Running the hosted proof
+## How the hosted proof was run
 
-The temporary push trigger is restricted to branch
-`ci/2722-hosted-transfer-benchmark` and benchmark implementation paths. Once the
-initial run reaches its deliberate failures, rerun only failed jobs:
-
-```bash
-gh run rerun RUN_ID --failed
-```
-
-The `Benchmark evidence summary` job uploads `summary.json`, `summary.md`, every
+The workflow's push trigger was restricted to branch
+`ci/2722-hosted-transfer-benchmark` and benchmark implementation paths, and its
+`Benchmark evidence summary` job uploaded `summary.json`, `summary.md`, every
 raw command metric, and GitHub's raw job/step timing response for each attempt.
-Artifacts are retained for seven days; project payloads are retained for one
-day. The final run IDs, sizes, timings, and decision are published on #2708.
+The final run IDs, sizes, timings, and decision were published on #2708 and are
+reproduced below; the workflow itself no longer exists.
 
 ## Hosted result
 

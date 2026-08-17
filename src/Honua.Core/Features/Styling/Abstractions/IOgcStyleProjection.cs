@@ -24,8 +24,9 @@ public interface IOgcStyleProjection
 
     /// <summary>
     /// Gets the stylesheet for the requested style in the requested encoding. MapLibre
-    /// is served from canonical storage; SLD 1.0/1.1 are derived on demand from the
-    /// canonical MapLibre style.
+    /// is served from canonical storage; SLD 1.0/1.1 and Esri <c>drawingInfo</c> are
+    /// derived on demand from the canonical MapLibre style (ADR-0002), for both
+    /// collection-keyed and standalone catalog styles.
     /// </summary>
     /// <param name="styleId">Stable style identifier (the collection's resource name).</param>
     /// <param name="encoding">Requested stylesheet encoding.</param>
@@ -48,10 +49,11 @@ public interface IOgcStyleProjection
 
     /// <summary>
     /// Validates and stores a MapLibre stylesheet for an existing style (OGC
-    /// <c>manage-styles</c>, PUT). Phase 1 only updates an existing styled collection's
-    /// per-layer style; it cannot create a standalone style.
+    /// <c>manage-styles</c>, PUT). Updates either a Phase 1 collection-keyed style or a
+    /// Phase 2 standalone catalog style; it never creates a style (use
+    /// <see cref="CreateStyleAsync"/>).
     /// </summary>
-    /// <param name="styleId">Stable style identifier (the collection's resource name).</param>
+    /// <param name="styleId">Stable style identifier (the collection's resource name, or a standalone style id).</param>
     /// <param name="mapLibreStyleJson">Candidate MapLibre style JSON document.</param>
     /// <param name="strict">When <c>true</c>, validation failures reject the request (OGC <c>style-validation</c>).</param>
     /// <param name="cancellationToken">Cancellation token.</param>

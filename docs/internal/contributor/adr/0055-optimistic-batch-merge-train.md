@@ -5,8 +5,10 @@
 Accepted. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
 land, and a dry-run-by-default workflow) is active. Automatic triggers remain
 dry-run-only; an explicit `workflow_dispatch` with `train_apply=true` and a
-`MERGE_TRAIN_TOKEN` is the only path that lands a batch. Ordinary clean PRs may
-also land through the separate serial `pr-merge-train.yml` workflow.
+`MERGE_TRAIN_TOKEN` is the only path that lands a batch. The separate serial
+`pr-merge-train.yml` lander referenced by earlier revisions of this ADR was
+deleted on 2026-07-21 (`d2afeb9d5`); `merge-train.yml` is now the sole merge
+authority and `scripts/ci/validate-single-merge-authority.sh` enforces that.
 
 ## Context
 
@@ -66,20 +68,55 @@ dry-run.
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
    drift, compile/test failures) ESCALATES, never auto-patched.
-5. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. GitHub job-level timeouts may surface as terminal `cancelled`, `timed_out`, or `startup_failure` conclusions instead of an exit code; those conclusions enter the same bounded retry path and cannot be removed by the non-blocking allowlist or pre-existing-failure subtraction. Pending, skipped selected-shard, missing, and neutral evidence still fail closed. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
+5. **shard-terminal / evidence ordering guard** (BEFORE the pre-existing-failure
+   filter, and therefore before every other classifier) — for EVERY failing job
+   the train first asks whether the job produced a comparable failure CAUSE at
+   all. A shard that could not finish executing its tests did not: `run-server-
+   test-shard.sh` ends it with `HONUA_SHARD_CAPACITY_EXHAUSTED` (over its
+   configured budget), `HONUA_SHARD_HANG_SUSPECTED` (stalled), or
+   `HONUA_SHARD_KILLED` (test host SIGKILLed, suspect OOM). Neither does a
+   terminal failed job whose log stays unreadable across the guard's bounded
+   retries. **None of these may ever be subtracted as pre-existing.** Capacity,
+   killed and evidence-unavailable are additionally terminal and never
+   attributable: they stop the batch at one shared outcome
+   (`ci-shard-capacity-exhausted` / `ci-shard-killed` /
+   `ci-failure-evidence-unavailable`) that escalates the batch as a whole,
+   **naming the offending jobs**, and clears `active_batch` so the queue can
+   progress once the budget is re-based or the runner resized. A stalled shard
+   keeps the historical bounded rerun (step 6) — it just reaches it without
+   passing through subtraction.
+
+   **The ordering is the guarantee, not an optimization.** The pre-existing
+   filter subtracts a batch failure whose job-scoped log signatures also appear
+   on trunk's latest CI, and it samples those signatures from a bounded window
+   of each job log. The shard markers are emitted as the shard's LAST error —
+   job 95149717187 of run 31940825557 carried its marker on line 47296 of 47298,
+   far outside that window — while the window itself fills with per-run noise
+   (passing-test lines, structured log records) that a red shard on trunk
+   produces too. Filtering first could therefore cancel the shard as "already
+   failing on trunk" and LAND a batch on tests that never ran.
+   `scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh` reproduces
+   that shape for all three markers and asserts the order structurally. Two
+   further protections back it up: the signature builder scans the WHOLE log for
+   the markers and emits a run-scoped signature that can never cancel, and the
+   marker predicates are ANCHORED to the emitted `::error::`/annotation form, so
+   a job log that merely PRINTS a marker token (every `CI Router Validation` log
+   does) stays an ordinary, subtractable failure.
+
+6. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. GitHub job-level timeouts may surface as terminal `cancelled`, `timed_out`, or `startup_failure` conclusions instead of an exit code; those conclusions enter the same bounded retry path and cannot be removed by the non-blocking allowlist or pre-existing-failure subtraction. Pending, skipped selected-shard, missing, and neutral evidence still fail closed. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
    `40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)`
    over failing-job logs. Match → a single `gh run rerun --failed` (cap 1),
    never bisection. Their existing optimistic merge-through policy remains separate from generic timeout handling.
-6. **attribute** — REVERSE of smart-CI routing: failing shard →
+7. **attribute** — REVERSE of smart-CI routing: failing shard →
    `.paths[]` from ci-shards.json → which INCLUDED PR's diff touches those
    prefixes. 1 suspect → drop it; ≥2 → drop all; 0 → escalate the whole batch.
    Dropped PRs get `train:escalated` + a comment; rebuild minus culprits, re-CI.
-7. **land** — `git fetch origin trunk`; compare-and-swap: only if
+8. **land** — `git fetch origin trunk`; compare-and-swap: only if
    `origin/trunk` still equals the assembled-onto SHA, `git push origin
    <batch>:trunk` FF-only (a non-FF rejection ⇒ trunk moved ⇒ re-assemble; the
    train NEVER lands un-CI'd bytes via force). Then `gh pr merge <n> --merge`
    per INCLUDED PR.
-8. **state** — a `Merge Train State` issue (label `train:state`) with a fenced
+9. **state** — a `Merge Train State` issue (label `train:state`) with a fenced
    JSON block, written BEFORE each side-effecting step so a crash is resumable;
    per-PR labels `train:landing`/`train:escalated`/`train:hold` carry transient
    state.
