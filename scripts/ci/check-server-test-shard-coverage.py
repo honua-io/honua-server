@@ -1,19 +1,37 @@
 #!/usr/bin/env python3
-"""Guard: every Honua.Server.Tests test class must be claimed by at least one
-shard `filter` in .github/ci-shards.json.
+"""Guard: shard `filter` clauses in .github/ci-shards.json and the test classes
+they select must stay in sync — in BOTH directions.
 
 Owned by ADR-0037 (#1899). The PR gate runs ONLY the shards selected by the
 targeted-shards matrix, and each shard runs `dotnet test --filter <filter>`.
-A test class whose fully-qualified name matches NO shard's filter therefore
-NEVER executes in CI — not even on a full run_all (run_all just selects every
-shard, and every shard still applies its own filter). #1899 found ~218 such
-orphaned classes (whole namespaces: Features.Admin/Console/Alerts, GeoServices
-VectorTileServer/VersionManagementServer, several Features.Ai classes, etc.).
+That creates two symmetric silent-failure modes:
+
+  A. ORPHANED CLASS (#1899). A test class whose fully-qualified name matches NO
+     shard's filter NEVER executes in CI — not even on a full run_all (run_all
+     just selects every shard, and every shard still applies its own filter).
+     #1899 found ~218 such orphaned classes (whole namespaces:
+     Features.Admin/Console/Alerts, GeoServices VectorTileServer/
+     VersionManagementServer, several Features.Ai classes, etc.).
+
+  B. DANGLING FILTER (this guard's second half). The mirror image: a filter
+     clause naming a namespace/class that no longer exists — because tests were
+     renamed, moved to another assembly, or deleted — selects nothing. `dotnet
+     test --filter` treats "no test matched" as success, so the shard runs ZERO
+     tests and PASSES. CI stays green while coverage silently drops, and nothing
+     in the config looks wrong. Because most filters are an OR of many clauses,
+     the check must be CLAUSE-level: one dead clause inside a 12-clause OR is
+     invisible at shard level (the shard still runs the other 11 clauses' tests)
+     yet the tests that clause was written to run are gone from CI.
 
 This script:
   1. Enumerates every test class across the server-test projects (any class
-     declaring an xUnit test method: [Fact], [Theory], [IntegrationTest],
-     [ScaleTest] — the latter two are FactAttribute subtypes in TestKit).
+     declaring an xUnit test method). The recognized test attributes are
+     DISCOVERED from the sources — [Fact]/[Theory] plus every FactAttribute /
+     TheoryAttribute subtype defined under tests/ ([IntegrationTest],
+     [UnitTest], [CloudTest], [EmulatorTest], [RoutingTest], ...) — so a new
+     TestKit attribute cannot silently shrink the inventory. Test method names
+     are captured too, since a filter clause may name a method rather than a
+     class.
   2. Reconstructs each class's fully-qualified name (file-scoped or block
      namespace + class name), which is the prefix xUnit reports as
      FullyQualifiedName for every test in that class.
@@ -21,7 +39,12 @@ This script:
      over FullyQualifiedName) against each class FQN.
   4. FAILS (exit 1) if any class is claimed by ZERO shards, or (optionally)
      reports classes claimed by MORE than one shard.
-  5. Verifies every legacy parent declared in `shard_partitions` is replaced by
+  5. FAILS (exit 1) if any shard's whole filter selects nothing, if any POSITIVE
+     clause (`~` / `=`) selects nothing, or if a filter cannot be resolved
+     statically (unknown target assembly, or a non-FullyQualifiedName property
+     whose emptiness this script cannot decide). Unresolvable is reported as a
+     FAILURE, never silently passed — under-reporting is the bug being guarded.
+  6. Verifies every legacy parent declared in `shard_partitions` is replaced by
      an exact class-level partition: each class selected by the parent filter is
      selected by exactly one child, and no child leaks outside the parent.
 
@@ -70,6 +93,8 @@ TEST_PROJECT_DIRS = {
         "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj",
     "tests/dotnet/Honua.Ai.Tests":
         "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
+    "tests/dotnet/Honua.Geoprocessing.Cli.Tests":
+        "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
 }
 
 # Namespaces that ci-shards.json intentionally leaves to a non-PR lane and so
@@ -89,10 +114,84 @@ EXEMPT_NAMESPACE_PREFIXES = [
     "Honua.Server.Tests.Features.Admin.RoleEndpointsTests",
 ]
 
-TEST_METHOD_ATTR = re.compile(
-    r"\[\s*(?:Fact|Theory|IntegrationTest|ScaleTest|SlowTest)\b"
+# Classes that no shard filter claims and that therefore never run in CI, but
+# whose ownership is a COVERAGE decision for a human rather than something this
+# guard may decide. They were invisible until the test-attribute inventory was
+# fixed to recognise every FactAttribute subtype (they use [UnitTest]/[CloudTest]
+# /[EmulatorTest], which the old hardcoded regex did not match), so they are
+# pre-existing #1899 holes surfaced — not newly created — by that fix.
+#
+# This list is EXACT FQNs, never prefixes: a brand-new orphan still fails the
+# guard hard. Every run prints the list so the gap stays visible instead of
+# silently sitting inside a regex. Delete entries as shard ownership is assigned
+# in #3259, which tracks this list to zero.
+#
+# EMPTY, and it must stay that way unless a genuinely unclaimed class appears.
+# It previously held 20 FQNs, every one of which had since been claimed by a
+# shard while sitting in here. That is worse than a stale comment, because
+# `is_exempt()` is consulted BEFORE the claim check (see the `continue` in the
+# orphan loop): an entry here is not "documented as uncovered", it is
+# *unconditionally skipped*. So each stale entry both over-reported the gap in
+# the run summary and disarmed the guard for that class — if one of them later
+# stopped matching its shard, the tool that exists to catch exactly that would
+# have said nothing.
+#
+# Verified empty by running the guard with the list cleared: all 1198 classes
+# are claimed and it exits 0. Adding an entry costs real coverage; prefer
+# assigning shard ownership.
+UNCLAIMED_PENDING_OWNERSHIP: list[str] = []
+
+# xUnit test-method attributes. [Fact]/[Theory] plus every subtype declared under
+# tests/ (TestKit's [IntegrationTest], [UnitTest], [CloudTest], [EmulatorTest],
+# [RoutingTest], [ScaleTest], ... and per-project ones like [ArchitectureTest]).
+# Discovered rather than hardcoded: a hardcoded list silently shrinks the class
+# inventory when a new attribute lands, which under-reports orphans AND makes the
+# dangling-filter guard emit false positives against filters that are actually
+# live. The closure below also follows subtypes-of-subtypes.
+_ATTR_DECL_RE = re.compile(
+    r"\bclass\s+([A-Za-z_][A-Za-z0-9_]*)Attribute\s*:\s*([^{\r\n]+)"
 )
+_ROOT_TEST_ATTRS = frozenset({"Fact", "Theory"})
+
+
+def discover_test_method_attributes() -> list[str]:
+    """Return the short names of every recognised xUnit test-method attribute."""
+    edges: dict[str, set[str]] = {}
+    tests_root = REPO_ROOT / "tests"
+    if tests_root.is_dir():
+        for path in tests_root.rglob("*.cs"):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if "Attribute" not in text:
+                continue
+            for match in _ATTR_DECL_RE.finditer(text):
+                child = match.group(1)
+                for base in match.group(2).split(","):
+                    base = base.strip().removesuffix("Attribute")
+                    if base:
+                        edges.setdefault(base, set()).add(child)
+    names = set(_ROOT_TEST_ATTRS)
+    pending = list(names)
+    while pending:
+        for derived in edges.get(pending.pop(), ()):
+            if derived not in names:
+                names.add(derived)
+                pending.append(derived)
+    return sorted(names)
+
+
+def _build_test_method_attr_re(names: list[str]) -> re.Pattern[str]:
+    alternatives = "|".join(re.escape(name) for name in names)
+    return re.compile(rf"\[\s*(?:{alternatives})\b")
+
+
+TEST_METHOD_ATTR = _build_test_method_attr_re(discover_test_method_attributes())
 NAMESPACE_RE = re.compile(r"^\s*namespace\s+([A-Za-z0-9_.]+)\s*;?\s*(\{)?", re.M)
+# A method declaration: the first `Name(` that follows a test attribute once any
+# further attribute blocks ([InlineData(...)], [Trait(...)]) have been skipped.
+_ATTR_BLOCK_RE = re.compile(r"\s*\[[^\]]*\]")
+_METHOD_DECL_RE = re.compile(
+    r"[^;{}()]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^<>()]*>)?\s*\("
+)
 # class / record class declarations (incl. partial, abstract, sealed, generics).
 CLASS_RE = re.compile(
     r"(?:public|internal|private|protected|\s)*"
@@ -113,8 +212,20 @@ def _strip_noise(text: str) -> str:
     return text
 
 
+def _method_name_after(text: str, index: int) -> str | None:
+    """Return the test method name declared after the attribute at `index`."""
+    pos = index
+    while True:
+        block = _ATTR_BLOCK_RE.match(text, pos)
+        if not block:
+            break
+        pos = block.end()
+    decl = _METHOD_DECL_RE.match(text, pos)
+    return decl.group(1) if decl else None
+
+
 def enumerate_test_classes() -> dict[str, dict]:
-    """Return {fully_qualified_class_name: {"csproj": str, "src": [paths]}}.
+    """Return {fully_qualified_class_name: {"csproj", "src", "methods"}}.
 
     Only TOP-LEVEL (namespace-scoped) classes count as test classes — xUnit
     reports a test's FullyQualifiedName as <namespace>.<top-level class>, and
@@ -149,6 +260,7 @@ def enumerate_test_classes() -> dict[str, dict]:
             current_top_class: str | None = None
             current_top_class_depth = -1
             test_owners: set[str] = set()
+            test_methods: dict[str, set[str]] = {}
             i = 0
             n = len(text)
             while i < n:
@@ -179,14 +291,20 @@ def enumerate_test_classes() -> dict[str, dict]:
                     am = TEST_METHOD_ATTR.match(text, i)
                     if am and current_top_class is not None:
                         test_owners.add(current_top_class)
+                        method = _method_name_after(text, i)
+                        if method:
+                            test_methods.setdefault(current_top_class, set()).add(method)
                 i += 1
 
             rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
             for cls in test_owners:
                 fqn = f"{namespace}.{cls}"
-                entry = classes.setdefault(fqn, {"csproj": csproj, "src": []})
+                entry = classes.setdefault(
+                    fqn, {"csproj": csproj, "src": [], "methods": set()}
+                )
                 if rel not in entry["src"]:
                     entry["src"].append(rel)
+                entry["methods"].update(test_methods.get(cls, ()))
     return classes
 
 
@@ -354,7 +472,100 @@ def shard_claims(filter_text: str, fqn: str) -> bool:
 
 
 def is_exempt(fqn: str) -> bool:
-    return any(fqn.startswith(p) for p in EXEMPT_NAMESPACE_PREFIXES)
+    return (fqn in UNCLAIMED_PENDING_OWNERSHIP
+            or any(fqn.startswith(p) for p in EXEMPT_NAMESPACE_PREFIXES))
+
+
+# --- dangling-filter guard ----------------------------------------------------
+# The mirror of the orphan check. `dotnet test --filter <f>` exits 0 when the
+# filter selects no test, so a shard whose filter (or whose individual clause)
+# names a namespace/class that no longer exists runs ZERO tests and PASSES. CI
+# stays green while coverage silently drops.
+
+def iter_clauses(node) -> list[tuple[str, str, str]]:
+    """Flatten a parsed filter into its (prop, op, value) clauses."""
+    if node[0] in ("or", "and"):
+        clauses: list[tuple[str, str, str]] = []
+        for child in node[1]:
+            clauses.extend(iter_clauses(child))
+        return clauses
+    return [(node[1], node[2], node[3])]
+
+
+def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
+    """Every runnable test FullyQualifiedName xUnit can report for `csproj`.
+
+    Runnable FQNs include the test method. Class-only names are deliberately not
+    candidates: `FullyQualifiedName=Namespace.Class` selects zero tests even though
+    substring filters commonly name a namespace or class prefix.
+    """
+    pool: list[str] = []
+    for fqn, entry in classes.items():
+        if entry["csproj"] != csproj:
+            continue
+        pool.extend(f"{fqn}.{method}" for method in entry["methods"])
+    return pool
+
+
+def clause_selects_any(op: str, value: str, pool: list[str]) -> bool:
+    if op in ("~", "!~"):
+        return any(value in candidate for candidate in pool)
+    return any(candidate == value for candidate in pool)
+
+
+def find_dangling_filters(
+    shards: list[dict],
+    parsed: dict,
+    shard_csproj: dict[str, str],
+    classes: dict[str, dict],
+) -> dict[str, list]:
+    """Resolve every shard filter against the static test inventory.
+
+    Returns empty_shards / dead_positive / stale_negative / unresolvable. A
+    filter this script cannot resolve statically is reported as UNRESOLVABLE and
+    fails the guard — never silently passed, since under-reporting is the exact
+    bug the guard exists to close.
+    """
+    known_csprojs = set(TEST_PROJECT_DIRS.values())
+    pools: dict[str, list[str]] = {}
+    result: dict[str, list] = {
+        "empty_shards": [],
+        "dead_positive": [],
+        "stale_negative": [],
+        "unresolvable": [],
+    }
+    for shard in shards:
+        name = shard["name"]
+        csproj = shard_csproj[name]
+        if csproj not in known_csprojs:
+            result["unresolvable"].append(
+                (name, csproj,
+                 f"target assembly {csproj} is not in TEST_PROJECT_DIRS, so its "
+                 "test classes cannot be enumerated statically")
+            )
+            continue
+        node = parsed[name]
+        clauses = iter_clauses(node)
+        foreign = sorted({p for p, _, _ in clauses if p != "FullyQualifiedName"})
+        if foreign:
+            result["unresolvable"].append(
+                (name, csproj,
+                 f"filter uses non-FullyQualifiedName propert(y/ies) {', '.join(foreign)}; "
+                 "whether they select any test cannot be decided from sources")
+            )
+            continue
+        pool = pools.get(csproj)
+        if pool is None:
+            pool = selection_pool(classes, csproj)
+            pools[csproj] = pool
+        if not any(_eval(node, candidate) for candidate in pool):
+            result["empty_shards"].append((name, csproj, shard["filter"]))
+        for _, op, value in clauses:
+            if clause_selects_any(op, value, pool):
+                continue
+            bucket = "dead_positive" if op in ("~", "=") else "stale_negative"
+            result[bucket].append((name, csproj, f"{op}{value}"))
+    return result
 
 
 def main() -> int:
@@ -363,6 +574,9 @@ def main() -> int:
                         help="print the full class->shard map")
     parser.add_argument("--report-multi", action="store_true",
                         help="also report classes claimed by >1 shard")
+    parser.add_argument("--skip-dangling-filters", action="store_true",
+                        help="skip the dangling-filter half of the guard "
+                             "(diagnostics only; CI must never pass this)")
     parser.add_argument(
         "--assert-owner",
         action="append",
@@ -450,7 +664,15 @@ def main() -> int:
             )
             return 2
         partition_children.update(children)
-        parsed_partitions.append((name, parent_filter, children))
+        # A partition lives in exactly ONE test assembly (asserted just above),
+        # so its invariant only applies to classes in that assembly. Namespaces
+        # are not assembly-unique here — e.g. Honua.Server.Tests.Features.
+        # Reporting.AnalysisReportResourceTests lives in Honua.Ai.Tests and is
+        # claimed by the MCP shard — so comparing on FQN alone would demand a
+        # child claim a class its `dotnet test <csproj>` can never discover.
+        parsed_partitions.append(
+            (name, parent_filter, children, next(iter(child_projects)))
+        )
 
     declared_classes = enumerate_declared_classes() if args.assert_owner else {}
     assertions = [(a, True) for a in (args.assert_owner or [])]
@@ -525,7 +747,9 @@ def main() -> int:
         elif len(claiming) > 1:
             multi.append((fqn, claiming))
 
-        for parent_name, parent_filter, children in parsed_partitions:
+        for parent_name, parent_filter, children, parent_csproj in parsed_partitions:
+            if cls_csproj != parent_csproj:
+                continue
             parent_claims = _eval(parent_filter, fqn)
             child_claims = [child for child in children if child in claiming]
             if parent_claims and len(child_claims) != 1:
@@ -571,13 +795,68 @@ def main() -> int:
         for error in partition_errors:
             print(f"  - {error}", file=sys.stderr)
 
-    if orphans or partition_errors:
+    dangling: dict[str, list] = {
+        "empty_shards": [], "dead_positive": [],
+        "stale_negative": [], "unresolvable": [],
+    }
+    if not args.skip_dangling_filters:
+        dangling = find_dangling_filters(shards, parsed, shard_csproj, classes)
+
+    # Stale exclusions cannot cause a zero-test shard, so they are reported
+    # loudly but do not fail the build.
+    if dangling["stale_negative"]:
+        print(f"\nNote: {len(dangling['stale_negative'])} exclusion clause(s) "
+              "no longer exclude anything (harmless, but dead config):")
+        for name, csproj, clause in dangling["stale_negative"]:
+            print(f"  - {name} [{csproj}]: FullyQualifiedName{clause}")
+
+    if dangling["unresolvable"]:
+        print(f"::error::{len(dangling['unresolvable'])} shard filter(s) cannot "
+              "be resolved statically, so this guard cannot prove they select "
+              "any test. Make them resolvable (register the target assembly in "
+              "TEST_PROJECT_DIRS, or express the selector over "
+              "FullyQualifiedName) rather than leaving them unchecked:",
+              file=sys.stderr)
+        for name, csproj, reason in dangling["unresolvable"]:
+            print(f"  - {name} [{csproj}]: {reason}", file=sys.stderr)
+
+    if dangling["empty_shards"]:
+        print(f"::error::{len(dangling['empty_shards'])} shard(s) have a filter "
+              "that selects NO test. `dotnet test --filter` exits 0 when nothing "
+              "matches, so the shard runs zero tests and PASSES while its "
+              "coverage silently disappears:", file=sys.stderr)
+        for name, csproj, filter_text in dangling["empty_shards"]:
+            print(f"  - {name} [{csproj}]: {filter_text}", file=sys.stderr)
+
+    if dangling["dead_positive"]:
+        print(f"::error::{len(dangling['dead_positive'])} shard filter clause(s) "
+              "select NO test — the namespace/class they name was renamed, moved "
+              "to another test assembly, or deleted. The tests that clause was "
+              "written to run are no longer running in CI. Repoint or remove "
+              "each clause in .github/ci-shards.json:", file=sys.stderr)
+        for name, csproj, clause in dangling["dead_positive"]:
+            print(f"  - {name} [{csproj}]: FullyQualifiedName{clause}",
+                  file=sys.stderr)
+
+    if orphans or partition_errors or dangling["unresolvable"] \
+            or dangling["empty_shards"] or dangling["dead_positive"]:
         return 1
 
-    print(f"OK: all {len(claim_map)} Honua.Server.Tests classes are claimed by "
+    if UNCLAIMED_PENDING_OWNERSHIP:
+        print(f"\n⚠️  {len(UNCLAIMED_PENDING_OWNERSHIP)} test class(es) are "
+              "claimed by no shard and never run in CI, pending a shard-"
+              "ownership decision (UNCLAIMED_PENDING_OWNERSHIP):")
+        for fqn in UNCLAIMED_PENDING_OWNERSHIP:
+            print(f"  - {fqn}")
+
+    print(f"\nOK: all {len(claim_map)} Honua.Server.Tests classes are claimed by "
           f"at least one shard filter "
-          f"({len(EXEMPT_NAMESPACE_PREFIXES)} exempt namespace prefix(es)); "
-          f"{len(parsed_partitions)} declared shard partition(s) are exact.")
+          f"({len(EXEMPT_NAMESPACE_PREFIXES)} exempt namespace prefix(es), "
+          f"{len(UNCLAIMED_PENDING_OWNERSHIP)} pending ownership); "
+          f"{len(parsed_partitions)} declared shard partition(s) are exact; "
+          f"all {len(shards)} shard filters and their "
+          f"{sum(len(iter_clauses(parsed[s['name']])) for s in shards)} clauses "
+          f"select at least one test.")
     return 0
 
 
