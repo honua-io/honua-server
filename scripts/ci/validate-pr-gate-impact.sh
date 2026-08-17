@@ -108,6 +108,11 @@ grep -Fq 'ref: context.sha' "${observer_workflow}"
 grep -Fq "trusted_execution: 'default-branch-workflow-run/v1'" "${observer_workflow}"
 grep -Fq 'trusted-classify-pr-gate-impact.py' "${observer_workflow}"
 grep -Fq 'policy_blob_sha' scripts/ci/classify-pr-gate-impact.py
+# The docs-only class must keep excluding markdown whose content a lean-gate
+# step asserts; without it an enforced route would skip reachable failures.
+grep -Fq 'LEAN_GATE_GOVERNED_DOCS' scripts/ci/classify-pr-gate-impact.py
+grep -Fq 'lean-gate-governed-doc' scripts/ci/classify-pr-gate-impact.py
+grep -Fq 'docs/internal/operator/audit-coverage-matrix.md' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'observer_workflow_blob_sha' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'gate_run_head_sha != head_sha' scripts/ci/classify-pr-gate-impact.py
 grep -Fq 'gate_run_conclusion' scripts/ci/classify-pr-gate-impact.py
@@ -121,6 +126,24 @@ fi
 
 if grep -Eq '^    paths(-ignore)?:' "${required_workflow}"; then
   echo '::error::Required PR Gate must not use a workflow-level paths filter.' >&2
+  exit 1
+fi
+
+# The admission contract validator reads docs/internal/ci/gate-model.md and
+# docs/internal/ci/workflow-inventory.md, so those documents are safe for the
+# docs-only class only while this step runs unconditionally. A future routing
+# change that guards it must move both documents into LEAN_GATE_GOVERNED_DOCS.
+admission_block="$(awk '
+  /^      - name: Verify review-first admission contract$/ { found=1; next }
+  found && /^      - / { exit }
+  found { print }
+' "${required_workflow}")"
+if grep -Eq '^        if:' <<<"${admission_block}"; then
+  echo '::error::The review-first admission validator must stay unconditional.' >&2
+  exit 1
+fi
+if ! grep -Fq 'scripts/ci/validate-review-first-dispatch.sh' <<<"${admission_block}"; then
+  echo '::error::The review-first admission validator step no longer runs its script.' >&2
   exit 1
 fi
 

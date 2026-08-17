@@ -14,6 +14,62 @@ from typing import Any
 CONTRACT = "honua.pr-gate-impact-observation/v3"
 MAX_FILES = 3_000
 DOCS_PREFIX = "docs/internal/"
+
+# Markdown under `docs/internal/` whose *content* is asserted by a step the
+# docs-only route would skip (the lean gate: Architecture/Server-governance
+# tests plus the merge-train fixture validators). Editing one of these files
+# alone can turn the authoritative gate red, so the docs-only class must never
+# claim them. The 2026-08-16 promotion audit (#3235) found these while the
+# shadow cohort was still open; without this list an enforced docs-only route
+# would have skipped real, reachable failures.
+#
+# `scripts/ci/classify-pr-gate-impact.test.py` rescans the lean-gate sources and
+# fails when a `docs/internal/**.md` literal appears that is in neither this set
+# nor LEAN_GATE_REFERENCED_DOCS, so the list cannot silently rot.
+LEAN_GATE_GOVERNED_DOCS = frozenset(
+    {
+        # AuditCoverageMatrixDriftTests joins the documented auth-route rows
+        # against DefaultAuditActionResolver in both directions.
+        "docs/internal/operator/audit-coverage-matrix.md",
+        # ServingImageBoundaryTests asserts exact sentences about which tags a
+        # GA promotion may move.
+        "docs/internal/contributor/release-bundle.md",
+        # PublicInterfaceProofLedgerTests uses this document as on-disk proof
+        # evidence; treat it as governed rather than reason about its parser.
+        "docs/internal/contributor/public-interface-quality-model.md",
+        # validate-early-failure-observe.sh (a lean-gate step) greps this file
+        # for two exact phrases.
+        "docs/internal/ci/merge-train-early-failure-observe.md",
+    }
+)
+
+# Markdown under `docs/internal/` that lean-gate sources only *mention* in prose,
+# doc comments, or assertion messages. These stay eligible for the docs-only
+# class; they are enumerated so the drift guard can tell "reviewed and safe"
+# apart from "never looked at".
+LEAN_GATE_REFERENCED_DOCS = frozenset(
+    {
+        "docs/internal/admin-api/studio-package-lifecycle.md",
+        "docs/internal/contributor/adr/0041-core-abstractions-extraction.md",
+        "docs/internal/contributor/adr/0047-module-dependency-policy.md",
+        "docs/internal/contributor/entitlement-sweep-known-gaps.md",
+    }
+)
+
+# Files read by lean-gate steps, relative to the repository root. The drift
+# guard scans exactly this set; adding a lean-gate step means adding its source
+# here.
+LEAN_GATE_SOURCE_GLOBS = (
+    "tests/dotnet/Honua.Architecture.Tests/**/*.cs",
+    "tests/dotnet/Honua.Server.Tests/**/*.cs",
+    "tests/dotnet/Honua.Ai.Tests/**/*.cs",
+    ".github/actions/lean-gate/action.yml",
+    "scripts/ci/fixtures/validate-lean-gate.py",
+    "scripts/ci/check-markdown-command-policy.ps1",
+    "scripts/ci/openapi-drift-check.py",
+    "scripts/ci/merge-train/fixtures/validate-timeout-retry.sh",
+    "scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh",
+)
 EXPECTED_REPOSITORY = "honua-io/honua-server"
 ALLOWED_GATE_CONCLUSIONS = {
     "success",
@@ -180,6 +236,8 @@ def classify(payload: object) -> dict[str, Any]:
             return full("rename-delete-or-unknown-status", count=changed_files, digest=digest)
         if not filename.startswith(DOCS_PREFIX) or not filename.endswith(".md"):
             return full("path-requires-full-gate", count=changed_files, digest=digest)
+        if filename in LEAN_GATE_GOVERNED_DOCS:
+            return full("lean-gate-governed-doc", count=changed_files, digest=digest)
 
     return {
         "contract": CONTRACT,

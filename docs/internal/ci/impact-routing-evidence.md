@@ -82,3 +82,78 @@ authoritative PR Gate or image workflows. If receipt integrity fails, keep the
 legacy routes authoritative, preserve the ledger artifact, and fix or version
 the producer contract. Never waive a missing image outcome or combine receipts
 from different policy cohorts to reach a threshold.
+
+## Docs-only promotion audit, 2026-08-16 (#3235)
+
+The docs-only PR Gate route is **not promoted**. Two independent problems block
+it, and only one of them is a matter of waiting.
+
+### The shadow cohort is an order of magnitude short
+
+Receipts harvested from the 100 most recent `PR Gate Impact Observation` runs
+(2026-08-13 through 2026-08-17): 82 runs completed successfully and 80 retained a
+current-contract receipt.
+
+| Classification | Receipts | Distinct heads |
+|---|---:|---:|
+| `full` / `path-requires-full-gate` | 78 | 70 |
+| `docs-only` / `internal-markdown-only` | 2 | 2 |
+
+Both docs-only receipts belong to pull request #3245 (heads `72c94f13` and
+`3b923c3f`), which changed `docs/internal/contributor/adr/0075-...md` and
+`docs/internal/contributor/adr/README.md`. Each head's authoritative `PR Gate`
+succeeded, so no missed failure is attributable to the classifier's own
+decisions. The trusted ledger
+([run 31951506155](https://github.com/honua-io/honua-server/actions/runs/31951506155))
+counted `1` of the required `20` docs-only heads inside its seven-day
+head-deduplicated window, with `0` docs-only gate failures and `5`
+receipt-integrity failures (four native, one superseded PR Gate policy).
+
+The observed candidate rate is 2 of 80 receipts. At the observed workload
+(roughly twenty PR Gate runs per day) the cohort needs about six more weeks of
+observation, and any change to the classifier restarts it because the ledger
+binds the classifier blob.
+
+### The docs-only class was unsound as written
+
+The audit also asked the inverse question: for a head the classifier calls
+docs-only, could the skipped lean gate have failed? For four documents the
+answer was yes, because a lean-gate step asserts their *content*:
+
+| Document | Asserted by | Lean-gate step |
+|---|---|---|
+| `docs/internal/operator/audit-coverage-matrix.md` | `AuditCoverageMatrixDriftTests` | Architecture tests |
+| `docs/internal/contributor/release-bundle.md` | `ServingImageBoundaryTests` | Architecture tests |
+| `docs/internal/contributor/public-interface-quality-model.md` | `PublicInterfaceProofLedgerTests` | Architecture tests |
+| `docs/internal/ci/merge-train-early-failure-observe.md` | `validate-early-failure-observe.sh` | Merge-train timeout policy |
+
+None of the observed docs-only heads touched one of these, so the shadow sample
+could never have exposed the gap; only reading the gate's own inputs could.
+`scripts/ci/classify-pr-gate-impact.py` now routes them to the full gate with
+reason `lean-gate-governed-doc`, and `classify-pr-gate-impact.test.py` rescans
+every lean-gate source so a new content assertion cannot silently widen the
+class again: an unclassified `docs/internal/**.md` literal fails the guard with
+the referencing file named.
+
+Two further documents, `docs/internal/ci/gate-model.md` and
+`docs/internal/ci/workflow-inventory.md`, are read by
+`validate-review-first-dispatch.py`. They stay eligible only because that step
+runs unconditionally, before any routing decision;
+`scripts/ci/validate-pr-gate-impact.sh` now fails if that step ever acquires a
+condition.
+
+### What remains before enforcement
+
+1. Twenty distinct docs-only candidate heads under the current classifier blob,
+   with zero docs-only full-gate failures and an integrity-clean ledger.
+2. Fixture coverage for rename, deletion, fork, moved head, truncated file
+   lists, and policy-input changes. Rename/deletion/status, truncation,
+   duplicate records, unsafe paths, generated data assets, and the governed-doc
+   class are covered by `classify-pr-gate-impact.test.py`; fork and moved-head
+   admission remain enforced by the trusted resolver rather than by fixtures.
+3. The in-gate route itself: an early classifier step inside the existing
+   `PR Gate` job, the heavy steps conditioned on its output, a docs-only path
+   that still runs admission, the base-image inventory check, the Markdown
+   command policy, and exact-head review revalidation, plus a labelled escape
+   hatch and a one-line rollback switch. None of that is implemented; the
+   required gate is unchanged and fully authoritative.

@@ -383,8 +383,13 @@ The complete checkpoint and decision are also recorded on
    after #3224's retained observations pass.
 6. Promote native-image routing/evidence reuse under #3204 after its impact
    ledger passes.
-7. Implement SDK build/browser separation under honua-sdk-js#1286.
-8. Promote each slice only after its declared parity, latency, cost, and
+7. Keep docs-only PR Gate routing (#3235) in observe. The 2026-08-16 audit in
+   `docs/internal/ci/impact-routing-evidence.md` found 2 docs-only heads against
+   a required cohort of 20, and found four internal documents whose content a
+   lean-gate step asserts. The classifier now excludes those documents and a
+   drift guard keeps the exclusion honest; the required gate is unchanged.
+8. Implement SDK build/browser separation under honua-sdk-js#1286.
+9. Promote each slice only after its declared parity, latency, cost, and
    security gates; keep one independent rollback per slice.
 
 Each implementation slice has its own issue and PR. The umbrella PR does not
