@@ -8,28 +8,25 @@ native-image, release, or merge authority.
 ## What is live vs. still shadow (2026-08-16)
 
 **Live in `ci.yml`:** producer-free attempt-1 reuse of the shard-local
-exact-head payload. `Server Tests (<shard>)` now reads its own exact cache key
-on attempt 1 as well as on reruns. That payload was already being written on
-attempt 1 by the single designated writer shard; only the read was gated. No
-producer job, `needs:` edge, poll, or wait is introduced, so this cannot
-reproduce the run 31768277005 fan-out regression. Kill switch:
-`HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`. Contract and fail-open behaviour:
-[`server-test-binary-artifacts.md`](server-test-binary-artifacts.md).
+exact-head payload. Contract, kill switch and fail-open behaviour:
+[`server-test-binary-artifacts.md`](server-test-binary-artifacts.md). It adds no
+producer, `needs:` edge, poll or wait, so it cannot reproduce the run
+31768277005 fan-out regression.
 
-**Still shadow, unpromoted:** everything described in the rest of this document
-— the PR Gate build-evidence producer, the trusted observer receipt, the train
-handoff, and the Smart CI consumer proof. Ledger status as of the 2026-08-16
-scheduled run (`server-test-prebuild-evidence-ledger.yml` run 31950724055):
-3 of the required 20 countable exact heads, 1 of 2 required profiles, 65.23%
-rounded runner-minute savings, p90 test start 380,464 ms -> 94,640 ms, zero
-integrity failures, 33 successful shells excluded for missing/invalid evidence.
+**Still shadow, unpromoted:** everything else in this document — the PR Gate
+build-evidence producer, the trusted observer receipt, the train handoff, and
+the Smart CI consumer proof. Ledger status as of the 2026-08-16 scheduled run
+(`server-test-prebuild-evidence-ledger.yml` run 31950724055): 3 of the required
+20 countable exact heads, 1 of 2 required profiles, 65.23% rounded
+runner-minute savings, p90 test start 380,464 ms -> 94,640 ms, zero integrity
+failures, 33 successful shells excluded for missing/invalid evidence.
 Recommendation `insufficient-evidence`; every promotion gate except
 `integrity_clean` is still `false`.
 
 `server-test-prebuild-parity.yml` has produced **no** parity artifacts to date:
 sampled runs resolve no subject and skip the candidate/baseline matrix, so there
-is currently no direct proof that a prebuilt payload yields byte-identical test
-results at the workflow level. The equivalent evidence that does exist is the
+is currently no direct proof at the workflow level that a prebuilt payload
+yields identical test results. The equivalent evidence that does exist is the
 `prove-server-test-binary-artifacts.sh` contract proof (clean detached worktree,
 empty NuGet cache, full discovery plus representative execution with
 `--no-build --no-restore`) and the observe lane's no-build proof test.

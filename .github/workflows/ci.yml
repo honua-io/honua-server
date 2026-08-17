@@ -1538,15 +1538,11 @@ jobs:
           SHARD_NAME: ${{ matrix.shard_name }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
           SELECTED_SHARDS_JSON: ${{ needs.targeted-shards.outputs.matrix_include }}
-          # Attempt-1 opportunistic reuse (#3213). The exact-head payload is
-          # already SAVED on attempt 1 by the single designated writer shard;
-          # this switch controls whether siblings are also allowed to READ it on
-          # attempt 1 instead of rebuilding the same project up to ~20 times.
-          # Set repository variable HONUA_SERVER_TEST_ATTEMPT1_REUSE to the
-          # string 'false' for an immediate rollback to rerun-only reads. No
-          # branch protection, required context, shard name, filter, or merge
-          # authority changes with it.
-          ATTEMPT1_REUSE: ${{ vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE == 'false' && 'false' || 'true' }}
+          # Attempt-1 opportunistic reuse (#3213). Contract, fail-open behaviour
+          # and rollback: docs/internal/ci/server-test-binary-artifacts.md.
+          # The raw repository variable is forwarded verbatim; the single
+          # "on unless exactly 'false'" rule lives in the plan script.
+          ATTEMPT1_REUSE: ${{ vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE }}
         run: |
           scripts/ci/server-test-shard-cache.sh plan \
             --shard "${SHARD_NAME}" \
@@ -1555,6 +1551,7 @@ jobs:
             --source-sha '${{ github.sha }}' \
             --runner-os '${{ runner.os }}' \
             --sdk "$(dotnet --version)" \
+            --run-id '${{ github.run_id }}' \
             --run-attempt '${{ github.run_attempt }}' \
             --attempt1-reuse "${ATTEMPT1_REUSE}"
 
@@ -1565,10 +1562,9 @@ jobs:
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
 
       - name: Restore exact-head shard cache
-        # Fail-open: a cache-service error, throttle, or timeout must never turn
-        # a shard red. The action is best-effort; an empty `cache-hit` output is
-        # treated as a miss and the shard takes the unchanged restore/build path.
-        # Nothing here waits for the writer shard to publish.
+        # Single-shot and fail-open: never waits for the writer, and a cache
+        # service error is a miss rather than a red shard. See
+        # docs/internal/ci/server-test-binary-artifacts.md.
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-download
         continue-on-error: true
@@ -1624,7 +1620,9 @@ jobs:
 
       - name: Package shard-local cache payload
         id: shard-cache-package
-        if: ${{ steps.shard-cache-build.outcome == 'success' && (steps.shard-cache-plan.outputs.cache_writer == 'true' || github.run_attempt > 1) }}
+        # `package_enabled` is the plan step's single decision point; the
+        # attempt counter is parsed there and nowhere else.
+        if: ${{ steps.shard-cache-build.outcome == 'success' && steps.shard-cache-plan.outputs.package_enabled == 'true' }}
         shell: bash
         run: |
           rm -rf '${{ steps.shard-cache-plan.outputs.payload_dir }}'
@@ -1661,7 +1659,11 @@ jobs:
         env:
           CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
           RESTORE_MODE: ${{ steps.shard-cache-plan.outputs.restore_mode }}
+          ATTEMPT1_SWITCH: ${{ steps.shard-cache-plan.outputs.attempt1_switch }}
           DOWNLOAD_OUTCOME: ${{ steps.shard-cache-download.outcome }}
+          BUILD_OUTCOME: ${{ steps.shard-cache-build.outcome }}
+          PACKAGE_OUTCOME: ${{ steps.shard-cache-package.outcome }}
+          SAVE_OUTCOME: ${{ steps.shard-cache-save.outcome }}
           CACHE_WRITER: ${{ steps.shard-cache-plan.outputs.cache_writer }}
           CACHE_WRITER_SHARD: ${{ steps.shard-cache-plan.outputs.cache_writer_shard }}
           CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
@@ -1674,24 +1676,38 @@ jobs:
           PAYLOAD_DIR: ${{ steps.shard-cache-plan.outputs.payload_dir }}
           PROJECT_SUFFIX: ${{ steps.shard-cache-plan.outputs.project_suffix }}
         run: |
-          package_ms=0
-          manifest="${PAYLOAD_DIR}/server-test-binaries-${PROJECT_SUFFIX}.manifest.json"
-          if [[ -f "${manifest}" ]]; then
-            package_ms="$(jq -r '.package_milliseconds' "${manifest}")"
+          # Only a package step that actually succeeded produced this manifest;
+          # on a cache hit the manifest in the payload dir belongs to the
+          # RESTORED evidence and its timing describes the writer, not us.
+          package_ms=na
+          if [[ "${PACKAGE_OUTCOME}" == 'success' ]]; then
+            manifest="${PAYLOAD_DIR}/server-test-binaries-${PROJECT_SUFFIX}.manifest.json"
+            if [[ -f "${manifest}" ]]; then
+              package_ms="$(jq -r '.package_milliseconds' "${manifest}")"
+            fi
           fi
           {
             echo '### Server-test shard cache'
             echo
             echo "- Key: \`${CACHE_KEY:-unavailable}\`"
             echo "- Attempt: \`${{ github.run_attempt }}\`"
-            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (lookup outcome \`${DOWNLOAD_OUTCOME:-skipped}\`)"
+            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (switch \`${ATTEMPT1_SWITCH:-unset}\`, lookup outcome \`${DOWNLOAD_OUTCOME:-skipped}\`)"
             echo "- Decision: \`${REASON:-not_evaluated}\`"
             echo "- Exact cache hit: \`${CACHE_HIT:-false}\`"
             echo "- Materialized without build: \`${MATERIALIZED:-false}\`"
-            if [[ "${MATERIALIZED:-false}" != 'true' ]]; then
+            # Only claim a successful local fallback when one actually happened.
+            # A failed or cancelled build must not be reported as the unchanged
+            # happy path.
+            if [[ "${MATERIALIZED:-false}" != 'true' && "${BUILD_OUTCOME}" == 'success' ]]; then
               echo "- Fallback: this shard restored and built \`${PROJECT_SUFFIX}\` locally (unchanged path)."
             fi
-            echo "- Attempt-1 writer: \`${CACHE_WRITER:-false}\` (\`${CACHE_WRITER_SHARD:-unknown}\`)"
+            # Writer identity is only meaningful when this job actually
+            # published; a designated writer that hit the cache saved nothing.
+            if [[ "${SAVE_OUTCOME}" == 'success' || "${SAVE_OUTCOME}" == 'failure' ]]; then
+              echo "- Published payload: \`true\` (designated writer \`${CACHE_WRITER_SHARD:-unknown}\`, save \`${SAVE_OUTCOME}\`)"
+            else
+              echo "- Published payload: \`false\` (designated writer \`${CACHE_WRITER_SHARD:-unknown}\`, this shard writer=\`${CACHE_WRITER:-false}\`)"
+            fi
             echo "- Transfer / integrity / unpack: \`${TRANSFER_MS:-0} / ${INTEGRITY_MS:-0} / ${UNPACK_MS:-0} ms\`"
             echo "- Package / save: \`${package_ms} / ${SAVE_MS:-0} ms\`"
           } >> "${GITHUB_STEP_SUMMARY}"

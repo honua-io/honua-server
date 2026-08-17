@@ -204,33 +204,20 @@ artifact and not one build per logical shard.
 
 #### Producer-free attempt-1 reuse (live, 2026-08-16)
 
-One narrow slice of "build once" is now live in `ci.yml`, because it needs no
-producer and adds no wait. Since PR #2750 the single lexicographically-first
-selected shard for each project already packages and saves its exact-head
-payload on attempt 1, before it runs tests. Until now no shard was permitted to
-*read* that payload before attempt 2, so the same project was rebuilt in every
-sibling shard even when a valid, digest-verified, identical-tree payload already
-existed in the run's own cache scope.
+One narrow slice of "build once" is live in `ci.yml`, because it needs no
+producer and adds no wait. The single designated writer shard for each project
+already packaged and saved its exact-head payload on attempt 1; only the *read*
+was gated on `run_attempt > 1`, so the same project was rebuilt in every sibling
+shard while a valid identical-tree payload sat unread in the run's own cache
+scope. Shards now perform one single-shot, fail-open lookup on attempt 1 as
+well. Nothing polls or waits, so the run 31768277005 fan-out regression cannot
+recur, and cache write volume is unchanged.
 
-`Server Tests (<shard>)` now performs exactly one bounded cache lookup for its
-own exact key on attempt 1 as well. The lookup is single-shot: a shard that
-reaches it before the writer has published simply misses and takes the unchanged
-restore/build path. Nothing polls, nothing waits, no job-level `needs` edge is
-added, and no additional runner is instantiated — so the same-run fan-out
-regression measured in run 31768277005 (13 -> 21 rounded runner-minutes) cannot
-recur. The write volume is unchanged; only reads increase.
-
-Every existing safety property is retained verbatim: exact key with no prefix
-fallback, manifest binding to contract/project/source SHA/SDK, 24-hour validity,
-size/digest/archive-entry validation, and partial-output cleanup on rejection.
-The read path is additionally fail-open at two levels — a cache-service error
-cannot fail the step (`continue-on-error`), and a rejected payload emits
-`restored=false` so the shard restores and builds locally as before. Both
-outcomes are recorded in the job step summary.
-
-Rollback is the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`,
-which restores rerun-only reads without touching branch protection, required
-contexts, shard names, filters, or merge authority.
+The full contract — run-scoped keys and the same-SHA TTL poisoning they prevent,
+writer selection, the single kill-switch rule, the three fail-open levels, the
+trust boundary, and the accepted limitations — lives in
+[`docs/internal/ci/server-test-binary-artifacts.md`](../../ci/server-test-binary-artifacts.md).
+Rollback is `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`.
 
 This promotion is deliberately narrower than the shadowed producer designs. It
 does not authorize a shared producer job, PR Gate payload consumption, or any
