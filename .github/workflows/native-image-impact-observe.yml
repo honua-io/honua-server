@@ -159,17 +159,51 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch and verify exact comparison commits
+        id: trees
         if: steps.collect.outputs.skip != 'true'
         env:
           BASE_SHA: ${{ steps.collect.outputs.base_sha }}
           HEAD_SHA: ${{ steps.collect.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.collect.outputs.pr }}
         run: |
+          set -euo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "${HEAD_SHA}"
           if ! git -C candidate cat-file -e "${BASE_SHA}^{commit}"; then
             git -C candidate fetch --no-tags --depth=1 \
               "https://github.com/${GITHUB_REPOSITORY}.git" "${BASE_SHA}"
           fi
           git -C candidate cat-file -e "${BASE_SHA}^{commit}"
+
+          # Both authoritative image workflows check out the pull_request merge
+          # ref, so the image-input content address must be taken over the merge
+          # tree, not the head tree. The merge ref is mutable, so it only counts
+          # when its parents are exactly the observed base and head commits.
+          tree_kind=head
+          tree_sha="${HEAD_SHA}"
+          # No --depth here: a shallow fetch grafts the merge commit as a root,
+          # which hides its parents from rev-list and would silently downgrade
+          # every observation to the head tree. Both parents are already present
+          # from the full candidate checkout, so this transfers almost nothing.
+          if git -C candidate fetch --no-tags \
+               "https://github.com/${GITHUB_REPOSITORY}.git" \
+               "+refs/pull/${PR_NUMBER}/merge:refs/honua/observed-merge" 2>/dev/null; then
+            merge_sha="$(git -C candidate rev-parse refs/honua/observed-merge)"
+            # Read the raw commit header rather than rev-list, so the parent
+            # check cannot be fooled by any pre-existing shallow boundary.
+            parents="$(git -C candidate cat-file commit refs/honua/observed-merge \
+              | awk '/^parent /{printf "%s ", $2} /^$/{exit}')"
+            if [[ "${parents}" == "${BASE_SHA} ${HEAD_SHA} " ]]; then
+              tree_kind=merge
+              tree_sha="${merge_sha}"
+            else
+              echo "merge ref parents are ${parents:-none}, expected ${BASE_SHA} ${HEAD_SHA};" \
+                   "falling back to the head tree" >&2
+            fi
+          else
+            echo "no fetchable merge ref; falling back to the head tree" >&2
+          fi
+          echo "image_input_tree=${tree_kind}" >> "${GITHUB_OUTPUT}"
+          echo "image_input_tree_sha=${tree_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Validate trusted selector policy
         if: steps.collect.outputs.skip != 'true'
@@ -207,6 +241,8 @@ jobs:
             --gate-run-id '${{ steps.collect.outputs.run_id }}' \
             --gate-run-attempt '${{ steps.collect.outputs.run_attempt }}' \
             --gate-run-conclusion '${{ steps.collect.outputs.run_conclusion }}' \
+            --image-input-tree '${{ steps.trees.outputs.image_input_tree }}' \
+            --image-input-tree-sha '${{ steps.trees.outputs.image_input_tree_sha }}' \
             --output native-image-impact-observation.json \
             --markdown native-image-impact-summary.md
 
@@ -266,7 +302,7 @@ jobs:
         if: steps.recheck.outputs.retain == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}
+          name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}
           path: |
             native-image-impact-observation.json
             native-image-impact-summary.md

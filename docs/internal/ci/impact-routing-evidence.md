@@ -1,9 +1,10 @@
 # Impact-routing evidence ledger
 
-Status: report-only. Tracking: #3204 and umbrella #3213. The docs-only PR
-Gate experiment (#3235) was closed as not planned on 2026-08-17 UTC; its
-cohort thresholds below are retained only as the standard the native-image
-stream is still measured against. See the audit at the end of this document.
+Status: report-only. Contracts: promotion policy `/v2`, ledger `/v2`.
+Tracking: #3204 and umbrella #3213. The docs-only PR Gate experiment (#3235)
+was closed as not planned on 2026-08-17 UTC; its cohort thresholds below are
+retained only as the standard the native-image stream is still measured
+against. See the audit at the end of this document.
 
 Workflow-run counts are not promotion evidence. A trusted observer can complete
 successfully while producing no relevant candidate, while using a superseded
@@ -18,7 +19,7 @@ run:
 
 - `pr-gate-impact-docs-only-v3-attempt-<n>` for the countable candidate cohort
   and `pr-gate-impact-full-v3-attempt-<n>` for noncandidate diagnostics;
-- `native-image-impact-observation-v2-attempt-<n>`.
+- `native-image-impact-observation-v3-attempt-<n>`.
 
 The ledger first discovers a bounded set of trusted producer runs, then reads
 each run's artifact catalog and selects only the name whose attempt equals the
@@ -104,7 +105,15 @@ Native receipts additionally bind both authoritative image workflows
 and record the Serving Image Boundary workflow's replayed per-variant decision.
 Serving narrowing is the strict difference between that legacy variant count
 and the candidate variant count; reproducing an existing
-Lambda-only, Functions-only, or generic-only selection does not count. An image
+Lambda-only, Functions-only, or generic-only selection does not count.
+Native receipts also bind one content digest per image class over that class's
+exact build-input file set, taken over the **merge** tree the image workflows
+actually check out (`refs/pull/<N>/merge`, accepted only when its parents are
+exactly the observed base and head). Each record is `[mode, path, blob id]`, so
+an exec-bit or symlink change is a different address. A receipt that could only
+address the head tree records `image_input_tree: head` and is excluded from both
+sides of the reuse cohort. Two heads sharing a digest consume byte-identical
+build inputs, which is what makes an earlier successful image run reusable. An image
 outcome is authoritative only when its GitHub-managed workflow association
 matches the receipt's PR number, base SHA, and head SHA; an earlier run for a
 reopened same-head PR cannot satisfy a later-base observation.
@@ -128,18 +137,38 @@ before it can emit `eligible-for-human-promotion-review`:
   `PR Gate` succeeded, with zero docs-only full-gate failures;
 - at least 20 distinct native-image heads;
 - positive serving and worker impact cohorts;
-- serving narrowing and worker avoidance cohorts that demonstrate actual work
-  removal rather than a selector that merely reproduces the legacy filters;
+- a serving savings cohort and a worker savings cohort that demonstrate actual
+  work removal rather than a selector that merely reproduces the legacy filters.
+  Each is satisfied by narrowing/avoidance **or** by exact-input build reuse. A
+  head counts as reuse-eligible only when an attestation for byte-identical
+  inputs already existed when that head's own image work started, only for the
+  variants the authoritative workflow actually built, and only under a
+  `(image class, digest)` key so one variant's build cannot satisfy another's.
+  `signals` and `savings_mechanism` record which mechanism the sample proved,
+  because a reuse-only sample does not authorize promoting the path router;
 - successful exact-head Serving Image Boundary or GDAL Worker Image outcomes
   whenever either the legacy or candidate decision says that image evidence is
   required; and
 - zero receipt-integrity failures.
 
-The initial pre-ledger audit on 2026-08-15 demonstrates why these cohorts matter:
+The 2026-08-16 audit demonstrates why these cohorts matter. Across 74 distinct
+trusted native heads the candidate reproduced the legacy decision on every head
+(40 serving-impacted, 35 worker-impacted, 0 narrowed, 0 avoided, 0
+candidate-only), while 60% of serving-impacted heads and 71% of worker-impacted
+heads repeated an input set already built on the same pull request. A
+narrowing-only savings gate can never pass here; the reuse cohort is what the
+observation must now substantiate.
+
+The initial pre-ledger audit on 2026-08-15 demonstrates the same point:
 35 trusted PR Gate receipts represented 27 heads, but all 35 selected the full
 gate and zero were docs-only candidates. Thirty-two trusted native receipts
 represented 25 heads, but only one head impacted either image workflow and no
 head demonstrated narrower routing. Neither experiment was promotion-ready.
+
+Reuse is **build** reuse. The GDAL Worker image's Trivy scan is enforcing and
+its verdict depends on the vulnerability database at scan time, so identical
+inputs never imply an identical verdict; scanning is re-run on every head and is
+excluded from every savings estimate.
 
 ## Rollback and incident handling
 
