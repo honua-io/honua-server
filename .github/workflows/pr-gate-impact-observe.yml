@@ -79,28 +79,34 @@ jobs:
             }
 
             const {
-              resolveTrustedPullRequestWorkflowRun,
+              recordObservationSkip,
+              resolveForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
-            // Observation only: an unresolvable source (cancelled, superseded, or
-            // a head the pull request has already moved past) produces no
-            // evidence and must end as a clean skip, not an unhandled error.
-            const resolved = await resolveTrustedPullRequestWorkflowRun({
-              github,
-              ...context.repo,
+            const source = {
               runId: process.env.SOURCE_RUN_ID,
               runAttempt: process.env.SOURCE_RUN_ATTEMPT,
               runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+            };
+            const skip = {
+              core,
+              fs,
+              label: 'pr-gate-impact',
+              markerPath: path.join(runnerTemp, 'observation-skipped.json'),
+            };
+            // Observation only. resolveForObservation downgrades ONLY a
+            // superseded source (cancelled run, moved head, closed PR) to a
+            // recorded skip; misconfiguration and API drift still throw.
+            const resolved = await resolveForObservation({
+              github,
+              ...skip,
+              ...context.repo,
+              ...source,
               workflowPath: '.github/workflows/pr-gate.yml',
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
-              unresolved: 'skip',
             });
-            if (resolved.skipped) {
-              core.notice(`Skipping PR Gate impact observation: ${resolved.reason}.`);
-              core.setOutput('skip', 'true');
-              return;
-            }
+            if (!resolved) return;
             const gateRun = resolved.run;
             const pr = resolved.pullRequest;
             const number = resolved.pullRequestNumber;
@@ -116,8 +122,12 @@ jobs:
               pull_number: number,
             });
             if (currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead) {
-              core.notice('Skipping PR Gate impact observation: the pull request moved while paginating changed files.');
-              core.setOutput('skip', 'true');
+              recordObservationSkip({
+                ...skip,
+                source,
+                code: 'pull-request-moved',
+                reason: 'the pull request moved while paginating changed files',
+              });
               return;
             }
 
@@ -221,6 +231,18 @@ jobs:
             } else {
               core.notice('No unique current-contract PR Gate build artifact pair is available; reuse remains a cache miss.');
             }
+
+      # A stable-name marker so the evidence ledger can classify this run as
+      # observation-skipped:<code> instead of counting it as a receipt-emission
+      # regression. Read from the artifact catalog; never downloaded.
+      - name: Retain observation skip marker
+        if: steps.collect.outputs.skip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
 
       - id: classify
         name: Classify non-authoritative PR Gate impact

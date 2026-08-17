@@ -184,8 +184,10 @@ jobs:
             echo "::error::CITE runners published no exit-code inventory; the suite step did not run to completion."
             exit 1
           fi
-          if ! grep -Eq '^.+=[0-9]+$' "$codes"; then
-            echo "::error::CITE exit-code inventory is malformed:"
+          malformed="$(grep -Ev '^[^=]+=[0-9]+$' "$codes" || true)"
+          if [[ -n "$malformed" ]]; then
+            echo "::error::CITE exit-code inventory has malformed entries: $(tr '\n' ' ' <<<"$malformed")"
+            echo 'Full inventory:'
             cat "$codes"
             exit 1
           fi
@@ -202,20 +204,36 @@ jobs:
             echo "::error::Every CITE runner exited 0 but $summary was not produced; conformance results are missing."
             exit 1
           fi
-          if ! jq -e '.totals.allPassed == true' "$summary" >/dev/null; then
-            echo '::error::CITE evidence reports at least one suite that is not fully passing.'
-            jq -r '.totals
-              | "Totals: suites=\(.suites) tests=\(.totalTests) passed=\(.passed) failed=\(.failed) skipped=\(.skipped) cantTell=\(.cantTell)"' \
-              "$summary"
-            echo 'Suites that block a clean report:'
-            jq -r '.suites[]
-              | select(.status != "passed" or .totalTests == 0 or .failed != 0
-                       or .skipped != 0 or .cantTell != 0)
-              | "  - \(.name): status=\(.status) total=\(.totalTests) passed=\(.passed) failed=\(.failed) skipped=\(.skipped) cantTell=\(.cantTell)"' \
-              "$summary"
+          # One jq pass emits the verdict, the totals, and exactly the suites
+          # that fail the allPassed predicate in build-cite-evidence.sh. The
+          # `blocking` filter is that predicate's exact negation, so the list
+          # under the error can never come out empty.
+          report="$RUNNER_TEMP/cite-verdict.txt"
+          if ! jq -r '
+                def blocking:
+                  .status != "passed" or .totalTests == 0 or .passed != .totalTests
+                  or .failed != 0 or .skipped != 0 or .cantTell != 0;
+                "verdict=\(.totals.allPassed)",
+                "totals=\(.totals.passed)/\(.totals.totalTests) tests across \(.totals.suites) suite(s); failed=\(.totals.failed) skipped=\(.totals.skipped) cantTell=\(.totals.cantTell)",
+                (.suites[] | select(blocking)
+                  | "  - \(.name): status=\(.status) total=\(.totalTests) passed=\(.passed) failed=\(.failed) skipped=\(.skipped) cantTell=\(.cantTell)")
+              ' "$summary" > "$report"; then
+            echo "::error::$summary is present but could not be read as a conformance summary."
             exit 1
           fi
-          echo "All CITE suites passed: $(jq -r '.totals | "\(.passed)/\(.totalTests) tests across \(.suites) suites"' "$summary")."
+          verdict="$(sed -n '1s/^verdict=//p' "$report")"
+          totals="$(sed -n '2s/^totals=//p' "$report")"
+          if [[ "$verdict" != true ]]; then
+            echo "::error::CITE evidence reports at least one suite that is not fully passing ($totals)."
+            if [[ "$(wc -l < "$report")" -gt 2 ]]; then
+              echo 'Suites that block a clean report:'
+              tail -n +3 "$report"
+            else
+              echo "No individual suite is blocking, so .totals.allPassed disagrees with .suites; inspect $summary."
+            fi
+            exit 1
+          fi
+          echo "All CITE suites passed: $totals."
 
       - name: Assert CITE status freshness
         if: always()

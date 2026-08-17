@@ -53,7 +53,15 @@ grep -Fq "github.event.workflow_run.event == 'pull_request'" "${observer}"
 grep -Fq 'github.event.workflow_run.head_repository.full_name == github.repository' "${observer}"
 grep -Fq 'ref: ${{ github.sha }}' "${observer}"
 grep -Fq 'persist-credentials: false' "${observer}"
-grep -Fq 'resolveTrustedPullRequestWorkflowRun' "${observer}"
+# Observation-only consumers route through resolveForObservation, which is the
+# trusted resolver's observation entrypoint: it must still delegate to
+# resolveTrustedPullRequestWorkflowRun and must downgrade only the superseded
+# source class, never misconfiguration.
+grep -Fq 'resolveForObservation' "${observer}"
+grep -Fq 'resolveTrustedPullRequestWorkflowRun({ ...options, unresolved: ' \
+  scripts/ci/trusted-pr-workflow-run.js
+grep -Fq 'error instanceof UnresolvedTrustedWorkflowRunError' \
+  scripts/ci/trusted-pr-workflow-run.js
 grep -Fq 'python3 policy/scripts/ci/pr-gate-build-evidence.py build' "${observer}"
 grep -Fq 'pr-gate-build-evidence-receipt-' "${observer}"
 # Cross-workflow artifact downloads default to the observer's own run unless

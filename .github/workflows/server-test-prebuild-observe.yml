@@ -77,24 +77,39 @@ jobs:
           SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.run_conclusion }}
         with:
           script: |
+            const runnerTemp = process.env.RUNNER_TEMP;
+            if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
             const { data: repository } = await github.rest.repos.get(context.repo);
             const trustedRef = `refs/heads/${repository.default_branch}`;
             if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
               throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
             }
 
+            const fs = require('fs');
+            const path = require('path');
             const {
-              resolveTrustedPullRequestWorkflowRun,
+              recordObservationSkip,
+              resolveForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
-            // Observation only: an unresolvable source (cancelled, superseded, or
-            // a head the pull request has already moved past) produces no
-            // evidence and must end as a clean skip, not an unhandled error.
-            const resolved = await resolveTrustedPullRequestWorkflowRun({
-              github,
-              ...context.repo,
+            const source = {
               runId: process.env.SOURCE_RUN_ID,
               runAttempt: process.env.SOURCE_RUN_ATTEMPT,
               runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+            };
+            const skip = {
+              core,
+              fs,
+              label: 'server-test-prebuild',
+              markerPath: path.join(runnerTemp, 'observation-skipped.json'),
+            };
+            // Observation only. resolveForObservation downgrades ONLY a
+            // superseded source (cancelled run, moved head, closed PR) to a
+            // recorded skip; misconfiguration and API drift still throw.
+            const resolved = await resolveForObservation({
+              github,
+              ...skip,
+              ...context.repo,
+              ...source,
               workflowPath: '.github/workflows/review-gate.yml',
               workflowName: 'Review Gate Attestation',
               workflowEvent: 'pull_request_target',
@@ -103,16 +118,15 @@ jobs:
               jobConclusion: 'success',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
-              unresolved: 'skip',
             });
-            if (resolved.skipped) {
-              core.notice(`Skipping server-test prebuild observation: ${resolved.reason}.`);
-              core.setOutput('skip', 'true');
-              return;
-            }
+            if (!resolved) return;
             if (resolved.pullRequest.draft) {
-              core.notice('Skipping server-test prebuild observation: the pull request is a draft.');
-              core.setOutput('skip', 'true');
+              recordObservationSkip({
+                ...skip,
+                source,
+                code: 'pull-request-draft',
+                reason: 'the pull request is not ready for review',
+              });
               return;
             }
             core.setOutput('pr', String(resolved.pullRequestNumber));
@@ -124,6 +138,15 @@ jobs:
             core.setOutput('source_job_id', String(resolved.job.id));
             core.setOutput('source_run_head_sha', resolved.workflowSha);
             core.setOutput('source_run_sha_role', resolved.workflowShaRole);
+
+      - name: Retain observation skip marker
+        if: steps.target.outputs.skip == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-prebuild-skipped-${{ steps.target.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
 
       - id: policy
         name: Bind trusted policy commit

@@ -34,6 +34,16 @@ PR_GATE_ARTIFACT = re.compile(
 NATIVE_ARTIFACT = re.compile(
     r"^native-image-impact-observation-v2-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
+# A successful observer that deliberately skipped a superseded source uploads a
+# stable-name marker. Recognising it from the catalog alone (never downloading
+# it) keeps "observation-receipt-not-emitted" meaning ONLY a real
+# receipt-emission regression.
+PR_GATE_SKIP_ARTIFACT = re.compile(
+    r"^pr-gate-impact-skipped-(?P<code>[a-z][a-z0-9-]{0,47})-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
+NATIVE_SKIP_ARTIFACT = re.compile(
+    r"^native-image-impact-skipped-(?P<code>[a-z][a-z0-9-]{0,47})-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
 PR_GATE_RECEIPT = "pr-gate-impact-observation.json"
 NATIVE_RECEIPT = "native-image-impact-observation.json"
 NATIVE_SUMMARY = "native-image-impact-summary.md"
@@ -119,8 +129,16 @@ def load_policy(value: object) -> dict[str, Any]:
         raise ValueError("image outcome lookback exceeds the policy bound")
     pages = positive_int(value.get("maximum_pages_per_query"), "maximum pages per query")
     downloads = positive_int(value.get("maximum_receipt_downloads"), "maximum downloads")
-    if pages > 10 or downloads > 500:
-        raise ValueError("GitHub query or download bound is unsafe")
+    # Listing one run's artifact catalog is a cheap paged GET; downloading a
+    # receipt is a real archive transfer. Conflating the two made the download
+    # bound the binding cap on how many observer runs could exist in the window.
+    catalogs = positive_int(
+        value.get("maximum_producer_run_catalogs"), "maximum producer run catalogs"
+    )
+    if pages > 10 or downloads > 500 or catalogs > 1200:
+        raise ValueError("GitHub query, catalog, or download bound is unsafe")
+    if catalogs < downloads:
+        raise ValueError("catalog bound must not be smaller than the download bound")
     for field in (
         "minimum_docs_only_heads",
         "minimum_native_heads",
@@ -279,6 +297,7 @@ def _discover_stream(
     workflow: str,
     artifact_pattern: re.Pattern[str],
     cutoff: datetime,
+    skip_pattern: re.Pattern[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
@@ -319,6 +338,31 @@ def _discover_stream(
             ):
                 matches.append(artifact)
         if not matches:
+            # A deliberate, recorded skip of a superseded source is not a
+            # receipt-emission regression; classify it by its own code so the
+            # remaining "not emitted" count keeps its diagnostic value.
+            skip_codes = sorted({
+                skip.group("code")
+                for artifact in by_run.get(run_id, [])
+                for skip in [skip_pattern.fullmatch(str(artifact.get("name", "")))]
+                if skip
+                and int(skip.group("attempt")) == run["run_attempt"]
+                and artifact.get("expired") is False
+            })
+            if len(skip_codes) == 1:
+                exclusions.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": f"observation-skipped:{skip_codes[0]}",
+                })
+                continue
+            if skip_codes:
+                failures.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": "observation-skip-marker-ambiguous",
+                })
+                continue
             exclusions.append({
                 "stream": stream,
                 "producer_run_id": run_id,
@@ -364,7 +408,8 @@ def _discover_stream(
         })
     for run_id, values in by_run.items():
         if run_id not in seen_runs and any(
-            artifact_pattern.fullmatch(str(item.get("name", "")))
+            (artifact_pattern.fullmatch(str(item.get("name", "")))
+             or skip_pattern.fullmatch(str(item.get("name", ""))))
             and parse_time(item.get("created_at"), "artifact creation") >= cutoff
             for item in values
         ):
@@ -387,13 +432,21 @@ def discover(
     policy = load_policy(policy_value)
     cutoff = receipt_cutoff(policy, now)
     streams = (
-        (PR_GATE_STREAM, pr_gate_runs, pr_gate_artifacts, PR_GATE_WORKFLOW, PR_GATE_ARTIFACT),
-        (NATIVE_STREAM, native_runs, native_artifacts, NATIVE_WORKFLOW, NATIVE_ARTIFACT),
+        (
+            PR_GATE_STREAM, pr_gate_runs, pr_gate_artifacts, PR_GATE_WORKFLOW,
+            PR_GATE_ARTIFACT, PR_GATE_SKIP_ARTIFACT,
+        ),
+        (
+            NATIVE_STREAM, native_runs, native_artifacts, NATIVE_WORKFLOW,
+            NATIVE_ARTIFACT, NATIVE_SKIP_ARTIFACT,
+        ),
     )
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    for stream, runs_root, artifacts_root, workflow, artifact_pattern in streams:
+    for (
+        stream, runs_root, artifacts_root, workflow, artifact_pattern, skip_pattern,
+    ) in streams:
         found, omitted, invalid = _discover_stream(
             stream,
             flatten_pages(runs_root, "workflow_runs"),
@@ -401,6 +454,7 @@ def discover(
             workflow,
             artifact_pattern,
             cutoff,
+            skip_pattern,
         )
         entries.extend(found)
         exclusions.extend(omitted)
@@ -784,7 +838,16 @@ def summarize(
             "worker_avoided_heads": len(worker_avoided),
             "authoritative_image_outcome_failures": len(image_failures),
             "integrity_failures": len(failures),
+            "observations_skipped": sum(
+                1 for item in index_value.get("exclusions", [])
+                if str(item.get("reason", "")).startswith("observation-skipped:")
+            ),
+            "observation_receipts_not_emitted": sum(
+                1 for item in index_value.get("exclusions", [])
+                if item.get("reason") == "observation-receipt-not-emitted"
+            ),
         },
+        "skipped_observations_by_code": skipped_by_code(index_value.get("exclusions", [])),
         "gates": gates,
         "docs_only_failures": docs_failures,
         "image_outcome_failures": image_failures,
@@ -795,6 +858,17 @@ def summarize(
         },
         "exclusions": index_value.get("exclusions", []),
     }
+
+
+def skipped_by_code(exclusions: list[dict[str, Any]]) -> dict[str, int]:
+    """Count recorded observation skips per bounded code, newest schema first."""
+    counts: dict[str, int] = {}
+    for item in exclusions:
+        reason = str(item.get("reason", ""))
+        if reason.startswith("observation-skipped:"):
+            code = reason.split(":", 1)[1]
+            counts[code] = counts.get(code, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def markdown(ledger: dict[str, Any]) -> str:
@@ -814,6 +888,16 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Docs-only gate failures: `{counts['docs_only_failure_heads']}`",
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
+        f"- Observations skipped (superseded source): `{counts['observations_skipped']}`"
+        + (
+            " — " + ", ".join(
+                f"`{code}`: `{value}`"
+                for code, value in ledger.get("skipped_observations_by_code", {}).items()
+            )
+            if ledger.get("skipped_observations_by_code") else ""
+        ),
+        f"- Successful observers with no receipt and no skip marker: "
+        f"`{counts['observation_receipts_not_emitted']}`",
         "",
         "| Gate | Passed |",
         "|---|---|",
@@ -865,6 +949,7 @@ def main() -> int:
             ).isoformat().replace("+00:00", "Z"),
             "image_run_cutoff": image_cutoff,
             "maximum_pages_per_query": policy["maximum_pages_per_query"],
+            "maximum_producer_run_catalogs": policy["maximum_producer_run_catalogs"],
             "maximum_receipt_downloads": policy["maximum_receipt_downloads"],
         }
         if args.github_output:

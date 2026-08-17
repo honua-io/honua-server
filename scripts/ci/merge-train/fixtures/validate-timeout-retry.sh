@@ -163,20 +163,29 @@ train_classify_timeout 31940825557 0 'Server Tests (Infra and Security)' || rc=$
 pass "REST job-log fallback preserves capacity classification"
 
 # Production shape of batch CI 31940825557 and 31931541793: 'Infra and Security'
-# burned its whole 39m budget, so the marker is the LAST error in a ~47k-line
-# job log that is full of unrelated `FATAL:`/`error` noise, the exact-check
-# annotations are unavailable, and the aggregate `gh run view --job --log`
-# surface is unavailable too. Both merge-train runs (31940583968 / 31931259882)
-# fell through to attribution and dropped an arbitrary member (#3197). No
-# bounded head-of-log read may ever be reintroduced here.
+# burned its whole 39m budget, so HONUA_SHARD_CAPACITY_EXHAUSTED is the LAST
+# error of a 47298-line job log full of unrelated `FATAL:`/`error` noise, the
+# exact-check annotations are unavailable, and the aggregate
+# `gh run view --job --log` surface is unavailable too. Both merge-train runs
+# (31940583968 / 31931259882) fell through to attribution and dropped an
+# arbitrary member (#3197). No bounded head-of-log read may be reintroduced.
+#
+# The fixture reproduces the SHAPE at 1/20 scale on purpose. train_read_job_log
+# tests emptiness with `${text//[[:space:]]/}`, which bash evaluates
+# quadratically: 125 KB costs ~2s, 250 KB ~6s, 1 MB ~79s, and a true 3 MB replay
+# takes minutes of CPU per read. 2000 noise lines already sit far beyond any
+# plausible head-of-log bound, which is the property under test.
+noise_lines=2000
 noisy_capacity_log="$(mktemp)"
 {
-  for i in $(seq 1 4000); do
-    printf '2026-08-16T10:%02d:00Z  FATAL:  role "root" does not exist (%s)\n' $(( i % 60 )) "${i}"
-  done
+  awk -v n="${noise_lines}" 'BEGIN { for (i = 1; i <= n; i++)
+    printf "2026-08-16T10:%02d:00Z  FATAL:  role \"root\" does not exist (%d)\n", i % 60, i }'
   printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Infra and Security' hit its 39m test budget while still producing output 2s ago.\n"
   printf '::error::Process completed with exit code 124.\n'
 } >"${noisy_capacity_log}"
+[[ "$(grep -n 'HONUA_SHARD_CAPACITY_EXHAUSTED' "${noisy_capacity_log}" | cut -d: -f1)" \
+  -gt "${noise_lines}" ]] \
+  || fail "the capacity marker must sit past every noise line for this fixture to mean anything"
 : >"${record}"
 gh() {
   case "$*" in
