@@ -1001,7 +1001,7 @@ jobs:
     # overhead across the per-project test steps (Core 30m, Server Fast 20m,
     # Architecture 10m, Security 3m), then the #2943 revival of the 8
     # protocol-split projects' Fast tier plus the previously-orphaned
-    # DuckDB/Plugins/ArcGisRest/Oracle/Postgres.Security/Worker.Gdal/MySql
+    # DuckDB/Plugins/ArcGisRest/Oracle/Postgres.Security/MySql
     # projects (an additional ~60m of step-level budget; see the "Run .NET
     # Tests (...)" steps below for the per-group rationale), then the #58
     # follow-up wiring the SQL/warehouse provider UNIT suites
@@ -1229,9 +1229,10 @@ jobs:
         #   - Honua.Oracle.Tests: unit-only today (no live Oracle instance is
         #     wired up; see the sibling warehouse-nightly.yml lane for the
         #     creds-gated story).
-        #   - Honua.Worker.Gdal.Tests: self-skips its [GdalCliFact]/Docker
-        #     cases when the GDAL/PDAL CLI or Docker image are absent from the
-        #     runner, so this step is safe on a lean ubuntu-latest agent.
+        # Honua.Worker.Gdal.Tests used to be in this list; #3271 moved it to
+        # the dedicated `worker-gdal-tests` job below, which installs the GDAL
+        # CLI first. On this lean agent GdalCliFactAttribute set Skip on every
+        # real-GDAL case, so `gdaldem`/`ogr2ogr` coverage was green-by-absence.
         # Verified locally before wiring in (DuckDB 95/95, Honua.Plugins.Tests
         # 75/75, Honua.Oracle.Tests 55/55, Honua.ArcGisRest.Tests 93/93 passed
         # — the latter's one observed "Collection was modified" flake from a
@@ -1247,7 +1248,6 @@ jobs:
             tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj
             tests/dotnet/Honua.ArcGisRest.Tests/Honua.ArcGisRest.Tests.csproj
             tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj
-            tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
           )
           for csproj in "${projects[@]}"; do
             project="$(basename "${csproj}" .Tests.csproj)"
@@ -1762,6 +1762,156 @@ jobs:
           path: tests/TestResults/
           retention-days: 7
 
+  worker-gdal-tests:
+    name: Worker GDAL Tests
+    # #3271. `Honua.Worker.Gdal.Tests` used to run as one step of
+    # dotnet-foundation-tests on a lean ubuntu-latest agent with no GDAL CLI on
+    # PATH. GdalCliFactAttribute (tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs)
+    # sets Skip when the tool it names is missing, so the ONLY cases that drive
+    # the real `gdaldem` / `ogr2ogr` command lines the native-profile worker
+    # shells out to were skipped on every run while the step exited 0 — the 22
+    # src/Honua.Worker.Gdal/Execution/Gdal*JobExecutor.cs executors were covered
+    # only by their FakeGdalCommandRunner unit cases. This job installs GDAL
+    # first so those cases execute, and asserts they did (a skip is invisible in
+    # a dotnet-test exit code, so it needs an explicit guard).
+    #
+    # Gating deliberately MIRRORS the foundation job this was carved out of
+    # (integration_changes) instead of path-filtering on src/Honua.Worker.Gdal/**:
+    # the project's ~300 [UnitTest] cases already ran on every integration PR, and
+    # a narrower gate would trade a fixed skip for a new coverage hole. Scheduled
+    # / manual full CI and merge-train batches set integration_changes=true, so
+    # the job is part of the run_all lane too.
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    runs-on: ubuntu-latest
+    needs: changes
+    # Step caps sit inside the job cap with the >=10 min non-test overhead margin
+    # the ci-shards.json budget policy asks for (#3054): build 15m + test 10m
+    # under a 30m job cap. Measured locally on this branch: 318 discovered cases
+    # run in ~1s once built, and a cold Release build of the test project takes
+    # ~6 min, so the caps bound a hang rather than normal growth.
+    timeout-minutes: 30
+    env:
+      HONUA_TEST_CONFIGURATION: Release
+      # Suppresses GdalCliFactAttribute's "tool not on PATH" skip, so a runner
+      # that lost its GDAL install FAILS the real-GDAL cases instead of silently
+      # reporting them skipped with a green exit code (#3271).
+      HONUA_REQUIRE_GDAL_CLI: "true"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install GDAL CLI
+        # Same provisioning as python-integration-tests below. `gdal-bin` carries
+        # gdaldem / ogr2ogr / gdal_create / gdal_translate, which is the whole
+        # tool surface GdalCli.Available() probes. The production worker image
+        # (docker/worker-gdal/Dockerfile) pins a much richer GDAL base; this job
+        # asserts the CLI contract, not the driver universe, which stays owned by
+        # worker-gdal-image.yml and gdal-driver-e2e.yml.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -yqq gdal-bin
+          for tool in gdaldem ogr2ogr gdal_translate; do
+            command -v "${tool}" >/dev/null \
+              || { echo "::error::${tool} is missing after installing gdal-bin"; exit 1; }
+          done
+          gdalinfo --version
+
+      - name: Restore
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Build
+        timeout-minutes: 15
+        run: |
+          dotnet build tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --no-restore \
+            --configuration Release
+
+      - name: Run Worker GDAL tests
+        id: run-tests
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --logger "trx;LogFileName=worker-gdal-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Run the real-GDAL cases and prove they were not skipped
+        # HONUA_REQUIRE_GDAL_CLI above already turns a missing tool into a test
+        # FAILURE, so this is the tripwire for every other way the coverage could
+        # vanish (trait removed, attribute deleted, env var lost): re-run just the
+        # Category=GDAL subset into its own TRX and require at least one Passed
+        # and zero NotExecuted. `dotnet test` exits 0 when a filter matches
+        # nothing and when every matched case skips, so the counts — not the exit
+        # code — are the assertion. Same idiom as warehouse-nightly.yml.
+        #
+        # Runs whenever the main test step ran, pass or fail: a failing run can
+        # still have skipped every real-GDAL case, and that is the regression
+        # being guarded. Skipped when the build produced nothing, so a build break
+        # reports once instead of twice.
+        if: ${{ !cancelled() && steps.run-tests.conclusion != 'skipped' }}
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          trx=./tests/TestResults/worker-gdal-cli.trx
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --filter "Category=GDAL" \
+            --logger "trx;LogFileName=worker-gdal-cli.trx" \
+            --logger "console;verbosity=normal" \
+            --results-directory ./tests/TestResults
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=GDAL subset"
+            exit 1
+          fi
+          # `|| true` on each grep is load-bearing under `set -euo pipefail`:
+          # grep exits 1 when it matches nothing, and on the healthy path BOTH
+          # the Failed and NotExecuted counts are zero. Without it the step dies
+          # before printing the summary — and reports failure for a green run.
+          # (warehouse-nightly.yml uses the bare idiom because it does not set
+          # pipefail.)
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Real-GDAL coverage'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} [GdalCliFact] case(s) were skipped — the real-GDAL coverage silently disappeared"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no [GdalCliFact] case passed — the Category=GDAL trait or the cases themselves are gone"
+            exit 1
+          fi
+          echo "OK: ${passed} real-GDAL case(s) executed, 0 skipped."
+
+      - name: Upload Worker GDAL test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 3
+        with:
+          name: worker-gdal-test-results
+          path: tests/TestResults/
+          retention-days: 7
+
   python-integration-tests:
     name: Python Integration Tests
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
@@ -1862,6 +2012,7 @@ jobs:
     needs:
       - dotnet-foundation-tests
       - server-tests
+      - worker-gdal-tests
       - python-integration-tests
       - js-typecheck
       - js-integration-tests
