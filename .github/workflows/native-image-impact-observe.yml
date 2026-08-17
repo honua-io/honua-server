@@ -38,9 +38,13 @@ concurrency:
 jobs:
   observe:
     name: Compare native-image impact routing
+    # A cancelled source run is a superseded push: its head is already stale, so
+    # there is nothing observable and the trusted resolver would correctly refuse
+    # it. Never schedule the job at all rather than manufacture a red run.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion != 'cancelled' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -71,6 +75,9 @@ jobs:
             if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
               throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
             }
+            // Observation only: an unresolvable source (cancelled, superseded, or
+            // a head the pull request has already moved past) produces no
+            // evidence and must end as a clean skip, not an unhandled error.
             const resolved = await resolveTrustedPullRequestWorkflowRun({
               github,
               ...context.repo,
@@ -81,7 +88,13 @@ jobs:
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
+              unresolved: 'skip',
             });
+            if (resolved.skipped) {
+              core.notice(`Skipping native-image observation: ${resolved.reason}.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
 
             const policyInputs = [
               { path: 'scripts/ci/native-image-impact.py', output: 'policy_blob_sha', ref: context.sha },
@@ -121,6 +134,7 @@ jobs:
             core.setOutput('policy_inputs_sha256', policyInputsSha256);
 
       - name: Checkout candidate tree as inert data
+        if: steps.collect.outputs.skip != 'true'
         uses: actions/checkout@v7
         with:
           repository: ${{ steps.collect.outputs.head_repository }}
@@ -130,6 +144,7 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch and verify exact comparison commits
+        if: steps.collect.outputs.skip != 'true'
         env:
           BASE_SHA: ${{ steps.collect.outputs.base_sha }}
           HEAD_SHA: ${{ steps.collect.outputs.head_sha }}
@@ -142,6 +157,7 @@ jobs:
           git -C candidate cat-file -e "${BASE_SHA}^{commit}"
 
       - name: Validate trusted selector policy
+        if: steps.collect.outputs.skip != 'true'
         run: |
           python3 policy/scripts/ci/native-image-impact.py \
             --policy policy/.github/native-image-impact.json validate
@@ -152,6 +168,7 @@ jobs:
             -v
 
       - name: Observe exact diff with trusted selector
+        if: steps.collect.outputs.skip != 'true'
         run: |
           python3 policy/scripts/ci/native-image-impact.py \
             --policy policy/.github/native-image-impact.json \
@@ -179,7 +196,9 @@ jobs:
             --markdown native-image-impact-summary.md
           cat native-image-impact-summary.md >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Recheck exact PR identity before retaining evidence
+      - id: recheck
+        name: Recheck exact PR identity before retaining evidence
+        if: steps.collect.outputs.skip != 'true'
         uses: actions/github-script@v9
         env:
           SOURCE_RUN_ID: ${{ steps.collect.outputs.run_id }}
@@ -204,14 +223,27 @@ jobs:
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
+              unresolved: 'skip',
             });
+            // The retention invariant is "never retain evidence for a moved pull
+            // request", which a discard satisfies exactly as well as a hard
+            // failure. Warn loudly, then withhold the artifact.
+            if (resolved.skipped) {
+              core.warning(`Discarding native-image observation: ${resolved.reason}.`);
+              core.setOutput('retain', 'false');
+              return;
+            }
             if (String(resolved.pullRequestNumber) !== process.env.EXPECTED_PR ||
                 resolved.baseSha !== process.env.EXPECTED_BASE ||
                 resolved.headSha !== process.env.EXPECTED_HEAD) {
-              throw new Error('pull request identity moved during native-image observation');
+              core.warning('Discarding native-image observation: pull request identity moved during observation.');
+              core.setOutput('retain', 'false');
+              return;
             }
+            core.setOutput('retain', 'true');
 
       - name: Retain trusted observation evidence
+        if: steps.recheck.outputs.retain == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}

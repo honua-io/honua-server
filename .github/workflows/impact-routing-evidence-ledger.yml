@@ -89,7 +89,13 @@ jobs:
               page=$((page + 1))
             done
             if [[ "${complete}" != true ]]; then
-              echo "${collection} catalog exceeded the bounded page budget" >&2
+              # Fail closed and say exactly what to change. A truncated catalog
+              # cannot degrade gracefully here: `discover`/`summarize` count
+              # observed heads and reconcile authoritative image outcomes
+              # against these pages, so silently dropping the tail would turn a
+              # collection shortfall into fabricated integrity/outcome failures.
+              printf '::error::%s catalog needs more than %s page(s) of 100 (declared total %s). Raise maximum_pages_per_query in .github/impact-routing-promotion.json (validator bound: 10) or shorten the window.\n' \
+                "${collection}" "${MAXIMUM_PAGES}" "${expected_total:-unknown}" >&2
               exit 1
             fi
           }
@@ -111,7 +117,8 @@ jobs:
           producer_count="$(wc -l < evidence/producer-run-ids.txt | tr -d '[:space:]')"
           [[ "${producer_count}" =~ ^[0-9]+$ && "${MAXIMUM_CATALOGS}" =~ ^[1-9][0-9]*$ ]] || exit 1
           if (( producer_count > MAXIMUM_CATALOGS )); then
-            echo "observer runs exceeded the bounded artifact-catalog budget" >&2
+            printf '::error::%s observer runs exceed the %s artifact-catalog budget. Raise maximum_receipt_downloads in .github/impact-routing-promotion.json (validator bound: 500) or shorten the retention window.\n' \
+              "${producer_count}" "${MAXIMUM_CATALOGS}" >&2
             exit 1
           fi
 
@@ -159,7 +166,8 @@ jobs:
           count="$(jq -er '.artifacts | arrays | length' evidence/index.json)"
           [[ "${count}" =~ ^[0-9]+$ && "${MAXIMUM_DOWNLOADS}" =~ ^[1-9][0-9]*$ ]] || exit 1
           if (( count > MAXIMUM_DOWNLOADS )); then
-            echo "observation receipts exceeded the bounded download budget" >&2
+            printf '::error::%s indexed receipts exceed the %s download budget. Raise maximum_receipt_downloads in .github/impact-routing-promotion.json (validator bound: 500) or shorten the retention window.\n' \
+              "${count}" "${MAXIMUM_DOWNLOADS}" >&2
             exit 1
           fi
           jq -r '.artifacts[].artifact_id' evidence/index.json \

@@ -5,6 +5,9 @@ name: PR Gate Impact Observation
 # change the collector, its input, or the produced evidence. The full PR Gate
 # remains authoritative throughout the shadow period in #3235. Fork heads are
 # explicitly outside the observation denominator and always retain the full gate.
+# A cancelled source run is a superseded push: its head is already stale, so
+# there is nothing observable and the trusted resolver correctly refuses it. The
+# observe job filters those out instead of manufacturing a red run.
 on:
   workflow_run:
     workflows: [PR Gate]
@@ -42,6 +45,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion != 'cancelled' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -77,6 +81,9 @@ jobs:
             const {
               resolveTrustedPullRequestWorkflowRun,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            // Observation only: an unresolvable source (cancelled, superseded, or
+            // a head the pull request has already moved past) produces no
+            // evidence and must end as a clean skip, not an unhandled error.
             const resolved = await resolveTrustedPullRequestWorkflowRun({
               github,
               ...context.repo,
@@ -87,7 +94,13 @@ jobs:
               workflowName: 'PR Gate',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
+              unresolved: 'skip',
             });
+            if (resolved.skipped) {
+              core.notice(`Skipping PR Gate impact observation: ${resolved.reason}.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
             const gateRun = resolved.run;
             const pr = resolved.pullRequest;
             const number = resolved.pullRequestNumber;
@@ -103,7 +116,9 @@ jobs:
               pull_number: number,
             });
             if (currentPr.base.sha !== expectedBase || currentPr.head.sha !== expectedHead) {
-              throw new Error('pull request moved while paginating changed files');
+              core.notice('Skipping PR Gate impact observation: the pull request moved while paginating changed files.');
+              core.setOutput('skip', 'true');
+              return;
             }
 
             const runArtifacts = await github.paginate(
@@ -209,6 +224,7 @@ jobs:
 
       - id: classify
         name: Classify non-authoritative PR Gate impact
+        if: steps.collect.outputs.skip != 'true'
         run: |
           python3 "${RUNNER_TEMP}/trusted-classify-pr-gate-impact.py" \
             --input "${RUNNER_TEMP}/pr-gate-impact-input.json" \
@@ -229,6 +245,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload trusted PR Gate impact observation
+        if: steps.collect.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-${{ github.run_attempt }}
@@ -338,7 +355,7 @@ jobs:
           retention-days: 7
 
       - name: Report PR Gate build evidence decision
-        if: always()
+        if: always() && steps.collect.outputs.skip != 'true'
         shell: bash
         run: |
           {

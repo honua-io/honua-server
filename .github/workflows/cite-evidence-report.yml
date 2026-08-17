@@ -168,6 +168,9 @@ jobs:
         with:
           path: artifacts/cite-evidence
 
+      # Every failure branch must say WHICH condition tripped. The suite runners
+      # interleave their own per-suite "Tests failed: 0" lines into this job's
+      # log, so a bare non-zero exit here reads as "failed with zero failures".
       - name: Fail on conformance issues
         if: always()
         env:
@@ -175,14 +178,44 @@ jobs:
         run: |
           set -euo pipefail
 
-          printf '%s\n' "$EXIT_CODES" > "$RUNNER_TEMP/cite-exit-codes.txt"
-          if grep -Ev '=0$' "$RUNNER_TEMP/cite-exit-codes.txt"; then
-            echo "One or more CITE runner scripts exited non-zero."
-            cat "$RUNNER_TEMP/cite-exit-codes.txt"
+          codes="$RUNNER_TEMP/cite-exit-codes.txt"
+          printf '%s\n' "$EXIT_CODES" | sed '/^$/d' > "$codes"
+          if [[ ! -s "$codes" ]]; then
+            echo "::error::CITE runners published no exit-code inventory; the suite step did not run to completion."
+            exit 1
+          fi
+          if ! grep -Eq '^.+=[0-9]+$' "$codes"; then
+            echo "::error::CITE exit-code inventory is malformed:"
+            cat "$codes"
+            exit 1
+          fi
+          nonzero="$(grep -Ev '=0$' "$codes" || true)"
+          if [[ -n "$nonzero" ]]; then
+            echo "::error::CITE runner scripts exited non-zero: $(tr '\n' ' ' <<<"$nonzero")"
+            echo 'Full inventory:'
+            cat "$codes"
             exit 1
           fi
 
-          jq -e '.totals.allPassed == true' artifacts/cite-evidence/conformance-summary.json >/dev/null
+          summary=artifacts/cite-evidence/conformance-summary.json
+          if [[ ! -f "$summary" ]]; then
+            echo "::error::Every CITE runner exited 0 but $summary was not produced; conformance results are missing."
+            exit 1
+          fi
+          if ! jq -e '.totals.allPassed == true' "$summary" >/dev/null; then
+            echo '::error::CITE evidence reports at least one suite that is not fully passing.'
+            jq -r '.totals
+              | "Totals: suites=\(.suites) tests=\(.totalTests) passed=\(.passed) failed=\(.failed) skipped=\(.skipped) cantTell=\(.cantTell)"' \
+              "$summary"
+            echo 'Suites that block a clean report:'
+            jq -r '.suites[]
+              | select(.status != "passed" or .totalTests == 0 or .failed != 0
+                       or .skipped != 0 or .cantTell != 0)
+              | "  - \(.name): status=\(.status) total=\(.totalTests) passed=\(.passed) failed=\(.failed) skipped=\(.skipped) cantTell=\(.cantTell)"' \
+              "$summary"
+            exit 1
+          fi
+          echo "All CITE suites passed: $(jq -r '.totals | "\(.passed)/\(.totalTests) tests across \(.suites) suites"' "$summary")."
 
       - name: Assert CITE status freshness
         if: always()

@@ -97,7 +97,13 @@ jobs:
                   page=$((page + 1))
                 done
                 if [[ "${partition_complete}" != true ]]; then
-                  echo "workflow-run partition exceeded its bounded page budget" >&2
+                  # Fail closed and name the fix. A truncated partition cannot
+                  # degrade gracefully: `discover`/`summarize` derive countable
+                  # heads and "successful Review Gate runs without a receipt"
+                  # from these pages, so dropping the tail would fabricate
+                  # integrity failures instead of reporting a collection gap.
+                  printf '::error::Review Gate partition %s needs more than %s page(s) of 100 (declared total %s). Raise maximum_runs_per_partition or shorten query_partition_hours in .github/review-first-promotion.json.\n' \
+                    "${partition}" "${maximum_run_pages}" "${expected_total:-unknown}" >&2
                   exit 1
                 fi
                 jq -s '.' "${partition_root}"/*.json \
@@ -140,7 +146,8 @@ jobs:
             page=$((page + 1))
           done
           if [[ "${catalog_complete}" != true ]]; then
-            echo "repository artifact catalog exceeded the bounded page budget" >&2
+            printf '::error::review-first-observation-v1 artifact catalog needs more than %s page(s) of 100 (declared total %s). Raise maximum_artifact_catalog_pages in .github/review-first-promotion.json.\n' \
+              "${maximum_pages}" "${expected_total:-unknown}" >&2
             exit 1
           fi
           jq -s '.' evidence/artifact-query-pages/*.json > evidence/artifact-pages.json
@@ -159,7 +166,8 @@ jobs:
           receipt_count="$(jq -er '.artifacts | arrays | length' evidence/index.json)"
           [[ "${maximum_downloads}" =~ ^[1-9][0-9]*$ && "${receipt_count}" =~ ^[0-9]+$ ]] || exit 1
           if (( receipt_count > maximum_downloads )); then
-            echo "observation receipts exceeded the bounded download budget" >&2
+            printf '::error::%s indexed receipts exceed the %s download budget. Raise maximum_receipt_downloads in .github/review-first-promotion.json or shorten receipt_retention_days.\n' \
+              "${receipt_count}" "${maximum_downloads}" >&2
             exit 1
           fi
           jq -r '.artifacts[].artifact_id' evidence/index.json \

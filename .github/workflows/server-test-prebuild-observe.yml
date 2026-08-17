@@ -52,6 +52,7 @@ jobs:
        github.event.workflow_run.event == 'pull_request_target')
     runs-on: ubuntu-latest
     outputs:
+      skip: ${{ steps.target.outputs.skip }}
       base_sha: ${{ steps.target.outputs.base_sha }}
       head_sha: ${{ steps.target.outputs.head_sha }}
       policy_sha: ${{ steps.policy.outputs.sha }}
@@ -85,6 +86,9 @@ jobs:
             const {
               resolveTrustedPullRequestWorkflowRun,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            // Observation only: an unresolvable source (cancelled, superseded, or
+            // a head the pull request has already moved past) produces no
+            // evidence and must end as a clean skip, not an unhandled error.
             const resolved = await resolveTrustedPullRequestWorkflowRun({
               github,
               ...context.repo,
@@ -99,9 +103,17 @@ jobs:
               jobConclusion: 'success',
               defaultBranch: repository.default_branch,
               repositoryId: repository.id,
+              unresolved: 'skip',
             });
+            if (resolved.skipped) {
+              core.notice(`Skipping server-test prebuild observation: ${resolved.reason}.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
             if (resolved.pullRequest.draft) {
-              throw new Error('Prebuild observation requires a ready pull request.');
+              core.notice('Skipping server-test prebuild observation: the pull request is a draft.');
+              core.setOutput('skip', 'true');
+              return;
             }
             core.setOutput('pr', String(resolved.pullRequestNumber));
             core.setOutput('head_sha', resolved.headSha);
@@ -115,9 +127,11 @@ jobs:
 
       - id: policy
         name: Bind trusted policy commit
+        if: steps.target.outputs.skip != 'true'
         run: echo "sha=$(git -C policy rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout raw pull-request head
+        if: steps.target.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.repository }}
@@ -128,6 +142,7 @@ jobs:
 
       - id: plan
         name: Select only repeated registered projects
+        if: steps.target.outputs.skip != 'true'
         env:
           BASE_SHA: ${{ steps.target.outputs.base_sha }}
           HEAD_SHA: ${{ steps.target.outputs.head_sha }}
@@ -151,6 +166,7 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
 
       - name: Bind plan to trusted workflow provenance
+        if: steps.target.outputs.skip != 'true'
         run: |
           jq \
             --arg repository '${{ github.repository }}' \
@@ -179,6 +195,7 @@ jobs:
           mv prebuild-plan.bound.json prebuild-plan.json
 
       - name: Retain immutable shadow plan
+        if: steps.target.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: server-test-prebuild-plan-${{ steps.target.outputs.pr }}-${{ steps.target.outputs.head_sha }}-attempt-${{ github.run_attempt }}
@@ -191,7 +208,7 @@ jobs:
   producer:
     name: Prebuild repeated project / ${{ matrix.identity }}
     needs: plan
-    if: needs.plan.outputs.has_producers == 'true'
+    if: needs.plan.outputs.skip != 'true' && needs.plan.outputs.has_producers == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:

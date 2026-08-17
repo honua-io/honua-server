@@ -28,6 +28,29 @@ unsafe-archive, wrong-workflow, wrong-policy, and cross-head evidence. It
 deduplicates successful observations by full head SHA and never counts a head
 associated with more than one pull request.
 
+Observers wake on every completed source run, including the cancelled and
+superseded ones an ordinary force-push produces, whose head no longer matches
+the pull request. `resolveTrustedPullRequestWorkflowRun` stays fail-closed for
+those, but observation-only consumers pass `unresolved: 'skip'` so the refusal
+returns `{ skipped: true, reason }` and the job no-ops with a notice instead of
+raising an unhandled error. Skipping produces no evidence at all, so it can
+never widen what a candidate influences; the trusted default (`'throw'`) is
+unchanged and remains mandatory for anything that attests, promotes, or gates.
+The observe jobs additionally decline to schedule at all when the source run's
+conclusion is `cancelled`.
+
+The ledger's collection budgets (`maximum_pages_per_query`,
+`maximum_receipt_downloads`) are hard API-cost bounds and stay fail-closed: a
+truncated catalog would be counted as missing evidence and reported as a
+fabricated integrity or authoritative-outcome failure rather than as the
+collection gap it is. Exhausting a budget therefore prints an error naming the
+collection, the pages consumed, the declared total, and the policy key to raise.
+`maximum_pages_per_query` is 8 (800 runs per query): on 2026-08-17 the widest
+collection, `serving-image-boundary.yml` `pull_request` runs, was 430 over a
+trailing 7-day window (worker-gdal-image 388, native observer 175, PR Gate
+observer 138), and the image window is the receipt window plus
+`image_outcome_lookback_hours`.
+
 Both streams bind the Git blobs of the authoritative PR Gate workflow and
 `scripts/ci/trusted-pr-workflow-run.js`, which resolved the canonical PR, base,
 head, workflow, run, and attempt. A gate or resolver change therefore starts a

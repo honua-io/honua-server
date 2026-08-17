@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  UnresolvedTrustedWorkflowRunError,
   parseRunId,
   resolveTrustedPullRequestWorkflowRun,
 } = require('./trusted-pr-workflow-run');
@@ -308,4 +309,110 @@ test('accepts only positive safe integer workflow run ids', () => {
   for (const value of ['', '0', '-1', '1.5', '01', '9007199254740992', true]) {
     assert.throws(() => parseRunId(value), /workflow run id/);
   }
+});
+
+// Observation-only consumers (pr-gate-impact-observe, native-image-impact-observe,
+// server-test-prebuild-observe) wake on EVERY completed source run, including the
+// cancelled/superseded ones a fresh push produces. Fail-closed is still correct,
+// but for them the correct fail-closed outcome is a clean skip, not ~93 red runs.
+test('skip mode converts every unresolvable source into a clean skip', async () => {
+  const cases = [
+    // A superseded source run: the association no longer matches the run head.
+    ['superseded head', { checkRun: { head_sha: 'c'.repeat(40) } },
+      /check identity is inconsistent/],
+    // A cancelled source run whose check retains no PR association.
+    ['zero pull requests', { checkRun: { pull_requests: [] } },
+      /exactly one pull request/],
+    ['multiple pull requests', {
+      checkRun: {
+        pull_requests: [
+          { number: 41, base: { ref: 'trunk', sha: BASE, repo: { id: 1 } }, head: { sha: HEAD } },
+          { number: 42, base: { ref: 'trunk', sha: BASE, repo: { id: 1 } }, head: { sha: HEAD } },
+        ],
+      },
+    }, /exactly one pull request/],
+    // The PR advanced past the observed head while the observer was waking.
+    ['head moved', {
+      pullRequest: {
+        head: { sha: 'd'.repeat(40), repo: { id: 1, full_name: 'honua-io/honua-server' } },
+      },
+    }, /moved after/],
+  ];
+  for (const [label, overrides, pattern] of cases) {
+    const { github } = fixtures(overrides);
+    await assert.rejects(resolve(github), pattern, label);
+    const skipped = await resolveTrustedPullRequestWorkflowRun({
+      github,
+      owner: 'honua-io',
+      repo: 'honua-server',
+      runId: '123',
+      runAttempt: '2',
+      runConclusion: 'success',
+      workflowPath: '.github/workflows/pr-gate.yml',
+      workflowName: 'PR Gate',
+      defaultBranch: 'trunk',
+      repositoryId: 1,
+      unresolved: 'skip',
+    });
+    assert.equal(skipped.skipped, true, label);
+    assert.match(skipped.reason, pattern, label);
+  }
+});
+
+test('skip mode reports a cancelled source run rather than throwing', async () => {
+  // SOURCE_RUN_CONCLUSION: cancelled with a head the PR has already moved past
+  // is the exact shape of runs 31988311533 / 31988311576 / 31974102710.
+  const { github } = fixtures({
+    run: { conclusion: 'cancelled', head_sha: 'e'.repeat(40) },
+    job: { conclusion: 'cancelled', head_sha: 'e'.repeat(40) },
+    checkRun: { conclusion: 'cancelled', head_sha: 'e'.repeat(40) },
+  });
+  const call = (unresolved) => resolveTrustedPullRequestWorkflowRun({
+    github,
+    owner: 'honua-io',
+    repo: 'honua-server',
+    runId: '123',
+    runAttempt: '2',
+    runConclusion: 'cancelled',
+    jobConclusion: 'cancelled',
+    workflowPath: '.github/workflows/pr-gate.yml',
+    workflowName: 'PR Gate',
+    defaultBranch: 'trunk',
+    repositoryId: 1,
+    ...(unresolved ? { unresolved } : {}),
+  });
+  await assert.rejects(call(), /identity is inconsistent/);
+  const skipped = await call('skip');
+  assert.equal(skipped.skipped, true);
+  assert.match(skipped.reason, /identity is inconsistent/);
+});
+
+test('skip mode never masks malformed caller input or a resolved success', async () => {
+  const { github } = fixtures();
+  const call = (overrides) => resolveTrustedPullRequestWorkflowRun({
+    github,
+    owner: 'honua-io',
+    repo: 'honua-server',
+    runId: '123',
+    runAttempt: '2',
+    runConclusion: 'success',
+    workflowPath: '.github/workflows/pr-gate.yml',
+    workflowName: 'PR Gate',
+    defaultBranch: 'trunk',
+    repositoryId: 1,
+    unresolved: 'skip',
+    ...overrides,
+  });
+  await assert.rejects(call({ runConclusion: 'in_progress' }), /workflow run conclusion/);
+  await assert.rejects(call({ runId: '0' }), /workflow run id/);
+  await assert.rejects(call({ defaultBranch: '' }), /input is incomplete/);
+  await assert.rejects(call({ unresolved: 'ignore' }), /unresolved-source behavior/);
+  const resolved = await call({});
+  assert.equal(resolved.skipped, false);
+  assert.equal(resolved.pullRequestNumber, 42);
+});
+
+test('the default behavior stays fail-closed for trusted callers', async () => {
+  const { github } = fixtures({ checkRun: { pull_requests: [] } });
+  await assert.rejects(resolve(github), UnresolvedTrustedWorkflowRunError);
 });

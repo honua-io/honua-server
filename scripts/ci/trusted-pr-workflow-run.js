@@ -16,6 +16,31 @@ const WORKFLOW_SHA_ROLES = new Set([
   'pull-request-head',
   'pull-request-target-associated',
 ]);
+const UNRESOLVED_BEHAVIORS = new Set(['throw', 'skip']);
+
+/**
+ * A source workflow run could not be bound to exactly one still-current pull
+ * request. This is the deliberate fail-closed outcome of the trusted resolver
+ * (#3226): a cancelled or superseded source run no longer matches the pull
+ * request head, and no consumer may proceed on it.
+ *
+ * Trusted consumers (anything that attests, promotes, or gates) must let this
+ * propagate. Observation-only consumers may pass `unresolved: 'skip'` to turn
+ * it into a `{ skipped: true, reason }` result instead: skipping produces no
+ * evidence at all, so it can never widen what a candidate can influence, while
+ * an unhandled throw only manufactures red runs for ordinary superseded pushes.
+ */
+class UnresolvedTrustedWorkflowRunError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = 'UnresolvedTrustedWorkflowRunError';
+    this.reason = reason;
+  }
+}
+
+function unresolved(reason) {
+  return new UnresolvedTrustedWorkflowRunError(reason);
+}
 
 function parsePositiveSafeInteger(value, label) {
   const text = String(value ?? '');
@@ -29,7 +54,7 @@ function parseRunId(value) {
   return parsePositiveSafeInteger(value, 'workflow run id');
 }
 
-async function resolveTrustedPullRequestWorkflowRun({
+async function resolveOrThrow({
   github,
   owner,
   repo,
@@ -82,7 +107,7 @@ async function resolveTrustedPullRequestWorkflowRun({
     run.run_attempt !== expectedAttempt ||
     run.conclusion !== runConclusion
   ) {
-    throw new Error('source run is not a completed canonical pull-request workflow');
+    throw unresolved('source run is not a completed canonical pull-request workflow');
   }
 
   // workflow_run.pull_requests is routinely empty, especially for forks. The
@@ -102,12 +127,12 @@ async function resolveTrustedPullRequestWorkflowRun({
     job.conclusion === jobConclusion,
   );
   if (canonicalJobs.length !== 1) {
-    throw new Error('source run does not identify exactly one canonical workflow job');
+    throw unresolved('source run does not identify exactly one canonical workflow job');
   }
 
   const job = canonicalJobs[0];
   if (!Number.isSafeInteger(job.id) || job.id <= 0) {
-    throw new Error('canonical workflow job identity is invalid');
+    throw unresolved('canonical workflow job identity is invalid');
   }
   const { data: checkRun } = await github.rest.checks.get({
     owner,
@@ -121,13 +146,13 @@ async function resolveTrustedPullRequestWorkflowRun({
     checkRun.conclusion !== job.conclusion ||
     checkRun.head_sha !== run.head_sha
   ) {
-    throw new Error('canonical workflow job check identity is inconsistent');
+    throw unresolved('canonical workflow job check identity is inconsistent');
   }
 
   const associations = checkRun.pull_requests || [];
   if (associations.length !== 1 ||
       !Number.isSafeInteger(associations[0]?.number) || associations[0].number <= 0) {
-    throw new Error('canonical workflow check does not identify exactly one pull request');
+    throw unresolved('canonical workflow check does not identify exactly one pull request');
   }
   const associated = associations[0];
   const associatedBase = associated.base?.sha;
@@ -152,7 +177,7 @@ async function resolveTrustedPullRequestWorkflowRun({
       ? run.head_sha !== associatedHead
       : resolvedWorkflowShaRole === null)
   ) {
-    throw new Error('canonical workflow check pull-request identity is inconsistent');
+    throw unresolved('canonical workflow check pull-request identity is inconsistent');
   }
 
   const { data: pullRequest } = await github.rest.pulls.get({
@@ -171,10 +196,11 @@ async function resolveTrustedPullRequestWorkflowRun({
     pullRequest.head?.repo?.full_name !== repository ||
     pullRequest.head?.repo?.id !== repositoryId
   ) {
-    throw new Error('pull request moved after the canonical workflow run');
+    throw unresolved('pull request moved after the canonical workflow run');
   }
 
   return {
+    skipped: false,
     run,
     job,
     checkRun,
@@ -189,8 +215,37 @@ async function resolveTrustedPullRequestWorkflowRun({
   };
 }
 
+/**
+ * Resolve the still-current pull request behind a completed canonical
+ * workflow run.
+ *
+ * `unresolved` selects what happens when the source run cannot be bound to
+ * exactly one unchanged pull request:
+ *   'throw' (default) - fail closed by throwing; required for trusted callers.
+ *   'skip'            - return `{ skipped: true, reason }` so an
+ *                       observation-only consumer can no-op cleanly.
+ * Malformed caller input always throws under both behaviors.
+ */
+async function resolveTrustedPullRequestWorkflowRun(options) {
+  const behavior = options?.unresolved ?? 'throw';
+  if (!UNRESOLVED_BEHAVIORS.has(behavior)) {
+    throw new Error('invalid unresolved-source behavior');
+  }
+  if (behavior === 'throw') return resolveOrThrow(options);
+  try {
+    return await resolveOrThrow(options);
+  } catch (error) {
+    if (error instanceof UnresolvedTrustedWorkflowRunError) {
+      return { skipped: true, reason: error.reason };
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   TERMINAL_CONCLUSIONS,
+  UNRESOLVED_BEHAVIORS,
+  UnresolvedTrustedWorkflowRunError,
   WORKFLOW_SHA_ROLES,
   parseRunId,
   resolveTrustedPullRequestWorkflowRun,
