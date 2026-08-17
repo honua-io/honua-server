@@ -590,7 +590,11 @@ def apply_disposition(
 
     Pure, and mutates-then-returns the finding the way the classifiers do.
     """
-    if not disposition:
+    if not disposition or finding["classification"] not in ACTIONABLE_CLASSIFICATIONS:
+        # Nothing to decide. A `landed` or `superseded` finding is already
+        # informational, and filing it under "Adjudicated" would assert that its
+        # payload never reached the default branch -- the opposite of what those
+        # classifications mean. The sweep reports the entry as stale instead.
         return finding
 
     status = disposition["status"]
@@ -999,7 +1003,7 @@ def sweep(
     # the payload re-landed, or the PR aged past --limit. Either way the entry is
     # now silencing nothing, and saying so is what stops the ledger accumulating
     # waivers nobody can account for.
-    reported = {f["number"] for f in merged_findings}
+    reported = {f["number"] for f in merged_findings if f.get("disposition")}
     stale = [
         {"pr": number, "status": entry["status"], "reason": entry["reason"]}
         for number, entry in sorted(dispositions.items())

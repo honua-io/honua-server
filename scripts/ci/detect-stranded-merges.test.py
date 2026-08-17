@@ -616,6 +616,24 @@ def test_dispositions_drop_out_of_the_actionable_count_and_into_their_own_table(
     assert "### Stranded (1)" in out, "the other stranded PR must still be reported"
 
 
+def test_a_decision_about_an_already_informational_finding_is_stale_not_adjudicated():
+    # #9004 is `landed`: its content reached trunk under a different SHA. Filing
+    # it under "Adjudicated" would assert the opposite, so the entry is reported
+    # as having nothing left to decide.
+    result = run_fixture_sweep(
+        dispositions={9004: {"pr": 9004, "status": MODULE.DISPOSITION_ABANDONED, "reason": "x", "paths": []}},
+        today=TODAY,
+    )
+    landed = by_number(result["merged"])[9004]
+    assert landed["classification"] == MODULE.MERGED_LANDED
+    assert "disposition" not in landed
+    assert [e["pr"] for e in result["staleDispositions"]] == [9004]
+
+    out = MODULE.render_markdown(result, DEFAULT_REF)
+    assert "### Adjudicated" not in out
+    assert "**landed**" in out, "it must stay in the informational list where it belongs"
+
+
 def test_a_decision_about_a_pr_the_sweep_no_longer_reports_is_flagged_as_stale():
     result = run_fixture_sweep(
         dispositions={4242: {"pr": 4242, "status": MODULE.DISPOSITION_ABANDONED, "reason": "gone", "paths": []}},
