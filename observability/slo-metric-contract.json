@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "_comment": "Canonical Honua SLO metric contract. This file is the ONE source of truth for the Prometheus SERIES NAMES and LABEL NAMES that out-of-repo alerting may reference: honua-helm's PrometheusRule template, honua-devops' recording/alert rules, and honua-release's gate-observability. Each of those repositories was individually correct and collectively broken because nothing checked that the names matched across the seam — a PromQL ratio whose denominator series does not exist evaluates to an EMPTY vector, so the alert produces no series and never fires. The failure mode is silence, not noise. Two guards enforce this file: honua-server's SloMetricContractTests scrapes the real /metrics exposition and fails if the server stops exporting a name listed under `emitted`; honua-release's tools/check_metric_contract.py parses the consumer rule files and fails if they reference a name that is in neither `emitted` nor `not_emitted`.",
+  "_naming_comment": "`series` is the name as it appears in the Prometheus text exposition, NOT the .NET instrument name. They are equal here only because these instruments deliberately declare no OpenTelemetry `unit`: the OTel Prometheus exporter appends the UCUM-mapped unit to the metric name, so declaring unit \"ms\" would export `honua_serving_request_duration_ms_milliseconds` and unit \"errors\" would export `honua_request_error_total_errors_total`. See the SLO-contract comment block in src/Honua.ServiceDefaults/HonuaTelemetry.cs.",
+  "version": 1,
+  "meter": "Honua",
+  "emitted": [
+    {
+      "series": "honua_geoservices_error_total",
+      "instrument": "honua_geoservices_error_total",
+      "type": "counter",
+      "labels": ["service_type", "operation", "error_code"],
+      "role": "GeoServices-only error-envelope numerator.",
+      "recorded_by": "HonuaTelemetry.RecordErrorEnvelope"
+    },
+    {
+      "series": "honua_request_error_total",
+      "instrument": "honua_request_error_total",
+      "type": "counter",
+      "labels": ["service_type", "operation", "error_code", "in_band"],
+      "role": "All-surface error-envelope numerator. in_band=\"true\" is the GeoServices HTTP-200-with-{error} class that transport 5xx metrics cannot see (server#2243, devops#113).",
+      "recorded_by": "HonuaTelemetry.RecordErrorEnvelope"
+    },
+    {
+      "series": "honua_serving_request_duration_ms_count",
+      "instrument": "honua_serving_request_duration_ms",
+      "type": "histogram_count",
+      "labels": ["honua_protocol", "honua_operation", "status_class"],
+      "role": "CANONICAL SLO DENOMINATOR. One sample per served request that classifies to a Honua protocol. Strictly richer than a flat request counter: it carries the protocol/operation/status_class dimensions, so a GeoServices-only error budget can be expressed as honua_protocol=~\"FeatureServer|MapServer|ImageServer|VectorTileServer\". Requests that do not classify to a protocol are intentionally not counted (bounded cardinality) — the denominator is 'classified serving-plane requests', not 'all HTTP requests'.",
+      "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
+    },
+    {
+      "series": "honua_serving_request_duration_ms_sum",
+      "instrument": "honua_serving_request_duration_ms",
+      "type": "histogram_sum",
+      "labels": ["honua_protocol", "honua_operation", "status_class"],
+      "role": "Serving-plane latency sum (milliseconds).",
+      "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
+    },
+    {
+      "series": "honua_serving_request_duration_ms_bucket",
+      "instrument": "honua_serving_request_duration_ms",
+      "type": "histogram_bucket",
+      "labels": ["honua_protocol", "honua_operation", "status_class", "le"],
+      "role": "Serving-plane latency buckets; the only histogram the platform exposes for protocol-sliced p50/p95/p99.",
+      "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
+    }
+  ],
+  "not_emitted": [
+    {
+      "series": "honua_backup_success_ratio",
+      "reason": "Referenced by honua-devops' backup SLO recording rule. No server instrument produces it; it is expected from a future backup/DR exporter. Listed here so the cross-repo guard treats it as a KNOWN gap rather than silently accepting it — and so a typo in a real metric name still fails."
+    },
+    {
+      "series": "honua_replication_lag_seconds",
+      "reason": "Referenced by honua-devops' replication SLO recording rule. No server instrument produces it; expected from a future database/replication exporter."
+    },
+    {
+      "series": "honua_maintenance_window_active",
+      "reason": "Referenced by honua-devops' maintenance-window suppression rule. No server instrument produces it; it is set by the deploy tooling, not the serving plane."
+    }
+  ],
+  "retired": [
+    {
+      "series": "honua_http_requests_total",
+      "reason": "Never emitted by any Honua component. honua-helm's PrometheusRule and honua-devops' recording rules divided by it until honua-release#5, which made every SLO ratio an empty vector and every alert silent. Replaced by honua_serving_request_duration_ms_count. Legal to NAME in an explanatory comment; using it in an expression is a hard failure."
+    },
+    {
+      "series": "honua_geoservices_requests_total",
+      "reason": "Never emitted. Was the default REQUEST_METRIC of honua-release's gate-observability, which made that gate structurally incapable of returning `pass`. Replaced by honua_serving_request_duration_ms_count."
+    },
+    {
+      "series": "honua_request_duration_ms_bucket",
+      "reason": "Never emitted. honua-devops' latency quantile rules used it; the real histogram is honua_serving_request_duration_ms_bucket."
+    },
+    {
+      "series": "honua_geoservices_error_total_errors_total",
+      "reason": "The name the OTel Prometheus exporter produced while the counter declared unit \"errors\". Not a metric anyone should reference; listed so a rule that 'fixes' drift by adopting the mangled name fails instead."
+    },
+    {
+      "series": "honua_request_error_total_errors_total",
+      "reason": "As above, for the all-surface error counter."
+    },
+    {
+      "series": "honua_serving_request_duration_ms_milliseconds",
+      "reason": "The name the exporter produced while the histogram declared unit \"ms\"."
+    }
+  ],
+  "external_labels": {
+    "_comment": "Label names that alert rules may use even though the server does not emit them: Prometheus target labels applied by the scrape config / Prometheus Operator, plus PromQL structural labels.",
+    "names": [
+      "job",
+      "instance",
+      "cluster",
+      "namespace",
+      "pod",
+      "container",
+      "service",
+      "environment",
+      "deployment",
+      "endpoint",
+      "le",
+      "otel_scope_name",
+      "otel_scope_version"
+    ]
+  }
+}

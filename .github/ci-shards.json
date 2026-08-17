@@ -288,7 +288,8 @@
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Infrastructure/",
         "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
-        "src/Honua.Core/Features/Validation/"
+        "src/Honua.Core/Features/Validation/",
+        "observability/"
       ]
     },
     {

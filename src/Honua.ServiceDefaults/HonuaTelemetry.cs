@@ -36,6 +36,28 @@ public static class HonuaTelemetry
     /// </summary>
     public static readonly Meter Meter = new(ServiceName, ServiceVersion);
 
+    // ── SLO metric contract (observability/slo-metric-contract.json) ──────────────────────────────
+    //
+    // The three instruments below are the platform SLO contract: alert rules (honua-helm
+    // PrometheusRule, honua-devops recording rules) and the honua-release observability gate
+    // reference their Prometheus series names directly, in a different repository.
+    //
+    // NONE of them declares an OpenTelemetry `unit`, and that omission is load-bearing. The
+    // OTel Prometheus exporter derives the exposed series name from BOTH the instrument name and
+    // its unit: it maps the unit through the UCUM table and appends it when the name does not
+    // already end in the mapped form. With units declared, these instruments used to be exported
+    // as `honua_geoservices_error_total_errors_total`, `honua_request_error_total_errors_total`
+    // and `honua_serving_request_duration_ms_milliseconds` — names nothing in the platform
+    // referenced, so every SLO ratio divided by an absent series and silently produced no series
+    // at all (an empty PromQL vector never fires an alert). Dropping the unit makes the exported
+    // name identical to the instrument name, which is the name the whole platform already assumes
+    // (see docker/monitoring/grafana/dashboards/honua-serving-overview.json). The unit stays
+    // documented in the instrument name (`_ms`) and description.
+    //
+    // Do not add a `unit` argument to these three instruments without also updating every
+    // consumer; SloMetricContractTests scrapes the real /metrics exposition and fails if the
+    // exported names drift from the contract file.
+
     /// <summary>
     /// Counter for GeoServices/ArcGIS REST error envelopes produced by the server.
     /// GeoServices returns most errors as an <c>{"error":{code,message,details}}</c>
@@ -45,7 +67,7 @@ public static class HonuaTelemetry
     /// </summary>
     public static readonly Counter<long> GeoServicesErrors = Meter.CreateCounter<long>(
         "honua_geoservices_error_total",
-        "errors",
+        unit: null,
         "Total GeoServices/ArcGIS REST error envelopes produced, tagged by service_type, operation, and error_code.");
 
     /// <summary>
@@ -58,7 +80,7 @@ public static class HonuaTelemetry
     /// </summary>
     public static readonly Counter<long> RequestErrors = Meter.CreateCounter<long>(
         "honua_request_error_total",
-        "errors",
+        unit: null,
         "Total protocol error envelopes produced across all surfaces, tagged by service_type, operation, error_code, and in_band.");
 
     /// <summary>
@@ -69,11 +91,18 @@ public static class HonuaTelemetry
     /// serving p95/p99 sliced by the GeoServices/OGC/WFS/OData protocol family and its logical
     /// operation. Cardinality is bounded because both tags come from the fixed
     /// <see cref="Protocols"/> set and the request classifier's finite operation vocabulary.
+    /// <para>
+    /// Its Prometheus <c>_count</c> child series (<c>honua_serving_request_duration_ms_count</c>) is
+    /// the canonical SLO denominator: every served request that classifies to a Honua protocol is
+    /// counted exactly once, sliced by <c>honua_protocol</c>/<c>honua_operation</c>/<c>status_class</c>.
+    /// Requests that do not classify to a protocol are deliberately not recorded (see
+    /// <c>CorrelationIdMiddleware.RecordServingRequestMetric</c>), which bounds label cardinality.
+    /// </para>
     /// </summary>
     public static readonly Histogram<double> ServingRequestDuration = Meter.CreateHistogram<double>(
         "honua_serving_request_duration_ms",
-        "ms",
-        "Serving-plane request latency, tagged by protocol, operation, and status_class.");
+        unit: null,
+        "Serving-plane request latency in milliseconds, tagged by protocol, operation, and status_class.");
 
     private const int DefaultMaxExceptionDetailLength = 256;
 
