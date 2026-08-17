@@ -550,6 +550,38 @@ public static class HonuaTelemetry
 
         /// <summary>Model Context Protocol operator surface.</summary>
         public const string Mcp = "Mcp";
+
+        /// <summary>
+        /// Protocol values that are NOT part of the serving plane: liveness/readiness probes and the
+        /// metrics scrape endpoint. They are excluded from <see cref="ServingRequestDuration"/>
+        /// because they are infrastructure traffic, not requests a client made of the geospatial
+        /// platform, and because their volume dwarfs real traffic — a candidate idling for a day
+        /// with 10s probes and a 15s scrape accumulates tens of thousands of samples. Counting them
+        /// in the SLO denominator dilutes any real error rate toward zero, which turns an
+        /// error-budget gate from fail-closed into fail-open (honua-release#5).
+        /// </summary>
+        public static readonly string[] NonServingPlane = [Health, Monitoring];
+
+        /// <summary>
+        /// The GeoServices/ArcGIS REST protocol family — the surfaces whose requests are counted by
+        /// the denominator that pairs with <see cref="GeoServicesErrors"/>. This is the single
+        /// definition of that set; <c>observability/slo-metric-contract.json</c> publishes it as a
+        /// PromQL selector for out-of-repo alert rules and the release gate, and a test asserts the
+        /// two stay identical. Omitting a member makes the denominator smaller and the measured
+        /// error rate higher, i.e. it fails closed.
+        /// </summary>
+        public static readonly string[] GeoServicesFamily =
+        [
+            FeatureServer,
+            MapServer,
+            ImageServer,
+            VectorTileServer,
+            GPServer,
+            NAServer,
+            GeometryService,
+            PrintingTools,
+            StaticMap
+        ];
     }
 
     /// <summary>

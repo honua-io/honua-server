@@ -67,8 +67,9 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
                 EnrichActivityWithRequestContext(context);
 
                 // Emit the GIS-aware serving latency histogram once per request, keyed by the
-                // classified protocol/operation. Skipped for non-Honua paths (health, metrics,
-                // static) so the metric stays low-cardinality.
+                // classified protocol/operation. Skipped for unclassified paths and for the
+                // non-serving-plane protocols (health probes, metrics scrape) so the metric stays
+                // low-cardinality and usable as an SLO denominator.
                 RecordServingRequestMetric(context, startTimestamp);
             }
         }
@@ -165,13 +166,25 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
     }
 
     /// <summary>
-    /// Records the GIS-aware serving-plane latency histogram for the completed request. Only
-    /// requests that classify to a Honua protocol are recorded, keeping label cardinality bounded.
+    /// Records the GIS-aware serving-plane latency histogram for the completed request. Requests
+    /// that do not classify to a Honua protocol are skipped, which keeps label cardinality bounded.
+    /// <para>
+    /// Health probes and the metrics scrape are ALSO skipped, even though the classifier does give
+    /// them a protocol (<see cref="HonuaTelemetry.Protocols.Health"/> /
+    /// <see cref="HonuaTelemetry.Protocols.Monitoring"/>). They are infrastructure traffic, not
+    /// serving-plane requests, and their volume dwarfs real traffic: a candidate idling for 24h with
+    /// 10s liveness+readiness probes and a 15s Prometheus scrape accrues ~23k samples. Because
+    /// <c>honua_serving_request_duration_ms_count</c> is the SLO denominator, including them would
+    /// dilute a real error rate by two orders of magnitude and let an error-budget gate pass a
+    /// badly broken release — fail-open, which is worse than the no-signal state it replaced
+    /// (honua-release#5). It also skews the latency quantiles this histogram exists to report.
+    /// </para>
     /// </summary>
     private static void RecordServingRequestMetric(HttpContext context, long startTimestamp)
     {
         var protocol = RequestTelemetryClassifier.ResolveProtocol(context.Request.Path);
-        if (string.IsNullOrWhiteSpace(protocol))
+        if (string.IsNullOrWhiteSpace(protocol) ||
+            Array.IndexOf(HonuaTelemetry.Protocols.NonServingPlane, protocol) >= 0)
         {
             return;
         }
