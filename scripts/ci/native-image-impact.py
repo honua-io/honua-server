@@ -25,7 +25,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY = ROOT / ".github" / "native-image-impact.json"
-SCHEMA = "honua.ci.native-image-impact-observation/v2"
+SCHEMA = "honua.ci.native-image-impact-observation/v3"
 TRUSTED_EXECUTION = "default-branch-workflow-run/v1"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 TERMINAL_CONCLUSIONS = {
@@ -39,6 +39,13 @@ TERMINAL_CONCLUSIONS = {
     "stale",
     "startup_failure",
 }
+IMAGE_INPUT_CLASSES = (
+    "serving_generic",
+    "serving_lambda",
+    "serving_functions",
+    "worker",
+)
+TREE_ENTRY = re.compile(rb"^[0-7]{6} (blob|commit) ([0-9a-f]{40})\t(.*)$", re.DOTALL)
 RISK_CLASSES = (
     "server_aot_compile",
     "generic_final_rootfs",
@@ -426,8 +433,16 @@ def evaluate(
     gate_run_id: int = 0,
     gate_run_attempt: int = 0,
     gate_run_conclusion: str = "",
+    tree_ref: str = "HEAD",
+    image_inputs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     paths = sorted({normalize_path(path) for path in changed_paths if normalize_path(path)})
+    if image_inputs is None:
+        image_inputs = image_input_digests(repo, policy, tree_ref)
+    if set(image_inputs) != set(IMAGE_INPUT_CLASSES) or any(
+        re.fullmatch(r"[0-9a-f]{64}", value or "") is None for value in image_inputs.values()
+    ):
+        raise PolicyError("image input digests are incomplete")
     serving_projects, serving_external = project_closure(
         repo, policy["roots"]["serving"], policy["global_projects"]
     )
@@ -515,6 +530,7 @@ def evaluate(
         "resolver_blob_sha": resolver_blob_sha,
         "observer_workflow_blob_sha": observer_workflow_blob_sha,
         "policy_inputs_sha256": policy_inputs_sha256,
+        "image_input_digests": dict(sorted(image_inputs.items())),
         "trusted_execution": trusted_execution,
         "gate_workflow_path": gate_workflow_path,
         "gate_run_id": gate_run_id,
@@ -555,6 +571,17 @@ def evaluate(
     }
 
 
+def _is_unsafe_path(path: str) -> bool:
+    return (
+        not path
+        or "\\" in path
+        or any(ord(character) < 32 or ord(character) == 127 for character in path)
+        or PurePosixPath(path).is_absolute()
+        or ".." in PurePosixPath(path).parts
+        or PurePosixPath(path).as_posix() != path
+    )
+
+
 def parse_changed_path_output(raw: bytes) -> list[str]:
     if not raw:
         return []
@@ -567,19 +594,116 @@ def parse_changed_path_output(raw: bytes) -> list[str]:
             path = encoded.decode("utf-8")
         except UnicodeDecodeError as error:
             raise PolicyError("git diff emitted a non-UTF-8 path") from error
-        if (
-            not path
-            or "\\" in path
-            or any(ord(character) < 32 or ord(character) == 127 for character in path)
-            or PurePosixPath(path).is_absolute()
-            or ".." in PurePosixPath(path).parts
-            or PurePosixPath(path).as_posix() != path
-            or path in seen
-        ):
+        if _is_unsafe_path(path) or path in seen:
             raise PolicyError(f"git diff emitted an unsafe path: {path!r}")
         seen.add(path)
         paths.append(path)
     return paths
+
+
+def parse_tree_output(raw: bytes) -> dict[str, str]:
+    """Parse ``git ls-tree -r -z`` into an ordered path -> object-id mapping."""
+    if not raw:
+        return {}
+    if not raw.endswith(b"\0"):
+        raise PolicyError("git ls-tree emitted a truncated record")
+    entries: dict[str, str] = {}
+    for record in raw[:-1].split(b"\0"):
+        match = TREE_ENTRY.fullmatch(record)
+        if match is None:
+            raise PolicyError("git ls-tree emitted an unreadable record")
+        try:
+            path = match.group(3).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise PolicyError("git ls-tree emitted a non-UTF-8 path") from error
+        if _is_unsafe_path(path) or path in entries:
+            raise PolicyError(f"git ls-tree emitted an unsafe path: {path!r}")
+        entries[path] = match.group(2).decode("ascii")
+    return entries
+
+
+def tree_entries(repo: Path, ref: str) -> dict[str, str]:
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "-z", "--full-tree", f"{ref}^{{tree}}"],
+        cwd=repo,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise PolicyError(f"git ls-tree failed: {detail}")
+    entries = parse_tree_output(result.stdout)
+    if not entries:
+        raise PolicyError("git ls-tree produced an empty tree")
+    return entries
+
+
+def _content_digest(entries: dict[str, str], selected: Iterable[str]) -> str:
+    payload = json.dumps(
+        [[path, entries[path]] for path in sorted(set(selected))],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def image_input_selection(
+    repo: Path, policy: dict[str, Any], paths: Iterable[str]
+) -> dict[str, list[str]]:
+    """Select the exact image-build input set per image class.
+
+    The same graph closure and pattern predicates that drive the routing
+    decision drive the digest, so a routing input can never be omitted from the
+    content address without also being omitted from the decision.
+    """
+    paths = list(paths)
+    serving_projects, serving_external = project_closure(
+        repo, policy["roots"]["serving"], policy["global_projects"]
+    )
+    serving_external = sorted(
+        set(serving_external) | set(policy["serving_external_patterns"])
+    )
+    worker_projects, worker_external = project_closure(
+        repo, policy["roots"]["worker"], policy["global_projects"]
+    )
+    common = set(matching_paths(paths, policy["common_managed_patterns"]))
+    serving_shared = (
+        set(graph_matching_paths(paths, serving_projects, serving_external))
+        | common
+        | set(matching_paths(paths, policy["serving_shared_patterns"]))
+    )
+    selection = {
+        f"serving_{variant}": sorted(
+            serving_shared
+            | set(matching_paths(paths, policy["serving_variant_patterns"][variant]))
+        )
+        for variant in ("generic", "lambda", "functions")
+    }
+    selection["worker"] = sorted(
+        set(graph_matching_paths(paths, worker_projects, worker_external))
+        | common
+        | set(matching_paths(paths, policy["worker_native_patterns"]))
+        | set(matching_paths(paths, policy["worker_vulnerability_patterns"]))
+    )
+    return selection
+
+
+def image_input_digests(
+    repo: Path, policy: dict[str, Any], ref: str = "HEAD"
+) -> dict[str, str]:
+    """Content-address every image build input at ``ref``.
+
+    Two heads that share a digest consume byte-identical build inputs, so the
+    later head can reuse the earlier head's image evidence instead of rebuilding
+    it.  Measured re-push churn, not path over-triggering, is the dominant cost
+    on this repository (#3204).
+    """
+    entries = tree_entries(repo, ref)
+    selection = image_input_selection(repo, policy, entries.keys())
+    if any(not selection.get(name) for name in IMAGE_INPUT_CLASSES):
+        raise PolicyError("image input selection is empty for at least one image class")
+    return {name: _content_digest(entries, selection[name]) for name in IMAGE_INPUT_CLASSES}
 
 
 def changed_paths(repo: Path, base_ref: str, head_ref: str) -> list[str]:
@@ -661,6 +785,11 @@ def markdown(report: dict[str, Any]) -> str:
         f"- Candidate serving variants: `{json.dumps(candidate['serving_variants'], sort_keys=True)}`",
         f"- Legacy worker trigger: `{str(report['legacy']['worker_trigger']).lower()}`",
         f"- Candidate worker build: `{str(candidate['worker_build']).lower()}`",
+        "- Image input digests: "
+        + ", ".join(
+            f"`{name}={digest[:12]}`"
+            for name, digest in sorted(report["image_input_digests"].items())
+        ),
         "",
         "| Risk class | Impacted | Matched inputs |",
         "|---|---:|---|",
@@ -736,6 +865,7 @@ def main(argv: list[str] | None = None) -> int:
         policy,
         changed_paths(repo_root, args.base, args.head),
         base_sha=args.base,
+        tree_ref=args.head,
         head_sha=args.head,
         repository=args.repository,
         pull_request=args.pr,

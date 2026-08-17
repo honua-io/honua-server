@@ -15,6 +15,8 @@
 | `pr-gate-impact-observe.yml` | PR Gate Impact Observation | PR evidence | completed `PR Gate` `workflow_run`, `workflow_dispatch` | No | Trusted default-branch, read-only classification of the exact gate-time diff. It retains bounded docs-only/full receipts and, when present, validates PR Gate build metadata plus exact payload artifact identity before emitting a small tree/policy-bound build receipt. It never downloads or executes the large payload; the full required PR Gate remains authoritative. |
 | `native-image-impact-observe.yml` | Native Image Impact Observation | PR evidence | completed `PR Gate` `workflow_run`, `workflow_dispatch` | No | Trusted default-branch, read-only comparison of graph-derived image inputs with legacy path triggers. Existing Serving/GDAL image workflows remain authoritative in observe mode. |
 | `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | Maintenance | daily schedule, `workflow_dispatch` | No | Read-only default-branch audit of attempt-bound PR Gate and native-image impact receipts. Selects only each producer run's current attempt, counts only current trusted policy and distinct candidate heads, reconciles native decisions with successful exact-head Serving/GDAL image outcomes, and reports cohort readiness without changing routing, statuses, workflows, or merge state. |
+| `serving-image-boundary.yml` | Serving Image Boundary | PR evidence | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | No | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Authoritative pre-merge final-rootfs evidence; the same boundary is re-proved by `nightly-container-build.yml`, `deploy.yml`, `deploy-platform-images.yml`, and `release-bundle.yml` before any publication. |
+| `worker-gdal-image.yml` | GDAL Worker Image | PR evidence | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | No | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head. Re-proved on the nightly security and release/deploy lanes. |
 | `merge-train.yml` | Merge Train | Batch | schedule, workflow dispatch | Sole merge authority | Requires exact-head `PR Gate` + `Review Gate` at selection and immediately before compare-and-swap landing. With the build-reuse shadow enabled, only an exact one-member batch may carry the canonical successful PR Gate run/attempt/PR/head identity into Smart CI; multi-member or incomplete state omits it and follows the existing path. |
 | `ci.yml` | CI | nightly + train batch CI (no `pull_request` trigger) | `schedule`, `merge_group`, `workflow_dispatch` | Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch — it never appears on a PR head SHA (#2865) | Core build, test, architecture gate, CI router validation, JavaScript typecheck, and baseline Postgres compatibility; the `pr-template-check` job runs first and `pr-readiness` (and therefore every downstream test job) depends on it, so a malformed PR body short-circuits the pipeline before heavy runners are provisioned; per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the shards a diff exercises and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)` so routine PRs only instantiate runners for selected shards. The full configured shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. With the PR Gate build-reuse shadow enabled and exact one-member identity present, a separate non-gating job validates the trusted receipt, requires complete producer/consumer tree equality, safely restores the bounded payload, and runs registered proof tests with `--no-build --no-restore`; authoritative server shards still restore/build independently and `CI Gate` does not depend on the shadow. Separately from that shadow, `server-tests` shards opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait), rolled back with the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false` — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics over normal-verbosity test logs, writes a `.timing.json` artifact, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. PR shards therefore skip `[EmulatorTest]` / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods and do not rerun Fast tests already covered by the foundation lane. Expensive Python, browser, MCP, AOT, Docker/security, and expanded Postgres lanes run only in full CI (`schedule`, `workflow_dispatch`, or `ci/full`). |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `workflow_dispatch` | Yes | Path-scoped to API surface |
@@ -55,6 +57,48 @@
 
 Branch protection requires `PR Gate` and `Review Gate` together: unprivileged
 verification plus trusted exact-head admission. `CI Gate` remains train-only.
+
+### Native-image evidence placement and measured savings (#3204)
+
+Measured on trunk for the 2026-08-13 -> 2026-08-17 window (100 most recent runs
+per workflow, plus 74 distinct trusted observation receipts):
+
+| Signal | Serving Image Boundary | GDAL Worker Image |
+|---|---:|---:|
+| Runs sampled | 100 | 100 |
+| Successful | 19 | 22 |
+| Cancelled by a newer push | 80 | 78 |
+| Median successful wall time | 140 min | 18 min |
+| Total successful wall time in window | 2667 min | 405 min |
+| Median cancelled wall time | 0.7 min | 0.7 min |
+
+Cancellation is already cheap: `concurrency: cancel-in-progress` stops a
+superseded run at a median of 0.7 minutes, so the 80/78 cancelled runs are not
+where the money goes. The cost is the ~2670 serving minutes and ~405 worker
+minutes actually spent on completed builds, at roughly 785 and 119 runner
+minutes per day.
+
+Path routing cannot recover any of it. Across all 74 distinct observed heads
+the graph-derived candidate selected exactly the same images and the same
+serving variants as the legacy path filters: 40/74 serving-impacted and 35/74
+worker-impacted under both policies, with zero narrowed, zero avoided, and
+zero candidate-only heads. Only 6 of 33 `src/**` projects sit outside the
+serving closure, so the theoretical avoidance ceiling is small and the observed
+rate is zero.
+
+Repeat pushes are where the money goes. Grouping the impacted heads by their
+selected image-input set shows 24 of 40 serving-impacted heads (60%) and 25 of
+35 worker-impacted heads (71%) repeat an input set already built on the same
+pull request; one review-heavy pull request contributed 21 serving builds
+across 3 distinct input sets. The independent run sample agrees: 19 successful
+serving runs across 11 branches and 22 successful worker runs across 10
+branches.
+
+Evidence placement therefore stays as-is (pre-merge boundary/worker evidence on
+the PR, re-proved on nightly/release/deploy before publication) and the expected
+savings move to exact-input reuse rather than path narrowing. The observation
+receipt now carries per-image content digests so reuse eligibility is measured
+before anything is enforced; see `native-image-impact-routing.md`.
 
 ## honua-sdk-js
 

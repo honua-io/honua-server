@@ -39,6 +39,8 @@ def policy(**overrides: object) -> dict:
         "minimum_worker_impacted_heads": 1,
         "minimum_serving_narrowed_heads": 1,
         "minimum_worker_avoided_heads": 1,
+        "minimum_serving_reuse_heads": 1,
+        "minimum_worker_reuse_heads": 1,
         "require_zero_integrity_failures": True,
         "require_zero_docs_only_gate_failures": True,
         "require_successful_authoritative_image_outcomes": True,
@@ -82,7 +84,7 @@ def artifact(artifact_id: int, run_value: dict, name: str) -> dict:
 def artifact_name(stream: str, attempt: int = 1) -> str:
     if stream == MODULE.PR_GATE_STREAM:
         return f"pr-gate-impact-docs-only-v3-attempt-{attempt}"
-    return f"native-image-impact-observation-v2-attempt-{attempt}"
+    return f"native-image-impact-observation-v3-attempt-{attempt}"
 
 
 def pages(root: Path, collection: str, values: list[dict]) -> None:
@@ -157,6 +159,7 @@ def native_receipt(
     serving: dict[str, bool] | None = None,
     legacy_serving: dict[str, bool] | None = None,
     legacy_worker: bool = True,
+    image_inputs: dict[str, str] | None = None,
 ) -> dict:
     if serving is None:
         serving = {"generic": True, "lambda": False, "functions": False}
@@ -165,6 +168,11 @@ def native_receipt(
             "generic": True,
             "lambda": True,
             "functions": True,
+        }
+    if image_inputs is None:
+        image_inputs = {
+            name: hashlib.sha256(f"{name}:{head}".encode("utf-8")).hexdigest()
+            for name in MODULE.IMAGE_INPUT_CLASSES
         }
     changed_paths = ["src/Honua.Core/Models/Resource.cs"]
     return {
@@ -194,6 +202,7 @@ def native_receipt(
         ).hexdigest(),
         "mode": "observe",
         "mutation": "none",
+        "image_input_digests": image_inputs,
         "legacy": {
             "serving_trigger": any(legacy_serving.values()),
             "serving_variants": legacy_serving,
@@ -469,6 +478,10 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert ledger["counts"]["docs_only_success_heads"] == 1
         assert ledger["counts"]["native_countable_heads"] == 3
         assert ledger["counts"]["serving_narrowed_heads"] == 2
+        assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
+        assert ledger["counts"]["worker_reuse_eligible_heads"] == 0
+        assert ledger["gates"]["serving_savings_sample_ready"]
+        assert ledger["gates"]["worker_savings_sample_ready"]
         assert ledger["counts"]["worker_impacted_heads"] == 1
         assert ledger["counts"]["worker_avoided_heads"] == 1
         assert all(ledger["gates"].values())
@@ -575,13 +588,104 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
         "${{ github.run_attempt }}" in pr_gate
     )
     assert (
-        "name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}"
+        "name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}"
         in native
     )
+
+
+def test_exact_input_reuse_counts_when_routing_never_narrows() -> None:
+    """#3204: identical image inputs on a later head are reuse-eligible evidence."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    all_variants = {"generic": True, "lambda": True, "functions": True}
+    shared = {
+        name: hashlib.sha256(f"{name}:shared".encode("utf-8")).hexdigest()
+        for name in MODULE.IMAGE_INPUT_CLASSES
+    }
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        entries = [
+            entry(MODULE.NATIVE_STREAM, 102, 2),
+            entry(MODULE.NATIVE_STREAM, 103, 3),
+        ]
+        entries[0]["producer_head_sha"] = BASE
+        entries[1]["producer_head_sha"] = BASE
+        for artifact_id, head in ((102, HEAD_B), (103, HEAD_C)):
+            archive(
+                archives,
+                artifact_id,
+                MODULE.NATIVE_STREAM,
+                native_receipt(
+                    blobs,
+                    pr=11,
+                    head=head,
+                    worker=True,
+                    serving=all_variants,
+                    legacy_serving=all_variants,
+                    image_inputs=shared,
+                ),
+            )
+        pages(root / "serving", "workflow_runs", [
+            image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11),
+            image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11),
+        ])
+        pages(root / "worker", "workflow_runs", [
+            image_run(203, MODULE.WORKER_WORKFLOW, HEAD_B, 11),
+            image_run(204, MODULE.WORKER_WORKFLOW, HEAD_C, 11),
+        ])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "repository": MODULE.REPOSITORY,
+            "cutoff": "2026-08-15T00:00:00Z",
+            "artifacts": entries,
+            "exclusions": [],
+            "integrity_failures": [],
+        }
+        ledger = MODULE.summarize(
+            index, archives, root / "serving", root / "worker", policy(), REPOSITORY_ROOT
+        )
+        assert ledger["counts"]["serving_narrowed_heads"] == 0
+        assert ledger["counts"]["worker_avoided_heads"] == 0
+        assert ledger["counts"]["serving_reuse_eligible_heads"] == 1
+        assert ledger["counts"]["worker_reuse_eligible_heads"] == 1
+        assert ledger["gates"]["serving_savings_sample_ready"]
+        assert ledger["gates"]["worker_savings_sample_ready"]
+        assert ledger["reuse_eligible"]["serving"][0]["head_sha"] == HEAD_C
+        assert ledger["reuse_eligible"]["worker"][0]["reused_from"]["worker"] == HEAD_B
+
+
+def test_missing_or_malformed_image_digests_fail_closed() -> None:
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        entries = [entry(MODULE.NATIVE_STREAM, 102, 2)]
+        entries[0]["producer_head_sha"] = BASE
+        broken = native_receipt(blobs, pr=11, head=HEAD_B, worker=True)
+        del broken["image_input_digests"]
+        archive(archives, 102, MODULE.NATIVE_STREAM, broken)
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "repository": MODULE.REPOSITORY,
+            "cutoff": "2026-08-15T00:00:00Z",
+            "artifacts": entries,
+            "exclusions": [],
+            "integrity_failures": [],
+        }
+        ledger = MODULE.summarize(
+            index, archives, root / "serving", root / "worker", policy(), REPOSITORY_ROOT
+        )
+        assert ledger["counts"]["native_countable_heads"] == 0
+        assert not ledger["gates"]["integrity_clean"]
+        assert "image input digests" in ledger["integrity_failures"][0]["reason"]
 
 
 test_policy_and_discovery()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
 test_workflows_are_read_only_and_attempt_bound()
+test_exact_input_reuse_counts_when_routing_never_narrows()
+test_missing_or_malformed_image_digests_fail_closed()
 print("impact-routing-evidence-ledger=ok mode=report-only")

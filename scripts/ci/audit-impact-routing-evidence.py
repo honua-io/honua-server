@@ -19,11 +19,12 @@ POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v1"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v1"
 LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v1"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
-NATIVE_CONTRACT = "honua.ci.native-image-impact-observation/v2"
+NATIVE_CONTRACT = "honua.ci.native-image-impact-observation/v3"
 REPOSITORY = "honua-io/honua-server"
 DEFAULT_BRANCH = "trunk"
 PR_GATE_STREAM = "pr_gate"
 NATIVE_STREAM = "native"
+IMAGE_INPUT_CLASSES = ("serving_generic", "serving_lambda", "serving_functions", "worker")
 PR_GATE_WORKFLOW = ".github/workflows/pr-gate-impact-observe.yml"
 NATIVE_WORKFLOW = ".github/workflows/native-image-impact-observe.yml"
 SERVING_WORKFLOW = ".github/workflows/serving-image-boundary.yml"
@@ -32,7 +33,7 @@ PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-docs-only-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
 NATIVE_ARTIFACT = re.compile(
-    r"^native-image-impact-observation-v2-attempt-(?P<attempt>[1-9][0-9]*)$"
+    r"^native-image-impact-observation-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
 # A successful observer that deliberately skipped a superseded source uploads a
 # stable-name marker. Recognising it from the catalog alone (never downloading
@@ -146,6 +147,8 @@ def load_policy(value: object) -> dict[str, Any]:
         "minimum_worker_impacted_heads",
         "minimum_serving_narrowed_heads",
         "minimum_worker_avoided_heads",
+        "minimum_serving_reuse_heads",
+        "minimum_worker_reuse_heads",
     ):
         positive_int(value.get(field), field.replace("_", " "))
     for field in (
@@ -619,6 +622,13 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     positive_int(value.get("gate_run_attempt"), "native-image gate run attempt")
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
         raise ValueError("native-image gate result identity is invalid")
+    digests = value.get("image_input_digests")
+    if (
+        not isinstance(digests, dict)
+        or set(digests) != set(IMAGE_INPUT_CLASSES)
+        or any(not isinstance(item, str) or not DIGEST.match(item) for item in digests.values())
+    ):
+        raise ValueError("native-image image input digests are invalid")
     legacy = value.get("legacy")
     candidate = value.get("candidate")
     comparison = value.get("comparison")
@@ -668,7 +678,9 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         "legacy_worker": legacy["worker_trigger"],
         "candidate_serving": candidate_serving,
         "candidate_serving_count": sum(1 for item in serving.values() if item),
+        "candidate_serving_variants": {name: bool(serving[name]) for name in sorted(serving)},
         "candidate_worker": candidate["worker_build"],
+        "image_input_digests": dict(sorted(digests.items())),
         "producer_run_id": entry["producer_run_id"],
         "artifact_id": entry["artifact_id"],
     }
@@ -722,6 +734,59 @@ def _deduplicate(observations: list[dict[str, Any]], failures: list[dict[str, An
             continue
         result.append(max(values, key=lambda item: (item["producer_run_id"], item["artifact_id"])))
     return sorted(result, key=lambda item: item["head_sha"])
+
+
+def _reuse_cohorts(
+    native_countable: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Heads whose image inputs were already built successfully on an earlier head.
+
+    Measured routing evidence for #3204 shows the candidate selector never
+    narrows or avoids an image build, so exact-input reuse is the only savings
+    mechanism the observation can still substantiate. A head counts only when a
+    strictly earlier observation produced a successful authoritative image run
+    for byte-identical build inputs.
+    """
+    serving_reuse: list[dict[str, Any]] = []
+    worker_reuse: list[dict[str, Any]] = []
+    built_serving: dict[str, dict[str, Any]] = {}
+    built_worker: dict[str, dict[str, Any]] = {}
+    ordered = sorted(
+        native_countable, key=lambda item: (item["producer_run_id"], item["head_sha"])
+    )
+    for item in ordered:
+        digests = item["image_input_digests"]
+        selected = sorted(
+            f"serving_{variant}"
+            for variant in ("generic", "lambda", "functions")
+            if item["candidate_serving_variants"][variant]
+        )
+        if selected:
+            matched = {
+                name: built_serving[digests[name]]["head_sha"]
+                for name in selected
+                if digests[name] in built_serving
+            }
+            if len(matched) == len(selected):
+                serving_reuse.append({
+                    "pull_request": item["pull_request"],
+                    "head_sha": item["head_sha"],
+                    "reused_from": matched,
+                })
+            if item["serving_outcome"]["success"]:
+                for name in selected:
+                    built_serving.setdefault(digests[name], item)
+        if item["candidate_worker"]:
+            source = built_worker.get(digests["worker"])
+            if source is not None:
+                worker_reuse.append({
+                    "pull_request": item["pull_request"],
+                    "head_sha": item["head_sha"],
+                    "reused_from": {"worker": source["head_sha"]},
+                })
+            if item["worker_outcome"]["success"]:
+                built_worker.setdefault(digests["worker"], item)
+    return serving_reuse, worker_reuse
 
 
 def summarize(
@@ -805,6 +870,7 @@ def summarize(
         item for item in native_countable
         if item["legacy_worker"] and not item["candidate_worker"]
     ]
+    serving_reuse, worker_reuse = _reuse_cohorts(native_countable)
     gates = {
         "integrity_clean": not failures,
         "docs_only_sample_ready": len(docs_success) >= policy["minimum_docs_only_heads"],
@@ -812,8 +878,14 @@ def summarize(
         "native_sample_ready": len(native_countable) >= policy["minimum_native_heads"],
         "serving_impacted_sample_ready": len(serving_impacted) >= policy["minimum_serving_impacted_heads"],
         "worker_impacted_sample_ready": len(worker_impacted) >= policy["minimum_worker_impacted_heads"],
-        "serving_narrowed_sample_ready": len(serving_narrowed) >= policy["minimum_serving_narrowed_heads"],
-        "worker_avoided_sample_ready": len(worker_avoided) >= policy["minimum_worker_avoided_heads"],
+        "serving_savings_sample_ready": (
+            len(serving_narrowed) >= policy["minimum_serving_narrowed_heads"]
+            or len(serving_reuse) >= policy["minimum_serving_reuse_heads"]
+        ),
+        "worker_savings_sample_ready": (
+            len(worker_avoided) >= policy["minimum_worker_avoided_heads"]
+            or len(worker_reuse) >= policy["minimum_worker_reuse_heads"]
+        ),
         "authoritative_image_outcomes_clean": not image_failures,
     }
     eligible = all(gates.values())
@@ -836,6 +908,8 @@ def summarize(
             "worker_impacted_heads": len(worker_impacted),
             "serving_narrowed_heads": len(serving_narrowed),
             "worker_avoided_heads": len(worker_avoided),
+            "serving_reuse_eligible_heads": len(serving_reuse),
+            "worker_reuse_eligible_heads": len(worker_reuse),
             "authoritative_image_outcome_failures": len(image_failures),
             "integrity_failures": len(failures),
             "observations_skipped": sum(
@@ -855,6 +929,10 @@ def summarize(
         "countable": {
             "docs_only": docs_success,
             "native": native_countable,
+        },
+        "reuse_eligible": {
+            "serving": serving_reuse,
+            "worker": worker_reuse,
         },
         "exclusions": index_value.get("exclusions", []),
     }
@@ -885,6 +963,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Native exact heads: `{counts['native_countable_heads']}` / `{policy['minimum_native_heads']}`",
         f"- Serving impacted/narrowed heads: `{counts['serving_impacted_heads']}` / `{counts['serving_narrowed_heads']}`",
         f"- Worker impacted/avoided heads: `{counts['worker_impacted_heads']}` / `{counts['worker_avoided_heads']}`",
+        "- Exact-input reuse-eligible heads (serving/worker): "
+        f"`{counts['serving_reuse_eligible_heads']}` / `{counts['worker_reuse_eligible_heads']}`",
         f"- Docs-only gate failures: `{counts['docs_only_failure_heads']}`",
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",

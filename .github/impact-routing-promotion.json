@@ -12,6 +12,8 @@
   "minimum_worker_impacted_heads": 3,
   "minimum_serving_narrowed_heads": 3,
   "minimum_worker_avoided_heads": 3,
+  "minimum_serving_reuse_heads": 3,
+  "minimum_worker_reuse_heads": 3,
   "require_zero_integrity_failures": true,
   "require_zero_docs_only_gate_failures": true,
   "require_successful_authoritative_image_outcomes": true

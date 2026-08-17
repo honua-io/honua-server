@@ -266,7 +266,7 @@ jobs:
         if: steps.recheck.outputs.retain == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: native-image-impact-observation-v2-attempt-${{ github.run_attempt }}
+          name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}
           path: |
             native-image-impact-observation.json
             native-image-impact-summary.md

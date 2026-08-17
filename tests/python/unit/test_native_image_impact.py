@@ -17,10 +17,18 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 POLICY = MODULE.load_policy(ROOT / ".github" / "native-image-impact.json")
+IMAGE_INPUTS = MODULE.image_input_digests(ROOT, POLICY, "HEAD")
 
 
 def report(*paths: str):
-    return MODULE.evaluate(ROOT, POLICY, paths, base_sha="base", head_sha="head")
+    return MODULE.evaluate(
+        ROOT,
+        POLICY,
+        paths,
+        base_sha="base",
+        head_sha="head",
+        image_inputs=IMAGE_INPUTS,
+    )
 
 
 class NativeImageImpactTests(unittest.TestCase):
@@ -204,7 +212,7 @@ class NativeImageImpactTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(MODULE.PolicyError):
                 MODULE.parse_changed_path_output(raw)
 
-    def test_trusted_identity_is_bound_to_v2_report(self) -> None:
+    def test_trusted_identity_is_bound_to_v3_report(self) -> None:
         result = MODULE.evaluate(
             ROOT,
             POLICY,
@@ -227,8 +235,9 @@ class NativeImageImpactTests(unittest.TestCase):
             gate_run_id=123,
             gate_run_attempt=2,
             gate_run_conclusion="success",
+            image_inputs=IMAGE_INPUTS,
         )
-        self.assertEqual(result["schema"], "honua.ci.native-image-impact-observation/v2")
+        self.assertEqual(result["schema"], "honua.ci.native-image-impact-observation/v3")
         self.assertEqual(result["gate_run_head_sha"], "b" * 40)
         self.assertEqual(result["policy_sha"], "c" * 40)
         self.assertEqual(result["routing_policy_blob_sha"], "e" * 40)
@@ -277,6 +286,96 @@ class NativeImageImpactTests(unittest.TestCase):
             with self.subTest(attribute=attribute), self.assertRaises(MODULE.PolicyError):
                 MODULE.observation_identity(args)
             setattr(args, attribute, original)
+
+
+class ImageInputContentAddressTests(unittest.TestCase):
+    """#3204: routing narrows nothing here, so reuse needs an exact input digest."""
+
+    def test_every_image_class_has_a_stable_content_digest(self) -> None:
+        first = MODULE.image_input_digests(ROOT, POLICY, "HEAD")
+        second = MODULE.image_input_digests(ROOT, POLICY, "HEAD")
+        self.assertEqual(first, second)
+        self.assertEqual(set(first), set(MODULE.IMAGE_INPUT_CLASSES))
+        for name, digest in first.items():
+            with self.subTest(image=name):
+                self.assertRegex(digest, r"^[0-9a-f]{64}$")
+
+    def test_serving_variants_are_content_isolated_from_each_other(self) -> None:
+        digests = MODULE.image_input_digests(ROOT, POLICY, "HEAD")
+        self.assertEqual(len(set(digests.values())), len(digests))
+        selection = MODULE.image_input_selection(
+            ROOT, POLICY, MODULE.tree_entries(ROOT, "HEAD").keys()
+        )
+        self.assertIn("docker/Dockerfile.aot", selection["serving_generic"])
+        self.assertNotIn("docker/Dockerfile.aot", selection["serving_lambda"])
+        self.assertNotIn("docker/Dockerfile.lambda.aot", selection["serving_generic"])
+        self.assertNotIn("docker/Dockerfile.aot", selection["worker"])
+
+    def test_selection_covers_every_routing_input_class(self) -> None:
+        selection = MODULE.image_input_selection(
+            ROOT, POLICY, MODULE.tree_entries(ROOT, "HEAD").keys()
+        )
+        for required in ("Directory.Build.props", "Directory.Packages.props"):
+            self.assertIn(required, selection["serving_generic"])
+            self.assertIn(required, selection["worker"])
+        self.assertIn(".trivyignore", selection["worker"])
+        self.assertIn(
+            "src/Honua.Server/Honua.Server.csproj", selection["serving_generic"]
+        )
+        self.assertIn(
+            "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj", selection["worker"]
+        )
+        self.assertNotIn(
+            "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj",
+            selection["serving_generic"],
+        )
+
+    def test_digest_changes_when_a_selected_input_changes(self) -> None:
+        entries = MODULE.tree_entries(ROOT, "HEAD")
+        selection = MODULE.image_input_selection(ROOT, POLICY, entries.keys())
+        baseline = MODULE._content_digest(entries, selection["serving_generic"])
+        mutated = dict(entries)
+        mutated["Directory.Build.props"] = "0" * 40
+        self.assertNotEqual(
+            baseline, MODULE._content_digest(mutated, selection["serving_generic"])
+        )
+        unrelated = dict(entries)
+        unrelated["README.md"] = "0" * 40
+        self.assertEqual(
+            baseline, MODULE._content_digest(unrelated, selection["serving_generic"])
+        )
+
+    def test_tree_parser_is_nul_delimited_and_fail_closed(self) -> None:
+        raw = b"100644 blob " + b"a" * 40 + b"\tsrc/App.cs\0"
+        self.assertEqual(MODULE.parse_tree_output(raw), {"src/App.cs": "a" * 40})
+        self.assertEqual(MODULE.parse_tree_output(b""), {})
+        unsafe = [
+            b"100644 blob " + b"a" * 40 + b"\tsrc/App.cs",
+            b"100644 blob " + b"a" * 40 + b"\t../escape\0",
+            b"100644 blob " + b"a" * 40 + b"\t/absolute\0",
+            b"100644 blob " + b"a" * 40 + b"\tdup\0100644 blob " + b"b" * 40 + b"\tdup\0",
+            b"100644 blob nothex\tsrc/App.cs\0",
+            b"garbage\0",
+        ]
+        for value in unsafe:
+            with self.subTest(raw=value), self.assertRaises(MODULE.PolicyError):
+                MODULE.parse_tree_output(value)
+
+    def test_report_carries_the_image_input_digests(self) -> None:
+        result = report("src/Honua.Core/Models/Resource.cs")
+        self.assertEqual(result["image_input_digests"], IMAGE_INPUTS)
+
+    def test_incomplete_image_digests_fail_closed(self) -> None:
+        for broken in ({}, {"serving_generic": "0" * 64}, dict(IMAGE_INPUTS, worker="short")):
+            with self.subTest(broken=sorted(broken)), self.assertRaises(MODULE.PolicyError):
+                MODULE.evaluate(
+                    ROOT,
+                    POLICY,
+                    ["src/Honua.Core/Models/Resource.cs"],
+                    base_sha="base",
+                    head_sha="head",
+                    image_inputs=broken,
+                )
 
 
 if __name__ == "__main__":
