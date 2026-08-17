@@ -7,6 +7,11 @@ honua-server#3213 and its cross-repository children. Existing gates remain
 authoritative until a shadowed replacement satisfies the promotion criteria in
 this ADR.
 
+One slice has left shadow: producer-free attempt-1 reuse of the shard-local
+exact-head server-test payload is live in `ci.yml` (see section 5). Every other
+build-reuse topology in this ADR — shared producer jobs and PR Gate build
+evidence — remains report-only and unpromoted.
+
 ## Context
 
 Honua's CI has accumulated useful local optimizations without changing the
@@ -197,6 +202,28 @@ returns to optimization rather than becoming policy by assertion.
 This is one build per repeated project fingerprint, not one oversized solution
 artifact and not one build per logical shard.
 
+#### Producer-free attempt-1 reuse (live, 2026-08-16)
+
+One narrow slice of "build once" is live in `ci.yml`, because it needs no
+producer and adds no wait. The single designated writer shard for each project
+already packaged and saved its exact-head payload on attempt 1; only the *read*
+was gated on `run_attempt > 1`, so the same project was rebuilt in every sibling
+shard while a valid identical-tree payload sat unread in the run's own cache
+scope. Shards now perform one single-shot, fail-open lookup on attempt 1 as
+well. Nothing polls or waits, so the run 31768277005 fan-out regression cannot
+recur, and cache write volume is unchanged.
+
+The full contract — run-scoped keys and the same-SHA TTL poisoning they prevent,
+writer selection, the single kill-switch rule, the three fail-open levels, the
+trust boundary, and the accepted limitations — lives in
+[`docs/internal/ci/server-test-binary-artifacts.md`](../../ci/server-test-binary-artifacts.md).
+Rollback is `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`.
+
+This promotion is deliberately narrower than the shadowed producer designs. It
+does not authorize a shared producer job, PR Gate payload consumption, or any
+cross-head/content-addressed key; those remain gated on the promotion criteria
+above and on the #3226 ledger.
+
 The current shadow candidate reuses a sunk build rather than adding a producer
 dependency. The required `PR Gate` already performs the full Release solution
 build after exact-head review. Once that gate is green, a best-effort step may
@@ -379,6 +406,9 @@ The complete checkpoint and decision are also recorded on
    allowlist validator (#3219).
 4. Rejected the standalone producer for insufficient savings; shadow the sunk-
    cost PR Gate build-evidence topology under #3226.
+4a. Completed: producer-free attempt-1 reads of the already-written shard-local
+   exact-head payload in `ci.yml` (see "Producer-free attempt-1 reuse" above).
+   This is the only build-reuse slice currently enforced in production.
 5. Promote deterministic-failure cancellation and focused attribution only
    after #3224's retained observations pass.
 6. Promote native-image routing/evidence reuse under #3204 after its impact
