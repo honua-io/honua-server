@@ -3,6 +3,10 @@
 const { execFileSync } = require('node:child_process');
 const { isDeepStrictEqual } = require('node:util');
 
+// `__typename` on every author is REQUIRED, not cosmetic: GraphQL reports bot
+// logins without the `[bot]` suffix, and `reviewerFor` accepts a suffix-less bot
+// login only when GitHub also types the author as a `Bot`. Dropping it makes
+// every Claude review invisible to the gate.
 const QUERY = `
 query(
   $owner: String!,
@@ -23,18 +27,18 @@ query(
         pageInfo { hasNextPage endCursor }
       }
       reviews(first: 100, after: $reviewsCursor) {
-        nodes { author { login } body submittedAt updatedAt state commit { oid } }
+        nodes { author { login __typename } body submittedAt updatedAt state commit { oid } }
         pageInfo { hasNextPage endCursor }
       }
       comments(first: 100, after: $commentsCursor) {
-        nodes { author { login } body createdAt updatedAt includesCreatedEdit }
+        nodes { author { login __typename } body createdAt updatedAt includesCreatedEdit }
         pageInfo { hasNextPage endCursor }
       }
       reviewThreads(first: 100, after: $threadsCursor) {
         nodes {
           isResolved
           comments(first: 100) {
-            nodes { author { login } commit { oid } }
+            nodes { author { login __typename } commit { oid } }
             pageInfo { hasNextPage endCursor }
           }
         }
