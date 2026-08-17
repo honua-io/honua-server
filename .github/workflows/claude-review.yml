@@ -1,0 +1,230 @@
+name: Claude Review
+
+# Second attesting reviewer for the required `Review Gate` context (#3213, #3314).
+#
+# `scripts/ci/review-gate-evidence.js` accepts review evidence from exactly two
+# identities: `chatgpt-codex-connector[bot]` and `claude[bot]`. Codex is
+# frequently rate-limited ("You have reached your Codex usage limits for code
+# reviews"), which deadlocks the required gate. This lane lets `claude[bot]`
+# post the same shape of exact-head evidence so a PR can still land.
+#
+# The lane is INERT until the repository owner adds one of the two auth secrets
+# (see docs/internal/ci/gate-model.md). Without a secret every run exits 0 with
+# a `::notice::` rather than failing every PR.
+#
+# It posts through the Claude GitHub App's own installation token (obtained by
+# exchanging this workflow's OIDC token), NOT `GITHUB_TOKEN`. Two consequences
+# the gate depends on:
+#   * the review author is `claude[bot]`, the login the evidence script accepts;
+#   * the resulting `pull_request_review` event DOES trigger workflows, so
+#     `review-event-bridge.yml` fires and `review-gate.yml` re-evaluates. A
+#     review posted with `GITHUB_TOKEN` would satisfy neither.
+# Therefore never pass a `github_token` input to the action.
+
+on:
+  pull_request:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+# Evidence is exact-head bound: a review of a superseded head can never attest,
+# so cancel it rather than paying for it.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  review:
+    name: Post exact-head Claude review evidence
+    # Draft PRs are excluded (Review Gate already fails them). Comment events
+    # must be on a pull request and must carry the re-request phrase, mirroring
+    # `@codex review`.
+    if: >-
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '@claude review'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      # Required by the action's default auth path: it exchanges this OIDC
+      # token for a Claude GitHub App installation token.
+      id-token: write
+    steps:
+      - name: Resolve the pull request and its exact head
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_FROM_EVENT: ${{ github.event.pull_request.number }}
+          ISSUE_FROM_EVENT: ${{ github.event.issue.number }}
+          HEAD_FROM_EVENT: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO_FROM_EVENT: ${{ github.event.pull_request.head.repo.full_name }}
+          HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          skip() {
+            echo "::notice::$1"
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          }
+
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            pr="${PR_FROM_EVENT}"
+            head="${HEAD_FROM_EVENT}"
+            head_repo="${HEAD_REPO_FROM_EVENT}"
+          else
+            # issue_comment carries no PR payload; read the current state so a
+            # re-request always reviews the live head rather than a stale one.
+            pr="${ISSUE_FROM_EVENT}"
+            info="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")"
+            head="$(printf '%s' "${info}" | jq -r '.head.sha')"
+            head_repo="$(printf '%s' "${info}" | jq -r '.head.repo.full_name')"
+            base_ref="$(printf '%s' "${info}" | jq -r '.base.ref')"
+            state="$(printf '%s' "${info}" | jq -r '.state')"
+            draft="$(printf '%s' "${info}" | jq -r '.draft')"
+            [ "${state}" = "open" ] || skip "PR #${pr} is ${state}; nothing to review."
+            [ "${draft}" = "false" ] || skip "PR #${pr} is a draft; nothing to review."
+            [ "${base_ref}" = "trunk" ] || skip "PR #${pr} does not target trunk; the Review Gate does not apply."
+          fi
+
+          # Fork PRs run without secrets and without a usable OIDC identity, so
+          # the lane cannot authenticate. Skip cleanly instead of failing.
+          [ "${head_repo}" = "${GITHUB_REPOSITORY}" ] || \
+            skip "PR #${pr} comes from fork ${head_repo}; the Claude review lane does not run on forks (no secrets, no OIDC). A maintainer must review it."
+
+          if [ "${HAS_OAUTH}" != "true" ] && [ "${HAS_API_KEY}" != "true" ]; then
+            skip "Claude review lane is not configured. Add repository secret CLAUDE_CODE_OAUTH_TOKEN (from 'claude setup-token') or ANTHROPIC_API_KEY to enable it. Codex remains the only attesting reviewer until then."
+          fi
+
+          echo "skip=false" >> "${GITHUB_OUTPUT}"
+          echo "pr=${pr}" >> "${GITHUB_OUTPUT}"
+          echo "head=${head}" >> "${GITHUB_OUTPUT}"
+          echo "Reviewing PR #${pr} at ${head}."
+
+      - name: Check out the exact head under review
+        if: steps.target.outputs.skip == 'false'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.target.outputs.head }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Review and publish exact-head evidence
+        if: steps.target.outputs.skip == 'false'
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Exactly one of these is set; the empty one is ignored. Do NOT add a
+          # `github_token` input — the default path mints the Claude App token
+          # that makes the review author `claude[bot]`.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Findings ride in the single review body, so the buffered
+          # inline-comment pass has nothing to post.
+          classify_inline_comments: 'false'
+          claude_args: '--model claude-opus-5 --max-turns 40 --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"'
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.target.outputs.pr }}
+            HEAD SHA: ${{ steps.target.outputs.head }}
+
+            You are the second attesting reviewer for this repository's required
+            `Review Gate` branch-protection context. Review the pull request diff
+            at HEAD SHA and publish machine-readable evidence. The repository
+            checkout in the current working directory is already at HEAD SHA.
+
+            ## Step 1 — do not double-post
+
+            Run:
+              gh api "repos/${{ github.repository }}/pulls/${{ steps.target.outputs.pr }}/reviews" --paginate \
+                --jq '.[] | select(.user.login == "claude[bot]" and .commit_id == "${{ steps.target.outputs.head }}") | .id'
+
+            If that prints anything, a review for this exact head already exists.
+            Stop immediately and post nothing — never more than one review per head.
+
+            ## Step 2 — review
+
+            Read the diff with `gh pr diff ${{ steps.target.outputs.pr }}` and read
+            surrounding files as needed. Follow this repository's review checklist in
+            `CLAUDE.md` / `AGENTS.md`. Concentrate on:
+
+            - Correctness bugs the diff introduces, and behaviour changes not covered by tests.
+            - Architecture enforcement: dependency direction (`Honua.Core` <- providers <- `Honua.Server`),
+              no `ControllerBase`, infrastructure types `internal`, XML docs on public types,
+              endpoint <= 5 / handler <= 4 constructor dependencies, no `.Result` / `.Wait()`.
+            - Protocol-adapter rules: protocol slices must adapt to the shared
+              query/edit/metadata/raster/process/format pipelines instead of reimplementing them,
+              and must not depend on another protocol's handlers.
+            - Cross-cutting concerns: shared problem/error mapping (no leaked SQL, stack traces,
+              paths, or connection strings), structured logging, telemetry, cache keys that vary by
+              every behaviour-changing input, shared validators, RBAC enforced in the pipeline.
+            - Security: injection, authz gaps, secret handling, unbounded buffering, unsafe
+              deserialization, and anything that widens the CI supply-chain surface
+              (workflow permissions, unpinned actions, `pull_request_target` misuse).
+            - Tests: every implemented endpoint needs an integration test with the
+              `[Protocol]`/`[Operation]`/`[Endpoint]` attributes; new `[Endpoint]` tests require a
+              regenerated `feature-catalog.json`.
+
+            Judge only this diff. Do not report pre-existing issues it does not touch,
+            and do not report pure style preferences.
+
+            ## Step 3 — verify the head has not moved
+
+            Immediately before posting, run:
+              gh api "repos/${{ github.repository }}/pulls/${{ steps.target.outputs.pr }}" --jq .head.sha
+
+            If the result is not exactly `${{ steps.target.outputs.head }}`, the branch was
+            pushed during your run. Post nothing and stop — evidence for a stale head is
+            worthless and a stale REQUEST_CHANGES would block the PR.
+
+            ## Step 4 — post exactly one review
+
+            The gate parses your body, so reproduce these shapes byte for byte. The
+            reviewed-commit line must use the full 40-character HEAD SHA in backticks.
+
+            No blocking findings — the body must START with the clean sentence:
+
+            ```
+            Claude Review: No major issues found.
+
+            **Reviewed commit:** `${{ steps.target.outputs.head }}`
+            ```
+
+            Post it with:
+              gh api "repos/${{ github.repository }}/pulls/${{ steps.target.outputs.pr }}/reviews" \
+                --input - <<'JSON'
+              {"commit_id": "...", "event": "COMMENT", "body": "..."}
+              JSON
+
+            Use `event: "COMMENT"` and `commit_id: "${{ steps.target.outputs.head }}"`.
+            You may append non-blocking observations AFTER the reviewed-commit line.
+
+            Blocking findings — the body must START with a count line and must NOT
+            contain the phrase "No major issues found":
+
+            ```
+            Claude Review: 2 finding(s).
+
+            **Reviewed commit:** `${{ steps.target.outputs.head }}`
+
+            1. <path:line> — <what is wrong and why it blocks>
+            2. ...
+            ```
+
+            Post it with `event: "REQUEST_CHANGES"`, the same `commit_id`, and an optional
+            `comments` array in the same JSON body for inline anchors, each entry
+            `{"path": ..., "line": ..., "side": "RIGHT", "body": ...}`. Inline comments create
+            review threads that keep the gate red until they are resolved, so raise them only
+            for genuinely blocking findings.
+
+            Post the review with a single `gh api` call. Do not use `gh pr review`
+            (it cannot pin `commit_id`). Do not post issue comments, do not push commits,
+            and do not modify any file in the working tree.

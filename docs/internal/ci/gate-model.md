@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-05-07
+> Last updated: 2026-08-17
 
 ## Tier Definitions
 
@@ -36,7 +36,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | Workflow | What it validates | Path filter |
 |---|---|---|
 | `pr-gate.yml` | **Required verification context `PR Gate`.** One runner: full-solution warnings-as-errors build, `dotnet format --verify-no-changes`, `Tier=Fast` unit smoke, architecture-enforcement tests (incl. the `feature-catalog.json` drift guard). Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. | None — a required context must never be path-filtered, or non-matching PRs block forever waiting for a status that will not report |
-| `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head Codex review evidence and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
+| `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger** (deliberate — see the header comment). PR template compliance, CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility all run on the train's `train/batch/*` `workflow_dispatch` and the nightly schedule. Its aggregator context `CI Gate` is produced by the batch CI only and never appears on a PR. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
@@ -114,6 +114,67 @@ These workflows run on schedule and can be dispatched manually:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `release-please.yml` (SDK repos only) | Push | Version automation |
+
+## Attesting reviewers
+
+`Review Gate` goes green only on exact-head review evidence from a bot identity
+that is distinct from the PR author. `scripts/ci/review-gate-evidence.js` owns
+that identity set — it is the single source of truth, exported as
+`ATTESTING_LOGINS` and read by `scripts/ci/merge-train/select.sh` via
+`--print-logins`, so nothing else may restate the logins.
+
+| Reviewer | Accepted login(s) | Review marker | "No findings" phrasing |
+|---|---|---|---|
+| Codex | `chatgpt-codex-connector`, `chatgpt-codex-connector[bot]` | `Codex Review` / `Reviewed commit` | `Codex Review: Didn't find any major issues.` |
+| Claude | `claude[bot]` | `Claude Review` / `Reviewed commit` | `Claude Review: No major issues found.` |
+
+Either identity alone can attest, which is the point: when Codex is rate-limited
+("You have reached your Codex usage limits for code reviews") the gate would
+otherwise deadlock and nothing could land. A `CHANGES_REQUESTED`/`DISMISSED`
+verdict still blocks, and it can only be withdrawn by the identity that raised
+it — a second reviewer cannot paper over the first one's objection.
+
+GitHub Copilot code review (`github-code-quality[bot]`) is deliberately **not**
+accepted; the reasoning is in the block comment in `review-gate-evidence.js`.
+
+### The Claude lane
+
+`.github/workflows/claude-review.yml` produces the `claude[bot]` half. It runs
+`anthropics/claude-code-action@v1` on `pull_request` (`opened`, `synchronize`,
+`reopened`, `ready_for_review`) against `trunk`, and on an `issue_comment`
+containing **`@claude review`** for re-requests (mirroring `@codex review`). It
+skips drafts and fork PRs, and its concurrency group cancels in progress —
+a review of a superseded head can never attest.
+
+The action posts exactly one review per head via
+`POST /repos/{owner}/{repo}/pulls/{n}/reviews` with an explicit `commit_id`
+(`gh pr review` cannot pin a commit):
+
+- clean → `event: COMMENT`, body starting `Claude Review: No major issues found.`
+- findings → `event: REQUEST_CHANGES`, body starting `Claude Review: <n> finding(s).`
+
+Both bodies carry ``**Reviewed commit:** `<40-char head sha>` `` so the same text
+also satisfies the stricter clean-comment path. The exact strings are pinned by
+fixtures in `scripts/ci/review-gate-evidence.test.js`.
+
+**No `github_token` input is passed to the action.** The default path exchanges
+the workflow's OIDC token (hence `id-token: write`) for a Claude GitHub App
+installation token. That is load-bearing twice over: the review author becomes
+`claude[bot]` rather than `github-actions[bot]`, and the resulting
+`pull_request_review` event still triggers workflows — so `review-event-bridge.yml`
+fires and `review-gate.yml` re-evaluates through its existing
+`workflow_run: ["Review Event Bridge"]` edge. No additional `workflow_run` edge
+is needed, and the bridge does not filter by reviewer login.
+
+**Enabling the lane (repository owner only).** Add **one** repository secret:
+
+- `CLAUDE_CODE_OAUTH_TOKEN` — run `claude setup-token` locally and paste the
+  token (subscription billing); or
+- `ANTHROPIC_API_KEY` — an API key from console.anthropic.com (usage billing).
+
+Until one exists the job exits 0 with a `::notice::` naming the secrets; it never
+fails a PR. The `claude` GitHub App must stay installed on the org with
+`pull_requests: write`.
 
 ## Adding New Checks
 
