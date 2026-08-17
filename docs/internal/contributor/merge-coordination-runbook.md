@@ -93,6 +93,26 @@ The IAM trust policy must allow `token.actions.githubusercontent.com` for this r
 how the AI studio flows authenticate to Bedrock (see `docs/guides/run-studio-ai-on-bedrock.md`):
 Converse API + IAM credential chain, model is a Bedrock id / inference profile.
 
+## Reading a `ci-shard-capacity-exhausted` escalation
+
+When the train stops with the `ci-shard-capacity-exhausted` outcome it is telling you a
+server-test shard used its **whole configured budget while still executing tests**. Nothing in
+the batch is implicated: the shard never finished, so the batch has no verdict for it. The train
+escalates every member without attribution, names the shard in the escalation comment, and clears
+`active_batch`. The fix is a CI-configuration change — raise `test_timeout_minutes`/
+`timeout_minutes` or split the shard in `.github/ci-shards.json`
+(see [shard-timeout-budgets](../ci/shard-timeout-budgets.md)) — then remove `train:escalated` from
+the members and re-dispatch. Do **not** rerun the shard: rerunning reproduces the exhaustion at
+full runner cost. `ci-failure-evidence-unavailable` is the sibling outcome for a terminal failed
+job whose log could not be read at all; restore Actions evidence access and re-dispatch.
+
+Both are classified **before** the pre-existing-failure filter can subtract them, and before the
+bounded retry, autofix, and attribution can act on them. That ordering is the safety property:
+the filter compares head-of-log signatures, and the capacity marker lives at the tail of a very
+large log, so filtering first could have cancelled the shard against trunk's equally noisy red
+shard and landed the batch on tests that never ran.
+`scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh` locks the ordering in.
+
 ## Testing & validation
 
 - `scripts/ci/ci-failure-classifier.js` is unit-tested (`node --test scripts/ci/ci-failure-classifier.test.js`)

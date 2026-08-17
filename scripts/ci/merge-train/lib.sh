@@ -315,6 +315,21 @@ train_require() {
   [[ "${missing}" -eq 0 ]]
 }
 
+# --- capacity classification (pure, testable) --------------------------------
+# train_log_is_capacity_exhaustion <log-text>: returns 0 when the text carries
+# the shard capacity-exhaustion marker. scripts/ci/run-server-test-shard.sh
+# emits HONUA_SHARD_CAPACITY_EXHAUSTED when a shard burned its whole CONFIGURED
+# budget while still executing tests, and HONUA_SHARD_HANG_SUSPECTED when the
+# shard had gone silent before the cap fired. Rerunning a capacity failure just
+# reproduces it at full runner cost, and a shard that never finished its tests
+# produced no comparable failure cause, so this predicate gates both the retry
+# budget (classify-timeout.sh) and the pre-existing-failure subtraction
+# (preexisting.sh). It lives in lib.sh because those two steps, the early-failure
+# observer, and their fixtures all need the same single definition.
+train_log_is_capacity_exhaustion() {
+  grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"$1"
+}
+
 # --- flake classification (pure, testable) -----------------------------------
 # train_log_is_flake <log-text>: returns 0 if the text matches the flake regex.
 train_log_is_flake() {

@@ -86,6 +86,36 @@ is readable, classification stops with a distinct evidence-unavailable result
 and escalates the batch without per-PR attribution. Job-name routing alone is
 never sufficient evidence that a member caused the failure.
 
+### Ordering guarantee: capacity is classified before the pre-existing filter
+
+Capacity and evidence-unavailable classification runs for **every** failing job
+**before** the merge train's pre-existing-failure filter is allowed to subtract
+anything (`train_classify_capacity_guard` in `classify-timeout.sh`, called from
+the ci-gate loop in `train.sh` ahead of `train_preexisting_filter`).
+
+That filter exists to stop the train escalating PRs for a failure trunk already
+carries, and it decides equivalence from job-scoped signatures taken out of a
+bounded window at the **head** of each job log. A capacity-exhausted shard puts
+`HONUA_SHARD_CAPACITY_EXHAUSTED` at the **tail**: in job 95149717187 of run
+31940825557 it was line 47296 of 47298, while the head of that log was the same
+postgres `FATAL: role "root"` noise trunk's own red shard carried. Classifying
+after the filter therefore risked subtracting the shard as "already failing on
+trunk" and **landing a batch on tests that never finished running**.
+
+Two independent protections now hold:
+
+* the guard runs first, so a capacity/evidence-unavailable job can never reach
+  the filter, the bounded retry, autofix, or per-PR attribution; and
+* the signature builder (`preexisting.sh`) scans the **whole** job log for the
+  marker and, when it is present, emits a single run-scoped signature that can
+  never cancel against another run — so the filter is correct in isolation too.
+
+`scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh` reproduces the
+production shape (marker at the tail of a large noisy log, the same noise on the
+"trunk latest" side) and fails if either protection or the ordering regresses,
+while a control fixture proves a genuine pre-existing failure is still
+subtracted.
+
 ## Re-basing the budgets
 
 ```bash

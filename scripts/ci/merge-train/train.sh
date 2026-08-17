@@ -10,7 +10,8 @@ HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 #
 # Phases (also the resume points written to the state issue before each
 # side-effecting step):
-#   select -> assemble -> smart-ci -> [forward-fix] -> [pre-existing-filter] ->
+#   select -> assemble -> smart-ci -> [forward-fix] ->
+#   [capacity/evidence guard] -> [pre-existing-filter] ->
 #   [classify-timeout -> classify-flake] ->
 #   [autofix (Bedrock fix-agent + surgical re-verify)] ->
 #   [attribute -> rebuild | escalate] -> land -> done
@@ -95,6 +96,44 @@ _emit_metrics() {
     >"${TRAIN_METRICS_OUT}" 2>/dev/null \
     && train_log "metrics written: ${TRAIN_METRICS_OUT} (outcome=${outcome})" \
     || train_warn "could not write metrics JSON"
+}
+
+# _capacity_or_evidence_outcome <kind> <run_id> <trunk_sha> <included-csv> <shard_descriptor>
+# The single terminal handler for the two NON-ATTRIBUTABLE CI outcomes, shared
+# by the pre-filter ordering guard and the retry classifier so both call sites
+# behave identically (#3054/#3213):
+#   capacity              a server-test shard used its whole configured budget
+#                         while still executing tests. That is a CI-capacity
+#                         defect owned by .github/ci-shards.json, not something
+#                         any batch member did, and the shard never finished its
+#                         tests, so the batch has no verdict for it.
+#   evidence-unavailable  a terminal failed job with no readable log cannot be
+#                         called a product regression, timeout, capacity
+#                         exhaustion, or flake at all.
+# Neither may be subtracted as pre-existing, retried, autofixed, or attributed
+# to a member diff. Escalate the batch as a whole and clear it so the queue can
+# progress once the budget is re-based / evidence access is restored. Closes the
+# ci-gate group and always returns 0 (terminal, non-error stop).
+_capacity_or_evidence_outcome() {
+  local kind="$1" run_id="$2" trunk_sha="$3" included="$4" shard_descriptor="$5"
+  local outcome reason warning
+  if [[ "${kind}" == "capacity" ]]; then
+    warning="a server-test shard exhausted its configured test budget while still running tests (HONUA_SHARD_CAPACITY_EXHAUSTED); escalating this batch without per-PR attribution"
+    reason="A server-test shard exhausted its configured test budget while still executing tests. This is shard capacity exhaustion, not a failure introduced by any PR in this batch: raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json (see docs/internal/ci/shard-timeout-budgets.md), then re-dispatch."
+    outcome="ci-shard-capacity-exhausted"
+  else
+    warning="required failed-job log evidence is unavailable; escalating this batch without per-PR attribution"
+    reason="A selected CI job failed but its terminal log evidence was unavailable. Restore GitHub Actions evidence access, then re-dispatch; no member diff was attributed."
+    outcome="ci-failure-evidence-unavailable"
+  fi
+  train_early_failure_record_classification "${run_id}" "${kind}" true false || true
+  train_annotate_warn "${warning}"
+  train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+  train_escalate_batch "${included}" "${reason}"
+  _write_state "" "${trunk_sha}" "" "select" "" 0 0
+  train_step_end ci-gate >/dev/null; train_endgroup
+  _emit_metrics "${outcome}" "${trunk_sha}" "" "${shard_descriptor}"
+  return 0
 }
 
 # train_regenerate_derived_artifacts <batch>:
@@ -781,8 +820,13 @@ main() {
 
   # Live-mode gate handling. Roll-forward pipeline (each step independently
   # valuable, evaluated in this order):
-  #   forward-fix(format) -> PRE-EXISTING FILTER -> classify-timeout -> classify-flake ->
+  #   forward-fix(format) -> CAPACITY/EVIDENCE GUARD -> PRE-EXISTING FILTER ->
+  #   classify-timeout -> classify-flake ->
   #   [AUTOFIX (Bedrock fix-agent + surgical re-verify)] -> attribute/escalate.
+  # The capacity/evidence guard is ordered FIRST among the classifiers on
+  # purpose: a shard that never finished its tests, or a job with no readable
+  # log, has no comparable failure cause, so no later step may subtract, retry,
+  # patch, or attribute it (#3213).
   train_group ci-gate "evaluate CI Gate; forward-fix / pre-existing filter / flake / autofix / attribute"
   train_step_begin ci-gate
   local autofix_attempts=0
@@ -870,6 +914,29 @@ main() {
       fi
     fi
 
+    # --- (0.9) CAPACITY / EVIDENCE ORDERING GUARD (#3213) --------------------
+    # This MUST precede the pre-existing-failure filter. That filter subtracts a
+    # batch failure whose job-scoped log signatures also appear on trunk's
+    # latest CI, and it reads a bounded window from the HEAD of each job log. A
+    # capacity-exhausted shard puts HONUA_SHARD_CAPACITY_EXHAUSTED at the TAIL
+    # of a ~47k-line log (job 95149717187 of run 31940825557 had it on line
+    # 47296 of 47298) while the head carries the same environmental noise
+    # (postgres `FATAL: role "root"` lines) trunk's red shard carries. Filtering
+    # first could therefore subtract the shard as "already failing on trunk" and
+    # LAND a batch on a shard that never finished executing its tests. A job
+    # with no readable log has no comparable cause either. Classify both here,
+    # for every failing job, before anything may reinterpret them.
+    local rc_guard=0
+    train_classify_capacity_guard "${run_id}" "${failing}" || rc_guard=$?
+    if [[ "${rc_guard}" == "7" ]]; then
+      _capacity_or_evidence_outcome capacity "${run_id}" "${trunk_sha}" "${included}" "${shard_descriptor}"
+      return 0
+    fi
+    if [[ "${rc_guard}" == "8" ]]; then
+      _capacity_or_evidence_outcome evidence-unavailable "${run_id}" "${trunk_sha}" "${included}" "${shard_descriptor}"
+      return 0
+    fi
+
     # --- (1) PRE-EXISTING-FAILURE FILTER (deterministic, no AI) --------------
     # Subtract trunk's latest-CI failing jobs from the batch's failing jobs. If
     # ZERO batch-introduced failures remain, the batch is red ONLY because trunk
@@ -925,34 +992,15 @@ main() {
       _emit_metrics "ci-rerun-rejection-persist-failed" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
+    # Defense in depth: the ordering guard above already routed these two codes,
+    # so reaching them here means the reduced, batch-introduced set newly
+    # produced capacity/evidence-unavailable evidence. Same terminal handling.
     if [[ "${rc_retry}" == "7" ]]; then
-      train_early_failure_record_classification "${run_id}" capacity true false || true
-      # #3054: a server-test shard used its whole configured budget while still
-      # executing tests. That is a CI-capacity defect owned by
-      # .github/ci-shards.json, not something any batch member did, so it must
-      # skip autofix and per-PR attribution (which would drop or escalate an
-      # arbitrary PR). Escalate the batch as a whole and clear it so the queue
-      # can progress once the budget is re-based.
-      train_annotate_warn "a server-test shard exhausted its configured test budget while still running tests (HONUA_SHARD_CAPACITY_EXHAUSTED); escalating this batch without per-PR attribution"
-      train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
-      train_escalate_batch "${included}" "A server-test shard exhausted its configured test budget while still executing tests. This is shard capacity exhaustion, not a failure introduced by any PR in this batch: raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json (see docs/internal/ci/shard-timeout-budgets.md), then re-dispatch."
-      _write_state "" "${trunk_sha}" "" "select" "" 0 0
-      train_step_end ci-gate >/dev/null; train_endgroup
-      _emit_metrics "ci-shard-capacity-exhausted" "${trunk_sha}" "" "${shard_descriptor}"
+      _capacity_or_evidence_outcome capacity "${run_id}" "${trunk_sha}" "${included}" "${shard_descriptor}"
       return 0
     fi
     if [[ "${rc_retry}" == "8" ]]; then
-      train_early_failure_record_classification "${run_id}" evidence-unavailable true false || true
-      # A terminal failed job without readable log evidence cannot safely be
-      # called a product regression, timeout, capacity exhaustion, or flake.
-      # Hold the whole batch as a control-plane failure; never blame a member
-      # diff using only the matrix job name.
-      train_annotate_warn "required failed-job log evidence is unavailable; escalating this batch without per-PR attribution"
-      train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
-      train_escalate_batch "${included}" "A selected CI job failed but its terminal log evidence was unavailable. Restore GitHub Actions evidence access, then re-dispatch; no member diff was attributed."
-      _write_state "" "${trunk_sha}" "" "select" "" 0 0
-      train_step_end ci-gate >/dev/null; train_endgroup
-      _emit_metrics "ci-failure-evidence-unavailable" "${trunk_sha}" "" "${shard_descriptor}"
+      _capacity_or_evidence_outcome evidence-unavailable "${run_id}" "${trunk_sha}" "${included}" "${shard_descriptor}"
       return 0
     fi
     if [[ "${rc_retry}" == "5" ]]; then

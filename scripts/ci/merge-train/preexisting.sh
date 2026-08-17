@@ -14,6 +14,9 @@ HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 #
 # Cause signatures are job-scoped and built from the most stable evidence in CI
 # logs, in priority order:
+#   * a run-scoped capacity-exhaustion signature when the WHOLE job log carries
+#     HONUA_SHARD_CAPACITY_EXHAUSTED: the shard never finished executing its
+#     tests, so it has no comparable cause and can never be subtracted (#3213).
 #   * failing test FQNs from the existing surgical retry parser.
 #   * normalized compiler/error/assertion/exception/format-drift lines.
 #   * an opaque run-scoped fallback when no cause can be extracted, which is
@@ -159,9 +162,14 @@ train_extract_failure_signatures() {
         } else {
           next
         }
-        print prefix ":" line
-        count += 1
-        if (count >= 40) exit
+        # Bounded to the first 40 causes, but WITHOUT `exit`: exiting mid-pipe
+        # SIGPIPEs the upstream printf, and under `set -o pipefail` that turned
+        # a ~47k-line shard log into a nondeterministic 141 from the whole
+        # filter (#3213). Keep draining stdin once the cap is reached.
+        if (count < 40) {
+          print prefix ":" line
+          count += 1
+        }
       }
     '
   } | sed '/^$/d' | sort -u
@@ -175,6 +183,20 @@ train_emit_job_failure_signatures() {
   local run_id="$1" job="$2" job_id="${3:-}" log sigs sig
   [[ -z "${job}" ]] && return 0
   log="$(train_run_job_log "${run_id}" "${job}" "${job_id}")"
+  # #3213: a shard that burned its whole configured budget emits
+  # HONUA_SHARD_CAPACITY_EXHAUSTED as its LAST error, far past the bounded
+  # head-of-log window train_extract_failure_signatures scans, so the marker
+  # never became a signature while the head-of-log noise it shares with trunk
+  # (postgres `FATAL: role "root"` lines and friends) did. Scan the WHOLE log
+  # for the marker and, when present, emit a single run-scoped signature: the
+  # shard never finished executing its tests, so it produced no comparable
+  # failure cause and must never cancel against trunk's latest run. The train
+  # classifies this case before the filter ever runs (train.sh capacity guard);
+  # this keeps the filter itself correct in isolation.
+  if train_log_is_capacity_exhaustion "${log}"; then
+    printf '%s\tcapacity-exhausted:%s:%s\n' "${job}" "${run_id:-unknown-run}" "${job}"
+    return 0
+  fi
   sigs="$(train_extract_failure_signatures "${job}" "${log}")"
   if [[ -z "$(printf '%s' "${sigs}" | sed '/^$/d')" ]]; then
     printf '%s\topaque:%s:%s\n' "${job}" "${run_id:-unknown-run}" "${job}"

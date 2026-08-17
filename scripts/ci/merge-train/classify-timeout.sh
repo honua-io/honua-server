@@ -10,14 +10,10 @@ train_log_is_timeout() {
 }
 
 # #3054: a shard that ran out of its CONFIGURED budget while still executing
-# tests is a capacity failure, not a hang. scripts/ci/run-server-test-shard.sh
-# emits HONUA_SHARD_CAPACITY_EXHAUSTED for that case and
-# HONUA_SHARD_HANG_SUSPECTED when the shard had gone silent before the cap
-# fired. Rerunning a capacity failure just reproduces it at full runner cost,
-# so it must never consume a retry.
-train_log_is_capacity_exhaustion() {
-  grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"$1"
-}
+# tests is a capacity failure, not a hang. The marker predicate itself lives in
+# lib.sh (train_log_is_capacity_exhaustion) because the pre-existing-failure
+# filter and the early-failure observer must agree with this classifier on what
+# counts as capacity evidence.
 
 # train_wait_for_rerun_visibility <run-id> <base-attempt>: bounded grace for an
 # asynchronously accepted request to expose attempt > base.
@@ -317,6 +313,27 @@ train_classify_timeout() {
   fi
   train_log "timeout/exit-124 signature matched; rerunning failed jobs once"
   train_request_failed_job_rerun "${run_id}" timeout "$((retry_count + 1))" "${callback}"
+}
+
+# train_classify_capacity_guard <run-id> [failing-job-names]
+# #3213 ORDERING GUARD. Decide capacity-exhaustion and missing-evidence for the
+# failing jobs BEFORE any other step is allowed to reinterpret them, because
+# neither condition is a comparable failure CAUSE:
+#   * a capacity-exhausted shard never finished executing its tests, so the
+#     batch has no verdict for it at all; and
+#   * a failed job with no readable log has no evidence of any kind.
+# Both must therefore bypass the pre-existing-failure subtraction, the bounded
+# retry, autofix, and per-PR attribution. Returns 0 when the failing jobs carry
+# ordinary, comparable evidence, 7 for capacity exhaustion and 8 for
+# unavailable evidence — the same codes train_classify_retry_candidate uses, so
+# the orchestrator routes both call sites through one handler.
+# READ-ONLY: never requests a rerun and never mutates state.
+train_classify_capacity_guard() {
+  local run_id="$1" failing_names="${2:-}" scan_rc=0
+  train_run_logs_match_timeout "${run_id}" "${failing_names}" || scan_rc=$?
+  [[ "${scan_rc}" == "2" ]] && return 8
+  [[ "${scan_rc}" == "0" && "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] && return 7
+  return 0
 }
 
 # train_classify_retry_candidate <run-id> <timeout-count> <flake-count> [jobs]
