@@ -93,6 +93,29 @@ The IAM trust policy must allow `token.actions.githubusercontent.com` for this r
 how the AI studio flows authenticate to Bedrock (see `docs/guides/run-studio-ai-on-bedrock.md`):
 Converse API + IAM credential chain, model is a Bedrock id / inference profile.
 
+## Reading a shard-terminal escalation
+
+Three merge-train outcomes mean *a shard never finished executing its tests*, so nothing in the
+batch is implicated and no member diff is attributed. Each escalation comment **names the
+offending jobs** and the batch is cleared (`active_batch` reset) so the queue can progress.
+
+| Outcome | What happened | What to do |
+|---|---|---|
+| `ci-shard-capacity-exhausted` | The shard used its whole configured budget while still producing test output. | Raise `test_timeout_minutes`/`timeout_minutes` or split the shard in `.github/ci-shards.json` (see [shard-timeout-budgets](../ci/shard-timeout-budgets.md)). Do **not** rerun — a rerun reproduces the exhaustion at full runner cost. |
+| `ci-shard-killed` | The shard's test host was SIGKILLed before the runner's own kill deadline. Not a timeout. | Suspect an out-of-memory kill or an external cancellation; check runner size and the shard split. |
+| `ci-failure-evidence-unavailable` | A terminal failed job's log stayed unreadable across the controller's bounded retries. | Restore Actions evidence access, then re-dispatch. |
+
+In all three cases: fix the cause, remove `train:escalated` from the members, and re-dispatch. A
+**stalled** shard (`HONUA_SHARD_HANG_SUSPECTED`) is deliberately different — it still gets the
+historical single failed-job rerun, and is only treated as real if it reproduces.
+
+Every one of these is classified **before** the pre-existing-failure filter can subtract it, and
+before the bounded retry, autofix, and attribution can act on it. That ordering is the safety
+property: the filter compares signatures sampled from a bounded window of each job log, and a
+shard marker is the shard's very last line, so filtering first could have cancelled the shard
+against trunk's equally noisy red shard and landed the batch on tests that never ran.
+`scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh` locks the ordering in.
+
 ## Testing & validation
 
 - `scripts/ci/ci-failure-classifier.js` is unit-tested (`node --test scripts/ci/ci-failure-classifier.test.js`)

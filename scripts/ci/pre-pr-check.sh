@@ -227,6 +227,7 @@ if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
         echo "5. Running merge-train fixtures..."
         scripts/ci/merge-train/fixtures/validate-merge-train.sh
         scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+        scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh
         scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
     else
         echo "5. Merge-train fixtures not required (surface unchanged)."
