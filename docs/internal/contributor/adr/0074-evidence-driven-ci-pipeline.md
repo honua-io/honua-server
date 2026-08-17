@@ -7,6 +7,11 @@ honua-server#3213 and its cross-repository children. Existing gates remain
 authoritative until a shadowed replacement satisfies the promotion criteria in
 this ADR.
 
+One slice has left shadow: producer-free attempt-1 reuse of the shard-local
+exact-head server-test payload is live in `ci.yml` (see section 5). Every other
+build-reuse topology in this ADR — shared producer jobs and PR Gate build
+evidence — remains report-only and unpromoted.
+
 ## Context
 
 Honua's CI has accumulated useful local optimizations without changing the
@@ -139,6 +144,22 @@ independent exact-head PR Gate corroborates a no-op, or authoritative drift
 checks pass on the subsequent normalized head. Reproducibility and provenance
 are necessary admission signals, not mutation authority.
 
+The 2026-08-16 shadow audit closed that evidence requirement: 61 validated
+envelopes over 16 pull requests produced 29 independently corroborated heads,
+two byte-exact would-change candidates, and zero false positives
+(`docs/internal/ci/derived-artifact-normalization.md`). The Git-object
+compare-and-swap transition is therefore implemented and covered by fixtures,
+gated behind `NORMALIZATION_MODE: enforce` plus a per-run GitHub App token
+minted immediately before the mutation. The workflow `GITHUB_TOKEN` keeps
+`contents: read` in every mode; the repository token cannot be the write
+credential because a push made with it produces no `pull_request` events and
+would strand the normalized head without its required contexts. The swap is the
+GraphQL `updateRefs` mutation with `beforeOid` — REST `updateRef` with
+`force: false` only guarantees a fast-forward from the ref's value at update
+time and would silently reinstate a commit dropped by a concurrent backward
+force-push. Because the commit voids exact-head review evidence, the consumer
+re-requests review from both attesting lanes as part of the mutation.
+
 Review is requested only after normalization reaches a stable head. Generated
 drift remains independently checked in `verify` and `train`; early
 normalization changes when the error is found, not whether it is enforced.
@@ -196,6 +217,28 @@ returns to optimization rather than becoming policy by assertion.
 
 This is one build per repeated project fingerprint, not one oversized solution
 artifact and not one build per logical shard.
+
+#### Producer-free attempt-1 reuse (live, 2026-08-16)
+
+One narrow slice of "build once" is live in `ci.yml`, because it needs no
+producer and adds no wait. The single designated writer shard for each project
+already packaged and saved its exact-head payload on attempt 1; only the *read*
+was gated on `run_attempt > 1`, so the same project was rebuilt in every sibling
+shard while a valid identical-tree payload sat unread in the run's own cache
+scope. Shards now perform one single-shot, fail-open lookup on attempt 1 as
+well. Nothing polls or waits, so the run 31768277005 fan-out regression cannot
+recur, and cache write volume is unchanged.
+
+The full contract — run-scoped keys and the same-SHA TTL poisoning they prevent,
+writer selection, the single kill-switch rule, the three fail-open levels, the
+trust boundary, and the accepted limitations — lives in
+[`docs/internal/ci/server-test-binary-artifacts.md`](../../ci/server-test-binary-artifacts.md).
+Rollback is `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`.
+
+This promotion is deliberately narrower than the shadowed producer designs. It
+does not authorize a shared producer job, PR Gate payload consumption, or any
+cross-head/content-addressed key; those remain gated on the promotion criteria
+above and on the #3226 ledger.
 
 The current shadow candidate reuses a sunk build rather than adding a producer
 dependency. The required `PR Gate` already performs the full Release solution
@@ -267,6 +310,22 @@ compile risk, final-rootfs risk, worker dependency/entrypoint risk, and
 vulnerability-scan inputs to the lane that must prove them. Identical image
 input digests can reuse immutable attestations; publication remains blocked
 until the required PR, nightly, release, or deploy evidence exists.
+
+Observation resolved which half of that pays. Path routing does not: across 74
+distinct trusted heads the graph-derived selector reproduced the legacy path
+filters exactly, with zero narrowed, zero avoided, and zero candidate-only
+heads, because the serving closure covers 27 of 33 `src/**` projects and every
+managed change selects all three serving variants. Re-push churn does: 60% of
+serving-impacted heads and 71% of worker-impacted heads repeat an input set
+already built on the same pull request, against a median 140-minute serving
+build. The router therefore stays in observe mode and the promotion savings gate
+accepts either narrowing/avoidance or exact-input build reuse, with the
+observation receipt (`.../v3`) binding one content digest per image class over
+the merge tree the images are actually built from, so reuse eligibility is
+measured before anything is enforced. The ledger names the substantiated
+mechanism, because a reuse-only sample does not authorize promoting the router.
+Vulnerability scanning is never reused. See
+`docs/internal/ci/native-image-impact-routing.md`.
 
 The JavaScript SDK follows honua-sdk-js#1286. One immutable build feeds
 independent SDK, MCP, and browser jobs. Browser coverage is split by owned
@@ -376,15 +435,31 @@ The complete checkpoint and decision are also recorded on
 2. Completed in observe mode: review-first transition receipts and trusted
    dispatch fixtures (#3216).
 3. Completed in observe mode: data-only normalization envelope and trusted
-   allowlist validator (#3219).
+   allowlist validator (#3219). Its 20-head shadow audit passed on 2026-08-16
+   and the credential-gated enforce transition is implemented; activation waits
+   only on the scoped normalization App credential.
 4. Rejected the standalone producer for insufficient savings; shadow the sunk-
    cost PR Gate build-evidence topology under #3226.
+4a. Completed: producer-free attempt-1 reads of the already-written shard-local
+   exact-head payload in `ci.yml` (see "Producer-free attempt-1 reuse" above).
+   This is the only build-reuse slice currently enforced in production.
 5. Promote deterministic-failure cancellation and focused attribution only
-   after #3224's retained observations pass.
-6. Promote native-image routing/evidence reuse under #3204 after its impact
-   ledger passes.
-7. Implement SDK build/browser separation under honua-sdk-js#1286.
-8. Promote each slice only after its declared parity, latency, cost, and
+   after #3224's retained observations pass. The 2026-08-16 audit found 0 of the
+   required 20 countable samples across 149 train runs (23 live batch-CI
+   dispatches, all without a failing selected server shard), so cancellation
+   stays disabled and `TRAIN_EARLY_FAILURE_MODE` remains `observe`.
+6. Promote native-image evidence reuse under #3204 after its impact ledger
+   passes. Path-based routing narrowing measured zero savings on this
+   repository and is not a promotion candidate on its own.
+7. Do not pursue docs-only PR Gate routing. #3235 was closed as not planned on
+   2026-08-17 UTC: the audit in `docs/internal/ci/impact-routing-evidence.md`
+   found 2 docs-only heads against a required cohort of 20, for a route worth
+   about 2.5% of gate runs, and found seven internal documents whose content a
+   gate step asserts. The classifier excludes those documents and a drift guard
+   keeps the exclusion honest, so the report-only observer stays truthful; the
+   required gate is unchanged.
+8. Implement SDK build/browser separation under honua-sdk-js#1286.
+9. Promote each slice only after its declared parity, latency, cost, and
    security gates; keep one independent rollback per slice.
 
 Each implementation slice has its own issue and PR. The umbrella PR does not

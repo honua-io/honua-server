@@ -333,7 +333,7 @@ train_retry_terminal_jobs() {
 train_ci_jobs_are_terminal() {
   local run_id="$1" rows conclusion name saw_gate=0
   rows="$(train_ci_jobs "${run_id}")" || return 1
-  [[ -n "${rows//[$'\n'$'\t' ]/}" ]] || return 1
+  train_has_content "${rows}" || return 1
 
   while IFS=$'\t' read -r conclusion name; do
     [[ -n "${name}" ]] || return 1
@@ -381,7 +381,7 @@ train_nonblocking_failures_are_safe() {
   train_ci_jobs_are_terminal "${run_id}" || return 1
   train_expected_shards_are_classifiable "${run_id}" "${descriptor}" || return 1
   rows="$(train_ci_jobs "${run_id}")" || return 1
-  [[ -n "${rows//[$'\n'$'\t' ]/}" ]] || return 1
+  train_has_content "${rows}" || return 1
 
   local saw_failed_gate=0 saw_blocking_success=0
   while IFS=$'\t' read -r conclusion name; do

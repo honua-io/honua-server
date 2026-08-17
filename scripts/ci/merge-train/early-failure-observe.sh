@@ -96,8 +96,18 @@ train_early_failure_snapshot_matches_expected() {
 
 train_early_failure_classify_log() {
   local text="$1"
-  if grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"${text}"; then
+  # Use lib.sh's shared, anchored marker predicates rather than a local
+  # `grep -F` for the bare token: the unanchored form also matched job logs that
+  # merely PRINT the token (the merge train's own warning text does, so every
+  # CI Router Validation log contains it) and mislabelled them as capacity.
+  if train_log_is_capacity_exhaustion "${text}"; then
     printf 'capacity\n'
+  elif train_log_is_shard_killed "${text}"; then
+    # An OOM/external kill is infrastructure, not a deterministic candidate the
+    # observer should ever propose cancelling a run for.
+    printf 'shard-killed\n'
+  elif train_log_is_shard_hang "${text}"; then
+    printf 'timeout\n'
   elif train_log_is_timeout "${text}"; then
     printf 'timeout\n'
   elif train_log_is_flake "${text}"; then

@@ -140,13 +140,14 @@ jobs:
 
               const unresolved = pr.reviewThreads.nodes.filter(thread =>
                 !thread.isResolved && thread.comments.nodes.some(comment =>
-                  isAttestingReviewer(comment.author?.login) && comment.commit?.oid === head));
+                  isAttestingReviewer(comment.author?.login, comment.author?.__typename) &&
+                  comment.commit?.oid === head));
               if (unresolved.length) {
                 reasons.push(`${unresolved.length} unresolved reviewer thread(s)`);
               }
 
               const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
-                if (!isAttestingReviewer(comment.author?.login)) return comment;
+                if (!isAttestingReviewer(comment.author?.login, comment.author?.__typename)) return comment;
                 const matches = [...(comment.body || '').matchAll(
                   /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
                 )];

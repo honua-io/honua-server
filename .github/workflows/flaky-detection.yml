@@ -1,20 +1,57 @@
 name: Flaky Test Detection
 
+# Bounded, incremental flake hunt (ADR-0037).
+#
+# WHY IT IS SHARDED AND ROTATING. The previous shape ran the WHOLE integration
+# tier (`--filter "Tier=Integration&Tier!=Slow"` over Honua.Server.Tests) twice
+# in ONE 180-minute job. That never had a chance: production CI splits the same
+# body of tests across every shard in `.github/ci-shards.json`, whose declared
+# inner test budgets already total ~1,600 minutes for a SINGLE pass. Every
+# scheduled run was therefore cancelled at its job timeout inside iteration 1
+# (13 of the 14 runs before this change), producing no TRX, no report, and no
+# flake signal at all — while still burning three hours of runner time a day.
+#
+# The fix is scope, not a bigger timeout. Each run takes a bounded ROTATING
+# WINDOW of shards, runs each shard's own filter `iterations` times under that
+# shard's own inner budget via the shared scripts/ci/run-server-test-shard.sh,
+# and reports per shard. The window advances daily, so the whole shard set is
+# covered every ceil(shards / shard_count) days and every run finishes.
+#
+# AD-HOC MODE. The pre-shard workflow could hunt any test project (Core, DuckDB,
+# MySql, Architecture, and the Fast tier). That is preserved: dispatch with
+# `project` (and optionally `filter`) to bypass the shard plan entirely. Ad-hoc
+# mode does not append the shard runner's `Tier!=Slow&Tier!=Fast` exclusions, so
+# a Fast-tier project is reachable again.
 on:
   schedule:
-    # Daily flake hunt: re-run the integration tier three times and report any
-    # test that is not 3-for-3 consistent. See ADR-0037.
+    # Daily rotating flake hunt.
     - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Number of times to re-run the integration tier'
+        description: 'Times to re-run each selection (>= 2 to detect inconsistency)'
         required: false
         default: '2'
-      project:
-        description: 'Test project to scan'
+      shard_count:
+        description: 'Shards in this run window (rotating mode only)'
         required: false
-        default: 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+        default: '6'
+      shards:
+        description: 'Comma-separated shard names to run instead of the rotating window'
+        required: false
+        default: ''
+      project:
+        description: 'AD-HOC: test project (.csproj) to hunt instead of the shard plan'
+        required: false
+        default: ''
+      filter:
+        description: 'AD-HOC: VSTest filter for the project above (default: Tier=Integration)'
+        required: false
+        default: ''
+      adhoc_timeout_minutes:
+        description: 'AD-HOC: inner per-iteration budget in minutes'
+        required: false
+        default: '45'
 
 permissions:
   contents: read
@@ -31,17 +68,143 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  flake-hunt:
-    name: Integration Tier Flake Hunt
+  plan:
+    name: Select flake-hunt window
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      window: ${{ steps.plan.outputs.window }}
+      iterations: ${{ steps.plan.outputs.iterations }}
+      expect_shards: ${{ steps.plan.outputs.expect_shards }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: plan
+        name: Choose this run's selections
+        # Every input is normalised HERE and nowhere else: the `default:` values
+        # above are the dispatch-form affordance, and `inputs.*` is empty on a
+        # schedule, so this step is the single place that decides the effective
+        # value. Do not add a second `|| 'x'` fallback in an expression.
+        env:
+          IN_ITERATIONS: ${{ inputs.iterations }}
+          IN_SHARD_COUNT: ${{ inputs.shard_count }}
+          IN_SHARDS: ${{ inputs.shards }}
+          IN_PROJECT: ${{ inputs.project }}
+          IN_FILTER: ${{ inputs.filter }}
+          IN_ADHOC_TIMEOUT: ${{ inputs.adhoc_timeout_minutes }}
+        run: |
+          set -euo pipefail
+          iterations="${IN_ITERATIONS}"
+          [[ "${iterations}" =~ ^[0-9]+$ && "${iterations}" -ge 2 ]] || iterations=2
+          count="${IN_SHARD_COUNT}"
+          [[ "${count}" =~ ^[0-9]+$ && "${count}" -ge 1 ]] || count=6
+          adhoc_timeout="${IN_ADHOC_TIMEOUT}"
+          [[ "${adhoc_timeout}" =~ ^[0-9]+$ && "${adhoc_timeout}" -ge 1 ]] || adhoc_timeout=45
+
+          if [[ -n "${IN_PROJECT}" ]]; then
+            # AD-HOC: one selection, no shard plan, no tier exclusions.
+            if [[ ! -f "${IN_PROJECT}" ]]; then
+              echo "::error::Ad-hoc project '${IN_PROJECT}' does not exist." >&2
+              exit 1
+            fi
+            adhoc_filter="${IN_FILTER}"
+            [[ -n "${adhoc_filter}" ]] || adhoc_filter='Tier=Integration'
+            matrix="$(jq -c -n \
+              --arg project "${IN_PROJECT}" \
+              --arg filter "${adhoc_filter}" \
+              --argjson iterations "${iterations}" \
+              --argjson budget "${adhoc_timeout}" '
+              {include: [{
+                shard_name: "ad-hoc",
+                suffix: "ad-hoc",
+                csproj: $project,
+                filter: $filter,
+                max_cpu_count: "",
+                exclude_slow: "false",
+                exclude_fast: "false",
+                test_timeout_minutes: $budget,
+                job_timeout_minutes: ([($budget * $iterations + 25), 350] | min)
+              }]}')"
+            window="ad-hoc: ${IN_PROJECT} [${adhoc_filter}]"
+          else
+            total="$(jq '.shards | length' .github/ci-shards.json)"
+            if [[ "${count}" -gt "${total}" ]]; then count="${total}"; fi
+            windows=$(( (total + count - 1) / count ))
+            # Days since the epoch: advances by exactly one every scheduled run
+            # and does not reset at a year boundary the way day-of-year would.
+            index=$(( ( $(date -u +%s) / 86400 ) % windows ))
+            offset=$(( index * count ))
+
+            if [[ -n "${IN_SHARDS}" ]]; then
+              selected="$(jq -c --arg names "${IN_SHARDS}" '
+                ($names | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $want
+                | [ .shards[] | select(.name as $n | $want | index($n)) ]' .github/ci-shards.json)"
+              window="explicit: ${IN_SHARDS}"
+            else
+              selected="$(jq -c --argjson offset "${offset}" --argjson count "${count}" \
+                '.shards[$offset:($offset + $count)]' .github/ci-shards.json)"
+              window="rotation ${index}/${windows} (shards ${offset}..$(( offset + count - 1 )) of ${total})"
+            fi
+
+            if [[ "$(jq 'length' <<<"${selected}")" -eq 0 ]]; then
+              echo "::error::No shard matched the requested selection." >&2
+              exit 1
+            fi
+
+            # `.csproj` is an EMPTY STRING on the 20 shards that target the
+            # Honua.Server.Tests monolith, not null, so jq's `//` does NOT
+            # substitute a default and `dotnet build ""` would build the whole
+            # solution. Emit "" here and let the shell default it, exactly as
+            # ci.yml's server-tests job does.
+            matrix="$(jq -c --argjson iterations "${iterations}" '
+              {include: [ .[] | {
+                shard_name: .name,
+                suffix: .artifact_suffix,
+                csproj: (.csproj // ""),
+                filter: .filter,
+                max_cpu_count: (.max_cpu_count // ""),
+                exclude_slow: "true",
+                exclude_fast: "true",
+                test_timeout_minutes: .test_timeout_minutes,
+                # Room for every iteration plus checkout, setup, restore and
+                # build. Capped because a GitHub job may not exceed 360 minutes.
+                job_timeout_minutes: ([(.test_timeout_minutes * $iterations + 25), 350] | min)
+              } ]}' <<<"${selected}")"
+          fi
+
+          {
+            echo "matrix=${matrix}"
+            echo "window=${window}"
+            echo "iterations=${iterations}"
+            echo "expect_shards=$(jq '.include | length' <<<"${matrix}")"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "### Flake-hunt window"
+            echo
+            echo "- Window: \`${window}\`"
+            echo "- Iterations per selection: \`${iterations}\`"
+            echo
+            jq -r '.include[] | "- `\(.shard_name)` (budget \(.test_timeout_minutes)m/iteration, job cap \(.job_timeout_minutes)m)"' <<<"${matrix}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  flake-hunt:
+    name: Flake hunt / ${{ matrix.shard_name }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.job_timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -50,11 +213,24 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      ITERATIONS: ${{ github.event.inputs.iterations || '2' }}
-      CSPROJ: ${{ github.event.inputs.project || 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' }}
-      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: honua
+      PGPASSWORD: honua
     steps:
       - uses: actions/checkout@v7
+
+      # Same reclamation the production shards do: the modular test topology
+      # pushes some shards past the runner's free-disk limit.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -62,119 +238,144 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          scripts/ci/dotnet-restore-retry.sh "${csproj}"
 
-      - name: Build target project
-        timeout-minutes: 30
-        run: dotnet build "${CSPROJ}" --no-restore --configuration Release
+      - name: Build shard test project
+        timeout-minutes: 25
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          dotnet build "${csproj}" --no-restore --configuration Release
 
-      - name: Run integration tier ${{ github.event.inputs.iterations || '2' }}× and collect TRX
-        # Integration-tier duration is inflated by shared-fixture/migration ordering flakes tracked in #1359.
-        timeout-minutes: 180
+      - name: Re-run selection ${{ needs.plan.outputs.iterations }}x
+        env:
+          ITERATIONS: ${{ needs.plan.outputs.iterations }}
+          SHARD_SUFFIX: ${{ matrix.suffix }}
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
+          HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
+          HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
+          HONUA_SERVER_TEST_EXCLUDE_SLOW: ${{ matrix.exclude_slow }}
+          HONUA_SERVER_TEST_EXCLUDE_FAST: ${{ matrix.exclude_fast }}
+          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_CONFIGURATION: Release
         run: |
           set -uo pipefail
+          export HONUA_SERVER_TEST_CSPROJ="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
           mkdir -p ./tests/TestResults
+
+          # Each iteration gets a FRESH database. PostgresFixture uses
+          # HONUA_TEST_DB_URL verbatim when it is set and never resets the
+          # external database, so residue from iteration 1 (or from an iteration
+          # the inner timeout killed mid-transaction) can make iteration 2 fail
+          # deterministically — which this workflow would then report as a flake.
+          # A per-iteration database makes each iteration an independent trial.
+          create_iteration_db() {
+            local db="$1"
+            psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE IF EXISTS ${db};"
+            if psql -tAc "SELECT 1 FROM pg_database WHERE datname='template_postgis';" -d postgres | grep -q 1; then
+              psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE ${db} TEMPLATE template_postgis;"
+            else
+              psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE ${db};"
+              psql -v ON_ERROR_STOP=1 -d "${db}" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+              psql -v ON_ERROR_STOP=1 -d "${db}" -c "CREATE EXTENSION IF NOT EXISTS postgis_raster;" || true
+            fi
+          }
+
+          usage_error=0
           for i in $(seq 1 "${ITERATIONS}"); do
-            echo "::group::flake-hunt iteration ${i}"
-            # Continue past failures so a 1/3 fail still produces TRX for analysis.
-            dotnet test "${CSPROJ}" \
-              --no-build \
-              --no-restore \
-              --configuration Release \
-              --filter "Tier=Integration&Tier!=Slow" \
-              --logger "trx;LogFileName=flake-hunt-${i}.trx" \
-              --logger "console;verbosity=minimal" \
-              --results-directory ./tests/TestResults \
-              || echo "iteration ${i} reported failures (expected during flake hunt)"
+            echo "::group::flake-hunt ${SHARD_SUFFIX} iteration ${i}"
+            db="honua_flake_${i}"
+            create_iteration_db "${db}"
+            rc=0
+            HONUA_TEST_DB_URL="Host=localhost;Port=5432;Database=${db};Username=honua;Password=honua" \
+            HONUA_SERVER_TEST_LOG_NAME="flake-${SHARD_SUFFIX}__iter${i}" \
+              scripts/ci/run-server-test-shard.sh || rc=$?
+            # Exit 2 is the runner's own USAGE error (missing required env), not
+            # a test outcome. Swallowing it would silently produce zero TRX and
+            # an empty, green report — exactly the vacuity this workflow must
+            # never have.
+            if [[ "${rc}" -eq 2 ]]; then
+              echo "::error::run-server-test-shard.sh rejected iteration ${i} with a usage error (exit 2)."
+              usage_error=1
+            elif [[ "${rc}" -ne 0 ]]; then
+              echo "iteration ${i} reported failures (expected during a flake hunt; exit ${rc})"
+            fi
             echo "::endgroup::"
           done
+          exit "${usage_error}"
 
-      - name: Analyze TRX results for inconsistent outcomes
-        id: analyze
+      - name: Upload shard flake evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-detection-${{ matrix.suffix }}
+          path: |
+            tests/TestResults/flake-*.trx
+            tests/TestResults/flake-*.log
+            tests/TestResults/flake-*.timing.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  report:
+    name: Flake candidate report
+    needs: [plan, flake-hunt]
+    # Report whatever the window produced, including when some shards failed or
+    # timed out — a shard that could not finish is itself a signal. Skipped when
+    # planning failed, because there is then nothing to report on.
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download shard flake evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: flaky-detection-*
+          path: flake-evidence
+          merge-multiple: false
+
+      - name: Summarize flake candidates
+        # The summarizer FAILS when the evidence is incomplete: a report that
+        # says "0 candidates" because no TRX was produced is worse than no
+        # report, and that is precisely how the old workflow's daily timeout
+        # went unnoticed for two weeks.
         env:
-          ITERATIONS: ${{ env.ITERATIONS }}
+          WINDOW: ${{ needs.plan.outputs.window }}
+          EXPECT_SHARDS: ${{ needs.plan.outputs.expect_shards }}
+          EXPECT_ITERATIONS: ${{ needs.plan.outputs.iterations }}
         run: |
-          python3 - <<'PY'
-          import glob, json, os, sys
-          from collections import defaultdict
-          from xml.etree import ElementTree as ET
+          set -euo pipefail
+          mkdir -p tests/TestResults
+          rc=0
+          python3 scripts/ci/summarize-flaky-detection.py \
+            --results flake-evidence \
+            --expect-shards "${EXPECT_SHARDS}" \
+            --expect-iterations "${EXPECT_ITERATIONS}" \
+            --output tests/TestResults/flaky-report.json \
+            --markdown tests/TestResults/flaky-report.md || rc=$?
+          {
+            printf '_Window: %s_\n\n' "${WINDOW}"
+            cat tests/TestResults/flaky-report.md
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${rc}"
 
-          ns = {"vs": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
-          totals = defaultdict(lambda: {"pass": 0, "fail": 0, "other": 0, "messages": []})
-
-          trx_files = sorted(glob.glob("tests/TestResults/flake-hunt-*.trx"))
-          if not trx_files:
-              print("::error::no TRX files produced by flake hunt")
-              sys.exit(1)
-          print(f"Analyzing {len(trx_files)} TRX file(s)")
-
-          for trx in trx_files:
-              tree = ET.parse(trx)
-              root = tree.getroot()
-              for unit in root.findall(".//vs:UnitTestResult", ns):
-                  name = unit.get("testName") or "unknown"
-                  outcome = (unit.get("outcome") or "Other").lower()
-                  if outcome == "passed":
-                      totals[name]["pass"] += 1
-                  elif outcome == "failed":
-                      totals[name]["fail"] += 1
-                      msg = unit.find(".//vs:ErrorInfo/vs:Message", ns)
-                      if msg is not None and msg.text:
-                          totals[name]["messages"].append(msg.text.strip().splitlines()[0][:200])
-                  else:
-                      totals[name]["other"] += 1
-
-          iterations = int(os.environ.get("ITERATIONS", "3"))
-          flaky = []
-          for name, c in totals.items():
-              total = c["pass"] + c["fail"] + c["other"]
-              if total < iterations:
-                  continue  # not run in every iteration; skip
-              if c["fail"] > 0 and c["pass"] > 0:
-                  flaky.append({
-                      "name": name,
-                      "pass": c["pass"],
-                      "fail": c["fail"],
-                      "iterations": total,
-                      "sample_message": (c["messages"] or [""])[0],
-                  })
-
-          report = {
-              "iterations_requested": iterations,
-              "trx_files": len(trx_files),
-              "tests_seen": len(totals),
-              "flaky_count": len(flaky),
-              "flaky_candidates": sorted(flaky, key=lambda x: (-x["fail"], x["name"])),
-          }
-          with open("tests/TestResults/flaky-report.json", "w", encoding="utf-8") as fh:
-              json.dump(report, fh, indent=2)
-
-          summary = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary:
-              with open(summary, "a", encoding="utf-8") as fh:
-                  fh.write(f"# Flaky Test Detection\n\n")
-                  fh.write(f"- Iterations: {iterations}\n")
-                  fh.write(f"- Tests observed: {len(totals)}\n")
-                  fh.write(f"- Flake candidates: {len(flaky)}\n\n")
-                  if flaky:
-                      fh.write("| Test | Pass | Fail | Sample Failure |\n|---|---|---|---|\n")
-                      for f in report["flaky_candidates"]:
-                          msg = f["sample_message"].replace("|", "\\|")
-                          fh.write(f"| `{f['name']}` | {f['pass']} | {f['fail']} | {msg} |\n")
-                  else:
-                      fh.write("No flake candidates detected in this run.\n")
-
-          # Always exit 0 — flake detection should not fail the workflow; it is
-          # a reporting concern. Detection of a candidate is success, not failure.
-          print(f"flaky_count={len(flaky)}")
-          PY
-
-      - name: Upload flake report and TRX artifacts
+      # Detecting a candidate is the successful outcome and never fails the run;
+      # only MISSING evidence does (above).
+      - name: Upload flake report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: flaky-detection-report
           path: |
             tests/TestResults/flaky-report.json
-            tests/TestResults/flake-hunt-*.trx
+            tests/TestResults/flaky-report.md
+          if-no-files-found: warn
           retention-days: 30

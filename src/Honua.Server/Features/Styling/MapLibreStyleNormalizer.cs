@@ -150,6 +150,128 @@ internal static class MapLibreStyleNormalizer
         return true;
     }
 
+    /// <summary>
+    /// Validates a standalone MapLibre style without requiring it to reference the
+    /// server-generated Honua source. Standalone catalog styles may use any declared
+    /// vector or GeoJSON source, but strict handling still enforces the same layer
+    /// structure and supported styling surface as layer-bound styles.
+    /// </summary>
+    public static bool TryValidateStandalone(JsonElement style, out string? error)
+    {
+        error = null;
+        if (style.ValueKind != JsonValueKind.Object)
+        {
+            error = "MapLibre style must be a JSON object.";
+            return false;
+        }
+
+        JsonNode? rootNode;
+        try
+        {
+            rootNode = JsonNode.Parse(style.GetRawText());
+        }
+        catch (JsonException)
+        {
+            error = "MapLibre style is not valid JSON.";
+            return false;
+        }
+
+        if (rootNode is not JsonObject root)
+        {
+            error = "MapLibre style must be a JSON object.";
+            return false;
+        }
+
+        if (!TryGetVersion(root, out var version) || version != 8)
+        {
+            error = "MapLibre style must include version 8.";
+            return false;
+        }
+
+        if (root["layers"] is not JsonArray layers || layers.Count == 0)
+        {
+            error = "MapLibre style must include at least one layer.";
+            return false;
+        }
+
+        if (root["sources"] is not null && root["sources"] is not JsonObject)
+        {
+            error = "MapLibre style sources must be a JSON object.";
+            return false;
+        }
+
+        var sources = root["sources"] as JsonObject ?? new JsonObject();
+        var seenLayerIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < layers.Count; index++)
+        {
+            if (layers[index] is not JsonObject layerObject)
+            {
+                error = $"MapLibre style layer at index {index} must be a JSON object.";
+                return false;
+            }
+
+            if (!TryValidateLayerStructure(
+                    layerObject,
+                    index,
+                    seenLayerIds,
+                    out var layerId,
+                    out var layerType,
+                    out error))
+            {
+                return false;
+            }
+
+            if (string.Equals(layerType, "background", StringComparison.OrdinalIgnoreCase))
+            {
+                if (layerObject["source"] is not null || layerObject["source-layer"] is not null)
+                {
+                    error = $"MapLibre background layer '{layerId}' must not declare a source.";
+                    return false;
+                }
+
+                continue;
+            }
+
+            var sourceValue = TryGetString(layerObject["source"]);
+            if (string.IsNullOrWhiteSpace(sourceValue))
+            {
+                error = $"MapLibre style layer '{layerId}' must include a non-empty source.";
+                return false;
+            }
+
+            if (sources[sourceValue] is not JsonObject sourceObject)
+            {
+                error = $"MapLibre style layer '{layerId}' references undefined source '{sourceValue}'.";
+                return false;
+            }
+
+            var sourceType = TryGetString(sourceObject["type"]);
+            if (string.Equals(sourceType, "vector", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(TryGetString(layerObject["source-layer"])))
+                {
+                    error = $"MapLibre style layer '{layerId}' must include a non-empty source-layer for vector source '{sourceValue}'.";
+                    return false;
+                }
+            }
+            else if (string.Equals(sourceType, "geojson", StringComparison.OrdinalIgnoreCase))
+            {
+                if (layerObject["source-layer"] is not null)
+                {
+                    error = $"MapLibre style layer '{layerId}' must not include source-layer for GeoJSON source '{sourceValue}'.";
+                    return false;
+                }
+            }
+            else
+            {
+                error = $"MapLibre style layer '{layerId}' requires a vector or GeoJSON source, but source '{sourceValue}' is '{sourceType}'.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool TryValidateLayer(
         JsonObject layerObject,
         int index,
@@ -162,48 +284,14 @@ internal static class MapLibreStyleNormalizer
         usesHonuaSource = false;
         error = null;
 
-        var layerId = TryGetString(layerObject["id"]);
-        if (string.IsNullOrWhiteSpace(layerId))
+        if (!TryValidateLayerStructure(
+                layerObject,
+                index,
+                seenLayerIds,
+                out var layerId,
+                out var layerType,
+                out error))
         {
-            error = $"MapLibre style layer at index {index} must include a non-empty id.";
-            return false;
-        }
-
-        if (!seenLayerIds.Add(layerId))
-        {
-            error = $"MapLibre style layer id '{layerId}' is duplicated.";
-            return false;
-        }
-
-        var layerType = TryGetString(layerObject["type"]);
-        if (string.IsNullOrWhiteSpace(layerType))
-        {
-            error = $"MapLibre style layer '{layerId}' must include a non-empty type.";
-            return false;
-        }
-
-        if (!SupportedLayerTypes.Contains(layerType))
-        {
-            error = $"MapLibre style layer '{layerId}' uses unsupported type '{layerType}'.";
-            return false;
-        }
-
-        if (!TryValidateZoomRange(layerObject, layerId, out error))
-        {
-            return false;
-        }
-
-        if (!TryValidatePaint(layerObject["paint"], layerId, layerType, out error)
-            || !TryValidateLayout(layerObject["layout"], layerId, layerType, out error))
-        {
-            return false;
-        }
-
-        if (layerObject["filter"] is { } filter
-            && (filter is not JsonArray
-                || !TryValidateExpression(filter, $"filter for MapLibre style layer '{layerId}'", out error)))
-        {
-            error ??= $"MapLibre style layer '{layerId}' filter must be an expression array.";
             return false;
         }
 
@@ -287,6 +375,64 @@ internal static class MapLibreStyleNormalizer
         }
 
         usesHonuaSource = string.Equals(sourceValue, honuaSourceId, StringComparison.OrdinalIgnoreCase);
+        return true;
+    }
+
+    private static bool TryValidateLayerStructure(
+        JsonObject layerObject,
+        int index,
+        HashSet<string> seenLayerIds,
+        out string layerId,
+        out string layerType,
+        out string? error)
+    {
+        layerId = TryGetString(layerObject["id"]) ?? string.Empty;
+        layerType = string.Empty;
+        error = null;
+        if (string.IsNullOrWhiteSpace(layerId))
+        {
+            error = $"MapLibre style layer at index {index} must include a non-empty id.";
+            return false;
+        }
+
+        if (!seenLayerIds.Add(layerId))
+        {
+            error = $"MapLibre style layer id '{layerId}' is duplicated.";
+            return false;
+        }
+
+        layerType = TryGetString(layerObject["type"]) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(layerType))
+        {
+            error = $"MapLibre style layer '{layerId}' must include a non-empty type.";
+            return false;
+        }
+
+        if (!SupportedLayerTypes.Contains(layerType))
+        {
+            error = $"MapLibre style layer '{layerId}' uses unsupported type '{layerType}'.";
+            return false;
+        }
+
+        if (!TryValidateZoomRange(layerObject, layerId, out error))
+        {
+            return false;
+        }
+
+        if (!TryValidatePaint(layerObject["paint"], layerId, layerType, out error)
+            || !TryValidateLayout(layerObject["layout"], layerId, layerType, out error))
+        {
+            return false;
+        }
+
+        if (layerObject["filter"] is { } filter
+            && (filter is not JsonArray
+                || !TryValidateExpression(filter, $"filter for MapLibre style layer '{layerId}'", out error)))
+        {
+            error ??= $"MapLibre style layer '{layerId}' filter must be an expression array.";
+            return false;
+        }
+
         return true;
     }
 
