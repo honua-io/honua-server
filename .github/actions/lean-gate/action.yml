@@ -1,7 +1,7 @@
 name: Lean Gate
 description: >
   Shared LEAN gate: full-solution warnings-as-errors build + format check + the
-  Fast/architecture unit smoke. Single source of truth for BOTH the per-PR
+  Fast/architecture/MCP-governance unit smoke. Single source of truth for BOTH the per-PR
   `PR Gate` job (.github/workflows/pr-gate.yml) and the `Merge Queue Gate` job
   (.github/workflows/ci.yml). Keeping one definition is deliberate — two
   hand-maintained copies of a gate is exactly the drift that produced #2865.
@@ -41,6 +41,13 @@ inputs:
     description: 'Cap for the architecture-enforcement tests.'
     required: false
     default: '10'
+  ai-governance-timeout-minutes:
+    description: >
+      Cap for the focused MCP registry/taxonomy roster drift tests. The full
+      solution build already produced this test assembly, so the smoke adds no
+      restore or compilation work.
+    required: false
+    default: '2'
   governance-timeout-minutes:
     description: >
       Cap for the Server-project governance/drift tests
@@ -142,6 +149,23 @@ runs:
             --no-restore \
             --configuration Release \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+    # Service-free MCP roster governance. The capability registry and taxonomy
+    # fixture must mirror the same live DI tool surface. The assembly is already
+    # available from the full solution build, so this adds only a no-build test
+    # invocation to the required gate (#3198).
+    - name: Run .NET Tests (MCP Registry/Taxonomy Drift)
+      shell: bash
+      run: |
+        timeout "${{ inputs.ai-governance-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~CapabilityRegistryConformanceTests.LiveMcpTools_MatchRegistryToolDescriptors|FullyQualifiedName~CapabilityRegistryConformanceTests.RegistryToolDescriptors_MirrorLiveWorkflowFamilies|FullyQualifiedName~McpTaxonomyAlignmentTests.ToolNames_MatchTaxonomyRoster|FullyQualifiedName~McpTaxonomyAlignmentTests.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors|FullyQualifiedName~McpTaxonomyAlignmentTests.ToolRoster_MatchesFullMcpDependencyInjectionRegistrations|FullyQualifiedName~McpTaxonomyAlignmentTests.ErrorEnvelopeRoster_CoversEveryStaticallyRegisteredTool" \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-mcp-roster.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 

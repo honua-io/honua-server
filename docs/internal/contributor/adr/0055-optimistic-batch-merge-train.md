@@ -44,7 +44,10 @@ dry-run.
 1. **select** — `gh pr list --base trunk --state open`. Ready = non-draft,
    labels exclude `train:hold`/`train:escalated` (and the pre-existing `hold`
    opt-out), `mergeable==MERGEABLE`, and CI Gate `SUCCESS` or a flake-only
-   failure. Oldest-`createdAt` first, capped at `MAX_BATCH` (default 3).
+   failure. GitHub computes mergeability asynchronously after trunk/head moves,
+   so an `UNKNOWN` queue snapshot is refreshed up to three times with a
+   two-second delay before remaining fail-closed. Oldest-`createdAt` first,
+   capped at `MAX_BATCH` (default 3).
 2. **assemble** (the git heart) — branch `train/batch/<trunkSha7>/<epoch>` off
    `origin/trunk`; `git merge --no-ff` each PR head. On conflict
    `git merge --abort` (transactional, ZERO residue), mark `SKIPPED_CONFLICT`,
