@@ -17,8 +17,12 @@ namespace Honua.FileStorage;
 /// </summary>
 internal sealed class LocalFileStorage : CloudFileStorageBase
 {
+    private const int MutationLockStripeCount = 64;
     private readonly LocalStorageOptions _options;
     private readonly ConcurrentDictionary<string, CloudFile> _fileIndex;
+    private readonly SemaphoreSlim[] _mutationLocks = Enumerable.Range(0, MutationLockStripeCount)
+        .Select(_ => new SemaphoreSlim(1, 1))
+        .ToArray();
     private readonly string _basePath;
     private readonly string _metadataPath;
 
@@ -50,9 +54,28 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     public override CloudStorageProvider Provider => CloudStorageProvider.Local;
 
     /// <inheritdoc />
-    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override Task<UploadResult> UploadAsync(
+        FileUploadRequest request,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: false, expectedETag: null, cancellationToken);
+
+    public override Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: true, expectedETag, cancellationToken);
+
+    private async Task<UploadResult> UploadCoreAsync(
+        FileUploadRequest request,
+        bool conditional,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (conditional && expectedETag is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
@@ -63,6 +86,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // this upload's own processing has removed its entry.
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
+        SemaphoreSlim? mutationLock = null;
+        var mutationLockHeld = false;
 
         // Store cancellation token for potential cancellation
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
@@ -93,6 +118,24 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             }
 
             var fullPath = GetSafeFullPath(storagePath);
+
+            mutationLock = GetMutationLock(fileId);
+            await mutationLock.WaitAsync(linkedCancellationSource.Token).ConfigureAwait(false);
+            mutationLockHeld = true;
+
+            if (conditional)
+            {
+                _fileIndex.TryGetValue(fileId, out var current);
+                var preconditionMatches = expectedETag is null
+                    ? current is null
+                    : current is not null
+                      && string.Equals(current.ETag, expectedETag, StringComparison.Ordinal);
+                if (!preconditionMatches)
+                {
+                    throw new InvalidOperationException(
+                        $"The object '{fileId}' changed before the conditional upload could commit.");
+                }
+            }
 
             // Ensure directory exists
             var directory = Path.GetDirectoryName(fullPath);
@@ -156,6 +199,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
+                ETag = uploadId,
                 Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };
@@ -245,6 +289,11 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
         finally
         {
+            if (mutationLockHeld)
+            {
+                mutationLock!.Release();
+            }
+
             // Clean up cancellation token
             UploadCancellationTokens.TryRemove(uploadId, out _);
             DeferredDisposal.Dispose(linkedCancellationSource);
@@ -277,10 +326,28 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
-        if (!_fileIndex.TryRemove(fileId, out var cloudFile))
+        var mutationLock = GetMutationLock(fileId);
+        await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return false;
+            if (!_fileIndex.TryRemove(fileId, out var cloudFile))
+            {
+                return false;
+            }
+
+            return await DeleteRemovedFileAsync(fileId, cloudFile, cancellationToken).ConfigureAwait(false);
         }
+        finally
+        {
+            mutationLock.Release();
+        }
+    }
+
+    private async Task<bool> DeleteRemovedFileAsync(
+        string fileId,
+        CloudFile cloudFile,
+        CancellationToken cancellationToken)
+    {
 
         var fullPath = GetSafeFullPath(cloudFile.StoragePath);
         var metadataFile = GetMetadataFilePath(fileId);
@@ -320,8 +387,36 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         {
             FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
             // Re-add to index since deletion failed
-            _fileIndex[fileId] = cloudFile;
+            _ = _fileIndex.TryAdd(fileId, cloudFile);
             return false;
+        }
+    }
+
+    public override async Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+
+        var mutationLock = GetMutationLock(fileId);
+        await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_fileIndex.TryGetValue(fileId, out var current)
+                || !string.Equals(current.ETag, expectedETag, StringComparison.Ordinal)
+                || !((ICollection<KeyValuePair<string, CloudFile>>)_fileIndex)
+                    .Remove(new KeyValuePair<string, CloudFile>(fileId, current)))
+            {
+                return false;
+            }
+
+            return await DeleteRemovedFileAsync(fileId, current, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            mutationLock.Release();
         }
     }
 
@@ -416,13 +511,17 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             .Where(f => f.ExpiresAt.HasValue && f.ExpiresAt.Value <= now)
             .ToList();
 
-        // Not a `.Where(...).Count()`: DeleteAsync is an awaited side-effecting deletion
+        // Not a `.Where(...).Count()`: DeleteIfMatchAsync is an awaited side-effecting deletion
         // attempted for every expired file, not a pure predicate, so every element must still
         // be visited regardless of its outcome; only the counting is conditional.
         var cleanedCount = 0;
         foreach (var file in expiredFiles)
         {
-            cleanedCount += await DeleteAsync(file.FileId, cancellationToken).ConfigureAwait(false) ? 1 : 0;
+            if (!string.IsNullOrWhiteSpace(file.ETag))
+            {
+                cleanedCount += await DeleteIfMatchAsync(file.FileId, file.ETag, cancellationToken)
+                    .ConfigureAwait(false) ? 1 : 0;
+            }
         }
 
         if (cleanedCount > 0)
@@ -466,6 +565,18 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 var cloudFile = JsonSerializer.Deserialize(json, FileStorageJsonContext.Default.CloudFile);
                 if (cloudFile is not null)
                 {
+                    // Metadata written before generation validators were introduced has no
+                    // ETag. Give that on-disk generation a stable legacy validator at startup
+                    // so expiry cleanup can remain conditional instead of either leaking it
+                    // forever or risking deletion of a later replacement.
+                    if (string.IsNullOrWhiteSpace(cloudFile.ETag))
+                    {
+                        cloudFile = cloudFile with
+                        {
+                            ETag = $"legacy-{cloudFile.UploadedAt.UtcDateTime.Ticks:x16}-{cloudFile.SizeBytes:x16}",
+                        };
+                    }
+
                     _fileIndex[cloudFile.FileId] = cloudFile;
 
                     // Rebuild batch index
@@ -542,6 +653,12 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
     private static string GenerateFileId() =>
         Guid.NewGuid().ToString("N");
+
+    private SemaphoreSlim GetMutationLock(string fileId)
+    {
+        var hash = (uint)StringComparer.Ordinal.GetHashCode(fileId);
+        return _mutationLocks[(int)(hash % MutationLockStripeCount)];
+    }
 
     private static string BuildStoragePath(string fileId, string fileName, string? folder)
     {

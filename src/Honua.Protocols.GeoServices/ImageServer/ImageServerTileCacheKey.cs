@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Tiles;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -13,8 +14,8 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 /// Builds the durable cloud tile-cache object key for an ImageServer WMTS tile. The key is
 /// partitioned by every dimension that changes the rendered bytes so two requests that differ in
 /// any of them can never collide: the tile matrix set (gridset), style, output format, time,
-/// tenant/auth identity, and the layer identity (layer id plus the participating raster set and
-/// metadata graph revision).
+/// tenant/auth identity, and the layer identity (publication scope, layer id, participating raster
+/// set, and metadata graph revision).
 /// </summary>
 internal static class ImageServerTileCacheKey
 {
@@ -24,6 +25,7 @@ internal static class ImageServerTileCacheKey
     internal static string Build(
         CloudStorageOptions? storageOptions,
         string metadataEtag,
+        string publicationId,
         int layerId,
         string tileMatrixSetId,
         string styleId,
@@ -48,6 +50,7 @@ internal static class ImageServerTileCacheKey
         var behaviorHash = GeoServicesCloudTileCache.Hash(string.Join(
             '|',
             metadataEtag,
+            publicationId,
             layerId.ToString(CultureInfo.InvariantCulture),
             tileMatrixSetId,
             styleId,
@@ -59,12 +62,14 @@ internal static class ImageServerTileCacheKey
             rasterFormat.ToString(),
             BuildWindowKey(window)));
 
-        // The matrix set and style are also explicit path segments (not only hashed) so cache
-        // objects stay human-navigable and structurally isolated per gridset/style.
+        // Publication scope, matrix set, and style are also explicit path segments (not only
+        // behavior-hashed) so lifecycle operations can target one service publication safely.
         return GeoServicesCloudTileCache.BuildObjectKey(
             storageOptions,
             "imageserver",
             "tiles",
+            "v2",
+            TileCachePublicationScope.Create(publicationId),
             layerId.ToString(CultureInfo.InvariantCulture),
             tileMatrixSetId,
             styleId,

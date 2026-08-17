@@ -71,11 +71,13 @@ internal sealed partial class RedisTileCacheGenerationCheckpointStore : ITileCac
         }
         catch (JsonException ex)
         {
-            // A malformed payload is unrecoverable resume state; drop it and start clean rather
-            // than surfacing a parse error into the seed loop.
-            Log.CorruptCheckpointDropped(_logger, generationId, ex);
-            await _redis.GetDatabase().KeyDeleteAsync(BuildKey(generationId)).ConfigureAwait(false);
-            return null;
+            // Preserve malformed state and fail the read. Seed/warm callers intentionally wrap
+            // loads in their best-effort adapter, while destructive delete callers must fail
+            // closed rather than erase unknown reservation accounting and restart their budget.
+            Log.CorruptCheckpointReadFailed(_logger, generationId, ex);
+            throw new InvalidDataException(
+                $"Tile-cache checkpoint '{generationId}' is corrupt and cannot be resumed safely.",
+                ex);
         }
     }
 
@@ -93,7 +95,7 @@ internal sealed partial class RedisTileCacheGenerationCheckpointStore : ITileCac
     private static partial class Log
     {
         [LoggerMessage(9230, LogLevel.Warning,
-            "Dropped a corrupt tile-cache generation checkpoint for generation {GenerationId}.")]
-        public static partial void CorruptCheckpointDropped(ILogger logger, string generationId, Exception exception);
+            "Could not read corrupt tile-cache generation checkpoint for generation {GenerationId}.")]
+        public static partial void CorruptCheckpointReadFailed(ILogger logger, string generationId, Exception exception);
     }
 }

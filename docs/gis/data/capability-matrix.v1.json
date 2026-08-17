@@ -28,10 +28,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 369,
-      "provingTestCount": 1006,
+      "entryCount": 370,
+      "provingTestCount": 1009,
       "maturity": {
-        "implemented": 369
+        "implemented": 370
       },
       "noSurface": null,
       "cite": [],

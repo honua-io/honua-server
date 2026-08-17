@@ -7,10 +7,12 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -39,14 +41,53 @@ public sealed class TileCacheJobServiceTests
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend> backends,
         TileCacheBatchOptions options,
-        IJobQueue? jobQueue = null)
+        IJobQueue? jobQueue = null,
+        IMetadataV2GraphProvider? graphProvider = null)
         => new(
             jobStore,
             progressStore,
             backends,
             new StaticOptionsMonitor<TileCacheBatchOptions>(options),
+            graphProvider ?? Substitute.For<IMetadataV2GraphProvider>(),
             NullLogger<TileCacheJobService>.Instance,
             jobQueue);
+
+    [UnitTest]
+    public async Task SubmitAsync_ServiceAndStorageLayerAliases_SharePartition()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "resource")
+            .AddStorageBinding("binding", "resource", "features", storageLayerId: 42)
+            .AddService("service", "service")
+            .AddPublication("publication", "service", "resource", layerIndex: 7, storageBindingId: "binding")
+            .Build();
+        var graphProvider = new TestMetadataV2GraphProvider(graph);
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var service = CreateService(jobStore, progressStore, [backend], options, graphProvider: graphProvider);
+
+        var byService = await service.SubmitAsync(new TileOperationStartRequest
+        {
+            Operation = "seed",
+            ServiceId = "service",
+            TileMatrixSetId = "Web/MercatorQuad",
+            Style = "a/b"
+        }, schemaName: null);
+        var byLayer = await service.SubmitAsync(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 42,
+            TileMatrixSetId = "Web_MercatorQuad",
+            Style = "a_b"
+        }, schemaName: null);
+
+        var servicePartition = (await jobStore.GetAsync(byService))!.Concurrency!.PartitionKey;
+        var layerPartition = (await jobStore.GetAsync(byLayer))!.Concurrency!.PartitionKey;
+        servicePartition.Should().Be("tilecache:layers:web_mercatorquad:a_b");
+        layerPartition.Should().Be(servicePartition);
+    }
 
     [UnitTest]
     public async Task SubmitAsync_LocalBackend_CreatesQueuedJobAndEnqueues()
@@ -59,7 +100,10 @@ public sealed class TileCacheJobServiceTests
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
 
-        var jobId = await service.SubmitAsync(SeedRequest(), schemaName: null);
+        var jobId = await service.SubmitAsync(
+            SeedRequest(),
+            schemaName: null,
+            tenantScope: "public");
 
         jobId.Should().StartWith("tile-");
         var record = await jobStore.GetAsync(jobId);
@@ -67,12 +111,36 @@ public sealed class TileCacheJobServiceTests
         record!.Status.Should().Be(ExecutionJobStatus.Queued);
         record.Spec.Kind.Should().Be(ExecutionJobKind.TileCache);
         record.Spec.Backend.Should().Be(LocalBatchComputeBackend.BackendId);
+        record.Spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("public");
 
         await jobQueue.Received(1).EnqueueAsync(jobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
 
         var progress = await progressStore.GetProgressAsync<TileOperationProgress>(jobId);
         progress.Should().NotBeNull();
         progress!.Operation.Should().Be("seed");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_NormalizesOperationBeforeDurableDispatch()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var service = CreateService(jobStore, progressStore, [backend], options);
+
+        var jobId = await service.SubmitAsync(SeedRequest() with
+        {
+            Operation = " DELETE ",
+            TileMatrixSetId = " WebMercatorQuad ",
+            Style = " default ",
+        }, schemaName: null);
+
+        var record = (await jobStore.GetAsync(jobId))!;
+        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("delete");
+        var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
+        progress.Operation.Should().Be("delete");
+        progress.TileMatrixSetId.Should().Be("WebMercatorQuad");
     }
 
     [UnitTest]

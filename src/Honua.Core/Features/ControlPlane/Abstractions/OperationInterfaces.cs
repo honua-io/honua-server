@@ -214,6 +214,25 @@ public interface IExecutionJobStore : IOperationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically persists the execution job record only when both its version and the specified
+    /// distributed lease owner still match. Stores that cannot provide a single atomic operation
+    /// fail closed.
+    /// </summary>
+    /// <param name="job">Execution job record with the expected version.</param>
+    /// <param name="leaseOperationId">Operation identifier used to derive the lease key.</param>
+    /// <param name="leaseOwnerId">Expected current lease owner.</param>
+    /// <param name="ttl">Optional retention period.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when updated while the lease was owned; otherwise false.</returns>
+    Task<bool> TrySetIfLeaseOwnedAsync(
+        ExecutionJobRecord job,
+        string leaseOperationId,
+        string leaseOwnerId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    /// <summary>
     /// Queries durable execution jobs with cursor pagination.
     /// </summary>
     /// <param name="query">Filter and cursor criteria.</param>
