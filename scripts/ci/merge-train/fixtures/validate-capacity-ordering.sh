@@ -316,6 +316,45 @@ run_guard 704 'Server Tests (Core)'
   || fail "the guard broke the filter's purpose: a failure trunk already has was not subtracted"
 pass "control: a genuine pre-existing failure is still subtracted and merged through"
 
+# --- 6b. evidence reads stay linear on a real multi-MB job log --------------
+# `[[ -n "${text//[[:space:]]/}" ]]` is QUADRATIC in bash: measured on this exact
+# log shape at 84 KB 0.14s, 170 KB 0.56s, 342 KB 2.1s, 686 KB 8.4s. Real shard
+# logs are multi-MB (job 95149717187 was 47298 lines), and the guard performs one
+# read per failing job on every classification pass, so the idiom cost MINUTES of
+# pure CPU per pass. train_has_content stops at the first non-whitespace byte.
+big="${work}/big.log"
+awk 'BEGIN { for (i = 1; i <= 14000; i++) printf "2026-08-16T10:%02d:%02dZ  Passed Honua.Server.Tests.Suite%d.Method_Returns_Ok [%d ms]\n", i % 60, (i * 7) % 60, i, i }' >"${big}"
+big_bytes="$(wc -c <"${big}")"
+[[ "${big_bytes}" -ge 1000000 ]] \
+  || fail "the large-log fixture is only ${big_bytes} bytes; it no longer exercises the hazard"
+(
+  # Subshell: exercise the REAL read path (the injected reader short-circuits
+  # before the emptiness check) without leaking the stubs into later sections.
+  unset TRAIN_JOB_LOG_READER
+  gh() { cat "${big}"; }
+  start_ns="$(date +%s%N)"
+  text="$(train_read_job_log 9999)" || fail "a ${big_bytes}-byte job log was reported unreadable"
+  elapsed_ms=$(( ( $(date +%s%N) - start_ns ) / 1000000 ))
+  [[ "${#text}" -ge $(( big_bytes - 16 )) ]] || fail "the large job log came back truncated"
+  [[ "${elapsed_ms}" -lt 2000 ]] \
+    || fail "reading a ${big_bytes}-byte job log took ${elapsed_ms}ms (>2s); the emptiness check is quadratic again"
+  # Worst case for the linear form: an all-whitespace buffer must be scanned to
+  # the end, and must still be reported blank.
+  blank="$(awk 'BEGIN { for (i = 0; i < 40000; i++) printf "     \t\n" }')"
+  start_ns="$(date +%s%N)"
+  train_has_content "${blank}" && fail "a whitespace-only buffer was reported as content"
+  elapsed_ms=$(( ( $(date +%s%N) - start_ns ) / 1000000 ))
+  [[ "${elapsed_ms}" -lt 2000 ]] \
+    || fail "scanning a ${#blank}-byte whitespace-only buffer took ${elapsed_ms}ms (>2s)"
+) || exit 1
+train_has_content 'x' || fail "train_has_content rejected real content"
+train_has_content '' && fail "train_has_content accepted an empty string"
+train_has_content "$(printf ' \t\n ')" && fail "train_has_content accepted whitespace only"
+# Comment lines (the helper documents the idiom it replaces) are not code.
+grep -rn '//\[\[:space:\]\]/' "${TRAIN_DIR}"/*.sh | grep -v ':[0-9]*:[[:space:]]*#' \
+  && fail "the quadratic whitespace-substitution idiom is back in a merge-train script"
+pass "job-log reads stay linear on a >1MB log and whitespace-only buffers"
+
 # --- 7. the orchestrator really runs the guard FIRST -------------------------
 # A correct classifier that runs too late is the whole bug, so assert the order
 # structurally in train.sh rather than trusting the comment.

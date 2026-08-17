@@ -115,6 +115,21 @@ train_log()  { _train_emit INFO "$*"; }
 train_warn() { _train_emit WARN "$*"; }
 train_err()  { _train_emit ERROR "$*"; }
 
+# train_has_content <text>: 0 when the text holds at least one non-whitespace
+# character; 1 when it is empty or whitespace-only.
+#
+# ALWAYS use this instead of `[[ -n "${text//[[:space:]]/}" ]]`. Bash's pattern
+# substitution builds a new string one match at a time and is QUADRATIC in the
+# input, which is invisible on a job-name list and ruinous on a job log. Measured
+# on a realistic shard log (timestamped test lines): 84 KB 0.14s, 170 KB 0.56s,
+# 342 KB 2.1s, 686 KB 8.4s — ~4x per doubling, so a real multi-MB 47k-line shard
+# log costs MINUTES of pure CPU per emptiness check. The merge train performs one
+# of these per failing job on every classification pass. The regex form stops at
+# the first non-whitespace byte and measured 3-9ms across that whole range.
+train_has_content() {
+  [[ "$1" =~ [^[:space:]] ]]
+}
+
 # train_read_job_log <job-id>: read one completed Actions job log without
 # depending on the parent workflow having finished publishing its aggregate
 # log archive. `gh run view --job --log` can remain unavailable for minutes
@@ -130,13 +145,13 @@ train_read_job_log() {
     return
   fi
   if text="$(gh api "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/jobs/${job_id}/logs" 2>/dev/null)" \
-    && [[ -n "${text//[[:space:]]/}" ]]; then
+    && train_has_content "${text}"; then
     printf '%s\n' "${text}"
     return 0
   fi
   if text="$(gh run view --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" \
       --job "${job_id}" --log 2>/dev/null)" \
-    && [[ -n "${text//[[:space:]]/}" ]]; then
+    && train_has_content "${text}"; then
     printf '%s\n' "${text}"
     return 0
   fi

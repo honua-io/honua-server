@@ -293,7 +293,7 @@ train_attribute_probe_gate() {
   local prev_run_id="${TRAIN_RUN_ID_FILE}"
   local pr
   for pr in "${suspects[@]}"; do
-    [[ -z "${pr//[[:space:]]/}" ]] && continue
+    train_has_content "${pr}" || continue
     probe_prs+=("${pr}")
   done
   if [[ "${#probe_prs[@]}" -eq 0 ]]; then
@@ -897,7 +897,7 @@ main() {
     # shard succeeded. A cancelled/timed-out allowlisted job has no evidence,
     # so restore it to the classifier input even if its name is allowlisted.
     failing="$(printf '%s\n%s\n' "${failing}" "${retry_terminal}" | sed '/^$/d' | sort -u)"
-    if [[ -z "${failing//[${HONUA_NL}${HONUA_TAB} ]/}" ]]; then
+    if ! train_has_content "${failing}"; then
       if [[ "${nonblocking_only}" == "1" ]]; then
         train_early_failure_record_classification "${run_id}" nonblocking true false || true
         train_metric_set nonblocking_passes 1
@@ -972,7 +972,7 @@ main() {
     # batch-introduced failures for flake/autofix/attribute.
     _write_state "${batch}" "${trunk_sha}" "${included}" "preexisting-filter" "${run_id}" "${fwdfix}" "${flake_reruns}"
     local introduced rc_pe=0
-    if [[ -n "${retry_terminal//[${HONUA_NL}${HONUA_TAB} ]/}" || "${shard_terminal}" == "1" ]]; then
+    if train_has_content "${retry_terminal}" || [[ "${shard_terminal}" == "1" ]]; then
       # A missing result, or a shard that ran out of time mid-run, cannot be
       # proven equivalent to a trunk failure by job name or log signature.
       # Require the bounded rerun before any optimistic pre-existing-failure
