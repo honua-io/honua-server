@@ -12,8 +12,17 @@ namespace Honua.Server.Features.Admin.TileOperations;
 /// </summary>
 /// <param name="Scanned">The number of cache entries the index held at the start of the sweep.</param>
 /// <param name="Evicted">The number of tiles deleted from the cache store and index.</param>
-/// <param name="Enabled">Whether eviction was enabled and a live index was available for this sweep.</param>
-public readonly record struct TileCacheEvictionResult(int Scanned, int Evicted, bool Enabled);
+/// <param name="Enabled">Whether eviction is configured on with a live index implementation.</param>
+/// <param name="IndexAvailable">
+/// Whether the backing index could actually be read. A disabled evictor and an unreadable index
+/// both evict nothing, but only the second is a fault, so they are reported separately instead of
+/// collapsing a Redis outage into "eviction is disabled".
+/// </param>
+public readonly record struct TileCacheEvictionResult(
+    int Scanned,
+    int Evicted,
+    bool Enabled,
+    bool IndexAvailable = true);
 
 /// <summary>
 /// Drives a single size-quota / LRU eviction pass over the live Redis tile-key index (#1917).
@@ -65,7 +74,9 @@ internal sealed partial class TileCacheEvictionService(
         {
             if (!page.IsAvailable)
             {
-                return new TileCacheEvictionResult(0, 0, Enabled: false);
+                // Fail closed and say so: evict nothing, and report the index fault distinctly
+                // from a deliberately disabled evictor.
+                return new TileCacheEvictionResult(0, 0, Enabled: true, IndexAvailable: false);
             }
 
             totalEntries += page.Entries.Count;

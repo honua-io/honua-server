@@ -116,6 +116,30 @@ public sealed class TileCacheEvictionServiceTests
     }
 
     [UnitTest]
+    public async Task SweepAsync_WhenIndexIsUnavailable_ReportsIndexFaultAndEvictsNothing()
+    {
+        // A Redis outage must not be reported the same way as a deliberately disabled evictor:
+        // both evict nothing, but only one is a fault the operator has to act on.
+        var index = new FakeTileCacheKeyIndex(enabled: true) { SnapshotAvailable = false };
+        index.Seed(new TileCacheEntry("oldest", 100, DateTimeOffset.UtcNow.AddMinutes(-30)));
+        var storage = Substitute.For<ICloudFileStorage>();
+        var service = CreateService(
+            index,
+            new TileCacheEvictionOptions { Enabled = true, MaxBytes = 1 },
+            storage);
+
+        var result = await service.SweepAsync(CancellationToken.None);
+
+        result.Enabled.Should().BeTrue();
+        result.IndexAvailable.Should().BeFalse();
+        result.Evicted.Should().Be(0);
+        index.Removed.Should().BeEmpty();
+        await storage.DidNotReceive()
+            .DeleteIfMatchAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task SweepAsync_AtExactlyTheEntryQuota_EvictsNothing()
     {
         // Pins the quota comparison at the boundary: MaxEntries is an inclusive ceiling, so a
@@ -249,6 +273,8 @@ public sealed class TileCacheEvictionServiceTests
 
         public bool RejectCurrent { get; init; }
 
+        public bool SnapshotAvailable { get; init; } = true;
+
         public void Seed(TileCacheEntry entry) => _entries.Add(entry);
 
         public Task RecordAccessAsync(
@@ -275,6 +301,10 @@ public sealed class TileCacheEvictionServiceTests
 
         public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileCacheEntry>>([.. _entries]);
+
+        public Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new TileCacheIndexSnapshot([.. _entries], SnapshotAvailable));
 
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
         {

@@ -68,6 +68,57 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_UnscopedRequest_FailsInTheExecutionCoreWithoutTouchingStorage()
+    {
+        // The endpoint validator rejects this shape, but the execution core is also reached by the
+        // durable TileCacheJobExecutor, which reconstructs the request from job parameters. Without
+        // its own guard an unscoped window would select every tracked tile in the tenant.
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        index.Seed(OtherLayerKey, 100);
+        var storage = CreateStorage();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Failed);
+        result.ErrorMessage.Should().Contain("layerId");
+        index.Removed.Should().BeEmpty();
+        index.Remaining.Should().BeEquivalentTo([InBoundKey, OtherLayerKey]);
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await storage.DidNotReceive()
+            .DeleteIfMatchAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Expire_UnscopedRequest_FailsWithoutMarkingAnyEntry()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var storage = CreateStorage();
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "expire",
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Failed);
+        index.Expired.Should().BeEmpty();
+        index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
     public async Task Delete_TenantScopedWindow_DoesNotRemoveAnotherTenantsTiles()
     {
         const string tenantAKey = "prefix/imageserver/tiles/1/webmercatorquad/default/tenant-a/2/1/1.png";

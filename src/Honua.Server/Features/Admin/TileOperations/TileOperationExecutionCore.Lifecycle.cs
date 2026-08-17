@@ -40,6 +40,22 @@ internal sealed partial class TileOperationExecutionCore
             throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
         }
 
+        // Refuse an unscoped destructive window here, not only at the HTTP validator. This is the
+        // one place every expire/delete arrives (in-process worker and durable TileCacheJobExecutor
+        // alike), and a request with no layer and no service would otherwise select every tracked
+        // tile in the tenant.
+        if (!request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
+        {
+            return progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage =
+                    "Expire/delete operations require either 'layerId' or 'serviceId'; an unscoped window would match every tracked tile.",
+                CurrentPhase = "Failed"
+            };
+        }
+
         // Expire keeps the HTTP-layer invalidation the invalidate/purge operations perform so
         // cached responses at the edge are dropped alongside the storage-layer staleness marking.
         if (!deleteBytes)
@@ -479,7 +495,6 @@ internal sealed partial class TileOperationExecutionCore
         private readonly HashSet<int> _layers;
         private readonly HashSet<string> _publicationScopes;
         private readonly bool _serviceScoped;
-        private readonly bool _anyLayer;
         private readonly string _gridset;
         private readonly string _style;
         private readonly string? _format;
@@ -496,7 +511,6 @@ internal sealed partial class TileOperationExecutionCore
             HashSet<int> layers,
             HashSet<string> publicationScopes,
             bool serviceScoped,
-            bool anyLayer,
             string gridset,
             string style,
             string? format,
@@ -512,7 +526,6 @@ internal sealed partial class TileOperationExecutionCore
             _layers = layers;
             _publicationScopes = publicationScopes;
             _serviceScoped = serviceScoped;
-            _anyLayer = anyLayer;
             _gridset = gridset;
             _style = style;
             _format = format;
@@ -532,16 +545,13 @@ internal sealed partial class TileOperationExecutionCore
             TileLimits tileLimits,
             string? tenantScope)
         {
-            // An unscoped internal request may target every layer. A named service that does not
-            // resolve must instead match nothing; treating its empty layer set as "all layers"
-            // would turn a misspelled service id into a deployment-wide lifecycle operation.
+            // There is deliberately no "every layer" mode. An empty layer set matches nothing, so
+            // a misspelled service id, a service with no publications, or a blank/whitespace target
+            // all fail closed instead of widening into a deployment-wide lifecycle operation.
             var layers = new HashSet<int>(target.LayerIds);
             var publicationScopes = target.PublicationIds
                 .Select(TileCachePublicationScope.Create)
                 .ToHashSet(StringComparer.Ordinal);
-            var anyLayer = layers.Count == 0
-                && string.IsNullOrWhiteSpace(request.ServiceId)
-                && !request.LayerId.HasValue;
 
             var gridset = GeneratedTileCacheKey.Sanitize(string.IsNullOrWhiteSpace(request.TileMatrixSetId) ? "WebMercatorQuad" : request.TileMatrixSetId);
             var style = GeneratedTileCacheKey.Sanitize(string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style);
@@ -562,7 +572,6 @@ internal sealed partial class TileOperationExecutionCore
                 layers,
                 publicationScopes,
                 target.IsServiceScoped,
-                anyLayer,
                 gridset,
                 style,
                 format,
@@ -597,7 +606,6 @@ internal sealed partial class TileOperationExecutionCore
             AppendScopeComponent(scope, generationId.Trim());
             AppendScopeComponent(scope, operation);
             AppendScopeComponent(scope, _tenantScope);
-            AppendScopeComponent(scope, _anyLayer ? "all" : "selected");
             foreach (var layerId in _layers.Order())
             {
                 AppendScopeComponent(scope, layerId.ToString(CultureInfo.InvariantCulture));
@@ -643,7 +651,7 @@ internal sealed partial class TileOperationExecutionCore
                 return false;
             }
 
-            if (!_anyLayer && !_layers.Contains(parsed.LayerId))
+            if (!_layers.Contains(parsed.LayerId))
             {
                 return false;
             }

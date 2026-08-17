@@ -163,6 +163,14 @@ internal static class TileOperationsEndpoints
         CancellationToken cancellationToken)
     {
         var result = await evictionService.SweepAsync(cancellationToken).ConfigureAwait(false);
+        if (result.Enabled && !result.IndexAvailable)
+        {
+            return Results.Problem(
+                title: "Tile cache index unavailable",
+                detail: "The tile-cache eviction sweep could not read its backing index; no tiles were evicted.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
         var response = new TileCacheEvictionResponse
         {
             Enabled = result.Enabled,
