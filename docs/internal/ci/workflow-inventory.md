@@ -31,9 +31,13 @@ verification plus trusted exact-head admission. `CI Gate` remains train-only and
 is deliberately not a per-PR required context. Nothing else in this inventory is
 a required context — the merge train selects on `mergeable`, not on
 `mergeStateStatus`, so a red advisory check does not by itself block landing.
-PR-time CodeQL comes from GitHub code scanning **default setup**
-(`dynamic/github-code-scanning/codeql`, enrolled through the org security
-configuration), not from `codeql.yml`.
+PR-time CodeQL security analysis comes from `codeql.yml`'s own
+`pull_request` lane: code-scanning **default setup is `not-configured`** for this
+repository, and every entry in `/code-scanning/analyses` carries
+`analysis_key: .github/workflows/codeql.yml:analyze`. The separate
+`dynamic/github-code-scanning/codeql` runs titled `Code Quality: PR #N` are
+GitHub **Code Quality**, a different product that publishes no security
+analysis.
 
 ## Required PR lane
 
@@ -68,6 +72,10 @@ configuration), not from `codeql.yml`.
 | `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). |
 | `release-bundle-tooling.yml` | Release Bundle Tooling | `pull_request`, `push` (trunk), `workflow_dispatch` | Verifies the deterministic, locally-runnable core of the release-bundle orchestrator (manifest generator, evidence collector, dispatch helper, suite registry). |
 | `issue-capability-check.yml` | Issue Capability Key Check | `issues` | Advisory comment when a bug/feature issue's capability key is missing or unrecognized (#2896). Never labels or fails. |
+
+`codeql.yml` also runs on a path-filtered `pull_request`; it is listed under
+*Nightly and scheduled test lanes* because the same file owns the weekly deep
+scan.
 
 ### Native-image evidence placement and measured savings (#3204)
 
@@ -151,7 +159,7 @@ anything is enforced; see `native-image-impact-routing.md`.
 | `routing-nightly.yml` | Routing Nightly (pgRouting) | weekly `schedule` (Sun 05:00 UTC), `workflow_dispatch` | `Category=Routing` with `HONUA_ROUTING_TEST=1`; `PgRoutingFixture` manages its own `pgrouting/pgrouting` Testcontainers image. |
 | `warehouse-nightly.yml` | Warehouse Providers Nightly (Creds-Gated) | weekly `schedule` (Sun 06:00 UTC), `workflow_dispatch` | Matrix over Snowflake/Redshift/Databricks/SqlServer test projects using optional repository secrets; a missing secret reads as "not configured", not "absent from CI". |
 | `sdk-server-compatibility.yml` | SDK Server Compatibility | weekly `schedule` (Mon 08:35 UTC), `workflow_dispatch` | Manifest-driven last-3-servers × last-3-SDK-sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs SDK sources from an isolated `$RUNNER_TEMP` copy and publishes `sdk-compatibility-matrix-<run-id>`. |
-| `codeql.yml` | CodeQL | weekly `schedule` (Mon 00:00 UTC), `workflow_dispatch` | Weekly **deep** scan only: full instrumented build with the `security-extended` query suite. PR/push CodeQL is provided by GitHub code scanning default setup, which analyses more languages than this C#-only lane; the duplicate `pull_request` trigger was removed rather than paying for both. |
+| `codeql.yml` | CodeQL | path-filtered `pull_request` (base `trunk`), weekly `schedule` (Mon 00:00 UTC), `workflow_dispatch` | Two lanes in one workflow, and the **only** CodeQL security analysis this repository has. On `pull_request` it uses C# `build-mode: none` extraction with the default high-precision suite to stay on the PR critical path; on the weekly schedule it performs a full instrumented build with `security-extended` to catch lower-confidence findings and dependency churn. |
 | `geoservices-import-fidelity-external.yml` | GeoServices Import Fidelity (External) | `workflow_dispatch` | External parity against live Esri services; deliberately on-demand because upstream data drifts. Enforces the correctness regression gate and the perf-parity latency gate (#1249). |
 
 ## OGC CITE / conformance
@@ -231,7 +239,7 @@ Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment
 
 #### CodeQL moved off PR path
 
-`codeql.yml` no longer triggers on `pull_request` or merge-to-trunk push. It runs on a weekly schedule. This avoids adding a slow, non-deterministic security scan to routine PR or merge cycles.
+`codeql.yml` no longer triggers on `pull_request` or merge-to-trunk push. It runs on a weekly schedule. This avoids adding a slow, non-deterministic security scan to routine PR or merge cycles. **(Superseded: a path-filtered `pull_request` lane using `build-mode: none` was later reinstated and is now the repository's only PR-time CodeQL security analysis — see the table above.)**
 
 #### PR template and validation redesigned
 

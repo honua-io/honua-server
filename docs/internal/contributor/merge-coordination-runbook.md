@@ -49,18 +49,50 @@ about what actually holds:
 | Recovery refuses to act unless the state issue still names this exact batch branch, this exact CI run id, and a recoverable phase (`ci-incomplete`, `land`, `requeue`). A train that has moved on fails it closed. | `recovery.sh:211-214` |
 | Post-land reconciliation is driven by trunk ancestry, not by the journal, and terminal recovery refuses to overwrite a land-family phase rather than clearing it. | `land.sh:119-139`, `train.sh:464,470` |
 
-**Residual risk, and why the wait is kept.** The state issue is written with a
-plain `gh issue edit --body-file` and has no compare-and-swap (`state.sh:168`),
-so two concurrent writers are last-writer-wins and an interleave can drop a
-journal entry. That cannot strand a batch — the land-family phases reconcile
-against trunk ancestry — but it is untidy, so the recovery job waits for any
-**live** train before acting. It waits only on `workflow_dispatch` runs, because
-a scheduled train is provably dry-run and waiting behind the 15-minute cadence
-would be pure delay. On expiry the job fails loudly with the state untouched,
+### Residual risk (larger than a lost journal entry)
+
+The idle wait narrows a window; it does not close one. A live train can still be
+dispatched between the wait passing and recovery finishing. **Nothing can
+double-land or merge an unreviewed head** — that is settled by the fast-forward
+push and `--match-head-commit` above — but the green rerun this workflow exists
+to rescue *can still be discarded*, because a concurrently starting train runs
+its own startup recovery over the same state:
+
+- a `ci-incomplete` batch is classified `escalate` (`train.sh:380`), which labels
+  every member `train:escalated` and clears the batch; or
+- a land-family phase is taken over by `train_restore_post_land`
+  (`land.sh:91-140`), which reconciles against trunk and reselects.
+
+Either outcome loses the rescue and needs an operator to clear the escalation
+and re-dispatch. Separately, the state issue is a plain `gh issue edit` with **no
+compare-and-swap** (`state.sh:168`), so interleaved writers are last-writer-wins.
+
+**Why not fence the train out with an early `land` phase?** Considered and
+rejected. `land` is durable land intent: `train_state_salvage` refuses to reset
+it (`state.sh:232`) and `train_recover_terminal_batch` refuses to clear it
+(`train.sh:464,470`). Writing it for a batch recovery has not yet decided to land
+— and might abandon at the wait cap — trades a rare lost rescue for exactly the
+repo-wide merge deadlock #3045 exists to prevent. Recovery-side land intent
+therefore stays where it is: written immediately before `train_land`, with
+immutable member heads and a batch SHA.
+
+**What the wait does buy.** It waits only on `workflow_dispatch` runs, because a
+scheduled train is provably dry-run and blocking on the 15-minute cadence would
+be pure delay. A failed API read counts as "busy, keep polling" rather than
+aborting the job, and on expiry the job fails loudly with the state untouched —
 so a dropped recovery is visible and rerunnable rather than silently cancelled.
 
-**Why recovery does not simply re-dispatch the train.** It is the obvious
-design, and it is not currently available: the train's own startup recovery
+**The relevance precheck comes first.** This workflow fires on *every* green
+`train/batch/*` CI run, and a live drain self-chains, so most invocations concern
+a batch the train has already moved past. The job therefore runs the read-only
+`train_recovery_active_state` guard (`recovery.sh`) before it waits at all, and
+exits with a notice when this run is not the active recoverable batch. Without
+that ordering a drain produced a string of recoveries that each burned the full
+30-minute wait and then went red.
+
+### Why recovery does not simply re-dispatch the train
+
+It is the obvious design, and it is not currently available: the train's own startup recovery
 classifies `ci-incomplete` as `escalate` (`train.sh:380`), which labels every
 member `train:escalated` and clears the batch — the opposite of landing it. The
 fact that makes landing correct ("that same CI run has since been rerun green")

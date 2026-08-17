@@ -1206,6 +1206,12 @@ assert_descriptor \
 #      resolved statically are reported as failures, never passed by default.
 # ---------------------------------------------------------------------------
 if [[ -n "${PYTHON_BIN}" ]]; then
+echo "Checking flake-hunt report contract..."
+# The nightly flake hunt reads the same shard definitions; its summarizer decides
+# what counts as a flake candidate and whether the evidence is complete enough to
+# report at all. Untested, it silently emits an empty green report.
+"${PYTHON_BIN}" scripts/ci/summarize-flaky-detection.test.py
+
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \

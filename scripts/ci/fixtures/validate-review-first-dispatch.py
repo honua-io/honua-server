@@ -32,7 +32,7 @@ def read_text(path: Path) -> str:
     traceback that took a local reproduction to diagnose (#3320, #3321).
     """
     try:
-        return read_text(path)
+        return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
         byte = error.object[error.start : error.start + 1]
         raise AssertionError(
@@ -443,29 +443,48 @@ def main() -> None:
     agents = read_text(AGENTS)
     if "pr-merge-train.yml" in agents:
         raise AssertionError("AGENTS.md must not instruct operators to wait for the deleted lander")
-    for retired in (
-        "auto-rerun-flaky.yml",
-        "ci-failure-triage.yml",
-        "server-test-shard-cache-proof.yml",
-        "server-test-transfer-benchmark.yml",
-    ):
-        if (WORKFLOW_DIR / retired).exists():
-            raise AssertionError(
-                f"{retired} was retired as unreachable; re-adding it needs a live trigger and a review"
-            )
-
-    # The inventory is only useful if it is COMPLETE. It had silently rotted to
-    # 44 of 79 workflows before anything noticed, and the tables are edited by
-    # several concurrent PRs at once, so a bad conflict resolution is the most
-    # likely way a row disappears. Assert every workflow file has a row.
-    inventory = WORKFLOW_INVENTORY.read_text(encoding="utf-8")
-    documented = set(re.findall(r"^\| `([a-z0-9._-]+\.ya?ml)`", inventory, re.MULTILINE))
+    # The inventory is only useful if it is COMPLETE and HONEST. It had silently
+    # rotted to 44 of 79 workflows before anything noticed, and the tables are
+    # edited by several concurrent PRs at once, so a bad conflict resolution is
+    # the most likely way a row disappears.
+    #
+    # Both directions are derived from the document itself rather than from a
+    # second hardcoded list here: a duplicated list is just a second thing to
+    # forget to update. Rows under "Recently retired" name workflows that must
+    # NOT exist; every other row names a workflow that must exist.
+    inventory = read_text(WORKFLOW_INVENTORY)
+    retired_section = re.search(
+        r"^## Recently retired$(?P<body>.*?)(?=^## |\Z)", inventory, re.MULTILINE | re.DOTALL
+    )
+    if not retired_section:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md must keep a '## Recently retired' section"
+        )
+    row = re.compile(r"^\| `([a-z0-9._-]+\.ya?ml)`", re.MULTILINE)
+    retired = set(row.findall(retired_section.group("body")))
+    if not retired:
+        raise AssertionError("the 'Recently retired' section lists no workflow rows")
+    documented = set(row.findall(inventory)) - retired
     present = {path.name for path in WORKFLOW_DIR.glob("*.yml")}
+
+    resurrected = sorted(retired & present)
+    if resurrected:
+        raise AssertionError(
+            "workflow-inventory.md lists these as retired but they exist in "
+            f".github/workflows/: {', '.join(resurrected)}. Re-adding one needs a live "
+            "trigger, a review, and its row moved out of 'Recently retired'."
+        )
     undocumented = sorted(present - documented)
     if undocumented:
         raise AssertionError(
             "docs/internal/ci/workflow-inventory.md is missing a row for: "
             + ", ".join(undocumented)
+        )
+    phantom = sorted(documented - present)
+    if phantom:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md documents workflows that do not "
+            f"exist: {', '.join(phantom)}. Move them to 'Recently retired' or delete the row."
         )
 
     print(f"review-first-dispatch=ok mode={pr_mode}")

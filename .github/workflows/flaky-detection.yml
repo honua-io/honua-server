@@ -16,6 +16,12 @@ name: Flaky Test Detection
 # shard's own inner budget via the shared scripts/ci/run-server-test-shard.sh,
 # and reports per shard. The window advances daily, so the whole shard set is
 # covered every ceil(shards / shard_count) days and every run finishes.
+#
+# AD-HOC MODE. The pre-shard workflow could hunt any test project (Core, DuckDB,
+# MySql, Architecture, and the Fast tier). That is preserved: dispatch with
+# `project` (and optionally `filter`) to bypass the shard plan entirely. Ad-hoc
+# mode does not append the shard runner's `Tier!=Slow&Tier!=Fast` exclusions, so
+# a Fast-tier project is reachable again.
 on:
   schedule:
     # Daily rotating flake hunt.
@@ -23,17 +29,29 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Times to re-run each selected shard (>= 2 to detect inconsistency)'
+        description: 'Times to re-run each selection (>= 2 to detect inconsistency)'
         required: false
         default: '2'
       shard_count:
-        description: 'Shards in this run window'
+        description: 'Shards in this run window (rotating mode only)'
         required: false
         default: '6'
       shards:
         description: 'Comma-separated shard names to run instead of the rotating window'
         required: false
         default: ''
+      project:
+        description: 'AD-HOC: test project (.csproj) to hunt instead of the shard plan'
+        required: false
+        default: ''
+      filter:
+        description: 'AD-HOC: VSTest filter for the project above (default: Tier=Integration)'
+        required: false
+        default: ''
+      adhoc_timeout_minutes:
+        description: 'AD-HOC: inner per-iteration budget in minutes'
+        required: false
+        default: '45'
 
 permissions:
   contents: read
@@ -58,70 +76,115 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       window: ${{ steps.plan.outputs.window }}
       iterations: ${{ steps.plan.outputs.iterations }}
+      expect_shards: ${{ steps.plan.outputs.expect_shards }}
     steps:
       - uses: actions/checkout@v7
 
       - id: plan
-        name: Choose this run's shards
+        name: Choose this run's selections
+        # Every input is normalised HERE and nowhere else: the `default:` values
+        # above are the dispatch-form affordance, and `inputs.*` is empty on a
+        # schedule, so this step is the single place that decides the effective
+        # value. Do not add a second `|| 'x'` fallback in an expression.
         env:
-          ITERATIONS: ${{ inputs.iterations || '2' }}
-          SHARD_COUNT: ${{ inputs.shard_count || '6' }}
-          EXPLICIT_SHARDS: ${{ inputs.shards || '' }}
+          IN_ITERATIONS: ${{ inputs.iterations }}
+          IN_SHARD_COUNT: ${{ inputs.shard_count }}
+          IN_SHARDS: ${{ inputs.shards }}
+          IN_PROJECT: ${{ inputs.project }}
+          IN_FILTER: ${{ inputs.filter }}
+          IN_ADHOC_TIMEOUT: ${{ inputs.adhoc_timeout_minutes }}
         run: |
           set -euo pipefail
-          iterations="${ITERATIONS}"
+          iterations="${IN_ITERATIONS}"
           [[ "${iterations}" =~ ^[0-9]+$ && "${iterations}" -ge 2 ]] || iterations=2
-          count="${SHARD_COUNT}"
+          count="${IN_SHARD_COUNT}"
           [[ "${count}" =~ ^[0-9]+$ && "${count}" -ge 1 ]] || count=6
+          adhoc_timeout="${IN_ADHOC_TIMEOUT}"
+          [[ "${adhoc_timeout}" =~ ^[0-9]+$ && "${adhoc_timeout}" -ge 1 ]] || adhoc_timeout=45
 
-          total="$(jq '.shards | length' .github/ci-shards.json)"
-          if [[ "${count}" -gt "${total}" ]]; then count="${total}"; fi
-          windows=$(( (total + count - 1) / count ))
-          # Days since the epoch: advances by exactly one every scheduled run and
-          # does not reset at a year boundary the way day-of-year would.
-          index=$(( ( $(date -u +%s) / 86400 ) % windows ))
-          offset=$(( index * count ))
-
-          if [[ -n "${EXPLICIT_SHARDS}" ]]; then
-            selected="$(jq -c --arg names "${EXPLICIT_SHARDS}" '
-              ($names | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $want
-              | [ .shards[] | select(.name as $n | $want | index($n)) ]' .github/ci-shards.json)"
-            window="explicit: ${EXPLICIT_SHARDS}"
+          if [[ -n "${IN_PROJECT}" ]]; then
+            # AD-HOC: one selection, no shard plan, no tier exclusions.
+            if [[ ! -f "${IN_PROJECT}" ]]; then
+              echo "::error::Ad-hoc project '${IN_PROJECT}' does not exist." >&2
+              exit 1
+            fi
+            adhoc_filter="${IN_FILTER}"
+            [[ -n "${adhoc_filter}" ]] || adhoc_filter='Tier=Integration'
+            matrix="$(jq -c -n \
+              --arg project "${IN_PROJECT}" \
+              --arg filter "${adhoc_filter}" \
+              --argjson iterations "${iterations}" \
+              --argjson budget "${adhoc_timeout}" '
+              {include: [{
+                shard_name: "ad-hoc",
+                suffix: "ad-hoc",
+                csproj: $project,
+                filter: $filter,
+                max_cpu_count: "",
+                exclude_slow: "false",
+                exclude_fast: "false",
+                test_timeout_minutes: $budget,
+                job_timeout_minutes: ([($budget * $iterations + 25), 350] | min)
+              }]}')"
+            window="ad-hoc: ${IN_PROJECT} [${adhoc_filter}]"
           else
-            selected="$(jq -c --argjson offset "${offset}" --argjson count "${count}" \
-              '.shards[$offset:($offset + $count)]' .github/ci-shards.json)"
-            window="rotation ${index}/${windows} (shards ${offset}..$(( offset + count - 1 )) of ${total})"
-          fi
+            total="$(jq '.shards | length' .github/ci-shards.json)"
+            if [[ "${count}" -gt "${total}" ]]; then count="${total}"; fi
+            windows=$(( (total + count - 1) / count ))
+            # Days since the epoch: advances by exactly one every scheduled run
+            # and does not reset at a year boundary the way day-of-year would.
+            index=$(( ( $(date -u +%s) / 86400 ) % windows ))
+            offset=$(( index * count ))
 
-          if [[ "$(jq 'length' <<<"${selected}")" -eq 0 ]]; then
-            echo "::error::No shard matched the requested selection." >&2
-            exit 1
-          fi
+            if [[ -n "${IN_SHARDS}" ]]; then
+              selected="$(jq -c --arg names "${IN_SHARDS}" '
+                ($names | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $want
+                | [ .shards[] | select(.name as $n | $want | index($n)) ]' .github/ci-shards.json)"
+              window="explicit: ${IN_SHARDS}"
+            else
+              selected="$(jq -c --argjson offset "${offset}" --argjson count "${count}" \
+                '.shards[$offset:($offset + $count)]' .github/ci-shards.json)"
+              window="rotation ${index}/${windows} (shards ${offset}..$(( offset + count - 1 )) of ${total})"
+            fi
 
-          matrix="$(jq -c --argjson iterations "${iterations}" '
-            {include: [ .[] | {
-              shard_name: .name,
-              suffix: .artifact_suffix,
-              csproj: (.csproj // "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"),
-              filter: .filter,
-              max_cpu_count: (.max_cpu_count // ""),
-              test_timeout_minutes: .test_timeout_minutes,
-              # Room for every iteration plus checkout, setup, restore and build.
-              # Capped because a GitHub job may not exceed 360 minutes.
-              job_timeout_minutes: ([(.test_timeout_minutes * $iterations + 25), 350] | min)
-            } ]}' <<<"${selected}")"
+            if [[ "$(jq 'length' <<<"${selected}")" -eq 0 ]]; then
+              echo "::error::No shard matched the requested selection." >&2
+              exit 1
+            fi
+
+            # `.csproj` is an EMPTY STRING on the 20 shards that target the
+            # Honua.Server.Tests monolith, not null, so jq's `//` does NOT
+            # substitute a default and `dotnet build ""` would build the whole
+            # solution. Emit "" here and let the shell default it, exactly as
+            # ci.yml's server-tests job does.
+            matrix="$(jq -c --argjson iterations "${iterations}" '
+              {include: [ .[] | {
+                shard_name: .name,
+                suffix: .artifact_suffix,
+                csproj: (.csproj // ""),
+                filter: .filter,
+                max_cpu_count: (.max_cpu_count // ""),
+                exclude_slow: "true",
+                exclude_fast: "true",
+                test_timeout_minutes: .test_timeout_minutes,
+                # Room for every iteration plus checkout, setup, restore and
+                # build. Capped because a GitHub job may not exceed 360 minutes.
+                job_timeout_minutes: ([(.test_timeout_minutes * $iterations + 25), 350] | min)
+              } ]}' <<<"${selected}")"
+          fi
 
           {
             echo "matrix=${matrix}"
             echo "window=${window}"
             echo "iterations=${iterations}"
+            echo "expect_shards=$(jq '.include | length' <<<"${matrix}")"
           } >> "${GITHUB_OUTPUT}"
 
           {
             echo "### Flake-hunt window"
             echo
             echo "- Window: \`${window}\`"
-            echo "- Iterations per shard: \`${iterations}\`"
+            echo "- Iterations per selection: \`${iterations}\`"
             echo
             jq -r '.include[] | "- `\(.shard_name)` (budget \(.test_timeout_minutes)m/iteration, job cap \(.job_timeout_minutes)m)"' <<<"${matrix}"
           } >> "${GITHUB_STEP_SUMMARY}"
@@ -152,7 +215,10 @@ jobs:
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
-      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: honua
+      PGPASSWORD: honua
     steps:
       - uses: actions/checkout@v7
 
@@ -174,37 +240,76 @@ jobs:
       - name: Restore
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: scripts/ci/dotnet-restore-retry.sh "${SHARD_CSPROJ}"
+        run: |
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          scripts/ci/dotnet-restore-retry.sh "${csproj}"
 
       - name: Build shard test project
         timeout-minutes: 25
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: dotnet build "${SHARD_CSPROJ}" --no-restore --configuration Release
+        run: |
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          dotnet build "${csproj}" --no-restore --configuration Release
 
-      - name: Re-run shard ${{ needs.plan.outputs.iterations }}x
+      - name: Re-run selection ${{ needs.plan.outputs.iterations }}x
         env:
           ITERATIONS: ${{ needs.plan.outputs.iterations }}
           SHARD_SUFFIX: ${{ matrix.suffix }}
+          SHARD_CSPROJ: ${{ matrix.csproj }}
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
           HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
-          HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_EXCLUDE_SLOW: ${{ matrix.exclude_slow }}
+          HONUA_SERVER_TEST_EXCLUDE_FAST: ${{ matrix.exclude_fast }}
           HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
           HONUA_SERVER_TEST_CONFIGURATION: Release
         run: |
           set -uo pipefail
+          export HONUA_SERVER_TEST_CSPROJ="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
           mkdir -p ./tests/TestResults
+
+          # Each iteration gets a FRESH database. PostgresFixture uses
+          # HONUA_TEST_DB_URL verbatim when it is set and never resets the
+          # external database, so residue from iteration 1 (or from an iteration
+          # the inner timeout killed mid-transaction) can make iteration 2 fail
+          # deterministically — which this workflow would then report as a flake.
+          # A per-iteration database makes each iteration an independent trial.
+          create_iteration_db() {
+            local db="$1"
+            psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE IF EXISTS ${db};"
+            if psql -tAc "SELECT 1 FROM pg_database WHERE datname='template_postgis';" -d postgres | grep -q 1; then
+              psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE ${db} TEMPLATE template_postgis;"
+            else
+              psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE ${db};"
+              psql -v ON_ERROR_STOP=1 -d "${db}" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+              psql -v ON_ERROR_STOP=1 -d "${db}" -c "CREATE EXTENSION IF NOT EXISTS postgis_raster;" || true
+            fi
+          }
+
+          usage_error=0
           for i in $(seq 1 "${ITERATIONS}"); do
             echo "::group::flake-hunt ${SHARD_SUFFIX} iteration ${i}"
-            # Continue past failures: a 1-of-2 failure is exactly the signal this
-            # workflow exists to capture, and every iteration must produce TRX.
+            db="honua_flake_${i}"
+            create_iteration_db "${db}"
+            rc=0
+            HONUA_TEST_DB_URL="Host=localhost;Port=5432;Database=${db};Username=honua;Password=honua" \
             HONUA_SERVER_TEST_LOG_NAME="flake-${SHARD_SUFFIX}__iter${i}" \
-              scripts/ci/run-server-test-shard.sh \
-              || echo "iteration ${i} reported failures (expected during a flake hunt)"
+              scripts/ci/run-server-test-shard.sh || rc=$?
+            # Exit 2 is the runner's own USAGE error (missing required env), not
+            # a test outcome. Swallowing it would silently produce zero TRX and
+            # an empty, green report — exactly the vacuity this workflow must
+            # never have.
+            if [[ "${rc}" -eq 2 ]]; then
+              echo "::error::run-server-test-shard.sh rejected iteration ${i} with a usage error (exit 2)."
+              usage_error=1
+            elif [[ "${rc}" -ne 0 ]]; then
+              echo "iteration ${i} reported failures (expected during a flake hunt; exit ${rc})"
+            fi
             echo "::endgroup::"
           done
+          exit "${usage_error}"
 
       - name: Upload shard flake evidence
         if: always()
@@ -238,21 +343,32 @@ jobs:
           merge-multiple: false
 
       - name: Summarize flake candidates
+        # The summarizer FAILS when the evidence is incomplete: a report that
+        # says "0 candidates" because no TRX was produced is worse than no
+        # report, and that is precisely how the old workflow's daily timeout
+        # went unnoticed for two weeks.
+        env:
+          WINDOW: ${{ needs.plan.outputs.window }}
+          EXPECT_SHARDS: ${{ needs.plan.outputs.expect_shards }}
+          EXPECT_ITERATIONS: ${{ needs.plan.outputs.iterations }}
         run: |
           set -euo pipefail
           mkdir -p tests/TestResults
+          rc=0
           python3 scripts/ci/summarize-flaky-detection.py \
             --results flake-evidence \
+            --expect-shards "${EXPECT_SHARDS}" \
+            --expect-iterations "${EXPECT_ITERATIONS}" \
             --output tests/TestResults/flaky-report.json \
-            --markdown tests/TestResults/flaky-report.md
+            --markdown tests/TestResults/flaky-report.md || rc=$?
           {
-            echo "_Window: ${{ needs.plan.outputs.window }}_"
-            echo
+            printf '_Window: %s_\n\n' "${WINDOW}"
             cat tests/TestResults/flaky-report.md
           } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${rc}"
 
-      # Detecting a candidate is the successful outcome, not a failure: this
-      # workflow reports, it does not gate.
+      # Detecting a candidate is the successful outcome and never fails the run;
+      # only MISSING evidence does (above).
       - name: Upload flake report
         if: always()
         uses: actions/upload-artifact@v7
