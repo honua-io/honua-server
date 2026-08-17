@@ -185,33 +185,57 @@ train_recovery_finalize() {
   train_recovery_complete_continuation done "${batch}" "${batch_sha}" "${included}" "${run_id}" "${last}" "${batch_sha}"
 }
 
-train_recover_green_batch_rerun() {
-  local run_id="$1" batch="$2" event_sha="$3" run_url="${4:-}"
+# train_recovery_active_state <run-id> <batch> <event-sha>: READ-ONLY relevance
+# check. Emits the merge-train state JSON on stdout and returns 0 when this
+# green CI run really is the active recoverable batch; returns 1 (having logged
+# the reason to stderr) otherwise. Every log helper writes to stderr, so stdout
+# carries only the state.
+#
+# Split out of train_recover_green_batch_rerun so the WORKFLOW can run the same
+# check before it does anything expensive. This job fires on EVERY green
+# `train/batch/*` CI run, and during a live drain the train self-chains, so most
+# invocations are irrelevant; making them discover that only after a 30-minute
+# idle wait turned each one into a red run. Single implementation, two callers.
+train_recovery_active_state() {
+  local run_id="$1" batch="$2" event_sha="$3"
   if [[ -z "${batch}" || "${batch}" != train/batch/* || -z "${event_sha}" ]]; then
-    train_log "recovery skipped: invalid batch event"; return 0
+    train_log "recovery skipped: invalid batch event"; return 1
   fi
   local info workflow status conclusion run_branch run_sha
   info="$(train_recovery_run_info "${run_id}" 2>/dev/null || true)"
   IFS=${HONUA_TAB} read -r workflow status conclusion run_branch run_sha <<<"${info}"
   if [[ "${workflow}" != CI || "${status}" != completed || "${conclusion}" != success \
      || "${run_branch}" != "${batch}" || "${run_sha}" != "${event_sha}" ]]; then
-    train_warn "recovery skipped: run ${run_id} is not successful CI for the supplied batch head"; return 0
+    train_warn "recovery skipped: run ${run_id} is not successful CI for the supplied batch head"; return 1
   fi
 
-  local state active_branch trunk_base phase active_run included last
+  local state active_branch phase active_run
   state="$(train_recovery_state_json)"
   jq -e '.active_batch and (.active_batch.included|type=="array")' >/dev/null 2>&1 <<<"${state}" \
-    || { train_warn "recovery skipped: merge-train state is missing or invalid"; return 0; }
+    || { train_warn "recovery skipped: merge-train state is missing or invalid"; return 1; }
+  active_branch="$(jq -r '.active_batch.branch//""' <<<"${state}")"
+  phase="$(jq -r '.active_batch.phase//""' <<<"${state}")"
+  active_run="$(jq -r '.active_batch.run_id//""' <<<"${state}")"
+  if [[ "${active_branch}" != "${batch}" || "${active_run}" != "${run_id}" \
+     || ( "${phase}" != ci-incomplete && "${phase}" != land && "${phase}" != requeue ) ]]; then
+    train_log "recovery skipped: run is not the active recoverable batch"; return 1
+  fi
+  printf '%s\n' "${state}"
+}
+
+train_recover_green_batch_rerun() {
+  local run_id="$1" batch="$2" event_sha="$3" run_url="${4:-}"
+  local state active_branch trunk_base phase active_run included last
+  # Re-run the relevance check here rather than trusting the workflow's earlier
+  # precheck: the state can change between the two, and this is the guard that
+  # keeps recovery from acting on a batch the train has moved past.
+  state="$(train_recovery_active_state "${run_id}" "${batch}" "${event_sha}")" || return 0
   active_branch="$(jq -r '.active_batch.branch//""' <<<"${state}")"
   trunk_base="$(jq -r '.active_batch.trunk_base//""' <<<"${state}")"
   phase="$(jq -r '.active_batch.phase//""' <<<"${state}")"
   active_run="$(jq -r '.active_batch.run_id//""' <<<"${state}")"
   included="$(jq -r '.active_batch.included|map(tostring)|join(",")' <<<"${state}")"
   last="$(jq -r '.last_landed_trunk//"null"' <<<"${state}")"
-  if [[ "${active_branch}" != "${batch}" || "${active_run}" != "${run_id}" \
-     || ( "${phase}" != ci-incomplete && "${phase}" != land && "${phase}" != requeue ) ]]; then
-    train_log "recovery skipped: run is not the active recoverable batch"; return 0
-  fi
 
   local remote_sha records record_prs state_prs current
   current="$(train_recovery_trunk_head 2>/dev/null || true)"

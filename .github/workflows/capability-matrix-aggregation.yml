@@ -7,7 +7,7 @@ name: Capability Matrix Aggregation
 # docs/gis/data/capability-matrix.v1.json.
 #
 # ci.yml intentionally has no per-PR pull_request trigger (to avoid storming
-# the merge train's workflow_run event with the heavy ~45-job matrix -- see
+# the merge train's workflow_run event with the heavy full CI matrix -- see
 # ci.yml's header comment). This workflow is a single dependency-light Python
 # script (no dotnet build, no services:), so it follows the same lightweight
 # pattern as openapi-drift.yml: a pull_request drift-check plus a push-to-trunk

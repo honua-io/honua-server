@@ -13,9 +13,10 @@ REVIEW_GATE = ROOT / ".github/workflows/review-gate.yml"
 REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
 EVIDENCE_LEDGER = ROOT / ".github/workflows/review-first-evidence-ledger.yml"
 PROMOTION_POLICY = ROOT / ".github/review-first-promotion.json"
-AUTO_RERUN = ROOT / ".github/workflows/auto-rerun-flaky.yml"
-FAILURE_TRIAGE = ROOT / ".github/workflows/ci-failure-triage.yml"
-PREBUILD_BENCHMARK = ROOT / ".github/workflows/server-test-prebuild-benchmark.yml"
+WORKFLOW_DIR = ROOT / ".github/workflows"
+PREBUILD_BENCHMARK = WORKFLOW_DIR / "server-test-prebuild-benchmark.yml"
+PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
+PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
@@ -59,11 +60,16 @@ def main() -> None:
     review_bridge = read_text(REVIEW_BRIDGE)
     evidence_ledger = read_text(EVIDENCE_LEDGER)
     promotion_policy = read_text(PROMOTION_POLICY)
+    # Trusted default-branch script workflows. `auto-rerun-flaky.yml` and
+    # `ci-failure-triage.yml` used to be listed here; both were retired as
+    # unreachable (their `workflow_run.event == 'pull_request'` guard can never
+    # match a `ci.yml` that has no `pull_request` trigger), and the retirement is
+    # asserted below so they cannot quietly come back.
     action_workflows = {
         REVIEW_GATE: review_gate,
-        AUTO_RERUN: read_text(AUTO_RERUN),
-        FAILURE_TRIAGE: read_text(FAILURE_TRIAGE),
         PREBUILD_BENCHMARK: read_text(PREBUILD_BENCHMARK),
+        PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
+        PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
     train_select = read_text(TRAIN_SELECT)
     train_land = read_text(TRAIN_LAND)
@@ -434,8 +440,52 @@ def main() -> None:
             raise AssertionError(
                 f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
             )
-    if "pr-merge-train.yml" in read_text(AGENTS):
+    agents = read_text(AGENTS)
+    if "pr-merge-train.yml" in agents:
         raise AssertionError("AGENTS.md must not instruct operators to wait for the deleted lander")
+    # The inventory is only useful if it is COMPLETE and HONEST. It had silently
+    # rotted to 44 of 79 workflows before anything noticed, and the tables are
+    # edited by several concurrent PRs at once, so a bad conflict resolution is
+    # the most likely way a row disappears.
+    #
+    # Both directions are derived from the document itself rather than from a
+    # second hardcoded list here: a duplicated list is just a second thing to
+    # forget to update. Rows under "Recently retired" name workflows that must
+    # NOT exist; every other row names a workflow that must exist.
+    inventory = read_text(WORKFLOW_INVENTORY)
+    retired_section = re.search(
+        r"^## Recently retired$(?P<body>.*?)(?=^## |\Z)", inventory, re.MULTILINE | re.DOTALL
+    )
+    if not retired_section:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md must keep a '## Recently retired' section"
+        )
+    row = re.compile(r"^\| `([a-z0-9._-]+\.ya?ml)`", re.MULTILINE)
+    retired = set(row.findall(retired_section.group("body")))
+    if not retired:
+        raise AssertionError("the 'Recently retired' section lists no workflow rows")
+    documented = set(row.findall(inventory)) - retired
+    present = {path.name for path in WORKFLOW_DIR.glob("*.yml")}
+
+    resurrected = sorted(retired & present)
+    if resurrected:
+        raise AssertionError(
+            "workflow-inventory.md lists these as retired but they exist in "
+            f".github/workflows/: {', '.join(resurrected)}. Re-adding one needs a live "
+            "trigger, a review, and its row moved out of 'Recently retired'."
+        )
+    undocumented = sorted(present - documented)
+    if undocumented:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md is missing a row for: "
+            + ", ".join(undocumented)
+        )
+    phantom = sorted(documented - present)
+    if phantom:
+        raise AssertionError(
+            "docs/internal/ci/workflow-inventory.md documents workflows that do not "
+            f"exist: {', '.join(phantom)}. Move them to 'Recently retired' or delete the row."
+        )
 
     print(f"review-first-dispatch=ok mode={pr_mode}")
 

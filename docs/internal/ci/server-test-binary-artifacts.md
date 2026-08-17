@@ -176,12 +176,26 @@ of `setup-dotnet-ci` and belongs in its own change rather than here.
 
 #### Hosted proof coverage
 
-`server-test-shard-cache-proof.yml` is the opt-in hosted lane for this contract.
-It still exercises the **rerun** path only (it gates its own restore steps on
-`run_attempt > 1` and does not pass the attempt-1 flags), so the attempt-1 read
-has fixture and local end-to-end coverage but no hosted proof run. That lane is
-being retired as vestigial under #3332, so it is deliberately left untouched
-here rather than extended.
+`server-test-shard-cache-proof.yml` was the opt-in hosted lane for this
+contract. It exercised the **rerun** path only (it gated its own restore steps
+on `run_attempt > 1` and never passed the attempt-1 flags), so the attempt-1
+read has fixture and local end-to-end coverage but never had a hosted proof run.
+Rather than extend a lane whose only non-dispatch trigger was a push to the
+merged `ci/2735-shard-local-rerun-cache` branch, #3332 retired it; the deterministic
+fixture `scripts/ci/validate-server-test-shard-cache.sh` remains the guard on
+the live `ci.yml` behaviour.
+
+Its recorded result stands as evidence. Hosted proof
+[run 29167891150](https://github.com/honua-io/honua-server/actions/runs/29167891150)
+used three independent jobs over the 46.4 MiB geoprocessing CLI project cache.
+Attempt 1 built all three shards in parallel; the sole writer completed in
+145.3 seconds versus 144.9 seconds for its non-writer sibling (0.27% delta).
+Two consumers then failed deliberately. Failed-only attempt 2 left the writer's
+original timestamps unchanged: the exact-hit consumer verified/unpacked the
+cache, skipped build, and completed in 51.1 seconds (64.7% faster than its cold
+attempt; 1.8 second transfer, 1.0 second integrity check, 0.8 second unpack).
+The forced-miss consumer rebuilt successfully in 148.0 seconds and saved its
+new exact key. The run completed successfully on attempt 2.
 
 ## Baseline evidence
 

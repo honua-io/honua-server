@@ -86,7 +86,7 @@ default mapping. The mapping is documented in
 | Merge to trunk  | `trunk-sanity.yml`                    | Restore and build only. Heavy integration coverage comes from PR gates plus scheduled/manual full integration runs. |
 | Full integration | `ci.yml` (schedule / workflow_dispatch / PR label `ci/full`) | Full configured `server-tests` matrix, full-CI interop/certification lanes, and the expanded Postgres compat matrix. The `&Tier!=Slow&Tier!=Fast` exclusion still applies — Slow remains nightly-only and Fast remains in the foundation lane. |
 | Nightly (slow)  | `nightly-slow-tier.yml`               | `Tier=Slow&Category=Emulator` (LocalStack S3 + Azurite + Postgres). Scale/Cloud/External slow subfamilies need additional fixtures and are tracked as separate workflows. |
-| Nightly (flake) | `flaky-detection.yml`                 | Re-runs the Integration tier 3× and emits a candidate-flake report.                                   |
+| Nightly (flake) | `flaky-detection.yml`                 | Re-runs a rotating window of shards N× each and emits a per-shard candidate-flake report.             |
 
 `server-tests` is the largest contributor and stays sharded. The shards are
 the canonical Integration-tier partition for `Honua.Server.Tests`. The
@@ -343,8 +343,15 @@ failing `capability-impact.py validate`.
 - New `Honua.TestKit.Attributes.FlakyTestAttribute(reason)` adds the trait
   `Flaky=true`. It does **not** set `Skip`. Quarantined tests still run on
   the same schedule as their tier — quarantining is a reporting concern.
-- `flaky-detection.yml` runs nightly (and on `workflow_dispatch`) and
-  re-runs the Integration tier three times against a fresh runner. Any test
+- `flaky-detection.yml` runs nightly (and on `workflow_dispatch`). It does
+  NOT re-run the whole Integration tier in one job: the declared inner budgets
+  of the `.github/ci-shards.json` shards total roughly 1,600 minutes for a
+  single pass, so that shape was cancelled at its job timeout on 13 of its last
+  14 scheduled runs and produced no report at all. It instead takes a bounded
+  rotating window of shards (default 6/night), re-runs each shard's own filter
+  under that shard's own `test_timeout_minutes` a configurable number of times
+  (default 2) against a fresh database per iteration, and covers the whole
+  shard set every `ceil(shards / shard_count)` days. Any test
   that is not 3-for-3 consistent across the runs is reported as a flake
   candidate via job summary and an `actions/upload-artifact@v7` JSON
   payload.

@@ -5,8 +5,10 @@
 Accepted. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
 land, and a dry-run-by-default workflow) is active. Automatic triggers remain
 dry-run-only; an explicit `workflow_dispatch` with `train_apply=true` and a
-`MERGE_TRAIN_TOKEN` is the only path that lands a batch. Ordinary clean PRs may
-also land through the separate serial `pr-merge-train.yml` workflow.
+`MERGE_TRAIN_TOKEN` is the only path that lands a batch. The separate serial
+`pr-merge-train.yml` lander referenced by earlier revisions of this ADR was
+deleted on 2026-07-21 (`d2afeb9d5`); `merge-train.yml` is now the sole merge
+authority and `scripts/ci/validate-single-merge-authority.sh` enforces that.
 
 ## Context
 
