@@ -24,6 +24,22 @@ PR's files absent from the default branch? -- and only candidates that fail
 that second test are reported as ``payload-missing``. The rest are reported as
 ``content-present``: worth a glance, not worth an issue.
 
+**Known limit: this detects missing FILES, not reverted EDITS.** The content
+pass tests path existence, so a PR that only *modified* existing files -- and
+whose modifications were later reverted or lost in a bad conflict resolution --
+has every path present and classifies as ``content-present``. Silence. That is
+the higher-risk case, because a lost modification is far harder to spot by eye
+than a missing file.
+
+Closing it is not a one-line change and is deliberately out of scope. A
+stranded PR's diff is computed against its own base, so on a diverged stack
+base the file list is inflated with unrelated drift (honua-server#3113 reports
+100 files for what its issue describes as a 24-file change). Blob-comparing
+those against the default branch yields dozens of "differences" that are mostly
+just the default branch moving forward. Telling "the branch lacks this PR's
+change" apart from "the branch moved past it" needs three-way logic against the
+merge base -- a different and much larger tool.
+
 Examples::
 
     # human-readable sweep of the last 250 merged PRs
@@ -174,7 +190,14 @@ def render_markdown(findings: Sequence[dict[str, Any]], default_ref: str, limit:
     missing = [f for f in findings if f["classification"] == CLASSIFICATION_PAYLOAD_MISSING]
     present = [f for f in findings if f["classification"] == CLASSIFICATION_CONTENT_PRESENT]
 
-    lines = [f"Swept the {limit} most recent merged PRs against `{default_ref}`.", ""]
+    lines = [
+        f"Swept the {limit} most recent merged PRs against `{default_ref}`.",
+        "",
+        "_Scope: this detects missing **files**, not reverted **edits**. A PR that only modified "
+        "existing files, whose changes were later reverted or lost in a conflict resolution, has "
+        "every path present and will not appear here._",
+        "",
+    ]
     if not findings:
         lines.append("No merged PR has a merge commit outside the default branch. Nothing to do.")
         return "\n".join(lines)
