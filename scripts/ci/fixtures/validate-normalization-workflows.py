@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PRODUCER = ROOT / ".github/workflows/normalize-derived-artifacts.yml"
 CONSUMER = ROOT / ".github/workflows/normalize-derived-artifacts-consumer.yml"
 ROUTER = ROOT / "scripts/ci/validate-ci-router.sh"
+MUTATION_MODULE = ROOT / "scripts/ci/normalization-mutation.js"
 CONTRACT_VALIDATOR = ROOT / "scripts/ci/validate-normalization-contract.sh"
 
 
@@ -18,11 +19,20 @@ def require(source: str, needle: str, message: str) -> None:
         raise AssertionError(message)
 
 
-def main() -> None:
-    producer = PRODUCER.read_text(encoding="utf-8")
-    consumer = CONSUMER.read_text(encoding="utf-8")
-    router = ROUTER.read_text(encoding="utf-8")
-    contract_validator = CONTRACT_VALIDATOR.read_text(encoding="utf-8")
+def consumer_steps(consumer: str) -> list[tuple[str, str]]:
+    """Split the consumer's job steps into (name, block) pairs."""
+    parts = re.split(r"(?m)^      - name: (.+)$", consumer)
+    return [(parts[index].strip(), parts[index + 1]) for index in range(1, len(parts), 2)]
+
+
+def validate(
+    producer: str,
+    consumer: str,
+    router: str,
+    contract_validator: str,
+    mutation_module: str,
+) -> str:
+    """Check the normalization security contract and return the declared mode."""
 
     require(producer, "name: Derived Artifact Normalization", "producer identity changed")
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
@@ -95,18 +105,53 @@ def main() -> None:
         raise AssertionError("untrusted producer must receive no secret or trusted event")
 
     require(consumer, 'workflows: ["Derived Artifact Normalization"]', "consumer workflow_run identity changed")
+
+    # --- mode tripwire -----------------------------------------------------
+    # A job- or step-level `env:` entry silently shadows the workflow value at
+    # runtime, so every occurrence at any indentation is counted, not just the
+    # workflow-level one.
     mode_lines = [
-        line for line in consumer.splitlines() if line.startswith("  NORMALIZATION_MODE: ")
+        line for line in consumer.splitlines()
+        if re.match(r"^\s*NORMALIZATION_MODE\s*:", line)
     ]
     if len(mode_lines) != 1:
-        raise AssertionError("normalization mode must be declared exactly once")
+        raise AssertionError(
+            f"NORMALIZATION_MODE must be declared exactly once; found {len(mode_lines)}: {mode_lines}")
+    if not mode_lines[0].startswith("  NORMALIZATION_MODE: "):
+        raise AssertionError("NORMALIZATION_MODE must be declared once at workflow level")
     mode = mode_lines[0].split(": ", 1)[1].strip()
     if mode not in {"observe", "enforce"}:
         raise AssertionError(f"normalization mode must be observe or enforce; got {mode}")
+
+    # --- credential surface -------------------------------------------------
+    # Secret lookup is case-insensitive and reachable through property, index,
+    # and whole-context JSON forms, so every shape is detected and each use must
+    # be one of the exact allowlisted expressions.
+    allowed_expressions = {
+        "secrets.NORMALIZATION_APP_ID != ''\n        && secrets.NORMALIZATION_APP_PRIVATE_KEY != ''",
+        "secrets.NORMALIZATION_APP_ID",
+        "secrets.NORMALIZATION_APP_PRIVATE_KEY",
+    }
+    expressions = re.findall(r"\$\{\{(.*?)\}\}", consumer, re.DOTALL)
+    secret_expressions = [
+        expression.strip() for expression in expressions
+        if re.search(r"secrets", expression, re.IGNORECASE)
+    ]
+    for expression in secret_expressions:
+        if expression not in allowed_expressions:
+            raise AssertionError(f"unexpected secret expression in the consumer: {expression!r}")
+    outside = re.sub(r"\$\{\{.*?\}\}", "", consumer, flags=re.DOTALL)
+    if re.search(r"secrets\s*[.\[]", outside, re.IGNORECASE) or re.search(
+            r"(?:to|from)JSON\s*\(\s*secrets", outside, re.IGNORECASE):
+        raise AssertionError("the consumer must reference secrets only inside allowlisted expressions")
+    if re.search(r"^\s+(?:actions|contents|pull-requests|statuses|issues):\s+write\s*$",
+                 consumer, re.MULTILINE):
+        raise AssertionError("consumer GITHUB_TOKEN must never gain a write permission")
+
     require(consumer, "  actions: read", "consumer needs bounded artifact read permission")
-    require(consumer, "  contents: read", "observe consumer must not have contents: write")
+    require(consumer, "  contents: read", "consumer GITHUB_TOKEN must stay read-only")
     if "statuses: write" in consumer or "createCommitStatus" in consumer:
-        raise AssertionError("candidate consumer must publish no authoritative status")
+        raise AssertionError("the consumer must publish no authoritative status")
     require(consumer, "ref: ${{ github.event.repository.default_branch }}", "consumer must check out default policy")
     require(consumer, "persist-credentials: false", "trusted checkout must not persist credentials")
     require(consumer, "scripts/ci/normalization-envelope.py validate-archive", "consumer must use trusted validation")
@@ -169,63 +214,6 @@ def main() -> None:
         raise AssertionError("consumer must reject oversized artifacts before download")
     if "actions/download-artifact" in consumer:
         raise AssertionError("trusted consumer must inspect the zip before any extraction")
-    # The workflow GITHUB_TOKEN never gains write permission. Enforcement uses a
-    # separately scoped credential referenced by the single mutation step.
-    if "contents: write" in consumer or "pull-requests: write" in consumer:
-        raise AssertionError("consumer GITHUB_TOKEN must never gain a write permission")
-    allowed_secrets = {"secrets.NORMALIZATION_TOKEN", "secrets.GITHUB_TOKEN"}
-    used_secrets = set(re.findall(r"secrets\.[A-Z0-9_]+", consumer))
-    if not used_secrets <= allowed_secrets:
-        raise AssertionError(
-            f"consumer may only use the scoped normalization credential; got {sorted(used_secrets)}")
-
-    mutation_marker = "      - name: Advance the same-repository head with validated blobs\n"
-    require(consumer, mutation_marker, "the enforce transition step is missing")
-    validation_block, mutation_block = consumer.split(mutation_marker, 1)
-    presence_input = "NORMALIZATION_CREDENTIAL_PRESENT: ${{ secrets.NORMALIZATION_TOKEN != '' }}"
-    if "secrets." in validation_block.replace(presence_input, ""):
-        raise AssertionError("envelope download, validation, and comparison must run without a secret")
-    require(
-        mutation_block,
-        "github-token: ${{ secrets.NORMALIZATION_TOKEN || secrets.GITHUB_TOKEN }}",
-        "the mutation step must use the scoped normalization credential",
-    )
-    require(consumer, "NORMALIZATION_CREDENTIAL_PRESENT: ${{ secrets.NORMALIZATION_TOKEN != '' }}",
-            "credential presence must be an explicit fail-closed input")
-    for condition in (
-        "env.NORMALIZATION_MODE == 'enforce'",
-        "steps.artifact.outputs.same_repository == 'true'",
-        "steps.compare.outputs.change_count != '0'",
-    ):
-        require(mutation_block, condition, f"the mutation step must be gated on {condition}")
-    require(
-        mutation_block,
-        "require('./scripts/ci/normalization-mutation')",
-        "mutation must use the default-branch decision module",
-    )
-    require(mutation_block, "planNormalizationMutation({", "mutation must evaluate the trusted decision")
-    require(mutation_block, "decision.action === 'fail'", "an inadmissible decision must fail the run")
-    require(mutation_block, "if (decision.action !== 'commit')", "only a commit decision may mutate")
-    decision_index = mutation_block.index("planNormalizationMutation({")
-    blob_index = mutation_block.index("github.rest.git.createBlob")
-    if blob_index < decision_index:
-        raise AssertionError("no Git object may be written before the trusted decision")
-    require(mutation_block, "base_tree: headCommit.tree.sha", "the commit must extend the exact head tree")
-    require(mutation_block, "mode: '100644', type: 'blob'", "only regular file blobs may be written")
-    require(
-        mutation_block,
-        "if (tree.sha === headCommit.tree.sha)",
-        "an identical tree must emit no commit",
-    )
-    require(mutation_block, "parents: [process.env.HEAD_SHA]",
-            "the normalization commit must be a child of the exact envelope source")
-    require(mutation_block, "if (ref.object.sha !== process.env.HEAD_SHA)",
-            "the ref update must compare-and-swap against the exact source head")
-    require(mutation_block, "force: false", "the ref update must never force")
-    if "force: true" in consumer:
-        raise AssertionError("consumer must never force-update a ref")
-    require(mutation_block, "buildNormalizationCommitMessage({",
-            "the commit must carry the auditable normalization marker")
     require(
         consumer,
         "candidate only; independent PR Gate required",
@@ -234,7 +222,79 @@ def main() -> None:
     if "github.event.pull_request.head" in consumer or "github.head_ref" in consumer:
         raise AssertionError("workflow_run consumer must not check out the PR head")
     if "git push" in consumer or "git apply" in consumer:
-        raise AssertionError("observe consumer must not mutate a branch")
+        raise AssertionError("the consumer must not mutate a branch through a shell checkout")
+
+    # --- enforce transition structure ---------------------------------------
+    steps = consumer_steps(consumer)
+    names = [name for name, _ in steps]
+    mint_name = "Mint scoped normalization credential"
+    mutation_name = "Advance the same-repository head with validated blobs"
+    for required_step in (mint_name, mutation_name):
+        if names.count(required_step) != 1:
+            raise AssertionError(f"expected exactly one '{required_step}' step")
+    if names.index(mint_name) + 1 != names.index(mutation_name):
+        raise AssertionError("the credential mint step must sit immediately before the mutation step")
+    if names.index(mutation_name) != len(names) - 1:
+        raise AssertionError("the mutation step must be the final step")
+    blocks = dict(steps)
+    mint_block = blocks[mint_name]
+    mutation_block = blocks[mutation_name]
+
+    minted_before = "".join(
+        block for name, block in steps if names.index(name) < names.index(mint_name))
+    if re.search(r"secrets", minted_before, re.IGNORECASE):
+        raise AssertionError("no step before the credential mint may reference a secret")
+    if re.search(r"secrets", mutation_block, re.IGNORECASE):
+        raise AssertionError("the mutation step must consume the minted token, never a raw secret")
+
+    mint_uses = re.search(
+        r"uses: actions/create-github-app-token@([0-9a-f]{40})\s*$", mint_block, re.MULTILINE)
+    if not mint_uses:
+        raise AssertionError("the credential mint must pin actions/create-github-app-token by commit SHA")
+    require(mint_block, "permission-contents: write", "the minted token must request Contents: write")
+    require(mint_block, "permission-pull-requests: write",
+            "the minted token must request Pull requests: write for the review re-request")
+
+    token_uses = re.findall(r"github-token: (.+)", consumer)
+    if token_uses != ["${{ steps.app-token.outputs.token }}"]:
+        raise AssertionError(f"only the mutation step may set github-token; got {token_uses}")
+
+    for gate in (
+        "env.NORMALIZATION_MODE == 'enforce'",
+        "env.NORMALIZATION_CREDENTIAL_PRESENT == 'true'",
+        "steps.artifact.outputs.same_repository == 'true'",
+        "steps.compare.outputs.change_count != '0'",
+    ):
+        for block, label in ((mint_block, "mint"), (mutation_block, "mutation")):
+            require(block, gate, f"the {label} step must be gated on {gate}")
+
+    require(
+        mutation_block,
+        "require('./scripts/ci/normalization-mutation')",
+        "mutation must use the tested default-branch module",
+    )
+    for call in ("planNormalizationMutation({", "probeNormalizationCredential({", "applyNormalizationMutation({"):
+        require(mutation_block, call, f"mutation must call {call.rstrip('({')}")
+    require(mutation_block, "decision.action === 'fail'", "an inadmissible decision must fail the run")
+    require(mutation_block, "if (decision.action !== 'commit')", "only a commit decision may mutate")
+    require(mutation_block, "allowedPaths: plan.outputs.map(output => output.path)",
+            "the admissible paths must come from the validated plan, not a second copy")
+    for inline in ("createBlob", "createTree", "createCommit", "updateRef", "updateRefs"):
+        if inline in mutation_block:
+            raise AssertionError(
+                f"Git object orchestration ({inline}) belongs in the tested module, not the workflow")
+
+    require(mutation_module, "beforeOid: sourceSha",
+            "the ref update must be a compare-and-swap against the exact source head")
+    require(mutation_module, "force: false,", "the ref update must never force")
+    if "force: true" in mutation_module or "force: true" in consumer:
+        raise AssertionError("normalization must never force-update a ref")
+    require(mutation_module, "normalization ref verification failed",
+            "the module must read the ref back after the update")
+    require(mutation_module, "parents: [sourceSha]",
+            "the normalization commit must be a child of the exact envelope source")
+    require(mutation_module, "function isNormalizationReplay",
+            "replay detection must compare the trailer with the commit parent")
 
     require(router, 'if [[ -n "${PYTHON_BIN}" ]]', "router must preserve its no-Python fallback")
     require(
@@ -248,6 +308,17 @@ def main() -> None:
         "normalization validator must accept the router's interpreter",
     )
 
+    return mode
+
+
+def main() -> None:
+    mode = validate(
+        PRODUCER.read_text(encoding="utf-8"),
+        CONSUMER.read_text(encoding="utf-8"),
+        ROUTER.read_text(encoding="utf-8"),
+        CONTRACT_VALIDATOR.read_text(encoding="utf-8"),
+        MUTATION_MODULE.read_text(encoding="utf-8"),
+    )
     print(f"normalization-workflows=ok mode={mode}")
 
 

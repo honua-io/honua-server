@@ -154,54 +154,100 @@ Enforcement is implemented in the consumer and is inert until both switches are
 set. It never checks out the PR under a write token and never promotes the
 observe-mode candidate directly:
 
-1. `NORMALIZATION_MODE` must be `enforce`. It appears exactly once in
-   `normalize-derived-artifacts-consumer.yml`;
-   `scripts/ci/fixtures/validate-normalization-workflows.py` rejects drift.
-2. A scoped `NORMALIZATION_TOKEN` App credential must exist. The workflow
-   `GITHUB_TOKEN` keeps `contents: read` in every mode, and the credential is
-   referenced only by the mutation step, so envelope download, archive
-   validation, and blob comparison never execute with a write token.
-   `NORMALIZATION_CREDENTIAL_PRESENT` is an explicit fail-closed input: enforce
-   mode without the credential refuses the mutation instead of silently
-   observing. The repository `GITHUB_TOKEN` is deliberately not an acceptable
-   substitute — a push made with it creates no `pull_request` events, so the
-   normalized head would never receive the required `PR Gate` and `Review Gate`
-   contexts.
+1. `NORMALIZATION_MODE` must be `enforce`. It appears exactly once, at workflow
+   level, in `normalize-derived-artifacts-consumer.yml`;
+   `scripts/ci/fixtures/validate-normalization-workflows.py` counts every
+   occurrence at any indentation, so a job- or step-level `env:` override that
+   would silently shadow the declared value is rejected rather than hidden.
+2. A normalization GitHub App must be provisioned as
+   `NORMALIZATION_APP_ID` + `NORMALIZATION_APP_PRIVATE_KEY`. The workflow
+   `GITHUB_TOKEN` keeps `contents: read` in every mode, and the App token is
+   minted per run by a SHA-pinned `actions/create-github-app-token` step placed
+   immediately before the mutation step, so envelope download, archive
+   validation, and blob comparison can never run with a write credential. The
+   validator allows exactly that one mint step, allowlists the exact secret
+   expressions, and rejects the index (`secrets['X']`), whole-context
+   (`toJSON(secrets)`), and lowercase spellings of a secret lookup.
 
-The mutation itself is decided by `scripts/ci/normalization-mutation.js`, a pure
+   Required App permissions (repository-scoped, this repository only):
+
+   | Permission | Level | Why |
+   |---|---|---|
+   | Contents | Read and write | create blob/tree/commit and the compare-and-swap ref update |
+   | Pull requests | Read and write | read exact-head identity, and post the review re-request |
+   | Metadata | Read | implied by the above |
+
+   Both switches are independent: `NORMALIZATION_CREDENTIAL_PRESENT` also gates
+   the mutation step's `if:`, so enforce mode with no credential provisioned is
+   a quiet no-op, not a red check on every drifting PR. Before writing anything,
+   the run probes the minted token with a `pulls.get` and a `git/refs` read and
+   fails with the missing-permission name if the App is misprovisioned.
+
+The mutation itself lives in `scripts/ci/normalization-mutation.js`, a
 default-branch module covered by `scripts/ci/normalization-mutation.test.js`
-(clean/no-op, one-file, three-file, fork, moved head, closed/draft PR, unsafe
-ref, non-allowlisted path, duplicate path, missing digest, replayed
-normalization commit, and missing credential). Only a `commit` decision may
-write, and only then are Git blobs created. The consumer then builds a tree from
-`base_tree` = the exact head tree with `100644` blob entries, emits no commit
-when the resulting tree equals the head tree, creates a child commit whose only
-parent is the envelope source SHA, re-reads the ref, and updates it non-force
-only while it still equals that SHA. A moved head is a failure, never an
-overwrite. Forks are always read-only; their drift stays enforced by `PR Gate`
-and the capability-matrix aggregation check.
+(33 cases: no-op, one-file, three-file, fork, moved head, closed/draft PR,
+unsafe ref, non-allowlisted or duplicate path, missing digest, missing
+credential, replay/squash/merge trailer handling, blob→tree→commit ordering,
+compare-and-swap rejection, ref read-back mismatch, unresolvable repository id,
+missing payload, review re-request, and credential probe). The workflow only
+decides and delegates; the validator rejects inline `createBlob`/`createTree`/
+`createCommit`/`updateRef` calls in YAML so this logic stays tested.
 
-Loop prevention is primarily tree equality: the normalized head reproduces the
-committed outputs, so the next producer/consumer pass observes an empty delta
-and stops. The `Normalization-Source-Sha:` commit trailer is the auditable
-defense in depth — a normalization commit that still produces a delta is treated
-as non-converging generation and fails closed instead of chaining a second
-commit.
+The write sequence is: create blobs for the changed paths only, build a tree
+from `base_tree` = the exact head tree with `100644` blob entries, create a
+commit whose only parent is the envelope source SHA, then advance the branch
+with the GraphQL `updateRefs` mutation using `beforeOid` = that same source SHA
+and `force: false`. `beforeOid` is a true compare-and-swap: the update applies
+only while the ref still holds exactly that commit. REST `updateRef` with
+`force: false` is deliberately not used — it only requires a fast-forward from
+whatever the ref holds at update time, so a backward force-push inside the
+window would be silently reinstated. After the swap the module re-reads the ref
+and fails loudly if it is not the new commit, and any rejection surfaces as a
+run failure rather than a retry. Forks are always read-only; their drift stays
+enforced by `PR Gate` and the capability-matrix aggregation check.
+
+The admissible paths come from the validated plan
+(`plan.outputs[].path`), which `scripts/ci/normalization-envelope.py` has
+already checked against its `OUTPUT_LIMITS` allowlist, so the mutation keeps no
+second copy of the contract; the module only backstops it with a structural
+`docs/gis/data/*.json` shape check. Two hand-maintained copies remain outside
+this path — the producer's `projections` list and
+`train_regenerate_derived_artifacts` in `scripts/ci/merge-train/train.sh` — and
+are deliberately untouched here because changing the producer recipe
+invalidates normalization evidence for every open PR head until it rebases.
+
+Loop prevention is convergence, not a marker: the normalized head reproduces the
+committed outputs, so the next producer/consumer pass computes
+`change_count == 0`, the mutation step does not run at all, and nothing is
+written. The `Normalization-Source-Sha:` trailer is audit metadata and a
+narrow replay guard — a commit is treated as a replay only when the trailer
+names its single parent, i.e. only for a commit this workflow itself created.
+A squashed, amended, cherry-picked, or merge commit that inherits the trailer
+text is not a replay and does not block later pushes. A genuine replay that
+still produces a delta means generation is not converging and fails closed
+instead of chaining a second commit.
 
 ### Ordering against review-first
 
-A normalization commit moves the head SHA and therefore invalidates exact-head
-Codex evidence, which is the intended ADR-0074 ordering: normalization runs from
-the `pull_request` producer immediately after a push, so it settles the head
-before review is requested, and `Review Gate` re-reads exact-head evidence on
-the normalized head. Enforcement never publishes a status of its own and never
-substitutes for `PR Gate`, `Review Gate`, or the merge train.
+A normalization commit moves the head SHA and therefore voids exact-head Codex
+or Claude evidence. The intended ADR-0074 ordering is normalize-then-review:
+the producer runs from the `pull_request` event immediately after a push, so the
+commit normally lands before review is requested. That ordering is a strong
+tendency, not a guarantee — the producer needs a full Release build, so a fast
+reviewer can attest to the pre-normalization head first. Enforcement therefore
+does not rely on timing: after a successful mutation the consumer posts one
+comment on the PR re-requesting review from both attesting lanes (`@codex
+review`, `@claude review`), and a failed re-request fails the run so the gap is
+visible instead of silent. Normalization publishes no status of its own and
+never substitutes for `PR Gate`, `Review Gate`, or the merge train.
 
 ## Rollback
 
 Rollback is the inverse one-value change of `NORMALIZATION_MODE` back to
-`observe`; removing the credential also disables mutation while leaving
-validation intact. Producer evidence and the independent drift gates stay
+`observe`. Removing (or never provisioning) the App credential is an equally
+valid disable: the mint and mutation steps are gated on
+`NORMALIZATION_CREDENTIAL_PRESENT`, so the consumer degrades to observation
+without failing any check. Producer evidence and the independent drift gates stay
 enabled for diagnosis. If an unexpected normalization commit occurs, put the PR
 on hold, return the mode to `observe`, retain the producer artifact/run IDs, and
 compare the envelope digests with the committed tree before resuming.

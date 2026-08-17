@@ -144,11 +144,16 @@ envelopes over 16 pull requests produced 29 independently corroborated heads,
 two byte-exact would-change candidates, and zero false positives
 (`docs/internal/ci/derived-artifact-normalization.md`). The Git-object
 compare-and-swap transition is therefore implemented and covered by fixtures,
-gated behind `NORMALIZATION_MODE: enforce` plus a scoped `NORMALIZATION_TOKEN`
-App credential. The workflow `GITHUB_TOKEN` keeps `contents: read` in every
-mode; the repository token cannot be the write credential because a push made
-with it produces no `pull_request` events and would strand the normalized head
-without its required contexts.
+gated behind `NORMALIZATION_MODE: enforce` plus a per-run GitHub App token
+minted immediately before the mutation. The workflow `GITHUB_TOKEN` keeps
+`contents: read` in every mode; the repository token cannot be the write
+credential because a push made with it produces no `pull_request` events and
+would strand the normalized head without its required contexts. The swap is the
+GraphQL `updateRefs` mutation with `beforeOid` — REST `updateRef` with
+`force: false` only guarantees a fast-forward from the ref's value at update
+time and would silently reinstate a commit dropped by a concurrent backward
+force-push. Because the commit voids exact-head review evidence, the consumer
+re-requests review from both attesting lanes as part of the mutation.
 
 Review is requested only after normalization reaches a stable head. Generated
 drift remains independently checked in `verify` and `train`; early
