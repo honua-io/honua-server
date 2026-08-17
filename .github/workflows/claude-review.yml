@@ -186,9 +186,10 @@ jobs:
               github.rest.issues.listComments,
               { ...context.repo, issue_number: number, per_page: 100 },
             );
+            const normalise = text => String(text || '').replace(/\r/g, '').trimEnd();
             if (comments.some(comment =>
               ATTESTING_LOGINS.includes(comment.user?.login) &&
-              (comment.body || '').trim() === cleanBody.trim())) {
+              normalise(comment.body) === normalise(cleanBody))) {
               return skip(`PR #${number} already carries a clean Claude attestation for ${head}.`);
             }
 
@@ -338,7 +339,8 @@ jobs:
           clean_count="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
             --jq '.[] | {login: .user.login, body: .body}' \
             | jq -s --argjson bots "${logins_json}" --arg expected "${expected}" \
-                '[.[] | select((.login as $l | $bots | index($l)) and ((.body // "") | rtrimstr("\n")) == ($expected | rtrimstr("\n")))] | length')"
+                'def norm: (. // "") | gsub("\r"; "") | sub("[[:space:]]+$"; "");
+                 [.[] | select((.login as $l | $bots | index($l)) and (.body | norm) == ($expected | norm))] | length')"
 
           verdict="$(printf '%s' "${STRUCTURED:-}" | jq -r '.verdict // "unknown"' 2>/dev/null || echo unknown)"
           echo "verdict=${verdict} clean_attestations_at_head=${clean_count}"
