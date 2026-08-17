@@ -419,3 +419,52 @@ test('an edited clean comment does not withdraw, even when other head evidence e
     ],
   }).exactCleanComment, false);
 });
+
+// --- The exact bodies `.github/workflows/claude-review.yml` posts.
+//
+// The lane's prompt reproduces these byte for byte, so a drift in either the
+// prompt or the markers above breaks a test here rather than silently
+// producing evidence the gate refuses to read. The clean COMMENT body is
+// already covered on the comment path by `claudeCleanComment` above (test
+// 'unedited Claude clean comment for exact head attests') -- it is the same
+// string; what is new below is the REVIEW path and the findings body.
+const LANE_CLEAN_BODY =
+  `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${claudeHead}\``;
+const LANE_FINDINGS_BODY =
+  `Claude Review: 2 finding(s).\n\n**Reviewed commit:** \`${claudeHead}\`\n\n` +
+  '1. src/Honua.Server/Foo.cs:12 - leaks the connection string into the problem detail.\n' +
+  '2. src/Honua.Core/Bar.cs:44 - sync-over-async `.Result` on the query path.';
+
+test('the review the Claude lane posts for a clean head attests', () => {
+  assert.equal(ev({
+    reviews: [{
+      author: { login: 'claude[bot]' },
+      body: LANE_CLEAN_BODY,
+      submittedAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+      commit: { oid: claudeHead }, state: 'COMMENTED',
+    }],
+  }).exactReview, true);
+});
+test('the findings review the Claude lane posts blocks instead of attesting', () => {
+  // REQUEST_CHANGES is a negative verdict, and the findings body must not
+  // match `cleanMarker` -- if it did, the same text could attest via a comment.
+  assert.equal(ev({
+    reviews: [{
+      author: { login: 'claude[bot]' },
+      body: LANE_FINDINGS_BODY,
+      submittedAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+      commit: { oid: claudeHead }, state: 'CHANGES_REQUESTED',
+    }],
+  }).exactReview, false);
+  assert.equal(ev({
+    cleanComments: [claudeCleanComment({ body: LANE_FINDINGS_BODY })],
+  }).exactCleanComment, false);
+});
+test('the clean sentence without the reviewed-commit line cannot attest', () => {
+  // The clean phrasing alone is not evidence: the comment path needs exactly
+  // one reviewed SHA resolving to the head, so a body that drops the
+  // `**Reviewed commit:**` line is unbound and must be refused.
+  assert.equal(ev({
+    cleanComments: [claudeCleanComment({ body: 'Claude Review: No major issues found.' })],
+  }).exactCleanComment, false);
+});
