@@ -61,6 +61,7 @@ Bound from the `Databricks` configuration section (environment variables shown w
 
 | Key | Required | Description |
 | --- | --- | --- |
+| `Experimental__Features__DatabricksProvider` | yes | **Required opt-in (#2436).** Without it the provider is never registered, and setting `Databricks__Enabled=true` throws at startup. |
 | `Databricks__Enabled` | no (default `true`) | Set `false` to compile the provider in but skip its DI registration. |
 | `Databricks__Host` | yes | Absolute HTTPS workspace URL, e.g. `https://dbc-abc123.cloud.databricks.com`. |
 | `Databricks__WarehouseId` | yes | SQL Warehouse id statements execute against. |
@@ -80,6 +81,13 @@ under `Databricks:Layers` maps a Honua layer id to a physical table:
 
 ```jsonc
 {
+  // Required opt-in (#2436). Without it the provider is never registered, and
+  // "Databricks:Enabled": true throws at startup.
+  "Experimental": {
+    "Features": {
+      "DatabricksProvider": true
+    }
+  },
   "Databricks": {
     "Host": "https://dbc-abc123.cloud.databricks.com",
     "WarehouseId": "1234567890abcdef",
