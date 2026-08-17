@@ -71,16 +71,9 @@ internal static class TileOperationMetrics
         "bytes",
         "Bytes released from the generated tile cache by bounded expire/delete jobs.");
 
-    /// <summary>Generated tile-cache serve-path hits (reserved for the serve adapters, #2661).</summary>
-    public static readonly Counter<long> CacheHits = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.hits",
-        "tiles",
-        "Number of generated tile-cache serve-path hits.");
-
-    /// <summary>Generated tile-cache serve-path misses (reserved for the serve adapters, #2661).</summary>
-    public static readonly Counter<long> CacheMisses = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.misses",
-        "tiles",
-        "Number of generated tile-cache serve-path misses.");
+    // Generated tile-cache serve-path hit/miss counters (honua.tile.cache.hits / .misses) are
+    // owned by GeoServicesCloudTileCache, the single place every generated-cache read passes
+    // through. They are deliberately not redeclared here: a counter declared beside the job
+    // metrics but never incremented from the serve path would report a permanent zero.
 }
 

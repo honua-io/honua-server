@@ -18,6 +18,7 @@ using Honua.Protocols.GeoServices;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -509,6 +510,15 @@ internal sealed class ImageServerTileHandler
     {
         if (resolvedLayer.Resource is null ||
             !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var service))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+        }
+
+        // Re-run the resolver's protocol gate against the current snapshot as well. Metadata can
+        // disable ImageServer for the owning service between endpoint resolution and this second
+        // snapshot read without changing the publication or layer bindings, and an in-flight
+        // request must not keep rendering tiles for a service that no longer exposes ImageServer.
+        if (!MetadataV2ServiceProtocols.IsProtocolEnabled(service, MetadataV2ServiceProtocols.ImageServer))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
         }

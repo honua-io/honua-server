@@ -428,6 +428,26 @@ public sealed class RedisTileCacheKeyIndexTests
                 RedisResult.Create((RedisValue)(entry.IsExplicitlyExpired ? 1 : 0))
             })).ToArray());
 
+    [Fact]
+    public async Task IsExpiredAsync_WhenRedisIsUnavailable_FailsClosed()
+    {
+        // The serve path treats the result as "may this object be served?". An unreadable
+        // lifecycle index must therefore report expired, never fall through to serving bytes an
+        // operator may already have expired.
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.SetContainsAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns<Task<bool>>(_ => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect,
+                "redis down"));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var expired = await index.IsExpiredAsync("tile-key");
+
+        expired.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

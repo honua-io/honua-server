@@ -116,6 +116,52 @@ public sealed class TileCacheEvictionServiceTests
     }
 
     [UnitTest]
+    public async Task SweepAsync_AtExactlyTheEntryQuota_EvictsNothing()
+    {
+        // Pins the quota comparison at the boundary: MaxEntries is an inclusive ceiling, so a
+        // cache sitting exactly on it is within quota. Without this, `>` and `>=` are
+        // indistinguishable to the suite and an off-by-one would silently evict a live tile.
+        var now = DateTimeOffset.UtcNow;
+        var index = new FakeTileCacheKeyIndex(enabled: true);
+        index.Seed(new TileCacheEntry("a", 10, now.AddMinutes(-3)));
+        index.Seed(new TileCacheEntry("b", 10, now.AddMinutes(-2)));
+        index.Seed(new TileCacheEntry("c", 10, now.AddMinutes(-1)));
+
+        var service = CreateService(index, eviction: new TileCacheEvictionOptions
+        {
+            Enabled = true,
+            MaxEntries = 3
+        });
+
+        var result = await service.SweepAsync(CancellationToken.None);
+
+        result.Enabled.Should().BeTrue();
+        result.Scanned.Should().Be(3);
+        result.Evicted.Should().Be(0);
+        index.Removed.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SweepAsync_AtExactlyTheByteQuota_EvictsNothing()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var index = new FakeTileCacheKeyIndex(enabled: true);
+        index.Seed(new TileCacheEntry("oldest", 100, now.AddMinutes(-30)));
+        index.Seed(new TileCacheEntry("newest", 100, now.AddMinutes(-1)));
+
+        var service = CreateService(index, eviction: new TileCacheEvictionOptions
+        {
+            Enabled = true,
+            MaxBytes = 200
+        });
+
+        var result = await service.SweepAsync(CancellationToken.None);
+
+        result.Evicted.Should().Be(0);
+        index.Removed.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task SweepAsync_WhenConditionalDeleteMissesNewerGeneration_LeavesKeyTracked()
     {
         var index = new FakeTileCacheKeyIndex(enabled: true);

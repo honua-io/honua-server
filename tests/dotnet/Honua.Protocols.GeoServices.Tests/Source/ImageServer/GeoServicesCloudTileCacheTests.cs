@@ -76,6 +76,51 @@ public sealed class GeoServicesCloudTileCacheTests
     }
 
     [UnitTest]
+    public async Task TryReadAsync_ExpiredDuringDownload_IsCacheMissAndDoesNotRecordAccess()
+    {
+        // The operator marker can be written after the pre-read check and before the download
+        // completes. Without the post-download recheck the request would serve bytes the operator
+        // has already expired and re-register them in the index.
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns(new CloudFile
+        {
+            FileId = ObjectKey,
+            FileName = "1.png",
+            StoragePath = ObjectKey,
+            ContentType = "image/png",
+            SizeBytes = 3,
+            UploadedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = expiresAt,
+            ETag = "etag-observed",
+            Provider = CloudStorageProvider.Local
+        });
+        storage.DownloadBytesAsync(ObjectKey, Arg.Any<CancellationToken>())
+            .Returns(new byte[] { 1, 2, 3 });
+        var keyIndex = Substitute.For<ITileCacheKeyIndex>();
+        keyIndex.IsEnabled.Returns(true);
+        keyIndex.IsExpiredAsync(ObjectKey, Arg.Any<CancellationToken>()).Returns(false, true);
+
+        var result = await GeoServicesCloudTileCache.TryReadAsync(
+            storage,
+            new CloudStorageOptions { Enabled = true },
+            ObjectKey,
+            CancellationToken.None,
+            keyIndex,
+            tenantScope: "tenant_a");
+
+        result.Should().BeNull();
+        await storage.Received(1).DownloadBytesAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await keyIndex.DidNotReceive().RecordAccessIfCurrentAsync(
+            Arg.Any<string>(),
+            Arg.Any<long>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task TryWriteAsync_SuccessfulRegeneration_RecordsWriteToClearExpiration()
     {
         var storage = Substitute.For<ICloudFileStorage>();
