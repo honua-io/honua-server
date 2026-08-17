@@ -1,11 +1,14 @@
 {
   "_comment": [
     "Recorded facts for the six merged PRs in honua-server#3248 plus the open-PR cases",
-    "from #3316. Every fact the classifier needs is pre-resolved here, so the tests run",
-    "with no gh call, no network and no git repository.",
+    "from #3316 and the edge cases the review of PR #3330 called out. Every fact the",
+    "classifier needs is pre-resolved here, so the tests run with no gh call, no network",
+    "and no git repository.",
     "Merged-PR verdicts were produced by running the live detector against honua-server",
-    "trunk at aa894e148 (2026-08-16); see the issue for the manual adjudication that",
-    "agrees with them."
+    "trunk at aa894e148 (2026-08-17); see honua-server#3248 for the manual adjudication",
+    "that agrees with them.",
+    "A base listed in 'open' but absent from 'bases' is intentionally left unrecorded so",
+    "the suite can assert that an unknown base is reported, not assumed healthy."
   ],
   "defaultBranch": "trunk",
   "defaultRef": "origin/trunk",
@@ -179,7 +182,7 @@
           "verdict": "partial",
           "addedLinesProbed": 8,
           "addedLinesFound": 2,
-          "supersededOnDefault": true
+          "supersededOnDefault": false
         },
         {
           "path": "src/Honua.Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
@@ -206,7 +209,7 @@
           "verdict": "partial",
           "addedLinesProbed": 17,
           "addedLinesFound": 1,
-          "supersededOnDefault": true
+          "supersededOnDefault": false
         },
         {
           "path": "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
@@ -234,7 +237,7 @@
           "verdict": "missing",
           "addedLinesProbed": 2,
           "addedLinesFound": 0,
-          "supersededOnDefault": true
+          "supersededOnDefault": false
         },
         {
           "path": "src/Honua.Worker.Gdal/Execution/GdalWorkerOptions.cs",
@@ -281,7 +284,7 @@
           "verdict": "missing",
           "addedLinesProbed": 2,
           "addedLinesFound": 0,
-          "supersededOnDefault": true
+          "supersededOnDefault": false
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerOptionsConfigBindingTests.cs",
@@ -315,7 +318,7 @@
           "verdict": "missing",
           "addedLinesProbed": 1,
           "addedLinesFound": 0,
-          "supersededOnDefault": true
+          "supersededOnDefault": false
         },
         {
           "path": "src/Honua.Server/Features/Admin/TileOperations/GeneratedTileCacheKey.cs",
@@ -351,7 +354,7 @@
           "verdict": "missing",
           "addedLinesProbed": 9,
           "addedLinesFound": 0,
-          "supersededOnDefault": true
+          "supersededOnDefault": false
         },
         {
           "path": "src/Honua.Server/Features/Admin/TileOperations/TileOperationJobService.cs",
@@ -417,6 +420,77 @@
           "verdict": "absent"
         }
       ]
+    },
+    {
+      "number": 9002,
+      "title": "feat: merged into a stack base that was later deleted",
+      "baseRefName": "feat/force-pushed-base",
+      "mergeCommit": {
+        "oid": "2222222222222222222222222222222222222222"
+      },
+      "mergedAt": "2026-08-06T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/9002",
+      "onDefaultBranch": false,
+      "indeterminateReason": "merge commit 222222222 is not in this clone -- the stack base was probably deleted or force-pushed, so the payload cannot be checked"
+    },
+    {
+      "number": 9003,
+      "title": "docs: touches a hot path that trunk rewrites weekly",
+      "baseRefName": "feat/hot-path-base",
+      "mergeCommit": {
+        "oid": "3333333333333333333333333333333333333333"
+      },
+      "mergedAt": "2026-08-07T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/9003",
+      "onDefaultBranch": false,
+      "paths": [
+        {
+          "path": "AGENTS.md",
+          "verdict": "missing",
+          "addedLinesProbed": 12,
+          "addedLinesFound": 0,
+          "supersededOnDefault": false
+        },
+        {
+          "path": ".github/ci-shards.json",
+          "verdict": "partial",
+          "addedLinesProbed": 8,
+          "addedLinesFound": 5,
+          "supersededOnDefault": true
+        }
+      ]
+    },
+    {
+      "number": 9004,
+      "title": "feat: re-landed on trunk by cherry-pick, proven by patch id",
+      "baseRefName": "feat/cherry-picked-base",
+      "mergeCommit": {
+        "oid": "4444444444444444444444444444444444444444"
+      },
+      "mergedAt": "2026-08-08T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/9004",
+      "onDefaultBranch": false,
+      "paths": [
+        {
+          "path": "src/Recovered.cs",
+          "verdict": "patch-landed"
+        },
+        {
+          "path": "src/AlsoRecovered.cs",
+          "verdict": "identical"
+        }
+      ]
+    },
+    {
+      "number": 9005,
+      "title": "chore: mergeCommit no longer reported by GitHub",
+      "baseRefName": "feat/gc-base",
+      "mergeCommit": {
+        "oid": ""
+      },
+      "mergedAt": "2026-08-09T00:00:00Z",
+      "url": "https://github.com/honua-io/honua-server/pull/9005",
+      "onDefaultBranch": false
     }
   ],
   "open": [
@@ -429,8 +503,8 @@
     },
     {
       "number": 9101,
-      "title": "feat: stacked on a base that has already landed",
-      "baseRefName": "feat/already-landed",
+      "title": "feat: stacked on a base whose PR has already merged",
+      "baseRefName": "feat/already-merged",
       "isDraft": false,
       "url": "https://github.com/honua-io/honua-server/pull/9101"
     },
@@ -457,28 +531,51 @@
     },
     {
       "number": 9105,
-      "title": "feat: base branch not resolvable in this clone",
+      "title": "feat: base branch could not be resolved",
       "baseRefName": "feat/unresolvable-base",
       "isDraft": false,
       "url": "https://github.com/honua-io/honua-server/pull/9105"
+    },
+    {
+      "number": 9106,
+      "title": "feat: stacked on a base freshly created from trunk",
+      "baseRefName": "feat/fresh-base",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9106"
+    },
+    {
+      "number": 9107,
+      "title": "feat: stacked on a base the fixture forgot to record",
+      "baseRefName": "feat/unrecorded-base",
+      "isDraft": false,
+      "url": "https://github.com/honua-io/honua-server/pull/9107"
     }
   ],
   "bases": {
     "feat/3255-retire-server-generation": {
       "exists": true,
-      "landed": false
+      "merged": false,
+      "ancestor": false
     },
-    "feat/already-landed": {
+    "feat/already-merged": {
       "exists": true,
-      "landed": true
+      "merged": true,
+      "ancestor": true
     },
     "feat/deleted-base": {
       "exists": false,
-      "landed": null
+      "merged": null,
+      "ancestor": null
     },
     "feat/unresolvable-base": {
+      "exists": null,
+      "merged": null,
+      "ancestor": null
+    },
+    "feat/fresh-base": {
       "exists": true,
-      "landed": null
+      "merged": false,
+      "ancestor": true
     }
   }
 }

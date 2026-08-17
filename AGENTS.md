@@ -189,11 +189,14 @@ the product and *nothing* signals it. It happened three times in five weeks
 - The scheduled stranded-merge detector (#3248, #3316) does exactly that —
   `scripts/ci/detect-stranded-merges.py`, run weekly by
   `.github/workflows/stranded-merge-detector.yml`. It adjudicates each candidate
-  by blob equality and added-line presence, splits `stranded` (files absent) from
-  `edits-missing` (files present, the PR's lines are not) and `landed`
-  /`superseded`, and separately warns about **open** PRs whose base has already
-  landed or been deleted, with the `gh pr edit` remedy. It is the backstop, not
-  the control: re-target the stack member yourself when its base lands.
+  by patch identity first, then blob equality, then added-line presence; splits
+  `stranded` (files absent) from `edits-missing` (files present, the PR's lines
+  are not), `superseded`, `landed`, and `indeterminate` (could not be checked —
+  usually a force-pushed or deleted stack base, which is treated as actionable,
+  never as a pass); and separately warns about **open** PRs whose base has
+  already been merged or deleted, with the `gh pr edit` remedy. It is the
+  backstop, not the control: re-target the stack member yourself when its base
+  lands.
 
 ### Live batch train
 

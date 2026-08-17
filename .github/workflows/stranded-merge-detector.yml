@@ -8,21 +8,36 @@ name: Stranded Merge Detector
 # watches. Detection is by *content*, not by commit identity -- the identity test
 # alone produced three false positives out of four on the first #3248 sweep.
 #
-# Preventive: open PRs stacked on a base that has already landed or been
+# Preventive: open PRs stacked on a base that has already been merged or
 # deleted. Those strand their payload the moment they merge, and the remedy is
 # one `gh pr edit` away, which is the point of running this on a schedule.
 #
 # Reusable on purpose: honua-sdk-js hit the identical failure, and both issues
 # ask for one mechanism rather than two implementations. Callers pass their own
-# default branch; the script and its tests live here.
+# default branch; the script and its tests live here. No external consumer is
+# wired up yet, so the `workflow_call` inputs are exercised only from this repo.
+#
+# JSON contract: findings.json carries `schemaVersion`. Version 2 renamed the
+# classifications (`payload-missing` -> `stranded`, `content-present` ->
+# `landed`) and added `edits-missing`, `superseded`, `indeterminate` and the
+# `openFindings` array. Anything parsing this output must branch on
+# `schemaVersion`; `--fail-on payload-missing` remains accepted as an alias.
 
 on:
   workflow_dispatch:
     inputs:
+      default-branch:
+        description: Default branch to sweep against (blank uses the repository default)
+        type: string
+        default: ""
       limit:
         description: How many merged PRs to sweep
         type: number
         default: 250
+      open-limit:
+        description: How many open PRs to check for a stale base
+        type: number
+        default: 200
   schedule:
     - cron: "23 6 * * 1"
   workflow_call:
@@ -53,15 +68,21 @@ concurrency:
   group: stranded-merge-detector-${{ github.repository }}
   cancel-in-progress: true
 
+env:
+  DETECTOR_LABEL: stranded-merge-detector
+
 jobs:
   sweep:
     name: Sweep merged and open PRs for stranded payload
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # fetch-depth: 0 is required twice over: merge-base --is-ancestor needs
-      # full history on both sides, and the content pass reads blobs out of the
-      # stranded merge commits themselves. A shallow clone answers both wrongly.
+      # fetch-depth: 0 is required three times over: merge-base --is-ancestor
+      # needs full history on both sides, the content pass reads blobs out of the
+      # stranded merge commits themselves, and the open-PR pass resolves base
+      # branches from local remote-tracking refs rather than over the network
+      # (this checkout is credential-free, so an authenticated git fetch is not
+      # available to it).
       - name: Checkout repository under test
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -88,6 +109,9 @@ jobs:
           echo "DETECTOR_ROOT=${root}" >> "${GITHUB_ENV}"
           python3 "${root}/scripts/ci/detect-stranded-merges.test.py"
 
+      # One sweep, one set of API calls. The markdown report is rendered from the
+      # same findings.json the gate below reads, so the report and the gate can
+      # never disagree.
       - id: sweep
         name: Sweep
         env:
@@ -103,18 +127,16 @@ jobs:
             --open-limit "${OPEN_LIMIT}" \
             --json > findings.json
           python3 "${DETECTOR_ROOT}/scripts/ci/detect-stranded-merges.py" \
-            --default-branch "${DEFAULT_BRANCH}" \
-            --limit "${LIMIT}" \
-            --open-limit "${OPEN_LIMIT}" \
-            | tee "${GITHUB_STEP_SUMMARY}" > report.md
+            --from-json findings.json | tee "${GITHUB_STEP_SUMMARY}" > report.md
           actionable=$(python3 -c "import json; print(json.load(open('findings.json'))['actionable'])")
           echo "actionable=${actionable}" >> "${GITHUB_OUTPUT}"
 
-      # Only actionable findings file an issue: payload that is absent or whose
-      # edits never landed, and open PRs pointing at a dead base. A stranded merge
-      # whose content re-landed elsewhere is real but harmless, and filing it would
-      # train everyone to ignore the detector -- three of the first four findings
-      # across both repos were exactly that case.
+      # Only actionable findings file an issue: payload that is absent, payload
+      # whose edits never landed, payload that could not be adjudicated at all,
+      # and open PRs pointing at a dead base. A stranded merge whose content
+      # re-landed elsewhere is real but harmless, and filing it would train
+      # everyone to ignore the detector -- three of the first four findings across
+      # both repos were exactly that case.
       - name: File or update the tracking issue
         if: steps.sweep.outputs.actionable != '0'
         env:
@@ -137,15 +159,24 @@ jobs:
             echo "PR merges and it never becomes a merged row."
           } > "${body_file}"
 
-          existing=""
-          for candidate in "${title}" "${legacy_title}"; do
-            existing=$(gh issue list --repo "${REPO}" --state open --search "\"${candidate}\" in:title" \
+          # Identity is the label, not the title: a title match breaks the moment
+          # anyone edits the heading. The legacy-title lookup is a one-time bridge
+          # for an issue filed before the label existed.
+          gh label create "${DETECTOR_LABEL}" --repo "${REPO}" --color ededed \
+            --description "Filed by the stranded-merge detector" 2>/dev/null || true
+
+          existing=$(gh issue list --repo "${REPO}" --state open --label "${DETECTOR_LABEL}" \
+            --json number --jq '.[0].number // empty')
+          if [ -z "${existing}" ]; then
+            existing=$(gh issue list --repo "${REPO}" --state open --search "\"${legacy_title}\" in:title" \
               --json number --jq '.[0].number // empty')
-            [ -n "${existing}" ] && break
-          done
+          fi
+
           if [ -n "${existing}" ]; then
-            gh issue edit "${existing}" --repo "${REPO}" --title "${title}" --body-file "${body_file}"
+            gh issue edit "${existing}" --repo "${REPO}" --title "${title}" \
+              --add-label "${DETECTOR_LABEL}" --body-file "${body_file}"
             echo "updated https://github.com/${REPO}/issues/${existing}"
           else
-            gh issue create --repo "${REPO}" --title "${title}" --body-file "${body_file}"
+            gh issue create --repo "${REPO}" --title "${title}" \
+              --label "${DETECTOR_LABEL}" --body-file "${body_file}"
           fi
