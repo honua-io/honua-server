@@ -802,7 +802,13 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Security and Authorization"
+assert_descriptor \
+  "hosting-authentication-includes-infrastructure-tests" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "targeted" \
+  "false" \
+  "Infrastructure and Control Plane"
 assert_excludes_shard \
   "hosting-authentication-excludes-featureserver" \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
@@ -814,7 +820,13 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Security and Authorization"
+assert_descriptor \
+  "hosting-security-includes-infrastructure-tests" \
+  "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
+  "targeted" \
+  "false" \
+  "Infrastructure and Control Plane"
 
 # Conservatism guards: the override must NOT widen run_all coverage. A NON-override
 # Startup file (DI/host bootstrap core) must STILL run_all, and a generic unmapped
@@ -1091,7 +1103,7 @@ assert_descriptor \
   "Server Features Studio and Feature Store"
 
 # A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
-# maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —
+# maps to Infrastructure and Control Plane (Features.Infrastructure.* tests), NOT run_all —
 # while the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring)
 # still escalate via infrastructure_paths (asserted below).
 assert_descriptor \
@@ -1099,18 +1111,36 @@ assert_descriptor \
   "src/Honua.Server/Features/Infrastructure/ControlPlane/DeployWorkflowService.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Infrastructure and Control Plane"
 # The deploy/coordinated-release/telemetry ControlPlane source actually lives at
 # src/Honua.Server/Features/ControlPlane/ (sibling of Features/Infrastructure/),
 # while its tests live under tests/.../Features/Infrastructure/ControlPlane/. That
-# path is claimed by the Infra and Security shard so a reconciler/telemetry change
+# path is claimed by the Infrastructure and Control Plane shard so a reconciler/telemetry change
 # targets it instead of tripping the unmapped-source run_all net.
 assert_descriptor \
   "controlplane-source-targeted" \
   "src/Honua.Server/Features/ControlPlane/DeployWorkflowReconciler.cs" \
   "targeted" \
   "false" \
-  "Infra and Security"
+  "Infrastructure and Control Plane"
+assert_descriptor \
+  "core-caching-targeted-to-split-child" \
+  "src/Honua.Core/Features/Caching/MetadataCacheState.cs" \
+  "targeted" \
+  "false" \
+  "Caching File Storage and Styling"
+assert_descriptor \
+  "file-storage-targeted-to-split-child" \
+  "src/Honua.Server/Features/FileStorage/FileStorageServiceCollectionExtensions.cs" \
+  "targeted" \
+  "false" \
+  "Caching File Storage and Styling"
+assert_descriptor \
+  "styling-targeted-to-split-child" \
+  "src/Honua.Server/Features/Styling/OgcStyleProjection.cs" \
+  "targeted" \
+  "false" \
+  "Caching File Storage and Styling"
 assert_descriptor \
   "infra-hosting-wiring-still-run-all" \
   "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
@@ -1205,10 +1235,115 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Studio and Feature Store" \
-  --assert-owner \
+  `# Synthetic probe, not a real class (#2709): proves an unknown future` \
+  `# Features.Protocols.* namespace still falls through to the Server Features` \
+  `# Misc catch-all. --assert-route skips the class-exists check that` \
+  `# --assert-owner applies; it must not be used for a class that does exist.` \
+  --assert-route \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Misc"
+    "Server Features Misc" \
+  `# --- #3259: the 20 classes that matched no shard filter and never ran ---` \
+  `# Honua.Ai.Tests assembly -> MCP (the only shard targeting that csproj).` \
+  --assert-owner \
+    "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.AnalysisGeneration.AnalysisGenerationServiceTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.AnthropicStudioAiProxyAdapterTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.BedrockStudioAiProxyAdapterTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.OpenAiCompatibleStudioAiProxyAdapterTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiChatRequestMapperTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyConfigurationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyJsonContextReflectionSafetyTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyLatencyTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP" \
+  `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
+  `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
+  `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
+  --assert-owner \
+    "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Services" \
+  --assert-owner \
+    "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices ImageServer" \
+  `# Honua.Server.Tests assembly. AlertNotificationRateLimiterTests was swallowed` \
+  `# by the Admin-family '!~RateLimit' exclusion, now narrowed to` \
+  `# '!~Honua.Server.Tests.Features.Admin.RateLimit'.` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Alerts.AlertNotificationRateLimiterTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Console and Alerts" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.AwsS3ShapefileImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.AwsS3UploadProgressTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.AzureBlobShapefileImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
+  `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
+  `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \
+  `# so no FQN ever contained 'Import.EmulatorCloudStorage'. Narrowed to` \
+  `# '~Honua.Server.Tests.Import.Emulator', which claims both.` \
+  --assert-owner \
+    "Honua.Server.Tests.Import.EmulatorAwsS3CloudStorageImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.EmulatorAzureBlobCloudStorageImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "FileImport"
 else
   echo "⚠️  Skipping server-test shard coverage check (no working Python 3: tried python3/python/py)"
 fi
