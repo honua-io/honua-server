@@ -2320,7 +2320,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 5,
-      "provingTestCount": 90,
+      "provingTestCount": 91,
       "maturity": {
         "implemented": 5
       },
