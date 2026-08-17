@@ -599,8 +599,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
     // Replaces the canonical MapLibre document of an existing catalog style, keeping its
     // descriptive metadata and letting the store increment style_version. The cached
-    // drawingInfo column is deliberately cleared: the Esri encoding is derived from the
-    // canonical style on read, so a stale cache must never outlive the style it mirrored.
+    // drawingInfo column is rewritten in the same statement from the document being
+    // stored, so it can never outlive the canonical style it mirrors. Reads still derive
+    // the Esri encoding from the canonical style rather than trusting that cache.
     private async Task<bool> PersistCatalogStyleAsync(
         StyleCatalogRecord existing,
         string mapLibreStyleJson,

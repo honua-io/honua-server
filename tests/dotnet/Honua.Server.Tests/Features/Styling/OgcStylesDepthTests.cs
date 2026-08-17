@@ -250,6 +250,35 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
         }
 
+        // The responses are emitted as UTF-8, so a charset=utf-8 media-range parameter
+        // matches the representation instead of disqualifying it the way an unknown
+        // parameter does. Case is insignificant for the charset token as well.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", $"{EsriDrawingInfoMediaType}; charset=UTF-8");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        }
+
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", "application/json; charset=utf-8");
+            var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        }
+
+        // A charset the server never emits does not match, so it cannot outrank an
+        // explicit exclusion of the same representation.
+        using (var request = new HttpRequestMessage(HttpMethod.Get, path))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                $"{EsriDrawingInfoMediaType};charset=iso-8859-1;q=1, {EsriDrawingInfoMediaType};q=0");
+            (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+        }
+
         // Without an acceptable fallback, q=0 means the representation is rejected.
         using (var request = new HttpRequestMessage(HttpMethod.Get, path))
         {
