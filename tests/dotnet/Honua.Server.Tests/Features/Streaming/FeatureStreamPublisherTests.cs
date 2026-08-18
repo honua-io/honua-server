@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.Server.Tests.Infrastructure.Telemetry;
@@ -344,6 +347,45 @@ public sealed class FeatureStreamPublisherTests : IDisposable
     }
 
     [UnitTest]
+    public async Task PublishStrictAsync_WhenRoutabilityRefreshFails_StillDispatchesToSink()
+    {
+        var sink = new SignalingSink();
+        var broadcaster = new FeatureChangeEventSinkBroadcaster(
+            [sink],
+            Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
+            NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
+        using var services = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => new ThrowingMetadataV2GraphProvider())
+            .BuildServiceProvider();
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = 256 }),
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            routabilityGuard: new FeatureStreamRoutabilityGuard(),
+            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
+        using var session = manager.CreateSession("WebSocket", "metadata-failure");
+        var publisher = new FeatureStreamPublisher(
+            _store,
+            manager,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            sinkBroadcaster: broadcaster);
+
+        await publisher.PublishStrictAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-sink-on-metadata-failure",
+            LayerId = 0,
+            ObjectId = 13,
+            Operation = "update",
+            Protocol = "outbox",
+            RequestId = "req-sink-metadata-failure",
+        });
+
+        var received = await sink.Signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("svc-sink-on-metadata-failure", received.ServiceId);
+        Assert.False(session.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
     public async Task PublishAsync_WithNoOpSinkOnly_DoesNotThrow()
     {
         // Default deployment: only the no-op sink is registered. Publishing must
@@ -402,6 +444,17 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             int limit,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+    }
+
+    private sealed class ThrowingMetadataV2GraphProvider : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("metadata unavailable");
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("metadata unavailable");
     }
 
     private sealed class RecordingRetryQueue : IFeatureChangeRetryQueue

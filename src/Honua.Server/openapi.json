@@ -1717,6 +1717,9 @@
           "description": {
             "type": "string"
           },
+          "attribution": {
+            "type": "string"
+          },
           "extent": {
             "$ref": "#/components/schemas/Extent"
           },
@@ -2021,6 +2024,9 @@
             "type": "string"
           },
           "type": {
+            "type": "string"
+          },
+          "hreflang": {
             "type": "string"
           },
           "title": {

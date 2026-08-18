@@ -33,6 +33,12 @@ public static class MetadataV2Constants
 /// </summary>
 public sealed record MetadataV2ObjectMetadata
 {
+    /// <summary>Maximum canonical attribution length.</summary>
+    public const int MaxAttributionLength = 512;
+
+    /// <summary>Maximum canonical publisher length.</summary>
+    public const int MaxPublisherLength = 256;
+
     private IReadOnlyList<string>? _tags;
     private IReadOnlyDictionary<string, string>? _labels;
     private IReadOnlyDictionary<string, string>? _annotations;
@@ -313,6 +319,12 @@ public sealed record MetadataV2ExtensionPoint
 /// </summary>
 public sealed record MetadataV2ContactPoint
 {
+    /// <summary>Maximum public contact display-name length.</summary>
+    public const int MaxNameLength = 256;
+
+    /// <summary>Maximum public contact URL length.</summary>
+    public const int MaxUrlLength = MetadataV2Link.MaxGovernanceHrefLength;
+
     /// <summary>Display name of the contact (person or organization).</summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
@@ -331,6 +343,13 @@ public sealed record MetadataV2ContactPoint
 /// </summary>
 public sealed record MetadataV2Link
 {
+    /// <summary>
+    /// Maximum length of a canonical external governance link target.
+    /// Applies to <c>license</c> and <c>describedby</c> relations across every
+    /// Metadata v2 authoring and import path.
+    /// </summary>
+    public const int MaxGovernanceHrefLength = 2048;
+
     /// <summary>Target URL of the link. Required (non-empty) when emitted.</summary>
     [JsonPropertyName("href")]
     public string Href { get; init; } = string.Empty;
@@ -351,6 +370,10 @@ public sealed record MetadataV2Link
     /// <summary>BCP-47 language tag of the linked resource.</summary>
     [JsonPropertyName("hreflang")]
     public string? Hreflang { get; init; }
+
+    /// <summary>Optional internal owner used to distinguish links managed by a specific authoring surface.</summary>
+    [JsonPropertyName("managedBy")]
+    public string? ManagedBy { get; init; }
 }
 
 /// <summary>

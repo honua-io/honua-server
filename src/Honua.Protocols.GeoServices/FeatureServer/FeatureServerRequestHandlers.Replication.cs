@@ -1946,6 +1946,7 @@ internal static partial class FeatureServerEndpoints
         return
         [
             ..snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
                 .Select(publication =>
                 {
                     var resource = snapshot.ResolveResource(publication);
@@ -1966,6 +1967,16 @@ internal static partial class FeatureServerEndpoints
                 })
                 .Where(layer => layer is not null)
                 .Select(layer => layer!)
+                // A resource can be published through several adapters under the same
+                // service-local layer ID (for example OData plus Esri FeatureServer).
+                // Replication needs one deterministic feature/table resource per public
+                // ID; otherwise dictionary lookups throw before access checks run.
+                .Where(layer => layer.Resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
+                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer ? 0 : 1)
+                .ThenByDescending(layer => layer.Publication.IsPrimary)
+                .ThenBy(layer => layer.Publication.Metadata.Id, StringComparer.Ordinal)
+                .DistinctBy(layer => layer.PublicLayerId)
+                .OrderBy(layer => layer.PublicLayerId)
         ];
     }
 

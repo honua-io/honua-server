@@ -50,7 +50,12 @@ internal sealed partial class FeatureStreamPublisher(
             return;
         }
 
-        FanOut(persisted);
+        if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
+        {
+            BroadcastToSessions(persisted);
+        }
+
+        DispatchToSinks(persisted);
     }
 
     public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
@@ -60,7 +65,12 @@ internal sealed partial class FeatureStreamPublisher(
         // silently transferring durability to the best-effort retry queue.
         var durableRequest = EnsureEventId(request);
         var persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
-        FanOut(persisted);
+        if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
+        {
+            BroadcastToSessions(persisted);
+        }
+
+        DispatchToSinks(persisted);
     }
 
     private static FeatureChangeEventRequest EnsureEventId(FeatureChangeEventRequest request)
@@ -68,7 +78,7 @@ internal sealed partial class FeatureStreamPublisher(
             ? request with { EventId = Guid.NewGuid().ToString("N") }
             : request;
 
-    private void FanOut(FeatureChangeEvent persisted)
+    private void BroadcastToSessions(FeatureChangeEvent persisted)
     {
         // Fan out to live streaming sessions after durable append.
         // Enrichment data (geometry envelope + properties) is carried on the message
@@ -79,12 +89,13 @@ internal sealed partial class FeatureStreamPublisher(
             FeatureStreamMessage.Data(envelope, persisted.GeometryEnvelope, persisted.PropertiesJson));
 
         LogLocalEventBroadcast(_logger, delivered, persisted.Cursor);
-
-        // Fan the durably persisted event out to broker-agnostic sinks (#357).
-        // Sink delivery runs off the write hot path with per-sink failure isolation,
-        // so a slow or failing transport never blocks the originating edit.
-        _sinkBroadcaster?.Dispatch(persisted);
     }
+
+    // Broker dispatch is independent from live-stream routability. A transient metadata
+    // failure must fail the live filters closed without dropping a durably persisted event
+    // from Kafka/NATS (especially on the strict outbox path).
+    private void DispatchToSinks(FeatureChangeEvent persisted)
+        => _sinkBroadcaster?.Dispatch(persisted);
 
     internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e)
     {

@@ -611,7 +611,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
             PrimaryKey = layer.PrimaryKey,
             FieldCount = layer.FieldCount,
             Enabled = enabled,
-            ServiceName = layer.ServiceName
+            ServiceName = layer.ServiceName,
+            License = layer.License,
+            Attribution = layer.Attribution,
+            Publisher = layer.Publisher,
+            LicenseUrl = layer.LicenseUrl,
+            SourceUrl = layer.SourceUrl
         };
     }
 }

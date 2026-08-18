@@ -587,7 +587,7 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
         var domains = accessibleLayers
             .SelectMany(pair => pair.Resource.SchemaFields
                 .Where(static field => !field.Hidden && field.Domain is not null)
@@ -686,7 +686,7 @@ internal static partial class FeatureServerEndpoints
 
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Resource is not null)
+            .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
@@ -699,7 +699,7 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, service, allPairs);
+        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, allPairs);
 
         // Layer ids of accessible publications. Relationships pointing at non-accessible
         // resources are filtered out (matching the v1 path which gated on layer access).
@@ -1078,7 +1078,7 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
         if (accessibleLayers.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context,

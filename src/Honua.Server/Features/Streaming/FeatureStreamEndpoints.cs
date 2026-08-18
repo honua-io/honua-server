@@ -162,6 +162,7 @@ internal static partial class FeatureStreamEndpoints
                 session,
                 filterResult.Filter,
                 addDefaultSubscription,
+                announceInitialSubscription: filterResult.HasSubscription,
                 filterResult.Mode).ConfigureAwait(false);
             return Results.Empty;
         }

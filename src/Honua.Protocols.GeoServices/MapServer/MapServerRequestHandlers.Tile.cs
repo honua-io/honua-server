@@ -24,7 +24,7 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    private sealed record TileLayerDescriptor(
+    internal sealed record TileLayerDescriptor(
         int PublicLayerId,
         int StorageLayerId,
         MetadataV2Resource Resource);
@@ -217,7 +217,7 @@ internal static partial class MapServerEndpoints
                int.TryParse(xValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out x);
     }
 
-    private static TileLayerDescriptor[] ResolveTileLayerDescriptors(
+    internal static TileLayerDescriptor[] ResolveTileLayerDescriptors(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
     {
@@ -229,11 +229,12 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
-            var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }
+
+            var resource = snapshot.ResolveResource(publication)!;
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
                 ?? snapshot.ResolveStorageLayerId(resource)
@@ -274,15 +275,15 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<string> BuildTileRlsFingerprintAsync(
         IRowLevelSecurityFilterSource? rlsFilterSource,
-        IReadOnlyList<TileLayerDescriptor> renderResources,
+        TileLayerDescriptor[] renderResources,
         CancellationToken cancellationToken)
     {
-        if (rlsFilterSource is null || renderResources.Count == 0)
+        if (rlsFilterSource is null || renderResources.Length == 0)
         {
             return "none";
         }
 
-        var parts = new List<string>(renderResources.Count);
+        var parts = new List<string>(renderResources.Length);
         foreach (var layer in renderResources.OrderBy(static l => l.StorageLayerId))
         {
             var fragment = await rlsFilterSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);

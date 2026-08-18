@@ -253,6 +253,29 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task GetItem_WithNonServiceRecordId_IsCaseSensitive()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/records/collections/{CatalogId}/items/{Uri.EscapeDataString($"LAYER:{WebAppFixture.TestLayerId}")}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task GetItems_WithIds_PreservesLegacyServiceCaseInsensitivityOnly()
+    {
+        var ids = Uri.EscapeDataString($"SERVICE:TEST,LAYER:{WebAppFixture.TestLayerId}");
+        var matched = await GetRecordIdsAsync($"ids={ids}&limit=100");
+
+        matched.Should().Contain("service:test");
+        matched.Should().NotContain($"layer:{WebAppFixture.TestLayerId}");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
     public async Task GetItem_WithUnknownQueryParameter_ReturnsBadRequest()

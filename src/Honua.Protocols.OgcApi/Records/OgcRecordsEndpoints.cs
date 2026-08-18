@@ -291,7 +291,7 @@ internal static class OgcRecordsEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
         var record = records.FirstOrDefault(candidate =>
-            string.Equals(candidate.Feature.Id, recordId, StringComparison.OrdinalIgnoreCase));
+            RecordIdEquals(candidate.Feature.Id, recordId));
         if (record is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Record '{recordId}' not found.");
@@ -331,7 +331,7 @@ internal static class OgcRecordsEndpoints
             var visiblePublications = services
                 .SelectMany(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                     .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))
-                .Where(t => t.Resource is not null)
+                .Where(t => snapshot.IsRoutable(t.Publication))
                 .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, t.Service))
                 .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
@@ -340,10 +340,10 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            var representative = services[0] with
+            var representative = visiblePublications[0].Service with
             {
-                Protocols = services
-                    .SelectMany(service => service.Protocols)
+                Protocols = visiblePublications
+                    .SelectMany(tuple => tuple.Service.Protocols)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray()
             };
@@ -358,7 +358,9 @@ internal static class OgcRecordsEndpoints
         var resourceRecords = snapshot.Graph.Resources
             .Select(resource =>
             {
-                var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id].ToArray();
+                var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id]
+                    .Where(snapshot.IsRoutable)
+                    .ToArray();
                 var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
                 var storageLayerId = primary is not null ? snapshot.ResolveStorageLayerId(primary) : null;
                 var layerSort = primary is not null
@@ -366,9 +368,14 @@ internal static class OgcRecordsEndpoints
                     : int.MaxValue;
                 return (Resource: resource, Publications: publications, Primary: primary, LayerSort: layerSort, HasStorageLayer: storageLayerId.HasValue);
             })
+            .Where(item => item.Primary is not null)
             .OrderByDescending(item => item.HasStorageLayer)
             .ThenBy(item => item.LayerSort)
+            // Multiple protocol resources may share one legacy storage-layer id.
+            // Keep the feature dataset as the canonical layer:{id} catalog record.
+            .ThenBy(item => item.Resource.Type == MetadataV2ResourceType.FeatureDataset ? 0 : 1)
             .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
+        var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in resourceRecords)
         {
             // Pick the primary publication if any (prefer IsPrimary, else first).
@@ -383,7 +390,11 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            records.Add(CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl));
+            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl);
+            if (resourceRecordIds.Add(record.Feature.Id))
+            {
+                records.Add(record);
+            }
         }
 
         return records;
@@ -515,16 +526,16 @@ internal static class OgcRecordsEndpoints
         string? type,
         string? externalIds)
     {
-        var idSet = SplitCsv(ids);
-        var typeSet = SplitCsv(type);
-        var externalIdSet = SplitCsv(externalIds);
+        var idSet = SplitCsv(ids, StringComparer.Ordinal);
+        var typeSet = SplitCsv(type, StringComparer.OrdinalIgnoreCase);
+        var externalIdSet = SplitCsv(externalIds, StringComparer.OrdinalIgnoreCase);
         var terms = string.IsNullOrWhiteSpace(q)
             ? Array.Empty<string>()
             : q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var record in records)
         {
-            if (idSet.Count > 0 && !idSet.Contains(record.Feature.Id))
+            if (idSet.Count > 0 && !idSet.Any(id => RecordIdEquals(record.Feature.Id, id)))
             {
                 continue;
             }
@@ -780,11 +791,16 @@ internal static class OgcRecordsEndpoints
             : recordBbox[0] <= filter.MaxX && recordBbox[2] >= filter.MinX;
     }
 
-    private static HashSet<string> SplitCsv(string? value)
+    private static HashSet<string> SplitCsv(string? value, StringComparer comparer)
         => string.IsNullOrWhiteSpace(value)
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            ? new HashSet<string>(comparer)
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                .ToHashSet(comparer);
+
+    private static bool RecordIdEquals(string canonicalId, string requestedId)
+        => canonicalId.StartsWith("service:", StringComparison.Ordinal)
+            ? string.Equals(canonicalId, requestedId, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(canonicalId, requestedId, StringComparison.Ordinal);
 
     private static bool IsCatalogCollection(string collectionId)
         => string.Equals(collectionId, CatalogCollectionId, StringComparison.OrdinalIgnoreCase);

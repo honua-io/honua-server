@@ -4,8 +4,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 
@@ -132,6 +134,90 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         serviceRecord.GetProperty("links").EnumerateArray()
             .Should()
             .Contain(link => HrefEndsWith(link, "/rest/services/test/FeatureServer"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task GetItem_WithRetiredProtocolSibling_OmitsInactiveProtocolLink()
+    {
+        const string serviceName = "records-protocol-visibility";
+        const string activeServiceId = "svc-records-protocol-active";
+        const string retiredServiceId = "svc-records-protocol-retired";
+        const string activePublicationId = "pub-records-protocol-active";
+        const string retiredPublicationId = "pub-records-protocol-retired";
+
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var provider = _fixture.GetService<TestMetadataV2GraphProvider>()
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+        var sourcePublication = snapshot.Graph.Publications.First(snapshot.IsRoutable);
+        var sourceService = snapshot.Graph.Services.Single(
+            service => service.Metadata.Id == sourcePublication.ServiceId);
+        var activeService = sourceService with
+        {
+            Metadata = sourceService.Metadata with
+            {
+                Id = activeServiceId,
+                Name = serviceName,
+                Title = "Active Records Service"
+            },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            PublicationIds = [activePublicationId],
+            Protocols = [ServiceProtocols.FeatureServer],
+            Status = sourceService.Status with { Lifecycle = MetadataV2LifecycleStatus.Active }
+        };
+        var retiredService = activeService with
+        {
+            Metadata = activeService.Metadata with
+            {
+                Id = retiredServiceId,
+                Title = "Retired Records Service"
+            },
+            ServiceType = MetadataV2ServiceType.EsriMapService,
+            PublicationIds = [retiredPublicationId],
+            Protocols = [ServiceProtocols.MapServer],
+            Status = activeService.Status with { Lifecycle = MetadataV2LifecycleStatus.Retired }
+        };
+        var activePublication = sourcePublication with
+        {
+            Metadata = sourcePublication.Metadata with { Id = activePublicationId },
+            ServiceId = activeServiceId,
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+        };
+        var retiredPublication = activePublication with
+        {
+            Metadata = activePublication.Metadata with { Id = retiredPublicationId },
+            ServiceId = retiredServiceId,
+            PublicationType = MetadataV2PublicationType.EsriMapLayer
+        };
+        var mutatedGraph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = [.. snapshot.Graph.Services, retiredService, activeService],
+            Publications = [.. snapshot.Graph.Publications, activePublication, retiredPublication]
+        };
+
+        try
+        {
+            provider.SetGraph(mutatedGraph, schema: _fixture.CurrentSchema);
+
+            var recordId = Uri.EscapeDataString($"service:{serviceName}");
+            var response = await _fixture.Client.GetAsync(
+                $"/ogc/records/collections/{CatalogId}/items/{recordId}");
+
+            await AssertOkAsync(response);
+            using var json = await ReadJsonAsync(response);
+            json.RootElement.GetProperty("properties").GetProperty("title").GetString()
+                .Should().Be("Active Records Service");
+            var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+            links.Should().Contain(link => HrefEndsWith(link, $"/rest/services/{serviceName}/FeatureServer"));
+            links.Should().NotContain(link => HrefEndsWith(link, $"/rest/services/{serviceName}/MapServer"));
+        }
+        finally
+        {
+            provider.SetGraph(snapshot.Graph, schema: _fixture.CurrentSchema);
+        }
     }
 
     [IntegrationTest]

@@ -15,6 +15,10 @@
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
 
+    <!-- Canonical SPDX License List snapshot shared by graph and authored-input validation. -->
+    <EmbeddedResource Include="Features/Metadata/Domain/V2/spdx-identifiers.json"
+                      LogicalName="Honua.Core.Features.Metadata.Domain.V2.spdx-identifiers.json" />
+
     <!--
       Abstractions-only contract surface. ProjectReference into this assembly is allowed
       for protocol assemblies (modularization Phase 1) which must NOT take a transitive

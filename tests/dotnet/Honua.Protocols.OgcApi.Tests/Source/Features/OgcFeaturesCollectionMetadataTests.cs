@@ -44,4 +44,24 @@ public sealed class OgcFeaturesCollectionMetadataTests : IAsyncLifetime
         collection.Extent.Temporal.Interval[0][0].Should().Be("2022-12-31T23:00:00Z");
         collection.Extent.Temporal.Interval[0][1].Should().Be("2024-10-15T00:00:00Z");
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task GetCollection_WithStandaloneLicenseScalar_DerivesCanonicalLicenseLink()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            License = "MIT",
+            Links = [],
+        });
+
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("links").EnumerateArray().Should().ContainSingle(link =>
+            link.GetProperty("rel").GetString() == "license" &&
+            link.GetProperty("href").GetString() == "https://spdx.org/licenses/MIT.html" &&
+            link.GetProperty("title").GetString() == "MIT");
+    }
 }

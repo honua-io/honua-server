@@ -511,7 +511,9 @@ internal static partial class FeatureStreamEndpoints
             return null;
         }
 
-        if (filter is not StreamSubscriptionFilter scoped || scoped.LayerIds is not { Length: > 0 })
+        if (filter is not StreamSubscriptionFilter scoped ||
+            !scoped.HasExplicitLayerScope ||
+            scoped.LayerIds is not { Length: > 0 })
         {
             return "snapshot subscriptions require an explicit layer scope; supply the layers parameter (or the layers/layerId control-frame field).";
         }
@@ -699,6 +701,7 @@ internal static partial class FeatureStreamEndpoints
         var baselineCursor = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
         var snapshotId = Guid.NewGuid().ToString("N");
         var layerIds = filter.LayerIds ?? [];
+        var snapshotServiceId = filter.ResolvedServiceId ?? filter.ServiceId;
 
         // A streamed baseline allocates one subscription-local sequence per emitted frame; a
         // batched baseline is a single frame and must therefore consume exactly one, or the
@@ -723,7 +726,7 @@ internal static partial class FeatureStreamEndpoints
             Sequence = AllocateSequence(),
             Cursor = baselineCursor,
             Reason = reason,
-            ServiceId = filter.ServiceId,
+            ServiceId = snapshotServiceId,
             LayerIds = layerIds
         };
         var measuredEndFrame = new FeatureStreamSnapshotEndFrame
@@ -748,7 +751,7 @@ internal static partial class FeatureStreamEndpoints
         await sink.WriteBeginAsync(beginFrame, cancellationToken).ConfigureAwait(false);
 
         var graph = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = filter.ServiceId is null ? null : ResolveStreamService(graph, filter.ServiceId);
+        var service = snapshotServiceId is null ? null : ResolveStreamService(graph, snapshotServiceId);
 
         long emitted = 0;
         long scanned = 0;
@@ -781,7 +784,7 @@ internal static partial class FeatureStreamEndpoints
             }
 
             var layerSrid = descriptor.Resource.ReadSrid();
-            var serviceId = filter.ServiceId ?? descriptor.Service?.Metadata.Name ?? string.Empty;
+            var serviceId = snapshotServiceId ?? descriptor.Service?.Metadata.Id ?? string.Empty;
             var remainingScan = options.MaxSnapshotScanRows - (int)scanned;
             if (remainingScan <= 0)
             {

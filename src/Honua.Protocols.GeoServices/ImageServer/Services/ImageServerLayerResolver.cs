@@ -53,6 +53,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         var service = serviceResult.Service!;
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var publishedResources = snapshot.PublicationsForService(service.Metadata.Id)
+            .Where(snapshot.IsRoutable)
             .Select(publication => new ImageServerPublicationLayer(
                 publication.Metadata.Id,
                 publication.LayerIndex,
@@ -97,6 +98,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
     {
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var candidates = snapshot.Graph.Publications
+            .Where(snapshot.IsRoutable)
             .Select(publication => new ImageServerPublishedLayer(
                 publication,
                 snapshot.ResolveStorageLayerId(publication),

@@ -42,7 +42,8 @@ internal static class ImageServerV2Lookups
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerId);
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p =>
+            p.LayerIndex == layerId && snapshot.IsRoutable(p));
         if (pub is null)
         {
             return null;

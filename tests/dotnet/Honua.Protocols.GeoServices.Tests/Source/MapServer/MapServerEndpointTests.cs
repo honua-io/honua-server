@@ -77,6 +77,44 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    public async Task MapServer_Metadata_MapsGovernanceToDocumentInfo()
+    {
+        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        var services = snapshot.Graph.Services
+            .Select(service =>
+                string.Equals(service.Metadata.Name, WebAppFixture.TestServiceId, StringComparison.OrdinalIgnoreCase) &&
+                service.Protocols.Contains(ServiceProtocols.MapServer, StringComparer.OrdinalIgnoreCase)
+                    ? service with
+                    {
+                        Metadata = service.Metadata with
+                        {
+                            Publisher = "Example Data Office",
+                            Attribution = "Example data contributors",
+                            ContactPoint = new MetadataV2ContactPoint { Name = "Example Data Contact" },
+                        },
+                    }
+                    : service)
+            .ToArray();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = services,
+        });
+
+        var response = await _fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var service = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.MapServerResponse);
+        service!.DocumentInfo!.Author.Should().Be("Example Data Contact");
+        service.DocumentInfo.Subject.Should().Be("Example Data Office");
+        service.DocumentInfo.Credits.Should().Be("Example data contributors");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_WithInvalidIdentifier_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer?f=json");
@@ -2314,6 +2352,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                 .Append(new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = serviceId, Name = serviceName },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     Protocols = [ServiceProtocols.MapServer],
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     Settings = new MetadataV2ServiceSettings { MaxFeaturesPerLayer = 10_000 },
@@ -2340,6 +2379,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         {
             Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = name },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             SchemaFields =
             [
@@ -2375,6 +2415,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         {
             Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
             ResourceId = resourceId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Locator = "features",
             StorageLayerId = layerId,
         });
@@ -2385,6 +2426,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = bindingId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             PublicationType = MetadataV2PublicationType.EsriMapLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {

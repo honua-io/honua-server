@@ -15,6 +15,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.MapServer.Models;
+using Honua.Protocols.GeoServices.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -254,7 +255,12 @@ internal static partial class MapServerEndpoints
                 Id = layer.PublicLayerId,
                 Name = layer.Name
             })],
-            CopyrightText = string.Empty,
+            CopyrightText = string.IsNullOrWhiteSpace(service.Metadata.Attribution)
+                ? service.Metadata.License ?? string.Empty
+                : service.Metadata.Attribution,
+            License = service.Metadata.License,
+            Publisher = service.Metadata.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
             // GIF is intentionally omitted: the SkiaSharp-backed export renderer ships no
             // GIF encoder and the export handler rejects format=gif, so advertising it here
             // would let capabilities claim an output the service cannot produce. (#1772)
@@ -276,8 +282,10 @@ internal static partial class MapServerEndpoints
             DocumentInfo = new MapServerDocumentInfo
             {
                 Title = service.Metadata.Name ?? "",
+                Author = service.Metadata.ContactPoint?.Name ?? "",
                 Comments = service.Metadata.Description ?? "",
-                Subject = service.Metadata.Description ?? ""
+                Subject = service.Metadata.Publisher ?? "",
+                Credits = service.Metadata.Attribution ?? ""
             },
             TileInfo = BuildTileInfo(maxTileZoom)
         };
@@ -361,6 +369,7 @@ internal static partial class MapServerEndpoints
         var serviceExtent = ResolveServiceExtent(serviceLayers, ResolveServiceSpatialReference(service, serviceLayers));
         var layerCapabilities = BuildMapServerLayerCapabilities(resource);
         var hasGeometry = HasMapServerGeometry(resource);
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
 
         return new MapServerLayerResponse
         {
@@ -370,6 +379,12 @@ internal static partial class MapServerEndpoints
                 : layerName,
             Type = hasGeometry ? "Feature Layer" : "Table",
             Description = resource.Metadata.Description,
+            CopyrightText = string.IsNullOrWhiteSpace(governance.Attribution)
+                ? governance.License
+                : governance.Attribution,
+            License = governance.License,
+            Publisher = governance.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
             GeometryType = hasGeometry ? MapGeometryTypeToEsri(resource.ReadGeometryType()) : null,
             SpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
             Extent = ResolveLayerExtent(resource, serviceExtent),

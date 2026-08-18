@@ -33,6 +33,7 @@ public sealed class GeoprocessingServiceSeederTests
             .ContainSingle(s => s.Metadata.Name == GeoprocessingServiceSeeder.ServiceName)
             .Which;
         gp.Metadata.Id.Should().Be(GeoprocessingServiceSeeder.ServiceId);
+        gp.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
         MetadataV2ServiceProtocols.IsProtocolEnabled(gp, MetadataV2ServiceProtocols.GPServer)
             .Should().BeTrue();
     }

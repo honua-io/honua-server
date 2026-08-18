@@ -39,6 +39,7 @@ internal sealed class FeatureStreamHeartbeatService : BackgroundService
                 var sessions = _sessionManager.GetSessions();
                 if (sessions.Count > 0)
                 {
+                    await _sessionManager.RefreshRoutabilityAsync(stoppingToken).ConfigureAwait(false);
                     _sessionManager.BroadcastHeartbeat();
                     FeatureStreamLog.HeartbeatBroadcast(_logger, sessions.Count);
                 }

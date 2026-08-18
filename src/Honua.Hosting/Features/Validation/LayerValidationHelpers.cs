@@ -184,7 +184,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
-        if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             var msg = $"Layer {layerId} not found";
             var error = protocol switch
@@ -208,9 +208,9 @@ internal static class LayerValidationHelpers
         // would otherwise wrap as a GeoServices 200-envelope for /tiles (honua-server#2945
         // review). Evaluate the decision directly and format it as problem+json here.
         var accessError = protocol == ValidationProtocol.ProblemJson
-            ? await RequireResourceAccessAsProblemJsonAsync(context, resource, service, scope, effectiveToken).ConfigureAwait(false)
+            ? await RequireResourceAccessAsProblemJsonAsync(context, resource!, service, scope, effectiveToken).ConfigureAwait(false)
             : await AccessPolicyHelpers.RequireResourceAccessAsync(
-                context, resource, service, scope, effectiveToken).ConfigureAwait(false);
+                context, resource!, service, scope, effectiveToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
@@ -247,14 +247,14 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
-        if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             var error = StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, service, scope, cancellationToken).ConfigureAwait(false);
+            context, resource!, service, scope, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
@@ -331,7 +331,8 @@ internal static class LayerValidationHelpers
         {
             var matchedResource = snapshot.ResolveResource(p);
             var matchedService = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) ? s : null;
-            return TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
+            return snapshot.IsRoutable(p) &&
+                TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
         }
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
@@ -348,7 +349,7 @@ internal static class LayerValidationHelpers
         }
         publication ??= snapshot.Graph.Publications.FirstOrDefault(p => MatchesCollectionId(p) && IsTenantVisible(p));
 
-        if (publication is null || IsRetired(publication))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             return new MetadataV2ValidationResult(
                 false,
@@ -373,7 +374,7 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
         }
 
-        if (resource is null || IsRetired(resource))
+        if (!snapshot.IsRoutable(publication))
         {
             return new MetadataV2ValidationResult(
                 false,
@@ -384,7 +385,7 @@ internal static class LayerValidationHelpers
         }
 
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, service, scope, cancellationToken).ConfigureAwait(false);
+            context, resource!, service, scope, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
@@ -444,14 +445,14 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
-        if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             return new LayerReadAccessResult(NotFound: true, default, null, null);
         }
 
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             context,
-            resource,
+            resource!,
             service,
             AccessPolicyHelpers.DefaultOperationForScope(AccessScope.Read),
             cancellationToken).ConfigureAwait(false);
@@ -477,7 +478,7 @@ internal static class LayerValidationHelpers
         var byLayer = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service)>();
         foreach (var pub in snapshot.Graph.Publications)
         {
-            if (!pub.LayerIndex.HasValue)
+            if (!pub.LayerIndex.HasValue || !snapshot.IsRoutable(pub))
             {
                 continue;
             }
@@ -574,7 +575,7 @@ internal static class LayerValidationHelpers
         // before falling back to the lexicographically earliest service name. LINQ ordering
         // is stable, preserving the first graph entry when names compare equal.
         return snapshot.Graph.Publications
-            .Where(publication => publication.LayerIndex == layerId)
+            .Where(publication => publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
             .Select(publication => (
                 Publication: publication,
                 Service: ResolveVisibleProtocolService(
@@ -606,7 +607,8 @@ internal static class LayerValidationHelpers
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+        if (!snapshot.IsRoutable(publication) ||
+            !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
         {
             return null;
         }
@@ -626,9 +628,6 @@ internal static class LayerValidationHelpers
     /// </summary>
     internal static bool IsRetired(MetadataV2Resource resource)
         => resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
-
-    internal static bool IsRetired(MetadataV2Publication publication)
-        => publication.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
 
     private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
         HttpContext context,
@@ -682,7 +681,7 @@ internal static class LayerValidationHelpers
         //   3. publication.IsPrimary
         //   4. lexicographically earliest by service name
         var candidatePublications = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId)
+            .Where(p => p.LayerIndex == layerId && snapshot.IsRoutable(p))
             .Where(p =>
             {
                 if (!applyTenantScope)
@@ -846,7 +845,7 @@ internal static class LayerValidationHelpers
         // reused across the equality and visibility checks — inlining them into a single
         // LINQ predicate would duplicate the lookups or require a less readable local
         // function.
-        foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.IsPrimary))
+        foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.IsPrimary && snapshot.IsRoutable(pub)))
         {
             var pubResource = snapshot.ResolveResource(pub);
             if (pubResource is null) continue;
@@ -1027,21 +1026,21 @@ internal static class LayerValidationHelpers
         foreach (var pub in publications)
         {
             var resource = snapshot.ResolveResource(pub);
-            if (resource is null)
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }
-            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
+            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource!, service))
             {
                 continue;
             }
             // Drop resources the caller can't read; capability documents normally hide them.
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service, scope))
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service, scope))
             {
                 continue;
             }
             visiblePublications.Add(pub);
-            resources.Add(resource);
+            resources.Add(resource!);
         }
 
         return new MetadataV2ServiceValidationResult(true, service, visiblePublications, resources, null);
