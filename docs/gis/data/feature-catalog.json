@@ -4051,6 +4051,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-tile-operations-cache-inventory",
+      "route": "/api/v1/admin/tile-operations/cache/inventory",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.CacheInventory_WhenNoIndex_ReturnsEmptyInventory"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-tile-operations-jobs",
       "route": "/api/v1/admin/tile-operations/jobs",
       "method": "GET",
@@ -5786,6 +5800,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.HealthEndpoints_AllVariations_ReturnCorrectStatus",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_CarriesTheLabelNamesTheContractPromises",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_DoesNotReintroduceTheUnitSuffixedSeriesNames",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_ExportsEverySeriesNamedByTheSloMetricContract",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.ServingDenominator_ExcludesHealthProbesAndTheMetricsScrape",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_ReturnsPrometheusTextExposition",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_WithoutAuthentication_ReturnsUnauthorized"
       ],
@@ -15782,6 +15800,8 @@
         "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.StartJob_ArchiveOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishWithoutLayerId_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenDeleteRequestWithoutTarget_Returns400",
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenExpireRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenInvalidateRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithInvalidOperation_Returns400"
       ],

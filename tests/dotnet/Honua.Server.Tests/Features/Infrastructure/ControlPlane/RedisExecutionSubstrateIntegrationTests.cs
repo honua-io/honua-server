@@ -76,6 +76,46 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_FinalizesOnlyWhileLeaseIsOwned()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var operationId = $"job-lease-finalize-{Guid.NewGuid():N}";
+        var leaseOperationId = $"partition:{Guid.NewGuid():N}";
+        const string owner = "worker-a:job";
+        var job = CreateQueuedJob(operationId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-a"
+        };
+        (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+        var running = await harness.JobStore.GetAsync(operationId);
+        running.Should().NotBeNull();
+        (await harness.JobStore.TryAcquireLeaseAsync(
+            leaseOperationId,
+            owner,
+            TimeSpan.FromMinutes(1))).Should().BeTrue();
+
+        var succeeded = running! with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        (await harness.JobStore.TrySetIfLeaseOwnedAsync(
+            succeeded,
+            leaseOperationId,
+            "worker-b:job")).Should().BeFalse();
+        (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
+            value => value.Status == ExecutionJobStatus.Running);
+
+        (await harness.JobStore.TrySetIfLeaseOwnedAsync(
+            succeeded,
+            leaseOperationId,
+            owner)).Should().BeTrue();
+        (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
+            value => value.Status == ExecutionJobStatus.Succeeded);
+    }
+
+    [IntegrationTest]
     public async Task ExecutionJobStore_WithRedis_QueriesByFiltersAndCursor()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);

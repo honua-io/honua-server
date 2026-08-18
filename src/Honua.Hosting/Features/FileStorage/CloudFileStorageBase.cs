@@ -25,6 +25,11 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
     public abstract Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default);
 
+    public abstract Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default);
+
     public async Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -95,6 +100,11 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     }
 
     public abstract Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default);
+
+    public abstract Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default);
 
     public virtual async Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default)
     {

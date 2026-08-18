@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Progress;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
@@ -36,6 +37,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IOptionsMonitor<TileCacheBatchOptions> _options;
     private readonly ILogger<TileCacheJobService> _logger;
+    private readonly IMetadataV2GraphProvider _graphProvider;
 
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
 
@@ -44,6 +46,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend> backends,
         IOptionsMonitor<TileCacheBatchOptions> options,
+        IMetadataV2GraphProvider graphProvider,
         ILogger<TileCacheJobService> logger,
         IJobQueue? jobQueue = null)
     {
@@ -51,6 +54,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _backends = (backends ?? throw new ArgumentNullException(nameof(backends))).ToArray();
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _jobQueue = jobQueue;
     }
@@ -63,14 +67,20 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     public async Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = TileCacheExecutionSpecBuilder.NormalizeRequest(request);
 
         var options = _options.CurrentValue;
         var jobId = $"tile-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, options);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, tenantScope, options);
+        var targetLayerIds = await TileCacheTargetResolver.ResolveLayerIdsAsync(
+            request,
+            _graphProvider,
+            cancellationToken).ConfigureAwait(false);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -79,6 +89,14 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
+            // Replica safety (issue #2661): serialize concurrent generations of the same
+            // (service, gridset, style) window under an exclusive lease so two backend workers
+            // never seed/expire/delete the same key window at once.
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = TileCacheExecutionSpecBuilder.BuildPartitionKey(request, targetLayerIds),
+                RequiresExclusiveLease = true
+            },
             Spec = spec
         };
 
@@ -238,6 +256,7 @@ internal interface ITileCacheJobService
     Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

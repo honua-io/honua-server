@@ -17,13 +17,36 @@ name: Stranded Merge Detector
 # default branch; the script and its tests live here. No external consumer is
 # wired up yet, so the `workflow_call` inputs are exercised only from this repo.
 #
+# Decisions live in `scripts/ci/stranded-merge-dispositions.json`, next to the
+# code. A stranded payload does not become un-stranded because someone decided
+# not to recover it, so without a ledger this job re-files the same settled rows
+# every Monday until everyone ignores it. An `abandoned` / `landed-elsewhere`
+# entry drops a finding out of the actionable count and into an Adjudicated
+# table; `recovering` only annotates it. Each entry covers exactly the paths it
+# names, so a newly actionable path re-opens the finding.
+#
 # JSON contract: findings.json carries `schemaVersion`. Version 2 renamed the
 # classifications (`payload-missing` -> `stranded`, `content-present` ->
 # `landed`) and added `edits-missing`, `superseded`, `indeterminate` and the
-# `openFindings` array. Anything parsing this output must branch on
+# `openFindings` array. Version 3 added the per-finding `disposition` object and
+# the `staleDispositions` array, and `actionable` no longer counts findings a
+# disposition silenced. Anything parsing this output must branch on
 # `schemaVersion`; `--fail-on payload-missing` remains accepted as an alias.
 
 on:
+  # The detector and its ledger are the only things that change how the weekly
+  # sweep behaves, so validate them on the PR that changes them. Without this the
+  # offline tests run first on the following Monday, and a broken classifier or a
+  # malformed ledger fails a scheduled job instead of a reviewable one. Only the
+  # test job runs here -- the sweep needs `gh` and files issues, neither of which
+  # belongs on a pull request.
+  pull_request:
+    paths:
+      - .github/workflows/stranded-merge-detector.yml
+      - scripts/ci/detect-stranded-merges.py
+      - scripts/ci/detect-stranded-merges.test.py
+      - scripts/ci/stranded-merge-dispositions.json
+      - scripts/ci/fixtures/stranded-merges-*.json
   workflow_dispatch:
     inputs:
       default-branch:
@@ -61,32 +84,29 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: read
 
+# Keyed by ref as well as repository so a pull_request validation run and the
+# scheduled sweep cannot cancel each other.
 concurrency:
-  group: stranded-merge-detector-${{ github.repository }}
+  group: stranded-merge-detector-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   DETECTOR_LABEL: stranded-merge-detector
 
 jobs:
-  sweep:
-    name: Sweep merged and open PRs for stranded payload
+  tests:
+    name: Validate the detector offline
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      # fetch-depth: 0 is required three times over: merge-base --is-ancestor
-      # needs full history on both sides, the content pass reads blobs out of the
-      # stranded merge commits themselves, and the open-PR pass resolves base
-      # branches from local remote-tracking refs rather than over the network
-      # (this checkout is credential-free, so an authenticated git fetch is not
-      # available to it).
+      # Shallow on purpose: these tests build their own synthetic repositories in
+      # temp directories and never read this one's history.
       - name: Checkout repository under test
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
           persist-credentials: false
 
       # When called from another repository the script is not in the caller's
@@ -100,14 +120,57 @@ jobs:
           path: .stranded-merge-tooling
           persist-credentials: false
 
+      # Pure classifiers over recorded facts plus synthetic git repositories: no
+      # network, no `gh`, no token. Includes the checked-in disposition ledger,
+      # so a malformed or drifted entry fails here rather than silencing a real
+      # finding in production.
       - name: Validate detector against recorded fixtures
         run: |
           root="."
           if [ "${{ github.repository }}" != "honua-io/honua-server" ]; then
             root=".stranded-merge-tooling"
           fi
-          echo "DETECTOR_ROOT=${root}" >> "${GITHUB_ENV}"
           python3 "${root}/scripts/ci/detect-stranded-merges.test.py"
+
+  sweep:
+    name: Sweep merged and open PRs for stranded payload
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: tests
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      # fetch-depth: 0 is required three times over: merge-base --is-ancestor
+      # needs full history on both sides, the content pass reads blobs out of the
+      # stranded merge commits themselves, and the open-PR pass resolves base
+      # branches from local remote-tracking refs rather than over the network
+      # (this checkout is credential-free, so an authenticated git fetch is not
+      # available to it).
+      - name: Checkout repository under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout detector tooling
+        if: github.repository != 'honua-io/honua-server'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.tooling-ref || 'trunk' }}
+          path: .stranded-merge-tooling
+          persist-credentials: false
+
+      - name: Resolve detector root
+        run: |
+          root="."
+          if [ "${{ github.repository }}" != "honua-io/honua-server" ]; then
+            root=".stranded-merge-tooling"
+          fi
+          echo "DETECTOR_ROOT=${root}" >> "${GITHUB_ENV}"
 
       # One sweep, one set of API calls. The markdown report is rendered from the
       # same findings.json the gate below reads, so the report and the gate can
@@ -152,8 +215,12 @@ jobs:
             cat report.md
             echo
             echo "**Merged rows are a signal to diff the payload**, not proof that a feature is gone."
-            echo "Recovery is a cherry-pick or a rebase of the stack base; abandonment is fine too,"
-            echo "as long as it is written down on the issue the PR was for."
+            echo "Recovery is a cherry-pick or a rebase of the stack base; abandonment is fine too."
+            echo
+            echo "**Record the decision either way** in \`scripts/ci/stranded-merge-dispositions.json\`."
+            echo "A stranded payload stays stranded, so an undecided finding reappears here every week."
+            echo "An \`abandoned\` or \`landed-elsewhere\` entry moves it to the Adjudicated table; the entry"
+            echo "covers only the paths it lists, so it cannot quietly absorb a new one."
             echo
             echo "**Open rows are cheap to fix right now** -- run the remedy in the table before the"
             echo "PR merges and it never becomes a merged row."

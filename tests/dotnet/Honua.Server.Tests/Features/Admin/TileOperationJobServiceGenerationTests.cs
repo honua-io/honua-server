@@ -43,33 +43,39 @@ public sealed class TileOperationJobServiceGenerationTests
             Operation = "seed",
             LayerId = 1,
             TileMatrixSetId = "UnsupportedSet"
-        });
+        }, schemaName: null, tenantScope: "public");
 
         await sut.ProcessQueuedJobAsync(failedJobId);
         (await sut.GetAsync(failedJobId))!.Status.Should().Be(OperationStatus.Failed);
 
-        var originalGeneration = await ReadPersistedGenerationIdAsync(cache, failedJobId);
+        var originalPersisted = await ReadPersistedRequestAsync(cache, failedJobId);
+        var originalGeneration = originalPersisted.Request.GenerationId;
         originalGeneration.Should().Be(failedJobId, "the first submission stamps the job id as the generation id");
+        originalPersisted.TenantScope.Should().Be("public");
 
         var retryJobId = await sut.RetryAsync(failedJobId);
         retryJobId.Should().NotBeNullOrWhiteSpace();
         retryJobId.Should().NotBe(failedJobId);
 
-        var retryGeneration = await ReadPersistedGenerationIdAsync(cache, retryJobId!);
+        var retryPersisted = await ReadPersistedRequestAsync(cache, retryJobId!);
+        var retryGeneration = retryPersisted.Request.GenerationId;
         retryGeneration.Should().Be(
             originalGeneration,
             "retry forwards the original generation id so the checkpoint resumes rather than restarting");
         retryGeneration.Should().NotBe(retryJobId, "the generation is intentionally decoupled from the new job id");
+        retryPersisted.TenantScope.Should().Be("public", "retry preserves the captured cache ownership scope");
     }
 
-    private static async Task<string?> ReadPersistedGenerationIdAsync(IDistributedCache cache, string jobId)
+    private static async Task<PersistedTileOperationRequest> ReadPersistedRequestAsync(
+        IDistributedCache cache,
+        string jobId)
     {
         var json = await cache.GetStringAsync($"tile:request:{jobId}");
         json.Should().NotBeNullOrWhiteSpace();
         var persisted = JsonSerializer.Deserialize(
             json!,
             TileOperationsJsonContext.Default.PersistedTileOperationRequest);
-        return persisted!.Request.GenerationId;
+        return persisted!;
     }
 
     private static TileOperationJobService CreateSut(

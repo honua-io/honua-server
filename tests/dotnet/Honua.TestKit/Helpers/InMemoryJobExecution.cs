@@ -69,6 +69,20 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
         }
     }
 
+    /// <summary>
+    /// This store models leases as always owned by the caller (see the lease methods above), so a
+    /// lease-fenced finalize is exactly a <see cref="TrySetAsync"/>. Without this override the
+    /// interface default fails closed and every partition-leased job (deploy workflows, metadata
+    /// releases, tile-cache lifecycle) would requeue forever instead of finalizing.
+    /// </summary>
+    public Task<bool> TrySetIfLeaseOwnedAsync(
+        ExecutionJobRecord job,
+        string leaseOperationId,
+        string leaseOwnerId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+        => TrySetAsync(job, ttl, cancellationToken);
+
     public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
     {
         lock (_gate)

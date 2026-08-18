@@ -53,6 +53,24 @@ internal static class ImageServerV2Lookups
         return Project(pub, resource);
     }
 
+    /// <summary>
+    /// Finds one exact publication by its canonical metadata identifier.
+    /// </summary>
+    public static ResolvedImageLayer? FindByPublicationId(
+        MetadataV2GraphSnapshot snapshot,
+        string publicationId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+
+        if (!snapshot.Index.PublicationsById.TryGetValue(publicationId, out var publication))
+        {
+            return null;
+        }
+
+        return Project(publication, snapshot.ResolveResource(publication));
+    }
+
     private static ResolvedImageLayer Project(MetadataV2Publication publication, MetadataV2Resource? resource)
     {
         var displayName = publication.TitleOverride

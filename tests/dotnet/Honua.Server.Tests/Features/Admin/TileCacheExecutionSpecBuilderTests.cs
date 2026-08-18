@@ -45,7 +45,11 @@ public sealed class TileCacheExecutionSpecBuilderTests
             }
         };
 
-        var spec = TileCacheExecutionSpecBuilder.Build(request, "tenant-schema", options);
+        var spec = TileCacheExecutionSpecBuilder.Build(
+            request,
+            "tenant-schema",
+            "tenant-default",
+            options);
 
         spec.Kind.Should().Be(ExecutionJobKind.TileCache);
         spec.Backend.Should().Be("honua-aws-batch");
@@ -62,6 +66,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
         spec.Parameters[TileCacheJobParameterKeys.TileMatrixSetId].Should().Be("WebMercatorQuad");
         spec.Parameters[TileCacheJobParameterKeys.MaxTiles].Should().Be("25000");
         spec.Parameters[TileCacheJobParameterKeys.SchemaName].Should().Be("tenant-schema");
+        spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("tenant-default");
         spec.Parameters[TileCacheJobParameterKeys.Bbox].Should().Be("-10,-20,30,40");
         spec.Parameters["batch.job_definition_arn"].Should().Be("arn:jd:1");
         spec.Parameters["batch.job_queue_arn"].Should().Be("arn:jq:1");
@@ -83,14 +88,19 @@ public sealed class TileCacheExecutionSpecBuilderTests
         };
 
         var options = new TileCacheBatchOptions { Enabled = true, Backend = "local" };
-        var spec = TileCacheExecutionSpecBuilder.Build(request, "schema-x", options);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, "schema-x", "tenant-x", options);
 
         var parsed = TileCacheExecutionSpecBuilder.TryParse(
-            spec.Parameters, out var decoded, out var schemaName, out var error);
+            spec.Parameters,
+            out var decoded,
+            out var schemaName,
+            out var tenantScope,
+            out var error);
 
         parsed.Should().BeTrue();
         error.Should().BeEmpty();
         schemaName.Should().Be("schema-x");
+        tenantScope.Should().Be("tenant-x");
         decoded.Operation.Should().Be("publish");
         decoded.ServiceId.Should().Be("svc-9");
         decoded.LayerId.Should().Be(7);
@@ -158,6 +168,163 @@ public sealed class TileCacheExecutionSpecBuilderTests
         var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
 
         spec.Parameters.ContainsKey(TileCacheJobParameterKeys.GenerationId).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void BuildThenTryParse_RoundTrips_StyleAndFormat()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 4,
+            TileMatrixSetId = "WebMercatorQuad",
+            Style = "night",
+            Format = "png"
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+        spec.Parameters[TileCacheJobParameterKeys.Style].Should().Be("night");
+        spec.Parameters[TileCacheJobParameterKeys.Format].Should().Be("png");
+
+        var parsed = TileCacheExecutionSpecBuilder.TryParse(
+            spec.Parameters, out var decoded, out _, out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.Operation.Should().Be("delete");
+        decoded.Style.Should().Be("night");
+        decoded.Format.Should().Be("png");
+    }
+
+    [UnitTest]
+    public void BuildThenTryParse_NormalizesDurableRequestBeforeDispatch()
+    {
+        var spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
+        {
+            Operation = " DELETE ",
+            LayerId = 4,
+            TileMatrixSetId = " WebMercatorQuad ",
+            Style = " night ",
+            Format = " PNG ",
+        }, schemaName: null, new TileCacheBatchOptions());
+
+        TileCacheExecutionSpecBuilder.TryParse(
+            spec.Parameters, out var decoded, out _, out var error).Should().BeTrue();
+
+        error.Should().BeEmpty();
+        decoded.Operation.Should().Be("delete");
+        decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        decoded.Style.Should().Be("night");
+        decoded.Format.Should().Be("png");
+    }
+
+    [UnitTest]
+    public void TryParse_SpecWithoutStyleOrFormat_ParsesWithNulls()
+    {
+        // Back-compat: a spec produced before the style/format fields existed must still parse.
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TileCacheJobParameterKeys.Operation] = "expire",
+            [TileCacheJobParameterKeys.LayerId] = "8",
+            [TileCacheJobParameterKeys.TileMatrixSetId] = "WebMercatorQuad"
+        };
+
+        var parsed = TileCacheExecutionSpecBuilder.TryParse(
+            parameters, out var decoded, out _, out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.Style.Should().BeNull();
+        decoded.Format.Should().BeNull();
+        decoded.LayerId.Should().Be(8);
+    }
+
+    [UnitTest]
+    public void BuildAndTryParse_DefaultTileMatrixSet_ForDurableJobs()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "expire",
+            LayerId = 8
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+        spec.Parameters[TileCacheJobParameterKeys.TileMatrixSetId].Should().Be("WebMercatorQuad");
+
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TileCacheJobParameterKeys.Operation] = "delete",
+            [TileCacheJobParameterKeys.LayerId] = "8"
+        };
+        TileCacheExecutionSpecBuilder.TryParse(parameters, out var decoded, out _, out var error).Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_EncodesServiceGridsetStyle()
+    {
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            ServiceId = "svc-1",
+            TileMatrixSetId = "WebMercatorQuad",
+            Style = "night"
+        }, [42]).Should().Be("tilecache:layers:webmercatorquad:night");
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_SameWindow_ProducesSameKey_DifferentWindow_Differs()
+    {
+        var a = new TileOperationStartRequest { Operation = "seed", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
+        var b = new TileOperationStartRequest { Operation = "delete", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
+        var c = new TileOperationStartRequest { Operation = "seed", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "night" };
+
+        // Two operations on the same (service, gridset, style) window share a partition key so the
+        // runtime serializes them under one exclusive lease; a different style is a different window.
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(a, [7])
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(b, [7]));
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(a, [7])
+            .Should().NotBe(TileCacheExecutionSpecBuilder.BuildPartitionKey(c, [7]));
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_CanonicalizesAliasesUsedByGeneratedKeys()
+    {
+        var serviceRequest = new TileOperationStartRequest
+        {
+            Operation = "seed",
+            ServiceId = "svc",
+            TileMatrixSetId = "Web/MercatorQuad",
+            Style = "a/b"
+        };
+        var layerRequest = serviceRequest with
+        {
+            Operation = "delete",
+            ServiceId = null,
+            LayerId = 42,
+            TileMatrixSetId = "Web_MercatorQuad",
+            Style = "a_b"
+        };
+
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(serviceRequest, [42])
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(layerRequest, [42]));
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_OverlappingLayerSets_ShareCoarseWindowLease()
+    {
+        var serviceRequest = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            ServiceId = "svc",
+            TileMatrixSetId = "WebMercatorQuad",
+            Style = "default",
+        };
+        var layerRequest = serviceRequest with { ServiceId = null, LayerId = 42, Operation = "seed" };
+
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(serviceRequest, [42, 43])
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(layerRequest, [42]));
     }
 
     [UnitTest]

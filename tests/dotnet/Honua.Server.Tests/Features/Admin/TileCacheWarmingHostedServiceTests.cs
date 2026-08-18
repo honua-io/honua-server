@@ -79,7 +79,11 @@ public sealed class TileCacheWarmingHostedServiceTests
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public Task<string> StartAsync(TileOperationStartRequest request, string? schemaName = null, CancellationToken cancellationToken = default)
+        public Task<string> StartAsync(
+            TileOperationStartRequest request,
+            string? schemaName = null,
+            string? tenantScope = null,
+            CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
             return Task.FromResult($"job-{Requests.Count}");

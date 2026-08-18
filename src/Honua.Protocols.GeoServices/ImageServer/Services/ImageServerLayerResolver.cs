@@ -26,6 +26,8 @@ internal interface IImageServerLayerResolver
 
 internal readonly record struct ImageServerLayerResolution(
     int LayerId,
+    string? PublicationId,
+    int? PublicationLayerIndex,
     IResult? ErrorResult);
 
 internal sealed class MetadataV2ImageServerLayerResolver(
@@ -45,7 +47,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!serviceResult.IsValid)
         {
-            return new ImageServerLayerResolution(0, serviceResult.ErrorResult);
+            return new ImageServerLayerResolution(0, null, null, serviceResult.ErrorResult);
         }
 
         var service = serviceResult.Service!;
@@ -53,9 +55,13 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         var publishedResources = snapshot.PublicationsForService(service.Metadata.Id)
             .Where(snapshot.IsRoutable)
             .Select(publication => new ImageServerPublicationLayer(
+                publication.Metadata.Id,
+                publication.LayerIndex,
                 snapshot.ResolveStorageLayerId(publication),
                 snapshot.ResolveResource(publication)))
-            .Where(static publication => publication.StorageLayerId.HasValue && publication.Resource is not null)
+            .Where(static publication =>
+                publication.StorageLayerId.HasValue
+                && publication.Resource is not null)
             .ToArray();
 
         var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
@@ -64,7 +70,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             service);
         if (accessError is not null)
         {
-            return new ImageServerLayerResolution(0, accessError);
+            return new ImageServerLayerResolution(0, null, null, accessError);
         }
 
         var layer = publishedResources.FirstOrDefault(publication =>
@@ -73,10 +79,16 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         {
             return new ImageServerLayerResolution(
                 0,
+                null,
+                null,
                 StandardErrorHelpers.CreateNotFound(context, "Image service has no layers."));
         }
 
-        return new ImageServerLayerResolution(layer.StorageLayerId.Value, null);
+        return new ImageServerLayerResolution(
+            layer.StorageLayerId.Value,
+            layer.PublicationId,
+            layer.PublicationLayerIndex,
+            null);
     }
 
     public async Task<ImageServerLayerResolution> ValidateLayerAsync(
@@ -99,6 +111,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         {
             return new ImageServerLayerResolution(
                 0,
+                null,
+                null,
                 StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found"));
         }
 
@@ -114,6 +128,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         {
             return new ImageServerLayerResolution(
                 0,
+                null,
+                null,
                 StandardErrorHelpers.CreateNotFound(context, $"{MetadataV2ServiceProtocols.ImageServer} is not enabled for this service."));
         }
 
@@ -123,13 +139,19 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             candidate.Service);
         if (accessError is not null)
         {
-            return new ImageServerLayerResolution(0, accessError);
+            return new ImageServerLayerResolution(0, null, null, accessError);
         }
 
-        return new ImageServerLayerResolution(layerId, null);
+        return new ImageServerLayerResolution(
+            snapshot.ResolveStorageLayerId(candidate.Publication) ?? layerId,
+            candidate.Publication.Metadata.Id,
+            candidate.Publication.LayerIndex,
+            null);
     }
 
     private readonly record struct ImageServerPublicationLayer(
+        string PublicationId,
+        int? PublicationLayerIndex,
         int? StorageLayerId,
         MetadataV2Resource? Resource);
 

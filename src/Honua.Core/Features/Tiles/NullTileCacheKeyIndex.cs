@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 namespace Honua.Core.Features.Tiles;
 
 /// <summary>
-/// No-op <see cref="ITileCacheKeyIndex" /> registered when tile-cache eviction is disabled or no
-/// Redis backing store is configured (#1917). Keeps the hot tile-serve path unchanged: every method
+/// No-op <see cref="ITileCacheKeyIndex" /> registered when no Redis backing store is configured.
+/// Keeps the hot tile-serve path unchanged: every method
 /// is a cheap no-op and <see cref="IsEnabled" /> is <see langword="false" /> so callers can skip
 /// building access records entirely.
 /// </summary>
@@ -24,8 +24,30 @@ public sealed class NullTileCacheKeyIndex : ITileCacheKeyIndex
     public bool IsEnabled => false;
 
     /// <inheritdoc />
-    public Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+    public Task RecordAccessAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        string? tenantScope = null,
+        CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task RecordWriteAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset expiresAt,
+        string? tenantScope = null,
+        CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    /// <inheritdoc />
+    public Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)

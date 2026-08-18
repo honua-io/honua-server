@@ -81,10 +81,22 @@ Every classifier is a pure function over resolved facts, and ``--fixture`` feeds
 those facts from JSON, so the whole classification is testable with no ``gh``
 call, no network, and no git repository. See ``fixtures/stranded-merges-*.json``.
 
+Recorded dispositions
+---------------------
+A stranded payload stays stranded even after someone decides not to recover it,
+so the finding is true every week forever. ``stranded-merge-dispositions.json``
+records the decision next to the code: an ``abandoned`` or ``landed-elsewhere``
+entry drops the finding out of the actionable count into an *Adjudicated* table,
+while ``recovering`` only annotates it. A decision covers exactly the paths it
+lists, so a newly actionable path re-opens the finding rather than being absorbed
+by an old waiver.
+
 JSON output carries ``schemaVersion``. Version 2 renamed the classifications:
 ``payload-missing`` -> ``stranded`` and ``content-present`` -> ``landed``, and
 added ``edits-missing`` / ``superseded`` / ``indeterminate`` plus the
-``openFindings`` array. ``--fail-on payload-missing`` is still accepted as an
+``openFindings`` array. Version 3 added the per-finding ``disposition`` object
+and the ``staleDispositions`` array, and ``actionable`` no longer counts findings
+a disposition silenced. ``--fail-on payload-missing`` is still accepted as an
 alias for ``--fail-on stranded``.
 
 Examples::
@@ -103,13 +115,15 @@ Examples::
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
+import os
 import subprocess
 import sys
 import time
 from typing import Any, Iterable, Sequence
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Bases that are expected to be non-ancestors for a while by design. The merge
 # train assembles a batch on train/batch/<sha>/<id>, lands the batch, and moves
@@ -135,6 +149,38 @@ OPEN_NEEDS_RETARGET = "needs-retarget"
 ACTIONABLE_CLASSIFICATIONS = frozenset(
     {MERGED_STRANDED, MERGED_EDITS_MISSING, MERGED_INDETERMINATE, OPEN_NEEDS_RETARGET}
 )
+
+# Recorded dispositions (#3248). A merged stranded payload does not become
+# un-stranded when someone decides not to recover it, so the finding is real
+# forever and the detector will keep reporting it every Monday. Two of the three
+# original #3248 findings are exactly that: #3116 was abandoned by name under the
+# single-engine raster decision, and #3113's residual was adjudicated as
+# no-action. Left alone, the weekly job files a tracking issue whose majority is
+# permanently-decided rows -- which is how a detector teaches everyone to ignore
+# it, the failure its own workflow comment warns about. It also invites the
+# re-litigation that already happened twice on #3113, once wrongly.
+#
+# So a decision is recorded in the repository, next to the code, and silences the
+# finding it was made about. Two properties keep the ledger from degrading into a
+# mute button:
+#
+# * **Scope-bound.** A disposition records the exact paths that were adjudicated.
+#   If the sweep later finds an actionable path the decision did not cover, the
+#   finding stays actionable and names the uncovered paths. Deleting a file from
+#   the default branch cannot be absorbed by a year-old waiver.
+# * **Not for work in flight.** ``recovering`` annotates a finding with the
+#   recovery PR and leaves it actionable. Only a *closed* decision silences, and
+#   even then an optional ``reviewBy`` date makes the silence lapse.
+DISPOSITION_ABANDONED = "abandoned"
+DISPOSITION_LANDED_ELSEWHERE = "landed-elsewhere"
+DISPOSITION_RECOVERING = "recovering"
+DISPOSITION_STATUSES = frozenset(
+    {DISPOSITION_ABANDONED, DISPOSITION_LANDED_ELSEWHERE, DISPOSITION_RECOVERING}
+)
+# Only these close the question. `recovering` deliberately does not.
+SILENCING_DISPOSITION_STATUSES = frozenset({DISPOSITION_ABANDONED, DISPOSITION_LANDED_ELSEWHERE})
+
+DEFAULT_DISPOSITIONS_PATH = "scripts/ci/stranded-merge-dispositions.json"
 
 # Per-path verdicts.
 PATH_IDENTICAL = "identical"
@@ -447,6 +493,142 @@ def classify_open_pr(
 
 def ignored(base: str, prefixes: Iterable[str]) -> bool:
     return any(base.startswith(prefix) for prefix in prefixes)
+
+
+# --------------------------------------------------------------------------- #
+# Recorded dispositions
+# --------------------------------------------------------------------------- #
+
+
+class DispositionError(ValueError):
+    """The disposition ledger is malformed.
+
+    Raised rather than skipped on purpose. A typo in a ``status`` would otherwise
+    fail *open* -- the entry stops silencing and the finding quietly returns to
+    the report, which is survivable -- or, worse, a typo in ``pr`` would silence
+    nothing while looking like it had. A ledger that decides what CI ignores has
+    to be loud when it is wrong.
+    """
+
+
+def load_dispositions(path: str, *, required: bool) -> dict[int, dict[str, Any]]:
+    """Read the ledger into ``{pr number: disposition}``.
+
+    ``required`` distinguishes an explicit ``--dispositions`` (a missing file is
+    an error the caller asked for) from the default path (a repository that has
+    never recorded a decision simply has no ledger, which is not a failure --
+    this script is ``workflow_call``-able from repositories that have their own).
+    """
+    if not os.path.exists(path):
+        if required:
+            raise DispositionError(f"disposition ledger not found: {path}")
+        return {}
+
+    with open(path, encoding="utf-8") as handle:
+        try:
+            document = json.load(handle)
+        except json.JSONDecodeError as error:
+            raise DispositionError(f"{path} is not valid JSON: {error}") from error
+
+    entries = document.get("dispositions")
+    if not isinstance(entries, list):
+        raise DispositionError(f"{path}: expected a top-level 'dispositions' array")
+
+    by_pr: dict[int, dict[str, Any]] = {}
+    for index, entry in enumerate(entries):
+        where = f"{path}: dispositions[{index}]"
+        if not isinstance(entry, dict):
+            raise DispositionError(f"{where} is not an object")
+        number = entry.get("pr")
+        if not isinstance(number, int) or isinstance(number, bool):
+            raise DispositionError(f"{where} needs an integer 'pr'")
+        if number in by_pr:
+            raise DispositionError(f"{where}: #{number} is recorded twice")
+        status = entry.get("status")
+        if status not in DISPOSITION_STATUSES:
+            raise DispositionError(
+                f"{where}: 'status' must be one of {sorted(DISPOSITION_STATUSES)}, got {status!r}"
+            )
+        if not (entry.get("reason") or "").strip():
+            raise DispositionError(f"{where}: 'reason' is required -- a silent waiver explains nothing")
+        paths = entry.get("paths", [])
+        if not isinstance(paths, list) or any(not isinstance(p, str) for p in paths):
+            raise DispositionError(f"{where}: 'paths' must be an array of strings")
+        review_by = entry.get("reviewBy")
+        if review_by is not None:
+            if not isinstance(review_by, str) or not _parse_date(review_by):
+                raise DispositionError(f"{where}: 'reviewBy' must be an ISO date (YYYY-MM-DD)")
+        by_pr[number] = entry
+    return by_pr
+
+
+def _parse_date(value: str) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def actionable_paths(finding: dict[str, Any]) -> list[str]:
+    """The paths a finding is actionable *for*, in report order.
+
+    ``indeterminate`` has none by construction -- nothing could be adjudicated --
+    so a disposition on it is trivially in scope. That is the right reading: the
+    only way to close an unadjudicable finding is for a human to look, and the
+    ledger is where they write down that they did.
+    """
+    return list(finding.get("absentPaths") or []) + list(finding.get("unlandedEditPaths") or [])
+
+
+def apply_disposition(
+    finding: dict[str, Any],
+    disposition: dict[str, Any] | None,
+    *,
+    today: dt.date,
+) -> dict[str, Any]:
+    """Attach a recorded decision to a finding and decide whether it silences it.
+
+    Pure, and mutates-then-returns the finding the way the classifiers do.
+    """
+    if not disposition or finding["classification"] not in ACTIONABLE_CLASSIFICATIONS:
+        # Nothing to decide. A `landed` or `superseded` finding is already
+        # informational, and filing it under "Adjudicated" would assert that its
+        # payload never reached the default branch -- the opposite of what those
+        # classifications mean. The sweep reports the entry as stale instead.
+        return finding
+
+    status = disposition["status"]
+    uncovered = [p for p in actionable_paths(finding) if p not in set(disposition.get("paths") or [])]
+    review_by = _parse_date(disposition["reviewBy"]) if disposition.get("reviewBy") else None
+    lapsed = bool(review_by and today > review_by)
+
+    record: dict[str, Any] = {
+        "status": status,
+        "reason": disposition["reason"],
+        "silences": False,
+    }
+    for optional in ("decidedOn", "decidedBy", "evidence", "recovery", "reviewBy"):
+        if disposition.get(optional):
+            record[optional] = disposition[optional]
+
+    if status not in SILENCING_DISPOSITION_STATUSES:
+        # `recovering` is a note, not a decision: the payload is still off the
+        # default branch, so the row stays in the actionable table with a pointer
+        # to whoever is carrying it.
+        record["why"] = "recovery is in flight; the finding stays actionable until it lands"
+    elif uncovered:
+        record["uncoveredPaths"] = uncovered
+        record["why"] = (
+            "the recorded decision does not cover every actionable path; "
+            "re-adjudicate and extend 'paths'"
+        )
+    elif lapsed:
+        record["why"] = f"the review date {disposition['reviewBy']} has passed; re-confirm the decision"
+    else:
+        record["silences"] = True
+
+    finding["disposition"] = record
+    return finding
 
 
 # --------------------------------------------------------------------------- #
@@ -774,8 +956,12 @@ def sweep(
     open_limit: int,
     ignored_prefixes: Iterable[str],
     include_open: bool = True,
+    dispositions: dict[int, dict[str, Any]] | None = None,
+    today: dt.date | None = None,
 ) -> dict[str, Any]:
     """Run both passes and return the findings worth showing a human."""
+    dispositions = dispositions or {}
+    today = today or dt.date.today()
     merged_prs = resolver.merged_prs(merged_limit)
     merged_findings: list[dict[str, Any]] = []
     for pr in merged_prs:
@@ -793,7 +979,7 @@ def sweep(
             indeterminate_reason=reason,
         )
         if finding["classification"] != MERGED_ON_DEFAULT:
-            merged_findings.append(finding)
+            merged_findings.append(apply_disposition(finding, dispositions.get(finding["number"]), today=today))
 
     open_prs: list[dict[str, Any]] = resolver.open_prs(open_limit) if include_open else []
     open_findings: list[dict[str, Any]] = []
@@ -813,9 +999,21 @@ def sweep(
         if finding["classification"] != OPEN_ON_DEFAULT:
             open_findings.append(finding)
 
+    # A decision about a PR the sweep no longer reports has outlived its subject:
+    # the payload re-landed, or the PR aged past --limit. Either way the entry is
+    # now silencing nothing, and saying so is what stops the ledger accumulating
+    # waivers nobody can account for.
+    reported = {f["number"] for f in merged_findings if f.get("disposition")}
+    stale = [
+        {"pr": number, "status": entry["status"], "reason": entry["reason"]}
+        for number, entry in sorted(dispositions.items())
+        if number not in reported
+    ]
+
     return {
         "merged": merged_findings,
         "open": open_findings,
+        "staleDispositions": stale,
         "scope": {
             "mergedExamined": len(merged_prs),
             "mergedLimit": merged_limit,
@@ -828,12 +1026,16 @@ def sweep(
     }
 
 
+def silenced(finding: dict[str, Any]) -> bool:
+    return bool((finding.get("disposition") or {}).get("silences"))
+
+
 def actionable(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         f
         for key in ("merged", "open")
         for f in (result.get(key) or [])
-        if f["classification"] in ACTIONABLE_CLASSIFICATIONS
+        if f["classification"] in ACTIONABLE_CLASSIFICATIONS and not silenced(f)
     ]
 
 
@@ -851,6 +1053,28 @@ def _paths_cell(paths: Sequence[str], limit: int = 5) -> str:
     if len(paths) > limit:
         cell += f" (+{len(paths) - limit} more)"
     return cell or "—"
+
+
+def _disposition_notes(findings: Sequence[dict[str, Any]]) -> list[str]:
+    """Bullets for rows that carry a recorded decision which did *not* silence them.
+
+    Printed under the table rather than as another column so the reason survives
+    at full length -- "why this is still here despite a decision" is the sentence
+    that stops the next person re-adjudicating it from scratch.
+    """
+    lines: list[str] = []
+    for f in findings:
+        record = f.get("disposition")
+        if not record or record.get("silences"):
+            continue
+        note = f"- #{f['number']} has a recorded `{record['status']}` disposition that does not close it: {record.get('why', '')}"
+        if record.get("uncoveredPaths"):
+            note += f" ({_paths_cell(record['uncoveredPaths'], limit=3)})"
+        note += "."
+        if record.get("recovery"):
+            note += f" Recovery: {record['recovery']}"
+        lines.append(note)
+    return [*lines, ""] if lines else []
 
 
 def _scope_sentence(scope: dict[str, Any], default_ref: str) -> str:
@@ -872,11 +1096,14 @@ def render_markdown(result: dict[str, Any], default_ref: str) -> str:
     merged = result.get("merged") or []
     opened = result.get("open") or []
     scope = result.get("scope") or {}
-    stranded = _of(merged, MERGED_STRANDED)
-    edits = _of(merged, MERGED_EDITS_MISSING)
-    unknown_payload = _of(merged, MERGED_INDETERMINATE)
-    superseded = _of(merged, MERGED_SUPERSEDED)
-    landed = _of(merged, MERGED_LANDED)
+    adjudicated = [f for f in merged if silenced(f)]
+    undecided = [f for f in merged if not silenced(f)]
+    stale_dispositions = result.get("staleDispositions") or []
+    stranded = _of(undecided, MERGED_STRANDED)
+    edits = _of(undecided, MERGED_EDITS_MISSING)
+    unknown_payload = _of(undecided, MERGED_INDETERMINATE)
+    superseded = _of(undecided, MERGED_SUPERSEDED)
+    landed = _of(undecided, MERGED_LANDED)
     retarget = _of(opened, OPEN_NEEDS_RETARGET)
     live = _of(opened, OPEN_LIVE_BASE)
     unknown_base = _of(opened, OPEN_UNKNOWN_BASE)
@@ -919,6 +1146,7 @@ def render_markdown(result: dict[str, Any], default_ref: str) -> str:
                 f"| `{f['mergeCommit'][:9]}` | {_paths_cell(f['absentPaths'])} |"
             )
         lines.append("")
+        lines += _disposition_notes(stranded)
 
     if edits:
         lines += [
@@ -937,6 +1165,7 @@ def render_markdown(result: dict[str, Any], default_ref: str) -> str:
                 f"| `{f['mergeCommit'][:9]}` | {_paths_cell(f['unlandedEditPaths'])} |"
             )
         lines.append("")
+        lines += _disposition_notes(edits)
 
     if unknown_payload:
         lines += [
@@ -954,6 +1183,42 @@ def render_markdown(result: dict[str, Any], default_ref: str) -> str:
                 f"| [#{f['number']}]({f['url']}) {f['title']} | `{f['base']}` "
                 f"| `{(f['mergeCommit'] or '?')[:9]}` | {f.get('reason', '')} |"
             )
+        lines.append("")
+
+    if adjudicated:
+        lines += [
+            f"### Adjudicated ({len(adjudicated)}) -- real findings, decision already recorded",
+            "",
+            "These payloads genuinely never reached the default branch, and they never will: someone",
+            f"looked and wrote the decision down in `{DEFAULT_DISPOSITIONS_PATH}`. They are listed so the",
+            "sweep stays honest about what is missing, and excluded from the actionable count so the",
+            "weekly issue is not mostly settled history. A decision covers only the paths it names --",
+            "a new actionable path puts the finding straight back in the tables above.",
+            "",
+            "| PR | decision | decided | why |",
+            "|---|---|---|---|",
+        ]
+        for f in adjudicated:
+            record = f["disposition"]
+            decided = record.get("decidedOn") or "—"
+            if record.get("decidedBy"):
+                decided += f" ({record['decidedBy']})"
+            lines.append(
+                f"| [#{f['number']}]({f['url']}) {f['title']} | `{record['status']}` | {decided} "
+                f"| {record['reason']} |"
+            )
+        lines.append("")
+
+    if stale_dispositions:
+        lines += [
+            f"### Dispositions with nothing left to decide ({len(stale_dispositions)})",
+            "",
+            "Recorded against a PR this sweep does not report. Either the payload reached the default",
+            "branch after all, or the PR aged past `--limit`. Prune the entry once you know which.",
+            "",
+        ]
+        for entry in stale_dispositions:
+            lines.append(f"- #{entry['pr']} — `{entry['status']}` — {entry['reason']}")
         lines.append("")
 
     if superseded or landed or live or unknown_base:
@@ -998,6 +1263,7 @@ def to_json_document(result: dict[str, Any], default_ref: str) -> dict[str, Any]
         "scope": result.get("scope") or {},
         "findings": result.get("merged") or [],
         "openFindings": result.get("open") or [],
+        "staleDispositions": result.get("staleDispositions") or [],
         "actionable": len(actionable(result)),
     }
 
@@ -1026,6 +1292,17 @@ def main() -> int:
         default=None,
         help=f"base-branch prefix to skip; repeatable (default: {', '.join(DEFAULT_IGNORED_BASE_PREFIXES)})",
     )
+    parser.add_argument(
+        "--dispositions",
+        default=None,
+        help=f"recorded decisions that silence settled findings (default: {DEFAULT_DISPOSITIONS_PATH} "
+        "relative to the working directory, skipped when absent)",
+    )
+    parser.add_argument(
+        "--no-dispositions",
+        action="store_true",
+        help="ignore the disposition ledger and report every finding",
+    )
     parser.add_argument("--json", action="store_true", help="emit findings as JSON instead of markdown")
     parser.add_argument(
         "--fail-on",
@@ -1045,10 +1322,24 @@ def main() -> int:
         result = {
             "merged": document.get("findings") or [],
             "open": document.get("openFindings") or [],
+            "staleDispositions": document.get("staleDispositions") or [],
             "scope": document.get("scope") or {},
         }
         print(render_markdown(result, document.get("defaultRef", default_ref)))
         return _exit_code(args.fail_on, result)
+
+    if args.no_dispositions:
+        dispositions: dict[int, dict[str, Any]] = {}
+    else:
+        # An explicit path that does not exist is the caller's mistake; the
+        # default one missing just means this repository has recorded nothing.
+        try:
+            dispositions = load_dispositions(
+                args.dispositions or DEFAULT_DISPOSITIONS_PATH, required=args.dispositions is not None
+            )
+        except DispositionError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
 
     if args.fixture:
         with open(args.fixture, encoding="utf-8") as handle:
@@ -1067,6 +1358,7 @@ def main() -> int:
         open_limit=args.open_limit,
         ignored_prefixes=prefixes,
         include_open=not args.no_open,
+        dispositions=dispositions,
     )
 
     if args.json:
@@ -1082,7 +1374,9 @@ def _exit_code(fail_on: str, result: dict[str, Any]) -> int:
         return 1
     if fail_on == "actionable" and actionable(result):
         return 1
-    if fail_on in ("stranded", "payload-missing") and _of(every, MERGED_STRANDED):
+    if fail_on in ("stranded", "payload-missing") and [
+        f for f in _of(every, MERGED_STRANDED) if not silenced(f)
+    ]:
         return 1
     return 0
 

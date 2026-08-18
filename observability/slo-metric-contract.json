@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "_comment": "Canonical Honua SLO metric contract. This file is the ONE source of truth for the Prometheus SERIES NAMES, LABEL NAMES and SCOPE SELECTORS that out-of-repo alerting may reference: honua-helm's PrometheusRule template, honua-devops' recording/alert rules, and honua-release's gate-observability. Each of those repositories was individually correct and collectively broken because nothing checked that the names matched across the seam — a PromQL ratio whose denominator series does not exist evaluates to an EMPTY vector, so the alert produces no series and never fires. The failure mode is silence, not noise. Two guards enforce this file: honua-server's SloMetricContractTests scrapes the real /metrics exposition and fails if the server stops exporting a name listed under `emitted`; honua-release's tools/check_metric_contract.py parses the consumer rule files and fails if they reference a name that is in neither `emitted` nor `not_emitted`.",
+  "_naming_comment": "`series` is the name as it appears in the Prometheus text exposition, NOT the .NET instrument name. They are equal here only because these instruments deliberately declare no OpenTelemetry `unit`: the OTel Prometheus exporter appends the UCUM-mapped unit to the metric name, so declaring unit \"ms\" would export `honua_serving_request_duration_ms_milliseconds` and unit \"errors\" would export `honua_request_error_total_errors_total`. See the SLO-contract comment block in src/Honua.ServiceDefaults/HonuaTelemetry.cs.",
+  "_scope_comment": "SCOPE IS PART OF THE CONTRACT, not a detail. An error-budget ratio is only meaningful when its denominator covers the same population as its numerator. Pairing the GeoServices-only numerator `honua_geoservices_error_total` with an unscoped request count is a fail-OPEN gate: 20 GeoServices errors out of 200 GeoServices calls is a 10% error rate, but divided by an unscoped denominator that also carries a day of health probes it reads as 0.00087 and passes a 1% budget with room to spare. Always pair a numerator with the denominator selector named in `slo_ratios` below.",
+  "version": 2,
+  "meter": "Honua",
+  "emitted": [
+    {
+      "series": "honua_geoservices_error_total",
+      "instrument": "honua_geoservices_error_total",
+      "type": "counter",
+      "labels": ["service_type", "operation", "error_code"],
+      "scope": "GeoServices/ArcGIS REST surfaces only.",
+      "role": "GeoServices-only error-envelope numerator. Pair with the geoservices_requests denominator selector.",
+      "recorded_by": "HonuaTelemetry.RecordErrorEnvelope"
+    },
+    {
+      "series": "honua_request_error_total",
+      "instrument": "honua_request_error_total",
+      "type": "counter",
+      "labels": ["service_type", "operation", "error_code", "in_band"],
+      "scope": "Every protocol surface.",
+      "role": "All-surface error-envelope numerator. in_band=\"true\" is the GeoServices HTTP-200-with-{error} class that transport 5xx metrics cannot see (server#2243, devops#113). error_code carries the HTTP status, so in_band=\"true\" (status < 400) and error_code=~\"5..\" are disjoint sets.",
+      "recorded_by": "HonuaTelemetry.RecordErrorEnvelope"
+    },
+    {
+      "series": "honua_serving_request_duration_ms_count",
+      "instrument": "honua_serving_request_duration_ms",
+      "type": "histogram_count",
+      "labels": ["honua_protocol", "honua_operation", "status_class"],
+      "scope": "Serving-plane requests: one sample per served request that classifies to a Honua protocol, EXCLUDING the non-serving-plane protocols Health and Monitoring (liveness/readiness probes and the /metrics scrape). Requests that classify to no protocol are also excluded, which bounds label cardinality.",
+      "role": "CANONICAL SLO DENOMINATOR. Always apply the selector for the numerator's scope — see slo_ratios.",
+      "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
+    },
+    {
+      "series": "honua_serving_request_duration_ms_sum",
+      "instrument": "honua_serving_request_duration_ms",
+      "type": "histogram_sum",
+      "labels": ["honua_protocol", "honua_operation", "status_class"],
+      "scope": "As honua_serving_request_duration_ms_count.",
+      "role": "Serving-plane latency sum (milliseconds).",
+      "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
+    },
+    {
+      "series": "honua_serving_request_duration_ms_bucket",
+      "instrument": "honua_serving_request_duration_ms",
+      "type": "histogram_bucket",
+      "labels": ["honua_protocol", "honua_operation", "status_class", "le"],
+      "scope": "As honua_serving_request_duration_ms_count.",
+      "role": "Serving-plane latency buckets; the only histogram the platform exposes for protocol-sliced p50/p95/p99.",
+      "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
+    }
+  ],
+  "selectors": {
+    "_comment": "PromQL label-matcher fragments published for out-of-repo consumers. geoservices_protocols is generated from HonuaTelemetry.Protocols.GeoServicesFamily and SloMetricContractTests fails if the two drift. Omitting a member shrinks the denominator and raises the measured error rate, i.e. it fails closed.",
+    "geoservices_protocols": "honua_protocol=~\"FeatureServer|MapServer|ImageServer|VectorTileServer|GPServer|NAServer|GeometryService|PrintingTools|StaticMap\""
+  },
+  "slo_ratios": {
+    "_comment": "The scope-matched numerator/denominator pairings every consumer must use. A consumer may add target-label matchers (namespace, service, ...) but must not widen the scope.",
+    "geoservices_error_rate": {
+      "numerator": "honua_geoservices_error_total",
+      "denominator": "honua_serving_request_duration_ms_count",
+      "denominator_selector": "selectors.geoservices_protocols",
+      "why": "Both sides cover the GeoServices family. Without the selector the denominator also carries OGC/OData/Admin/STAC traffic, and before the Health/Monitoring exclusion it carried probe traffic that outnumbers real requests ~100:1."
+    },
+    "all_surface_error_rate": {
+      "numerator": "honua_request_error_total",
+      "denominator": "honua_serving_request_duration_ms_count",
+      "denominator_selector": null,
+      "why": "Both sides cover every protocol surface, so no selector is needed. Counts 4xx client errors: this is an error-ENVELOPE rate, not an availability signal."
+    },
+    "platform_fault_rate": {
+      "numerator": "honua_request_error_total{in_band=\"true\"} + honua_request_error_total{error_code=~\"5..\"}",
+      "denominator": "honua_serving_request_duration_ms_count",
+      "denominator_selector": null,
+      "why": "The availability / error-budget numerator. Transport 5xx plus every in-band (HTTP<400 body-envelope) error, which is the class load-balancer metrics cannot see. Ordinary out-of-band 4xx — an Esri client probing capabilities and getting 404s — is excluded, so routine client behaviour cannot breach an availability target. The two selectors are disjoint because in_band is defined as error_code < 400. LIMITATION: an in-band error cannot currently be attributed to client vs server fault, so all of them count against availability. That is deliberate (an in-band error storm is exactly what devops#113 exists to catch) but it means this is not a true fault-attributed availability SLO; a `fault` tag on the error counter would be needed for that."
+    }
+  },
+  "not_emitted": [
+    {
+      "series": "honua_backup_success_ratio",
+      "reason": "Referenced by honua-devops' backup SLO recording rule. No server instrument produces it; it is expected from a future backup/DR exporter. Listed here so the cross-repo guard treats it as a KNOWN gap rather than silently accepting it — and so a typo in a real metric name still fails."
+    },
+    {
+      "series": "honua_replication_lag_seconds",
+      "reason": "Referenced by honua-devops' replication SLO recording rule. No server instrument produces it; expected from a future database/replication exporter."
+    },
+    {
+      "series": "honua_maintenance_window_active",
+      "reason": "Referenced by honua-devops' maintenance-window suppression rule. No server instrument produces it; it is set by the deploy tooling, not the serving plane."
+    }
+  ],
+  "retired": [
+    {
+      "series": "honua_http_requests_total",
+      "reason": "Never emitted by any Honua component. honua-helm's PrometheusRule and honua-devops' recording rules divided by it until honua-release#5, which made every SLO ratio an empty vector and every alert silent. Replaced by honua_serving_request_duration_ms_count. Legal to NAME in an explanatory comment; using it in an expression is a hard failure."
+    },
+    {
+      "series": "honua_geoservices_requests_total",
+      "reason": "Never emitted. Was the default REQUEST_METRIC of honua-release's gate-observability, which made that gate structurally incapable of returning `pass`. Replaced by honua_serving_request_duration_ms_count scoped to selectors.geoservices_protocols."
+    },
+    {
+      "series": "honua_request_duration_ms_bucket",
+      "reason": "Never emitted. honua-devops' latency quantile rules used it; the real histogram is honua_serving_request_duration_ms_bucket."
+    },
+    {
+      "series": "honua_geoservices_error_total_errors_total",
+      "reason": "The name the OTel Prometheus exporter produced while the counter declared unit \"errors\". Not a metric anyone should reference; listed so a rule that 'fixes' drift by adopting the mangled name fails instead."
+    },
+    {
+      "series": "honua_request_error_total_errors_total",
+      "reason": "As above, for the all-surface error counter."
+    },
+    {
+      "series": "honua_serving_request_duration_ms_milliseconds_count",
+      "reason": "The _count child the exporter produced while the histogram declared unit \"ms\". The bare `..._milliseconds` base name is never emitted for a histogram, so asserting against it would be an assertion that can never fail — the _count child is the one to guard."
+    }
+  ],
+  "external_labels": {
+    "_comment": "Label names that alert rules may use even though the server does not emit them: Prometheus target labels applied by the scrape config / Prometheus Operator, plus PromQL structural labels.",
+    "names": [
+      "job",
+      "instance",
+      "cluster",
+      "namespace",
+      "pod",
+      "container",
+      "service",
+      "environment",
+      "deployment",
+      "endpoint",
+      "le",
+      "otel_scope_name",
+      "otel_scope_version"
+    ]
+  },
+  "related_series_not_in_contract": {
+    "_comment": "Series that exist but are deliberately NOT the SLO denominator. Recorded because an earlier revision of this file wrongly claimed honua_serving_request_duration_ms_count was the only request-volume series the server exports.",
+    "http_server_request_duration_seconds_count": "Exported by OpenTelemetry's AddAspNetCoreInstrumentation(), which Extensions.cs registers on the same MeterProvider as AddPrometheusExporter(). It counts EVERY HTTP request with http_route / http_request_method / http_response_status_code labels. It is a strict superset of the serving plane — it includes /metrics scrapes, health probes and static files — and it carries no Honua protocol label, so a GeoServices-scoped denominator cannot be expressed with it without route regexes. It is the right series for raw HTTP traffic and transport status-code panels; it is the wrong series for a protocol-scoped error budget."
+  }
+}

@@ -31,7 +31,7 @@
       "entryCount": 369,
       "provingTestCount": 1027,
       "maturity": {
-        "implemented": 369
+        "implemented": 370
       },
       "noSurface": null,
       "cite": [],
@@ -1148,7 +1148,7 @@
       "category": "Ops",
       "edition": "Community",
       "entryCount": 16,
-      "provingTestCount": 33,
+      "provingTestCount": 37,
       "maturity": {
         "implemented": 16
       },
