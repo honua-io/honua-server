@@ -978,7 +978,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.PublicSceneDiscoveryEndpointTests.ListScenes_With3dTilesCapability_ReturnsDowntownHonoluluFixture"
       ],
       "proof_ledger_surface": "public-scene-discovery",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "capability": "scene.catalog"
     },
     {
@@ -993,7 +993,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetSceneMetadata_DoesNotAdvertiseOpenUsdAsRuntimeCapability"
       ],
       "proof_ledger_surface": "public-scene-discovery",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "capability": "scene.catalog"
     },
     {
@@ -1007,7 +1007,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.PublicSceneDiscoveryEndpointTests.ResolveScene_ForDowntownHonolulu_ReturnsHostedTilesetUrl"
       ],
       "proof_ledger_surface": "public-scene-discovery",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "capability": "scene.catalog"
     },
     {
@@ -5151,7 +5151,7 @@
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.IncidentSse_Once_ReturnsStatusSnapshotAndHeartbeat"
       ],
       "proof_ledger_surface": "cloud-demo-services",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "demo.showcase"
     },
     {
@@ -7181,6 +7181,9 @@
         "Honua.Server.Tests.Features.Infrastructure.Errors.StandardErrorResponseFormatterTests.FormatError_WmsAliasPath_ReturnsServiceExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcAlias_GetCapabilities_ReturnsXml",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_WithWmsEnabledAndMapServerDisabled_RendersStyledFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend"
       ],
       "proof_ledger_surface": "wms-1.3",
@@ -7197,7 +7200,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Errors.StandardErrorResponseFormatterTests.FormatError_OgcServiceAliasPath_ReturnsXmlExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcAlias_GetCapabilities_ReturnsXml"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcAlias_GetCapabilities_ReturnsXml",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcRoute_GetFeatureInfo_WithWmtsEnabledAndMapServerDisabled_ReturnsSeededFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcRoute_GetTile_UnknownTileMatrixSet_ReturnsOwsExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcRoute_GetTile_WithWmtsEnabledAndMapServerDisabled_RendersStyledFeature"
       ],
       "proof_ledger_surface": "wmts-1.0",
       "maturity": "implemented",
@@ -15941,7 +15947,7 @@
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.Reset_WithoutToken_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "cloud-demo-services",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "demo.showcase"
     },
     {
@@ -16840,7 +16846,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_MissingObserver_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_NonPositiveRadius_ReturnsUnprocessableEntity",
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_ObserverRaisedAboveRidgeRing_RestoresLongRangeVisibility",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_RidgeRingTerrain_OccludesFarSamplesButNotNearSamples",
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_SampleGrid_MatchesRequestedRayFanAndRadius",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_WithCoveredFlatTerrain_ReturnsVisibleSamples"
       ],
       "proof_ledger_surface": "elevation-query-profile",
