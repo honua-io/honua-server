@@ -563,8 +563,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 whereValidation.ErrorMessage ?? "Invalid where clause."));
         }
 
-        var requestedOffset = request.ResultOffset != 0 ? request.ResultOffset : (int?)null;
-        var requestedLimit = request.ResultRecordCount != 0 ? request.ResultRecordCount : (int?)null;
+        // 0.2.0-alpha.1 retired the int32 result_offset / result_record_count fields in favour of
+        // the int64 result_offset_long / result_record_count_long; narrow here so the existing
+        // pagination validator keeps owning the range and ordering diagnostics.
+        var requestedOffset = request.ResultOffsetLong != 0
+            ? GrpcConversionHelpers.NarrowPagination(request.ResultOffsetLong, "result_offset_long")
+            : (int?)null;
+        var requestedLimit = request.ResultRecordCountLong != 0
+            ? GrpcConversionHelpers.NarrowPagination(request.ResultRecordCountLong, "result_record_count_long")
+            : (int?)null;
         if (!requestedLimit.HasValue && request.ObjectIds.Count > 0)
         {
             requestedLimit = request.ObjectIds.Count;

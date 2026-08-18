@@ -89,7 +89,7 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
             LayerId = WebAppFixture.TestLayerId,
             Where = "1=1",
             ReturnGeometry = true,
-            ResultRecordCount = 1
+            ResultRecordCountLong = 1
         };
         request.OutFields.Add("*");
 

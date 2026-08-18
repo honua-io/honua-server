@@ -74,6 +74,26 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
+### Pre-1.0 exception
+
+`Geospatial.Grpc` is still pre-1.0, and its [`VERSIONING.md` Pre-1.0 Exception](https://github.com/honua-io/geospatial-grpc/blob/main/VERSIONING.md) permits a coordinated structural break inside `geospatial.v1` while the package major version is `0.x`. The freeze described above becomes binding at `1.0.0`.
+
+One such break has been exercised. `0.2.0-alpha.1` (geospatial-grpc#48 Option A) promoted the duplicated job-lifecycle control-plane messages to `execution_types.proto` and converged `SpecService` onto them, and `0.1.0-alpha.3` unified the severity enums and widened feature-query pagination. The protobuf package stayed `geospatial.v1`, so no client support floor moved, but callers built against `0.1.x` bindings must regenerate. The changes that alter what a client reads:
+
+| Change | Before | After |
+| --- | --- | --- |
+| Job-lifecycle messages | Per-service `Validate*Response`, `DryRun*Response`, `Submit*JobResponse`, `Get*JobRequest/Response`, `Get*JobResultRequest`, `Cancel*JobRequest/Response` | Shared `ValidateResponse`, `DryRunResponse`, `SubmitJobResponse`, `GetJobRequest`/`GetJobResponse`, `GetJobResultRequest`, `CancelJobRequest`/`CancelJobResponse` |
+| Severity | `IssueSeverity` / `ValidationSeverity` / `SpecDiagnosticSeverity` (`ERROR = 1`) | Shared `Severity`, ordered ascending (`INFO = 1 < WARNING = 2 < ERROR = 3`) |
+| `ErrorDetail` identity | `string error_code = 1` | `int32 code = 1`; the symbolic name Honua used to send is preserved in `details["error_code"]` |
+| Edit errors | `EditError` | `ErrorDetail` |
+| Feature-query pagination | `int32 result_offset = 8`, `int32 result_record_count = 9` | `int64 result_offset_long = 20`, `int64 result_record_count_long = 21`; fields 8/9 are `reserved` |
+| Scene / style catalog pagination | `result_offset` + `result_record_count`, `exceeded_transfer_limit` | `page_size` + opaque `page_token`, `next_page_token` |
+| Spec apply identity | `ApplySpecEvent.apply_token`, `CancelApplyRequest`/`CancelApplyResponse` | `ApplySpecEvent.job_id` (field 10), `CancelJobRequest`/`CancelJobResponse` |
+| Spec node fragments | `map<string, string> inputs` / `parameters` | `map<string, ParameterValue>`; Honua accepts the `string_value` branch only |
+| Spec cost / diagnostics | `SpecCostEstimate`, `SpecCostActual`, `SpecDiagnostic` | `DryRunResult` (fields 5-7 estimate, 8-10 actual), `ErrorDetail` |
+
+`ListScenes` page tokens are opaque and server-issued; a token this server did not mint is rejected with `INVALID_ARGUMENT`. A zero or negative `page_size` returns the entire scene catalog (the catalog is a small bounded set), so `next_page_token` is empty in that case.
+
 ## Conformance
 
 gRPC is a Honua-native surface (not OGC). Contract stability is tracked through the public-interface proof ledger; HTTP standards status lives in the [API standards summary](../compatibility/ogc-conformance.md).

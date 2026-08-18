@@ -16,6 +16,13 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal static class GeoprocessingConversionHelpers
 {
+    /// <summary>
+    /// <c>ErrorDetail.details</c> key that carries the symbolic error name. Geospatial.Grpc
+    /// 0.2.0-alpha.1 replaced the <c>string error_code</c> field with <c>int32 code</c>, so the
+    /// symbolic name is preserved here rather than dropped.
+    /// </summary>
+    internal const string ErrorCodeDetailKey = "error_code";
+
     // -----------------------------------------------------------------------
     // Proto → Domain
     // -----------------------------------------------------------------------
@@ -68,16 +75,16 @@ internal static class GeoprocessingConversionHelpers
     /// <summary>
     /// Converts a domain PlanValidationResult to the proto response.
     /// </summary>
-    public static Proto.ValidatePlanResponse ToProtoValidatePlanResponse(PlanValidationResult result)
+    public static Proto.ValidateResponse ToProtoValidateResponse(PlanValidationResult result)
     {
-        var response = new Proto.ValidatePlanResponse
+        var response = new Proto.ValidateResponse
         {
             Valid = result.IsExecutable
         };
 
         foreach (var violation in result.Violations)
         {
-            response.Issues.Add(ToProtoPlanValidationIssue(violation, Proto.IssueSeverity.Error));
+            response.Issues.Add(ToProtoPlanValidationIssue(violation, Proto.Severity.Error));
         }
 
         foreach (var warning in result.Warnings)
@@ -85,7 +92,7 @@ internal static class GeoprocessingConversionHelpers
             response.Issues.Add(new Proto.PlanValidationIssue
             {
                 Message = warning,
-                Severity = Proto.IssueSeverity.Warning
+                Severity = Proto.Severity.Warning
             });
         }
 
@@ -95,9 +102,9 @@ internal static class GeoprocessingConversionHelpers
     /// <summary>
     /// Converts a domain DryRunResult to the proto response.
     /// </summary>
-    public static Proto.DryRunPlanResponse ToProtoDryRunPlanResponse(DryRunResult result)
+    public static Proto.DryRunResponse ToProtoDryRunResponse(DryRunResult result)
     {
-        var response = new Proto.DryRunPlanResponse
+        var response = new Proto.DryRunResponse
         {
             Valid = true,
             Result = new Proto.DryRunResult
@@ -125,16 +132,16 @@ internal static class GeoprocessingConversionHelpers
     /// <summary>
     /// Converts a non-executable validation result to the proto dry-run response.
     /// </summary>
-    public static Proto.DryRunPlanResponse ToProtoDryRunPlanResponse(PlanValidationResult result)
+    public static Proto.DryRunResponse ToProtoDryRunResponse(PlanValidationResult result)
     {
-        var response = new Proto.DryRunPlanResponse
+        var response = new Proto.DryRunResponse
         {
             Valid = result.IsExecutable
         };
 
         foreach (var violation in result.Violations)
         {
-            response.Issues.Add(ToProtoPlanValidationIssue(violation, Proto.IssueSeverity.Error));
+            response.Issues.Add(ToProtoPlanValidationIssue(violation, Proto.Severity.Error));
         }
 
         foreach (var warning in result.Warnings)
@@ -142,7 +149,7 @@ internal static class GeoprocessingConversionHelpers
             response.Issues.Add(new Proto.PlanValidationIssue
             {
                 Message = warning,
-                Severity = Proto.IssueSeverity.Warning
+                Severity = Proto.Severity.Warning
             });
         }
 
@@ -179,17 +186,29 @@ internal static class GeoprocessingConversionHelpers
 
         if (package.Status is GeoprocessingWorkflowStatus.Failed or GeoprocessingWorkflowStatus.Cancelled)
         {
-            response.Error = package.Errors.Count == 0
-                ? new Proto.ErrorDetail
+            if (package.Errors.Count == 0)
+            {
+                var kind = package.Status == GeoprocessingWorkflowStatus.Cancelled
+                    ? GeoprocessingErrorKind.Cancelled
+                    : GeoprocessingErrorKind.ExecutionFailed;
+
+                var synthetic = new Proto.ErrorDetail
                 {
-                    ErrorCode = package.Status == GeoprocessingWorkflowStatus.Cancelled ? "CANCELLED" : "EXECUTION_FAILED",
+                    Code = ToProtoErrorCode(kind),
                     Category = Proto.ErrorCategory.Execution,
                     Message = package.Summary.Description ?? package.Summary.Title,
                     Retryability = package.Status == GeoprocessingWorkflowStatus.Cancelled
                         ? Proto.Retryability.FixPlanAndRetry
                         : Proto.Retryability.TransientBackendError
-                }
-                : ToProtoErrorDetail(package.Errors[0]);
+                };
+                synthetic.Details[ErrorCodeDetailKey] = ToProtoErrorCodeSymbol(kind);
+                response.Error = synthetic;
+            }
+            else
+            {
+                response.Error = ToProtoErrorDetail(package.Errors[0]);
+            }
+
             return response;
         }
 
@@ -289,18 +308,23 @@ internal static class GeoprocessingConversionHelpers
     }
 
     private static Proto.ErrorDetail ToProtoErrorDetail(GeoprocessingError error)
-        => new()
+    {
+        var detail = new Proto.ErrorDetail
         {
-            ErrorCode = ToProtoErrorCode(error.Kind),
+            Code = ToProtoErrorCode(error.Kind),
             Category = ToProtoErrorCategory(error.Kind),
             Message = error.Message,
             NodeId = error.StepId ?? "",
             Retryability = ToProtoRetryability(error.Kind)
         };
 
+        detail.Details[ErrorCodeDetailKey] = ToProtoErrorCodeSymbol(error.Kind);
+        return detail;
+    }
+
     private static Proto.PlanValidationIssue ToProtoPlanValidationIssue(
         GeoprocessingValidationFailure failure,
-        Proto.IssueSeverity severity)
+        Proto.Severity severity)
         => new()
         {
             Field = failure.FieldPath ?? "",
@@ -397,7 +421,30 @@ internal static class GeoprocessingConversionHelpers
         _ => Proto.Retryability.PermanentFailure
     };
 
-    private static string ToProtoErrorCode(GeoprocessingErrorKind kind) => kind switch
+    /// <summary>
+    /// Numeric <c>ErrorDetail.code</c> for a domain error kind. Geospatial.Grpc 0.2.0-alpha.1
+    /// narrowed <c>ErrorDetail.code</c> to <c>int32</c>, so the symbolic name that used to
+    /// travel in the removed <c>error_code</c> string is carried in
+    /// <c>details["<see cref="ErrorCodeDetailKey"/>"]</c> instead. These numbers are a stable
+    /// wire contract: never renumber an assigned value.
+    /// </summary>
+    private static int ToProtoErrorCode(GeoprocessingErrorKind kind) => kind switch
+    {
+        GeoprocessingErrorKind.ValidationFailed => 1000,
+        GeoprocessingErrorKind.AuthorizationDenied => 1001,
+        GeoprocessingErrorKind.UnknownDataset => 1002,
+        GeoprocessingErrorKind.UnknownProcess => 1003,
+        GeoprocessingErrorKind.ExecutionFailed => 1004,
+        GeoprocessingErrorKind.Timeout => 1005,
+        GeoprocessingErrorKind.Cancelled => 1006,
+        GeoprocessingErrorKind.OutputBindingFailed => 1007,
+        _ => 0
+    };
+
+    /// <summary>
+    /// Symbolic error name preserved from the pre-0.2.0 <c>ErrorDetail.error_code</c> string field.
+    /// </summary>
+    private static string ToProtoErrorCodeSymbol(GeoprocessingErrorKind kind) => kind switch
     {
         GeoprocessingErrorKind.ValidationFailed => "VALIDATION_FAILED",
         GeoprocessingErrorKind.AuthorizationDenied => "AUTHORIZATION_DENIED",
