@@ -257,6 +257,15 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     private const double RidgeFloorElevationMeters = 10;
     private const double RidgeRimElevationMeters = 3000;
 
+    /// <summary>
+    /// Observer offset used by the "raised above the ring" viewshed test. The rim is a square
+    /// frame, so the worst-case crossing on a diagonal ray is at 2000 * sqrt(2) ~= 2828 m; a
+    /// sight line from this height to a sample at 4034 m (the nearest diagonal sample beyond
+    /// the 4000 m assertion threshold) still passes ~5990 m above sea level there, well clear
+    /// of the 3000 m rim.
+    /// </summary>
+    private const double ObserverAboveRidgeHeightMeters = 20000;
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
@@ -360,6 +369,130 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         farSamples.Should().NotBeEmpty();
         farSamples.Should().OnlyContain(s => !s.GetProperty("visible").GetBoolean(),
             "samples beyond the ridge ring (> 2500m), in every direction, are blocked by the intervening 3000m ridge");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /elevation/{datasetId}/viewshed")]
+    public async Task PostViewshed_ObserverRaisedAboveRidgeRing_RestoresLongRangeVisibility()
+    {
+        // honua-release#100: the ridge test above proves occlusion with a ground-level
+        // observer, and the flat test proves the trivial all-visible case, but nothing
+        // proved that observerHeight actually feeds the occlusion math at the endpoint — a
+        // viewshed that ignored the observer offset entirely would pass both. Same terrain,
+        // same request, observer lifted well above the 3000 m rim: the far samples the
+        // ground-level observer cannot see must become visible.
+        await SeedRidgeRingRasterAsync();
+
+        var response = await _fixture.Client.PostAsJsonAsync(
+            "/elevation/0/viewshed",
+            new
+            {
+                observerLon = 0.0,
+                observerLat = 0.0,
+                observerHeight = ObserverAboveRidgeHeightMeters,
+                radiusMeters = 4500.0,
+                rayCount = 36,
+                samplesPerRay = 60
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        root.GetProperty("observerGroundElevation").GetDouble()
+            .Should().BeApproximately(RidgeFloorElevationMeters, 0.0001);
+        root.GetProperty("observerElevation").GetDouble()
+            .Should().BeApproximately(RidgeFloorElevationMeters + ObserverAboveRidgeHeightMeters, 0.0001,
+                "observerElevation must be the sampled ground elevation plus the requested offset");
+
+        var samples = root.GetProperty("samples").EnumerateArray().ToArray();
+
+        // The rim is a SQUARE frame, so a diagonal ray crosses it as far out as
+        // 2000 * sqrt(2) ~= 2828 m, not 2000 m. The observer height is chosen so the sight
+        // line to a sample beyond 4000 m clears 3000 m at that worst-case crossing in every
+        // direction — the exact opposite of the ground-level observer above, for whom every
+        // sample beyond 2500 m is blocked.
+        var farSamples = samples.Where(s => s.GetProperty("distanceMeters").GetDouble() > 4000).ToArray();
+        farSamples.Should().NotBeEmpty();
+        farSamples.Should().OnlyContain(s => s.GetProperty("visible").GetBoolean(),
+            "an observer raised above the ridge ring must see over it in every direction");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /elevation/{datasetId}/viewshed")]
+    public async Task PostViewshed_SampleGrid_MatchesRequestedRayFanAndRadius()
+    {
+        // honua-release#100: the existing viewshed tests assert visibility verdicts but never
+        // the sampling contract itself — that the response really is rayCount evenly-spaced
+        // rays of samplesPerRay points, all inside the requested radius and positioned on the
+        // ray they claim. A service that returned an arbitrary point cloud, or silently
+        // clamped/ignored rayCount, would pass every other test here.
+        const int rayCount = 8;
+        const int samplesPerRay = 10;
+        const double radiusMeters = 4000.0;
+
+        await SeedFullWorldRasterAsync(50);
+
+        var response = await _fixture.Client.PostAsJsonAsync(
+            "/elevation/0/viewshed",
+            new
+            {
+                observerLon = 0.0,
+                observerLat = 0.0,
+                observerHeight = 100.0,
+                radiusMeters,
+                rayCount,
+                samplesPerRay
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        root.GetProperty("radiusMeters").GetDouble().Should().BeApproximately(radiusMeters, 0.0001);
+        root.GetProperty("rayCount").GetInt32().Should().Be(rayCount);
+        root.GetProperty("samplesPerRay").GetInt32().Should().Be(samplesPerRay);
+
+        var samples = root.GetProperty("samples").EnumerateArray().ToArray();
+        samples.Should().HaveCount(rayCount * samplesPerRay,
+            "the sample grid is exactly rayCount x samplesPerRay points");
+        root.GetProperty("sampleCount").GetInt32().Should().Be(samples.Length);
+
+        // The ray endpoint is placed with a spherical destination-point formula while the
+        // profile length comes back from the ellipsoidal profile sampler, so distances land
+        // within a fraction of a percent of the requested radius rather than exactly on it.
+        const double radiusTolerance = radiusMeters * 0.02;
+        samples.Should().OnlyContain(
+            s => s.GetProperty("distanceMeters").GetDouble() > 0
+                 && s.GetProperty("distanceMeters").GetDouble() <= radiusMeters + radiusTolerance,
+            "every sample must lie strictly beyond the observer and no further than the requested radius");
+
+        var azimuths = samples
+            .Select(s => s.GetProperty("azimuthDegrees").GetDouble())
+            .Distinct()
+            .OrderBy(a => a)
+            .ToArray();
+        azimuths.Should().HaveCount(rayCount, "each ray carries one azimuth shared by all of its samples");
+        for (var i = 0; i < azimuths.Length; i++)
+        {
+            azimuths[i].Should().BeApproximately(i * (360.0 / rayCount), 0.0001,
+                "the ray fan must be evenly spaced over the full circle");
+        }
+
+        foreach (var azimuth in azimuths)
+        {
+            var ray = samples
+                .Where(s => Math.Abs(s.GetProperty("azimuthDegrees").GetDouble() - azimuth) < 0.0001)
+                .Select(s => s.GetProperty("distanceMeters").GetDouble())
+                .OrderBy(d => d)
+                .ToArray();
+
+            ray.Should().HaveCount(samplesPerRay);
+            ray[^1].Should().BeApproximately(radiusMeters, radiusTolerance,
+                "the outermost sample on every ray sits on the requested radius");
+        }
     }
 
     /// <summary>

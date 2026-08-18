@@ -22,6 +22,21 @@ reason, a mis-attributed route, or a shallow-evidence GA claim.
 > surface) and `security.mtls` (demoted back to experimental in #2958). Every other
 > disposition in this record stands.
 
+> **Update (2026-08, honua-release#100).** The "Mechanism" section below explains why
+> `scene.catalog` had to be a *documentation-only* demotion: no lever reached a key
+> outside the `CapabilityRegistry` roster, so `capability-matrix.v1.json` kept reporting
+> `implemented` for a key this record had already demoted — and honua-release's
+> `tools/check_ga_surface.py`, which reads that matrix, kept counting it as advertised GA.
+> The recommended follow-up named at the end of that section has now landed as
+> [`capability-maturity-overrides.v1.json`](data/capability-maturity-overrides.v1.json), a
+> reviewed demotion-only maturity table consumed by `FeatureCatalogGenerator`. It carries a
+> `scene.catalog` row (`deferred`; 3D moved wholesale to 2026.2 by owner decision D0.2) and
+> a `demo.showcase` row (`experimental`; the cloud-demo routes are off by default behind
+> `CloudDemoServices:Enabled`). It changes no runtime behaviour — the scene discovery routes
+> stay public and serving, exactly as the consumer-impact concern below required.
+> `analytics.slice` was **not** given a row: this record's finding for it is shallow test
+> evidence, and the honest fix for that is test depth, not a demotion.
+
 ## Demotion candidates: kept-GA-pending-#2945 vs. demoted
 
 `#2945` adds interface-level proving-test depth for several of the audit's demotion

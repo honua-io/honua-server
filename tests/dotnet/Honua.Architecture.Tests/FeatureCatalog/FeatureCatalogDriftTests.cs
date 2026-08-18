@@ -88,7 +88,7 @@ public sealed class FeatureCatalogDriftTests
     }
 
     [ArchitectureTest]
-    public void EveryCatalogEntry_IsImplementedOrExperimentalMaturity()
+    public void EveryCatalogEntry_CarriesAnExplainedMaturityTier()
     {
         var catalog = LoadCommittedCatalog();
 
@@ -98,12 +98,25 @@ public sealed class FeatureCatalogDriftTests
             .Should().OnlyHaveUniqueItems("the catalog id is the canonical per-entry key");
 
         // T10 (#2346): the built-experimental route groups are flipped to the
-        // `experimental` tier; every other test-backed route stays `implemented`.
-        catalog.Entries.Should().OnlyContain(
-            entry => entry.Maturity == FeatureCatalogGenerator.MaturityImplemented
-                || entry.Maturity == FeatureCatalogGenerator.MaturityExperimental,
-            "the catalog projects only implemented (in-release) or experimental "
-            + "(built-experimental, gated-off) test-backed routes.");
+        // `experimental` tier; every other test-backed route stays `implemented` —
+        // UNLESS a reviewed capability-maturity-overrides.v1.json row demotes it
+        // (honua-release#100). Any other tier is unexplained and fails here.
+        var overriddenCapabilities = CapabilityMaturityOverrides.Load().Overrides
+            .ToDictionary(row => row.Capability, row => row.Maturity, StringComparer.Ordinal);
+
+        var unexplained = catalog.Entries
+            .Where(entry => entry.Maturity != FeatureCatalogGenerator.MaturityImplemented
+                && entry.Maturity != FeatureCatalogGenerator.MaturityExperimental)
+            .Where(entry => !(overriddenCapabilities.TryGetValue(entry.Capability, out var demoted)
+                && string.Equals(demoted, entry.Maturity, StringComparison.Ordinal)))
+            .Select(entry => $"{EndpointKey.Format(entry.Method, entry.Route)} -> {entry.Maturity}")
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
+        unexplained.Should().BeEmpty(
+            "the catalog projects implemented (in-release) or experimental (built-experimental, "
+            + "gated-off) test-backed routes, plus whatever tier a reviewed "
+            + "capability-maturity-overrides.v1.json row demotes a capability to.");
     }
 
     [ArchitectureTest]
@@ -114,25 +127,41 @@ public sealed class FeatureCatalogDriftTests
         // The catalog `experimental` tier must be exactly the routes the T5
         // endpoint gate 404s (the WithCapabilityGate route groups), no more and no
         // less — the route → descriptor map is the single source both project from.
+        // A capability carrying a reviewed capability-maturity-overrides.v1.json row
+        // (honua-release#100) is re-derived the same way the generator does: the LOWER
+        // of the gate-derived tier and the override tier, so an override can shift an
+        // entry off `implemented` but can never move a gated route ONTO it.
+        var overrides = CapabilityMaturityOverrides.Load();
+
         foreach (var entry in catalog.Entries)
         {
             var gatedDescriptorId = FeatureCatalogGenerator.ResolveDescriptorIdForRoute(entry.Route);
-            if (gatedDescriptorId is null)
+            var gateTier = gatedDescriptorId is null
+                ? FeatureCatalogGenerator.MaturityImplemented
+                : FeatureCatalogGenerator.MaturityExperimental;
+            var expected = overrides.ResolveEffective(entry.Capability, gateTier);
+
+            if (string.Equals(expected, gateTier, StringComparison.Ordinal))
             {
                 entry.Maturity.Should().Be(
-                    FeatureCatalogGenerator.MaturityImplemented,
-                    "the in-release route {0} {1} is not part of a flipped experimental group",
+                    gateTier,
+                    gatedDescriptorId is null
+                        ? "the in-release route {0} {1} is not part of a flipped experimental group and carries no maturity override"
+                        : "the built-experimental route {0} {1} is gated by {2}",
                     entry.Method,
-                    entry.Route);
+                    entry.Route,
+                    gatedDescriptorId);
             }
             else
             {
                 entry.Maturity.Should().Be(
-                    FeatureCatalogGenerator.MaturityExperimental,
-                    "the built-experimental route {0} {1} is gated by {2}",
+                    expected,
+                    "the route {0} {1} is demoted to '{2}' by a reviewed capability-maturity-overrides.v1.json "
+                    + "row for capability '{3}'",
                     entry.Method,
                     entry.Route,
-                    gatedDescriptorId);
+                    expected,
+                    entry.Capability);
             }
         }
 

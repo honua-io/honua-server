@@ -98,6 +98,9 @@ could miss.
   silent gap.
 - [`capability-no-go-allowlist.v1.json`](data/capability-no-go-allowlist.v1.json) —
   the explicit not-supported markers described above.
+- [`capability-maturity-overrides.v1.json`](data/capability-maturity-overrides.v1.json) —
+  the reviewed, demotion-only maturity table described under
+  [Demoting a key that is shipped but not GA](#demoting-a-key-that-is-shipped-but-not-ga).
 - [`capability-matrix.v1.json`](data/capability-matrix.v1.json) — the Phase-A
   aggregation of all of the above plus proving-test counts, CITE pass rates,
   and parity status; see [`capability-matrix-schema.md`](capability-matrix-schema.md).
@@ -158,6 +161,40 @@ corrected, not a maturity change. A key that fails (2) or (4) gets a tracked fol
 CITE/parity/live-provability gaps are evidence work, not necessarily a reason to hide
 an otherwise-real, tested capability.
 
+### Demoting a key that is shipped but not GA
+
+There are exactly two levers, and they answer different questions:
+
+1. **`CapabilityRegistry` + `CapabilityGateResolver`** — the *runtime* lever. A
+   `CapabilityDescriptor` marked `Experimental` is 404'd off the default surface (opt in
+   via `Capabilities:Experimental:<id>:Enabled`) and the feature catalog projects it as
+   `experimental`. Use this when the capability should actually be held off the served
+   surface. It only reaches the ~30 curated `/mcp` + `honua.capability_manifest.v1` ids,
+   and adding a row to that roster changes the manifest wire.
+2. **[`capability-maturity-overrides.v1.json`](data/capability-maturity-overrides.v1.json)**
+   — the *claim* lever, for a key outside that roster whose routes should keep serving
+   exactly as they do today while the capability stops being advertised as GA for this
+   release. `FeatureCatalogGenerator.ResolveMaturity` takes the **lower** of the
+   registry-resolved tier and the override tier, so a row can only demote, never promote.
+   Every row carries a reason code, a verifiable reason, and the decision it implements;
+   `CapabilityKeyDriftTests` fails the build on a row that promotes, matches no catalog
+   entry, or is not reflected in the committed catalog.
+
+This second lever exists because
+[`capability-ga-regrade-2026-07.md`](capability-ga-regrade-2026-07.md) had to record its
+`scene.catalog` demotion as documentation-only: the decision was made, and nothing in the
+generated evidence could express it. A documented demotion that the capability matrix
+still reports as `implemented` is invisible to
+[honua-release's `tools/check_ga_surface.py`](https://github.com/honua-io/honua-release/blob/trunk/tools/check_ga_surface.py),
+which reads that matrix and treats every non-`noSurface` key with `maturity.implemented > 0`
+as advertised GA.
+
+**Do not** reach for `capability-no-surface-allowlist.v1.json` to demote a key: `noSurface`
+means "has no distinct catalogued route of its own", and
+`NoSurfaceAllowlist_DoesNotListCapabilitiesThatActuallyHaveEntries` fails the build for a
+key that does. Using it to dodge an evidence floor is precisely the dishonesty the GA-surface
+gate exists to catch.
+
 See
 [`capability-ga-regrade-2026-07.md`](capability-ga-regrade-2026-07.md) for the full
 per-key re-grade decision record produced by applying this bar (#2946).
@@ -177,11 +214,16 @@ per-key re-grade decision record produced by applying this bar (#2946).
 4. Every crosswalk row's `capability` resolves to a real key.
 5. Every `honua-esri-assess` `hard_lock_in` key appears in
    `capability-no-go-allowlist.v1.json`, not in the `esriAssess` crosswalk.
+6. Every `capability-maturity-overrides.v1.json` row names a real key, demotes
+   (never promotes), carries a reason code / reason / decision, matches at least
+   one `feature-catalog.json` entry, and is actually reflected in every entry of
+   that capability in the committed catalog.
 
 ## Regenerating
 
-`capability-keys.v1.json`, `capability-route-mapping.v1.json`, and
-`capability-no-surface-allowlist.v1.json` are hand-maintained JSON files kept
+`capability-keys.v1.json`, `capability-route-mapping.v1.json`,
+`capability-no-surface-allowlist.v1.json`, and
+`capability-maturity-overrides.v1.json` are hand-maintained JSON files kept
 in lockstep with `CapabilityKeyCatalog.cs` by the drift tests above (unlike
 `feature-catalog.json`, they are not emitted by a `[Fact]`). When you add a
 capability key:

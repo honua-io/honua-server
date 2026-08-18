@@ -115,6 +115,89 @@ public sealed class CapabilityKeyDriftTests
     }
 
     [ArchitectureTest]
+    public void MaturityOverrides_OnlyReferenceCanonicalCapabilities()
+    {
+        var overrides = CapabilityMaturityOverrides.Load();
+        var canonicalKeys = CapabilityKeyCatalog.All.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
+
+        var unknown = overrides.Overrides
+            .Select(row => row.Capability)
+            .Where(capability => !canonicalKeys.Contains(capability))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+
+        unknown.Should().BeEmpty(
+            "every capability referenced by a capability-maturity-overrides.v1.json row must "
+            + "exist in CapabilityKeyCatalog.All.");
+    }
+
+    [ArchitectureTest]
+    public void MaturityOverrides_AreDemotionsAndCarryAReviewedReason()
+    {
+        // The table is a DEMOTION-only lever: a row that named `implemented` would be a no-op
+        // dressed up as a decision, and a row with no reason/decision is an unreviewable claim.
+        var overrides = CapabilityMaturityOverrides.Load();
+        overrides.Overrides.Should().NotBeEmpty();
+
+        foreach (var row in overrides.Overrides)
+        {
+            var tier = CapabilityMaturityOverrides.ParseTier(row.Maturity);
+            tier.Should().NotBeNull("row '{0}' must name a known maturity tier", row.Capability);
+            ((int)tier!.Value).Should().BeLessThan(
+                (int)Honua.Core.Features.Capabilities.CapabilityMaturity.Implemented,
+                "row '{0}' must demote — an override may never promote a capability", row.Capability);
+
+            row.ReasonCode.Should().NotBeNullOrWhiteSpace("row '{0}' needs a reason code", row.Capability);
+            row.Reason.Should().NotBeNullOrWhiteSpace("row '{0}' needs a verifiable reason", row.Capability);
+            row.Decision.Should().NotBeNullOrWhiteSpace(
+                "row '{0}' must cite the decision it implements", row.Capability);
+        }
+    }
+
+    [ArchitectureTest]
+    public void MaturityOverrides_DoNotListCapabilitiesWithoutEntries()
+    {
+        // An override that matches no feature-catalog entry demotes nothing: it is either a
+        // typo or a stale row left behind after a key lost its routes, and either way it
+        // misrepresents the artifact. A key with no routes at all belongs in the no-surface
+        // allowlist instead.
+        var catalog = LoadCommittedCatalog();
+        var usedCapabilities = catalog.Entries.Select(entry => entry.Capability).ToHashSet(StringComparer.Ordinal);
+
+        var inert = CapabilityMaturityOverrides.Load().Overrides
+            .Select(row => row.Capability)
+            .Where(capability => !usedCapabilities.Contains(capability))
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+
+        inert.Should().BeEmpty(
+            "these capabilities have no feature-catalog entries for the override to demote; "
+            + "remove the row (or use capability-no-surface-allowlist.v1.json instead).");
+    }
+
+    [ArchitectureTest]
+    public void MaturityOverrides_AreReflectedInEveryEntryOfTheOverriddenCapability()
+    {
+        // The committed catalog must actually carry the demoted tier — otherwise the override
+        // silently fails to reach the capability matrix (and honua-release's GA-surface gate).
+        var catalog = LoadCommittedCatalog();
+        var overrides = CapabilityMaturityOverrides.Load();
+
+        foreach (var row in overrides.Overrides)
+        {
+            var entries = catalog.Entries
+                .Where(entry => string.Equals(entry.Capability, row.Capability, StringComparison.Ordinal))
+                .ToArray();
+
+            entries.Should().NotBeEmpty();
+            entries.Should().OnlyContain(entry => entry.Maturity == row.Maturity,
+                "every feature-catalog entry for '{0}' must carry the overridden tier '{1}'; "
+                + "regenerate with scripts/generate-feature-catalog.sh", row.Capability, row.Maturity);
+        }
+    }
+
+    [ArchitectureTest]
     public void CommittedCapabilityKeysJson_MatchesCapabilityKeyCatalog()
     {
         var committed = LoadCommittedCapabilityKeysDocument();
