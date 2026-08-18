@@ -79,7 +79,6 @@ public static partial class EndpointRegistry
         // Forms package lifecycle, offline policy, and submissions (#1184)
         new("GET", "/api/v1/admin/forms/packages"),
         new("POST", "/api/v1/admin/forms/packages"),
-        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/admin/forms/packages/{formId}"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
@@ -87,8 +86,6 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
         new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
-        // NL-assisted form package generation (#1184).
-        new("POST", "/api/v1/admin/forms/packages/generate"),
         new("GET", "/api/v1/forms/packages/{formId}"),
         new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
         new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),

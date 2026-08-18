@@ -466,8 +466,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     {
         // honua-server#3023: the end-user flag no longer hard-blocks non-admins at the route
         // policy; instead each generate handler denies a grant-less non-admin at the elevated
-        // authorization gate, before the request body is parsed or any generation service is
-        // touched. Without a StudioDraft Execute operator grant the outcome stays 403.
+        // authorization gate, before the request body is parsed or any draft is created.
+        // Without a StudioDraft Execute operator grant the outcome stays 403.
         await using var endUserFixture = await CreateEndUserFixtureAsync();
         var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var endUserKey = await apiKeyStore.CreateAsync(
@@ -484,10 +484,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         mapResponse.StatusCode.Should().Be(
             HttpStatusCode.Forbidden,
-            "end-user lifecycle access without a StudioDraft Execute grant must not reach the potentially costly map-generation path");
+            "end-user lifecycle access without a StudioDraft Execute grant must not reach the map draft-creation path");
         appResponse.StatusCode.Should().Be(
             HttpStatusCode.Forbidden,
-            "end-user lifecycle access without a StudioDraft Execute grant must not reach the potentially costly app-generation path");
+            "end-user lifecycle access without a StudioDraft Execute grant must not reach the app draft-creation path");
     }
 
     [IntegrationTest]
@@ -1473,13 +1473,53 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
-    public async Task GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    public async Task CreateMapPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // The generate route validates the prompt before invoking any AI provider, so an empty body
-        // exercises the wired endpoint (non-404) without calling a real LLM.
-        var response = await _client.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        // ADR-0076 (#3255): the route is a deterministic draft-creation entry point. It takes
+        // structured composition input, calls no model, and must hand back a real package with a
+        // stable map_ identifier -- the behavioural guard the ADR asks for, at the REST surface.
+        // sourceBindings was previously rejected outright and initialView was published in the
+        // schema and then dropped; both are honored here.
+        using var body = new StringContent(
+            """
+            {
+              "templateId": "basic-map",
+              "styleId": "style-1",
+              "sourceBindings": [
+                { "sourceId": "parcels", "protocol": "ogc_features", "url": "https://example.test/ogc" }
+              ],
+              "initialView": { "bbox": [-159.8, 18.9, -154.8, 22.3], "crs": "EPSG:4326" }
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+        var response = await _client.PostAsync("/api/v1/studio/map-packages/generate", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var payload = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        var data = payload.GetProperty("data");
+        data.GetProperty("packageId").GetString().Should().StartWith("map_");
+        var package = data.GetProperty("package");
+        package.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        package.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
+        package.GetProperty("initialView").GetProperty("crs").GetString().Should().Be("EPSG:4326");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    public async Task CreateMapPackageDraft_InvalidStructuralInput_ReturnsBadRequestWithFindingCode()
+    {
+        // A half-specified reference is a blocking error rather than a deferred warning
+        // (generation-families-retained-knowledge.md §2); the finding code must reach the caller.
+        using var body = new StringContent(
+            """{"styleId":"   "}""",
+            Encoding.UTF8,
+            "application/json");
+        var response = await _client.PostAsync("/api/v1/studio/map-packages/generate", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        problem.GetProperty("detail").GetString().Should().Contain("styleRefInvalid");
     }
 
     [IntegrationTest]
@@ -1487,11 +1527,11 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     public async Task GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant()
     {
         // PR #3018 review, round 7 (P1): the group-level end-user widening must not implicitly
-        // open the AI generation endpoints to every authenticated principal -- generation is an
-        // elevated operation requiring a StudioDraft Execute operator grant for non-admins.
+        // open the package draft-creation endpoints to every authenticated principal -- draft
+        // creation is an elevated operation requiring a StudioDraft Execute grant for non-admins.
         // An empty JSON body is sufficient on both sides of the boundary: the authorization
         // guard runs before body parsing, so "403 elevated_grant_required" proves the gate and
-        // "400 missing prompt" proves the caller got through it without invoking a real LLM.
+        // "201 Created" (an empty but valid deterministic draft) proves the caller got through it.
         var roleStore = new FakeGrantingRoleStore();
         await using var fixture = await CreateEndUserFixtureAsync(services =>
         {
@@ -1521,7 +1561,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             aliceKey.Record.Id.ToString("D"),
             [new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Execute" }]);
         var allowedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
-        allowedMap.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        allowedMap.StatusCode.Should().Be(HttpStatusCode.Created);
 
         // Per-key isolation (PR #3024 review, P1): Alice's Execute grant must not authorize
         // Bob's key -- previously every API-key principal resolved to the same empty subject
@@ -1534,18 +1574,26 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // Admin remains admitted with no grant.
         using var adminClient = fixture.CreateAdminClient();
         var adminResponse = await adminClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
-        adminResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
-    public async Task GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
+    public async Task CreateAppPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // The generate route validates the prompt before invoking any AI provider, so an empty body
-        // exercises the wired endpoint (non-404) without calling a real LLM.
-        var response = await _client.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+        // ADR-0076 (#3255) counterpart of the map route: deterministic, model-free, and returning
+        // a real package with a stable app_ identifier.
+        using var body = new StringContent(
+            """{"templateId":"basic-app","mapPackageId":"map_00000000000000000000000000000000"}""",
+            Encoding.UTF8,
+            "application/json");
+        var response = await _client.PostAsync("/api/v1/studio/app-packages/generate", body);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var payload = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        var data = payload.GetProperty("data");
+        data.GetProperty("packageId").GetString().Should().StartWith("app_");
+        data.GetProperty("package").GetProperty("templateId").GetString().Should().Be("basic-app");
     }
 
     [IntegrationTest]

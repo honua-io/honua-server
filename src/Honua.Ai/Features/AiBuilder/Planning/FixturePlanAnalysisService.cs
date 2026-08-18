@@ -61,16 +61,18 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
                 // #2485: explicitly disclose fixture (demo) mode on the miss path.
                 // The engine:"fixture" discriminator already flags every fixture
                 // response, but the miss reason must also say — in plain language —
-                // that this server replays canned demo plans and how to turn the
-                // live planner on, so a caller (or a cold client LLM) does not read
-                // "rejected" as "your intent is unsupported".
+                // that this server replays canned demo plans and where planning
+                // actually happens, so a caller (or a cold client LLM) does not read
+                // "rejected" as "your intent is unsupported". ADR-0076 (#3255) moved
+                // compilation of arbitrary intents to the client: the server no
+                // longer runs a model of its own, so the escape hatch is the calling
+                // model, not a server-side provider setting.
                 Reason = "The plan analyzer is running in fixture (demo) mode: it replays canned "
                     + "plans for a fixed set of demo intents and found no fixture matching the "
-                    + "supplied intent — it did not attempt to compile the intent. To compile "
-                    + "arbitrary intents into executable plans, configure a live model provider "
-                    + "(PlanAnalysis:Enabled=true with PlanAnalysis:Provider, or "
-                    + "WorkflowGeneration:Enabled=true with a live DefaultProvider). See "
-                    + "docs/guides/connect/mcp-live-planner.md.",
+                    + "supplied intent — it did not attempt to compile the intent. This server "
+                    + "performs no model inference of its own: compile the intent into plan steps "
+                    + "with your own client model, grounding them in the process catalog, then "
+                    + "submit the result to honua_validate_plan.",
                 Context = context
             });
         }

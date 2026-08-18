@@ -9,9 +9,8 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 
 /// <summary>
 /// <see cref="StudioAiProxyConfigurationValidator"/> tests: known/unknown adapter kinds, per-kind
-/// required fields, and the <c>DefaultProvider</c> cross-reference. Mirrors
-/// <c>WorkflowGenerationConfigurationValidator</c>'s per-provider validation style but validates
-/// every declared provider (not just the default) because providers here are operator-named, not a
+/// required fields, and the <c>DefaultProvider</c> cross-reference. Validation runs over every
+/// declared provider (not just the default) because providers here are operator-named, not a
 /// fixed compile-time id per adapter.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]

@@ -401,7 +401,6 @@ internal sealed class CapabilityManifestService(
             Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || batchBackends.Any(), requiresAuthentication: true),
             Capability("ai.spec-apply", "ai", context, entitlementKey: FeatureCatalog.AiSpecApplyKey),
             Capability("ai.grounding", "ai", context, entitlementKey: FeatureCatalog.AiGroundingKey),
-            Capability("ai.workflow-generation", "ai", context, entitlementKey: FeatureCatalog.AiWorkflowGenerationKey),
             Capability("gitops.release-manifest", "gitops", context, configured: deployTargetCount > 0, policyCapability: "catalog.publish", requiresEnvironment: true),
 
             Capability("transport.grpc", "transports", context),
@@ -521,7 +520,6 @@ internal sealed class CapabilityManifestService(
             ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true },
             ["ai.spec-apply"] = new() { EntitlementKey = FeatureCatalog.AiSpecApplyKey },
             ["ai.grounding"] = new() { EntitlementKey = FeatureCatalog.AiGroundingKey },
-            ["ai.workflow-generation"] = new() { EntitlementKey = FeatureCatalog.AiWorkflowGenerationKey },
             ["gitops.release-manifest"] = new()
             {
                 Configured = gitopsConfigured,

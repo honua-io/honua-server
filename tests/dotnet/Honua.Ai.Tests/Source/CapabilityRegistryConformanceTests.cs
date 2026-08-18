@@ -12,6 +12,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
@@ -60,7 +61,6 @@ public sealed class CapabilityRegistryConformanceTests
         "jobs.runner",
         "ai.spec-apply",
         "ai.grounding",
-        "ai.workflow-generation",
         "gitops.release-manifest",
         "transport.grpc",
         "transport.grpc-web",
@@ -277,8 +277,14 @@ public sealed class CapabilityRegistryConformanceTests
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
-            new CreateMapPackageTool(jobService, NullLogger<CreateMapPackageTool>.Instance),
-            new CreateAppPackageTool(jobService, NullLogger<CreateAppPackageTool>.Instance),
+            new CreateMapPackageTool(
+                jobService,
+                new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                NullLogger<CreateMapPackageTool>.Instance),
+            new CreateAppPackageTool(
+                jobService,
+                new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                NullLogger<CreateAppPackageTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,

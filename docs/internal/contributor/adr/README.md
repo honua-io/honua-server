@@ -80,6 +80,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 
 | [0074](0074-evidence-driven-ci-pipeline.md) | Evidence-Driven CI Pipeline | Proposed | 2026-08 |
 | [0075](0075-ui5-web-components-application-chrome.md) | UI5 Web Components for Application Chrome, Vega-Lite for Charting | Accepted | 2026-08 |
+| [0076](0076-retire-server-side-generation-families.md) | Retire the Server-Side Generation Families; Re-found Package Creation Deterministically | Accepted | 2026-08 |
 
 ## Template
 

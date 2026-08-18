@@ -7,9 +7,8 @@ using System.Text.Json.Serialization;
 namespace Honua.Ai.StudioAiProxy.Adapters.Models;
 
 /// <summary>
-/// Anthropic Messages API request with <c>stream: true</c>. Distinct from
-/// <c>Honua.Ai.WorkflowGeneration.Models.AnthropicMessagesRequest</c> (which always forces a single
-/// tool) — this proxy supports tool-free turns, multiple tools, and any tool-choice mode.
+/// Anthropic Messages API request with <c>stream: true</c>. The proxy supports tool-free turns,
+/// multiple tools, and any tool-choice mode.
 /// </summary>
 internal sealed class AnthropicProxyRequest
 {

@@ -199,20 +199,24 @@ internal static class McpToolSchemas
     // The geospatial-mcp create_map_package / create_app_package schemas mark NO
     // field required and set additionalProperties:true, so a standard-conformant
     // client composes a map/app from any subset of the composition selectors. The
-    // live schemas mirror that (no required fields) and add the Honua prompt /
-    // provider / model extension inputs the canonical generation pipeline drives.
+    // live schemas mirror that exactly. Since ADR-0076 (#3255) they no longer
+    // publish the Honua prompt/provider/model extension inputs: draft creation is
+    // deterministic, so there is nothing for a prompt to drive. sourceBindings
+    // items stay open (as in the standard) because the canonical SourceBinding
+    // member set is validated by the shared draft factory, not by the schema.
     private const string CreateMapPackageArgumentSchemaJson = """
         {
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "prompt": {
-              "type": "string",
-              "description": "Natural-language description of the map to build. Required by the generation pipeline; a missing prompt returns a structured invalid_argument."
-            },
             "templateId": {
               "type": "string",
               "description": "Registry-defined MapTemplate identifier seeding the composition (e.g. analysis_default)."
+            },
+            "sourceBindings": {
+              "type": "array",
+              "description": "Protocol-aware bindings of map layers to data sources (canonical SourceBinding entries: sourceId, protocol, url, serviceId, layerId, filter, metadata).",
+              "items": { "type": "object", "additionalProperties": true }
             },
             "styleId": {
               "type": "string",
@@ -225,19 +229,11 @@ internal static class McpToolSchemas
             "initialView": {
               "type": "object",
               "additionalProperties": true,
-              "description": "Initial view geometry: bounding box and CRS.",
+              "description": "Initial view geometry: bbox ordered [minLon, minLat, maxLon, maxLat] and CRS (EPSG:<code>, an OGC CRS URI/URN, or an integer EPSG code). CRS defaults to EPSG:4326.",
               "properties": {
                 "bbox": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
                 "crs": { "type": ["string", "integer"] }
               }
-            },
-            "provider": {
-              "type": "string",
-              "description": "Optional workflow-generation provider override (e.g. anthropic, bedrock, local)."
-            },
-            "model": {
-              "type": "string",
-              "description": "Optional model override for the selected provider."
             }
           }
         }
@@ -248,10 +244,6 @@ internal static class McpToolSchemas
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "prompt": {
-              "type": "string",
-              "description": "Natural-language description of the application to build. Required by the generation pipeline; a missing prompt returns a structured invalid_argument."
-            },
             "templateId": {
               "type": "string",
               "description": "App-template registry identifier (surfaced through AppPackage.templateId)."
@@ -269,13 +261,10 @@ internal static class McpToolSchemas
               "items": { "type": "string" },
               "description": "ArtifactRef identifiers (artifact_…) required at runtime."
             },
-            "provider": {
-              "type": "string",
-              "description": "Optional workflow-generation provider override (e.g. anthropic, bedrock, local)."
-            },
-            "model": {
-              "type": "string",
-              "description": "Optional model override for the selected provider."
+            "runtimeConfig": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Runtime configuration values projected into the created application."
             }
           }
         }
@@ -345,8 +334,8 @@ internal static class McpToolSchemas
     /// <summary>
     /// Schema for the <c>honua_create_map_package</c> tool input. Marks no field
     /// required to match the geospatial-mcp <c>create_map_package</c> standard
-    /// schema (the composition is built from any subset of selectors); the
-    /// generation pipeline reports a missing prompt as a structured finding.
+    /// schema (the composition is built from any subset of selectors); the shared
+    /// draft factory reports structural defects as typed findings.
     /// </summary>
     public static readonly JsonElement CreateMapPackageArgumentSchema = Parse(CreateMapPackageArgumentSchemaJson);
 

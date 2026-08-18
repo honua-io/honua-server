@@ -6,8 +6,7 @@ using Honua.Core.Features.Security.Abstractions;
 namespace Honua.Ai.StudioAiProxy;
 
 /// <summary>
-/// Resolves a Studio AI proxy provider's API key. Mirrors <c>WorkflowGenerationApiKeyResolver</c>'s
-/// resolution order:
+/// Resolves a Studio AI proxy provider's API key, in this order:
 /// <list type="number">
 ///   <item>If the configured value is a secret reference, resolve it via <see cref="ISecretProvider"/>.</item>
 ///   <item>Otherwise use the plain configured value when present.</item>

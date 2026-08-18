@@ -28,10 +28,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 370,
-      "provingTestCount": 1030,
+      "entryCount": 368,
+      "provingTestCount": 1029,
       "maturity": {
-        "implemented": 370
+        "implemented": 368
       },
       "noSurface": null,
       "cite": [],
@@ -61,7 +61,7 @@
       "noSurface": {
         "capability": "ai.agent-operations",
         "reasonCode": "cross-cutting-gate",
-        "reason": "Validation-layer gate applied across several existing MCP/spec routes rather than a distinct route of its own; see ai.spec-apply, ai.grounding, ai.workflow-generation for the gated route surfaces.",
+        "reason": "Validation-layer gate applied across several existing MCP/spec routes rather than a distinct route of its own; see ai.spec-apply and ai.grounding for the gated route surfaces.",
         "category": "Ai",
         "edition": "Pro"
       },
@@ -115,7 +115,7 @@
       "category": "AI",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 81,
+      "provingTestCount": 84,
       "maturity": {
         "implemented": 4
       },
@@ -152,23 +152,6 @@
       "provingTestCount": 18,
       "maturity": {
         "implemented": 4
-      },
-      "noSurface": null,
-      "cite": [],
-      "parity": [],
-      "esriAssess": [],
-      "interop": [],
-      "geobench": []
-    },
-    {
-      "key": "ai.workflow-generation",
-      "displayName": "AI Workflow and Content Generation",
-      "category": "AI",
-      "edition": "Pro",
-      "entryCount": 1,
-      "provingTestCount": 3,
-      "maturity": {
-        "implemented": 1
       },
       "noSurface": null,
       "cite": [],
@@ -296,10 +279,10 @@
       "displayName": "Analysis Artifact Content",
       "category": "Analytics",
       "edition": "Community",
-      "entryCount": 15,
-      "provingTestCount": 23,
+      "entryCount": 13,
+      "provingTestCount": 21,
       "maturity": {
-        "implemented": 15
+        "implemented": 13
       },
       "noSurface": null,
       "cite": [],
@@ -817,10 +800,10 @@
       "displayName": "Field Collection Forms",
       "category": "FieldOps",
       "edition": "Community",
-      "entryCount": 22,
-      "provingTestCount": 37,
+      "entryCount": 21,
+      "provingTestCount": 35,
       "maturity": {
-        "implemented": 22
+        "implemented": 21
       },
       "noSurface": null,
       "cite": [],

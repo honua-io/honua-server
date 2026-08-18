@@ -43,7 +43,6 @@ using Honua.Protocols.GeoServices.VectorTileServer;
 using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
-using Honua.Ai.WorkflowGeneration;
 using Honua.Ai.StudioAiProxy;
 using Honua.Plugins;
 using Honua.Server.Features.Plugins;
@@ -131,7 +130,6 @@ internal static class FeatureRegistrationExtensions
         services.AddAlerts(configuration);
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
-        services.AddWorkflowGeneration(configuration);
         services.AddStudioAiProxy(configuration);
         services.AddStac();
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
@@ -206,25 +204,6 @@ internal static class FeatureRegistrationExtensions
         // host build. It is resolved per-request via [FromServices] on the export endpoint.
         services.TryAddScoped<Honua.Server.Features.Studio.Export.IStudioDeliverableExporter,
             Honua.Server.Features.Studio.Export.StudioDeliverableExporter>();
-        // NL -> map.package generation. Reuses the workflow-generation provider config + chat plumbing
-        // (registered by AddWorkflowGeneration above) and a self-contained structural validator (no
-        // live metadata DB) so generation never depends on layer/style/source binding (deferred to
-        // publish). Mirrors the form generation service registration.
-        services.TryAddSingleton<Honua.Ai.MapGeneration.IMapGenerationService, Honua.Ai.MapGeneration.MapGenerationService>();
-        // NL -> studio-app/v1 app.package generation. Reuses the workflow-generation provider config + chat
-        // plumbing and a self-contained DB-free structural validator (the app body is the console's opaque
-        // studio-app/v1 envelope; content bindings resolve at publish, not generation). Mirrors the map
-        // generation service registration.
-        services.TryAddSingleton<Honua.Ai.AppGeneration.IAppGenerationService, Honua.Ai.AppGeneration.AppGenerationService>();
-        // NL -> report.document generation. Reuses the workflow-generation provider config + chat plumbing
-        // and a self-contained structural ReportDocumentValidator (no DB). Mirrors the form/map registration.
-        services.TryAddSingleton<Honua.Ai.ReportGeneration.IReportGenerationService, Honua.Ai.ReportGeneration.ReportGenerationService>();
-        // NL -> dashboard.document generation. Reuses the workflow-generation provider config + chat plumbing
-        // and a self-contained structural DashboardDocumentValidator (no DB). The dashboard is the close
-        // analog of the report (panels/charts/Vega-Lite + bindings/layout) with interactive filter/metric
-        // panels; the console reaches it via the shared /console/publications/generate endpoint with
-        // kind=dashboard. Mirrors the report registration.
-        services.TryAddSingleton<Honua.Ai.DashboardGeneration.IDashboardGenerationService, Honua.Ai.DashboardGeneration.DashboardGenerationService>();
         // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
         Honua.Core.Features.Console.Collaboration.StudioMapCollaborationServiceCollectionExtensions

@@ -22,6 +22,7 @@ namespace Honua.Core.Features.Geoprocessing.Domain;
 [JsonSerializable(typeof(MapInitialView))]
 [JsonSerializable(typeof(PopupBinding))]
 [JsonSerializable(typeof(LabelBinding))]
+[JsonSerializable(typeof(AppSharePolicy))]
 [JsonSerializable(typeof(AssetManifestEntry))]
 [JsonSerializable(typeof(DeliveryHints))]
 [JsonSerializable(typeof(LegendEntry))]

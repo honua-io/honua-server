@@ -90,8 +90,8 @@ internal sealed class PlanAnalysisTool : IMcpTool
                 + "compiled from your intent. To proceed with a real analysis, read the process catalog at "
                 + $"{McpResourceUris.CatalogProcesses}, hand-author an AnalysisPlan from its process ids, and "
                 + $"confirm it with {ValidatePlanTool.ToolName} (and {DryRunPlanTool.ToolName}) before "
-                + $"{ExecutePlanTool.ToolName}. To compile arbitrary intents automatically, enable a live "
-                + "planner (see docs/guides/connect/mcp-live-planner.md).";
+                + $"{ExecutePlanTool.ToolName}. This server performs no model inference of its own "
+                + "(ADR-0076), so compiling an arbitrary intent into plan steps is your client model's job.";
         }
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpPlanAnalysisOutput);

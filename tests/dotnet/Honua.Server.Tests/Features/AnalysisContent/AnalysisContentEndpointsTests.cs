@@ -530,34 +530,6 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.Equal("/savedQuery/layerId", first.GetProperty("path").GetString());
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Create)]
-    [Endpoint("POST /api/v1/analysis/content/generate")]
-    public async Task GenerateAnalysis_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
-    {
-        // The generate route validates the prompt before invoking any AI provider, so an empty body
-        // exercises the wired endpoint (non-404) without calling a real LLM.
-        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
-        var response = await _client.PostAsync(
-            "/api/v1/analysis/content/generate",
-            content);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Create)]
-    [Endpoint("POST /api/v1/analysis/content/queries/generate")]
-    public async Task GenerateSavedQuery_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
-    {
-        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
-        var response = await _client.PostAsync(
-            "/api/v1/analysis/content/queries/generate",
-            content);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
     private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)
     {
         var body = await response.Content.ReadAsStringAsync();

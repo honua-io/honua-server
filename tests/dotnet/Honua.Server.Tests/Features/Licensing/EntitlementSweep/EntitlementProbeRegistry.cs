@@ -190,16 +190,14 @@ internal static class EntitlementProbeRegistry
             // mirrors SpecEndpointsTests) so the request reaches the final entitlement gate
             // instead of failing plan validation first; ai.grounding needs a non-empty `turn`
             // AND a `spec` field (an empty object is accepted as "start a new spec" —
-            // TryReadSpecDocument 400s on a missing/null spec before the gate runs);
-            // ai.workflow-generation needs a non-empty `prompt`. All three read the body
-            // manually and validate-then-gate, so a body that fails validation short-circuits
-            // before the 402 check.
+            // TryReadSpecDocument 400s on a missing/null spec before the gate runs). Both read
+            // the body manually and validate-then-gate, so a body that fails validation
+            // short-circuits before the 402 check. ADR-0076 (#3255) retired
+            // ai.workflow-generation along with every server-side generation route it gated.
             new(FeatureCatalog.AiSpecApplyKey, HttpMethod.Post, "/v1/spec/apply",
                 SpecApplyDocument, AsEventStream),
             new(FeatureCatalog.AiGroundingKey, HttpMethod.Post, "/v1/grounding/spec/mutate",
                 """{"turn":"add a point layer","spec":{}}"""),
-            new(FeatureCatalog.AiWorkflowGenerationKey, HttpMethod.Post,
-                "/api/v1/analysis/content/generate", """{"prompt":"summarize this layer"}"""),
 
             // Scene ingest — Enterprise gate runs before any multipart-form parsing.
             new(FeatureCatalog.SceneBimIngestKey, HttpMethod.Post,

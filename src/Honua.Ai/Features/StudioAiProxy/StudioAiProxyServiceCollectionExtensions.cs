@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Ai.Providers.Bedrock;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,8 +28,7 @@ internal static class StudioAiProxyServiceCollectionExtensions
             .Bind(section)
             .PostConfigure(options =>
             {
-                // Per-provider API-key environment fallback (e.g. HONUA_STUDIOAI_MYPROVIDER_API_KEY),
-                // mirroring WorkflowGeneration's HONUA_WORKFLOWGEN_* pattern.
+                // Per-provider API-key environment fallback (e.g. HONUA_STUDIOAI_MYPROVIDER_API_KEY).
                 foreach (var (name, provider) in options.Providers)
                 {
                     if (!string.IsNullOrWhiteSpace(provider.ApiKey))
@@ -53,9 +52,9 @@ internal static class StudioAiProxyServiceCollectionExtensions
             HttpResiliencePolicies.FastApiDefaults);
         services.TryAddSingleton<StudioAiProxyApiKeyResolver>();
 
-        // Bedrock bridge: reuses the same chat-client factory the studio generation flows already
-        // register against IBedrockChatClientFactory (TryAdd, so whichever feature initializes DI
-        // first wins and the other is a no-op).
+        // Bedrock bridge: the Converse-API chat-client factory lives in this slice
+        // (Adapters/Bedrock) so the proxy owns its own provider plumbing. TryAdd, so any other
+        // feature that registers IBedrockChatClientFactory first wins and this is a no-op.
         services.TryAddSingleton<IBedrockChatClientFactory, BedrockChatClientFactory>();
 
         services.AddSingleton<IStudioAiProxyAdapter, AnthropicStudioAiProxyAdapter>();

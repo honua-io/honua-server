@@ -4,8 +4,8 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Honua.Ai.Providers.Bedrock;
 using Honua.Ai.StudioAiProxy.Abstractions;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -191,7 +191,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
         }
         // Intentional catch-all: this is the provider-boundary call to the Bedrock SDK, which
         // surfaces transport/auth/throttling failures beyond a specific type; map any remaining
-        // failure to an Error event instead of crashing the stream (mirrors BedrockWorkflowGenerationProvider).
+        // failure to an Error event instead of crashing the stream.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return (false, false, ex);
@@ -413,8 +413,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
     /// <summary>
     /// An <see cref="AIFunction"/> whose schema is one <see cref="StudioAiToolDefinition"/>; never
     /// invoked (Bedrock/Converse only needs the declaration to steer the model), it exists solely to
-    /// carry name/description/schema through <see cref="ChatOptions.Tools"/>. Mirrors the
-    /// <c>EmitWorkflowFunction</c> pattern already used by <c>BedrockWorkflowGenerationProvider</c>.
+    /// carry name/description/schema through <see cref="ChatOptions.Tools"/>.
     /// </summary>
     private sealed class StudioAiToolFunction : AIFunction
     {

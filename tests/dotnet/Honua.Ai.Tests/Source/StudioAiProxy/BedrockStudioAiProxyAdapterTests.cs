@@ -3,9 +3,9 @@
 
 using System.Runtime.CompilerServices;
 using FluentAssertions;
-using Honua.Ai.Providers.Bedrock;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters;
+using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.AI;

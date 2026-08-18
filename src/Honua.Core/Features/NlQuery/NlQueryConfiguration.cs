@@ -22,10 +22,17 @@ public sealed class NlQueryConfiguration
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// The provider type. Supported values: <c>"openai"</c> (live OpenAI-compatible
-    /// chat completion) and <c>"deterministic"</c> (fixture replay; no network).
+    /// The provider type. The only supported value is <c>"deterministic"</c>
+    /// (fixture replay; no network).
     /// </summary>
-    public string Provider { get; set; } = "openai";
+    /// <remarks>
+    /// The <c>"openai"</c> provider was removed in ADR-0076. Planning a
+    /// <c>FilterPlan</c> from natural language is the client's job; the server
+    /// validates and compiles the plan it is handed. The endpoint, model, key,
+    /// timeout, and token settings below are retained only so an existing
+    /// configuration section does not fail to bind, and are no longer read.
+    /// </remarks>
+    public string Provider { get; set; } = "deterministic";
 
     /// <summary>
     /// The API endpoint URL. Must follow the OpenAI <c>/v1/chat/completions</c> convention.
@@ -65,27 +72,17 @@ public sealed class NlQueryConfigurationValidator : ConfigurationValidator<NlQue
     {
         ValidateRequiredString(options.Provider, "NlQuery:Provider", errors);
 
-        // The deterministic provider has no network surface, so the endpoint,
-        // model, and timeout fields are not load-bearing. Leaving the OpenAI
-        // validations active for non-OpenAI providers would force operators
-        // running the fixture profile to supply throwaway URLs/keys.
-        var isOpenAi = string.IsNullOrWhiteSpace(options.Provider)
-            || string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase);
-
-        if (isOpenAi)
+        // Only the deterministic provider remains (ADR-0076), and it has no
+        // network surface, so the endpoint/model/timeout/token settings are no
+        // longer load-bearing and are deliberately not validated. Validating
+        // them would force operators to supply throwaway URLs and keys for a
+        // provider that never opens a socket.
+        if (!string.IsNullOrWhiteSpace(options.Provider)
+            && !string.Equals(options.Provider, "deterministic", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(options.Endpoint))
-            {
-                errors.Add("NlQuery:Endpoint cannot be empty");
-            }
-            else
-            {
-                ValidateUrl(options.Endpoint, "NlQuery:Endpoint", errors, requireHttps: true);
-            }
-
-            ValidateRequiredString(options.Model, "NlQuery:Model", errors);
-            ValidateRange(options.TimeoutSeconds, 5, 120, "NlQuery:TimeoutSeconds", errors);
-            ValidateRange(options.MaxTokens, 128, 8192, "NlQuery:MaxTokens", errors);
+            errors.Add(
+                $"NlQuery:Provider '{options.Provider}' is not supported. The only supported value is "
+                + "'deterministic'; server-side model inference was removed in ADR-0076.");
         }
     }
 }

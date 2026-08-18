@@ -3,19 +3,16 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
-using Honua.Ai.AppGeneration;
-using Honua.Ai.MapGeneration;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Studio.Services;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Studio.Export;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -121,27 +118,32 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Create Studio Rollback Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
-        // honua-server#3023: the generate routes intentionally rely on the group-level
+        // honua-server#3023: the draft routes intentionally rely on the group-level
         // RequireStudioLifecycleAuthorization() gate (admin unconditionally; any authenticated
         // principal once Studio:EndUserAuthorization:Enabled is on) instead of the former
-        // route-level RequireAdminAuthorization(). AI generation must not be implicitly
+        // route-level RequireAdminAuthorization(). Draft creation must not be implicitly
         // widened by the end-user flag, so each handler additionally enforces the elevated
         // StudioAuthorizationOperation.Generate check (StudioDraft/own/Execute operator grant
         // for non-admins) before the request body is parsed. With the flag off this is exactly
         // the prior admin-only posture.
-        group.MapPost("/map-packages/generate", HandleGenerateMap)
-            .WithDisplayName("Generate Studio Map Package")
-            .WithSummary("Generate or refine a map package from a natural-language prompt.")
+        //
+        // ADR-0076 (#3255): both routes are deterministic draft-creation entry points. They
+        // take structured composition input, perform no model inference, and delegate every
+        // validation rule to the shared draft factories in Honua.Core. The route paths are
+        // unchanged so existing clients keep resolving.
+        group.MapPost("/map-packages/generate", HandleCreateMapPackageDraft)
+            .WithDisplayName("Create Studio Map Package Draft")
+            .WithSummary("Create a map package draft deterministically from structured composition input.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Accepts<GenerateMapPackageRequest>("application/json")
-            .Produces<MapGenerationResult>();
+            .Accepts<MapPackageDraftRequest>("application/json")
+            .Produces<ApiResponse<StudioMapPackageDraftResponse>>(StatusCodes.Status201Created);
 
-        group.MapPost("/app-packages/generate", HandleGenerateApp)
-            .WithDisplayName("Generate Studio App Package")
-            .WithSummary("Generate or refine a studio-app/v1 app package from a natural-language prompt.")
+        group.MapPost("/app-packages/generate", HandleCreateAppPackageDraft)
+            .WithDisplayName("Create Studio App Package Draft")
+            .WithSummary("Create a studio-app/v1 app package draft deterministically from structured composition input.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Accepts<GenerateAppPackageRequest>("application/json")
-            .Produces<AppGenerationResult>();
+            .Accepts<AppPackageDraftRequest>("application/json")
+            .Produces<ApiResponse<StudioAppPackageDraftResponse>>(StatusCodes.Status201Created);
 
         group.MapPost("/{kind}/{id:guid}/export", HandleExportDeliverable)
             .WithDisplayName("Export Studio Deliverable")
@@ -334,115 +336,118 @@ internal static class StudioPackageEndpoints
         }
     }
 
-    private static async Task<IResult> HandleGenerateApp(
+    /// <summary>
+    /// Creates a <c>studio-app/v1</c> app package draft deterministically from structured
+    /// composition input (ADR-0076). No model is called: the handler parses the body onto the
+    /// canonical <see cref="AppPackageDraftRequest"/> and lets the shared
+    /// <see cref="IAppPackageDraftFactory"/> own every validation rule.
+    /// </summary>
+    private static async Task<IResult> HandleCreateAppPackageDraft(
         HttpContext context,
-        [FromServices] IAppGenerationService generation,
+        [FromServices] IAppPackageDraftFactory drafts,
         [FromServices] StudioEndpointAuthorization authorization)
     {
-        var generateAuthResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-app-generation").ConfigureAwait(false);
-        if (generateAuthResult is not null)
+        var authResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-app-generation").ConfigureAwait(false);
+        if (authResult is not null)
         {
-            return generateAuthResult;
+            return authResult;
         }
 
-        GenerateAppPackageRequest? request;
+        AppPackageDraftRequest? request;
         try
         {
             request = await JsonSerializer.DeserializeAsync(
                 context.Request.Body,
-                AppGenerationApiJsonContext.Default.GenerateAppPackageRequest,
+                StudioPackageDraftJsonContext.Default.AppPackageDraftRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            request = null;
+            return BadRequest(context, $"The request body is not valid JSON: {ex.Message}");
         }
 
-        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        request ??= new AppPackageDraftRequest();
+
+        // A JSON null for an array member deserializes to null even though the canonical
+        // request declares it non-nullable, so normalize before handing it to the factory.
+        var result = drafts.CreateDraft(request.BoundArtifactIds is null
+            ? request with { BoundArtifactIds = [] }
+            : request);
+
+        if (result.Package is null)
         {
-            var bad = new AppGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
-            return Results.Json(bad, AppGenerationApiJsonContext.Default.AppGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+            return BadRequest(context, DescribeFindings("App-package draft input is invalid", result.Errors));
         }
 
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context,
-            FeatureCatalog.AiWorkflowGenerationKey,
-            "AI app generation");
-        if (entitlementGate is not null)
-        {
-            return entitlementGate;
-        }
-
-        var result = await generation.GenerateAsync(
-            new AppGenerationRequest
+        return Results.Json(
+            ApiResponse<StudioAppPackageDraftResponse>.CreateSuccess(new StudioAppPackageDraftResponse
             {
-                Prompt = request.Prompt,
-                Provider = request.Provider,
-                Model = request.Model,
-                CurrentApp = request.Package,
-                Conversation = request.Conversation,
-                Answers = request.Answers
-            },
-            context.RequestAborted).ConfigureAwait(false);
-
-        context.Response.Headers.CacheControl = "no-store";
-        return Results.Json(result, AppGenerationApiJsonContext.Default.AppGenerationResult);
+                PackageId = result.Package.AppPackageId,
+                Package = result.Package,
+                Warnings = result.Warnings
+            }),
+            StudioPackageDraftJsonContext.Default.ApiResponseStudioAppPackageDraftResponse,
+            statusCode: StatusCodes.Status201Created);
     }
 
-    private static async Task<IResult> HandleGenerateMap(
+    /// <summary>
+    /// Creates a map package draft deterministically from structured composition input
+    /// (ADR-0076). Counterpart to <see cref="HandleCreateAppPackageDraft"/>.
+    /// </summary>
+    private static async Task<IResult> HandleCreateMapPackageDraft(
         HttpContext context,
-        [FromServices] IMapGenerationService generation,
+        [FromServices] IMapPackageDraftFactory drafts,
         [FromServices] StudioEndpointAuthorization authorization)
     {
-        var generateAuthResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-map-generation").ConfigureAwait(false);
-        if (generateAuthResult is not null)
+        var authResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-map-generation").ConfigureAwait(false);
+        if (authResult is not null)
         {
-            return generateAuthResult;
+            return authResult;
         }
 
-        GenerateMapPackageRequest? request;
+        MapPackageDraftRequest? request;
         try
         {
             request = await JsonSerializer.DeserializeAsync(
                 context.Request.Body,
-                MapGenerationApiJsonContext.Default.GenerateMapPackageRequest,
+                StudioPackageDraftJsonContext.Default.MapPackageDraftRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            request = null;
+            return BadRequest(context, $"The request body is not valid JSON: {ex.Message}");
         }
 
-        if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+        request ??= new MapPackageDraftRequest();
+
+        var result = drafts.CreateDraft(request.SourceBindings is null
+            ? request with { SourceBindings = [] }
+            : request);
+
+        if (result.Package is null)
         {
-            var bad = new MapGenerationResult { Status = "error", Rationale = "A non-empty 'prompt' is required." };
-            return Results.Json(bad, MapGenerationApiJsonContext.Default.MapGenerationResult, statusCode: StatusCodes.Status400BadRequest);
+            return BadRequest(context, DescribeFindings("Map-package draft input is invalid", result.Errors));
         }
 
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context,
-            FeatureCatalog.AiWorkflowGenerationKey,
-            "AI map generation");
-        if (entitlementGate is not null)
-        {
-            return entitlementGate;
-        }
-
-        var result = await generation.GenerateAsync(
-            new MapGenerationRequest
+        return Results.Json(
+            ApiResponse<StudioMapPackageDraftResponse>.CreateSuccess(new StudioMapPackageDraftResponse
             {
-                Prompt = request.Prompt,
-                Provider = request.Provider,
-                Model = request.Model,
-                CurrentMap = request.Package,
-                Conversation = request.Conversation,
-                Answers = request.Answers
-            },
-            context.RequestAborted).ConfigureAwait(false);
-
-        context.Response.Headers.CacheControl = "no-store";
-        return Results.Json(result, MapGenerationApiJsonContext.Default.MapGenerationResult);
+                PackageId = result.Package.MapPackageId,
+                Package = result.Package,
+                Warnings = result.Warnings
+            }),
+            StudioPackageDraftJsonContext.Default.ApiResponseStudioMapPackageDraftResponse,
+            statusCode: StatusCodes.Status201Created);
     }
+
+    /// <summary>
+    /// Renders blocking draft findings into a single problem detail string, preserving each
+    /// finding's stable code and JSON pointer so a client can act on them without re-parsing.
+    /// </summary>
+    private static string DescribeFindings(string summary, IReadOnlyList<PackageDraftFinding> findings)
+        => findings.Count == 0
+            ? summary + "."
+            : summary + ": " + string.Join("; ", findings.Select(static finding => finding.Describe()));
 
     private static IResult HandleGetPackageFamilies(
         [FromServices] IStudioPackageLifecycleService service,

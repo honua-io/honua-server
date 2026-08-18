@@ -78,7 +78,7 @@ public sealed class StudioCompositionBodyEditorTests
     {
         // StudioCompositionBody is a PROJECTION, not the whole document: a canonical map package
         // also carries mapPackageId/format/status/createdAt/sourceBindings/initialView, which
-        // MapGenerationSchema requires. Both round trips that serialize this record back over the
+        // the canonical MapPackage carries. Both round trips that serialize this record back over the
         // stored body -- the collaboration checkpoint applier and the MCP Studio composition tools
         // -- would otherwise DELETE every unmodelled field on the first edit. Silent data loss, not
         // a wedge, so nothing would surface at the time.

@@ -15,7 +15,7 @@
     {
       "capability": "ai.agent-operations",
       "reasonCode": "cross-cutting-gate",
-      "reason": "Validation-layer gate applied across several existing MCP/spec routes rather than a distinct route of its own; see ai.spec-apply, ai.grounding, ai.workflow-generation for the gated route surfaces.",
+      "reason": "Validation-layer gate applied across several existing MCP/spec routes rather than a distinct route of its own; see ai.spec-apply and ai.grounding for the gated route surfaces.",
       "category": "Ai",
       "edition": "Pro"
     },

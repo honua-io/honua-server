@@ -131,7 +131,8 @@ public static class StudioCompositionBodyEditor
     /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c> and <c>layout</c> and nothing
     /// else — but a canonical map package
     /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
-    /// <c>sourceBindings</c> and <c>initialView</c> (all required by <c>MapGenerationSchema</c>).
+    /// <c>sourceBindings</c> and <c>initialView</c> (all part of the canonical
+    /// <c>MapPackage</c> the draft factory emits).
     /// Serializing the projection straight over the body therefore DELETED every unmodelled field
     /// on the first edit, silently, through both round trips that use this editor: the
     /// collaboration checkpoint applier and the MCP Studio composition tools. Overlaying only the

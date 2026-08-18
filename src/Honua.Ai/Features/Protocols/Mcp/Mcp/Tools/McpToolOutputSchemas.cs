@@ -769,57 +769,81 @@ internal static class McpToolOutputSchemas
         """);
 
     /// <summary>
-    /// Schema for the <c>honua_create_map_package</c> result (a
-    /// <c>MapGenerationResult</c>). Pins the top-level envelope (status, package,
-    /// rationale, clarifications, validation, capabilityState, provider, model)
-    /// and leaves the deep package/validation sub-objects open so the published
-    /// contract stays stable as the generation engine evolves.
+    /// Schema for the <c>honua_create_map_package</c> result (ADR-0076): a real
+    /// draft package, its stable <c>map_…</c> identifier, and its resource URI.
     /// </summary>
+    /// <remarks>
+    /// The status vocabulary has exactly one value. There is deliberately no
+    /// <c>capability_unavailable</c> state: ADR-0076 names a permanently
+    /// unavailable-but-advertised tool as the failure mode this work exists to
+    /// prevent, so a draft that cannot be created fails as a structured
+    /// <c>invalid_argument</c> instead of succeeding with an empty envelope.
+    /// The package sub-object stays open because the canonical MapPackage shape
+    /// is owned by the domain model, not by this schema.
+    /// </remarks>
     public static readonly JsonElement CreateMapPackageOutputSchema = Parse(
         """
         {
           "type": "object",
-          "required": ["status"],
+          "required": ["status", "packageId", "resourceUri"],
           "properties": {
             "status": {
               "type": "string",
-              "description": "generated, needs_clarification, invalid, or capability_unavailable."
+              "enum": ["created"],
+              "description": "created — the draft package was created."
             },
-            "package": { "type": ["object", "null"], "description": "The generated MapPackage when status is generated." },
-            "rationale": { "type": ["string", "null"] },
-            "clarifications": { "type": "array", "items": { "type": "object" } },
-            "validation": { "type": ["object", "null"] },
-            "unmappedRequests": { "type": "array", "items": { "type": "string" } },
-            "capabilityState": { "type": ["object", "null"] },
-            "provider": { "type": ["string", "null"] },
-            "model": { "type": ["string", "null"] }
+            "packageId": { "type": "string", "description": "Stable map_… identifier for the created draft." },
+            "resourceUri": { "type": "string", "description": "honua://map-packages/{packageId}." },
+            "package": { "type": ["object", "null"], "description": "The created MapPackage draft." },
+            "warnings": {
+              "type": "array",
+              "description": "Non-blocking findings deferred to publish-time resolution.",
+              "items": {
+                "type": "object",
+                "required": ["code", "path", "message"],
+                "properties": {
+                  "code": { "type": "string" },
+                  "path": { "type": "string" },
+                  "message": { "type": "string" }
+                }
+              }
+            }
           }
         }
         """);
 
     /// <summary>
-    /// Schema for the <c>honua_create_app_package</c> result (an
-    /// <c>AppGenerationResult</c>). Mirrors <see cref="CreateMapPackageOutputSchema"/>;
-    /// the <c>package</c> is the opaque studio-app/v1 body.
+    /// Schema for the <c>honua_create_app_package</c> result (ADR-0076). Mirrors
+    /// <see cref="CreateMapPackageOutputSchema"/> with an <c>app_…</c> identifier
+    /// and the <c>honua://app-packages/{id}</c> resource URI.
     /// </summary>
     public static readonly JsonElement CreateAppPackageOutputSchema = Parse(
         """
         {
           "type": "object",
-          "required": ["status"],
+          "required": ["status", "packageId", "resourceUri"],
           "properties": {
             "status": {
               "type": "string",
-              "description": "generated, needs_clarification, invalid, or capability_unavailable."
+              "enum": ["created"],
+              "description": "created — the draft package was created."
             },
-            "package": { "type": ["object", "null"], "description": "The generated studio-app/v1 AppPackage body when status is generated." },
-            "rationale": { "type": ["string", "null"] },
-            "clarifications": { "type": "array", "items": { "type": "object" } },
-            "validation": { "type": ["object", "null"] },
-            "unmappedRequests": { "type": "array", "items": { "type": "string" } },
-            "capabilityState": { "type": ["object", "null"] },
-            "provider": { "type": ["string", "null"] },
-            "model": { "type": ["string", "null"] }
+            "packageId": { "type": "string", "description": "Stable app_… identifier for the created draft." },
+            "resourceUri": { "type": "string", "description": "honua://app-packages/{packageId}." },
+            "package": { "type": ["object", "null"], "description": "The created AppPackage draft." },
+            "warnings": {
+              "type": "array",
+              "description": "Non-blocking findings deferred to publish-time resolution.",
+              "items": {
+                "type": "object",
+                "required": ["code", "path", "message"],
+                "properties": {
+                  "code": { "type": "string" },
+                  "path": { "type": "string" },
+                  "message": { "type": "string" }
+                }
+              }
+            }
           }
         }
         """);

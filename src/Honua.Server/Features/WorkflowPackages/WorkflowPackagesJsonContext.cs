@@ -3,7 +3,6 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.WorkflowPackages.Domain;
-using Honua.Core.Features.WorkflowPackages.Generation.Domain;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.WorkflowPackages;
@@ -26,18 +25,6 @@ namespace Honua.Server.Features.WorkflowPackages;
 [JsonSerializable(typeof(ApiResponse<WorkflowPublication>))]
 [JsonSerializable(typeof(ApiResponse<WorkflowPublicationListResponse>))]
 [JsonSerializable(typeof(ApiResponse<WorkflowPublicationRunResult>))]
-[JsonSerializable(typeof(ApiResponse<WorkflowGenerationResult>))]
-[JsonSerializable(typeof(ApiResponse<WorkflowGenerationProviders>))]
-[JsonSerializable(typeof(GenerateWorkflowPackageRequest))]
-[JsonSerializable(typeof(WorkflowGenerationResult))]
-[JsonSerializable(typeof(WorkflowGenerationProviders))]
-[JsonSerializable(typeof(WorkflowGenerationProviderDescriptor))]
-[JsonSerializable(typeof(WorkflowGenerationClarification))]
-[JsonSerializable(typeof(WorkflowGenerationClarificationChoice))]
-[JsonSerializable(typeof(WorkflowGenerationCapabilityState))]
-[JsonSerializable(typeof(WorkflowGenerationUsage))]
-[JsonSerializable(typeof(WorkflowGenerationConversationTurn))]
-[JsonSerializable(typeof(WorkflowGenerationAnswer))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(SaveWorkflowPackageRequest))]
 [JsonSerializable(typeof(PublishWorkflowPackageRequest))]

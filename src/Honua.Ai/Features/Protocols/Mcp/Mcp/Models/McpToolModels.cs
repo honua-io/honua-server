@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
@@ -579,53 +580,96 @@ internal sealed class McpIngestDatasetOutput
 }
 
 /// <summary>
-/// Arguments for <c>honua_create_map_package</c>: author a MapPackage from a
-/// prompt through the canonical map-generation pipeline (#1951). The standard
-/// geospatial-mcp composition selectors (<c>templateId</c>, <c>styleId</c>,
-/// <c>themeId</c>) are woven into the generation prompt as explicit guidance.
-/// All fields are optional in the published schema (the standard schema marks
-/// none required); a missing <c>prompt</c> is reported as a structured
-/// <c>invalid_argument</c> at invocation time.
+/// Arguments for <c>honua_create_map_package</c>: the structured geospatial-mcp
+/// <c>create_map_package</c> composition selectors, projected onto a
+/// deterministic MapPackage draft (ADR-0076, #3255).
 /// </summary>
+/// <remarks>
+/// There is deliberately no <c>prompt</c>, <c>provider</c>, or <c>model</c>
+/// member: draft creation performs no model inference, so a caller that still
+/// sends prose has it ignored as an unmodelled property rather than having it
+/// change the result. <c>sourceBindings</c> and <c>initialView</c> are parsed and
+/// honored — before D5 the first was rejected outright and the second was
+/// published in the schema and silently dropped by the parser.
+/// </remarks>
 internal sealed class McpCreateMapPackageArgument
 {
-    [JsonPropertyName("prompt")]
-    public string? Prompt { get; set; }
-
-    [JsonPropertyName("provider")]
-    public string? Provider { get; set; }
-
-    [JsonPropertyName("model")]
-    public string? Model { get; set; }
-
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
+
+    [JsonPropertyName("sourceBindings")]
+    public IReadOnlyList<McpSourceBindingArgument?>? SourceBindings { get; set; }
 
     [JsonPropertyName("styleId")]
     public string? StyleId { get; set; }
 
     [JsonPropertyName("themeId")]
     public string? ThemeId { get; set; }
+
+    [JsonPropertyName("initialView")]
+    public McpInitialViewArgument? InitialView { get; set; }
 }
 
 /// <summary>
-/// Arguments for <c>honua_create_app_package</c>: author an AppPackage from a
-/// prompt through the canonical app-generation pipeline (#1951). The standard
-/// geospatial-mcp composition fields (<c>templateId</c>, <c>targetSdk</c>,
-/// <c>mapPackageId</c>, <c>boundArtifactIds</c>) are woven into the generation
-/// prompt as explicit guidance.
+/// Wire shape of a <c>create_map_package</c> source binding entry. The standard
+/// leaves the item shape open (<c>additionalProperties: true</c>); Honua parses
+/// the canonical <c>SourceBinding</c> members and additionally accepts
+/// <c>bindingId</c> as an alias for <c>sourceId</c>, which is the spelling the
+/// vendored standard fixture uses.
 /// </summary>
+internal sealed class McpSourceBindingArgument
+{
+    [JsonPropertyName("sourceId")]
+    public string? SourceId { get; set; }
+
+    [JsonPropertyName("bindingId")]
+    public string? BindingId { get; set; }
+
+    [JsonPropertyName("protocol")]
+    public string? Protocol { get; set; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public string? LayerId { get; set; }
+
+    [JsonPropertyName("filter")]
+    public string? Filter { get; set; }
+
+    [JsonPropertyName("metadata")]
+    public IReadOnlyDictionary<string, string>? Metadata { get; set; }
+}
+
+/// <summary>
+/// Wire shape of the <c>create_map_package</c> initial view. <c>crs</c> is
+/// declared by the standard as either a string or an integer EPSG code, so it is
+/// carried as a raw element and normalized by the tool.
+/// </summary>
+internal sealed class McpInitialViewArgument
+{
+    [JsonPropertyName("bbox")]
+    public IReadOnlyList<double>? Bbox { get; set; }
+
+    [JsonPropertyName("crs")]
+    public JsonElement? Crs { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_create_app_package</c>: the structured geospatial-mcp
+/// <c>create_app_package</c> fields, projected onto a deterministic AppPackage
+/// draft (ADR-0076, #3255).
+/// </summary>
+/// <remarks>
+/// As with <see cref="McpCreateMapPackageArgument"/> there is no prompt,
+/// provider, or model member, and <c>runtimeConfig</c> — published by the
+/// standard but never previously parsed — is now honored.
+/// </remarks>
 internal sealed class McpCreateAppPackageArgument
 {
-    [JsonPropertyName("prompt")]
-    public string? Prompt { get; set; }
-
-    [JsonPropertyName("provider")]
-    public string? Provider { get; set; }
-
-    [JsonPropertyName("model")]
-    public string? Model { get; set; }
-
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
 
@@ -637,6 +681,58 @@ internal sealed class McpCreateAppPackageArgument
 
     [JsonPropertyName("boundArtifactIds")]
     public IReadOnlyList<string>? BoundArtifactIds { get; set; }
+
+    [JsonPropertyName("runtimeConfig")]
+    public JsonElement? RuntimeConfig { get; set; }
+}
+
+/// <summary>
+/// Result of <c>honua_create_map_package</c> / <c>honua_create_app_package</c>:
+/// a real, addressable draft package rather than a generation envelope.
+/// </summary>
+/// <remarks>
+/// ADR-0076 names the failure mode this shape exists to prevent — a tool that
+/// stays advertised while permanently returning <c>capability_unavailable</c>.
+/// The status vocabulary therefore has a single success value and no
+/// unavailable state: either a package with a stable identifier comes back, or
+/// the call fails as a structured <c>invalid_argument</c>.
+/// </remarks>
+internal sealed class McpPackageDraftOutput
+{
+    /// <summary>Always <c>created</c> on the success path.</summary>
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "created";
+
+    /// <summary>Stable <c>map_…</c> / <c>app_…</c> identifier for the draft.</summary>
+    [JsonPropertyName("packageId")]
+    public string PackageId { get; set; } = string.Empty;
+
+    /// <summary>Canonical resource URI addressing the draft.</summary>
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    /// <summary>The created package body.</summary>
+    [JsonPropertyName("package")]
+    public JsonElement? Package { get; set; }
+
+    /// <summary>Non-blocking findings deferred to publish-time resolution.</summary>
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<McpPackageDraftFinding> Warnings { get; set; } = [];
+}
+
+/// <summary>
+/// A single structural finding raised while building a draft package.
+/// </summary>
+internal sealed class McpPackageDraftFinding
+{
+    [JsonPropertyName("code")]
+    public string Code { get; set; } = string.Empty;
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
 }
 
 /// <summary>

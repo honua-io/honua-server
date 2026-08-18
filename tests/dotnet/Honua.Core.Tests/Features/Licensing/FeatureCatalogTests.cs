@@ -158,7 +158,6 @@ public sealed class FeatureCatalogTests
     [Theory]
     [InlineData(FeatureCatalog.AiSpecApplyKey, "ai.spec-apply")]
     [InlineData(FeatureCatalog.AiGroundingKey, "ai.grounding")]
-    [InlineData(FeatureCatalog.AiWorkflowGenerationKey, "ai.workflow-generation")]
     public void All_AgenticAiOperationsAreProTier(string key, string expectedKey)
     {
         // Ticket #1592: AI operations that mutate, generate, or submit

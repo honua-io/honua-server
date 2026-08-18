@@ -449,20 +449,6 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages/generate")]
-    public async Task GenerateFormPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
-    {
-        // The generate route validates the prompt before invoking any AI provider, so an empty body
-        // exercises the wired endpoint (non-404) without calling a real LLM.
-        var response = await _fixture.Client.PostAsync(
-            "/api/v1/admin/forms/packages/generate",
-            JsonContent("{}"));
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Configuration)]
     [Endpoint("GET /api/v1/forms/packages/{formId}/offline-policy")]
     [Endpoint("GET /api/v1/forms/packages/{formId}/compatibility")]
     public async Task OfflineFormRuntime_WithCommunityLicense_ReturnsPaymentRequired()
@@ -485,31 +471,6 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
                 var body = await response.Content.ReadAsStringAsync();
                 body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages/generate")]
-    public async Task GenerateFormPackage_WithCommunityLicense_ReturnsPaymentRequired()
-    {
-        var fixture = new WebAppFixture()
-            .WithTestLicense(HonuaEdition.Community);
-        await fixture.InitializeAsync();
-
-        try
-        {
-            var response = await fixture.Client.PostAsync(
-                "/api/v1/admin/forms/packages/generate",
-                JsonContent("""{"prompt":"Build a simple inspection form"}"""));
-
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().Contain(FeatureCatalog.AiWorkflowGenerationKey);
         }
         finally
         {

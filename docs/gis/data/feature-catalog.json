@@ -4661,20 +4661,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-workflow-generation-providers",
-      "route": "/api/v1/console/workflow-generation/providers",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.GetGenerationProviders_WhenEnabled_ReportsDeterministicProvider"
-      ],
-      "proof_ledger_surface": "console-content-rbac",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-console-workflow-node-registry",
       "route": "/api/v1/console/workflow-node-registry",
       "method": "GET",
@@ -14013,21 +13999,6 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-packages-generate",
-      "route": "/api/v1/admin/forms/packages/generate",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.GenerateFormPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.GenerateFormPackage_WithCommunityLicense_ReturnsPaymentRequired"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "fieldops.forms"
-    },
-    {
       "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-publish",
       "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish",
       "method": "POST",
@@ -15870,20 +15841,6 @@
       "capability": "raster.multidim-coverage"
     },
     {
-      "id": "post-api-v1-analysis-content-generate",
-      "route": "/api/v1/analysis/content/generate",
-      "method": "POST",
-      "family": "Analysis Content",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AnalysisContent.AnalysisContentEndpointsTests.GenerateAnalysis_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
-      ],
-      "proof_ledger_surface": "analysis-content",
-      "maturity": "implemented",
-      "capability": "analytics.content"
-    },
-    {
       "id": "post-api-v1-analysis-content-items",
       "route": "/api/v1/analysis/content/items",
       "method": "POST",
@@ -15967,20 +15924,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.AnalysisContent.AnalysisContentEndpointsTests.AnalysisPackage_SubmitAndRerun_StampsVersionAndProvenanceMetadata"
-      ],
-      "proof_ledger_surface": "analysis-content",
-      "maturity": "implemented",
-      "capability": "analytics.content"
-    },
-    {
-      "id": "post-api-v1-analysis-content-queries-generate",
-      "route": "/api/v1/analysis/content/queries/generate",
-      "method": "POST",
-      "family": "Analysis Content",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.AnalysisContent.AnalysisContentEndpointsTests.GenerateSavedQuery_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
       ],
       "proof_ledger_surface": "analysis-content",
       "maturity": "implemented",
@@ -16149,20 +16092,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-console-publications-generate",
-      "route": "/api/v1/console/publications/generate",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.GenerateContent_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
-      ],
-      "proof_ledger_surface": "console-content-rbac",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "post-api-v1-console-publications-publicationid-republish",
       "route": "/api/v1/console/publications/{publicationId}/republish",
       "method": "POST",
@@ -16218,22 +16147,6 @@
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
       "capability": "admin.control-plane"
-    },
-    {
-      "id": "post-api-v1-console-workflow-packages-generate",
-      "route": "/api/v1/console/workflow-packages/generate",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.GenerateWorkflow_WithCommunityLicense_ReturnsPaymentRequired",
-        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.GenerateWorkflow_WithDeterministicProvider_ReturnsGeneratedGraph",
-        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.GenerateWorkflow_WithEmptyPrompt_ReturnsBadRequest"
-      ],
-      "proof_ledger_surface": "console-content-rbac",
-      "maturity": "implemented",
-      "capability": "ai.workflow-generation"
     },
     {
       "id": "post-api-v1-console-workflow-packages-packageid-versions",
@@ -16628,7 +16541,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateAppPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16709,8 +16622,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateMapPackageDraft_InvalidStructuralInput_ReturnsBadRequestWithFindingCode",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateMapPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant",
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -17042,6 +16956,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownMethod_ReturnsMethodNotFoundJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_AcceptedSilentlyWithoutBody",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_WithId_IsRejectedAsInvalidRequest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ToolsCall_CreateAppPackage_ReturnsRealPackageWithStableIdentifier",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ToolsCall_CreateMapPackage_ReturnsRealPackageWithStableIdentifier",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ToolsCall_CreateMapPackage_WithNoArgumentsAtAll_StillCreatesAPackage",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithFullScope_IsAuthorized",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithMatchingScope_IsAuthorized",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNarrowerScope_IsDeniedByScopeEvenThoughGrantPasses",
