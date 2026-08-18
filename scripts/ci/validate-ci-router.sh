@@ -1293,10 +1293,9 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
     "MCP" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.AnalysisGeneration.AnalysisGenerationServiceTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+  `# ADR-0076 (#3255) retired the server-side generation families, deleting` \
+  `# AnalysisGenerationServiceTests along with them, so the #3259 owner` \
+  `# assertion for that class is dropped rather than repointed.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
