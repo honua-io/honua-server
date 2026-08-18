@@ -157,6 +157,11 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         // The probes are created on the SAME meter name the exporter is registered against, so
         // they travel the real exporter, not a re-implementation of its UCUM rules.
         using var meter = new Meter(HonuaTelemetry.ServiceName, HonuaTelemetry.ServiceVersion);
+        // LIFETIME ANCHOR, not a result set. Observable instruments are only scraped while a
+        // strong reference to them survives; without this list the GC is free to collect them
+        // between creation and the /metrics scrape below, and every observable-kind entry would
+        // silently drop out of the exposition — turning this guard green over metrics it never
+        // actually checked. Its contents are deliberately never read; do not "clean it up".
         var observableProbes = new List<object>();
 
         foreach (var entry in contract)
