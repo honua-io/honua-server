@@ -32,6 +32,16 @@ internal sealed partial class RedisExecutionJobStore(
         return 1
         """;
 
+    private const string LeaseOwnedCasSetScript = """
+        if redis.call('GET', KEYS[2]) ~= ARGV[4] then return 0 end
+        local current = redis.call('GET', KEYS[1])
+        if current == false then return 0 end
+        local v = tonumber(string.match(current, '"version":(%d+)')) or 0
+        if v ~= tonumber(ARGV[1]) then return 0 end
+        redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3]))
+        return 1
+        """;
+
     private readonly IDatabase _database = redis.GetDatabase();
 
     public Task<bool> TryAcquireLeaseAsync(
@@ -145,6 +155,50 @@ internal sealed partial class RedisExecutionJobStore(
             keys: [(RedisKey)GetJobKey(job.OperationId)],
             values: [(RedisValue)job.Version, (RedisValue)payload, (RedisValue)(long)retention.TotalMilliseconds])
             .ConfigureAwait(false);
+
+        if ((long)result != 1)
+        {
+            Log.CasConflict(logger, job.OperationId, job.Version);
+            return false;
+        }
+
+        await UpdateIndexesAsync(previous, versioned).ConfigureAwait(false);
+        Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TrySetIfLeaseOwnedAsync(
+        ExecutionJobRecord job,
+        string leaseOperationId,
+        string leaseOwnerId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaseOperationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaseOwnerId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        var versioned = job with { Version = job.Version + 1 };
+        var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        var retention = ttl ?? DefaultRetention;
+
+        var result = await _database.ScriptEvaluateAsync(
+            LeaseOwnedCasSetScript,
+            keys:
+            [
+                (RedisKey)GetJobKey(job.OperationId),
+                (RedisKey)GetLeaseKey(leaseOperationId)
+            ],
+            values:
+            [
+                (RedisValue)job.Version,
+                (RedisValue)payload,
+                (RedisValue)(long)retention.TotalMilliseconds,
+                (RedisValue)leaseOwnerId
+            ]).ConfigureAwait(false);
 
         if ((long)result != 1)
         {

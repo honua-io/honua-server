@@ -7,15 +7,18 @@ using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Authentication;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Protocols.GeoServices;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -57,6 +60,8 @@ internal sealed class ImageServerTileHandler
         int row,
         int col,
         string format,
+        string? publicationId = null,
+        int? cacheLayerId = null,
         CancellationToken cancellationToken = default)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -72,7 +77,10 @@ internal sealed class ImageServerTileHandler
         {
             // Validate layer exists in the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolved = publicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            if (resolved is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -106,8 +114,21 @@ internal sealed class ImageServerTileHandler
                 return editionError;
             }
 
+            var resolvedLayer = resolved.Value;
+            if (!HasExpectedPublicationBinding(snapshot, resolvedLayer.Publication, layerId, cacheLayerId, publicationId))
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            {
+                return accessError;
+            }
+
+            var tileCacheLayerId = resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
-                resolved.Resource,
+                resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
 
             var tileGeometry = CreateTileEnvelope(level, row, col);
@@ -134,10 +155,12 @@ internal sealed class ImageServerTileHandler
                 var storage = context.RequestServices.GetService<ICloudFileStorage>();
                 var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
                 var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+                var tileCacheTenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
                 var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
-                    layerId,
+                    resolvedLayer.Publication.Metadata.Id,
+                    tileCacheLayerId,
                     TileMatrixSetRegistry.WebMercatorQuadId,
                     DefaultStyleId,
                     ResolveTenantAuthKey(context),
@@ -150,7 +173,13 @@ internal sealed class ImageServerTileHandler
                     row,
                     col);
 
-                if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
+                if (await GeoServicesCloudTileCache.TryReadAsync(
+                        storage,
+                        storageOptions,
+                        tileCacheKey,
+                        cancellationToken,
+                        tileCacheKeyIndex,
+                        tileCacheTenantScope).ConfigureAwait(false) is { } cachedTile)
                 {
                     ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                     scope.SetSuccess(1);
@@ -200,7 +229,8 @@ internal sealed class ImageServerTileHandler
                             .Add("format", rasterFormat.ToString())
                             .Add("metadataEtag", snapshot.Etag),
                         cancellationToken,
-                        tileCacheKeyIndex).ConfigureAwait(false);
+                        tileCacheKeyIndex,
+                        tileCacheTenantScope).ConfigureAwait(false);
                     return Results.File(result.Data, result.ContentType);
                 }
             }
@@ -263,6 +293,8 @@ internal sealed class ImageServerTileHandler
         int row,
         int col,
         string format,
+        string? publicationId = null,
+        int? cacheLayerId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(grid);
@@ -280,7 +312,10 @@ internal sealed class ImageServerTileHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolved = publicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            if (resolved is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -307,8 +342,21 @@ internal sealed class ImageServerTileHandler
                 return editionError;
             }
 
+            var resolvedLayer = resolved.Value;
+            if (!HasExpectedPublicationBinding(snapshot, resolvedLayer.Publication, layerId, cacheLayerId, publicationId))
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            {
+                return accessError;
+            }
+
+            var tileCacheLayerId = resolvedLayer.Publication.LayerIndex ?? layerId;
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
-                resolved.Resource,
+                resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
 
             var tileGeometry = ImageServerMosaicHelpers.CreateEnvelopeGeometry(
@@ -334,6 +382,7 @@ internal sealed class ImageServerTileHandler
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
             var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+            var tileCacheTenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
             var window = new RasterTileWindow
             {
                 MinX = bounds.XMin,
@@ -347,7 +396,8 @@ internal sealed class ImageServerTileHandler
             var tileCacheKey = ImageServerTileCacheKey.Build(
                 storageOptions,
                 snapshot.Etag,
-                layerId,
+                resolvedLayer.Publication.Metadata.Id,
+                tileCacheLayerId,
                 grid.Id,
                 DefaultStyleId,
                 ResolveTenantAuthKey(context),
@@ -361,7 +411,13 @@ internal sealed class ImageServerTileHandler
                 col,
                 window);
 
-            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
+            if (await GeoServicesCloudTileCache.TryReadAsync(
+                    storage,
+                    storageOptions,
+                    tileCacheKey,
+                    cancellationToken,
+                    tileCacheKeyIndex,
+                    tileCacheTenantScope).ConfigureAwait(false) is { } cachedTile)
             {
                 ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                 scope.SetSuccess(1);
@@ -410,7 +466,8 @@ internal sealed class ImageServerTileHandler
                     .Add("format", rasterFormat.ToString())
                     .Add("metadataEtag", snapshot.Etag),
                 cancellationToken,
-                tileCacheKeyIndex).ConfigureAwait(false);
+                tileCacheKeyIndex,
+                tileCacheTenantScope).ConfigureAwait(false);
             return Results.File(result.Data, result.ContentType);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -426,6 +483,47 @@ internal sealed class ImageServerTileHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the image tile.");
         }
+    }
+
+    private static bool HasExpectedPublicationBinding(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        int expectedStorageLayerId,
+        int? expectedCacheLayerId,
+        string? expectedPublicationId)
+    {
+        if (expectedPublicationId is null)
+        {
+            return true;
+        }
+
+        var currentStorageLayerId = snapshot.ResolveStorageLayerId(publication);
+        var currentCacheLayerId = publication.LayerIndex ?? currentStorageLayerId;
+        return currentStorageLayerId == expectedStorageLayerId
+            && currentCacheLayerId == (expectedCacheLayerId ?? expectedStorageLayerId);
+    }
+
+    private static IResult? RequireCurrentPublicationAccess(
+        MetadataV2GraphSnapshot snapshot,
+        ImageServerV2Lookups.ResolvedImageLayer resolvedLayer,
+        HttpContext context)
+    {
+        if (resolvedLayer.Resource is null ||
+            !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var service))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+        }
+
+        // Re-run the resolver's protocol gate against the current snapshot as well. Metadata can
+        // disable ImageServer for the owning service between endpoint resolution and this second
+        // snapshot read without changing the publication or layer bindings, and an in-flight
+        // request must not keep rendering tiles for a service that no longer exposes ImageServer.
+        if (!MetadataV2ServiceProtocols.IsProtocolEnabled(service, MetadataV2ServiceProtocols.ImageServer))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+        }
+
+        return AccessPolicyHelpers.RequireResourceAccess(context, resolvedLayer.Resource, service);
     }
 
     private static byte[] CreateTileEnvelope(int level, int row, int col)
@@ -490,4 +588,5 @@ internal sealed class ImageServerTileHandler
             CultureInfo.InvariantCulture,
             $"tenant:{tenantId.Length}:{tenantId}|auth:{authenticationType.Length}:{authenticationType}|principal:{principalId.Length}:{principalId}");
     }
+
 }

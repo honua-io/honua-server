@@ -13,6 +13,7 @@ Two layers, neither of which touches the network:
 
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import json
 import os
@@ -438,7 +439,7 @@ def test_markdown_reports_the_scope_it_actually_swept():
 
 def test_json_document_carries_a_schema_version_and_both_arrays():
     document = MODULE.to_json_document(run_fixture_sweep(), DEFAULT_REF)
-    assert document["schemaVersion"] == 2
+    assert document["schemaVersion"] == 3
     assert document["actionable"] == 7
     assert {"findings", "openFindings", "scope", "defaultRef"} <= set(document)
 
@@ -462,6 +463,239 @@ def test_fail_on_severities():
     assert MODULE._exit_code("stranded", result) == 1
     assert MODULE._exit_code("payload-missing", result) == 1, "deprecated alias must keep working"
     assert MODULE._exit_code("actionable", {"merged": [], "open": []}) == 0
+
+
+# --------------------------------------------------------------------------- #
+# Recorded dispositions
+# --------------------------------------------------------------------------- #
+
+LEDGER_PATH = Path(__file__).with_name("stranded-merge-dispositions.json")
+TODAY = dt.date(2026, 8, 17)
+
+
+def disposition(**overrides):
+    entry = {"pr": 1, "status": MODULE.DISPOSITION_ABANDONED, "reason": "decided", "paths": []}
+    entry.update(overrides)
+    return entry
+
+
+def write_ledger(root, document):
+    ledger = Path(root) / "ledger.json"
+    ledger.write_text(json.dumps(document), encoding="utf-8")
+    return str(ledger)
+
+
+def load_error(document):
+    with tempfile.TemporaryDirectory() as root:
+        try:
+            MODULE.load_dispositions(write_ledger(root, document), required=True)
+        except MODULE.DispositionError as error:
+            return str(error)
+    return None
+
+
+def test_an_abandoned_decision_silences_the_finding_it_covers():
+    finding = merged_pr([{"path": "a", "verdict": MODULE.PATH_ABSENT}])
+    MODULE.apply_disposition(finding, disposition(paths=["a"]), today=TODAY)
+    assert finding["classification"] == MODULE.MERGED_STRANDED, "the finding stays true"
+    assert MODULE.silenced(finding) is True
+    assert finding["disposition"]["reason"] == "decided"
+
+
+def test_a_recovering_decision_annotates_but_never_silences():
+    # The payload is still off the default branch while the recovery PR is open,
+    # so hiding the row would hide the one thing left to do.
+    finding = merged_pr([{"path": "a", "verdict": MODULE.PATH_ABSENT}])
+    MODULE.apply_disposition(
+        finding,
+        disposition(status=MODULE.DISPOSITION_RECOVERING, paths=["a"], recovery="https://example/pr/1"),
+        today=TODAY,
+    )
+    assert MODULE.silenced(finding) is False
+    assert "in flight" in finding["disposition"]["why"]
+
+
+def test_a_decision_cannot_absorb_a_path_it_never_adjudicated():
+    # The whole point of scope-binding: a file deleted from the default branch
+    # next year must not be swallowed by a waiver written today.
+    finding = merged_pr(
+        [{"path": "a", "verdict": MODULE.PATH_ABSENT}, {"path": "b", "verdict": MODULE.PATH_ABSENT}]
+    )
+    MODULE.apply_disposition(finding, disposition(paths=["a"]), today=TODAY)
+    assert MODULE.silenced(finding) is False
+    assert finding["disposition"]["uncoveredPaths"] == ["b"]
+
+
+def test_scope_binding_covers_unlanded_edits_as_well_as_absent_files():
+    finding = merged_pr([{"path": "b", "verdict": MODULE.PATH_MISSING, "supersededOnDefault": False}])
+    assert MODULE.actionable_paths(finding) == ["b"]
+    MODULE.apply_disposition(finding, disposition(paths=["a"]), today=TODAY)
+    assert MODULE.silenced(finding) is False
+
+
+def test_a_review_date_makes_the_silence_lapse():
+    covered = disposition(paths=["a"], reviewBy="2026-08-16")
+    before = merged_pr([{"path": "a", "verdict": MODULE.PATH_ABSENT}])
+    MODULE.apply_disposition(before, covered, today=dt.date(2026, 8, 16))
+    assert MODULE.silenced(before) is True, "the review date itself is still inside the window"
+
+    after = merged_pr([{"path": "a", "verdict": MODULE.PATH_ABSENT}])
+    MODULE.apply_disposition(after, covered, today=dt.date(2026, 8, 17))
+    assert MODULE.silenced(after) is False
+    assert "2026-08-16" in after["disposition"]["why"]
+
+
+def test_an_unadjudicable_finding_can_be_closed_by_a_decision():
+    # `indeterminate` has no paths by construction, so scope-binding is vacuous;
+    # a human looking and writing it down is the only way to close it.
+    finding = merged_pr(reason="merge commit is not in the clone")
+    assert finding["classification"] == MODULE.MERGED_INDETERMINATE
+    MODULE.apply_disposition(finding, disposition(), today=TODAY)
+    assert MODULE.silenced(finding) is True
+
+
+def test_a_finding_with_no_decision_is_untouched():
+    finding = merged_pr([{"path": "a", "verdict": MODULE.PATH_ABSENT}])
+    MODULE.apply_disposition(finding, None, today=TODAY)
+    assert "disposition" not in finding
+    assert MODULE.silenced(finding) is False
+
+
+def test_the_ledger_is_rejected_rather_than_half_read_when_it_is_malformed():
+    assert "expected a top-level 'dispositions' array" in load_error({"schemaVersion": 1})
+    assert "needs an integer 'pr'" in load_error({"dispositions": [disposition(pr="3116")]})
+    assert "recorded twice" in load_error({"dispositions": [disposition(pr=7), disposition(pr=7)]})
+    assert "'status' must be one of" in load_error({"dispositions": [disposition(status="waived")]})
+    assert "'reason' is required" in load_error({"dispositions": [disposition(reason="  ")]})
+    assert "'paths' must be an array of strings" in load_error({"dispositions": [disposition(paths="a")]})
+    assert "must be an ISO date" in load_error({"dispositions": [disposition(reviewBy="soon")]})
+    assert "is not valid JSON" in (_load_error_from_text("{") or "")
+
+
+def _load_error_from_text(text):
+    with tempfile.TemporaryDirectory() as root:
+        ledger = Path(root) / "ledger.json"
+        ledger.write_text(text, encoding="utf-8")
+        try:
+            MODULE.load_dispositions(str(ledger), required=True)
+        except MODULE.DispositionError as error:
+            return str(error)
+    return None
+
+
+def test_a_missing_ledger_is_only_an_error_when_it_was_asked_for_by_name():
+    with tempfile.TemporaryDirectory() as root:
+        absent = str(Path(root) / "nope.json")
+        assert MODULE.load_dispositions(absent, required=False) == {}
+        try:
+            MODULE.load_dispositions(absent, required=True)
+        except MODULE.DispositionError as error:
+            assert "not found" in str(error)
+        else:
+            raise AssertionError("an explicitly named ledger that is missing must fail")
+
+
+def test_dispositions_drop_out_of_the_actionable_count_and_into_their_own_table():
+    silencing = {
+        3116: {"pr": 3116, "status": MODULE.DISPOSITION_ABANDONED, "reason": "single-engine raster", "paths": []},
+    }
+    # #3116's recorded paths are empty here on purpose, so this also proves the
+    # scope guard fires on a real finding rather than only on a synthetic one.
+    result = run_fixture_sweep(dispositions=silencing, today=TODAY)
+    assert 3116 in [f["number"] for f in MODULE.actionable(result)], "an out-of-scope decision must not silence"
+
+    covered = by_number(run_fixture_sweep()["merged"])[3116]
+    silencing[3116]["paths"] = MODULE.actionable_paths(covered)
+    result = run_fixture_sweep(dispositions=silencing, today=TODAY)
+    assert 3116 not in [f["number"] for f in MODULE.actionable(result)]
+    assert MODULE.to_json_document(result, DEFAULT_REF)["actionable"] == 6
+
+    out = MODULE.render_markdown(result, DEFAULT_REF)
+    assert "### Adjudicated (1)" in out
+    assert "single-engine raster" in out
+    assert "### Stranded (1)" in out, "the other stranded PR must still be reported"
+
+
+def test_a_decision_about_an_already_informational_finding_is_stale_not_adjudicated():
+    # #9004 is `landed`: its content reached trunk under a different SHA. Filing
+    # it under "Adjudicated" would assert the opposite, so the entry is reported
+    # as having nothing left to decide.
+    result = run_fixture_sweep(
+        dispositions={9004: {"pr": 9004, "status": MODULE.DISPOSITION_ABANDONED, "reason": "x", "paths": []}},
+        today=TODAY,
+    )
+    landed = by_number(result["merged"])[9004]
+    assert landed["classification"] == MODULE.MERGED_LANDED
+    assert "disposition" not in landed
+    assert [e["pr"] for e in result["staleDispositions"]] == [9004]
+
+    out = MODULE.render_markdown(result, DEFAULT_REF)
+    assert "### Adjudicated" not in out
+    assert "**landed**" in out, "it must stay in the informational list where it belongs"
+
+
+def test_a_decision_about_a_pr_the_sweep_no_longer_reports_is_flagged_as_stale():
+    result = run_fixture_sweep(
+        dispositions={4242: {"pr": 4242, "status": MODULE.DISPOSITION_ABANDONED, "reason": "gone", "paths": []}},
+        today=TODAY,
+    )
+    assert result["staleDispositions"] == [{"pr": 4242, "status": MODULE.DISPOSITION_ABANDONED, "reason": "gone"}]
+    assert "Dispositions with nothing left to decide (1)" in MODULE.render_markdown(result, DEFAULT_REF)
+
+
+def test_a_silenced_stranded_finding_no_longer_fails_the_build():
+    covered = by_number(run_fixture_sweep()["merged"])
+    dispositions = {
+        number: {
+            "pr": number,
+            "status": MODULE.DISPOSITION_ABANDONED,
+            "reason": "decided",
+            "paths": MODULE.actionable_paths(covered[number]),
+        }
+        for number in (2835, 3113, 3116, 9002, 9003)
+    }
+    result = run_fixture_sweep(dispositions=dispositions, today=TODAY)
+    assert MODULE._exit_code("stranded", result) == 0
+    assert MODULE._exit_code("actionable", result) == 1, "the open-PR re-targets are not dispositionable"
+
+
+# --------------------------------------------------------------------------- #
+# The checked-in ledger
+# --------------------------------------------------------------------------- #
+
+
+def test_the_checked_in_ledger_records_the_two_settled_3248_decisions():
+    ledger = MODULE.load_dispositions(str(LEDGER_PATH), required=True)
+    assert set(ledger) == {3113, 3116}
+    assert ledger[3116]["status"] == MODULE.DISPOSITION_ABANDONED
+    assert ledger[3113]["status"] == MODULE.DISPOSITION_LANDED_ELSEWHERE
+    assert 2835 not in ledger, (
+        "#2835's payload reached trunk via PR #3176, so the sweep no longer reports it as "
+        "actionable and there is nothing left to decide -- an entry would only be stale"
+    )
+
+
+def test_the_checked_in_ledger_covers_every_path_the_recorded_fixture_finds():
+    # The fixture records the real adjudication of these PRs, so this is the
+    # regression guard for the ledger drifting away from what the sweep reports.
+    ledger = MODULE.load_dispositions(str(LEDGER_PATH), required=True)
+    merged = by_number(run_fixture_sweep()["merged"])
+    for number in sorted(ledger):
+        uncovered = [p for p in MODULE.actionable_paths(merged[number]) if p not in ledger[number]["paths"]]
+        assert not uncovered, f"#{number} disposition does not cover {uncovered}"
+
+
+def test_the_checked_in_ledger_silences_both_findings_it_covers():
+    # Against the recorded fixture -- which predates #3176 -- #2835 is still
+    # stranded and uncovered by the ledger, so it must remain actionable. That is
+    # the property being pinned: the ledger silences what it adjudicated and
+    # nothing else.
+    ledger = MODULE.load_dispositions(str(LEDGER_PATH), required=True)
+    result = run_fixture_sweep(dispositions=ledger, today=TODAY)
+    silenced = sorted(f["number"] for f in result["merged"] if MODULE.silenced(f))
+    assert silenced == [3113, 3116]
+    assert 2835 in [f["number"] for f in MODULE.actionable(result)]
+    assert "### Adjudicated (2)" in MODULE.render_markdown(result, DEFAULT_REF)
 
 
 # --------------------------------------------------------------------------- #

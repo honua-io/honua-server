@@ -1,0 +1,661 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Caching;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using StackExchange.Redis;
+
+namespace Honua.Server.Tests.Features.Caching;
+
+public sealed class RedisTileCacheKeyIndexTests
+{
+    [Fact]
+    public async Task RecordWriteAsync_TracksStorageExpirationAndPrunesExpiredState()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>()).Returns(true);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        await index.RecordWriteAsync("tile-key", 42, expiresAt);
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+        var expirationWrite = transaction.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ITransaction.SortedSetAddAsync))
+            .Select(call => call.GetArguments())
+            .Single(arguments =>
+                arguments[0]?.ToString() == "honua:tile-cache:storage-expiration");
+        expirationWrite[1]?.ToString().Should().Be("tile-key");
+        expirationWrite[2].Should().Be(Convert.ToDouble(expiresAt.ToUnixTimeMilliseconds()));
+        expirationWrite[3].Should().Be(SortedSetWhen.Always);
+    }
+
+    [Fact]
+    public async Task RecordWriteAsync_WhenTransactionIsNotCommitted_Throws()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>()).Returns(false);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var act = async () => await index.RecordWriteAsync(
+            "tile-key",
+            42,
+            DateTimeOffset.UtcNow.AddHours(1));
+
+        await act.Should().ThrowAsync<RedisException>()
+            .WithMessage("*write state transaction was not committed*");
+    }
+
+    [Fact]
+    public async Task RecordAccessAsync_WhenRedisFails_RemainsBestEffort()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromException<RedisResult>(new RedisException("unavailable")));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var act = async () => await index.RecordAccessAsync("tile-key", 42, expiresAt: null);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RecordAccessAsync_WhenObjectExpired_DoesNotReAddPrunedKey()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        await index.RecordAccessAsync("tile-key", 42, DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        await database.DidNotReceive().ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("ZSCORE", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task RecordAccessAsync_DoesNotShortenExpirationRecordedByNewerWrite()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)1));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        await index.RecordAccessAsync("tile-key", 42, expiresAt, "tenant_a");
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("if not redis.call('ZSCORE'", StringComparison.Ordinal) &&
+                script.Contains("'ZADD', KEYS[5], 'GT'", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Is<RedisValue[]>(values =>
+                values[0].ToString() == "tile-key" &&
+                values[3].ToString() == expiresAt.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) &&
+                values[4].ToString() == "tenant_a"),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task RecordAccessIfCurrentAsync_GuardsMetadataRefreshByObservedWriteVersion()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("current_version", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+
+        await index.RecordAccessIfCurrentAsync(
+            "tile-key",
+            42,
+            expiresAt,
+            "tenant_a",
+            "etag-observed");
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("current_version = redis.call('HGET', KEYS[6]", StringComparison.Ordinal) &&
+                script.Contains("current_version ~= ARGV[6]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 6 &&
+                keys[5].ToString() == "honua:tile-cache:write-version"),
+            Arg.Is<RedisValue[]>(values =>
+                values.Length == 7 &&
+                values[0].ToString() == "tile-key" &&
+                values[5].ToString() == "etag-observed" &&
+                values[6].ToString() == "1"),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task SnapshotWithStatusAsync_DrainsEveryExpiredStorageBatchBeforeReadingIndex()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(
+                Task.FromResult(RedisResult.Create((RedisValue)1_000)),
+                Task.FromResult(RedisResult.Create((RedisValue)1_000)),
+                Task.FromResult(RedisResult.Create((RedisValue)7)));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZSCAN", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create(new RedisResult[]
+            {
+                RedisResult.Create((RedisValue)"0"),
+                RedisResult.Create((RedisValue)"0")
+            }));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYLEX", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(CreateSnapshotResult(cursor: string.Empty, rawCount: 0));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var snapshot = await index.SnapshotWithStatusAsync();
+
+        snapshot.IsAvailable.Should().BeTrue();
+        snapshot.Entries.Should().BeEmpty();
+        await database.Received(3).ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task ReadPagesAsync_UsesStableBoundedMembershipCursor()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)0)));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZSCAN", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create(new RedisResult[]
+            {
+                RedisResult.Create((RedisValue)"0"),
+                RedisResult.Create((RedisValue)"0")
+            }));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYLEX", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(
+                CreateSnapshotResult("b", 2, ("a", "1000", "tenant_a", false), ("b", "2000", "tenant_a", true)),
+                CreateSnapshotResult("c", 1, ("c", "3000", "tenant_a", false)));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var entries = new List<TileCacheEntry>();
+        await foreach (var page in index.ReadPagesAsync(2))
+        {
+            entries.AddRange(page.Entries);
+        }
+
+        entries.Select(static entry => entry.Key).Should().Equal("a", "b", "c");
+        entries.Single(entry => entry.Key == "b").IsExplicitlyExpired.Should().BeTrue();
+        var cursors = database.ReceivedCalls()
+            .Where(call =>
+                call.GetMethodInfo().Name == nameof(IDatabase.ScriptEvaluateAsync) &&
+                call.GetArguments()[0]?.ToString()?.Contains("ZRANGEBYLEX", StringComparison.Ordinal) == true)
+            .Select(call => (RedisValue[])call.GetArguments()[2]!)
+            .Select(values => values.Select(static value => value.ToString()).ToArray())
+            .ToArray();
+        cursors.Should().BeEquivalentTo(new[] { new[] { string.Empty, "2" }, new[] { "b", "2" } },
+            options => options.WithStrictOrdering());
+        await database.Received(2).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("ZRANGEBYLEX", StringComparison.Ordinal) &&
+                script.Contains("SISMEMBER', KEYS[6]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 6 &&
+                keys[5].ToString() == "honua:tile-cache:expired"),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task ReadPagesAsync_MigratesOnlyEntriesWithCompleteLifecycleMetadata()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZSCAN", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create(new RedisResult[]
+            {
+                RedisResult.Create((RedisValue)"0"),
+                RedisResult.Create((RedisValue)"0")
+            }));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYLEX", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(CreateSnapshotResult(cursor: string.Empty, rawCount: 0));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var snapshot = await index.SnapshotWithStatusAsync();
+
+        snapshot.IsAvailable.Should().BeTrue();
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("HEXISTS', KEYS[4]", StringComparison.Ordinal) &&
+                script.Contains("HEXISTS', KEYS[6]", StringComparison.Ordinal) &&
+                script.Contains("ZSCORE', KEYS[8]", StringComparison.Ordinal) &&
+                script.Contains("ZADD', KEYS[2]", StringComparison.Ordinal) &&
+                script.Contains("incomplete[#incomplete + 1]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 8 &&
+                keys.Any(key => key.ToString() == "honua:tile-cache:members-migrated:v3") &&
+                keys.Any(key => key.ToString() == "honua:tile-cache:storage-expiration")),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+        database.ReceivedCalls().Should().ContainSingle(call =>
+            call.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync) &&
+            call.GetArguments()[0]!.ToString() == "honua:tile-cache:members-migrated:v3" &&
+            call.GetArguments()[1]!.ToString() == "1");
+    }
+
+    [Fact]
+    public async Task ReadPagesAsync_IncompleteLegacyEntry_DeletesStorageBeforeRemovingRedisState()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var storage = Substitute.For<ICloudFileStorage>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZSCAN", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create(new RedisResult[]
+            {
+                RedisResult.Create((RedisValue)"0"),
+                RedisResult.Create((RedisValue)"1"),
+                RedisResult.Create((RedisValue)"legacy-key")
+            }));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)1));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYLEX", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(CreateSnapshotResult(cursor: string.Empty, rawCount: 0));
+        database.LockTakeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        storage.GetMetadataAsync("legacy-key", Arg.Any<CancellationToken>()).Returns(new CloudFile
+        {
+            FileId = "legacy-key",
+            FileName = "legacy.png",
+            StoragePath = "legacy-key",
+            ContentType = "image/png",
+            SizeBytes = 42,
+            UploadedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            ETag = "legacy-etag",
+            Provider = CloudStorageProvider.Local
+        });
+        storage.DeleteIfMatchAsync("legacy-key", "legacy-etag", Arg.Any<CancellationToken>()).Returns(true);
+        var index = new RedisTileCacheKeyIndex(
+            redis,
+            NullLogger<RedisTileCacheKeyIndex>.Instance,
+            storage);
+
+        var snapshot = await index.SnapshotWithStatusAsync();
+
+        snapshot.IsAvailable.Should().BeTrue();
+        await storage.Received(1).DeleteIfMatchAsync(
+            "legacy-key",
+            "legacy-etag",
+            Arg.Any<CancellationToken>());
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal) &&
+                script.Contains("redis.call('ZREM', KEYS[8]", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Is<RedisValue[]>(values => values[1].ToString() == "legacy-key"),
+            CommandFlags.DemandMaster);
+    }
+
+    private static RedisResult CreateSnapshotResult(
+        string cursor,
+        int rawCount,
+        params (string Key, string Score, string TenantScope, bool IsExplicitlyExpired)[] entries)
+        => RedisResult.Create(
+            new RedisResult[]
+            {
+                RedisResult.Create((RedisValue)cursor),
+                RedisResult.Create((RedisValue)rawCount)
+            }.Concat(entries.SelectMany(static entry => new RedisResult[]
+            {
+                RedisResult.Create((RedisValue)entry.Key),
+                RedisResult.Create((RedisValue)entry.Score),
+                RedisResult.Create((RedisValue)"42"),
+                RedisResult.Create((RedisValue)"version"),
+                RedisResult.Create((RedisValue)entry.TenantScope),
+                RedisResult.Create((RedisValue)(entry.IsExplicitlyExpired ? 1 : 0))
+            })).ToArray());
+
+    [Fact]
+    public async Task IsExpiredAsync_WhenRedisIsUnavailable_FailsClosed()
+    {
+        // The serve path treats the result as "may this object be served?". An unreadable
+        // lifecycle index must therefore report expired, never fall through to serving bytes an
+        // operator may already have expired.
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.SetContainsAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns<Task<bool>>(_ => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect,
+                "redis down"));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var expired = await index.IsExpiredAsync("tile-key");
+
+        expired.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MarkExpiredAsync_ReturnsWhetherRedisAddedTheMarker(bool added)
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.SetAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>())
+            .Returns(added);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var result = await index.MarkExpiredAsync("tile-key");
+
+        result.Should().Be(added);
+    }
+
+    [Theory]
+    [InlineData(0, TileCacheExpirationMarkResult.NotCurrent)]
+    [InlineData(1, TileCacheExpirationMarkResult.AlreadyMarked)]
+    [InlineData(2, TileCacheExpirationMarkResult.Added)]
+    public async Task TryMarkExpiredIfCurrentAsync_UsesOneAtomicGenerationCheckedScript(
+        long redisResult,
+        TileCacheExpirationMarkResult expected)
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script =>
+                    script.Contains("current_version", StringComparison.Ordinal) &&
+                    script.Contains("SADD", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)redisResult));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var entry = new TileCacheEntry(
+            "tile-key",
+            42,
+            DateTimeOffset.UtcNow,
+            WriteVersion: "version-1");
+
+        var result = await index.TryMarkExpiredIfCurrentAsync(entry);
+
+        result.Should().Be(expected);
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("current_version", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys => keys.Length == 3),
+            Arg.Is<RedisValue[]>(values =>
+                values[0].ToString() == "tile-key" && values[1].ToString() == "version-1"),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task ExecuteSerializedAsync_WhenLeaseRenewalIsLost_CancelsMutationAndFailsClosed()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.LockTakeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.LockExtendAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CommandFlags>())
+            .Returns(false);
+        database.LockReleaseAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        var index = new RedisTileCacheKeyIndex(
+            redis,
+            NullLogger<RedisTileCacheKeyIndex>.Instance,
+            mutationLeaseDuration: TimeSpan.FromMilliseconds(100),
+            mutationLeaseRenewalInterval: TimeSpan.FromMilliseconds(5));
+        var mutationObservedCancellation = false;
+
+        var act = async () => await index.ExecuteSerializedAsync(
+            "tile-key",
+            async mutationContext =>
+            {
+                var cancellationToken = mutationContext.CancellationToken;
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    mutationObservedCancellation = true;
+                    throw;
+                }
+            });
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Lost the distributed tile-cache mutation lease*");
+        mutationObservedCancellation.Should().BeTrue();
+        await database.Received().LockExtendAsync(
+            Arg.Any<RedisKey>(),
+            Arg.Any<RedisValue>(),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CommandFlags>());
+        await database.Received().LockReleaseAsync(
+            Arg.Any<RedisKey>(),
+            Arg.Any<RedisValue>(),
+            Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task ExecuteSerializedAsync_CompensationRemovesIndexOnlyForCurrentLeaseOwner()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.LockTakeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.LockReleaseAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)1));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        await index.ExecuteSerializedAsync(
+            "tile-key",
+            async context =>
+            {
+                context.TryRemoveIndexIfLeaseOwnedAsync.Should().NotBeNull();
+                (await context.TryRemoveIndexIfLeaseOwnedAsync!(CancellationToken.None)).Should().BeTrue();
+            });
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal) &&
+                script.Contains("redis.call('ZREM', KEYS[8]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 8 &&
+                keys[0].ToString() == "honua:tile-cache:mutation:tile-key"),
+            Arg.Is<RedisValue[]>(values => values.Length == 2 && values[1].ToString() == "tile-key"),
+            CommandFlags.DemandMaster);
+    }
+
+    [Fact]
+    public async Task ExecuteSerializedAsync_WriteCommitRequiresCurrentLeaseAndStoresUploadedGeneration()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.LockTakeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script =>
+                    script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal) &&
+                    script.Contains("redis.call('HSET', KEYS[4]", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)1));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        await index.ExecuteSerializedAsync(
+            "tile-key",
+            async context =>
+            {
+                context.TryRecordWriteIfLeaseOwnedAsync.Should().NotBeNull();
+                var committed = await context.TryRecordWriteIfLeaseOwnedAsync!(
+                    new TileCacheWriteRegistration(42, expiresAt, "tenant_a", "storage-etag"),
+                    CancellationToken.None);
+                committed.Should().BeTrue();
+            });
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("redis.call('GET', KEYS[1])", StringComparison.Ordinal) &&
+                script.Contains("redis.call('HSET', KEYS[4]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 8 &&
+                keys[0].ToString() == "honua:tile-cache:mutation:tile-key"),
+            Arg.Is<RedisValue[]>(values =>
+                values.Length == 7 &&
+                values[1].ToString() == "tile-key" &&
+                values[3].ToString() == "42" &&
+                values[5].ToString() == "tenant_a" &&
+                values[6].ToString() == "storage-etag"),
+            CommandFlags.DemandMaster);
+    }
+}

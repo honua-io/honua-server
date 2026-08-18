@@ -1,0 +1,67 @@
+{
+  "$comment": [
+    "Recorded decisions about stranded-merge findings (honua-io/honua-server#3248).",
+    "Read by scripts/ci/detect-stranded-merges.py; validated by its offline tests.",
+    "",
+    "A stranded payload does not become un-stranded because someone decided not to",
+    "recover it, so the detector would report it truthfully every Monday forever.",
+    "This file is where the decision lives instead, next to the code, so the weekly",
+    "tracking issue stays a list of things to do rather than a list of things",
+    "already settled -- and so nobody re-litigates a call that was already made.",
+    "",
+    "status:",
+    "  abandoned        the payload is deliberately not coming back. Silences.",
+    "  landed-elsewhere the content reached trunk by another route, or the residual",
+    "                   was adjudicated as no-action. Silences.",
+    "  recovering       recovery is in flight. Annotates only -- the finding stays",
+    "                   actionable until the recovery actually lands.",
+    "",
+    "paths: the exact actionable paths the decision covers. A finding whose",
+    "actionable set grows beyond this list is reported again, naming the paths the",
+    "decision did not cover. Never widen this list without re-adjudicating.",
+    "",
+    "reviewBy (optional): after this date the silence lapses and the finding",
+    "returns, so a decision made under time pressure cannot become permanent by",
+    "default."
+  ],
+  "schemaVersion": 1,
+  "dispositions": [
+    {
+      "pr": 3113,
+      "status": "landed-elsewhere",
+      "decidedOn": "2026-08-16",
+      "decidedBy": "honua-io/honua-server#3248",
+      "evidence": "https://github.com/honua-io/honua-server/issues/3055",
+      "reason": "The #3055 config-binding fix re-landed on trunk independently and byte-identically; trunk's ConfigurationBindingShapeTests is a superset of the guard #3113 added. Of the two residual paths, AccessPolicy is deliberately left init-only, and Features.Import.Domain.ImportLimits is not IOptions-bound at all (hand-parsed at Honua.Db/Postgres/ServiceCollectionExtensions.cs), so init->set there was a no-op and a regression. The real defect behind that path is tracked separately as #3315.",
+      "paths": [
+        "src/Honua.Core.Abstractions/Features/Security/Domain/AccessPolicy.cs",
+        "src/Honua.Core/Features/Import/Domain/ImportLimits.cs"
+      ]
+    },
+    {
+      "pr": 3116,
+      "status": "abandoned",
+      "decidedOn": "2026-08-11",
+      "decidedBy": "honua-io/honua-server#3248",
+      "evidence": "https://github.com/honua-io/honua-server/issues/3091",
+      "reason": "A dual-engine raster capability/cost registry, rejected by name in the ADR-0071 single-engine amendment (epic #3085): all raster GP executes on the isolated GDAL worker and there is no per-job engine selection for the registry to feed. #3091 is closed NOT_PLANNED; the one decision-neutral fragment was re-filed as #3307.",
+      "paths": [
+        "src/Honua.Core/Features/Geoprocessing/Domain/ProcessDefinition.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilities.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs",
+        "src/Honua.Worker.Gdal/Execution/GdalHardeningOptions.cs",
+        "src/Honua.Worker.Gdal/Execution/GdalRasterFormatConvertJobExecutor.cs",
+        "tests/dotnet/Honua.Core.Tests/Features/Geoprocessing/RasterEngineCapabilityRegistryTests.cs",
+        "tests/dotnet/Honua.Geoprocessing.Testing.Tests/RasterEngineCapabilityRegistrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/RasterEngineCapabilityCatalogTests.cs",
+        "tests/dotnet/Honua.Worker.Gdal.Tests/GdalProcessExecutorModeRegistrationTests.cs",
+        "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs",
+        "tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs"
+      ]
+    }
+  ]
+}

@@ -27,6 +27,21 @@ public interface ICloudFileStorage
     Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Uploads a file only when the current object generation matches the caller's observation.
+    /// A null <paramref name="expectedETag"/> requires the object to be absent; a non-null value
+    /// requires that exact provider ETag. This is the storage fence for deterministic cache keys.
+    /// </summary>
+    /// <param name="request">Upload request with file content and metadata.</param>
+    /// <param name="expectedETag">Previously observed ETag, or null when the key was absent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The upload result; a failed result indicates the precondition did not hold.</returns>
+    Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(UploadResult.CreateFailure("Conditional uploads are not supported by this storage provider."));
+
+    /// <summary>
     /// Uploads a file from a byte array
     /// </summary>
     /// <param name="request">Upload request with file content and metadata</param>
@@ -82,6 +97,21 @@ public interface ICloudFileStorage
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>True if file was deleted, false if file was not found</returns>
     Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a file only when its current provider ETag matches <paramref name="expectedETag"/>.
+    /// This generation-conditional operation prevents stale compensating writes from deleting a
+    /// newer object stored at the same deterministic key.
+    /// </summary>
+    /// <param name="fileId">Unique file identifier.</param>
+    /// <param name="expectedETag">Opaque ETag returned by the upload that owns the bytes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><c>true</c> only when the matching generation was deleted.</returns>
+    Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 
     // Batch operations
 

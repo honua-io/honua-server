@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Tiles;
 using StackExchange.Redis;
 
@@ -16,29 +19,259 @@ namespace Honua.Infrastructure.Caching;
 ///   <item><description>a hash of <c>key → sizeBytes</c> so the evictor can honor the configured
 ///   byte-size quota without re-reading every tile.</description></item>
 /// </list>
-/// Index updates are best-effort bookkeeping: any Redis failure is swallowed so a tile request never
-/// fails because of eviction accounting. This is the canonical binding that replaces relying solely
-/// on the Redis server <c>maxmemory-policy allkeys-lru</c> setting.
+/// Access-only index updates are best-effort bookkeeping, so eviction accounting cannot fail a tile
+/// request. Write updates also advance lifecycle state and therefore surface Redis failures to the
+/// cache-write boundary. This is the canonical binding that replaces relying solely on the Redis
+/// server <c>maxmemory-policy allkeys-lru</c> setting.
 /// </summary>
-internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
+internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
 {
     private const string LastAccessSetKey = "honua:tile-cache:lru";
     private const string SizeHashKey = "honua:tile-cache:size";
+    private const string WriteVersionHashKey = "honua:tile-cache:write-version";
+    private const string TenantScopeHashKey = "honua:tile-cache:tenant-scope";
+    private const string ExpiredSetKey = "honua:tile-cache:expired";
+    private const string StorageExpirationSetKey = "honua:tile-cache:storage-expiration";
+    private const string MembershipSetKey = "honua:tile-cache:members";
+    // v3 re-runs membership discovery so entries migrated before tenant and storage-expiration
+    // metadata became mandatory are removed instead of becoming unbounded lifecycle objects.
+    private const string MembershipMigrationMarkerKey = "honua:tile-cache:members-migrated:v3";
+    private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
+    private const int StorageExpirationPruneBatchSize = 1_000;
+    private const int SnapshotPageSize = 1_000;
+    private static readonly TimeSpan DefaultMutationLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DefaultMutationLeaseRenewalInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan MutationLeaseRetryDelay = TimeSpan.FromMilliseconds(25);
+    private const string RecordAccessScript = """
+        if not redis.call('ZSCORE', KEYS[1], ARGV[1]) then
+            return 0
+        end
+        if ARGV[7] == '1' then
+            local current_version = redis.call('HGET', KEYS[6], ARGV[1])
+            if ARGV[6] == '' then
+                if current_version then
+                    return 0
+                end
+            elseif current_version ~= ARGV[6] then
+                return 0
+            end
+        end
+        redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
+        redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
+        redis.call('ZADD', KEYS[3], 0, ARGV[1])
+        redis.call('HSET', KEYS[4], ARGV[1], ARGV[5])
+        if ARGV[4] ~= '' then
+            redis.call('ZADD', KEYS[5], 'GT', ARGV[4], ARGV[1])
+        end
+        return 1
+        """;
+    private const string MigrateMembershipScript = """
+        if redis.call('EXISTS', KEYS[3]) == 1 then
+            return {'0', '0'}
+        end
+        local batch = redis.call('ZSCAN', KEYS[1], ARGV[1], 'COUNT', ARGV[2])
+        local values = batch[2]
+        local incomplete = {}
+        for index = 1, #values, 2 do
+            local key = values[index]
+            if redis.call('HEXISTS', KEYS[4], key) == 1
+                and redis.call('HEXISTS', KEYS[5], key) == 1
+                and redis.call('HEXISTS', KEYS[6], key) == 1
+                and redis.call('ZSCORE', KEYS[8], key) then
+                redis.call('ZADD', KEYS[2], 0, key)
+            else
+                incomplete[#incomplete + 1] = key
+            end
+        end
+        local next_cursor = tostring(batch[1])
+        local result = {next_cursor, tostring(#incomplete)}
+        for _, key in ipairs(incomplete) do
+            result[#result + 1] = key
+        end
+        return result
+        """;
+    private const string RemoveIfLeaseOwnerScript = """
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+            return 0
+        end
+        redis.call('ZREM', KEYS[2], ARGV[2])
+        redis.call('HDEL', KEYS[3], ARGV[2])
+        redis.call('HDEL', KEYS[4], ARGV[2])
+        redis.call('HDEL', KEYS[5], ARGV[2])
+        redis.call('SREM', KEYS[6], ARGV[2])
+        redis.call('ZREM', KEYS[7], ARGV[2])
+        redis.call('ZREM', KEYS[8], ARGV[2])
+        return 1
+        """;
+    private const string RecordWriteIfLeaseOwnerScript = """
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+            return 0
+        end
+        redis.call('ZADD', KEYS[2], ARGV[3], ARGV[2])
+        redis.call('HSET', KEYS[3], ARGV[2], ARGV[4])
+        redis.call('HSET', KEYS[4], ARGV[2], ARGV[7])
+        redis.call('HSET', KEYS[5], ARGV[2], ARGV[6])
+        redis.call('ZADD', KEYS[6], 0, ARGV[2])
+        redis.call('SREM', KEYS[7], ARGV[2])
+        redis.call('ZADD', KEYS[8], ARGV[5], ARGV[2])
+        return 1
+        """;
+    private const string SnapshotScript = """
+        local minimum = '-'
+        if ARGV[1] ~= '' then
+            minimum = '(' .. ARGV[1]
+        end
+        local keys = redis.call('ZRANGEBYLEX', KEYS[1], minimum, '+', 'LIMIT', 0, ARGV[2])
+        local snapshot = {}
+        snapshot[#snapshot + 1] = #keys > 0 and keys[#keys] or ''
+        snapshot[#snapshot + 1] = tostring(#keys)
+        for _, key in ipairs(keys) do
+            local score = redis.call('ZSCORE', KEYS[2], key)
+            if score then
+            snapshot[#snapshot + 1] = key
+                snapshot[#snapshot + 1] = score
+            snapshot[#snapshot + 1] = redis.call('HGET', KEYS[3], key) or ''
+                snapshot[#snapshot + 1] = redis.call('HGET', KEYS[4], key) or ''
+                snapshot[#snapshot + 1] = redis.call('HGET', KEYS[5], key) or ''
+                snapshot[#snapshot + 1] = redis.call('SISMEMBER', KEYS[6], key)
+            else
+                redis.call('ZREM', KEYS[1], key)
+            end
+        end
+        return snapshot
+        """;
+    private const string PruneStorageExpirationsScript = """
+        local expired = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, 1000)
+        for _, key in ipairs(expired) do
+            redis.call('ZREM', KEYS[1], key)
+            redis.call('ZREM', KEYS[2], key)
+            redis.call('HDEL', KEYS[3], key)
+            redis.call('HDEL', KEYS[4], key)
+            redis.call('SREM', KEYS[5], key)
+            redis.call('ZREM', KEYS[6], key)
+            redis.call('HDEL', KEYS[7], key)
+        end
+        return #expired
+        """;
+    private const string TryMarkExpiredIfCurrentScript = """
+        if not redis.call('ZSCORE', KEYS[1], ARGV[1]) then
+            return 0
+        end
+        local current_version = redis.call('HGET', KEYS[2], ARGV[1])
+        if ARGV[2] == '' then
+            if current_version then
+                return 0
+            end
+        elseif current_version ~= ARGV[2] then
+            return 0
+        end
+        if redis.call('SADD', KEYS[3], ARGV[1]) == 1 then
+            return 2
+        end
+        return 1
+        """;
 
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisTileCacheKeyIndex> _logger;
+    private readonly ICloudFileStorage? _storage;
+    private readonly TimeSpan _mutationLeaseDuration;
+    private readonly TimeSpan _mutationLeaseRenewalInterval;
 
-    public RedisTileCacheKeyIndex(IConnectionMultiplexer redis, ILogger<RedisTileCacheKeyIndex> logger)
+    public RedisTileCacheKeyIndex(
+        IConnectionMultiplexer redis,
+        ILogger<RedisTileCacheKeyIndex> logger,
+        ICloudFileStorage? storage = null)
+        : this(redis, logger, DefaultMutationLeaseDuration, DefaultMutationLeaseRenewalInterval, storage)
+    {
+    }
+
+    internal RedisTileCacheKeyIndex(
+        IConnectionMultiplexer redis,
+        ILogger<RedisTileCacheKeyIndex> logger,
+        TimeSpan mutationLeaseDuration,
+        TimeSpan mutationLeaseRenewalInterval,
+        ICloudFileStorage? storage = null)
     {
         _redis = redis ?? throw new ArgumentNullException(nameof(redis));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _storage = storage;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mutationLeaseDuration, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mutationLeaseRenewalInterval, TimeSpan.Zero);
+        if (mutationLeaseRenewalInterval >= mutationLeaseDuration)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mutationLeaseRenewalInterval),
+                "The mutation lease must be renewed before it expires.");
+        }
+
+        _mutationLeaseDuration = mutationLeaseDuration;
+        _mutationLeaseRenewalInterval = mutationLeaseRenewalInterval;
     }
 
     /// <inheritdoc />
     public bool IsEnabled => true;
 
     /// <inheritdoc />
-    public async Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+    public async Task RecordAccessAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        string? tenantScope = null,
+        CancellationToken cancellationToken = default)
+        => await RecordAsync(
+            key,
+            sizeBytes,
+            expiresAt,
+            tenantScope,
+            isWrite: false,
+            observedWriteVersion: null,
+            requireMatchingWriteVersion: false,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task RecordAccessIfCurrentAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        string? tenantScope,
+        string? observedWriteVersion,
+        CancellationToken cancellationToken = default)
+        => await RecordAsync(
+            key,
+            sizeBytes,
+            expiresAt,
+            tenantScope,
+            isWrite: false,
+            observedWriteVersion,
+            requireMatchingWriteVersion: true,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task RecordWriteAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset expiresAt,
+        string? tenantScope = null,
+        CancellationToken cancellationToken = default)
+        => await RecordAsync(
+            key,
+            sizeBytes,
+            expiresAt,
+            tenantScope,
+            isWrite: true,
+            observedWriteVersion: null,
+            requireMatchingWriteVersion: false,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task RecordAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        string? tenantScope,
+        bool isWrite,
+        string? observedWriteVersion,
+        bool requireMatchingWriteVersion,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(key))
         {
@@ -51,72 +284,408 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
         {
             var db = _redis.GetDatabase();
             var score = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            await PruneStorageExpirationsAsync(db, score).ConfigureAwait(false);
+            if (!isWrite && expiresAt.HasValue && expiresAt.Value.ToUnixTimeMilliseconds() <= score)
+            {
+                return;
+            }
 
-            // Refresh LRU score and remember the byte size. A transaction keeps the two structures
-            // consistent so the evictor never sees a key without an associated size.
+            if (!isWrite)
+            {
+                // A lifecycle delete removes the LRU member. The Lua-side existence guard makes
+                // the post-download access refresh conditional, so it cannot recreate phantom
+                // inventory/expiration state after that delete wins the race.
+                _ = await db.ScriptEvaluateAsync(
+                    RecordAccessScript,
+                    new RedisKey[]
+                    {
+                        LastAccessSetKey,
+                        SizeHashKey,
+                        MembershipSetKey,
+                        TenantScopeHashKey,
+                        StorageExpirationSetKey,
+                        WriteVersionHashKey
+                    },
+                    new RedisValue[]
+                    {
+                        key,
+                        score,
+                        sizeBytes,
+                        expiresAt?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                        tenantScope ?? string.Empty,
+                        observedWriteVersion ?? string.Empty,
+                        requireMatchingWriteVersion ? 1 : 0
+                    },
+                    CommandFlags.DemandMaster).ConfigureAwait(false);
+                return;
+            }
+
+            // Record the write generation, stable membership, tenant scope, and quota state in one
+            // transaction so lifecycle readers never observe a partially registered object.
             var transaction = db.CreateTransaction();
             _ = transaction.SortedSetAddAsync(LastAccessSetKey, key, score);
             _ = transaction.HashSetAsync(SizeHashKey, key, sizeBytes);
-            await transaction.ExecuteAsync().ConfigureAwait(false);
+            _ = transaction.HashSetAsync(WriteVersionHashKey, key, Guid.NewGuid().ToString("N"));
+            _ = transaction.HashSetAsync(TenantScopeHashKey, key, tenantScope ?? string.Empty);
+            _ = transaction.SortedSetAddAsync(MembershipSetKey, key, 0);
+            _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
+
+            if (expiresAt.HasValue)
+            {
+                _ = transaction.SortedSetAddAsync(
+                    StorageExpirationSetKey,
+                    key,
+                    expiresAt.Value.ToUnixTimeMilliseconds(),
+                    SortedSetWhen.Always);
+            }
+
+            var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+            if (!committed)
+            {
+                throw new RedisException("Tile-cache write state transaction was not committed.");
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            // Eviction accounting must never fail a tile request.
+            if (isWrite)
+            {
+                Log.RecordWriteFailed(_logger, ex);
+                throw;
+            }
+
+            // Access-only eviction accounting must never fail a tile request.
             Log.RecordAccessFailed(_logger, ex);
         }
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            var db = _redis.GetDatabase();
+            return await _redis.GetDatabase().SetContainsAsync(ExpiredSetKey, key).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ExpirationReadFailed(_logger, ex);
+            // Fail closed: an unavailable lifecycle index must never allow bytes that may have
+            // been explicitly expired to be served as a cache hit.
+            return true;
+        }
+    }
 
-            // Least-recently-used first so the snapshot ordering already matches the policy's
-            // eviction order; the policy re-sorts defensively but this keeps payloads small.
-            var ranked = await db.SortedSetRangeByRankWithScoresAsync(
-                LastAccessSetKey,
-                0,
-                -1,
-                Order.Ascending).ConfigureAwait(false);
+    /// <inheritdoc />
+    public async Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
 
-            if (ranked.Length == 0)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            return await _redis.GetDatabase().SetAddAsync(ExpiredSetKey, key).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ExpirationWriteFailed(_logger, ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
+        => (await SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false)).Entries;
+
+    /// <inheritdoc />
+    public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var entries = new List<TileCacheEntry>();
+        await foreach (var page in ReadPagesAsync(SnapshotPageSize, cancellationToken).ConfigureAwait(false))
+        {
+            if (!page.IsAvailable)
             {
-                return [];
+                return new TileCacheIndexSnapshot([], IsAvailable: false);
             }
 
-            var fields = new RedisValue[ranked.Length];
-            for (var i = 0; i < ranked.Length; i++)
+            entries.AddRange(page.Entries);
+        }
+
+        return new TileCacheIndexSnapshot(entries, IsAvailable: true);
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<TileCacheIndexPage> ReadPagesAsync(
+        int pageSize,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var db = _redis.GetDatabase();
+        var available = true;
+        try
+        {
+            var nowUnixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            while (await PruneStorageExpirationsAsync(db, nowUnixMilliseconds).ConfigureAwait(false)
+                == StorageExpirationPruneBatchSize)
             {
-                fields[i] = ranked[i].Element;
+                cancellationToken.ThrowIfCancellationRequested();
             }
-
-            var sizes = await db.HashGetAsync(SizeHashKey, fields).ConfigureAwait(false);
-
-            var entries = new List<TileCacheEntry>(ranked.Length);
-            for (var i = 0; i < ranked.Length; i++)
-            {
-                var key = (string?)ranked[i].Element;
-                if (string.IsNullOrEmpty(key))
-                {
-                    continue;
-                }
-
-                var size = sizes[i].TryParse(out long parsed) ? parsed : 0L;
-                var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)ranked[i].Score);
-                entries.Add(new TileCacheEntry(key, size, lastAccess));
-            }
-
-            return entries;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.SnapshotFailed(_logger, ex);
-            return [];
+            available = false;
         }
+
+        if (!available)
+        {
+            yield return new TileCacheIndexPage([], IsAvailable: false, HasMore: false);
+            yield break;
+        }
+
+        try
+        {
+            await EnsureStableMembershipAsync(db, pageSize, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.SnapshotFailed(_logger, ex);
+            available = false;
+        }
+
+        if (!available)
+        {
+            yield return new TileCacheIndexPage([], IsAvailable: false, HasMore: false);
+            yield break;
+        }
+
+        var cursor = string.Empty;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TileCacheIndexPage page;
+            try
+            {
+                // Membership is paged lexicographically, independently of the mutable LRU score.
+                // Each invocation captures that stable page's score, size, generation, and tenant
+                // scope atomically so destructive consumers can fence and scope every mutation.
+                var snapshot = (RedisResult[]?)await db.ScriptEvaluateAsync(
+                    SnapshotScript,
+                    new RedisKey[]
+                    {
+                        MembershipSetKey,
+                        LastAccessSetKey,
+                        SizeHashKey,
+                        WriteVersionHashKey,
+                        TenantScopeHashKey,
+                        ExpiredSetKey
+                    },
+                    new RedisValue[] { cursor, pageSize },
+                    CommandFlags.DemandMaster).ConfigureAwait(false);
+                (page, cursor) = ParseSnapshotPage(snapshot, pageSize);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log.SnapshotFailed(_logger, ex);
+                page = new TileCacheIndexPage([], IsAvailable: false, HasMore: false);
+            }
+
+            yield return page;
+            if (!page.IsAvailable || !page.HasMore)
+            {
+                yield break;
+            }
+
+        }
+    }
+
+    private static (TileCacheIndexPage Page, string Cursor) ParseSnapshotPage(
+        RedisResult[]? snapshot,
+        int pageSize)
+    {
+        if (snapshot is null || snapshot.Length < 2)
+        {
+            return (new TileCacheIndexPage([], IsAvailable: true, HasMore: false), string.Empty);
+        }
+
+        var cursor = (string?)snapshot[0] ?? string.Empty;
+        var rawCountText = (string?)snapshot[1];
+        if (!int.TryParse(rawCountText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rawEntryCount))
+        {
+            throw new RedisException("Tile-cache snapshot script returned an invalid page count.");
+        }
+
+        const int headerFields = 2;
+        const int fieldsPerEntry = 6;
+        if ((snapshot.Length - headerFields) % fieldsPerEntry != 0)
+        {
+            throw new RedisException("Tile-cache snapshot script returned a malformed result.");
+        }
+
+        var entries = new List<TileCacheEntry>((snapshot.Length - headerFields) / fieldsPerEntry);
+        for (var i = headerFields; i < snapshot.Length; i += fieldsPerEntry)
+        {
+            var key = (string?)snapshot[i];
+            if (string.IsNullOrEmpty(key))
+            {
+                continue;
+            }
+
+            var scoreRaw = (string?)snapshot[i + 1];
+            if (!double.TryParse(scoreRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var score))
+            {
+                throw new RedisException("Tile-cache snapshot script returned an invalid LRU score.");
+            }
+
+            var sizeRaw = (string?)snapshot[i + 2];
+            var size = long.TryParse(sizeRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : 0L;
+            var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)score);
+            var writeVersion = (string?)snapshot[i + 3];
+            if (string.IsNullOrEmpty(writeVersion))
+            {
+                writeVersion = null;
+            }
+
+            var tenantScope = (string?)snapshot[i + 4];
+            if (string.IsNullOrEmpty(tenantScope))
+            {
+                tenantScope = null;
+            }
+
+            var isExplicitlyExpired = (long)snapshot[i + 5] == 1L;
+            entries.Add(new TileCacheEntry(
+                key,
+                size,
+                lastAccess,
+                writeVersion,
+                tenantScope)
+            {
+                IsExplicitlyExpired = isExplicitlyExpired
+            });
+        }
+
+        return (
+            new TileCacheIndexPage(
+                entries,
+                IsAvailable: true,
+                HasMore: rawEntryCount == pageSize && cursor.Length > 0),
+            cursor);
+    }
+
+    private async Task EnsureStableMembershipAsync(
+        IDatabase database,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var cursor = "0";
+        do
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = (RedisResult[]?)await database.ScriptEvaluateAsync(
+                MigrateMembershipScript,
+                new RedisKey[]
+                {
+                    LastAccessSetKey,
+                    MembershipSetKey,
+                    MembershipMigrationMarkerKey,
+                    WriteVersionHashKey,
+                    TenantScopeHashKey,
+                    SizeHashKey,
+                    ExpiredSetKey,
+                    StorageExpirationSetKey
+                },
+                new RedisValue[] { cursor, pageSize },
+                CommandFlags.DemandMaster).ConfigureAwait(false);
+            if (result is null || result.Length < 2)
+            {
+                throw new RedisException("Tile-cache membership migration returned a malformed result.");
+            }
+
+            cursor = (string?)result[0] ?? "0";
+            var countText = (string?)result[1];
+            if (!int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var incompleteCount)
+                || incompleteCount < 0
+                || result.Length != incompleteCount + 2)
+            {
+                throw new RedisException("Tile-cache membership migration returned invalid cleanup candidates.");
+            }
+
+            for (var index = 0; index < incompleteCount; index++)
+            {
+                var key = (string?)result[index + 2];
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    throw new RedisException("Tile-cache membership migration returned an empty cleanup key.");
+                }
+
+                await DeleteIncompleteLegacyEntryAsync(database, key, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        while (!string.Equals(cursor, "0", StringComparison.Ordinal));
+
+        _ = await database.StringSetAsync(MembershipMigrationMarkerKey, "1").ConfigureAwait(false);
+    }
+
+    private async Task DeleteIncompleteLegacyEntryAsync(
+        IDatabase database,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        if (_storage is null)
+        {
+            throw new InvalidOperationException(
+                $"Cannot reconcile incomplete tile-cache lifecycle state for '{key}' without its storage backend.");
+        }
+
+        await ExecuteSerializedAsync(
+            key,
+            async mutationContext =>
+            {
+                var token = mutationContext.CancellationToken;
+                var metadataComplete = await database.HashExistsAsync(WriteVersionHashKey, key).ConfigureAwait(false)
+                    && await database.HashExistsAsync(TenantScopeHashKey, key).ConfigureAwait(false)
+                    && await database.HashExistsAsync(SizeHashKey, key).ConfigureAwait(false)
+                    && await database.SortedSetScoreAsync(StorageExpirationSetKey, key).ConfigureAwait(false) is not null;
+                if (metadataComplete)
+                {
+                    return;
+                }
+
+                var stored = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
+                if (stored is not null
+                    && (string.IsNullOrWhiteSpace(stored.ETag)
+                        || !await _storage.DeleteIfMatchAsync(key, stored.ETag, token).ConfigureAwait(false)))
+                {
+                    var current = await _storage.GetMetadataAsync(key, token).ConfigureAwait(false);
+                    if (current is not null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Could not delete incomplete legacy tile-cache object '{key}'.");
+                    }
+                }
+
+                if (mutationContext.TryRemoveIndexIfLeaseOwnedAsync is not { } tryRemove
+                    || !await tryRemove(mutationContext.LeaseLostToken).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        $"Lost the tile-cache mutation lease before removing legacy state for '{key}'.");
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -135,12 +704,279 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             var transaction = db.CreateTransaction();
             _ = transaction.SortedSetRemoveAsync(LastAccessSetKey, key);
             _ = transaction.HashDeleteAsync(SizeHashKey, key);
+            _ = transaction.HashDeleteAsync(WriteVersionHashKey, key);
+            _ = transaction.HashDeleteAsync(TenantScopeHashKey, key);
+            _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
+            _ = transaction.SortedSetRemoveAsync(StorageExpirationSetKey, key);
+            _ = transaction.SortedSetRemoveAsync(MembershipSetKey, key);
             await transaction.ExecuteAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.RemoveFailed(_logger, ex);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryRemoveAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(entry.Key))
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var transaction = db.CreateTransaction();
+            transaction.AddCondition(entry.WriteVersion is null
+                ? Condition.HashNotExists(WriteVersionHashKey, entry.Key)
+                : Condition.HashEqual(WriteVersionHashKey, entry.Key, entry.WriteVersion));
+            _ = transaction.SortedSetRemoveAsync(LastAccessSetKey, entry.Key);
+            _ = transaction.HashDeleteAsync(SizeHashKey, entry.Key);
+            _ = transaction.HashDeleteAsync(WriteVersionHashKey, entry.Key);
+            _ = transaction.HashDeleteAsync(TenantScopeHashKey, entry.Key);
+            _ = transaction.SetRemoveAsync(ExpiredSetKey, entry.Key);
+            _ = transaction.SortedSetRemoveAsync(StorageExpirationSetKey, entry.Key);
+            _ = transaction.SortedSetRemoveAsync(MembershipSetKey, entry.Key);
+            return await transaction.ExecuteAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.RemoveFailed(_logger, ex);
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task ExecuteSerializedAsync(
+        string key,
+        Func<TileCacheMutationContext, Task> mutation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(mutation);
+
+        var database = _redis.GetDatabase();
+        var leaseKey = MutationLeaseKeyPrefix + key;
+        var owner = Guid.NewGuid().ToString("N");
+        while (!await database.LockTakeAsync(leaseKey, owner, _mutationLeaseDuration).ConfigureAwait(false))
+        {
+            await Task.Delay(MutationLeaseRetryDelay, cancellationToken).ConfigureAwait(false);
+        }
+
+        using var renewalStop = new CancellationTokenSource();
+        using var leaseLost = new CancellationTokenSource();
+        using var mutationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            leaseLost.Token);
+        var renewalTask = RenewMutationLeaseAsync(
+            database,
+            leaseKey,
+            owner,
+            leaseLost,
+            renewalStop.Token);
+
+        async Task<bool> TryRemoveIndexIfLeaseOwnedAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            var removed = (long)await database.ScriptEvaluateAsync(
+                RemoveIfLeaseOwnerScript,
+                new RedisKey[]
+                {
+                    leaseKey,
+                    LastAccessSetKey,
+                    SizeHashKey,
+                    WriteVersionHashKey,
+                    TenantScopeHashKey,
+                    ExpiredSetKey,
+                    StorageExpirationSetKey,
+                    MembershipSetKey
+                },
+                new RedisValue[] { owner, key },
+                CommandFlags.DemandMaster).ConfigureAwait(false);
+            return removed == 1;
+        }
+
+        async Task<bool> TryRecordWriteIfLeaseOwnedAsync(
+            TileCacheWriteRegistration registration,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            ArgumentException.ThrowIfNullOrWhiteSpace(registration.WriteVersion);
+            var recorded = (long)await database.ScriptEvaluateAsync(
+                RecordWriteIfLeaseOwnerScript,
+                new RedisKey[]
+                {
+                    leaseKey,
+                    LastAccessSetKey,
+                    SizeHashKey,
+                    WriteVersionHashKey,
+                    TenantScopeHashKey,
+                    MembershipSetKey,
+                    ExpiredSetKey,
+                    StorageExpirationSetKey
+                },
+                new RedisValue[]
+                {
+                    owner,
+                    key,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    registration.SizeBytes,
+                    registration.ExpiresAt.ToUnixTimeMilliseconds(),
+                    registration.TenantScope ?? string.Empty,
+                    registration.WriteVersion
+                },
+                CommandFlags.DemandMaster).ConfigureAwait(false);
+            return recorded == 1;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await mutation(new TileCacheMutationContext(
+                    mutationCancellation.Token,
+                    leaseLost.Token,
+                    TryRemoveIndexIfLeaseOwnedAsync,
+                    TryRecordWriteIfLeaseOwnedAsync)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (
+                leaseLost.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException(
+                    $"Lost the distributed tile-cache mutation lease for key '{key}'.",
+                    ex);
+            }
+        }
+        finally
+        {
+            await renewalStop.CancelAsync().ConfigureAwait(false);
+            await renewalTask.ConfigureAwait(false);
+            await database.LockReleaseAsync(leaseKey, owner).ConfigureAwait(false);
+        }
+
+        if (leaseLost.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                $"Lost the distributed tile-cache mutation lease for key '{key}'.");
+        }
+    }
+
+    private async Task RenewMutationLeaseAsync(
+        IDatabase database,
+        RedisKey leaseKey,
+        RedisValue owner,
+        CancellationTokenSource leaseLost,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(_mutationLeaseRenewalInterval, cancellationToken).ConfigureAwait(false);
+                bool extended;
+                try
+                {
+                    extended = await database.LockExtendAsync(leaseKey, owner, _mutationLeaseDuration)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+                {
+                    Log.MutationLeaseRenewalFailed(_logger, leaseKey.ToString()!, ex);
+                    await leaseLost.CancelAsync().ConfigureAwait(false);
+                    return;
+                }
+
+                if (!extended)
+                {
+                    Log.MutationLeaseLost(_logger, leaseKey.ToString()!);
+                    await leaseLost.CancelAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected when the serialized mutation completes or fails.
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsCurrentAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(entry.Key))
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var database = _redis.GetDatabase();
+        var score = await database.SortedSetScoreAsync(LastAccessSetKey, entry.Key).ConfigureAwait(false);
+        if (!score.HasValue)
+        {
+            return false;
+        }
+
+        var currentVersion = await database.HashGetAsync(WriteVersionHashKey, entry.Key).ConfigureAwait(false);
+        return entry.WriteVersion is null
+            ? currentVersion.IsNull
+            : string.Equals((string?)currentVersion, entry.WriteVersion, StringComparison.Ordinal);
+    }
+
+    /// <inheritdoc />
+    public async Task<TileCacheExpirationMarkResult> TryMarkExpiredIfCurrentAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(entry.Key))
+        {
+            return TileCacheExpirationMarkResult.NotCurrent;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            var result = await _redis.GetDatabase().ScriptEvaluateAsync(
+                TryMarkExpiredIfCurrentScript,
+                new RedisKey[] { LastAccessSetKey, WriteVersionHashKey, ExpiredSetKey },
+                new RedisValue[] { entry.Key, entry.WriteVersion ?? string.Empty },
+                CommandFlags.DemandMaster).ConfigureAwait(false);
+            return result.IsNull
+                ? TileCacheExpirationMarkResult.NotCurrent
+                : (TileCacheExpirationMarkResult)(long)result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            Log.ExpirationWriteFailed(_logger, ex);
+            throw;
+        }
+    }
+
+    private static async Task<long> PruneStorageExpirationsAsync(IDatabase database, long nowUnixMilliseconds)
+    {
+        var result = await database.ScriptEvaluateAsync(
+            PruneStorageExpirationsScript,
+            new RedisKey[]
+            {
+                StorageExpirationSetKey,
+                LastAccessSetKey,
+                SizeHashKey,
+                WriteVersionHashKey,
+                ExpiredSetKey,
+                MembershipSetKey,
+                TenantScopeHashKey
+            },
+            new RedisValue[] { nowUnixMilliseconds },
+            CommandFlags.DemandMaster).ConfigureAwait(false);
+        return result is null || result.IsNull ? 0L : (long)result;
     }
 
     private static partial class Log
@@ -153,5 +989,20 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 
         [LoggerMessage(EventId = 9262, Level = LogLevel.Debug, Message = "Failed to remove a key from the Redis tile-cache LRU index.")]
         public static partial void RemoveFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9266, Level = LogLevel.Debug, Message = "Failed to read a tile-cache expiration marker from Redis.")]
+        public static partial void ExpirationReadFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9267, Level = LogLevel.Warning, Message = "Failed to write a tile-cache expiration marker to Redis.")]
+        public static partial void ExpirationWriteFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9268, Level = LogLevel.Warning, Message = "Lost Redis tile-cache mutation lease {LeaseKey} during a storage mutation.")]
+        public static partial void MutationLeaseLost(ILogger logger, string leaseKey);
+
+        [LoggerMessage(EventId = 9269, Level = LogLevel.Warning, Message = "Failed to renew Redis tile-cache mutation lease {LeaseKey}; cancelling the storage mutation.")]
+        public static partial void MutationLeaseRenewalFailed(ILogger logger, string leaseKey, Exception exception);
+
+        [LoggerMessage(EventId = 9270, Level = LogLevel.Warning, Message = "Failed to commit Redis tile-cache write generation and expiration state.")]
+        public static partial void RecordWriteFailed(ILogger logger, Exception exception);
     }
 }

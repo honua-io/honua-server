@@ -47,9 +47,28 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
-    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override Task<UploadResult> UploadAsync(
+        FileUploadRequest request,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: false, expectedETag: null, cancellationToken);
+
+    public override Task<UploadResult> UploadIfMatchAsync(
+        FileUploadRequest request,
+        string? expectedETag,
+        CancellationToken cancellationToken = default)
+        => UploadCoreAsync(request, conditional: true, expectedETag, cancellationToken);
+
+    private async Task<UploadResult> UploadCoreAsync(
+        FileUploadRequest request,
+        bool conditional,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (conditional && expectedETag is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
@@ -89,7 +108,12 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 HttpHeaders = new BlobHttpHeaders
                 {
                     ContentType = request.ContentType
-                }
+                },
+                Conditions = conditional
+                    ? expectedETag is null
+                        ? new BlobRequestConditions { IfNoneMatch = ETag.All }
+                        : new BlobRequestConditions { IfMatch = new ETag(expectedETag) }
+                    : null
             };
 
             if (request.Progress != null)
@@ -123,7 +147,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 });
             }
 
-            await blobClient.UploadAsync(request.Content, uploadOptions, linkedCancellationSource.Token);
+            var uploadResponse = await blobClient.UploadAsync(request.Content, uploadOptions, linkedCancellationSource.Token);
 
             var sizeBytes = await ResolveSizeAsync(blobClient, request, cancellationToken);
             var cloudFile = new CloudFile
@@ -136,6 +160,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = null,
+                ETag = uploadResponse.Value.ETag.ToString(),
                 Metadata = request.Metadata,
                 Provider = CloudStorageProvider.AzureBlob
             };
@@ -271,6 +296,33 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
     }
 
+    public override async Task<bool> DeleteIfMatchAsync(
+        string fileId,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+
+        try
+        {
+            var blobClient = _containerClient.GetBlobClient(fileId);
+            var deleted = await blobClient.DeleteIfExistsAsync(
+                conditions: new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
+                cancellationToken: cancellationToken);
+            if (deleted.Value)
+            {
+                FileStorageLog.FileDeleted(Logger, fileId);
+            }
+
+            return deleted.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status is 404 or 412)
+        {
+            return false;
+        }
+    }
+
     public override async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -293,6 +345,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 UploadedAt = properties.Value.LastModified,
                 ExpiresAt = expiresAt,
                 ContentHash = null,
+                ETag = properties.Value.ETag.ToString(),
                 Metadata = CloudStorageMetadata.ExtractUserMetadata(metadata),
                 Provider = CloudStorageProvider.AzureBlob
             };

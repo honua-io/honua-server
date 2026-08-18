@@ -16,6 +16,8 @@ namespace Honua.Server.Features.Admin.TileOperations;
 /// </summary>
 internal static class TileCacheExecutionSpecBuilder
 {
+    private const string DefaultTileMatrixSetId = "WebMercatorQuad";
+
     /// <summary>
     /// Builds the execution-job spec for <paramref name="request"/>, encoding every
     /// behavior-changing tile parameter onto <see cref="ExecutionJobSpec.Parameters"/>.
@@ -24,9 +26,21 @@ internal static class TileCacheExecutionSpecBuilder
         TileOperationStartRequest request,
         string? schemaName,
         TileCacheBatchOptions options)
+        => Build(request, schemaName, tenantScope: null, options);
+
+    /// <summary>
+    /// Builds a durable execution spec and captures the tile-cache ownership scope separately
+    /// from the optional routed database schema.
+    /// </summary>
+    public static ExecutionJobSpec Build(
+        TileOperationStartRequest request,
+        string? schemaName,
+        string? tenantScope,
+        TileCacheBatchOptions options)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
+        request = NormalizeRequest(request);
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -44,10 +58,9 @@ internal static class TileCacheExecutionSpecBuilder
                 request.LayerId.Value.ToString(CultureInfo.InvariantCulture);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.TileMatrixSetId))
-        {
-            parameters[TileCacheJobParameterKeys.TileMatrixSetId] = request.TileMatrixSetId;
-        }
+        parameters[TileCacheJobParameterKeys.TileMatrixSetId] = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
+            ? DefaultTileMatrixSetId
+            : request.TileMatrixSetId;
 
         if (request.MinZoom.HasValue)
         {
@@ -74,6 +87,16 @@ internal static class TileCacheExecutionSpecBuilder
                 request.MaxTiles.Value.ToString(CultureInfo.InvariantCulture);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Style))
+        {
+            parameters[TileCacheJobParameterKeys.Style] = request.Style;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Format))
+        {
+            parameters[TileCacheJobParameterKeys.Format] = request.Format;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.GenerationId))
         {
             parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
@@ -82,6 +105,11 @@ internal static class TileCacheExecutionSpecBuilder
         if (!string.IsNullOrWhiteSpace(schemaName))
         {
             parameters[TileCacheJobParameterKeys.SchemaName] = schemaName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tenantScope))
+        {
+            parameters[TileCacheJobParameterKeys.TenantScope] = tenantScope;
         }
 
         // Backend-specific coordinates (AWS Batch job-definition/queue ARNs,
@@ -118,11 +146,23 @@ internal static class TileCacheExecutionSpecBuilder
         out TileOperationStartRequest request,
         out string? schemaName,
         out string error)
+        => TryParse(parameters, out request, out schemaName, out _, out error);
+
+    /// <summary>
+    /// Reconstructs a tile operation together with its routed schema and persisted cache scope.
+    /// </summary>
+    public static bool TryParse(
+        IReadOnlyDictionary<string, string> parameters,
+        out TileOperationStartRequest request,
+        out string? schemaName,
+        out string? tenantScope,
+        out string error)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         request = null!;
         schemaName = null;
+        tenantScope = null;
         error = string.Empty;
 
         if (!parameters.TryGetValue(TileCacheJobParameterKeys.Operation, out var operation)
@@ -210,6 +250,8 @@ internal static class TileCacheExecutionSpecBuilder
 
         parameters.TryGetValue(TileCacheJobParameterKeys.ServiceId, out var serviceId);
         parameters.TryGetValue(TileCacheJobParameterKeys.TileMatrixSetId, out var tileMatrixSetId);
+        parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
+        parameters.TryGetValue(TileCacheJobParameterKeys.Format, out var format);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
         if (parameters.TryGetValue(TileCacheJobParameterKeys.SchemaName, out var schema)
             && !string.IsNullOrWhiteSpace(schema))
@@ -217,19 +259,97 @@ internal static class TileCacheExecutionSpecBuilder
             schemaName = schema;
         }
 
-        request = new TileOperationStartRequest
+        if (parameters.TryGetValue(TileCacheJobParameterKeys.TenantScope, out var scope)
+            && !string.IsNullOrWhiteSpace(scope))
+        {
+            tenantScope = scope;
+        }
+
+        var parsedRequest = new TileOperationStartRequest
         {
             Operation = operation,
             ServiceId = string.IsNullOrWhiteSpace(serviceId) ? null : serviceId,
             LayerId = layerId,
             MinZoom = minZoom,
             MaxZoom = maxZoom,
-            TileMatrixSetId = string.IsNullOrWhiteSpace(tileMatrixSetId) ? null : tileMatrixSetId,
+            TileMatrixSetId = string.IsNullOrWhiteSpace(tileMatrixSetId) ? DefaultTileMatrixSetId : tileMatrixSetId,
             Bbox = bbox,
             MaxTiles = maxTiles,
+            Style = string.IsNullOrWhiteSpace(style) ? null : style,
+            Format = string.IsNullOrWhiteSpace(format) ? null : format,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
         };
 
+        try
+        {
+            request = parsedRequest with { Operation = NormalizeOperation(parsedRequest.Operation) };
+        }
+        catch (ArgumentException)
+        {
+            error = $"invalid tile-cache parameter 'operation'; got '{operation}'";
+            return false;
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// Canonicalizes the request shape shared by in-process and durable execution paths.
+    /// </summary>
+    public static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var operation = NormalizeOperation(request.Operation);
+
+        return request with
+        {
+            Operation = operation,
+            TileMatrixSetId = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
+                ? DefaultTileMatrixSetId
+                : request.TileMatrixSetId.Trim(),
+            Style = string.IsNullOrWhiteSpace(request.Style)
+                ? "default"
+                : request.Style.Trim(),
+            Format = string.IsNullOrWhiteSpace(request.Format)
+                ? null
+                : request.Format.Trim().ToLowerInvariant(),
+        };
+    }
+
+    private static string NormalizeOperation(string? operation)
+    {
+        var normalized = operation?.Trim().ToLowerInvariant();
+        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or "expire" or "delete"))
+        {
+            throw new ArgumentException(
+                "Operation must be one of: seed, warm, invalidate, purge, archive, publish, expire, delete.",
+                nameof(operation));
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Builds the replica-safety partition key for a tile-cache generation window (issue #2661).
+    /// All resolved layer sets for the same gridset/style use one coarse partition. A composite
+    /// service target and any single-layer subset therefore overlap under the same exclusive lease,
+    /// preventing a service delete from racing a layer seed while unrelated grid/style windows can
+    /// still execute concurrently.
+    /// </summary>
+    public static string BuildPartitionKey(
+        TileOperationStartRequest request,
+        IReadOnlyList<int>? resolvedLayerIds = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var targetSegment = resolvedLayerIds is { Count: > 0 } ? "layers" : "unresolved";
+        var gridsetSegment = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
+            ? DefaultTileMatrixSetId
+            : GeneratedTileCacheKey.Sanitize(request.TileMatrixSetId);
+        var styleSegment = GeneratedTileCacheKey.Sanitize(
+            string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style);
+
+        return $"tilecache:{targetSegment}:{gridsetSegment}:{styleSegment}";
     }
 }

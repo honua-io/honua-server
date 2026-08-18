@@ -3377,13 +3377,22 @@ internal static class ImageServerEndpoints
         string format = "png",
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
+        var resolution = await ResolveImageLayerAsync(id, context, cancellationToken);
+        if (resolution.ErrorResult is not null)
         {
-            return layerError;
+            return resolution.ErrorResult;
         }
 
-        return await handler.GetImageTileAsync(context, id, level, row, col, format, cancellationToken);
+        return await handler.GetImageTileAsync(
+            context,
+            resolution.LayerId,
+            level,
+            row,
+            col,
+            format,
+            resolution.PublicationId,
+            resolution.PublicationLayerIndex,
+            cancellationToken);
     }
 
     private static async Task<IResult> GetImageTileByService(
@@ -3397,7 +3406,16 @@ internal static class ImageServerEndpoints
         CancellationToken cancellationToken = default)
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await GetImageTile(resolution.LayerId, level, row, col, context, handler, format, cancellationToken);
+        return resolution.ErrorResult ?? await handler.GetImageTileAsync(
+            context,
+            resolution.LayerId,
+            level,
+            row,
+            col,
+            format,
+            resolution.PublicationId,
+            resolution.PublicationLayerIndex,
+            cancellationToken);
     }
 
     private static async Task<IResult> GetWmts(
@@ -3406,17 +3424,19 @@ internal static class ImageServerEndpoints
         ImageServerWmtsHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
+        var resolution = await ResolveImageLayerAsync(id, context, cancellationToken);
+        if (resolution.ErrorResult is not null)
         {
-            return layerError;
+            return resolution.ErrorResult;
         }
 
         return await handler.HandleAsync(
             context,
-            id,
+            resolution.LayerId,
             id.ToString(CultureInfo.InvariantCulture),
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            publicationId: resolution.PublicationId,
+            cacheLayerId: resolution.PublicationLayerIndex);
     }
 
     private static async Task<IResult> GetWmtsRestful(
@@ -3426,17 +3446,19 @@ internal static class ImageServerEndpoints
         ImageServerWmtsHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
+        var resolution = await ResolveImageLayerAsync(id, context, cancellationToken);
+        if (resolution.ErrorResult is not null)
         {
-            return layerError;
+            return resolution.ErrorResult;
         }
 
         return await handler.HandleAsync(
             context,
-            id,
+            resolution.LayerId,
             id.ToString(CultureInfo.InvariantCulture),
             restPath,
+            resolution.PublicationId,
+            resolution.PublicationLayerIndex,
             cancellationToken);
     }
 
@@ -3448,7 +3470,13 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ??
-            await handler.HandleAsync(context, resolution.LayerId, serviceId, cancellationToken: cancellationToken);
+            await handler.HandleAsync(
+                context,
+                resolution.LayerId,
+                serviceId,
+                cancellationToken: cancellationToken,
+                publicationId: resolution.PublicationId,
+                cacheLayerId: resolution.PublicationLayerIndex);
     }
 
     private static async Task<IResult> GetWmtsRestfulByService(
@@ -3460,7 +3488,14 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ??
-            await handler.HandleAsync(context, resolution.LayerId, serviceId, restPath, cancellationToken);
+            await handler.HandleAsync(
+                context,
+                resolution.LayerId,
+                serviceId,
+                restPath,
+                resolution.PublicationId,
+                resolution.PublicationLayerIndex,
+                cancellationToken);
     }
 
     // Read-only raster metadata child resources. Each GET validates the f format and the
@@ -3601,7 +3636,12 @@ internal static class ImageServerEndpoints
         return (GetString(merged, "f"), null);
     }
 
-    private static async Task<(int LayerId, IResult? ErrorResult)> ResolveImageServiceLayerIdAsync(
+    private static async Task<(
+        int LayerId,
+        string? PublicationId,
+        int? PublicationLayerIndex,
+        IResult? ErrorResult)>
+        ResolveImageServiceLayerIdAsync(
         string serviceId,
         HttpContext context,
         CancellationToken cancellationToken)
@@ -3611,20 +3651,30 @@ internal static class ImageServerEndpoints
             serviceId,
             context,
             cancellationToken).ConfigureAwait(false);
-        return (resolution.LayerId, resolution.ErrorResult);
+        return (
+            resolution.LayerId,
+            resolution.PublicationId,
+            resolution.PublicationLayerIndex,
+            resolution.ErrorResult);
     }
 
     private static async Task<IResult?> ValidateImageLayerAsync(
         int layerId,
         HttpContext context,
         CancellationToken cancellationToken)
+        => (await ResolveImageLayerAsync(layerId, context, cancellationToken).ConfigureAwait(false))
+            .ErrorResult;
+
+    private static async Task<ImageServerLayerResolution> ResolveImageLayerAsync(
+        int layerId,
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
-        var resolution = await resolver.ValidateLayerAsync(
+        return await resolver.ValidateLayerAsync(
             layerId,
             context,
             cancellationToken).ConfigureAwait(false);
-        return resolution.ErrorResult;
     }
 
     private static bool IsSupportedJsonResponseFormat(string? format)
