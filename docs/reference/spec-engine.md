@@ -29,7 +29,8 @@ Each node carries `id`, `kind` (`compute`, `report`, `dataset`, `service`, `app`
 
 ## Apply behavior
 
-- The apply token is returned in the `X-Spec-Apply-Token` response header (gRPC: `x-spec-apply-token` initial metadata), flushed before the first event so cancel can be issued mid-stream.
+- The apply token is returned in the `X-Spec-Apply-Token` response header (gRPC: `x-spec-apply-token` initial metadata, plus `x-spec-job-id` carrying the identical value), flushed before the first event so cancel can be issued mid-stream.
+- On the gRPC surface this value is the apply run's **job id**: `Geospatial.Grpc` `0.2.0-alpha.1` reserved `ApplySpecEvent.apply_token` and replaced it with `ApplySpecEvent.job_id` (field 10), and `CancelApply` now takes `CancelJobRequest.job_id` and returns `CancelJobResponse`. `CancelJobResponse` has no `cancelled` boolean: an accepted cancellation reports `JOB_STATE_CANCELLED`, and an unknown or already-terminal run reports `JOB_STATE_UNSPECIFIED` (the call does not fault). The REST vocabulary is unchanged.
 - Disconnecting the stream does **not** cancel the run; only `/v1/spec/cancel` (or `CancelApply`) does. Tokens are in-process and do not survive a restart (`apply-token-unknown` after restart).
 - Event frames carry a monotonic `sequence`; the event buffer is bounded (256 frames, drop-oldest), so a gap in sequence numbers means frames were dropped for a slow reader.
 - Event kinds: `ApplyStarted`, `Queued`, `Running`, `Cached`, `Succeeded`, `Failed`, `Skipped`, `Warning`, `ApplyCompleted`, `ApplyCancelled`.

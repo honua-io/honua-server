@@ -743,7 +743,7 @@ public sealed class GrpcFeatureServiceTests
         {
             ServiceId = "test",
             LayerId = 0,
-            ResultRecordCount = 1
+            ResultRecordCountLong = 1
         };
 
         var response = await _sut.QueryFeatures(request, CreateCallContext());
@@ -898,7 +898,7 @@ public sealed class GrpcFeatureServiceTests
         {
             ServiceId = "test",
             LayerId = 0,
-            ResultRecordCount = new LimitsOptions().Query.MaxRecordCount + 1
+            ResultRecordCountLong = new LimitsOptions().Query.MaxRecordCount + 1
         };
 
         var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
@@ -960,7 +960,7 @@ public sealed class GrpcFeatureServiceTests
             LayerId = 0,
             Where = "1=1",
             ReturnGeometry = true,
-            ResultRecordCount = 1
+            ResultRecordCountLong = 1
         };
         request.OutFields.Add("*");
 

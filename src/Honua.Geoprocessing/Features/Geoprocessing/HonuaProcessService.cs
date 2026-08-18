@@ -26,7 +26,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         _logger = logger;
     }
 
-    public override async Task<Proto.ValidatePlanResponse> ValidatePlan(
+    public override async Task<Proto.ValidateResponse> ValidatePlan(
         Proto.ValidatePlanRequest request,
         ServerCallContext context)
     {
@@ -43,7 +43,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
             ValidateProtoStructure(request.Plan);
             var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
             var result = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
-            return GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result);
+            return GeoprocessingConversionHelpers.ToProtoValidateResponse(result);
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -51,7 +51,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
     }
 
-    public override async Task<Proto.DryRunPlanResponse> DryRunPlan(
+    public override async Task<Proto.DryRunResponse> DryRunPlan(
         Proto.DryRunPlanRequest request,
         ServerCallContext context)
     {
@@ -70,11 +70,11 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
             var validation = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
             if (!validation.IsExecutable)
             {
-                return GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(validation);
+                return GeoprocessingConversionHelpers.ToProtoDryRunResponse(validation);
             }
 
             var result = _jobService.DryRunPlan(domainPlan, context.GetHttpContext().User);
-            return GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result);
+            return GeoprocessingConversionHelpers.ToProtoDryRunResponse(result);
         }
         catch (Exception ex) when (ex is not RpcException)
         {

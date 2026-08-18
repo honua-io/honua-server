@@ -13,6 +13,13 @@ namespace Honua.Server.Features.Spec;
 /// </summary>
 internal static class SpecProtoMapping
 {
+    /// <summary>
+    /// <c>ErrorDetail.details</c> key carrying the symbolic diagnostic code. Geospatial.Grpc
+    /// 0.2.0-alpha.1 folded <c>SpecDiagnostic</c> (which had a <c>string code</c>) into
+    /// <c>ErrorDetail</c> (whose <c>code</c> is an <c>int32</c>), so the symbol lives here.
+    /// </summary>
+    internal const string ErrorCodeDetailKey = "error_code";
+
     public static CanonicalSpecDocument FromProto(Proto.CanonicalSpecDocument proto)
     {
         ArgumentNullException.ThrowIfNull(proto);
@@ -54,8 +61,8 @@ internal static class SpecProtoMapping
                 Id = n.Id,
                 Kind = FromProto(n.Kind),
                 Op = n.HasOp ? n.Op : null,
-                Inputs = new Dictionary<string, string>(n.Inputs, StringComparer.Ordinal),
-                Parameters = new Dictionary<string, string>(n.Parameters, StringComparer.Ordinal),
+                Inputs = FromProtoParameterMap(n.Id, "inputs", n.Inputs),
+                Parameters = FromProtoParameterMap(n.Id, "parameters", n.Parameters),
                 CanonicalFragment = n.HasCanonicalFragment ? n.CanonicalFragment : null,
                 SourcePins = new Dictionary<string, string>(n.SourcePins, StringComparer.Ordinal),
                 Nondeterministic = n.Nondeterministic
@@ -121,7 +128,11 @@ internal static class SpecProtoMapping
         {
             Sequence = evt.Sequence,
             Kind = ToProto(evt.Kind),
-            ApplyToken = evt.ApplyToken,
+            // Geospatial.Grpc 0.2.0-alpha.1 reserved ApplySpecEvent.apply_token (field 3) and
+            // replaced it with job_id (field 10). The value is unchanged — the apply handle's
+            // token is the apply run's job id — so CancelJobRequest.job_id accepts exactly what
+            // /v1/spec/cancel accepts.
+            JobId = evt.ApplyToken,
             TimestampUnixMs = evt.Timestamp.ToUnixTimeMilliseconds()
         };
 
@@ -226,14 +237,30 @@ internal static class SpecProtoMapping
         _ => Proto.SpecApplyEventKind.Unspecified
     };
 
-    public static Proto.SpecDiagnostic ToProto(SpecWarning warning)
+    /// <summary>
+    /// Maps a spec diagnostic to the shared <c>ErrorDetail</c>. Geospatial.Grpc 0.2.0-alpha.1
+    /// retired <c>SpecDiagnostic</c>; <c>ErrorDetail</c> gained <c>severity</c> (9) and
+    /// <c>remedy</c> (10) to absorb it.
+    /// </summary>
+    /// <remarks>
+    /// The spec diagnostic code is a kebab-case symbol (<see cref="SpecDiagnosticCodes"/>) and
+    /// <c>ErrorDetail.code</c> is an <c>int32</c>, so the symbol travels in
+    /// <c>details["<see cref="ErrorCodeDetailKey"/>"]</c> — the same slot the geoprocessing
+    /// mapper uses — and the numeric field is left unset. Admin tooling that keys off the
+    /// diagnostic code reads that entry.
+    /// </remarks>
+    public static Proto.ErrorDetail ToProto(SpecWarning warning)
     {
-        var proto = new Proto.SpecDiagnostic
+        ArgumentNullException.ThrowIfNull(warning);
+
+        var proto = new Proto.ErrorDetail
         {
-            Code = warning.Code,
             Message = warning.Message,
+            Category = Proto.ErrorCategory.Validation,
             Severity = ToProto(warning.Severity)
         };
+
+        proto.Details[ErrorCodeDetailKey] = warning.Code;
 
         if (warning.NodeId is not null)
         {
@@ -248,17 +275,27 @@ internal static class SpecProtoMapping
         return proto;
     }
 
-    public static Proto.SpecDiagnosticSeverity ToProto(SpecDiagnosticSeverity severity) => severity switch
+    public static Proto.Severity ToProto(SpecDiagnosticSeverity severity) => severity switch
     {
-        SpecDiagnosticSeverity.Info => Proto.SpecDiagnosticSeverity.Info,
-        SpecDiagnosticSeverity.Warning => Proto.SpecDiagnosticSeverity.Warning,
-        SpecDiagnosticSeverity.Error => Proto.SpecDiagnosticSeverity.Error,
-        _ => Proto.SpecDiagnosticSeverity.Unspecified
+        SpecDiagnosticSeverity.Info => Proto.Severity.Info,
+        SpecDiagnosticSeverity.Warning => Proto.Severity.Warning,
+        SpecDiagnosticSeverity.Error => Proto.Severity.Error,
+        _ => Proto.Severity.Unspecified
     };
 
-    public static Proto.SpecCostEstimate ToProto(SpecCostEstimate cost)
+    /// <summary>
+    /// Maps a per-node cost estimate onto <c>DryRunResult</c> fields 5-7. Geospatial.Grpc
+    /// 0.2.0-alpha.1 retired <c>SpecCostEstimate</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>SpecCostEstimate</c> carried <c>optional</c> scalars, so "not estimated" and "estimated
+    /// zero" were distinguishable. The <c>DryRunResult</c> replacements are plain proto3 scalars
+    /// with no presence, so an unknown estimate now serializes as <c>0</c>. That fidelity loss is
+    /// inherent to the upstream shape; nothing on the server side can restore it.
+    /// </remarks>
+    public static Proto.DryRunResult ToProto(SpecCostEstimate cost)
     {
-        var proto = new Proto.SpecCostEstimate();
+        var proto = new Proto.DryRunResult();
         if (cost.EstimatedRows is long r)
         {
             proto.EstimatedRows = r;
@@ -277,23 +314,77 @@ internal static class SpecProtoMapping
         return proto;
     }
 
-    public static Proto.SpecCostActual ToProto(SpecCostActual cost)
+    /// <summary>
+    /// Maps per-node actual execution metrics onto <c>DryRunResult</c> fields 8-10. Geospatial.Grpc
+    /// 0.2.0-alpha.1 retired <c>SpecCostActual</c>. The same presence loss described on
+    /// <see cref="ToProto(SpecCostEstimate)"/> applies to <c>actual_rows</c> / <c>actual_bytes</c>.
+    /// </summary>
+    public static Proto.DryRunResult ToProto(SpecCostActual cost)
     {
-        var proto = new Proto.SpecCostActual
+        var proto = new Proto.DryRunResult
         {
-            DurationMs = cost.DurationMs
+            ActualDurationMs = cost.DurationMs
         };
         if (cost.Rows is long r)
         {
-            proto.Rows = r;
+            proto.ActualRows = r;
         }
 
         if (cost.Bytes is long b)
         {
-            proto.Bytes = b;
+            proto.ActualBytes = b;
         }
 
         return proto;
+    }
+
+    /// <summary>
+    /// Reads a <c>map&lt;string, ParameterValue&gt;</c> node fragment back into the domain's
+    /// string-keyed, string-valued dictionary.
+    /// </summary>
+    /// <remarks>
+    /// Geospatial.Grpc 0.2.0-alpha.1 retyped <c>CanonicalSpecNode.inputs</c> and
+    /// <c>.parameters</c> from <c>map&lt;string, string&gt;</c> to
+    /// <c>map&lt;string, ParameterValue&gt;</c>; the proto documents string fragments as the
+    /// <c>string_value</c> branch. Only that branch (and an unset value, which reads as the empty
+    /// string the previous map could carry) is accepted. Coercing an <c>int64_value</c> or
+    /// <c>double_value</c> to text would let two structurally different documents canonicalize to
+    /// the same content hash, so a non-string branch is rejected at the transport boundary rather
+    /// than silently flattened.
+    /// </remarks>
+    private static Dictionary<string, string> FromProtoParameterMap(
+        string nodeId,
+        string fieldName,
+        Google.Protobuf.Collections.MapField<string, Proto.ParameterValue> source)
+    {
+        var result = new Dictionary<string, string>(source.Count, StringComparer.Ordinal);
+        foreach (var (key, value) in source)
+        {
+            if (value is null || value.KindCase == Proto.ParameterValue.KindOneofCase.None)
+            {
+                result[key] = string.Empty;
+                continue;
+            }
+
+            if (value.KindCase != Proto.ParameterValue.KindOneofCase.StringValue)
+            {
+                throw new SpecDocumentInvalidException(
+                [
+                    new SpecWarning
+                    {
+                        Code = SpecDiagnosticCodes.InvalidRequestBody,
+                        Message = $"Node '{nodeId}' {fieldName} entry '{key}' uses ParameterValue branch '{value.KindCase}'; only string_value is supported.",
+                        Severity = SpecDiagnosticSeverity.Error,
+                        NodeId = nodeId,
+                        Remedy = "Encode spec fragments as ParameterValue.string_value."
+                    }
+                ]);
+            }
+
+            result[key] = value.StringValue;
+        }
+
+        return result;
     }
 
     public static Proto.SpecApplySummary ToProto(SpecApplySummary summary) => new()

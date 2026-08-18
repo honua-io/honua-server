@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
+using Grpc.Core;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -69,14 +70,50 @@ public sealed class GrpcConversionHelpersTests
         {
             ServiceId = "test",
             LayerId = 0,
-            ResultOffset = 10,
-            ResultRecordCount = 50
+            ResultOffsetLong = 10,
+            ResultRecordCountLong = 50
         };
 
         var query = GrpcConversionHelpers.ToFeatureQuery(request);
 
         query.Offset.Should().Be(10);
         query.Limit.Should().Be(50);
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithInt64PaginationBeyondInt32_ThrowsInvalidArgument()
+    {
+        // Geospatial.Grpc 0.2.0-alpha.1 widened the pagination fields to int64
+        // (result_offset_long / result_record_count_long). The query pipeline is int-based, so
+        // an out-of-range value must fault as InvalidArgument rather than wrapping negative.
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ResultOffsetLong = (long)int.MaxValue + 1
+        };
+
+        var act = () => GrpcConversionHelpers.ToFeatureQuery(request);
+
+        act.Should().Throw<RpcException>()
+            .Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithInt64PaginationAtInt32Boundary_Narrows()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ResultOffsetLong = int.MaxValue,
+            ResultRecordCountLong = int.MaxValue
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.Offset.Should().Be(int.MaxValue);
+        query.Limit.Should().Be(int.MaxValue);
     }
 
     [UnitTest]

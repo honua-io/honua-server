@@ -91,11 +91,11 @@ public sealed class GeoprocessingConversionHelpersTests
     }
 
     // -----------------------------------------------------------------------
-    // ToProtoValidatePlanResponse
+    // ToProtoValidateResponse
     // -----------------------------------------------------------------------
 
     [UnitTest]
-    public void ToProtoValidatePlanResponse_WithViolations_MapsAll()
+    public void ToProtoValidateResponse_WithViolations_MapsAll()
     {
         var result = new PlanValidationResult
         {
@@ -113,23 +113,23 @@ public sealed class GeoprocessingConversionHelpersTests
             Warnings = ["Some warning"]
         };
 
-        var response = GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result);
+        var response = GeoprocessingConversionHelpers.ToProtoValidateResponse(result);
 
         response.Valid.Should().BeFalse();
         response.Issues.Should().HaveCount(2);
         response.Issues[0].Message.Should().Be("Field is required");
         response.Issues[0].Field.Should().Be("plan.steps[0].process_id");
-        response.Issues[0].Severity.Should().Be(Proto.IssueSeverity.Error);
+        response.Issues[0].Severity.Should().Be(Proto.Severity.Error);
         response.Issues[1].Message.Should().Be("Some warning");
-        response.Issues[1].Severity.Should().Be(Proto.IssueSeverity.Warning);
+        response.Issues[1].Severity.Should().Be(Proto.Severity.Warning);
     }
 
     // -----------------------------------------------------------------------
-    // ToProtoDryRunPlanResponse
+    // ToProtoDryRunResponse
     // -----------------------------------------------------------------------
 
     [UnitTest]
-    public void ToProtoDryRunPlanResponse_MapsAllFields()
+    public void ToProtoDryRunResponse_MapsAllFields()
     {
         var result = new DryRunResult
         {
@@ -138,7 +138,7 @@ public sealed class GeoprocessingConversionHelpersTests
             SideEffects = ["Creates temporary layer"]
         };
 
-        var response = GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result);
+        var response = GeoprocessingConversionHelpers.ToProtoDryRunResponse(result);
 
         response.Valid.Should().BeTrue();
         response.Result.EstimatedDurationSeconds.Should().Be(43);
@@ -260,6 +260,50 @@ public sealed class GeoprocessingConversionHelpersTests
 
         proto.Result.Artifacts.Should().ContainSingle()
             .Which.ProducerRef.Should().Be("outputRaster");
+    }
+
+    [UnitTest]
+    public void ToProtoGetJobResult_Failed_CarriesNumericCodeAndSymbolicDetail()
+    {
+        // Geospatial.Grpc 0.2.0-alpha.1 replaced ErrorDetail's `string error_code` with an
+        // `int32 code`. The numeric code is a stable per-kind assignment and the symbolic name
+        // it replaced is preserved in details["error_code"] so nothing on the wire is lost.
+        var package = AnalysisResultPackage.CreateFailed(
+            "job-1:v1",
+            new ResultSummary { Title = "Failed" },
+            [new GeoprocessingError
+            {
+                Kind = GeoprocessingErrorKind.UnknownDataset,
+                Message = "Dataset not found.",
+                StepId = "step-1"
+            }],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+        var proto = GeoprocessingConversionHelpers.ToProtoGetJobResultResponse("job-1", package);
+
+        proto.Error.Code.Should().Be(1002);
+        proto.Error.Details.Should().ContainKey("error_code")
+            .WhoseValue.Should().Be("UNKNOWN_DATASET");
+        proto.Error.Message.Should().Be("Dataset not found.");
+        proto.Error.NodeId.Should().Be("step-1");
+    }
+
+    [UnitTest]
+    public void ToProtoGetJobResult_FailedWithNoErrors_SynthesizesExecutionFailedDetail()
+    {
+        var package = AnalysisResultPackage.CreateFailed(
+            "job-1:v1",
+            new ResultSummary { Title = "Failed", Description = "Backend went away." },
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+        var proto = GeoprocessingConversionHelpers.ToProtoGetJobResultResponse("job-1", package);
+
+        proto.Error.Code.Should().Be(1004);
+        proto.Error.Details.Should().ContainKey("error_code")
+            .WhoseValue.Should().Be("EXECUTION_FAILED");
+        proto.Error.Category.Should().Be(Proto.ErrorCategory.Execution);
+        proto.Error.Retryability.Should().Be(Proto.Retryability.TransientBackendError);
     }
 
     // -----------------------------------------------------------------------
