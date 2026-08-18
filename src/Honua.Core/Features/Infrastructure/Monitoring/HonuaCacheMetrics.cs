@@ -40,12 +40,20 @@ public static class HonuaCacheMetrics
     // avoids a circular dependency on Honua.ServiceDefaults (which itself references Honua.Core).
     private static readonly Meter Meter = new("Honua");
 
+    // These counters declare no OpenTelemetry `unit`, and that omission is deliberate. The OTel
+    // Prometheus exporter appends the mapped unit to the metric name, so the previous unit
+    // "operations" exported them as `honua_cache_hits_total_operations_total` — a name nothing
+    // queries. The shipped Cache Hit Ratio panel in
+    // docker/monitoring/grafana/dashboards/honua-serving-overview.json asks for
+    // `honua_cache_hits_total`, so the panel rendered blank with no error anywhere. See the
+    // SLO-contract comment block in HonuaTelemetry.cs for the full mechanism (honua-release#5).
+
     /// <summary>
     /// Counter incremented on every cache hit. Tagged with <see cref="CacheNameTag"/>.
     /// </summary>
     public static readonly Counter<long> Hits = Meter.CreateCounter<long>(
         "honua_cache_hits_total",
-        "operations",
+        unit: null,
         "Total number of cache hits, partitioned by cache_name.");
 
     /// <summary>
@@ -53,7 +61,7 @@ public static class HonuaCacheMetrics
     /// </summary>
     public static readonly Counter<long> Misses = Meter.CreateCounter<long>(
         "honua_cache_misses_total",
-        "operations",
+        unit: null,
         "Total number of cache misses, partitioned by cache_name.");
 
     /// <summary>
@@ -65,7 +73,7 @@ public static class HonuaCacheMetrics
     /// </remarks>
     public static readonly Counter<long> Evictions = Meter.CreateCounter<long>(
         "honua_cache_evictions_total",
-        "operations",
+        unit: null,
         "Total number of cache evictions, partitioned by cache_name.");
 
     /// <summary>
