@@ -43,9 +43,18 @@ public sealed class FederationMetrics : IDisposable
     {
         _meter = new Meter(MeterName);
 
+        // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+        // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+        // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+        // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+        // against the absent name returns an empty vector, so the panel is blank and the alert never
+        // fires, silently. Units are documented in the instrument name and description instead. See the
+        // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+        // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
         _sourceDuration = _meter.CreateHistogram<double>(
             "honua_federation_source_duration_ms",
-            "milliseconds",
+            unit: null,
             "Wall-clock time spent fetching candidate rows from a federated source, including resilience handling.");
 
         _sourceRequests = _meter.CreateCounter<long>(

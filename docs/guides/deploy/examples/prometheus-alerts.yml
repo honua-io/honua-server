@@ -85,8 +85,13 @@ groups:
           runbook_url: "https://docs.honua.io/operations/runbook#memory-and-gc-issues"
 
       # Query Performance Alerts
+      #
+      # These use honua_database_query_duration_ms_bucket. An earlier revision asked for
+      # honua_query_duration_ms_bucket, which the server has never exported: in PromQL that is not
+      # an error, histogram_quantile over an empty vector is empty, and the alert simply never
+      # fired. See observability/metric-name-contract.json (honua-server#3323).
       - alert: HonuaQueryLatencyHigh
-        expr: histogram_quantile(0.95, sum(rate(honua_query_duration_ms_bucket[5m])) by (le)) > 1000
+        expr: histogram_quantile(0.95, sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)) > 1000
         for: 5m
         labels:
           severity: warning
@@ -97,7 +102,7 @@ groups:
           runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
 
       - alert: HonuaQueryLatencyCritical
-        expr: histogram_quantile(0.95, sum(rate(honua_query_duration_ms_bucket[5m])) by (le)) > 5000
+        expr: histogram_quantile(0.95, sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)) > 5000
         for: 2m
         labels:
           severity: critical
@@ -108,8 +113,13 @@ groups:
           runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
 
       # Error Rate Alerts
+      #
+      # Numerator and denominator are the pair named by observability/slo-metric-contract.json
+      # (all_surface_error_rate). Neither honua_errors_total nor honua_queries_total, which an
+      # earlier revision divided, has ever been exported by any Honua component, so this ratio was
+      # empty/empty and the alert could not fire (honua-release#5, honua-server#3323).
       - alert: HonuaErrorRateHigh
-        expr: rate(honua_errors_total[5m]) / rate(honua_queries_total[5m]) > 0.02
+        expr: rate(honua_request_error_total[5m]) / rate(honua_serving_request_duration_ms_count[5m]) > 0.02
         for: 5m
         labels:
           severity: warning
@@ -120,7 +130,7 @@ groups:
           runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
 
       - alert: HonuaErrorRateCritical
-        expr: rate(honua_errors_total[5m]) / rate(honua_queries_total[5m]) > 0.05
+        expr: rate(honua_request_error_total[5m]) / rate(honua_serving_request_duration_ms_count[5m]) > 0.05
         for: 2m
         labels:
           severity: critical
@@ -131,6 +141,12 @@ groups:
           runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
 
       # Rate Limiting Alerts
+      #
+      # INERT: no Honua component emits honua_rate_limit_violations_total today, so this rule
+      # evaluates to nothing. Kept as the intended shape of the alert and recorded under
+      # `not_emitted` in observability/metric-name-contract.json so the metric-name guard treats it
+      # as a known gap rather than silently accepting any name. It starts working the moment the
+      # rate limiter grows a counter under this name.
       - alert: HonuaRateLimitViolationsHigh
         expr: increase(honua_rate_limit_violations_total[5m]) > 100
         for: 5m
@@ -178,6 +194,10 @@ groups:
           runbook_url: "https://docs.honua.io/operations/runbook#emergency-procedures"
 
       # Circuit Breaker Alerts (based on log analysis or custom metrics)
+      #
+      # INERT: no Honua component emits honua_circuit_breaker_state_changes_total today. Recorded
+      # under `not_emitted` in observability/metric-name-contract.json; see the note on
+      # HonuaRateLimitViolationsHigh above.
       - alert: HonuaCircuitBreakerOpen
         expr: increase(honua_circuit_breaker_state_changes_total{state="open"}[5m]) > 0
         for: 1m

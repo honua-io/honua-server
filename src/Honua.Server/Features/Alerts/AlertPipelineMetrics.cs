@@ -57,66 +57,75 @@ internal sealed class AlertPipelineMetrics
         ArgumentNullException.ThrowIfNull(meterFactory);
         _meter = meterFactory.Create(HonuaTelemetry.ServiceName, HonuaTelemetry.ServiceVersion);
 
+        // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+        // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+        // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+        // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+        // against the absent name returns an empty vector, so the panel is blank and the alert never
+        // fires, silently. Units are documented in the instrument name and description instead. See the
+        // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+        // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
         _eventsEmittedCounter = _meter.CreateCounter<long>(
             "honua.alerts.events_emitted_total",
-            "events",
+            unit: null,
             "Alert events appended to the durable event store, tagged by trigger type.");
 
         _dispatchesEnqueuedCounter = _meter.CreateCounter<long>(
             "honua.alerts.dispatches_enqueued_total",
-            "dispatches",
+            unit: null,
             "Alert delivery dispatch rows enqueued to the outbox, tagged by channel.");
 
         _deliveriesSucceededCounter = _meter.CreateCounter<long>(
             "honua.alerts.deliveries_succeeded_total",
-            "deliveries",
+            unit: null,
             "Alert deliveries that succeeded, tagged by channel.");
 
         _deliveriesFailedCounter = _meter.CreateCounter<long>(
             "honua.alerts.deliveries_failed_total",
-            "deliveries",
+            unit: null,
             "Alert deliveries that failed but remain retriable, tagged by channel.");
 
         _deliveriesDeadLetteredCounter = _meter.CreateCounter<long>(
             "honua.alerts.deliveries_dead_lettered_total",
-            "deliveries",
+            unit: null,
             "Alert deliveries that exhausted retries and were dead-lettered, tagged by channel.");
 
         _deliveriesRateCappedCounter = _meter.CreateCounter<long>(
             "honua.alerts.deliveries_rate_capped_total",
-            "deliveries",
+            unit: null,
             "Alert deliveries deferred by the per-channel notification rate cap, tagged by channel.");
 
         _opsNotificationsCounter = _meter.CreateCounter<long>(
             "honua.alerts.ops_notifications_total",
-            "notifications",
+            unit: null,
             "Operations notifications composed for delivery, tagged by source, severity, and outcome.");
 
         _deliveriesSuppressedCounter = _meter.CreateCounter<long>(
             "honua.alerts.deliveries_suppressed_total",
-            "deliveries",
+            unit: null,
             "Alert deliveries deferred because the event is operator-suppressed, tagged by channel.");
 
         _deliveriesCircuitDeferredCounter = _meter.CreateCounter<long>(
             "honua.alerts.deliveries_circuit_deferred_total",
-            "deliveries",
+            unit: null,
             "Alert deliveries deferred because the per-channel delivery circuit breaker is open, tagged by channel.");
 
         _deliveryLatencyHistogram = _meter.CreateHistogram<double>(
             "honua.alerts.delivery_latency",
-            "milliseconds",
-            "Latency of an alert delivery sink call, tagged by channel and outcome.");
+            unit: null,
+            "Latency of an alert delivery sink call in milliseconds, tagged by channel and outcome.");
 
         _meter.CreateObservableGauge(
             "honua.alerts.dispatch_backlog_count",
             () => Interlocked.Read(ref _backlogPending),
-            unit: "dispatches",
+            unit: null,
             description: "Alert dispatch rows awaiting delivery (pending, claimed, or retriable).");
 
         _meter.CreateObservableGauge(
             "honua.alerts.dispatch_dead_lettered_count",
             () => Interlocked.Read(ref _backlogDeadLettered),
-            unit: "dispatches",
+            unit: null,
             description: "Alert dispatch rows currently in the dead-letter state.");
 
         _meter.CreateObservableGauge(

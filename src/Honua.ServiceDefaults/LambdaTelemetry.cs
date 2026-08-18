@@ -42,9 +42,18 @@ public static class LambdaTelemetry
         unit: "{cold_start}",
         description: "Number of Lambda cold starts observed by the Honua process.");
 
+    // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+    // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+    // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+    // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+    // against the absent name returns an empty vector, so the panel is blank and the alert never
+    // fires, silently. Units are documented in the instrument name and description instead. See the
+    // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+    // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
     private static readonly Histogram<double> InitDurationHistogram = Meter.CreateHistogram<double>(
         "honua.lambda.init_duration_ms",
-        unit: "ms",
+        unit: null,
         description: "Duration of Lambda process initialization (cold start) in milliseconds.");
 
     private static int _coldStartRecorded;
@@ -56,7 +65,7 @@ public static class LambdaTelemetry
         Meter.CreateObservableGauge(
             "honua.lambda.memory_limit_mib",
             ObserveMemoryLimit,
-            unit: "MiB",
+            unit: null,
             description: "Configured Lambda memory limit in MiB (0 when not running on Lambda).");
     }
 

@@ -34,34 +34,43 @@ internal static class OrchestrationTelemetry
         public const string BindingCount = "honua.orchestration.binding_count";
     }
 
+    // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+    // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+    // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+    // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+    // against the absent name returns an empty vector, so the panel is blank and the alert never
+    // fires, silently. Units are documented in the instrument name and description instead. See the
+    // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+    // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
     public static readonly Counter<long> RunsCreated = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.orchestration.runs_created_total",
-        "runs",
+        unit: null,
         "Workflow runs created, tagged by trigger kind.");
 
     public static readonly Counter<long> RunsCompleted = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.orchestration.runs_completed_total",
-        "runs",
+        unit: null,
         "Workflow runs that reached a terminal state, tagged by status.");
 
     public static readonly Counter<long> StepsCompleted = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.orchestration.steps_completed_total",
-        "steps",
+        unit: null,
         "Workflow steps that reached a terminal state, tagged by status.");
 
     public static readonly Counter<long> StepsRetried = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.orchestration.steps_retried_total",
-        "steps",
+        unit: null,
         "Workflow steps scheduled for retry after a failure.");
 
     public static readonly Histogram<double> RunDuration = HonuaTelemetry.Meter.CreateHistogram<double>(
         "honua.orchestration.run_duration_ms",
-        "ms",
+        unit: null,
         "Elapsed time for workflow runs that reached terminal states.");
 
     public static readonly Histogram<double> StepDuration = HonuaTelemetry.Meter.CreateHistogram<double>(
         "honua.orchestration.step_duration_ms",
-        "ms",
+        unit: null,
         "Elapsed time for workflow steps that reached terminal states.");
 
     public static Activity? StartReconcileRunActivity(string runId, string workflowId, int stepCount)
