@@ -89,28 +89,42 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
             ? scenes
             : scenes.Where(scene => SceneIntersectsExtent(scene, filter)).ToList();
 
-        var offset = Math.Max(0, request.ResultOffset);
-        var count = request.ResultRecordCount;
+        // Geospatial.Grpc 0.2.0-alpha.1 retired result_offset / result_record_count on
+        // ListScenesRequest in favour of page_size plus an opaque page_token, and replaced
+        // ListScenesResponse.exceeded_transfer_limit with next_page_token. The catalog is a
+        // stably ordered in-memory merge, so the token is an encoded offset (SceneCatalogPageToken).
+        if (!SceneCatalogPageToken.TryDecode(request.PageToken, out var offset))
+        {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.ListScenesOperation, "page_token is not a valid continuation token.");
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "page_token is not a valid continuation token."));
+        }
+
+        var count = request.PageSize;
 
         // Intentional protocol divergence (documented per CLAUDE.md "If a protocol
         // intentionally diverges ... document why in code and add direct
-        // endpoint-level tests"): the proto comments result_record_count's zero as
+        // endpoint-level tests"): the proto comments page_size's zero as
         // "server default", but the scene catalog is a small, bounded set of
-        // published scenes (not an unbounded feature table), so a zero/unset count
+        // published scenes (not an unbounded feature table), so a zero/unset size
         // returns the entire catalog rather than imposing an arbitrary default page
         // size. This keeps a typical "list all my scenes" call complete in one round
-        // trip. Covered by ListScenes_ZeroResultRecordCount_ReturnsEntireCatalog.
+        // trip. Covered by ListScenes_ZeroPageSize_ReturnsEntireCatalog.
         IEnumerable<Proto.SceneMetadata> page = ordered.Skip(offset);
         if (count > 0)
         {
             page = page.Take(count);
         }
 
-        var response = new Proto.ListScenesResponse
-        {
-            ExceededTransferLimit = count > 0 && ordered.Count > offset + count,
-        };
+        var response = new Proto.ListScenesResponse();
         response.Scenes.AddRange(page);
+
+        // Only a bounded page can have a successor: an unbounded (page_size <= 0) call
+        // already returned the whole remaining catalog.
+        if (count > 0 && ordered.Count > offset + count)
+        {
+            response.NextPageToken = SceneCatalogPageToken.Encode(offset + count);
+        }
+
         activity?.SetTag(SceneGrpcTelemetry.SceneCountTag, response.Scenes.Count);
         return response;
     }

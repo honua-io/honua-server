@@ -218,7 +218,7 @@ public sealed class EvalRunner
         };
     }
 
-    private async Task<(EvalStageOutcome Stage, Proto.ValidatePlanResponse? Response)> RunValidatePlanAsync(
+    private async Task<(EvalStageOutcome Stage, Proto.ValidateResponse? Response)> RunValidatePlanAsync(
         EvalScenario scenario,
         Proto.ProcessService.ProcessServiceClient client,
         AnalysisPlan domainPlan,
@@ -275,7 +275,7 @@ public sealed class EvalRunner
         }
     }
 
-    private async Task<(EvalStageOutcome Stage, Proto.DryRunPlanResponse? Response)> RunDryRunAsync(
+    private async Task<(EvalStageOutcome Stage, Proto.DryRunResponse? Response)> RunDryRunAsync(
         EvalScenario scenario,
         Proto.ProcessService.ProcessServiceClient client,
         AnalysisPlan domainPlan,
@@ -412,7 +412,7 @@ public sealed class EvalRunner
 
     private async Task<EvalProtocolParityOutcome> RunProtocolParityAsync(
         EvalScenario scenario,
-        Proto.ValidatePlanResponse? grpcValidate,
+        Proto.ValidateResponse? grpcValidate,
         CancellationToken cancellationToken)
     {
         using var activity = ActivitySource.StartActivity("eval.stage.protocol_parity");
@@ -543,7 +543,7 @@ public sealed class EvalRunner
     // Protocol parity probes
     // -----------------------------------------------------------------------
 
-    private static EvalProtocolProbe BuildGrpcValidateProbe(Proto.ValidatePlanResponse? response, bool expectedExecutable)
+    private static EvalProtocolProbe BuildGrpcValidateProbe(Proto.ValidateResponse? response, bool expectedExecutable)
     {
         if (response == null)
         {
@@ -846,7 +846,7 @@ public sealed class EvalRunner
 
     private static ExecutionSkipReason? ResolveSubmitSkipReason(
         EvalExpectedOutcome expected,
-        (EvalStageOutcome Stage, Proto.ValidatePlanResponse? Response) validateOutcome)
+        (EvalStageOutcome Stage, Proto.ValidateResponse? Response) validateOutcome)
     {
         if (validateOutcome.Response is null || validateOutcome.Stage.Status != EvalStageStatus.Passed)
         {

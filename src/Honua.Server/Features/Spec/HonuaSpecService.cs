@@ -152,14 +152,22 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
                 $"{primary.Code}: {primary.Message}"));
         }
 
-        // Surface the apply token as initial response metadata so clients can
+        // Surface the apply run's id as initial response metadata so clients can
         // correlate with CancelApply (gRPC) or /v1/spec/cancel (REST) while the
         // stream is still active. gRPC trailers are only delivered when the
         // RPC closes, so a client that keyed off trailers could not cancel an
         // in-flight run — initial metadata is flushed before the first event.
+        //
+        // Geospatial.Grpc 0.2.0-alpha.1 renamed the in-band carrier of this value
+        // (ApplySpecEvent.apply_token -> ApplySpecEvent.job_id, CancelApplyRequest.apply_token
+        // -> CancelJobRequest.job_id). The metadata key is a Honua-side header, not part of the
+        // proto, and the REST cancel endpoint still spells it "apply token", so the existing
+        // x-spec-apply-token key is kept for continuity; x-spec-job-id is emitted alongside it
+        // under the new vocabulary. Both carry the identical value.
         var initialMetadata = new Metadata
         {
-            { "x-spec-apply-token", handle.ApplyToken }
+            { "x-spec-apply-token", handle.ApplyToken },
+            { "x-spec-job-id", handle.ApplyToken }
         };
         await context.WriteResponseHeadersAsync(initialMetadata).ConfigureAwait(false);
 
@@ -173,20 +181,35 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
         }
     }
 
-    public override Task<Proto.CancelApplyResponse> CancelApply(
-        Proto.CancelApplyRequest request,
+    /// <summary>
+    /// Cooperatively cancels an in-flight apply run.
+    /// </summary>
+    /// <remarks>
+    /// Geospatial.Grpc 0.2.0-alpha.1 converged this RPC onto the shared job-control messages:
+    /// it now takes <c>CancelJobRequest.job_id</c> (the value previously sent as
+    /// <c>apply_token</c>) and returns <c>CancelJobResponse</c>, which carries a
+    /// <c>JobState</c> instead of the old <c>bool cancelled</c>. There is no boolean left to
+    /// carry "no such run", so an accepted cancellation reports
+    /// <c>JOB_STATE_CANCELLED</c> and an unknown or already-terminal run reports
+    /// <c>JOB_STATE_UNSPECIFIED</c> — the server declines to assert a state for a run it does
+    /// not hold. The call stays non-faulting either way, matching the previous
+    /// <c>cancelled = false</c> behaviour rather than turning a no-op cancel into a NotFound.
+    /// </remarks>
+    public override Task<Proto.CancelJobResponse> CancelApply(
+        Proto.CancelJobRequest request,
         ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (string.IsNullOrEmpty(request.ApplyToken))
+        if (string.IsNullOrEmpty(request.JobId))
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "apply_token is required"));
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
         }
 
-        var cancelled = _applyEngine.TryCancel(request.ApplyToken);
-        return Task.FromResult(new Proto.CancelApplyResponse
+        var cancelled = _applyEngine.TryCancel(request.JobId);
+        return Task.FromResult(new Proto.CancelJobResponse
         {
-            Cancelled = cancelled
+            JobId = request.JobId,
+            State = cancelled ? Proto.JobState.Cancelled : Proto.JobState.Unspecified
         });
     }
 }

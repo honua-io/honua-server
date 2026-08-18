@@ -196,115 +196,131 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_ZeroResultRecordCount_ReturnsEntireCatalog()
+    public async Task ListScenes_ZeroPageSize_ReturnsEntireCatalog()
     {
-        // Documented intentional divergence: the proto comments result_record_count
-        // zero as "server default", but the adapter treats 0/unset as "no limit"
-        // because the scene catalog is a small bounded set. A request that leaves
-        // the count unset (0) must return every scene, never an arbitrary default
-        // page, and must not flag ExceededTransferLimit.
+        // Documented intentional divergence: the proto comments page_size zero as
+        // "server default", but the adapter treats 0/unset as "no limit" because the
+        // scene catalog is a small bounded set. A request that leaves the size unset
+        // (0) must return every scene, never an arbitrary default page, and must not
+        // hand back a continuation token.
         var total = (await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultRecordCount = 0 },
+            new Proto.ListScenesRequest { PageSize = 0 },
             _headers)).Scenes.Count;
 
         // The total here equals the count returned by an explicit page sized to the
         // catalog, confirming 0 imposed no cap.
         var explicitFull = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultRecordCount = total },
+            new Proto.ListScenesRequest { PageSize = total },
             _headers);
 
         total.Should().BeGreaterThan(0);
         explicitFull.Scenes.Count.Should().Be(total);
 
         var zeroCount = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultRecordCount = 0 },
+            new Proto.ListScenesRequest { PageSize = 0 },
             _headers);
         zeroCount.Scenes.Count.Should().Be(total);
-        zeroCount.ExceededTransferLimit.Should().BeFalse(
-            "a zero/unset result_record_count imposes no cap, so the transfer limit is never exceeded.");
+        zeroCount.NextPageToken.Should().BeEmpty(
+            "a zero/unset page_size imposes no cap, so there is never a next page.");
     }
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_WithResultRecordCountBelowTotal_PagesAndSetsExceededTransferLimit()
+    public async Task ListScenes_WithPageSizeBelowTotal_PagesAndSetsNextPageToken()
     {
         // The fixture registers at least three scenes (two config + one DB-backed
-        // extent scene), so a page size of 1 must return a single scene and flag
-        // that more records remain.
+        // extent scene), so a page size of 1 must return a single scene and hand
+        // back a continuation token.
         var response = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultRecordCount = 1 },
+            new Proto.ListScenesRequest { PageSize = 1 },
             _headers);
 
         response.Scenes.Should().ContainSingle();
-        response.ExceededTransferLimit.Should().BeTrue();
+        response.NextPageToken.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_WithResultRecordCountEqualToTotal_DoesNotSetExceededTransferLimit()
+    public async Task ListScenes_WithPageSizeEqualToTotal_DoesNotSetNextPageToken()
     {
         var total = (await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers)).Scenes.Count;
 
         var response = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultRecordCount = total },
+            new Proto.ListScenesRequest { PageSize = total },
             _headers);
 
         response.Scenes.Count.Should().Be(total);
-        response.ExceededTransferLimit.Should().BeFalse();
+        response.NextPageToken.Should().BeEmpty();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_WithResultOffsetPastEnd_ReturnsEmptyPage()
+    public async Task ListScenes_FollowingNextPageToken_WalksTheWholeCatalogExactlyOnce()
     {
-        var response = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultOffset = 10_000 },
+        // Geospatial.Grpc 0.2.0-alpha.1 replaced result_offset/result_record_count with
+        // page_size + opaque page_token. Walking the catalog one scene at a time must
+        // visit every scene exactly once, in the same order as the unpaged listing, and
+        // terminate with an empty token rather than looping or repeating a page.
+        var unpaged = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers);
+        unpaged.Scenes.Count.Should().BeGreaterThan(1);
+
+        var walked = new List<string>();
+        var token = string.Empty;
+        for (var guard = 0; guard <= unpaged.Scenes.Count; guard++)
+        {
+            var page = await _sceneClient!.ListScenesAsync(
+                new Proto.ListScenesRequest { PageSize = 1, PageToken = token },
+                _headers);
+
+            walked.AddRange(page.Scenes.Select(scene => scene.SceneId));
+            token = page.NextPageToken;
+            if (string.IsNullOrEmpty(token))
+            {
+                break;
+            }
+        }
+
+        token.Should().BeEmpty("the walk must terminate once the catalog is exhausted.");
+        walked.Should().Equal(unpaged.Scenes.Select(scene => scene.SceneId));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_WithMalformedPageToken_ReturnsInvalidArgument()
+    {
+        // page_token is opaque and server-issued; a token this server did not mint is a
+        // client error, not a silently-ignored first page.
+        var act = async () => await _sceneClient!.ListScenesAsync(
+            new Proto.ListScenesRequest { PageToken = "not-a-token" },
             _headers);
 
-        response.Scenes.Should().BeEmpty();
-        response.ExceededTransferLimit.Should().BeFalse();
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_WithNegativeResultRecordCount_ReturnsEntireCatalog()
+    public async Task ListScenes_WithNegativePageSize_ReturnsEntireCatalog()
     {
-        // A negative result_record_count is a reachable proto int32 input. The
-        // adapter's `if (count > 0)` guard means a negative count falls through
-        // and imposes NO cap (same as zero/unset), returning the entire catalog
-        // without flagging ExceededTransferLimit. Pin that clamp-to-no-cap
-        // behavior so a regression that threw or returned an empty page is caught.
+        // A negative page_size is a reachable proto int32 input. The adapter's
+        // `if (count > 0)` guard means a negative size falls through and imposes NO cap
+        // (same as zero/unset), returning the entire catalog without a continuation
+        // token. Pin that clamp-to-no-cap behavior so a regression that threw or
+        // returned an empty page is caught.
         var total = (await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers)).Scenes.Count;
         total.Should().BeGreaterThan(0);
 
         var response = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultRecordCount = -1 },
+            new Proto.ListScenesRequest { PageSize = -1 },
             _headers);
 
         response.Scenes.Count.Should().Be(total);
-        response.ExceededTransferLimit.Should().BeFalse();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GetServiceInfo)]
-    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_WithNegativeResultOffset_ClampsToZeroAndReturnsEntireCatalog()
-    {
-        // A negative result_offset is clamped to 0 via Math.Max(0, ...), so it
-        // behaves like no offset and returns the full catalog from the start.
-        var total = (await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers)).Scenes.Count;
-        total.Should().BeGreaterThan(0);
-
-        var response = await _sceneClient!.ListScenesAsync(
-            new Proto.ListScenesRequest { ResultOffset = -1 },
-            _headers);
-
-        response.Scenes.Count.Should().Be(total);
-        response.ExceededTransferLimit.Should().BeFalse();
+        response.NextPageToken.Should().BeEmpty();
     }
 
     [IntegrationTest]

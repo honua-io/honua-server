@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Google.Protobuf;
+using Grpc.Core;
 using Google.Protobuf.Collections;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -35,6 +36,31 @@ internal static class GrpcConversionHelpers
     private static WKBWriter WkbWriter => _wkbWriter ??= new WKBWriter();
 
     /// <summary>
+    /// Narrows an <c>int64</c> pagination value from <c>QueryFeaturesRequest</c> to the
+    /// <c>int</c> the query pipeline uses.
+    /// </summary>
+    /// <remarks>
+    /// Geospatial.Grpc 0.2.0-alpha.1 retired the <c>int32 result_offset</c> (8) and
+    /// <c>int32 result_record_count</c> (9) fields and replaced them with the <c>int64</c>
+    /// <c>result_offset_long</c> (20) and <c>result_record_count_long</c> (21). The domain
+    /// <see cref="FeatureQuery"/> and the pagination validator are <c>int</c>-based, so a value
+    /// beyond <see cref="int.MaxValue"/> is rejected at the transport boundary rather than
+    /// wrapping into a negative offset. Negative values pass through unchanged so the existing
+    /// pagination validator keeps producing its own diagnostic for them.
+    /// </remarks>
+    public static int NarrowPagination(long value, string fieldName)
+    {
+        if (value is > int.MaxValue or < int.MinValue)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{fieldName} must be between {int.MinValue} and {int.MaxValue}."));
+        }
+
+        return (int)value;
+    }
+
+    /// <summary>
     /// Converts a proto QueryFeaturesRequest into a domain FeatureQuery.
     /// </summary>
     public static FeatureQuery ToFeatureQuery(Proto.QueryFeaturesRequest request)
@@ -46,8 +72,8 @@ internal static class GrpcConversionHelpers
                 ? request.ObjectIds.ToImmutableArray()
                 : null,
             OutFields = NormalizeOutFields(request.OutFields),
-            Offset = request.ResultOffset > 0 ? request.ResultOffset : null,
-            Limit = request.ResultRecordCount > 0 ? request.ResultRecordCount : null,
+            Offset = NarrowPagination(request.ResultOffsetLong, "result_offset_long") is int o and > 0 ? o : null,
+            Limit = NarrowPagination(request.ResultRecordCountLong, "result_record_count_long") is int l and > 0 ? l : null,
             OutputSrid = TryResolveOutputSrid(request.OutSr),
             Distinct = request.ReturnDistinct,
             SpatialFilter = request.SpatialFilter != null
@@ -147,10 +173,11 @@ internal static class GrpcConversionHelpers
 
         if (result.WasRolledBack && (response.AddResults.Count > 0 || response.UpdateResults.Count > 0 || response.DeleteResults.Count > 0))
         {
-            response.Error = new Proto.EditError
+            response.Error = new Proto.ErrorDetail
             {
                 Code = 1000,
-                Message = "Operation rolled back."
+                Message = "Operation rolled back.",
+                Category = Proto.ErrorCategory.Execution
             };
         }
 
@@ -454,10 +481,11 @@ internal static class GrpcConversionHelpers
 
         if (!result.IsSuccess)
         {
-            proto.Error = new Proto.EditError
+            proto.Error = new Proto.ErrorDetail
             {
                 Code = result.ErrorCode,
-                Message = result.ErrorMessage ?? "Edit operation failed."
+                Message = result.ErrorMessage ?? "Edit operation failed.",
+                Category = Proto.ErrorCategory.Execution
             };
         }
 

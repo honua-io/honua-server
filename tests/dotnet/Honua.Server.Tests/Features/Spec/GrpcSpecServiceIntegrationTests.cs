@@ -109,11 +109,14 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
         var tokenEntry = headers.GetValue("x-spec-apply-token");
         tokenEntry.Should().NotBeNullOrEmpty();
 
+        // Geospatial.Grpc 0.2.0-alpha.1 reserved ApplySpecEvent.apply_token and replaced it
+        // with job_id; the value is unchanged, and the adapter emits it under both the legacy
+        // and the new metadata key so REST/gRPC clients keep correlating interchangeably.
+        headers.GetValue("x-spec-job-id").Should().Be(tokenEntry);
+
         await foreach (var evt in call.ResponseStream.ReadAllAsync())
         {
-            // The token on each event must match the one surfaced in initial
-            // metadata so REST/gRPC clients can correlate interchangeably.
-            evt.ApplyToken.Should().Be(tokenEntry);
+            evt.JobId.Should().Be(tokenEntry);
         }
     }
 
@@ -135,14 +138,14 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             Id = "a",
             Kind = Proto.SpecResourceKind.Compute,
             Op = "compute.noop",
-            Inputs = { ["src"] = "@b" }
+            Inputs = { ["src"] = StringParameter("@b") }
         });
         document.Nodes.Add(new Proto.CanonicalSpecNode
         {
             Id = "b",
             Kind = Proto.SpecResourceKind.Compute,
             Op = "compute.noop",
-            Inputs = { ["src"] = "@a" }
+            Inputs = { ["src"] = StringParameter("@a") }
         });
 
         var request = new Proto.ApplySpecRequest { Document = document };
@@ -218,14 +221,14 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             Id = "a",
             Kind = Proto.SpecResourceKind.Compute,
             Op = "compute.noop",
-            Inputs = { ["src"] = "@b" }
+            Inputs = { ["src"] = StringParameter("@b") }
         });
         document.Nodes.Add(new Proto.CanonicalSpecNode
         {
             Id = "b",
             Kind = Proto.SpecResourceKind.Compute,
             Op = "compute.noop",
-            Inputs = { ["src"] = "@a" }
+            Inputs = { ["src"] = StringParameter("@a") }
         });
 
         var request = new Proto.PlanSpecRequest { Document = document };
@@ -552,27 +555,40 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/CancelApply")]
-    public async Task CancelApply_UnknownToken_ReturnsCancelledFalse()
+    public async Task CancelApply_UnknownJobId_ReturnsUnspecifiedState()
     {
-        var request = new Proto.CancelApplyRequest { ApplyToken = "does-not-exist" };
+        // CancelJobResponse has no `cancelled` boolean (Geospatial.Grpc 0.2.0-alpha.1 replaced
+        // CancelApplyResponse with the shared message). A run the server does not hold reports
+        // JOB_STATE_UNSPECIFIED rather than faulting, preserving the previous non-faulting
+        // "cancelled = false" outcome.
+        var request = new Proto.CancelJobRequest { JobId = "does-not-exist" };
 
         var response = await _client.CancelApplyAsync(request);
 
-        response.Cancelled.Should().BeFalse();
+        response.JobId.Should().Be("does-not-exist");
+        response.State.Should().Be(Proto.JobState.Unspecified);
     }
 
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
-    public async Task CancelApply_EmptyToken_ReturnsInvalidArgument()
+    public async Task CancelApply_EmptyJobId_ReturnsInvalidArgument()
     {
-        var request = new Proto.CancelApplyRequest { ApplyToken = string.Empty };
+        var request = new Proto.CancelJobRequest { JobId = string.Empty };
 
         var act = async () => await _client.CancelApplyAsync(request);
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
+
+    /// <summary>
+    /// Wraps a spec fragment in the <c>ParameterValue.string_value</c> branch. Geospatial.Grpc
+    /// 0.2.0-alpha.1 retyped <c>CanonicalSpecNode.inputs</c> / <c>.parameters</c> from
+    /// <c>map&lt;string, string&gt;</c> to <c>map&lt;string, ParameterValue&gt;</c>.
+    /// </summary>
+    private static Proto.ParameterValue StringParameter(string value)
+        => new() { StringValue = value };
 
     private static Proto.CanonicalSpecDocument BuildDocument(string nodeId)
     {
