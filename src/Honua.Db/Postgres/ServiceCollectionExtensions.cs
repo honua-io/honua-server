@@ -550,7 +550,23 @@ internal static class ServiceCollectionExtensions
                         ignoreCase: true,
                         out var geometryValidityMode)
                             ? geometryValidityMode
-                            : limits.GeometryValidityMode
+                            : limits.GeometryValidityMode,
+                    // #3315: the six keys below were declared on ImportLimits but never read
+                    // here, so operators who tightened them saw no effect. Every settable
+                    // property of the record must be assigned in this initializer; the
+                    // HandParsedConfigurationSectionTests architecture guard enforces that.
+                    MaxVertices = ParsePositiveIntOrDefault(section["MaxVertices"], limits.MaxVertices),
+                    MaxRings = ParsePositiveIntOrDefault(section["MaxRings"], limits.MaxRings),
+                    MaxWkbSize = ParsePositiveLongOrDefault(section["MaxWkbSize"], limits.MaxWkbSize),
+                    MaxSingleFeatureBytes = ParsePositiveLongOrDefault(
+                        section["MaxSingleFeatureBytes"],
+                        limits.MaxSingleFeatureBytes),
+                    ValidateGeometry = bool.TryParse(section["ValidateGeometry"], out var validateGeometry)
+                        ? validateGeometry
+                        : limits.ValidateGeometry,
+                    SkipInvalidGeometry = bool.TryParse(section["SkipInvalidGeometry"], out var skipInvalidGeometry)
+                        ? skipInvalidGeometry
+                        : limits.SkipInvalidGeometry
                 };
             }
 
