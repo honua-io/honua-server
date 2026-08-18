@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
+  "trackingIssue": "honua-release#100",
+  "description": "Hand-maintained, reviewed DEMOTION-ONLY maturity table for capability keys whose feature-catalog entries would otherwise project the default `implemented` tier. It exists because the only runtime maturity lever (a CapabilityRegistry CapabilityDescriptor read through CapabilityGateResolver) reaches just the ~30 curated /mcp + honua.capability_manifest.v1 ids, so a key outside that roster had no way to express 'shipped, but not advertised as GA in this release' — the gap docs/gis/capability-ga-regrade-2026-07.md recorded as a documentation-only demotion for want of a lever. Rows are applied per capability key by FeatureCatalogGenerator.ResolveMaturity, which takes the LOWER of the registry-resolved tier and the tier named here: an override can only demote, never promote, so it can never be used to advertise a capability as more mature than the live registry says. Adding a row changes what the capability matrix reports (docs/gis/data/capability-matrix.v1.json rolls the per-entry tiers up into `maturity`, and honua-release's tools/check_ga_surface.py treats a key with `maturity.implemented == 0` as not advertised GA). It changes NO runtime behaviour: the routes stay registered, gated and served exactly as before. Drift-gated by CapabilityKeyDriftTests.",
+  "maturityTiers": {
+    "planned": "Planned but not yet built; declared for roadmap visibility only.",
+    "deferred": "Deferred out of the current release scope by an owner decision; present and serving on trunk but not advertised as part of this release's GA surface.",
+    "experimental": "Implemented but off by default and gated behind an explicitly-named configuration flag, so it is not part of the default advertised surface.",
+    "partial": "Partially implemented — a subset of the capability is served."
+  },
+  "reasonCodes": {
+    "release-deferred": "An owner decision moved the capability out of the current release; the code ships but the claim does not.",
+    "config-gated-off-by-default": "Served only when a named, default-off configuration flag is set; not part of the default advertised surface."
+  },
+  "overrides": [
+    {
+      "capability": "demo.showcase",
+      "maturity": "experimental",
+      "reasonCode": "config-gated-off-by-default",
+      "reason": "The cloud-demo surfaces (POST /api/v1/cloud-demo/reset, GET /api/v1/realtime/incidents/sse) are served only when CloudDemoServices:Enabled / HONUA_CLOUD_DEMO_ENABLED is set — CloudDemoConfiguration.IsEnabled defaults to false, and CloudDemoEndpoints short-circuits every request when it is off. They exist to drive demo.honua.io, are described in CapabilityKeyCatalog as 'non-sellable demo/showcase endpoints', and are not a product capability: advertising them as GA puts the demo on the same footing as serve.wms in the capability manifest. NOTE: the gating flag is the CloudDemoServices section, NOT the Capabilities:Experimental:{id}:Enabled capability flag — demo.showcase has no CapabilityRegistry descriptor.",
+      "decision": "honua-release#100 (release-lead disposition, 2026-08)"
+    },
+    {
+      "capability": "scene.catalog",
+      "maturity": "deferred",
+      "reasonCode": "release-deferred",
+      "reason": "3D moved wholesale to 2026.2 by owner decision D0.2, so advertising a scene key as GA in 2026.1 contradicts the release ladder. The public scene-discovery routes (GET /api/scenes, /api/scenes/{sceneId}, /api/scenes/{sceneId}/resolve) stay registered, unauthenticated and serving exactly as before — this row changes the claim, not the surface. It also finally wires the demotion docs/gis/capability-ga-regrade-2026-07.md decided in #2946 and could only record as documentation-only, because scene.catalog has no CapabilityRegistry descriptor for CapabilityGateResolver to act on.",
+      "decision": "honua-release#100 / decision D0.2; see honua-release#86 and honua-server#3279 for the rest of the scene keys"
+    }
+  ]
+}

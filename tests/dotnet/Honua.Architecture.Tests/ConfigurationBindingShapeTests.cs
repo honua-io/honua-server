@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using System.Text.RegularExpressions;
 using Honua.TestKit.Attributes;
 using Xunit;
@@ -12,11 +11,18 @@ namespace Honua.Architecture.Tests;
 /// Protects source-generated configuration binding from init-only properties (#3055).
 /// </summary>
 /// <remarks>
+/// <para>
 /// Covered registration shapes: <c>Configure&lt;T&gt;(IConfiguration)</c>,
 /// <c>AddOptions&lt;T&gt;().Bind(...)</c> / <c>.BindConfiguration(...)</c> (chained or through a
 /// deferred builder local), <c>Get&lt;T&gt;()</c>, <c>GetSection(T.SectionName).Bind(instance)</c>, and
 /// <c>section.Bind(local)</c> where the local is created with <c>new T()</c>. All of these use the
 /// source-generated assignment path, which silently skips init-only properties.
+/// </para>
+/// <para>
+/// A type that is populated by a hand-rolled parser instead of a binder is NOT in scope here — it is
+/// unreachable from any binding root by construction. That shape is guarded by
+/// <see cref="HandParsedConfigurationSectionTests"/> (#3315).
+/// </para>
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class ConfigurationBindingShapeTests
@@ -54,23 +60,61 @@ public sealed partial class ConfigurationBindingShapeTests
         "SecurityHeadersOptions",
     ];
 
+    /// <summary>
+    /// Nested option graphs that the recursive walk must keep reaching (#3306). A root being
+    /// discovered is not enough — the walk has to descend through its nested option objects, which
+    /// is where the init-only properties actually hide. Each entry is a qualified type name that is
+    /// only reachable through another type's property, so if the traversal ever stops descending the
+    /// guard fails loudly instead of going quietly green over a smaller graph.
+    /// </summary>
+    private static readonly string[] AuditedNestedGraphNames =
+    [
+        // Limits -> Imports. #3306 was filed believing this reached
+        // Honua.Core.Features.Import.Domain.ImportLimits; it does not, and must not — that is a
+        // DIFFERENT, identically-named type built by a hand parser and guarded by
+        // HandParsedConfigurationSectionTests. LimitsOptions.Imports is the settable
+        // Honua.Core.Configuration.ImportLimits declared in AdvancedLimits.cs, and the walk must
+        // keep descending into it.
+        "Honua.Core.Configuration.ImportLimits",
+        "Honua.Core.Configuration.AttachmentLimits",
+        "Honua.Core.Configuration.TileLimits",
+        "Honua.Core.Configuration.ConnectionLimits",
+        "Honua.Core.Configuration.AnalyticsLimits",
+        "Honua.Core.Configuration.ElevationLimits",
+        "Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderConfiguration",
+    ];
+
+    /// <summary>
+    /// Recorded decisions for init-only types that are deliberately NOT converted to setters
+    /// (#3306 AC4). Each entry asserts the type stays OUT of the bound graph: it is a domain or
+    /// metadata record, not an options root, so <c>init</c> is correct. If a future change makes one
+    /// of these reachable from a binding root, this guard fails and forces the decision to be
+    /// re-taken — either the registration is wrong, or the record must move to ordinary setters.
+    /// </summary>
+    private static readonly Dictionary<string, string> DeliberatelyUnboundInitOnlyTypes =
+        new(StringComparer.Ordinal)
+        {
+            ["Honua.Core.Features.Security.Domain.AccessPolicy"] =
+                "Appears only as a nested property of domain/metadata records (SceneDataset, " +
+                "MetadataV2Graph, ContentPublicationPolicy), never of an options root. It is " +
+                "deserialized from metadata JSON, not bound from IConfiguration, so init-only is " +
+                "correct and PR #3113's conversion was unnecessary (#3306).",
+            ["Honua.Core.Features.Import.Domain.ImportLimits"] =
+                "Built by the hand-rolled Import:Limits parser in " +
+                "src/Honua.Db/Postgres/ServiceCollectionExtensions.cs, not by the options binder, " +
+                "so init-only is safe here. Key coverage for that parser is guarded by " +
+                "HandParsedConfigurationSectionTests (#3315).",
+        };
+
     [ArchitectureTest]
     public void ConfigureBoundOptionGraphs_MustNotDeclareInitOnlyProperties()
     {
-        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var sourceRoot = ArchitectureTestHelpers.CombinePath(repositoryRoot, "src");
-        var sources = Directory
-            .EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsBuildArtifact(path))
-            .ToDictionary(
-                path => Path.GetRelativePath(repositoryRoot, path).Replace('\\', '/'),
-                File.ReadAllText,
-                StringComparer.Ordinal);
+        var sources = ConfigurationSourceModel.LoadSourceFiles();
 
-        var typesByName = ParseTypes(sources);
+        var typesByName = ConfigurationSourceModel.ParseTypes(sources);
         var boundRootNames = DiscoverConfigurationBoundRoots(sources.Values, typesByName);
         var boundRootSimpleNames = boundRootNames
-            .Select(SimpleTypeName)
+            .Select(ConfigurationSourceModel.SimpleTypeName)
             .ToHashSet(StringComparer.Ordinal);
         foreach (var auditedRootName in AuditedRootNames)
         {
@@ -82,12 +126,18 @@ public sealed partial class ConfigurationBindingShapeTests
         Assert.Contains("Honua.Core.Features.Infrastructure.Domain.QueryCacheOptions", boundRootNames);
         Assert.DoesNotContain("Honua.Infrastructure.Caching.QueryCacheOptions", boundRootNames);
 
-        var pending = new Stack<TypeShape>(
+        var pending = new Stack<ConfigurationSourceModel.TypeShape>(
             typesByName.Values
                 .SelectMany(static shapes => shapes)
                 .Where(shape => boundRootNames.Contains(shape.QualifiedName)));
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var violations = new SortedSet<string>(StringComparer.Ordinal);
+
+        // #3306: a property whose simple type name matches several declarations that neither the
+        // declaring namespace nor the file's imports disambiguate used to be dropped silently, so
+        // the walk could stop early and stay green over a graph it never actually inspected. Such a
+        // reference is now collected and reported rather than skipped.
+        var unresolvable = new SortedSet<string>(StringComparer.Ordinal);
 
         while (pending.TryPop(out var typeShape))
         {
@@ -103,28 +153,78 @@ public sealed partial class ConfigurationBindingShapeTests
                     violations.Add($"{typeShape.Path}: {typeShape.QualifiedName}.{property.Name}");
                 }
 
-                foreach (var referencedType in ResolveReferencedTypes(property.TypeName, typeShape, typesByName))
+                foreach (var candidateName in ConfigurationSourceModel
+                             .QualifiedTypeIdentifierPattern()
+                             .Matches(property.TypeName)
+                             .Select(match => match.Value)
+                             .Distinct(StringComparer.Ordinal))
                 {
-                    pending.Push(referencedType);
+                    if (!typesByName.ContainsKey(
+                            ConfigurationSourceModel.SimpleTypeName(candidateName)))
+                    {
+                        continue;
+                    }
+
+                    var referencedTypes = ConfigurationSourceModel.ResolveDeclaredTypes(
+                        candidateName,
+                        typeShape.Namespace,
+                        typeShape.UsingNamespaces,
+                        typesByName,
+                        out var ambiguous);
+                    if (ambiguous)
+                    {
+                        unresolvable.Add(
+                            $"{typeShape.QualifiedName}.{property.Name} -> {candidateName}");
+                        continue;
+                    }
+
+                    foreach (var referencedType in referencedTypes)
+                    {
+                        pending.Push(referencedType);
+                    }
                 }
             }
 
             foreach (var baseTypeName in typeShape.BaseTypeNames)
             {
-                foreach (var baseType in ResolveDeclaredTypes(
-                             baseTypeName,
-                             typeShape.Namespace,
-                             typeShape.UsingNamespaces,
-                             typesByName))
+                var baseTypes = ConfigurationSourceModel.ResolveDeclaredTypes(
+                    baseTypeName,
+                    typeShape.Namespace,
+                    typeShape.UsingNamespaces,
+                    typesByName,
+                    out var ambiguousBase);
+                if (ambiguousBase)
+                {
+                    unresolvable.Add($"{typeShape.QualifiedName} : {baseTypeName}");
+                    continue;
+                }
+
+                foreach (var baseType in baseTypes)
                 {
                     pending.Push(baseType);
                 }
             }
         }
 
-        Assert.Contains(
-            "Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderConfiguration",
-            visited);
+        foreach (var nestedGraphName in AuditedNestedGraphNames)
+        {
+            Assert.Contains(nestedGraphName, visited);
+        }
+
+        foreach (var (typeName, reason) in DeliberatelyUnboundInitOnlyTypes)
+        {
+            Assert.False(
+                visited.Contains(typeName),
+                $"{typeName} is now reachable from a configuration binding root, but it was recorded " +
+                $"as deliberately init-only: {reason} Either the new registration is wrong, or the " +
+                "type must move to ordinary setters and lose its entry here.");
+        }
+
+        Assert.True(
+            unresolvable.Count == 0,
+            "The reachability walk could not resolve these property/base types, so part of a bound " +
+            "option graph was never inspected (#3306). Qualify the type name at the declaration " +
+            "site so the walk can follow it: " + string.Join(", ", unresolvable));
 
         Assert.True(
             violations.Count == 0,
@@ -136,16 +236,13 @@ public sealed partial class ConfigurationBindingShapeTests
 
     private static HashSet<string> DiscoverConfigurationBoundRoots(
         IEnumerable<string> sources,
-        IReadOnlyDictionary<string, List<TypeShape>> typesByName)
+        IReadOnlyDictionary<string, List<ConfigurationSourceModel.TypeShape>> typesByName)
     {
         var roots = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var source in sources.Select(StripCommentsAndLiterals))
+        foreach (var source in sources.Select(ConfigurationSourceModel.StripCommentsAndLiterals))
         {
-            var namespaceName = NamespacePattern().Match(source).Groups["namespace"].Value;
-            var usingNamespaces = UsingNamespacePattern()
-                .Matches(source)
-                .Select(match => match.Groups["namespace"].Value)
-                .ToHashSet(StringComparer.Ordinal);
+            var namespaceName = ConfigurationSourceModel.MatchNamespace(source);
+            var usingNamespaces = ConfigurationSourceModel.MatchUsingNamespaces(source);
             var candidateTypeNames = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (Match match in ChainedAddOptionsPattern()
@@ -174,7 +271,10 @@ public sealed partial class ConfigurationBindingShapeTests
                              Tail = match.Groups["tail"].Value
                          })
                          .Where(candidate =>
-                             !string.Equals(SimpleTypeName(candidate.Name), "TOptions", StringComparison.Ordinal) &&
+                             !string.Equals(
+                                 ConfigurationSourceModel.SimpleTypeName(candidate.Name),
+                                 "TOptions",
+                                 StringComparison.Ordinal) &&
                              ContainsConfigurationBind(candidate.Tail))
                          .Select(candidate => candidate.Name))
             {
@@ -216,7 +316,11 @@ public sealed partial class ConfigurationBindingShapeTests
                 .SelectMany(argument => newInstanceTypesByVariable[argument]));
 
             roots.UnionWith(candidateTypeNames.SelectMany(typeName =>
-                ResolveDeclaredTypes(typeName, namespaceName, usingNamespaces, typesByName))
+                ConfigurationSourceModel.ResolveDeclaredTypes(
+                    typeName,
+                    namespaceName,
+                    usingNamespaces,
+                    typesByName))
                 .Select(shape => shape.QualifiedName));
         }
 
@@ -231,371 +335,6 @@ public sealed partial class ConfigurationBindingShapeTests
                invocationTail.Contains("GetSection(", StringComparison.Ordinal) ||
                string.Equals(trimmed, "section", StringComparison.Ordinal) ||
                string.Equals(trimmed, "localSection", StringComparison.Ordinal);
-    }
-
-    private static Dictionary<string, List<TypeShape>> ParseTypes(
-        IReadOnlyDictionary<string, string> sources)
-    {
-        var typesByName = new Dictionary<string, List<TypeShape>>(StringComparer.Ordinal);
-        foreach (var (path, source) in sources.Select(pair =>
-                     (pair.Key, Source: StripCommentsAndLiterals(pair.Value))))
-        {
-            var namespaceName = NamespacePattern().Match(source).Groups["namespace"].Value;
-            var usingNamespaces = UsingNamespacePattern()
-                .Matches(source)
-                .Select(match => match.Groups["namespace"].Value)
-                .ToHashSet(StringComparer.Ordinal);
-
-            foreach (Match typeMatch in TypeDeclarationPattern().Matches(source))
-            {
-                var openBrace = typeMatch.Groups["brace"].Index;
-                var closeBrace = FindMatchingBrace(source, openBrace);
-                if (closeBrace < 0)
-                {
-                    continue;
-                }
-
-                var body = source[(openBrace + 1)..closeBrace];
-                var properties = new List<PropertyShape>();
-                foreach (Match propertyMatch in AutoPropertyPattern()
-                             .Matches(body)
-                             .Where(propertyMatch => BraceDepthAt(body, propertyMatch.Index) == 0))
-                {
-                    properties.Add(new PropertyShape(
-                        propertyMatch.Groups["name"].Value,
-                        propertyMatch.Groups["type"].Value,
-                        string.Equals(
-                            propertyMatch.Groups["setter"].Value,
-                            "init",
-                            StringComparison.Ordinal)));
-                }
-
-                var declarationTail = typeMatch.Groups["tail"].Value;
-                var baseClauseSeparator = declarationTail.IndexOf(':', StringComparison.Ordinal);
-                var baseTypeNames = baseClauseSeparator < 0
-                    ? []
-                    : QualifiedTypeIdentifierPattern()
-                        .Matches(declarationTail[(baseClauseSeparator + 1)..])
-                        .Select(match => match.Value)
-                        .Distinct(StringComparer.Ordinal)
-                        .ToArray();
-
-                var typeName = typeMatch.Groups["name"].Value;
-                if (!typesByName.TryGetValue(typeName, out var shapes))
-                {
-                    shapes = [];
-                    typesByName.Add(typeName, shapes);
-                }
-
-                shapes.Add(new TypeShape(
-                    typeName,
-                    namespaceName,
-                    path,
-                    usingNamespaces,
-                    baseTypeNames,
-                    properties));
-            }
-        }
-
-        return typesByName;
-    }
-
-    private static IEnumerable<TypeShape> ResolveReferencedTypes(
-        string propertyTypeName,
-        TypeShape declaringType,
-        IReadOnlyDictionary<string, List<TypeShape>> typesByName)
-    {
-        foreach (var candidateName in QualifiedTypeIdentifierPattern()
-                     .Matches(propertyTypeName)
-                     .Select(match => match.Value)
-                     .Distinct(StringComparer.Ordinal))
-        {
-            var simpleName = SimpleTypeName(candidateName);
-            if (!typesByName.TryGetValue(simpleName, out var shapes))
-            {
-                continue;
-            }
-
-            foreach (var shape in ResolveDeclaredTypes(
-                         candidateName,
-                         declaringType.Namespace,
-                         declaringType.UsingNamespaces,
-                         typesByName))
-            {
-                yield return shape;
-            }
-        }
-    }
-
-    private static IEnumerable<TypeShape> ResolveDeclaredTypes(
-        string candidateName,
-        string preferredNamespace,
-        IReadOnlySet<string> usingNamespaces,
-        IReadOnlyDictionary<string, List<TypeShape>> typesByName)
-    {
-        var simpleName = SimpleTypeName(candidateName);
-        if (!typesByName.TryGetValue(simpleName, out var shapes))
-        {
-            return [];
-        }
-
-        if (candidateName.Contains('.', StringComparison.Ordinal))
-        {
-            return shapes.Where(shape =>
-                string.Equals(shape.QualifiedName, candidateName, StringComparison.Ordinal));
-        }
-
-        var sameNamespace = shapes
-            .Where(shape => string.Equals(shape.Namespace, preferredNamespace, StringComparison.Ordinal))
-            .ToArray();
-        if (sameNamespace.Length > 0)
-        {
-            return sameNamespace;
-        }
-
-        var imported = shapes
-            .Where(shape => usingNamespaces.Contains(shape.Namespace))
-            .ToArray();
-        if (imported.Select(shape => shape.QualifiedName).Distinct(StringComparer.Ordinal).Count() == 1)
-        {
-            return imported;
-        }
-
-        return shapes.Select(shape => shape.QualifiedName).Distinct(StringComparer.Ordinal).Count() == 1
-            ? shapes
-            : [];
-    }
-
-    private static int FindMatchingBrace(string source, int openBrace)
-    {
-        var depth = 0;
-        for (var index = openBrace; index < source.Length; index++)
-        {
-            switch (source[index])
-            {
-                case '{':
-                    depth++;
-                    break;
-                case '}':
-                    depth--;
-                    if (depth == 0)
-                    {
-                        return index;
-                    }
-
-                    break;
-            }
-        }
-
-        return -1;
-    }
-
-    private static int BraceDepthAt(string body, int targetIndex)
-    {
-        var depth = 0;
-        for (var index = 0; index < targetIndex; index++)
-        {
-            if (body[index] == '{')
-            {
-                depth++;
-            }
-            else if (body[index] == '}')
-            {
-                depth--;
-            }
-        }
-
-        return depth;
-    }
-
-    private static bool IsBuildArtifact(string path)
-    {
-        var normalized = path.Replace('\\', '/');
-        return normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string SimpleTypeName(string typeName)
-    {
-        var separator = typeName.LastIndexOf('.');
-        return separator < 0 ? typeName : typeName[(separator + 1)..];
-    }
-
-    private static string StripCommentsAndLiterals(string source)
-    {
-        var result = new StringBuilder(source.Length);
-        for (var index = 0; index < source.Length; index++)
-        {
-            var current = source[index];
-            if (current == '/' && index + 1 < source.Length && source[index + 1] == '/')
-            {
-                AppendSpaces(result, 2);
-                index += 2;
-                while (index < source.Length && source[index] != '\n')
-                {
-                    result.Append(' ');
-                    index++;
-                }
-
-                if (index < source.Length)
-                {
-                    result.Append('\n');
-                }
-
-                continue;
-            }
-
-            if (current == '/' && index + 1 < source.Length && source[index + 1] == '*')
-            {
-                AppendSpaces(result, 2);
-                index += 2;
-                while (index < source.Length)
-                {
-                    if (source[index] == '*' && index + 1 < source.Length && source[index + 1] == '/')
-                    {
-                        AppendSpaces(result, 2);
-                        index++;
-                        break;
-                    }
-
-                    result.Append(source[index] == '\n' ? '\n' : ' ');
-                    index++;
-                }
-
-                continue;
-            }
-
-            if (current == '@' && index + 1 < source.Length && source[index + 1] == '"')
-            {
-                AppendSpaces(result, 2);
-                index += 2;
-                while (index < source.Length)
-                {
-                    if (source[index] == '"')
-                    {
-                        if (index + 1 < source.Length && source[index + 1] == '"')
-                        {
-                            AppendSpaces(result, 2);
-                            index += 2;
-                            continue;
-                        }
-
-                        result.Append(' ');
-                        break;
-                    }
-
-                    result.Append(source[index] == '\n' ? '\n' : ' ');
-                    index++;
-                }
-
-                continue;
-            }
-
-            if (current == '"')
-            {
-                var quoteCount = CountRun(source, index, '"');
-                if (quoteCount >= 3)
-                {
-                    AppendSpaces(result, quoteCount);
-                    index += quoteCount;
-                    while (index < source.Length)
-                    {
-                        var closingCount = source[index] == '"' ? CountRun(source, index, '"') : 0;
-                        if (closingCount >= quoteCount)
-                        {
-                            AppendSpaces(result, quoteCount);
-                            index += quoteCount - 1;
-                            break;
-                        }
-
-                        result.Append(source[index] == '\n' ? '\n' : ' ');
-                        index++;
-                    }
-
-                    continue;
-                }
-
-                result.Append(' ');
-                index++;
-                while (index < source.Length)
-                {
-                    if (source[index] == '\\' && index + 1 < source.Length)
-                    {
-                        AppendSpaces(result, 2);
-                        index += 2;
-                        continue;
-                    }
-
-                    result.Append(source[index] == '\n' ? '\n' : ' ');
-                    if (source[index] == '"')
-                    {
-                        break;
-                    }
-
-                    index++;
-                }
-
-                continue;
-            }
-
-            if (current == '\'')
-            {
-                result.Append(' ');
-                index++;
-                while (index < source.Length)
-                {
-                    if (source[index] == '\\' && index + 1 < source.Length)
-                    {
-                        AppendSpaces(result, 2);
-                        index += 2;
-                        continue;
-                    }
-
-                    result.Append(source[index] == '\n' ? '\n' : ' ');
-                    if (source[index] == '\'')
-                    {
-                        break;
-                    }
-
-                    index++;
-                }
-
-                continue;
-            }
-
-            result.Append(current);
-        }
-
-        return result.ToString();
-    }
-
-    private static int CountRun(string source, int start, char value)
-    {
-        var count = 0;
-        while (start + count < source.Length && source[start + count] == value)
-        {
-            count++;
-        }
-
-        return count;
-    }
-
-    private static void AppendSpaces(StringBuilder builder, int count)
-        => builder.Append(' ', count);
-
-    private sealed record PropertyShape(string Name, string TypeName, bool IsInitOnly);
-
-    private sealed record TypeShape(
-        string Name,
-        string Namespace,
-        string Path,
-        IReadOnlySet<string> UsingNamespaces,
-        IReadOnlyList<string> BaseTypeNames,
-        IReadOnlyList<PropertyShape> Properties)
-    {
-        public string QualifiedName => string.IsNullOrEmpty(Namespace)
-            ? Name
-            : $"{Namespace}.{Name}";
     }
 
     [GeneratedRegex(
@@ -629,25 +368,4 @@ public sealed partial class ConfigurationBindingShapeTests
 
     [GeneratedRegex(@"\.\s*Get\s*<\s*(?<type>[\w.]+)\s*>\s*\(\s*\)")]
     private static partial Regex GetPattern();
-
-    [GeneratedRegex(
-        @"\b(?:class|record(?:\s+class)?)\s+(?<name>[A-Za-z_]\w*)(?<tail>[^\{;]*)(?<brace>\{)",
-        RegexOptions.Singleline)]
-    private static partial Regex TypeDeclarationPattern();
-
-    [GeneratedRegex(
-        @"\bpublic\s+(?:required\s+)?(?<type>[A-Za-z_][\w.\s<>,?\[\]]*?)\s+(?<name>[A-Za-z_]\w*)\s*\{\s*get\s*;\s*(?<setter>init|set)\s*;\s*\}",
-        RegexOptions.Singleline)]
-    private static partial Regex AutoPropertyPattern();
-
-    [GeneratedRegex(@"\bnamespace\s+(?<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*[;{]")]
-    private static partial Regex NamespacePattern();
-
-    [GeneratedRegex(
-        @"^\s*using\s+(?<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;",
-        RegexOptions.Multiline)]
-    private static partial Regex UsingNamespacePattern();
-
-    [GeneratedRegex(@"\b[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*\b")]
-    private static partial Regex QualifiedTypeIdentifierPattern();
 }

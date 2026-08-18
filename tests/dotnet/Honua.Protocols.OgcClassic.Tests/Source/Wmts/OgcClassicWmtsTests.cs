@@ -929,6 +929,109 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         }
     }
 
+    // ---- OGC-native service route (/ogc/services/{serviceId}/wmts) ----
+    //
+    // honua-release#100: `serve.wmts` is the capability key behind the OGC-native service
+    // route ONLY — the /rest/services/{id}/MapServer/WMTS alias above belongs to the
+    // GeoServices MapServer key, so none of the GetTile/GetFeatureInfo depth above counts as
+    // proving evidence for `serve.wmts`. Before this block the OGC route had GetCapabilities
+    // coverage and nothing else: GetTile — the operation every WMTS client actually calls —
+    // was never exercised on the route Honua advertises as WMTS 1.0. These tests drive
+    // GetTile, GetFeatureInfo and the OWS exception path through that route with MapServer
+    // switched off, so they also prove the protocol-gated path end to end.
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    public async Task Wmts_OgcRoute_GetTile_WithWmtsEnabledAndMapServerDisabled_RendersStyledFeature()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            fixture.UpdateV2ServiceMetadata(
+                WebAppFixture.TestServiceId,
+                enabledProtocols: [ServiceProtocols.Wmts]);
+
+            var catalog = fixture.GetService<ILayerStyleCatalog>();
+            await catalog.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyleJson("#ff0000"));
+
+            // WebMercatorQuad level 0 is a single tile spanning the whole globe, so it always
+            // contains the seeded point at (lon=-122.5, lat=37.5) (tests/seed/server.yaml).
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+
+            var content = await response.Content.ReadAsByteArrayAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            using var bitmap = SKBitmap.Decode(content);
+            bitmap.Should().NotBeNull();
+            bitmap!.Width.Should().Be(256);
+            bitmap.Height.Should().Be(256);
+
+            HasRedPixel(bitmap).Should().BeTrue(
+                "GetTile on the OGC-native service route must render the styled feature inside "
+                + "the z=0 tile, not merely return a non-empty image");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetFeatureInfo")]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    public async Task Wmts_OgcRoute_GetFeatureInfo_WithWmtsEnabledAndMapServerDisabled_ReturnsSeededFeature()
+    {
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            enabledProtocols: [ServiceProtocols.Wmts]);
+
+        // I=41/J=99 inside the WebMercatorQuad z=0 world tile is the Web Mercator projection of
+        // the seeded point at (lon=-122.5, lat=37.5) (tests/seed/server.yaml), so a correct
+        // tile-pixel -> world -> feature lookup finds it. The existing MapServer-route
+        // GetFeatureInfo tests all click I=128/J=128 (lon 0, lat 0) and only assert the body is
+        // non-empty, which "No features found." also satisfies — they never proved a hit.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=41&J=99&INFOFORMAT=text/plain");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        content.Should().Contain("Layer=");
+        // The text/plain body is "Layer=<name>" followed by one "<attribute>=<value>" line per
+        // attribute, so a real hit carries attribute lines rather than just the layer header.
+        content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Count(line => line.Contains('=', StringComparison.Ordinal))
+            .Should().BeGreaterThan(1, "a resolved feature must report its attributes, not just the layer name");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    public async Task Wmts_OgcRoute_GetTile_UnknownTileMatrixSet_ReturnsOwsExceptionReport()
+    {
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            enabledProtocols: [ServiceProtocols.Wmts]);
+
+        // A WMTS client must get an OWS ExceptionReport naming the offending parameter, not a
+        // JSON problem document, on the OGC-native route as well as on the MapServer alias.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=NoSuchGrid&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"TileMatrixSet\"");
+    }
+
     private static string CircleStyleJson(string hexColor) =>
         $$"""
         {

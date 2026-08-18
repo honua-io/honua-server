@@ -1024,6 +1024,109 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         }
     }
 
+    // ---- OGC-native service route (/ogc/services/{serviceId}/wms) ----
+    //
+    // honua-release#100: `serve.wms` is the capability key behind the OGC-native service
+    // route ONLY — the /rest/services/{id}/MapServer/WMS alias above belongs to the
+    // GeoServices MapServer key, so none of the GetMap/GetFeatureInfo depth above counts as
+    // proving evidence for `serve.wms`. Before this block the OGC route had GetCapabilities
+    // coverage and nothing else: the operations an OGC client (QGIS, ArcGIS Pro, a browser
+    // map) actually calls were unproven on the route Honua advertises as WMS 1.3. These
+    // tests drive GetMap, GetFeatureInfo and the OGC exception path through that route with
+    // MapServer switched off, so they also prove the protocol-gated path end to end.
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task Wms_OgcRoute_GetMap_WithWmsEnabledAndMapServerDisabled_RendersStyledFeature()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            fixture.UpdateV2ServiceMetadata(
+                WebAppFixture.TestServiceId,
+                enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
+
+            var catalog = fixture.GetService<ILayerStyleCatalog>();
+            await catalog.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyleJson("#ff0000"));
+
+            // Tight bbox around the seeded point at (lon=-122.5, lat=37.5) (tests/seed/server.yaml).
+            // WMS 1.3.0 + EPSG:4326 uses (lat,lon) axis order.
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=37.4,-122.6,37.6,-122.4&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
+
+            var content = await response.Content.ReadAsByteArrayAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            using var bitmap = SKBitmap.Decode(content);
+            bitmap.Should().NotBeNull();
+            bitmap!.Width.Should().Be(256);
+            bitmap.Height.Should().Be(256);
+
+            HasRedPixel(bitmap).Should().BeTrue(
+                "GetMap on the OGC-native service route must render the styled feature at its "
+                + "seeded real-world location, not merely return a non-empty image");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature()
+    {
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
+
+        // I=41/J=74 over the whole-world CRS:84 bbox lands on the seeded point at
+        // (lon=-122.5, lat=37.5), so a correct pixel -> world -> feature lookup must find it.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        content.Should().NotBe("No features found.",
+            "the queried pixel covers the seeded feature, so GetFeatureInfo on the OGC-native "
+            + "route must resolve it rather than reporting an empty result");
+        content.Should().Contain("Layer=");
+        // The text/plain body is "Layer=<name>" followed by one "<attribute>=<value>" line per
+        // attribute, so a real hit carries attribute lines rather than just the layer header.
+        content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Count(line => line.Contains('=', StringComparison.Ordinal))
+            .Should().BeGreaterThan(1, "a resolved feature must report its attributes, not just the layer name");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException()
+    {
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
+
+        // A WMS client must get an OGC ServiceExceptionReport, not a JSON problem document,
+        // on the OGC-native route as well as on the MapServer alias.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&CRS=CRS:84&FORMAT=image/png&LAYERS=NonExistant&STYLES=");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("LayerNotDefined");
+    }
+
     private static string CircleStyleJson(string hexColor) =>
         $$"""
         {

@@ -40,7 +40,12 @@ namespace Honua.Architecture.Tests.FeatureCatalog;
 /// <para>
 /// Slice 1 (#1946) projects the API surface only. <c>maturity</c> is read from
 /// the unified capability registry (<see cref="ICapabilityRegistry"/>,
-/// ADR-0058) rather than hard-coded: each entry's proof-ledger surface / route
+/// ADR-0058), then demoted where
+/// <see cref="CapabilityMaturityOverrides"/> carries a reviewed row for the
+/// entry's capability key (honua-release#100 — the registry only covers the
+/// curated <c>/mcp</c> + manifest roster, so keys outside it previously had no
+/// way to express "shipped, but not advertised as GA in this release"), rather
+/// than hard-coded: each entry's proof-ledger surface / route
 /// id is joined to a <see cref="CapabilityDescriptor"/> and the descriptor's
 /// <see cref="CapabilityMaturity"/> is emitted (#2345 / T9). A route with no
 /// matching descriptor falls back to <c>"implemented"</c>, which — given the
@@ -90,6 +95,7 @@ internal static class FeatureCatalogGenerator
         var provingTestsByEndpoint = CollectProvingTests();
         var ledger = ProofLedgerProjection.Load();
         var capabilityMapper = CapabilityRouteMapper.Load();
+        var maturityOverrides = CapabilityMaturityOverrides.Load();
 
         var entries = EndpointRegistry.All
             // EndpointRegistry.All may list the same (method, route) twice when a
@@ -109,6 +115,8 @@ internal static class FeatureCatalogGenerator
                 var family = surface?.Protocol ?? "uncategorized";
                 var method = endpoint.Method.ToUpperInvariant();
 
+                var capability = capabilityMapper.Resolve(family, endpoint.Path, method);
+
                 return new FeatureCatalogEntry
                 {
                     Id = id,
@@ -119,8 +127,10 @@ internal static class FeatureCatalogGenerator
                     CodeLocation = surface?.CodeLocation ?? "src/Honua.Server/EndpointRegistry.cs",
                     ProvingTests = provingTests,
                     ProofLedgerSurface = surface?.SurfaceId ?? string.Empty,
-                    Maturity = ResolveMaturity(surface?.SurfaceId, id, endpoint.Path),
-                    Capability = capabilityMapper.Resolve(family, endpoint.Path, method)
+                    Maturity = maturityOverrides.ResolveEffective(
+                        capability,
+                        ResolveMaturity(surface?.SurfaceId, id, endpoint.Path)),
+                    Capability = capability
                 };
             })
             .OrderBy(entry => entry.Method, StringComparer.Ordinal)

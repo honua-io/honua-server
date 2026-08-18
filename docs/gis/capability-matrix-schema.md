@@ -24,7 +24,14 @@ the bar for being advertised GA. See
 [`capability-keys-schema.md#ga-criteria-2946`](capability-keys-schema.md#ga-criteria-2946)
 for that bar and
 [`capability-ga-regrade-2026-07.md`](capability-ga-regrade-2026-07.md) for the
-2026-07 re-grade decisions applied against it.
+2026-07 re-grade decisions applied against it. A capability that ships but is
+deliberately not advertised GA for the current release carries a demoted tier here
+because of a reviewed row in
+[`capability-maturity-overrides.v1.json`](data/capability-maturity-overrides.v1.json)
+(see
+[`capability-keys-schema.md#demoting-a-key-that-is-shipped-but-not-ga`](capability-keys-schema.md#demoting-a-key-that-is-shipped-but-not-ga));
+the demotion reaches this file through `feature-catalog.json`, not through a
+second source artifact.
 
 ## Generation
 
@@ -94,7 +101,7 @@ file (drift gate), printing the regeneration command above.
 | `key`, `displayName`, `category`, `edition` | string | Copied from `capability-keys.v1.json`. |
 | `entryCount` | number | Count of `feature-catalog.json` entries stamped with this capability. |
 | `provingTestCount` | number | Sum of `proving_tests` across those entries. |
-| `maturity` | object | Count per maturity tier (`implemented`, `experimental`) among this capability's entries. |
+| `maturity` | object | Count per maturity tier (`implemented`, `partial`, `experimental`, `deferred`, `planned`) among this capability's entries. |
 | `noSurface` | object \| null | The matching row from `capability-no-surface-allowlist.v1.json` when `entryCount` is `0`; otherwise `null`. |
 | `cite` | array | Zero or one OGC CITE suite result (`{ suite, profile, passed, total, passRate }`) when this capability's protocol has an official ETS (see `CAPABILITY_TO_CITE_SUITE` in the generator script). Empty for capabilities with no CITE suite. |
 | `parity` | array | Esri GeoServices REST parity rows (`{ serviceId, displayName, parity }`) from `geoservices-rest-parity.json`, joined via the `esriCompatMatrix` crosswalk. |
