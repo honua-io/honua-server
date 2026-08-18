@@ -399,7 +399,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 1
       },
@@ -626,7 +626,7 @@
       "entryCount": 2,
       "provingTestCount": 3,
       "maturity": {
-        "implemented": 2
+        "experimental": 2
       },
       "noSurface": null,
       "cite": [],
@@ -1384,7 +1384,7 @@
       "entryCount": 3,
       "provingTestCount": 4,
       "maturity": {
-        "implemented": 3
+        "deferred": 3
       },
       "noSurface": null,
       "cite": [],
@@ -2127,7 +2127,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 7,
       "maturity": {
         "implemented": 1
       },
@@ -2185,7 +2185,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 1,
-      "provingTestCount": 3,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 1
       },

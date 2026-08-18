@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Reflection;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
@@ -141,6 +143,109 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.GeometryValidityMode.Should().Be(new ImportLimits().GeometryValidityMode);
         limits.GeometryValidityMode.Should().Be(Honua.Core.Configuration.ValidationMode.Repair);
     }
+
+    /// <summary>
+    /// Mechanical drift guard for the hand-rolled <c>Import:Limits</c> parser (#3315): every
+    /// settable property of <see cref="ImportLimits"/> gets a distinct non-default value in
+    /// configuration, and every one of them must survive into the registered instance. Six keys
+    /// (MaxVertices, MaxRings, MaxWkbSize, MaxSingleFeatureBytes, ValidateGeometry,
+    /// SkipInvalidGeometry) were declared on the record but never read by the parser, so operators
+    /// who set them silently kept the defaults. Reflection-driven on purpose: adding a property to
+    /// the record without teaching the parser fails here, naming the property.
+    /// </summary>
+    [Fact]
+    public void AddPostgreSqlServices_HonoursEveryImportLimitsConfigurationKey()
+    {
+        var defaults = new ImportLimits();
+        var properties = typeof(ImportLimits)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(property => property.CanRead && property.CanWrite)
+            .OrderBy(property => property.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        properties.Should().NotBeEmpty();
+
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] =
+                "Host=localhost;Database=honua_test;Username=honua;Password=test"
+        };
+        var expected = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var property in properties)
+        {
+            var value = NonDefaultValueFor(property, defaults);
+            expected[property.Name] = value;
+            settings[$"Import:Limits:{property.Name}"] = FormatConfigurationValue(value);
+        }
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(settings)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddPostgreSqlServices(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var limits = provider.GetRequiredService<ImportLimits>();
+
+        var ignored = properties
+            .Where(property => !Equals(property.GetValue(limits), expected[property.Name]))
+            .Select(property =>
+                $"{property.Name} (configured {FormatConfigurationValue(expected[property.Name])}, " +
+                $"got {FormatConfigurationValue(property.GetValue(limits))})")
+            .ToArray();
+
+        ignored.Should().BeEmpty(
+            "every Import:Limits:* key must reach ImportLimits; the hand parser in " +
+            "ServiceCollectionExtensions silently ignores any property it never assigns (#3315)");
+    }
+
+    private static object NonDefaultValueFor(PropertyInfo property, ImportLimits defaults)
+    {
+        var current = property.GetValue(defaults);
+        var type = property.PropertyType;
+
+        if (type == typeof(bool))
+        {
+            return !(bool)current!;
+        }
+
+        if (type.IsEnum)
+        {
+            return Enum.GetValues(type)
+                .Cast<object>()
+                .First(candidate => !Equals(candidate, current));
+        }
+
+        if (type == typeof(int))
+        {
+            // Every int limit is parsed as positive (or non-negative for MaxFeaturesPerFile),
+            // so offsetting the default keeps the value acceptable to the parser.
+            return (int)current! + 7;
+        }
+
+        if (type == typeof(long))
+        {
+            return (long)current! + 7L;
+        }
+
+        if (type == typeof(double))
+        {
+            return (double)current! + 0.5d;
+        }
+
+        throw new InvalidOperationException(
+            $"ImportLimits.{property.Name} has unsupported type {type} — teach this guard how to " +
+            "produce a non-default value for it rather than dropping the property from coverage.");
+    }
+
+    private static string FormatConfigurationValue(object? value) => value switch
+    {
+        null => string.Empty,
+        Enum enumValue => enumValue.ToString(),
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? string.Empty
+    };
 
     [Fact]
     public void AddPostgreSqlServices_RegistersMigrationRunCatalog()
