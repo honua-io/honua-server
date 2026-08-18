@@ -7,8 +7,10 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Resources;
@@ -36,6 +38,11 @@ public sealed class McpPromotionResourceTests
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
     private readonly IPublishedServiceStore _services = Substitute.For<IPublishedServiceStore>();
     private readonly IDeploymentStore _deployments = Substitute.For<IDeploymentStore>();
+
+    // Empty by default: every existing case here reads a deployment-backed package,
+    // so the draft fallback must not change any of their outcomes (honua-server#3262).
+    private readonly InMemoryPackageDraftStore _drafts =
+        new(new PackageDraftRetentionOptions(), TimeProvider.System);
 
     // ------------------------------------------------------------------
     // PublishedServiceResource
@@ -323,7 +330,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-a", DeploymentSource.FromMapPackage("map-55"))
             ]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/map-55",
@@ -348,13 +355,98 @@ public sealed class McpPromotionResourceTests
         _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "orphan", Arg.Any<CancellationToken>())
             .Returns([]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/orphan",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
+    {
+        // honua-server#3262: a draft has no deployment by definition, so the deployment
+        // reverse-lookup alone made the URI the create tool returns unresolvable.
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map_draft", Arg.Any<CancellationToken>())
+            .Returns([]);
+        await _drafts.SaveMapDraftAsync(new MapPackage
+        {
+            MapPackageId = "map_draft",
+            Format = "honua_map_package.v1",
+            Status = PackageStatus.Draft,
+            CreatedAt = PublishedAt,
+        });
+
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/map_draft",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("packageKind").GetString().Should().Be("map_package");
+        body.GetProperty("packageId").GetString().Should().Be("map_draft");
+        body.GetProperty("resourceUri").GetString().Should().Be("honua://map-packages/map_draft");
+        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
+        body.GetProperty("deploymentResourceUris").GetArrayLength().Should().Be(0);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_PublishedPackage_PrefersDeploymentViewOverAnOlderDraft()
+    {
+        // A promoted package must keep reporting its deployment edges, not the draft it grew from.
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map_promoted", Arg.Any<CancellationToken>())
+            .Returns([BuildDeployment("dep-p", DeploymentSource.FromMapPackage("map_promoted"))]);
+        await _drafts.SaveMapDraftAsync(new MapPackage
+        {
+            MapPackageId = "map_promoted",
+            Format = "honua_map_package.v1",
+            Status = PackageStatus.Draft,
+            CreatedAt = PublishedAt,
+        });
+
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/map_promoted",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("packageStatus").GetString().Should().Be("published");
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
+    public async Task AppPackageResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
+    {
+        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "app_draft", Arg.Any<CancellationToken>())
+            .Returns([]);
+        await _drafts.SaveAppDraftAsync(new AppPackage
+        {
+            AppPackageId = "app_draft",
+            TargetSdk = "honua-sdk-js",
+            Format = "honua_app_package.v1",
+            Status = PackageStatus.Draft,
+            CreatedAt = PublishedAt,
+        });
+
+        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://app-packages/app_draft",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("packageKind").GetString().Should().Be("app_package");
+        body.GetProperty("resourceUri").GetString().Should().Be("honua://app-packages/app_draft");
+        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
     }
 
     [UnitTest]
@@ -368,7 +460,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-r2", DeploymentSource.FromMapPackage("retired-only"), status: DeploymentStatus.Superseded)
             ]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/retired-only",
@@ -393,7 +485,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-c1", DeploymentSource.FromMapPackage("failed-only"), status: DeploymentStatus.Cancelled)
             ]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/failed-only",
@@ -418,7 +510,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-rolling-out", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.RollingOut)
             ]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/pre-serving",
@@ -438,7 +530,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-active", DeploymentSource.FromMapPackage("mixed"))
             ]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/mixed",
@@ -457,7 +549,7 @@ public sealed class McpPromotionResourceTests
         _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "app-9", Arg.Any<CancellationToken>())
             .Returns([BuildDeployment("dep-a", DeploymentSource.FromAppPackage("app-9"))]);
 
-        var resource = new AppPackageResource(_deployments, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://app-packages/app-9",
@@ -479,7 +571,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-s", DeploymentSource.FromAppPackage("superseded"), status: DeploymentStatus.Superseded)
             ]);
 
-        var resource = new AppPackageResource(_deployments, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://app-packages/superseded",
@@ -498,7 +590,7 @@ public sealed class McpPromotionResourceTests
                 BuildDeployment("dep-f", DeploymentSource.FromAppPackage("failed-app"), status: DeploymentStatus.Failed)
             ]);
 
-        var resource = new AppPackageResource(_deployments, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://app-packages/failed-app",
@@ -510,8 +602,8 @@ public sealed class McpPromotionResourceTests
     [UnitTest]
     public void PackageResources_CanHandle_MatchOnlyBarePackageUris()
     {
-        var map = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
-        var app = new AppPackageResource(_deployments, _jobService, NullLogger<AppPackageResource>.Instance);
+        var map = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var app = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
 
         map.CanHandle("honua://map-packages/pkg").Should().BeTrue();
         map.CanHandle("honua://map-packages/").Should().BeFalse();
@@ -897,7 +989,7 @@ public sealed class McpPromotionResourceTests
         _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map-1", Arg.Any<CancellationToken>())
             .Returns([BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-1"))]);
 
-        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://map-packages/map-1",

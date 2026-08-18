@@ -273,3 +273,64 @@ regression this work caused.
 - Touching `src/Honua.Scene/Generation` or
   `src/Honua.Core/Features/WorkflowPackages/Generation`, which are not AI
   generation despite the name.
+
+## Amendment (2026-08-16): where the persisted draft lives (#3262)
+
+The Decision above says the entry points "create **and persist** a draft
+package" and return an identifier "addressable at its
+`honua://map-packages/{id}` / `honua://app-packages/{id}` URI". The first
+implementation created without persisting. `MapPackageResource` and
+`AppPackageResource` reverse-look-up *deployments*, and a freshly created draft
+has none, so the tool returned a well-formed URI that could never resolve — a
+softer version of the `capability_unavailable` dead end this ADR is built around
+guarding against, and one invisible from the tool's own response.
+
+### What was chosen
+
+**A dedicated draft store, `IPackageDraftStore`, keyed by the `map_…` / `app_…`
+identifier the factories mint.** Both tools write the draft before returning;
+both package resources read it when the deployment reverse-lookup finds nothing.
+The deployment lookup stays first, so a promoted package keeps reporting its
+deployment edges rather than the older draft it grew from. The response gains one
+field, `packageStatus` (`draft` | `published`), so a caller can tell which
+lifecycle state it is looking at instead of inferring it from an empty
+`deploymentResourceUris`.
+
+### Why not `IStudioPackageStore`
+
+`IStudioPackageStore` already exists and already persists drafts, which makes it
+the obvious candidate. It was rejected because it is `Guid`-keyed over a
+`StudioPackageEnvelope`: routing map/app drafts through it puts two identifier
+schemes on one object, and the identifier the tool returns — the one the URI is
+built from — would not be the store's key. Every read would then be a
+scan-and-reconcile against a `packageKey` rather than a lookup, and the
+`create → resolve` promise this amendment exists to keep would rest on that
+reconciliation staying correct. Studio's Guid-keyed envelope drafts and the MCP
+package drafts remain separate surfaces with separate lifecycles; nothing here
+merges them.
+
+### Retention, stated rather than implied
+
+The default implementation, `InMemoryPackageDraftStore`, is in-process and
+age-bounded (24h TTL, 500 drafts per kind, oldest evicted first). A draft is
+pre-publish scratch: it becomes durable when it is promoted to a deployment,
+which is the surface the resources already read. The consequences are real and
+are recorded here rather than discovered later — on a multi-replica deployment a
+draft resolves only on the replica that created it, and it does not survive a
+restart. Both present as an ordinary not-found, which is also what an expired
+draft gives. A durable, shared backing is a separate decision with its own
+retention and authorization questions and is not made here.
+
+Draft reads are authorized exactly as deployment-backed package reads are
+(`OperatorResourceType.Package` / `OperatorOperation.Read`). The draft store
+records no owner, so it does not narrow that further; per-draft ownership would
+be a change to the package authorization model, not to this store.
+
+### The guard
+
+The behavioural guard this ADR asks for is extended rather than duplicated:
+`McpPackageDraftIntegrationTests` now asserts **create-then-resolve** through the
+composed host — `tools/call` to mint the identifier, then `resources/read` on the
+exact `resourceUri` the tool returned — for both map and app packages. A tool
+that creates without persisting passes the create half and fails the resolve
+half, which is precisely the defect this amendment closes.

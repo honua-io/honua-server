@@ -663,6 +663,14 @@ internal sealed class McpPackageView
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Lifecycle state the package is visible in: <c>draft</c> for a created but
+    /// not yet deployed package held by the draft store, <c>published</c> for one
+    /// reached through a currently-serving deployment (honua-server#3262).
+    /// </summary>
+    [JsonPropertyName("packageStatus")]
+    public string PackageStatus { get; set; } = string.Empty;
+
     [JsonPropertyName("deploymentCount")]
     public int DeploymentCount { get; set; }
 

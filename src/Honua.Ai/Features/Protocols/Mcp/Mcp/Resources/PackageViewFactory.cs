@@ -60,6 +60,30 @@ internal static class PackageViewFactory
     public static bool IsPublished(Deployment deployment) =>
         deployment.PublicationState == DeploymentPublicationState.Published;
 
+    /// <summary>Package lifecycle states surfaced on <c>packageStatus</c>.</summary>
+    public const string DraftStatus = "draft";
+
+    /// <summary>Package lifecycle state for a package reached through a serving deployment.</summary>
+    public const string PublishedStatus = "published";
+
+    /// <summary>
+    /// View for a created-but-not-yet-deployed package held by the draft store
+    /// (honua-server#3262). It carries no deployment edges by construction — that
+    /// is exactly what makes it a draft — so the deployment projection is empty
+    /// rather than absent, keeping one response shape for both lifecycle states.
+    /// </summary>
+    public static McpPackageView BuildDraft(string packageKind, string packageId, string resourceUri) =>
+        new()
+        {
+            PackageKind = packageKind,
+            PackageId = packageId,
+            ResourceUri = resourceUri,
+            PackageStatus = DraftStatus,
+            DeploymentCount = 0,
+            DeploymentResourceUris = [],
+            Provenance = new McpHostedProvenance()
+        };
+
     public static McpPackageView Build(
         string packageKind,
         string packageId,
@@ -79,6 +103,7 @@ internal static class PackageViewFactory
             PackageKind = packageKind,
             PackageId = packageId,
             ResourceUri = resourceUri,
+            PackageStatus = PublishedStatus,
             DeploymentCount = deployments.Count,
             DeploymentResourceUris = deploymentUris,
             Provenance = new McpHostedProvenance()
