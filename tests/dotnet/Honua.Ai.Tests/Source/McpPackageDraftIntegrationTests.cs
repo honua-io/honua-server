@@ -5,9 +5,15 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -27,8 +33,49 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureServices(AdvertiseHostedPromotionResources);
+
     private HttpClient _client = null!;
+
+    /// <summary>
+    /// Opts the fixture host into the hosted-promotion MCP resources
+    /// (<c>honua://map-packages/{packageId}</c> and its app counterpart), which the
+    /// default Test composition does not advertise.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>AddServerFeatures</c> gates <c>AddMcpPromotionSurface</c> on
+    /// <see cref="IPublishedServiceStore"/> and <see cref="IDeploymentStore"/> already
+    /// being present in the service collection, so a store-less profile cannot advertise
+    /// an always-empty promotion surface. Only <c>AddPostgreSqlServices</c> registers
+    /// those stores, and <c>Program.cs</c> skips infrastructure registration under the
+    /// Test environment because <see cref="WebAppFixture"/> owns data access. The gate is
+    /// therefore false in this host and the package URIs resolve to
+    /// <c>Unknown MCP resource</c> — a property of the test composition, not of the draft
+    /// path under test.
+    /// </para>
+    /// <para>
+    /// Both stores are registered empty on purpose: no deployment references a package
+    /// that was created a moment ago, so an empty deployment store *is* the state a real
+    /// server is in at the instant the create tool returns. That keeps the assertion
+    /// honest — the URI can only resolve through the draft store this test exists to
+    /// prove is written and read (honua-server#3262).
+    /// </para>
+    /// </remarks>
+    private static void AdvertiseHostedPromotionResources(IServiceCollection services)
+    {
+        var deployments = Substitute.For<IDeploymentStore>();
+        deployments
+            .ListBySourceAsync(Arg.Any<DeploymentSourceKind>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Deployment>>([]));
+        services.AddSingleton(deployments);
+
+        var published = Substitute.For<IPublishedServiceStore>();
+        services.AddSingleton(published);
+
+        services.AddMcpPromotionSurface();
+    }
 
     public async Task InitializeAsync()
     {
