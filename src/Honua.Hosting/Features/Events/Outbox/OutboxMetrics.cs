@@ -42,24 +42,33 @@ internal sealed class OutboxMetrics
         ArgumentNullException.ThrowIfNull(meterFactory);
         _meter = meterFactory.Create(HonuaTelemetry.ServiceName, HonuaTelemetry.ServiceVersion);
 
+        // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+        // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+        // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+        // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+        // against the absent name returns an empty vector, so the panel is blank and the alert never
+        // fires, silently. Units are documented in the instrument name and description instead. See the
+        // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+        // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
         _dispatched = _meter.CreateCounter<long>(
             "honua.outbox.dispatched_total",
-            "events",
+            unit: null,
             "Feature-change outbox rows successfully dispatched to the canonical event publisher.");
 
         _failed = _meter.CreateCounter<long>(
             "honua.outbox.failed_total",
-            "events",
+            unit: null,
             "Feature-change outbox rows whose dispatch attempt failed (still retriable until dead-lettered).");
 
         _deadLettered = _meter.CreateCounter<long>(
             "honua.outbox.dead_lettered_total",
-            "events",
+            unit: null,
             "Feature-change outbox rows that exhausted retries and require operator triage.");
 
         _recoveredClaims = _meter.CreateCounter<long>(
             "honua.outbox.recovered_claims_total",
-            "claims",
+            unit: null,
             "Outbox claim leases reset by the recovery loop after a worker exit.");
 
         // Observable gauges report the dispatcher's most recent backlog snapshot.
@@ -69,13 +78,13 @@ internal sealed class OutboxMetrics
         _meter.CreateObservableGauge(
             "honua.outbox.pending_count",
             () => Interlocked.Read(ref _pendingCount),
-            unit: "events",
+            unit: null,
             description: "Outbox rows waiting for dispatch (pending, claimed, or retriable).");
 
         _meter.CreateObservableGauge(
             "honua.outbox.dead_lettered_count",
             () => Interlocked.Read(ref _deadLetteredCount),
-            unit: "events",
+            unit: null,
             description: "Outbox rows currently in the dead-letter state.");
 
         _meter.CreateObservableGauge(

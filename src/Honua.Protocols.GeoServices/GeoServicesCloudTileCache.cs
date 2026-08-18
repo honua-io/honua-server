@@ -31,15 +31,24 @@ internal static class GeoServicesCloudTileCache
     /// miss).
     /// </summary>
     private static readonly System.Diagnostics.Metrics.Counter<long> CacheHits =
+        // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+        // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+        // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+        // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+        // against the absent name returns an empty vector, so the panel is blank and the alert never
+        // fires, silently. Units are documented in the instrument name and description instead. See the
+        // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+        // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
         HonuaTelemetry.Meter.CreateCounter<long>(
             "honua.tile.cache.hits",
-            "tiles",
+            unit: null,
             "Number of generated tile-cache serve-path hits.");
 
     private static readonly System.Diagnostics.Metrics.Counter<long> CacheMisses =
         HonuaTelemetry.Meter.CreateCounter<long>(
             "honua.tile.cache.misses",
-            "tiles",
+            unit: null,
             "Number of generated tile-cache serve-path misses.");
 
     internal static async Task<Hit?> TryReadAsync(

@@ -71,49 +71,58 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionQueueDepth = "honua.execution.queue.depth";
     }
 
+    // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+    // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+    // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+    // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+    // against the absent name returns an empty vector, so the panel is blank and the alert never
+    // fires, silently. Units are documented in the instrument name and description instead. See the
+    // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+    // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
     public static readonly Counter<long> WorkflowRequests = HonuaTelemetry.Meter.CreateCounter<long>(
         Metrics.WorkflowRequests,
-        "requests",
+        unit: null,
         "Number of workflow requests by operation and result.");
 
     public static readonly Counter<long> WorkflowTransitions = HonuaTelemetry.Meter.CreateCounter<long>(
         Metrics.WorkflowTransitions,
-        "transitions",
+        unit: null,
         "Number of workflow state transitions observed by the control plane.");
 
     public static readonly Histogram<double> WorkflowDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
         Metrics.WorkflowDurations,
-        "ms",
+        unit: null,
         "Elapsed time for workflow operations that reached terminal states.");
 
     public static readonly Histogram<double> ReconcileDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
         Metrics.ReconcileDurations,
-        "ms",
+        unit: null,
         "Elapsed time spent reconciling workflow operations.");
 
     public static readonly Counter<long> ExecutionRequests = HonuaTelemetry.Meter.CreateCounter<long>(
         Metrics.ExecutionRequests,
-        "requests",
+        unit: null,
         "Number of execution-job backend requests by operation and result.");
 
     public static readonly Counter<long> ExecutionJobSubmitted = HonuaTelemetry.Meter.CreateCounter<long>(
         Metrics.ExecutionJobSubmitted,
-        "jobs",
+        unit: null,
         "Number of execution jobs submitted to a batch-compute backend.");
 
     public static readonly Counter<long> ExecutionJobTransitions = HonuaTelemetry.Meter.CreateCounter<long>(
         Metrics.ExecutionJobTransitions,
-        "transitions",
+        unit: null,
         "Number of execution job state transitions observed by the control plane.");
 
     public static readonly Histogram<double> ExecutionJobDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
         Metrics.ExecutionJobDurations,
-        "ms",
+        unit: null,
         "Elapsed time for execution jobs that reached terminal states.");
 
     public static readonly Counter<long> ExecutionReconcileCycles = HonuaTelemetry.Meter.CreateCounter<long>(
         Metrics.ExecutionReconcileCycles,
-        "cycles",
+        unit: null,
         "Number of execution job reconciliation cycles completed by the background service.");
 
     // GP-plane queue-depth gauge. The observable callback yields one measurement per
@@ -127,7 +136,7 @@ internal static class ControlPlaneTelemetry
     public static readonly ObservableGauge<int> ExecutionQueueDepthGauge = HonuaTelemetry.Meter.CreateObservableGauge(
         Metrics.ExecutionQueueDepth,
         ObserveQueueDepth,
-        "jobs",
+        unit: null,
         "Active execution jobs by status and backend (queued/provisioning/running).");
 
     /// <summary>

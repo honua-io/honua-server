@@ -5786,6 +5786,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.HealthEndpoints_AllVariations_ReturnCorrectStatus",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.MetricNameContractTests.PrometheusExposition_ExportsEveryContractInstrumentUnderItsContractSeriesName",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_CarriesTheLabelNamesTheContractPromises",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_DoesNotReintroduceTheUnitSuffixedSeriesNames",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_ExportsEverySeriesNamedByTheSloMetricContract",

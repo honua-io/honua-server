@@ -47,9 +47,18 @@ public static class SpecTelemetry
 
     /// <summary>Observed duration of apply runs in milliseconds.</summary>
     public static readonly Histogram<double> ApplyDurationMs =
+        // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
+        // Prometheus exporter derives the exported series name from the instrument name AND its unit:
+        // it maps the unit through the UCUM table and appends it, so a declared unit renames the series
+        // out from under every dashboard and alert rule without breaking a single build. A PromQL query
+        // against the absent name returns an empty vector, so the panel is blank and the alert never
+        // fires, silently. Units are documented in the instrument name and description instead. See the
+        // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+        // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
+
         Meter.CreateHistogram<double>(
             "honua.spec.apply_duration_ms",
-            unit: "ms",
+            unit: null,
             description: "End-to-end apply duration including cache lookups.");
 
     /// <summary>
@@ -60,7 +69,7 @@ public static class SpecTelemetry
     public static readonly Histogram<double> NodeDurationMs =
         Meter.CreateHistogram<double>(
             "honua.spec.node_duration_ms",
-            unit: "ms",
+            unit: null,
             description: "Per-node execution duration; excludes cache hits.");
 
     /// <summary>Cache-lookup outcomes (hit/miss/bypass).</summary>

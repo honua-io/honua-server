@@ -1091,7 +1091,8 @@
         "src/Honua.Io/Features/Export/",
         "tests/dotnet/Honua.Server.Tests/Features/Export/",
         "src/Honua.Core/Features/Validation/",
-        "src/Honua.Hosting/Features/Services/"
+        "src/Honua.Hosting/Features/Services/",
+        "observability/"
       ]
     },
     {
