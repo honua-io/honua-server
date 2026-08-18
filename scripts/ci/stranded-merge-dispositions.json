@@ -27,29 +27,6 @@
   "schemaVersion": 1,
   "dispositions": [
     {
-      "pr": 2835,
-      "status": "recovering",
-      "decidedOn": "2026-08-16",
-      "decidedBy": "honua-io/honua-server#3248",
-      "recovery": "https://github.com/honua-io/honua-server/pull/3176",
-      "reason": "The expire/delete lifecycle half of #2661 is genuinely off trunk. PR #3176 carries all three absent files plus a full review pass; this stays actionable until it merges.",
-      "paths": [
-        "src/Honua.Server/EndpointRegistry.AdminOperations.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/GeneratedTileCacheKey.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileCacheExecutionSpecBuilder.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileCacheJobParameterKeys.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileCacheJobService.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileOperationExecutionCore.Lifecycle.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileOperationExecutionCore.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileOperationLog.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs",
-        "src/Honua.Server/Features/Admin/TileOperations/TileOperationsEndpoints.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Admin/TileCacheExecutionSpecBuilderTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Admin/TileCacheLifecycleExecutionTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Admin/TileOperationsEndpointsTests.cs"
-      ]
-    },
-    {
       "pr": 3113,
       "status": "landed-elsewhere",
       "decidedOn": "2026-08-16",

@@ -664,37 +664,38 @@ def test_a_silenced_stranded_finding_no_longer_fails_the_build():
 # --------------------------------------------------------------------------- #
 
 
-def test_the_checked_in_ledger_loads_and_records_the_three_3248_decisions():
+def test_the_checked_in_ledger_records_the_two_settled_3248_decisions():
     ledger = MODULE.load_dispositions(str(LEDGER_PATH), required=True)
-    assert set(ledger) == {2835, 3113, 3116}
+    assert set(ledger) == {3113, 3116}
     assert ledger[3116]["status"] == MODULE.DISPOSITION_ABANDONED
     assert ledger[3113]["status"] == MODULE.DISPOSITION_LANDED_ELSEWHERE
-    assert ledger[2835]["status"] == MODULE.DISPOSITION_RECOVERING, (
-        "#2835 is the one payload still genuinely off trunk; it must stay actionable "
-        "until its recovery PR lands"
+    assert 2835 not in ledger, (
+        "#2835's payload reached trunk via PR #3176, so the sweep no longer reports it as "
+        "actionable and there is nothing left to decide -- an entry would only be stale"
     )
 
 
 def test_the_checked_in_ledger_covers_every_path_the_recorded_fixture_finds():
-    # The fixture records the real adjudication of these three PRs, so this is the
+    # The fixture records the real adjudication of these PRs, so this is the
     # regression guard for the ledger drifting away from what the sweep reports.
     ledger = MODULE.load_dispositions(str(LEDGER_PATH), required=True)
     merged = by_number(run_fixture_sweep()["merged"])
-    for number in (2835, 3113, 3116):
+    for number in sorted(ledger):
         uncovered = [p for p in MODULE.actionable_paths(merged[number]) if p not in ledger[number]["paths"]]
         assert not uncovered, f"#{number} disposition does not cover {uncovered}"
 
 
-def test_the_checked_in_ledger_silences_exactly_the_two_settled_findings():
+def test_the_checked_in_ledger_silences_both_findings_it_covers():
+    # Against the recorded fixture -- which predates #3176 -- #2835 is still
+    # stranded and uncovered by the ledger, so it must remain actionable. That is
+    # the property being pinned: the ledger silences what it adjudicated and
+    # nothing else.
     ledger = MODULE.load_dispositions(str(LEDGER_PATH), required=True)
     result = run_fixture_sweep(dispositions=ledger, today=TODAY)
     silenced = sorted(f["number"] for f in result["merged"] if MODULE.silenced(f))
     assert silenced == [3113, 3116]
     assert 2835 in [f["number"] for f in MODULE.actionable(result)]
-
-    out = MODULE.render_markdown(result, DEFAULT_REF)
-    assert "### Adjudicated (2)" in out
-    assert "pull/3176" in out, "the row that is still actionable must point at its recovery"
+    assert "### Adjudicated (2)" in MODULE.render_markdown(result, DEFAULT_REF)
 
 
 # --------------------------------------------------------------------------- #
