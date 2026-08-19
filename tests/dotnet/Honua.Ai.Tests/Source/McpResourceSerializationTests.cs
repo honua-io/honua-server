@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -338,15 +339,27 @@ public sealed class McpResourceSerializationTests
         entries.GetArrayLength().Should().BeGreaterThan(0);
 
         // Every served entry is evidence-backed: a route, at least one proving
-        // test, and a recognized maturity tier. The catalog carries both the
-        // slice-1 "implemented" tier (#1946) and the "experimental" tier
-        // introduced with #2346; the resource serves the catalog unfiltered.
+        // test, and a recognized maturity tier. The tier vocabulary is closed:
+        // FeatureCatalogGenerator.MaturityLabel projects the shared
+        // CapabilityMaturity enum (ADR-0058) onto its lower-case name, so the
+        // catalog can only ever carry planned/deferred/experimental/partial/
+        // implemented. Deriving the set from the enum rather than pinning the
+        // literals keeps this honest when a reviewed
+        // capability-maturity-overrides.v1.json row demotes a capability
+        // (honua-release#100 demoted scene.catalog to "deferred" when D0.2 moved
+        // 3D to 2026.2) while still failing on any value outside the vocabulary.
+        // The resource serves the catalog unfiltered; that each non-implemented
+        // tier is *explained* is gated by FeatureCatalogDriftTests.
+        var maturityTiers = Enum.GetValues<CapabilityMaturity>()
+            .Select(tier => tier.ToString().ToLowerInvariant())
+            .ToArray();
+
         foreach (var entry in entries.EnumerateArray())
         {
             entry.GetProperty("route").GetString().Should().NotBeNullOrWhiteSpace();
             entry.GetProperty("method").GetString().Should().NotBeNullOrWhiteSpace();
             entry.GetProperty("proving_tests").GetArrayLength().Should().BeGreaterThan(0);
-            entry.GetProperty("maturity").GetString().Should().BeOneOf("implemented", "experimental");
+            entry.GetProperty("maturity").GetString().Should().BeOneOf(maturityTiers);
         }
     }
 

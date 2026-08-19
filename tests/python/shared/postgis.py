@@ -964,25 +964,55 @@ class PostGISFixture:
             })
 
         status = {"lifecycle": "active", "state": "ready"}
-        protocols = [
+
+        # Per-service protocol sets, mirroring the production v1 -> v2 compatibility
+        # synthesis (MetadataV2CompatSnapshotSql, and its SQL twin in
+        # tests/seed/base-schema.sql used by the JS harness): one v2 service per
+        # protocol family, all sharing the v1 display name, where ONLY the feature
+        # service carries the full protocol union and every sibling advertises just
+        # its own family.
+        #
+        # This shape is load-bearing, not cosmetic. Name-based protocol resolution
+        # (ResourceValidator.ResolveServiceForProtocol) collects every routable
+        # same-name service that advertises the protocol, disambiguates by
+        # publication type, and otherwise requires EXACTLY ONE candidate. GPServer
+        # is service-scoped: it has no publications, so neither the preferred nor
+        # the compatible publication-type filter can narrow the set. Advertising
+        # GPServer on all five seeded services therefore produced five candidates,
+        # resolved to none, and 404'd every GPServer route in this harness while the
+        # JS harness (correct seed) passed.
+        feature_service_protocols = [
             "FeatureServer",
             "MapServer",
             "ImageServer",
             "GPServer",
+            "OData",
+            "Grpc",
             "OgcFeatures",
-            "OGC-API-Maps",
-            "OGC-API-Coverages",
-            "OGC-API-Tiles",
             "Wfs20",
             "Wms",
             "Wmts",
             "Wcs",
-            "OData",
-            "Grpc",
+            "OGC-API-Maps",
+            "OGC-API-Tiles",
+            "OGC-API-Coverages",
+            # Not part of the production compatibility synthesis; kept on the union
+            # service so this harness can still reach the STAC/terrain/elevation
+            # surfaces it seeds publications for.
             "Stac",
             "Terrain",
             "Elevation",
         ]
+        map_service_protocols = [
+            "MapServer",
+            "Wms",
+            "Wmts",
+            "OGC-API-Maps",
+            "OGC-API-Tiles",
+        ]
+        image_service_protocols = ["ImageServer", "Wcs", "OGC-API-Coverages"]
+        ogc_service_protocols = ["OgcFeatures", "Wfs20"]
+        stac_service_protocols = ["Stac"]
 
         resources_by_id: dict[str, dict[str, object]] = {}
         storage_by_id: dict[str, dict[str, object]] = {}
@@ -993,14 +1023,15 @@ class PostGISFixture:
             service_id: str,
             name: str,
             service_type: str,
+            service_protocols: list[str],
             route: str | None = None,
         ) -> None:
             services_by_id.setdefault(service_id, {
                 "metadata": {"id": service_id, "name": name, "title": name},
                 "serviceType": service_type,
                 "route": route,
-                "protocols": protocols,
-                "enabledProtocols": protocols,
+                "protocols": service_protocols,
+                "enabledProtocols": service_protocols,
                 "options": {
                     "capabilities": ["Query", "Extract", "Create", "Update", "Delete"],
                     "supportedFormats": ["JSON", "GeoJSON"],
@@ -1136,11 +1167,38 @@ class PostGISFixture:
             ogc_service_id = f"svc-{service_part}-ogc"
             stac_service_id = f"svc-{service_part}-stac"
 
-            add_service(feature_service_id, row_service_name, "esri-feature-service")
-            add_service(map_service_id, row_service_name, "esri-map-service")
-            add_service(image_service_id, row_service_name, "esri-image-service")
-            add_service(ogc_service_id, row_service_name, "ogc-api-features", "/ogc/features")
-            add_service(stac_service_id, row_service_name, "stac-api", "/stac")
+            add_service(
+                feature_service_id,
+                row_service_name,
+                "esri-feature-service",
+                feature_service_protocols,
+            )
+            add_service(
+                map_service_id,
+                row_service_name,
+                "esri-map-service",
+                map_service_protocols,
+            )
+            add_service(
+                image_service_id,
+                row_service_name,
+                "esri-image-service",
+                image_service_protocols,
+            )
+            add_service(
+                ogc_service_id,
+                row_service_name,
+                "ogc-api-features",
+                ogc_service_protocols,
+                "/ogc/features",
+            )
+            add_service(
+                stac_service_id,
+                row_service_name,
+                "stac-api",
+                stac_service_protocols,
+                "/stac",
+            )
 
             local_id = str(row_layer_id)
             # ImageServer handlers currently resolve the first layer-index publication,
