@@ -94,7 +94,17 @@ jobs:
   build-aot:
     name: Build & Push AOT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
+    # is self-perpetuating. buildx exports the `type=gha` layer cache in `cache-to`, which only runs
+    # after a successful build — so a job killed at the ceiling exports nothing, the next run starts
+    # cold too, and the workflow can never converge on its own. Observed 2026-08-19: amd64 timed out
+    # at 90m twice in a row (runs 32295916913 and 32304223543, the second on an idle runner pool), so
+    # `Publish AOT Manifests` was skipped both times and no multi-arch tag was produced at all — which
+    # blocks pinning a release candidate, since the pin resolves `image@digest`.
+    # Warm builds are not the problem and stay fast: in run 32304223543 the arm64 leg finished in ~1m
+    # off cache, having taken ~73m cold in the run before it, and 2026-08-18 completed amd64 in ~46m
+    # warm. The ceiling only has to cover the cold case once; every run after that rides the cache.
+    timeout-minutes: 180
     needs: mirror-base-images
     strategy:
       fail-fast: false
@@ -195,7 +205,17 @@ jobs:
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
+    # is self-perpetuating. buildx exports the `type=gha` layer cache in `cache-to`, which only runs
+    # after a successful build — so a job killed at the ceiling exports nothing, the next run starts
+    # cold too, and the workflow can never converge on its own. Observed 2026-08-19: amd64 timed out
+    # at 90m twice in a row (runs 32295916913 and 32304223543, the second on an idle runner pool), so
+    # `Publish AOT Manifests` was skipped both times and no multi-arch tag was produced at all — which
+    # blocks pinning a release candidate, since the pin resolves `image@digest`.
+    # Warm builds are not the problem and stay fast: in run 32304223543 the arm64 leg finished in ~1m
+    # off cache, having taken ~73m cold in the run before it, and 2026-08-18 completed amd64 in ~46m
+    # warm. The ceiling only has to cover the cold case once; every run after that rides the cache.
+    timeout-minutes: 180
     needs: mirror-base-images
     strategy:
       fail-fast: false
