@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Progress;
 using Honua.ControlPlane;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
@@ -28,6 +29,14 @@ namespace Honua.Server.Features.Admin.TileOperations;
 /// is set and the execution-job substrate (Redis-backed store/queue) is present; the
 /// legacy in-process channel remains the zero-config default fallback otherwise.
 /// </para>
+/// <para>
+/// The service is a singleton, so it resolves the request-lifetime
+/// <see cref="IMetadataV2GraphProvider"/> from a per-submission
+/// <see cref="IServiceScopeFactory"/> scope rather than capturing it in the constructor.
+/// The production provider (Postgres) is scoped over a scoped database connection provider,
+/// and injecting it directly fails <c>ValidateOnBuild</c>/<c>ValidateScopes</c> at host startup.
+/// This mirrors <c>MapTileExportProducer</c>, which does the same for the same reason.
+/// </para>
 /// </summary>
 internal sealed partial class TileCacheJobService : ITileCacheJobService
 {
@@ -37,7 +46,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IOptionsMonitor<TileCacheBatchOptions> _options;
     private readonly ILogger<TileCacheJobService> _logger;
-    private readonly IMetadataV2GraphProvider _graphProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
 
@@ -46,7 +55,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend> backends,
         IOptionsMonitor<TileCacheBatchOptions> options,
-        IMetadataV2GraphProvider graphProvider,
+        IServiceScopeFactory scopeFactory,
         ILogger<TileCacheJobService> logger,
         IJobQueue? jobQueue = null)
     {
@@ -54,7 +63,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _backends = (backends ?? throw new ArgumentNullException(nameof(backends))).ToArray();
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _jobQueue = jobQueue;
     }
@@ -77,10 +86,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var jobId = $"tile-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
         var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, tenantScope, options);
-        var targetLayerIds = await TileCacheTargetResolver.ResolveLayerIdsAsync(
-            request,
-            _graphProvider,
-            cancellationToken).ConfigureAwait(false);
+        var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -215,6 +221,24 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             _progressStore,
             ProgressRetention,
             _logger,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the tile-cache target layer indices for a submission through a fresh DI scope.
+    /// <see cref="IMetadataV2GraphProvider"/> is request-lifetime in the production (Postgres)
+    /// wiring, so this singleton must not hold one; a per-submission scope owns the provider and
+    /// its underlying database connection for exactly the duration of the resolve.
+    /// </summary>
+    private async Task<IReadOnlyList<int>> ResolveTargetLayerIdsAsync(
+        TileOperationStartRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var graphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        return await TileCacheTargetResolver.ResolveLayerIdsAsync(
+            request,
+            graphProvider,
             cancellationToken).ConfigureAwait(false);
     }
 

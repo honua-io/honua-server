@@ -13,6 +13,7 @@ using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -48,9 +49,25 @@ public sealed class TileCacheJobServiceTests
             progressStore,
             backends,
             new StaticOptionsMonitor<TileCacheBatchOptions>(options),
-            graphProvider ?? Substitute.For<IMetadataV2GraphProvider>(),
+            ScopeFactoryFor(graphProvider ?? Substitute.For<IMetadataV2GraphProvider>()),
             NullLogger<TileCacheJobService>.Instance,
             jobQueue);
+
+    /// <summary>
+    /// Builds a real <see cref="IServiceScopeFactory"/> over a <em>scoped</em>
+    /// <see cref="IMetadataV2GraphProvider"/>, matching the production (Postgres) lifetime. The
+    /// service under test is a singleton, so it must reach the provider through a scope rather
+    /// than capture it — see the container-validation matrix in
+    /// <c>ImportExportTileOperationsRegistrationTests</c>.
+    /// </summary>
+    private static IServiceScopeFactory ScopeFactoryFor(IMetadataV2GraphProvider graphProvider)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => graphProvider);
+        return services
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true })
+            .GetRequiredService<IServiceScopeFactory>();
+    }
 
     [UnitTest]
     public async Task SubmitAsync_ServiceAndStorageLayerAliases_SharePartition()
