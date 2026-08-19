@@ -10,7 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Features.Validation;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Validation;
@@ -144,10 +144,14 @@ public class ImageServerTileHandlerTests
                 serviceLocalId: "primary",
                 publicationType: MetadataV2PublicationType.EsriImageLayer)
             .BuildProvider();
-        var snapshot = await graphProvider.GetCurrentAsync();
-        var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceV2Async("imagery", Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(snapshot.Index.ServicesById["service-imagery"]));
+        // #3366: drive the resolver through the production ResourceValidator rather than a
+        // substitute. The resolver reaches IResourceValidator via the protocol-scoped
+        // ValidateServiceV2Async(serviceId, protocol, ct) overload; a substitute stubbed against
+        // the sibling ValidateServiceV2Async(serviceId, ct) overload leaves the real call
+        // unconfigured, and NSubstitute then returns a null ResourceValidationResult, which the
+        // shared helper dereferences. Using the real validator over the same test graph keeps the
+        // test honest about the production resolution path and cannot rot when an overload is added.
+        var resourceValidator = new ResourceValidator(graphProvider);
         var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider);
         var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
