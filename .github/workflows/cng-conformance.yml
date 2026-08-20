@@ -54,6 +54,12 @@ jobs:
           # FlatGeobuf read-back (GDAL ogrinfo).
           sudo apt-get update -qq
           sudo apt-get install -y gdal-bin curl jq
+          # Canonical artifact consumers. Exact pins are evidence identities.
+          python3 -m pip install \
+            geopandas==1.1.4 \
+            pyarrow==25.0.1 \
+            pyogrio==0.13.0 \
+            pmtiles==3.7.0
           # 3D Tiles validator (chains the Khronos glTF validator).
           npm install -g 3d-tiles-validator
 
@@ -65,7 +71,22 @@ jobs:
         run: |
           set +e
           bash ./scripts/conformance/cng/run-cng-conformance.sh
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cng_exit=$?
+
+          image_digest="$(docker image inspect --format '{{.Id}}' honua-server:latest 2>/dev/null)"
+          candidate_cut_at="$(git show -s --format=%cI HEAD)"
+          python3 ./scripts/conformance/cng/validate-canonical-artifacts.py \
+            --artifacts cng-results/artifacts \
+            --output cng-results/protocol-certification-fragment.json \
+            --source-sha "$GITHUB_SHA" \
+            --image-digest "$image_digest" \
+            --candidate-cut-at "$candidate_cut_at" \
+            --fixture-revision "docker/cng/seed.sql@$GITHUB_SHA" \
+            --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          client_exit=$?
+
+          if [[ "$cng_exit" -ne 0 || "$client_exit" -ne 0 ]]; then exit_code=1; else exit_code=0; fi
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
       - name: Upload CNG results
         if: always()
