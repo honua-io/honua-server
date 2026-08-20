@@ -84,6 +84,147 @@ public sealed class FeatureQueryBuilderStatisticsTests
         result.Sql.Should().Contain("MAX((attributes->>'bucket')::numeric) AS \"max_bucket\"");
     }
 
+    // #3372: an aggregate result set's columns are the statistic aliases and the group-by
+    // fields, so ORDER BY must be able to name them. The emitted SQL is rebuilt from the
+    // matched declaration (the aggregate expression / the group-by field expression), never
+    // from the order-by clause's own text.
+    [Fact]
+    public void BuildStatisticsQuery_WithOrderByStatisticAlias_OrdersByTheAggregateExpression()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                }),
+            GroupByFields = ImmutableArray.Create("category"),
+            OrderBy = ImmutableArray.Create(new OrderByClause("feature_count", ascending: false))
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ORDER BY COUNT(objectid) DESC");
+    }
+
+    [Fact]
+    public void BuildStatisticsQuery_WithOrderByGroupByField_OrdersByTheGroupedExpression()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                }),
+            GroupByFields = ImmutableArray.Create("category"),
+            OrderBy = ImmutableArray.Create(new OrderByClause("category"))
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ORDER BY attributes->>'category' ASC");
+    }
+
+    [Fact]
+    public void BuildStatisticsQuery_WithMultipleOrderByTerms_EmitsEachInOrder()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                }),
+            GroupByFields = ImmutableArray.Create("category"),
+            OrderBy = ImmutableArray.Create(
+                new OrderByClause("feature_count", ascending: false),
+                new OrderByClause("category"))
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain(
+            "ORDER BY COUNT(objectid) DESC, attributes->>'category' ASC");
+    }
+
+    [Fact]
+    public void BuildStatisticsQuery_WithoutOrderBy_EmitsNoOrderByClause()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                }),
+            GroupByFields = ImmutableArray.Create("category")
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().NotContain("ORDER BY");
+    }
+
+    // The widened order-by surface stays bounded at the SQL boundary too: an order-by
+    // field that matches no declared alias or group-by field is refused rather than
+    // interpolated into the statement.
+    [Fact]
+    public void BuildStatisticsQuery_WithOrderByUndeclaredField_Throws()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                }),
+            GroupByFields = ImmutableArray.Create("category"),
+            OrderBy = ImmutableArray.Create(new OrderByClause("name"))
+        };
+
+        var act = () => queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void BuildStatisticsQuery_WithOrderByInjectionAttempt_Throws()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                }),
+            GroupByFields = ImmutableArray.Create("category"),
+            OrderBy = ImmutableArray.Create(new OrderByClause("feature_count; DROP TABLE features--"))
+        };
+
+        var act = () => queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     private static FeatureQueryBuilder CreateQueryBuilder()
     {
         var poolProvider = new DefaultObjectPoolProvider();

@@ -686,6 +686,21 @@ internal sealed partial class FeatureServerQueryHandler(
                     havingConditions = parsedHaving;
                 }
 
+                // #3372: the aggregate result set's columns are the declared statistic
+                // aliases plus the group-by fields, so orderByFields is resolved against
+                // those declarations here rather than against the layer schema.
+                if (!GeoServicesStatisticsOrderBy.TryResolve(
+                        validatedParams.OrderByFields,
+                        statisticsDefs,
+                        groupByFields,
+                        out var statisticsOrderBy,
+                        out var statisticsOrderByError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid orderByFields",
+                        [statisticsOrderByError ?? "orderByFields could not be parsed."]);
+                }
+
                 // BH7-003: Apply the configured MaxRecordCount as an upper bound on
                 // statistics group rows. Without this cap a groupByFieldsForStatistics
                 // on a high-cardinality column (e.g. objectId) forces the server to
@@ -697,7 +712,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     Having = havingConditions,
                     Limit = queryLimits.MaxRecordCount,
                     Offset = null,
-                    OrderBy = null,
+                    OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                     Distinct = false
                 };
 
@@ -1815,6 +1830,19 @@ internal sealed partial class FeatureServerQueryHandler(
                 havingConditions = parsedHaving;
             }
 
+            // #3372: orderByFields on an aggregate query names statistic aliases /
+            // group-by fields, not layer fields, so it is resolved against the parsed
+            // declarations here (see GeoServicesStatisticsOrderBy).
+            if (!GeoServicesStatisticsOrderBy.TryResolve(
+                    validatedParams.OrderByFields,
+                    statisticsDefs,
+                    groupByFields,
+                    out var statisticsOrderBy,
+                    out var statisticsOrderByError))
+            {
+                throw new ArgumentException(statisticsOrderByError ?? "orderByFields could not be parsed.");
+            }
+
             var statisticsQuery = query with
             {
                 OutStatistics = statisticsDefs,
@@ -1822,7 +1850,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 Having = havingConditions,
                 Limit = null,
                 Offset = null,
-                OrderBy = null,
+                OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                 Distinct = false
             };
 

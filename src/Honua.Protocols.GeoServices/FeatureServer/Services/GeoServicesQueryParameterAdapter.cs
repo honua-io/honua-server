@@ -64,10 +64,21 @@ internal sealed class GeoServicesQueryParameterAdapter(
             var hasObjectIds = request.UseObjectIdsFastPath && hasObjectIdRequest;
             var outFields = ResolveOutFields(queryParams, resource);
             var spatialFilter = ResolveSpatialFilter(queryParams, request.ParsedGeometry, request.InputSrid);
-            var orderBy = OrderByParsing.ParseFeatureServerOrderBy(
-                queryParams.OrderByFields,
-                resource,
-                FeatureServerOrderByFields.AllowedCoreOrderByFields);
+            // When outStatistics is present the response columns are the declared statistic
+            // aliases plus the groupByFieldsForStatistics columns, not the layer's source
+            // fields, so validating orderByFields against the layer schema here would reject
+            // the only names that can order aggregate output (#3372). The aggregate branch of
+            // the query handler owns orderByFields in that case — it resolves the terms against
+            // the parsed statistic/group-by declarations via GeoServicesStatisticsOrderBy and
+            // sets FeatureQuery.OrderBy itself. Leaving it null here also keeps the shared
+            // UnifiedQuery validation (which likewise only knows the layer schema) out of the
+            // way; the statistics executor never reads the value set on this path.
+            var orderBy = string.IsNullOrWhiteSpace(queryParams.OutStatistics)
+                ? OrderByParsing.ParseFeatureServerOrderBy(
+                    queryParams.OrderByFields,
+                    resource,
+                    FeatureServerOrderByFields.AllowedCoreOrderByFields)
+                : null;
 
             QueryFilter? filter = null;
             if (request.SqlFilter != null)

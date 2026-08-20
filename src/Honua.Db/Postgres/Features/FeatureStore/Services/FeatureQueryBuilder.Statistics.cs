@@ -51,6 +51,8 @@ internal sealed partial class FeatureQueryBuilder
                 AppendHavingClause(sql, query.Having.Value, ref paramIndex, parameters);
             }
 
+            AppendStatisticsOrderByClause(sql, query.OrderBy, statistics, groupByFields);
+
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally
@@ -159,6 +161,80 @@ internal sealed partial class FeatureQueryBuilder
 
             sql.Append(GetFieldExpression(groupByFields[i]));
         }
+    }
+
+    /// <summary>
+    /// Appends ORDER BY to an aggregate statistics query (#3372). Ordering an aggregate result set
+    /// can only reference the columns that set actually has — a declared
+    /// <c>outStatisticFieldName</c> alias or a group-by field — so each clause is re-resolved
+    /// against those declarations and the SQL is rebuilt from the matched declaration. Nothing from
+    /// the clause's own text is emitted, and a clause that matches no declaration throws rather than
+    /// reaching the database.
+    /// </summary>
+    private static void AppendStatisticsOrderByClause(
+        StringBuilder sql,
+        ImmutableArray<OrderByClause>? orderBy,
+        ImmutableArray<StatisticDefinition> statistics,
+        ImmutableArray<string>? groupByFields)
+    {
+        if (!orderBy.HasValue || orderBy.Value.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var first = true;
+        foreach (var clause in orderBy.Value)
+        {
+            var expression = ResolveStatisticsOrderByExpression(clause.Field, statistics, groupByFields);
+            sql.Append(first ? " ORDER BY " : ", ");
+            sql.Append(CultureInfo.InvariantCulture, $"{expression} {(clause.Ascending ? "ASC" : "DESC")}");
+            first = false;
+        }
+    }
+
+    private static string ResolveStatisticsOrderByExpression(
+        string field,
+        ImmutableArray<StatisticDefinition> statistics,
+        ImmutableArray<string>? groupByFields)
+    {
+        foreach (var stat in statistics)
+        {
+            if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
+            {
+                // Repeat the aggregate expression rather than referencing the SELECT alias:
+                // an alias that collides with a real table column would make an alias
+                // reference ambiguous, and the expression is rebuilt from the validated
+                // declaration either way.
+                if (!IsValidFieldName(stat.OnStatisticField))
+                {
+                    throw new ArgumentException($"Invalid statistic field name: {stat.OnStatisticField}");
+                }
+
+                return BuildAggregateExpression(
+                    stat.StatisticType,
+                    GetFieldExpression(stat.OnStatisticField),
+                    stat.FieldType);
+            }
+        }
+
+        if (groupByFields.HasValue && !groupByFields.Value.IsDefaultOrEmpty)
+        {
+            foreach (var groupByField in groupByFields.Value)
+            {
+                if (groupByField.Equals(field, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!IsValidFieldName(groupByField))
+                    {
+                        throw new ArgumentException($"Invalid group-by field name: {groupByField}");
+                    }
+
+                    return GetFieldExpression(groupByField);
+                }
+            }
+        }
+
+        throw new ArgumentException(
+            $"Invalid statistics order-by field name: {field}. Aggregate ordering must name a declared statistic alias or group-by field.");
     }
 
     private static void AppendHavingClause(
