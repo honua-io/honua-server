@@ -754,6 +754,147 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         content.Should().Contain("having");
     }
 
+    // #3372: when outStatistics is present the result columns ARE the statistic aliases plus
+    // the groupByFieldsForStatistics columns, so ordering by an alias is the only way to order
+    // aggregate output. ArcGIS Server accepts it; validating against the layer's source fields
+    // (the non-aggregate denominator) rejected it. The test layer groups to test=3, sample=2.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByStatisticAliasDescending_ReturnsRowsOrderedByAlias()
+    {
+        var features = await QueryStatisticsFeaturesAsync("feature_count DESC");
+
+        features.Select(feature => GetStringAttribute(feature.Attributes, "category"))
+            .Should().Equal("test", "sample");
+        features.Select(feature => GetInt64Attribute(feature.Attributes, "feature_count"))
+            .Should().Equal(3L, 2L);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByStatisticAliasAscending_ReturnsRowsOrderedByAlias()
+    {
+        var features = await QueryStatisticsFeaturesAsync("feature_count ASC");
+
+        features.Select(feature => GetInt64Attribute(feature.Attributes, "feature_count"))
+            .Should().Equal(2L, 3L);
+    }
+
+    // An alias with no explicit direction defaults to ascending, matching the non-aggregate path.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByStatisticAliasNoDirection_DefaultsToAscending()
+    {
+        var features = await QueryStatisticsFeaturesAsync("feature_count");
+
+        features.Select(feature => GetInt64Attribute(feature.Attributes, "feature_count"))
+            .Should().Equal(2L, 3L);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByGroupByField_ReturnsRowsOrderedByThatField()
+    {
+        var ascending = await QueryStatisticsFeaturesAsync("category ASC");
+        ascending.Select(feature => GetStringAttribute(feature.Attributes, "category"))
+            .Should().Equal("sample", "test");
+
+        var descending = await QueryStatisticsFeaturesAsync("category DESC");
+        descending.Select(feature => GetStringAttribute(feature.Attributes, "category"))
+            .Should().Equal("test", "sample");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByMultipleTerms_ReturnsOrderedRows()
+    {
+        var features = await QueryStatisticsFeaturesAsync("feature_count DESC, category ASC");
+
+        features.Select(feature => GetStringAttribute(feature.Attributes, "category"))
+            .Should().Equal("test", "sample");
+    }
+
+    // The widened set is exactly "declared statistic alias or declared group-by field" — a name
+    // that is neither is still rejected, so typos do not silently sort by nothing.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByUnknownField_ReturnsBadRequest()
+    {
+        var content = await QueryStatisticsRawAsync("not_a_field");
+
+        content.Should().Contain("orderByFields");
+        content.Should().Contain("\"code\":400");
+    }
+
+    // A layer field that is real but is not in the aggregate result set is equally invalid:
+    // `name` exists on the layer yet is neither a statistic alias nor a group-by column.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByNonAggregateLayerField_ReturnsBadRequest()
+    {
+        var content = await QueryStatisticsRawAsync("name");
+
+        content.Should().Contain("orderByFields");
+        content.Should().Contain("\"code\":400");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithOutStatisticsOrderByInvalidDirection_ReturnsBadRequest()
+    {
+        var content = await QueryStatisticsRawAsync("feature_count SIDEWAYS");
+
+        content.Should().Contain("orderByFields");
+        content.Should().Contain("\"code\":400");
+    }
+
+    // The non-aggregate path keeps the layer-schema denominator exactly as before: a statistic
+    // alias is meaningless without outStatistics and must still be rejected there.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithoutOutStatisticsOrderByUnknownField_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            "?f=json&where=1%3D1&orderByFields=feature_count%20DESC");
+
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("\"code\":400");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithoutOutStatisticsOrderByLayerField_ReturnsOrderedFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            "?f=json&where=1%3D1&outFields=objectid&returnGeometry=false&orderByFields=objectid%20DESC");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull().And.NotBeEmpty();
+
+        var objectIds = queryResponse.Features!
+            .Select(feature => GetInt64Attribute(feature.Attributes, "objectid"))
+            .ToList();
+        objectIds.Should().BeInDescendingOrder();
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetLayerInfo)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}")]
@@ -771,6 +912,58 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         capabilities.TryGetProperty("supportsHavingClause", out var supportsHaving)
             .Should().BeTrue("advancedQueryCapabilities should expose supportsHavingClause");
         supportsHaving.GetBoolean().Should().BeTrue();
+    }
+
+    // #3372 helper: the canonical aggregate request — count grouped by category, ordered by the
+    // caller-supplied orderByFields — issued against the shared test layer.
+    private const string StatisticsOutStatistics =
+        """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"feature_count"}]""";
+
+    private Task<string> QueryStatisticsRawAsync(string orderByFields)
+    {
+        var url = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?f=json&groupByFieldsForStatistics=category" +
+            $"&outStatistics={Uri.EscapeDataString(StatisticsOutStatistics)}" +
+            $"&orderByFields={Uri.EscapeDataString(orderByFields)}";
+
+        return ReadStatisticsBodyAsync(url);
+    }
+
+    private async Task<string> ReadStatisticsBodyAsync(string url)
+    {
+        var response = await _fixture.Client.GetAsync(url);
+
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    private async Task<List<GeoServicesFeature>> QueryStatisticsFeaturesAsync(string orderByFields)
+    {
+        var content = await QueryStatisticsRawAsync(orderByFields);
+        content.Should().NotContain("\"error\"", "the aggregate query must succeed");
+
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull().And.HaveCount(2);
+        return [.. queryResponse.Features!];
+    }
+
+    private static long? GetInt64Attribute(Dictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out var value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            long l => l,
+            int i => i,
+            double d => (long)d,
+            JsonElement element when element.ValueKind == JsonValueKind.Number => element.GetInt64(),
+            _ => long.TryParse(value.ToString(), out var parsed) ? parsed : null
+        };
     }
 
     private static string? GetStringAttribute(Dictionary<string, object?> attributes, string key)

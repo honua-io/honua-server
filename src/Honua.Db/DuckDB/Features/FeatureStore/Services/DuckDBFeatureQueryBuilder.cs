@@ -334,7 +334,66 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             sb.Append(CultureInfo.InvariantCulture, $" GROUP BY {string.Join(", ", groupByColumns)}");
         }
 
+        AppendStatisticsOrderByClause(sb, query.OrderBy, query.OutStatistics.Value, query.GroupByFields);
+
         return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Appends ORDER BY to an aggregate statistics query (#3372). An aggregate result set only has
+    /// the declared statistic aliases and group-by columns, so each clause is re-resolved against
+    /// those declarations and the SQL is rebuilt from the matched declaration — the clause's own
+    /// text is never emitted, and an unmatched clause throws instead of reaching the database.
+    /// </summary>
+    private static void AppendStatisticsOrderByClause(
+        StringBuilder sb,
+        System.Collections.Immutable.ImmutableArray<OrderByClause>? orderBy,
+        System.Collections.Immutable.ImmutableArray<StatisticDefinition> statistics,
+        System.Collections.Immutable.ImmutableArray<string>? groupByFields)
+    {
+        if (!orderBy.HasValue || orderBy.Value.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var terms = new List<string>();
+        foreach (var clause in orderBy.Value)
+        {
+            var expression = ResolveStatisticsOrderByExpression(clause.Field, statistics, groupByFields);
+            terms.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}");
+        }
+
+        sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", terms)}");
+    }
+
+    private static string ResolveStatisticsOrderByExpression(
+        string field,
+        System.Collections.Immutable.ImmutableArray<StatisticDefinition> statistics,
+        System.Collections.Immutable.ImmutableArray<string>? groupByFields)
+    {
+        foreach (var stat in statistics)
+        {
+            if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
+            {
+                ValidateFieldName(stat.OutStatisticFieldName);
+                return $"\"{stat.OutStatisticFieldName}\"";
+            }
+        }
+
+        if (groupByFields.HasValue && !groupByFields.Value.IsDefaultOrEmpty)
+        {
+            foreach (var groupByField in groupByFields.Value)
+            {
+                if (groupByField.Equals(field, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateFieldName(groupByField);
+                    return $"\"{groupByField}\"";
+                }
+            }
+        }
+
+        throw new ArgumentException(
+            $"Invalid statistics order-by field name: {field}. Aggregate ordering must name a declared statistic alias or group-by field.");
     }
 
     /// <inheritdoc />

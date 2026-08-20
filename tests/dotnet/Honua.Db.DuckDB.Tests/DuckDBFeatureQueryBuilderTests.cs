@@ -169,6 +169,52 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains("SUM(\"area\") AS \"total_area\"", result.Sql);
         Assert.Contains("COUNT(\"name\") AS \"count_name\"", result.Sql);
         Assert.Contains("GROUP BY \"type\"", result.Sql);
+        Assert.DoesNotContain("ORDER BY", result.Sql);
+    }
+
+    // #3372: an aggregate result set's columns are the declared statistic aliases plus the
+    // group-by fields, so ORDER BY must be able to name them. Each clause is re-resolved
+    // against those declarations, so only a declared name can reach the SQL.
+    [Fact]
+    public void BuildStatisticsQuery_WithOrderByStatisticAliasAndGroupByField_EmitsOrderBy()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "name",
+                    OutStatisticFieldName = "count_name"
+                }),
+            GroupByFields = ImmutableArray.Create("type"),
+            OrderBy = ImmutableArray.Create(
+                new OrderByClause("count_name", ascending: false),
+                new OrderByClause("type"))
+        };
+
+        var result = _builder.BuildStatisticsQuery(TestLayerId, query);
+
+        Assert.Contains("ORDER BY \"count_name\" DESC, \"type\" ASC", result.Sql);
+    }
+
+    [Fact]
+    public void BuildStatisticsQuery_WithOrderByUndeclaredField_Throws()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "name",
+                    OutStatisticFieldName = "count_name"
+                }),
+            GroupByFields = ImmutableArray.Create("type"),
+            OrderBy = ImmutableArray.Create(new OrderByClause("area"))
+        };
+
+        Assert.Throws<ArgumentException>(() => _builder.BuildStatisticsQuery(TestLayerId, query));
     }
 
     [Fact]
