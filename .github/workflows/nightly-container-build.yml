@@ -35,7 +35,26 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # One build date for the WHOLE run. Every tag-producing job used to evaluate the
+      # metadata-action date template independently at ITS OWN start time, so a run spanning UTC midnight
+      # tagged the arch images with one date and then looked for the other when assembling the
+      # manifest. Observed 2026-08-20 in run 32314563833: both AOT legs pushed
+      # `nightly-20260819-*`, the manifest job started at 00:50 and failed with
+      # `nightly-20260820-arm64: not found`, so no multi-arch tag (and no `nightly-aot-<sha>`
+      # compatibility tag) was published at all. Cold native-AOT builds now take ~90 minutes, so
+      # any run starting in the last ~1.5h of a UTC day straddles midnight — this is not rare.
+      build_date: ${{ steps.run_date.outputs.date }}
     steps:
+      # Named `run_date` deliberately. Honua.Architecture.Tests'
+      # ReleaseWorkflows_ShouldInspectTheAotImagesTheyPublish counts the step-identifier prefix
+      # shared by the two AOT build steps and requires exactly two, so that each one keeps
+      # exposing an immutable digest to its verifier. A step identified as `build_date` would
+      # carry that prefix and trip the guard; this name does not.
+      - name: Freeze the build date for every tag in this run
+        id: run_date
+        run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -148,7 +167,7 @@ jobs:
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
             type=raw,value=nightly
-            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}
             type=sha,prefix=nightly-
             type=raw,value=trunk
           flavor: |
@@ -259,7 +278,7 @@ jobs:
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
             type=raw,value=nightly-lambda-aot
-            type=raw,value=nightly-lambda-aot-{{date 'YYYYMMDD'}}
+            type=raw,value=nightly-lambda-aot-${{ needs.mirror-base-images.outputs.build_date }}
             type=sha,prefix=nightly-lambda-aot-
           flavor: |
             suffix=-${{ matrix.arch }}
@@ -315,7 +334,7 @@ jobs:
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
     runs-on: ubuntu-24.04
-    needs: build-lambda-aot
+    needs: [build-lambda-aot, mirror-base-images]
     if: ${{ needs.build-lambda-aot.result == 'success' }}
     permissions:
       contents: read
@@ -346,7 +365,7 @@ jobs:
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
             type=raw,value=nightly-lambda-aot
-            type=raw,value=nightly-lambda-aot-{{date 'YYYYMMDD'}}
+            type=raw,value=nightly-lambda-aot-${{ needs.mirror-base-images.outputs.build_date }}
             type=sha,prefix=nightly-lambda-aot-
 
       - name: Create and push multi-arch manifests
@@ -407,7 +426,7 @@ jobs:
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
             type=raw,value=nightly-jit
-            type=raw,value=nightly-jit-{{date 'YYYYMMDD'}}
+            type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}
             type=sha,prefix=nightly-jit-
             type=raw,value=trunk-jit
           flavor: |
@@ -441,7 +460,7 @@ jobs:
   manifest-aot:
     name: Publish AOT Manifests
     runs-on: ubuntu-24.04
-    needs: build-aot
+    needs: [build-aot, mirror-base-images]
     if: ${{ needs.build-aot.result == 'success' }}
     permissions:
       contents: read
@@ -472,7 +491,7 @@ jobs:
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
             type=raw,value=nightly
-            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}
             type=sha,prefix=nightly-
             type=raw,value=trunk
 
@@ -503,7 +522,7 @@ jobs:
   manifest-jit:
     name: Publish JIT Manifests
     runs-on: ubuntu-24.04
-    needs: build-jit
+    needs: [build-jit, mirror-base-images]
     if: ${{ needs.build-jit.result == 'success' }}
     permissions:
       contents: read
@@ -534,7 +553,7 @@ jobs:
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
             type=raw,value=nightly-jit
-            type=raw,value=nightly-jit-{{date 'YYYYMMDD'}}
+            type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}
             type=sha,prefix=nightly-jit-
             type=raw,value=trunk-jit
 
