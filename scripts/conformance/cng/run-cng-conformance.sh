@@ -40,6 +40,7 @@ BASE_URL="http://localhost:${HONUA_CNG_SERVER_PORT}"
 SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-300}"
 SKIP_BUILD="${HONUA_CNG_SKIP_BUILD:-false}"
 CLEANUP="${HONUA_CNG_CLEANUP:-true}"
+GPQ_VERSION="v0.24.0"
 
 # Per-format pass/fail accumulators (0 = pass, 1 = fail, 2 = skipped/not run).
 GEOPARQUET_STATUS=2
@@ -95,7 +96,7 @@ install_tools() {
 
     if ! command -v gpq &> /dev/null; then
         echo "Installing gpq (GeoParquet validator)..."
-        go install github.com/planetlabs/gpq@latest
+        go install "github.com/planetlabs/gpq/cmd/gpq@${GPQ_VERSION}"
         export PATH="$PATH:$(go env GOPATH)/bin"
     fi
 
@@ -185,15 +186,9 @@ validate_flatgeobuf() {
     local code
     code=$(curl -sS -o "$out" -w "%{http_code}" "$url")
     if [[ "$code" != "200" ]]; then
-        # Known open bug honua-server#1938: the source-backed (provider-routed)
-        # PostGIS reader (PostgresStorageMappedFeatureReader) does not yet emit
-        # FlatGeobuf, so a compat-seeded FeatureServer returns 400 for f=fgb. Treat
-        # this as PENDING (status 2) rather than a lane failure until #1938 lands;
-        # flip this to a hard FAIL once the storage-mapped reader implements
-        # IFlatGeobufFeatureStore so a regression cannot slip back in.
-        FLATGEOBUF_STATUS=2
-        FLATGEOBUF_DETAIL="PENDING honua-server#1938: f=fgb returned HTTP ${code} (storage-mapped reader does not emit FlatGeobuf yet)"
-        echo -e "${YELLOW}${FLATGEOBUF_DETAIL}${NC}"
+        FLATGEOBUF_STATUS=1
+        FLATGEOBUF_DETAIL="FeatureServer returned HTTP ${code} for f=fgb (expected 200)"
+        echo -e "${RED}${FLATGEOBUF_DETAIL}${NC}"
         head -c 500 "$out"; echo
         return
     fi
@@ -302,6 +297,7 @@ cat > "$SUMMARY_FILE" << EOF
 
 **Execution Date**: $(date)
 **Honua Server Version**: $(git describe --tags --always 2>/dev/null || echo "unknown")
+**gpq Validator Pin**: ${GPQ_VERSION} (`github.com/planetlabs/gpq/cmd/gpq`)
 
 ## Per-format results
 
@@ -325,21 +321,14 @@ EOF
 echo -e "\n${BLUE}Summary written to ${SUMMARY_FILE}${NC}"
 cat "$SUMMARY_FILE"
 
-# Fail the lane if any hard-gated format did not pass. GeoParquet, PMTiles and
-# 3D Tiles must be PASS (status 0); a "not run" (stack failed to start) is a
-# failure. FlatGeobuf is allowed to be PENDING (status 2) until honua-server#1938
-# lands — but a PENDING caused by anything other than the documented 400 still
-# surfaces in the summary for review.
+# Fail the lane if any hard-gated format did not pass. A "not run" outcome is
+# also a failure: supported formats cannot be certified by skipped validators.
 OVERALL=0
-for s in $GEOPARQUET_STATUS $PMTILES_STATUS $TILES_STATUS; do
+for s in $GEOPARQUET_STATUS $FLATGEOBUF_STATUS $PMTILES_STATUS $TILES_STATUS; do
     if [[ "$s" != "0" ]]; then
         OVERALL=1
     fi
 done
-# FlatGeobuf: fail only on an actual validator FAIL (status 1); PENDING (2) is OK.
-if [[ "$FLATGEOBUF_STATUS" == "1" ]]; then
-    OVERALL=1
-fi
 
 if [[ $OVERALL -eq 0 ]]; then
     echo -e "\n${GREEN}All CNG conformance validators passed.${NC}"
