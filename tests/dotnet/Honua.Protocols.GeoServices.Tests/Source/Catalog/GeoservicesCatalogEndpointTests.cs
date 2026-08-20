@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -180,6 +182,69 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             imageServerUrls.Should().OnlyContain(url =>
                 !string.IsNullOrWhiteSpace(url) &&
                 System.Text.RegularExpressions.Regex.IsMatch(url, @".*/rest/services/[^/]+/ImageServer$"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(new[]
+            {
+                new RasterInfo
+                {
+                    Id = 1,
+                    LayerId = callInfo.ArgAt<int>(0),
+                    Name = "test-raster",
+                    Width = 256,
+                    Height = 256,
+                    BandCount = 3,
+                    PixelType = "8BUI",
+                    Srid = 4326,
+                    CreatedAt = DateTimeOffset.UtcNow
+                }
+            }));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(rasterStore));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            const string soapRequest = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                  <soap:Body>
+                    <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                  </soap:Body>
+                </soap:Envelope>
+                """;
+            using var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
+
+            var response = await fixture.Client.PostAsync("/services", content);
+
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var description = payload.Descendants()
+                .Single(element => element.Name.LocalName == "ServiceDescription");
+            description.Elements()
+                .Single(element => element.Name.LocalName == "Name")
+                .Value.Should().Be("test");
+            description.Elements()
+                .Single(element => element.Name.LocalName == "Type")
+                .Value.Should().Be("ImageServer");
+            description.Elements()
+                .Single(element => element.Name.LocalName == "Url")
+                .Value.Should().EndWith("/services/test/ImageServer");
         }
         finally
         {
