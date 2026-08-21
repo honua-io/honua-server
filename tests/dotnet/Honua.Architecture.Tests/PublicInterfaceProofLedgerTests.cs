@@ -244,19 +244,31 @@ public sealed partial class PublicInterfaceProofLedgerTests
     }
 
     [ArchitectureTest]
-    public void ClientTemplateVersionMatrix_ShouldUseConcreteEvidenceLinks()
+    public void ClientTemplateVersionMatrix_ShouldSeparateExamplesFromCertifyingEvidence()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var matrixPath = ArchitectureTestHelpers.CombinePath(repoRoot, "docs", "gis", "CLIENT_TEMPLATE_VERSION_MATRIX.md");
         var matrixDirectory = Path.GetDirectoryName(matrixPath)!;
 
-        var evidenceRows = File.ReadAllLines(matrixPath)
-            .Where(line => line.StartsWith("| ", StringComparison.Ordinal) && line.Contains(".cert.json", StringComparison.Ordinal))
+        var rows = File.ReadAllLines(matrixPath)
+            .Where(line => line.StartsWith("| ", StringComparison.Ordinal))
+            .ToArray();
+        var exampleRows = rows
+            .Where(line => line.Contains(".cert.example.json", StringComparison.Ordinal))
+            .ToArray();
+        var certifyingRows = rows
+            .Where(line => line.Contains(".cert.json", StringComparison.Ordinal) &&
+                           !line.Contains(".cert.example.json", StringComparison.Ordinal))
             .ToArray();
 
-        evidenceRows.Should().HaveCount(8, "the current release ledger should enumerate ArcGIS Pro, QGIS, Power BI, Excel, MapLibre, and PyQGIS (OGC/WFS) evidence rows");
+        exampleRows.Should().NotBeEmpty("historical schema examples remain discoverable without entering certification collectors");
+        exampleRows.Should().OnlyContain(row => row.Contains("Not certified", StringComparison.Ordinal),
+            "a .cert.example.json link must never be presented as a certification pass");
+        certifyingRows.Should().NotBeEmpty("active automated lanes must identify their emitted .cert.json evidence");
+        certifyingRows.Should().OnlyContain(row => row.Contains("automated", StringComparison.OrdinalIgnoreCase),
+            "a certifying row must identify the automated producer until an immutable release artifact is linked");
 
-        foreach (var row in evidenceRows)
+        foreach (var row in exampleRows.Concat(certifyingRows))
         {
             row.Should().NotContain("TBD",
                 "required client rows must point at concrete immutable evidence instead of placeholders");

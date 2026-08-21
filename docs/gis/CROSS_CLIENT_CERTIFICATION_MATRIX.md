@@ -118,7 +118,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | `duckdb` | DuckDB Spatial | OGC API Features | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
 | `r-sf` | R sf and ows4R | OGC API Features, WFS | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
 | `py-pystac` | pystac-client | STAC | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
-| `desktop-arcpy` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `desktop-arcgis` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
 | `bi-excel` | Microsoft Excel Power Query | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-powerbi` | Power BI Desktop | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-tableau` | Tableau Desktop | OData, OGC API Features | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |

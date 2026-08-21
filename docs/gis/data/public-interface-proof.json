@@ -1834,22 +1834,6 @@
           "versionCaptureRule": null
         },
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
-          "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
-          "evidenceLocations": [
-            ".github/workflows/client-compat-smoke-nightly.yml",
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-arcgis-featureserver.cert.json"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final FeatureServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
-        },
-        {
           "proofClass": "tool-interoperability",
           "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
           "executionLane": "ci:esri-leaflet-browser-tests",
@@ -2060,22 +2044,6 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": null
-        },
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
-          "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
-          "evidenceLocations": [
-            ".github/workflows/client-compat-smoke-nightly.yml",
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-arcgis-mapserver.cert.json"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final MapServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
         },
         {
           "proofClass": "tool-interoperability",
@@ -2479,22 +2447,6 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Pin Microsoft.OData.Client in tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj; ODataClientCertificationFixture reads the loaded assembly version into the cert envelope's client_version field on every CI run, and the envelope's server_version field is sourced from GITHUB_SHA or the Honua.Server informational version."
-        },
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Power BI Desktop and Excel manual certification evidence",
-          "executionLane": "release:manual-follow-through",
-          "evidenceLocations": [
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-bi-powerbi-odata.cert.json",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-bi-excel-odata.cert.json"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact Power BI Desktop and Excel versions, run date, and immutable OData .cert.json links in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
         }
       ]
     },
@@ -2573,21 +2525,6 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Capture the exact ogrinfo --version string in tests/python/gdal_ogr/conftest.py and preserve the generated tests/python/gdal-ogr-results*.json artifact from ci.yml."
-        },
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "QGIS manual certification evidence",
-          "executionLane": "release:manual-follow-through",
-          "evidenceLocations": [
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-qgis-ogc-features.cert.json"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact QGIS version, run date, and immutable OGC API Features .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
         },
         {
           "proofClass": "tool-interoperability",
@@ -3798,7 +3735,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer\u2192INT32 with clamping warnings, BigInteger\u2192INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
+          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer→INT32 with clamping warnings, BigInteger→INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/EcefCoordinateTransformTests.cs",
@@ -3994,7 +3931,7 @@
       "displayName": "MCP operator surface (server-owned)",
       "surfaceKind": "http-route-family",
       "protocol": "MCP",
-      "canonicalIdentifier": "POST /mcp \u2014 JSON-RPC 2.0 operator surface",
+      "canonicalIdentifier": "POST /mcp — JSON-RPC 2.0 operator surface",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
