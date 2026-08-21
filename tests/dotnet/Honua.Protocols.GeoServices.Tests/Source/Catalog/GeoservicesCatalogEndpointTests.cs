@@ -540,13 +540,13 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 storageType: MetadataV2StorageType.RelationalTable,
                 storageLayerId: storageLayerId)
             .AddService(
-                "svc-soap-storage",
+                "storage-image",
                 "storage-image",
                 protocols: [ServiceProtocols.ImageServer],
                 accessPolicy: anonymous)
             .AddPublication(
                 "pub-soap-storage",
-                "svc-soap-storage",
+                "storage-image",
                 "res-soap-storage",
                 layerIndex: publicationLayerIndex,
                 serviceLocalId: publicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -554,8 +554,31 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();
-        rasterStore.ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>())
-            .Returns([CreateSoapRaster(storageLayerId)]);
+        var raster = CreateSoapRaster(storageLayerId);
+        rasterStore.ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>()).Returns([raster]);
+        rasterStore.QueryRastersAsync(
+                storageLayerId,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>())
+            .Returns([raster]);
+        rasterStore.ExportImageAsync(
+                storageLayerId,
+                Arg.Any<long>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var query = callInfo.ArgAt<RasterQuery>(2);
+                return new RasterResult
+                {
+                    Data = CreateSoapPng(query.OutputWidth ?? 16, query.OutputHeight ?? 8),
+                    ContentType = "image/png",
+                    Width = query.OutputWidth ?? 16,
+                    Height = query.OutputHeight ?? 8,
+                    Srid = 4326,
+                    Extent = raster.Extent
+                };
+            });
 
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
@@ -574,6 +597,121 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             (await response.Content.ReadAsStringAsync()).Should().Contain("storage-image");
             await rasterStore.Received().ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>());
             await rasterStore.DidNotReceive().ListRastersAsync(publicationLayerIndex, Arg.Any<CancellationToken>());
+
+            const string exportOperation = """
+                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+                             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <ImageDescription xsi:type="GeoImageDescription">
+                    <Extent xsi:type="EnvelopeN">
+                      <XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax>
+                    </Extent>
+                    <Width>16</Width><Height>8</Height>
+                  </ImageDescription>
+                  <ImageType xsi:type="ImageType">
+                    <ImageFormat>esriImagePNG</ImageFormat>
+                    <ImageReturnType>esriImageReturnURL</ImageReturnType>
+                  </ImageType>
+                </ExportImage>
+                """;
+            using var exportResponse = await PostSoapOperationAsync(
+                fixture.Client,
+                "/services/storage-image/ImageServer",
+                exportOperation);
+
+            exportResponse.Be200Ok();
+            await rasterStore.Received().ExportImageAsync(
+                storageLayerId,
+                Arg.Any<long>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_SelectsRasterBearingPublicationAndUsesReferencePixelSize()
+    {
+        const int emptyStorageLayerId = 9101;
+        const int rasterStorageLayerId = 9102;
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("res-soap-empty", "Empty raster", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+            .AddStorageBinding(
+                "binding-soap-empty",
+                "res-soap-empty",
+                "empty_raster_data",
+                storageType: MetadataV2StorageType.RelationalTable,
+                storageLayerId: emptyStorageLayerId)
+            .AddResource("res-soap-data", "Raster data", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+            .AddStorageBinding(
+                "binding-soap-data",
+                "res-soap-data",
+                "raster_data",
+                storageType: MetadataV2StorageType.RelationalTable,
+                storageLayerId: rasterStorageLayerId)
+            .AddService(
+                "selection-image",
+                "selection-image",
+                protocols: [ServiceProtocols.ImageServer],
+                accessPolicy: anonymous)
+            .AddPublication(
+                "pub-soap-empty",
+                "selection-image",
+                "res-soap-empty",
+                layerIndex: 0,
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .AddPublication(
+                "pub-soap-data",
+                "selection-image",
+                "res-soap-data",
+                layerIndex: 1,
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .Build();
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(emptyStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([]);
+        rasterStore.ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([
+                CreateSoapRaster(
+                    rasterStorageLayerId,
+                    id: 201,
+                    width: 180,
+                    extent: new RasterExtent { XMin = -180, YMin = -90, XMax = 0, YMax = 90, Srid = 4326 }),
+                CreateSoapRaster(
+                    rasterStorageLayerId,
+                    id: 202,
+                    width: 90,
+                    extent: new RasterExtent { XMin = 0, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 })
+            ]);
+
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                "/services/selection-image/ImageServer",
+                "GetServiceInfo");
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Single(element => element.Name.LocalName == "PixelSizeX")
+                .Value.Should().Be("1");
+            await rasterStore.Received().ListRastersAsync(emptyStorageLayerId, Arg.Any<CancellationToken>());
+            await rasterStore.Received().ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -905,18 +1043,23 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         return encoded.ToArray();
     }
 
-    private static RasterInfo CreateSoapRaster(int layerId)
+    private static RasterInfo CreateSoapRaster(
+        int layerId,
+        long id = 101,
+        int width = 360,
+        int height = 180,
+        RasterExtent? extent = null)
         => new()
         {
-            Id = 101,
+            Id = id,
             LayerId = layerId,
             Name = "soap-raster",
-            Width = 360,
-            Height = 180,
+            Width = width,
+            Height = height,
             BandCount = 3,
             PixelType = "8BUI",
             Srid = 4326,
-            Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            Extent = extent ?? new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
             CreatedAt = DateTimeOffset.UtcNow
         };
 

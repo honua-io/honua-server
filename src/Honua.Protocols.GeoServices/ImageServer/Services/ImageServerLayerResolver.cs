@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -32,7 +33,8 @@ internal readonly record struct ImageServerLayerResolution(
 
 internal sealed class MetadataV2ImageServerLayerResolver(
     IResourceValidator resourceValidator,
-    IMetadataV2GraphProvider metadataGraphProvider) : IImageServerLayerResolver
+    IMetadataV2GraphProvider metadataGraphProvider,
+    IRasterStore rasterStore) : IImageServerLayerResolver
 {
     public async Task<ImageServerLayerResolution> ResolveFirstAccessibleLayerAsync(
         string serviceId,
@@ -73,15 +75,31 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             return new ImageServerLayerResolution(0, null, null, accessError);
         }
 
-        var layer = publishedResources.FirstOrDefault(publication =>
-            AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource!, service));
+        var layer = default(ImageServerPublicationLayer);
+        foreach (var publication in publishedResources)
+        {
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource!, service))
+            {
+                continue;
+            }
+
+            var rasters = await rasterStore.ListRastersAsync(
+                publication.StorageLayerId!.Value,
+                cancellationToken).ConfigureAwait(false);
+            if (rasters.Length > 0)
+            {
+                layer = publication;
+                break;
+            }
+        }
+
         if (layer.Resource is null || !layer.StorageLayerId.HasValue)
         {
             return new ImageServerLayerResolution(
                 0,
                 null,
                 null,
-                StandardErrorHelpers.CreateNotFound(context, "Image service has no layers."));
+                StandardErrorHelpers.CreateNotFound(context, "Image service has no raster layers."));
         }
 
         return new ImageServerLayerResolution(

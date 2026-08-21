@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -74,6 +75,7 @@ internal sealed class ImageServerExportHandler
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
+            var storageLayerId = snapshot.ResolveStorageLayerId(resolved.Publication) ?? layerId;
 
             if (!TryParseExportParameters(request, out var exportQuery, out var parseError))
             {
@@ -101,7 +103,7 @@ internal sealed class ImageServerExportHandler
             {
                 return await ExportMultidimensionalSliceAsync(
                         context,
-                        layerId,
+                        storageLayerId,
                         request,
                         exportQuery,
                         dimensionConstraints,
@@ -146,7 +148,7 @@ internal sealed class ImageServerExportHandler
                 Timestamp = mosaicRule.Method == MosaicMethod.LockRaster ? null : timestamp,
             };
 
-            var selectedRasters = await _exportBackend.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            var selectedRasters = await _exportBackend.QueryRastersAsync(storageLayerId, selectionQuery, cancellationToken);
 
             if (mosaicRule.Method == MosaicMethod.LockRaster)
             {
@@ -182,7 +184,7 @@ internal sealed class ImageServerExportHandler
                 outputFormat);
 
             var result = await _exportBackend.ExportAsync(
-                layerId,
+                storageLayerId,
                 selectedRasters,
                 mergeStrategy,
                 exportQuery,

@@ -705,12 +705,14 @@ internal static class GeoservicesCatalogEndpoints
     {
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
-            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
+            if (!snapshot.IsRoutable(publication)
+                || publication.LayerIndex is not { } layerIndex
+                || snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId)
             {
                 continue;
             }
 
-            var rasters = await rasterStore.ListRastersAsync(layerIndex, cancellationToken).ConfigureAwait(false);
+            var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
             if (rasters.Length > 0)
             {
                 return layerIndex;
