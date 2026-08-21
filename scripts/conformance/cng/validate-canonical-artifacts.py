@@ -63,6 +63,35 @@ def _run(*command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, check=True, capture_output=True, text=True)
 
 
+FAILURE_IDENTITIES = {
+    "validate_geoparquet": ("geoparquet", "feature-read", "PyArrow"),
+    "validate_flatgeobuf": ("flatgeobuf", "feature-read", "Pyogrio"),
+    "validate_pmtiles": ("pmtiles", "archive-read", "pmtiles"),
+    "validate_cog": ("cog", "window-read", "Rasterio"),
+    "validate_hdf5_netcdf": ("hdf5-netcdf", "metadata-statistics", "h5py"),
+    "validate_zarr": ("zarr", "multidimensional-subset", "xarray"),
+    "validate_stac": ("stac", "asset-discovery", "PySTAC-Client"),
+    "validate_javascript": ("cloud-native", "javascript-client-validation", "Node.js"),
+}
+
+
+def _collect(observations: list[dict], validator, path, args: argparse.Namespace, transform=None) -> None:
+    """Run one format independently so a failure cannot hide later matrix rows."""
+    started = _now()
+    try:
+        results = validator(path, args)
+        observations.extend(transform(results) if transform else results)
+    except Exception as exc:  # evidence must retain the failed cell and continue
+        surface, operation, client = FAILURE_IDENTITIES[validator.__name__]
+        failure = _observation(
+            surface, operation, client, validator.__name__, started, args,
+            CLIENTS.get(client, "unknown"),
+        )
+        failure["result"] = "fail"
+        failure["failure_reason"] = f"{type(exc).__name__}: {exc}"
+        observations.append(failure)
+
+
 def _command_version(client: str, *command: str) -> str:
     completed = _run(*command)
     output = f"{completed.stdout}\n{completed.stderr}"
@@ -263,14 +292,14 @@ def main() -> int:
     args = parser.parse_args()
 
     observations: list[dict] = []
-    observations.extend(validate_geoparquet(args.artifacts / "cng.parquet", args))
-    observations.extend(validate_flatgeobuf(args.artifacts / "cng.fgb", args))
-    observations.extend(validate_pmtiles(args.artifacts / "honua.pmtiles", args))
-    observations.extend(_mark_unbound(validate_cog(args.artifacts / "canonical.cog.tif", args)))
-    observations.extend(_mark_unbound(validate_hdf5_netcdf(args.artifacts / "canonical.nc", args)))
-    observations.extend(_mark_unbound(validate_zarr(args.artifacts / "canonical.zarr", args)))
-    observations.extend(validate_stac(args.base_url, args))
-    observations.extend(validate_javascript(args.artifacts, args))
+    _collect(observations, validate_geoparquet, args.artifacts / "cng.parquet", args)
+    _collect(observations, validate_flatgeobuf, args.artifacts / "cng.fgb", args)
+    _collect(observations, validate_pmtiles, args.artifacts / "honua.pmtiles", args)
+    _collect(observations, validate_cog, args.artifacts / "canonical.cog.tif", args, _mark_unbound)
+    _collect(observations, validate_hdf5_netcdf, args.artifacts / "canonical.nc", args, _mark_unbound)
+    _collect(observations, validate_zarr, args.artifacts / "canonical.zarr", args, _mark_unbound)
+    _collect(observations, validate_stac, args.base_url, args)
+    _collect(observations, validate_javascript, args.artifacts, args)
     fragment = {
         "schema": "honua.protocol-certification-fragment/v1",
         "producer": "honua-server-cng",
