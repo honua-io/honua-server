@@ -24,7 +24,7 @@ drift.
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
 | `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
-| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:c4b29bf368004ad9076c1ab9bc91fb373561e3905b4345637e14e8b8c57e3be8` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94` |
 | `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1` |
 | `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:379b17d7d388a2a1b5330bfc2429a01091f85e255d3bce7981d65927d786c000` |
 | `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
@@ -113,7 +113,7 @@ other link generator.
 | DL3041 | `docker/Dockerfile.lambda` dnf upgrade/install | suppressed | The Lambda base is digest-pinned, while the final runtime layer deliberately resolves the newest compatible Amazon Linux security revisions from `--releasever=latest` and installs required runtime libraries at build time. |
 | SC2086 | `Dockerfile` dotnet restore | suppressed | `EXTRA_MSBUILD_ARGS` must word-split into separate `-p:` args; quoting it produces an invalid single argument. |
 | SC2086 | `Dockerfile` dotnet publish | suppressed | Same as above. |
-| DL3018 | `Dockerfile` apk add | suppressed | Runtime base image is digest-pinned to a specific Alpine snapshot; apk versions are deterministic for that snapshot. |
+| DL3005 | `Dockerfile` apt-get upgrade | suppressed | The digest-pinned runtime base can lag Debian security repositories; applying compatible updates removes repository-fixable runtime CVEs. |
 
 Each suppression is inline `# hadolint ignore=...` directly above the
 offending line with the rationale recorded in the surrounding comment block.
@@ -408,9 +408,11 @@ a way to run again. (The dismissals recorded earlier in this note belong to the
 The nightly container gate scans the image built from the top-level `Dockerfile`,
 which is framework-dependent and therefore inherits the .NET shared framework
 from its runtime base. The 2026-07-24 `aspnet:10.0-alpine` refresh moved the
-runtime from 10.0.8 to 10.0.10 and fixed the six advisories above. The current
-digest carries `DOTNET_VERSION=10.0.11` / `ASPNET_VERSION=10.0.11`, the fixed
-version for CVE-2026-62901.
+runtime from 10.0.8 to 10.0.10 and fixed the six advisories above. The auxiliary
+JIT image now uses the digest-pinned glibc `aspnet:10.0` variant because its
+GeoParquet writer depends on ParquetSharp's glibc native library; production AOT
+images remain Alpine-based. The current JIT digest carries the patched .NET 10
+shared framework.
 
 The AOT and Lambda images publish self-contained, so their embedded runtime comes
 from the SDK base rather than a runtime image. Both current

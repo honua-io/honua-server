@@ -5,15 +5,15 @@
 
 # Base images are digest-pinned for reproducible builds and supply-chain integrity.
 # Refresh both digests together by resolving the current manifests behind
-# `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`.
+# `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0`.
 # Overrideable via build args so CI can swap in pre-warmed mirrors if MCR throttles.
 # These ARG defaults are the single source of truth for the mirrored bases:
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
 # digest pinned 2026-08-12
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
-# digest pinned 2026-08-12
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:c4b29bf368004ad9076c1ab9bc91fb373561e3905b4345637e14e8b8c57e3be8
+# digest pinned 2026-08-20
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94
 
 # Build stage
 FROM ${DOTNET_SDK_IMAGE} AS build
@@ -50,8 +50,8 @@ ARG HONUA_INCLUDE_SNOWFLAKE=
 RUN --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
-        amd64) RUNTIME_ID="linux-musl-x64" ;; \
-        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        amd64) RUNTIME_ID="linux-x64" ;; \
+        arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
@@ -79,8 +79,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
-        amd64) RUNTIME_ID="linux-musl-x64" ;; \
-        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        amd64) RUNTIME_ID="linux-x64" ;; \
+        arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
@@ -118,24 +118,24 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
-# Security: Install runtime dependencies.
-# DL3018 suppression rationale: the runtime base image is digest-pinned to a specific Alpine
-# snapshot, so apk package versions are deterministic for that snapshot. Pinning here would
-# force a parallel apk-version update on every digest bump.
-# hadolint ignore=DL3018
-RUN apk upgrade --no-cache && \
-    apk add --no-cache \
-    icu-libs \
-    krb5-libs \
-    tzdata \
+# Security: Install runtime dependencies. The glibc runtime is required by
+# ParquetSharp's native library, which backs the GeoParquet writer.
+# The base is digest-pinned; compatible security updates and dependency versions
+# intentionally follow that Debian snapshot's configured repositories.
+# hadolint ignore=DL3005,DL3008
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
     fontconfig \
-    ca-certificates && \
-    rm -rf /var/cache/apk/* && \
-    rm -rf /tmp/*
+    libgssapi-krb5-2 \
+    tzdata \
+    wget && \
+    rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Security: Create non-root user with minimal privileges
-RUN addgroup -g 1001 -S honua && \
-    adduser -S honua -G honua -u 1001 -s /sbin/nologin -h /app
+RUN groupadd --gid 1001 --system honua && \
+    useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin honua
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .

@@ -111,6 +111,9 @@ jobs:
             --base-url "http://localhost:8094"
           client_exit=$?
 
+          docker compose -f docker/cng/compose.yml logs --no-color honua-server \
+            > cng-results/honua-server.log 2>&1 || true
+
           if [[ "$cng_exit" -ne 0 || "$client_exit" -ne 0 ]]; then exit_code=1; else exit_code=0; fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
