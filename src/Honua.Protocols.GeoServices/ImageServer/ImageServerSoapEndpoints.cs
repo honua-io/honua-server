@@ -711,6 +711,12 @@ internal static class ImageServerSoapEndpoints
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         XNamespace xsd = XmlSchemaNamespace;
+        foreach (var element in result.DescendantsAndSelf()
+                     .Where(static element => element.Name.Namespace == XNamespace.None))
+        {
+            element.Name = operationNamespace + element.Name.LocalName;
+        }
+
         var response = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
