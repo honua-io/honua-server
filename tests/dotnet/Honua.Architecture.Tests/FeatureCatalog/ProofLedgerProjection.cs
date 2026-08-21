@@ -47,12 +47,17 @@ internal sealed class ProofLedgerProjection
             return null;
         }
 
-        var codeLocation = surface.Proofs
-            .Where(proof => string.Equals(proof.ProofClass, "route-coverage", StringComparison.OrdinalIgnoreCase))
-            .SelectMany(proof => proof.EvidenceLocations)
-            .Concat(surface.Proofs.SelectMany(proof => proof.EvidenceLocations))
-            .FirstOrDefault(location => !IsExternal(location))
-            ?? "src/Honua.Server/EndpointRegistry.cs";
+        var routeCodeLocation = surface.RouteCodeLocations is not null
+            && surface.RouteCodeLocations.TryGetValue(path, out var configuredCodeLocation)
+                ? configuredCodeLocation
+                : null;
+        var codeLocation = routeCodeLocation
+            ?? surface.Proofs
+                .Where(proof => string.Equals(proof.ProofClass, "route-coverage", StringComparison.OrdinalIgnoreCase))
+                .SelectMany(proof => proof.EvidenceLocations)
+                .Concat(surface.Proofs.SelectMany(proof => proof.EvidenceLocations))
+                .FirstOrDefault(location => !IsExternal(location))
+                ?? "src/Honua.Server/EndpointRegistry.cs";
 
         return new ResolvedSurface(surface.SurfaceId, surface.Protocol, surface.SurfaceKind, codeLocation);
     }
@@ -97,6 +102,11 @@ internal sealed class ProofLedgerSurface
 
     /// <summary>Substring route matches claimed by this surface.</summary>
     public string[] EndpointContains { get; init; } = [];
+
+    /// <summary>
+    /// Optional exact route-to-source overrides for surfaces implemented by more than one endpoint file.
+    /// </summary>
+    public Dictionary<string, string>? RouteCodeLocations { get; init; }
 
     /// <summary>Proofs backing this surface.</summary>
     public ProofLedgerProof[] Proofs { get; init; } = [];
