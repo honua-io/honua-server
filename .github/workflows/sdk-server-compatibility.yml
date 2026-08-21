@@ -160,6 +160,27 @@ jobs:
           set -euo pipefail
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Bind candidate image revision to server commit
+        if: inputs.release_certification && matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current'
+        shell: bash
+        env:
+          SERVER_IMAGE: ${{ inputs.server_current_image }}
+          EXPECTED_SERVER_COMMIT: ${{ steps.server-revision.outputs.commit }}
+        run: |
+          set -euo pipefail
+          docker pull "$SERVER_IMAGE"
+          image_revision="$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            "$SERVER_IMAGE")"
+          [ -n "$image_revision" ] || {
+            echo '::error::candidate image has no org.opencontainers.image.revision label'
+            exit 1
+          }
+          [ "${image_revision,,}" = "${EXPECTED_SERVER_COMMIT,,}" ] || {
+            echo "::error::candidate image revision $image_revision does not match server commit $EXPECTED_SERVER_COMMIT"
+            exit 1
+          }
+
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
