@@ -9,6 +9,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -124,7 +125,7 @@ internal static class ProposalEndpoints
         [FromServices] IOperationProposalStore proposalStore,
         HttpContext context)
     {
-        var actor = ConsolePrincipal.ResolveActorId(context.User);
+        var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
         var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context).ConfigureAwait(false);
         if (denied != null)
         {
@@ -157,7 +158,7 @@ internal static class ProposalEndpoints
             return Results.Problem(detail: "A rejection reason is required.", statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var actor = ConsolePrincipal.ResolveActorId(context.User);
+        var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
         var denied = await EnsureApprovePermissionAsync(permissionResolver, actor, context).ConfigureAwait(false);
         if (denied != null)
         {
@@ -178,7 +179,7 @@ internal static class ProposalEndpoints
         }
     }
 
-    private static async Task<IResult?> EnsureApproverAsync(
+    internal static async Task<IResult?> EnsureApproverAsync(
         IPermissionResolver permissionResolver,
         IOperationProposalStore proposalStore,
         string proposalId,

@@ -20,6 +20,7 @@ public sealed class OperationDispatcher : IOperationInvoker
     private readonly IOperationPolicyDecisionPoint _policy;
     private readonly TimeProvider _clock;
     private readonly IOperationApprovalProposalBridge? _approvalBridge;
+    private readonly Func<string, IOperationExecutor?>? _fallbackExecutorResolver;
 
     /// <summary>
     /// Initializes a new instance of <see cref="OperationDispatcher"/>.
@@ -29,12 +30,14 @@ public sealed class OperationDispatcher : IOperationInvoker
     /// <param name="policy">Policy decision point consulted before execution.</param>
     /// <param name="clock">Time provider used for handle id generation.</param>
     /// <param name="approvalBridge">Optional durable proposal bridge for RequireApproval decisions.</param>
+    /// <param name="fallbackExecutorResolver">Optional resolver for catalog-derived executors.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
         IOperationPolicyDecisionPoint policy,
         TimeProvider clock,
-        IOperationApprovalProposalBridge? approvalBridge = null)
+        IOperationApprovalProposalBridge? approvalBridge = null,
+        Func<string, IOperationExecutor?>? fallbackExecutorResolver = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -44,6 +47,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         _policy = policy;
         _clock = clock;
         _approvalBridge = approvalBridge;
+        _fallbackExecutorResolver = fallbackExecutorResolver;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -93,6 +97,8 @@ public sealed class OperationDispatcher : IOperationInvoker
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
             ? executor
+            : _fallbackExecutorResolver?.Invoke(operationId) is { } fallback
+                ? fallback
             : throw new OperationNotFoundException(operationId);
 
     private OperationHandle BuildDecisionHandle(string operationId, PolicyDecision decision)

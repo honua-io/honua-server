@@ -3,22 +3,30 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
+using Honua.Infrastructure.Security;
 using CatalogOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using ControlPlaneOperationExecutor = Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor;
+using AdminProposalEndpoints = Honua.Server.Features.Admin.ProposalEndpoints;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -239,13 +247,70 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties()
     {
-        // The admin client authenticates as the "admin" principal; seeding the
+        // The admin client authenticates as the scheme-qualified bootstrap principal; seeding the
         // proposal with that same requester must trip the separation-of-duties guard.
-        var proposal = await SeedProposalAsync(requestedBy: "admin");
+        var proposal = await SeedProposalAsync(requestedBy: "admin:bootstrap");
 
         var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [UnitTest]
+    public async Task SeparationOfDuties_OidcDisplayNameMismatch_StillDeniesSelfApproval()
+    {
+        var proposer = OidcPrincipal("subject-1", displayName: "Name Before");
+        var approver = OidcPrincipal("subject-1", displayName: "Name After");
+        var proposerActor = CanonicalSecurityActor.Resolve(proposer)!.ActorId;
+        var proposal = await SeedProposalAsync(requestedBy: proposerActor);
+        var resolver = Substitute.For<IPermissionResolver>();
+        resolver.AuthorizeAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<AuthorizationOperation>(),
+                true,
+                Arg.Any<CancellationToken>())
+            .Returns(PermissionDecision.NoMatch());
+        var context = new DefaultHttpContext { User = approver };
+
+        var denied = await AdminProposalEndpoints.EnsureApproverAsync(
+            resolver,
+            _proposalStore,
+            proposal.ProposalId,
+            CanonicalSecurityActor.Resolve(approver)!.ActorId,
+            context);
+
+        denied.Should().NotBeNull("display names cannot change the immutable OIDC actor id");
+    }
+
+    [UnitTest]
+    public async Task SeparationOfDuties_NamelessOidcSub_StillDeniesSelfApproval()
+    {
+        var principal = OidcPrincipal("subject-without-name", displayName: null);
+        var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
+        var proposal = await SeedProposalAsync(requestedBy: actor);
+        var resolver = Substitute.For<IPermissionResolver>();
+        resolver.AuthorizeAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<AuthorizationOperation>(),
+                true,
+                Arg.Any<CancellationToken>())
+            .Returns(PermissionDecision.NoMatch());
+        var context = new DefaultHttpContext { User = principal };
+
+        var denied = await AdminProposalEndpoints.EnsureApproverAsync(
+            resolver,
+            _proposalStore,
+            proposal.ProposalId,
+            actor,
+            context);
+
+        denied.Should().NotBeNull("sub is a durable identity even when Identity.Name is null");
     }
 
     [IntegrationTest]
@@ -345,6 +410,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation()
     {
+        var (keyId, _) = await CreateScopedApiKeyAsync("proposal-originator", ["admin:read"]);
         await using var scope = _fixture.Services.CreateAsyncScope();
         var bridge = scope.ServiceProvider
             .GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge>();
@@ -359,10 +425,12 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         };
         var operationContext = new OperationPolicyContext
         {
-            PrincipalId = "agent:proposer",
-            TenantId = "tenant-1",
+            ResolvedConnectionString = "Host=db;Password=must-not-be-persisted",
+            PrincipalId = $"admin-api-key:api-key:{keyId:D}",
+            AuthenticationScheme = "admin-api-key",
+            ApiKeyId = keyId.ToString("D"),
             CorrelationId = "correlation-1",
-            Roles = ["operator"],
+            Roles = ["admin"],
             Permissions = ["admin:read"],
         };
         var descriptor = new OperationDescriptor
@@ -401,6 +469,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         persisted.Should().NotBeNull();
         persisted!.Kind.Should().Be(OperationClass.PublishedOperation);
         persisted.Plan.ExecutionPayload.Should().Contain(request.OperationId);
+        persisted.Plan.ExecutionPayload.Should().NotContain("must-not-be-persisted");
 
         var listResponse = await _client.GetAsync("/api/v1/admin/proposals?kind=PublishedOperation");
         listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -414,8 +483,136 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await approvalResponse.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("status").GetString().Should().Be("Submitted");
         _publishedExecutor.ExecutedRequest.Should().BeEquivalentTo(request);
-        _publishedExecutor.ExecutedContext.Should().BeEquivalentTo(operationContext);
+        _publishedExecutor.ExecutedContext.Should().BeEquivalentTo(
+            operationContext with { ResolvedConnectionString = null });
     }
+
+    [IntegrationTest]
+    public async Task PublishedOperation_RawCredential_IsDeniedBeforeProposalPersistence()
+    {
+        var (keyId, _) = await CreateScopedApiKeyAsync("raw-secret-originator", ["admin:read"]);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var bridge = scope.ServiceProvider
+            .GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge>();
+        var before = await _proposalStore.ListActiveAsync(OperationClass.PublishedOperation);
+
+        var handle = await bridge.CreateProposalAsync(
+            TestPublishedDescriptor(),
+            new OperationRequest
+            {
+                OperationId = "admin.server.status",
+                Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["body"] = "{\"password\":\"must-never-be-stored\"}",
+                },
+            },
+            ApiKeyContext(keyId, ["admin:read"]),
+            ApprovalDecision());
+
+        handle.Status.Should().Be(OperationHandleStatus.Denied);
+        handle.Reason.Should().Contain("Raw credentials");
+        (await _proposalStore.ListActiveAsync(OperationClass.PublishedOperation))
+            .Should().HaveCount(before.Count, "credential-bearing requests must never reach proposal storage");
+    }
+
+    [IntegrationTest]
+    public async Task PublishedOperation_RevokedProposerKey_CannotResumeAfterApproval()
+    {
+        var (keyId, _) = await CreateScopedApiKeyAsync("revoked-originator", ["admin:read"]);
+        var proposalId = await CreatePublishedProposalAsync(ApiKeyContext(keyId, ["admin:read"]));
+
+        using var revoke = await _client.PostAsync($"/api/v1/admin/api-keys/{keyId:D}/revoke", null);
+        revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var approval = await _client.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+
+        approval.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await approval.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("status").GetString().Should().Be("Failed");
+        _publishedExecutor.ExecutedRequest.Should().BeNull("a revoked proposer key must deny resume");
+    }
+
+    [IntegrationTest]
+    public async Task PublishedOperation_DowngradedOidcProposer_CannotResumeAfterApproval()
+    {
+        const string subject = "oidc-subject-1";
+        const string issuer = "https://issuer.example.com";
+        var userStore = _fixture.Services.GetRequiredService<IUserStore>();
+        var scimStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        await scimStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "oidc-user-1",
+            ExternalId = subject,
+            ExternalIssuer = issuer,
+            DisplayName = "Changed Display Name",
+            Roles = ["publisher"],
+        });
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = $"oidc:subject:{Uri.EscapeDataString(issuer)}:{subject}",
+            AuthenticationScheme = "oidc",
+            SubjectId = subject,
+            SubjectIssuer = issuer,
+            Roles = ["publisher"],
+        };
+        var proposalId = await CreatePublishedProposalAsync(context);
+
+        await userStore.UpdateUserRolesAsync("oidc-user-1", ["viewer"]);
+        using var approval = await _client.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+
+        approval.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await approval.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("status").GetString().Should().Be("Failed");
+        _publishedExecutor.ExecutedRequest.Should().BeNull("a downgraded proposer must deny resume");
+    }
+
+    private async Task<string> CreatePublishedProposalAsync(OperationPolicyContext context)
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var bridge = scope.ServiceProvider
+            .GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge>();
+        var handle = await bridge.CreateProposalAsync(
+            TestPublishedDescriptor(),
+            new OperationRequest { OperationId = "admin.server.status" },
+            context,
+            ApprovalDecision());
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        return handle.HandleId;
+    }
+
+    private static OperationPolicyContext ApiKeyContext(Guid keyId, IReadOnlyList<string> permissions) => new()
+    {
+        PrincipalId = $"admin-api-key:api-key:{keyId:D}",
+        AuthenticationScheme = "admin-api-key",
+        ApiKeyId = keyId.ToString("D"),
+        Roles = ["admin"],
+        Permissions = permissions,
+    };
+
+    private static PolicyDecision ApprovalDecision() => new()
+    {
+        Kind = PolicyDecisionKind.RequireApproval,
+        ApprovalLane = "admin-operator",
+        Reason = "operator review",
+    };
+
+    private static OperationDescriptor TestPublishedDescriptor() => new()
+    {
+        OperationId = "admin.server.status",
+        ProviderId = "test",
+        Title = "Get server status",
+        Description = "Test descriptor for the approval bridge.",
+        Category = "admin",
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
+        Policy = new OperationPolicyMetadata
+        {
+            BlastRadiusClass = OperationBlastRadiusClass.None,
+            SideEffectClass = OperationSideEffectClass.ReadOnly,
+            Determinism = OperationDeterminism.Deterministic,
+            SupportsDryRun = false,
+            IsIdempotent = true,
+        },
+    };
 
     private async Task<(Guid Id, string Key)> CreateScopedApiKeyAsync(
         string name,
@@ -431,6 +628,23 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         return (
             data.GetProperty("apiKey").GetProperty("id").GetGuid(),
             data.GetProperty("key").GetString()!);
+    }
+
+    private static ClaimsPrincipal OidcPrincipal(string subject, string? displayName)
+    {
+        var claims = new List<Claim>
+        {
+            new("sub", subject),
+            new("iss", "https://issuer.example.com"),
+            new("auth_type", "oidc"),
+            new(ClaimTypes.Role, "admin"),
+        };
+        if (displayName is not null)
+        {
+            claims.Add(new Claim(ClaimTypes.Name, displayName));
+        }
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "oidc"));
     }
 
     private sealed class StubGuardrailLadder : IGuardrailLadder

@@ -18,17 +18,16 @@ public sealed class AdminOperationCatalogTests
     [UnitTest]
     public void Catalog_ContainsEveryScopedOperationExactlyOnce()
     {
-        // Baseline the whole source document, not only the selected 2026.1 inventory. Any
-        // future Admin API addition/removal must make an explicit catalog-scope decision.
+        // Every source operation must have exactly one executable catalog definition.
         _catalog.OpenApiOperationIds.Should().HaveCount(396);
         _catalog.OpenApiOperationIds.Should().OnlyHaveUniqueItems();
-        _catalog.Definitions.Should().HaveCount(119);
+        _catalog.Definitions.Should().HaveCount(396);
         _catalog.Definitions.Select(definition => definition.Descriptor.OperationId)
             .Should().OnlyHaveUniqueItems();
         _catalog.Definitions.Select(definition => definition.OpenApiOperationId)
             .Should().OnlyHaveUniqueItems();
         _catalog.Definitions.Select(definition => definition.OpenApiOperationId)
-            .Should().BeSubsetOf(_catalog.OpenApiOperationIds);
+            .Should().BeEquivalentTo(_catalog.OpenApiOperationIds);
         _catalog.Definitions.GroupBy(definition => definition.Lane)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal)
             .Should().BeEquivalentTo(new Dictionary<string, int>(StringComparer.Ordinal)
@@ -37,6 +36,7 @@ public sealed class AdminOperationCatalogTests
                 ["B"] = 21,
                 ["C"] = 49,
                 ["D"] = 26,
+                ["OpenAPI"] = 277,
             });
     }
 

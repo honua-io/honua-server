@@ -231,6 +231,7 @@ internal sealed class AdminEndpointOperationInvoker(
             }
 
             var jobId = TryReadIdentifier(responseText, "jobId", "operationId");
+            var safeResponseText = AdminOperationResponseRedactor.Redact(responseText);
             var status = httpContext.Response.StatusCode == StatusCodes.Status202Accepted
                 ? OperationHandleStatus.Queued
                 : OperationHandleStatus.Completed;
@@ -248,7 +249,7 @@ internal sealed class AdminEndpointOperationInvoker(
                     Details = new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["httpStatus"] = httpContext.Response.StatusCode.ToString(CultureInfo.InvariantCulture),
-                        ["response"] = responseText,
+                        ["response"] = safeResponseText,
                         ["responseTruncated"] = responseBody.WasTruncated.ToString(CultureInfo.InvariantCulture),
                     },
                 },

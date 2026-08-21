@@ -101,8 +101,29 @@ public sealed class AdminEndpointOperationInvokerTests
             CancellationToken.None);
 
         result.Status.Should().Be(OperationHandleStatus.Completed);
-        result.Result!.Details["response"].Should().HaveLength(AdminEndpointOperationInvoker.MaxCapturedResponseBytes);
+        result.Result!.Details["response"].Should().Be("[REDACTED]",
+            "a truncated non-JSON body cannot be proven credential-safe");
         result.Result.Details["responseTruncated"].Should().Be(bool.TrueString);
+    }
+
+    [UnitTest]
+    public void Redact_NestedCredentialValues_RemovesSecretsAndPreservesReferences()
+    {
+        const string response =
+            """{"data":{"apiKey":"hnua_secret","nested":[{"clientSecret":"oauth-secret","secretReference":"aws-sm://honua/control-plane","accessKey":"cloud-secret"}],"token":"bearer-secret","connectionString":"Host=db;Password=secret"}}""";
+
+        var redacted = AdminOperationResponseRedactor.Redact(response);
+
+        redacted.Should().NotContain("hnua_secret");
+        redacted.Should().NotContain("oauth-secret");
+        redacted.Should().NotContain("bearer-secret");
+        redacted.Should().NotContain("cloud-secret");
+        redacted.Should().NotContain("Host=db");
+        redacted.Should().Contain("aws-sm://honua/control-plane");
+        using var document = System.Text.Json.JsonDocument.Parse(redacted);
+        document.RootElement.GetProperty("data").GetProperty("apiKey").GetString().Should().Be("[REDACTED]");
+        document.RootElement.GetProperty("data").GetProperty("nested")[0]
+            .GetProperty("clientSecret").GetString().Should().Be("[REDACTED]");
     }
 
     private static AdminEndpointOperationInvoker CreateInvoker(
