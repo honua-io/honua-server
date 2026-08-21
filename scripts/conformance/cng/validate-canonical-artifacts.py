@@ -27,6 +27,8 @@ CLIENTS = {
     "h5stat": "1.10.10",
     "h5dump": "1.10.10",
     "h5repack": "1.10.10",
+    "go-pmtiles": "1.30.0",
+    "3d-tiles-validator": "0.6.1",
 }
 
 UNBOUND_CONSUMER_GAP = (
@@ -100,6 +102,33 @@ def _collect(observations: list[dict], validator, path, args: argparse.Namespace
         observations.append(failure)
 
 
+def _collect_client(observations: list[dict], surface: str, operation: str, client: str,
+                    lane: str, args: argparse.Namespace, check, *, unbound: bool = False) -> None:
+    """Collect one client independently so its verdict cannot hide or misattribute siblings."""
+    started = _now()
+    try:
+        detected_version = check()
+        observation = _observation(
+            surface, operation, client, lane, started, args,
+            detected_version if isinstance(detected_version, str) else None,
+        )
+        if unbound:
+            observation["result"] = "skip"
+            observation["skip_reason"] = UNBOUND_CONSUMER_GAP
+    except Exception as exc:  # evidence must retain the exact client that failed
+        observation = _observation(surface, operation, client, lane, started, args, CLIENTS.get(client, "unknown"))
+        observation["result"] = "fail"
+        detail = f"{type(exc).__name__}: {exc}"
+        if isinstance(exc, subprocess.CalledProcessError):
+            process_output = "\n".join(
+                value.strip() for value in (exc.stdout, exc.stderr) if value and value.strip()
+            )
+            if process_output:
+                detail = f"{detail}\n{process_output[-4000:]}"
+        observation["failure_reason"] = detail
+    observations.append(observation)
+
+
 def _command_version(client: str, *command: str) -> str:
     completed = _run(*command)
     output = f"{completed.stdout}\n{completed.stderr}"
@@ -115,8 +144,9 @@ def _command_version(client: str, *command: str) -> str:
 
 def _mark_unbound(observations: list[dict]) -> list[dict]:
     for observation in observations:
-        observation["result"] = "skip"
-        observation["skip_reason"] = UNBOUND_CONSUMER_GAP
+        if observation["result"] == "pass":
+            observation["result"] = "skip"
+            observation["skip_reason"] = UNBOUND_CONSUMER_GAP
     return observations
 
 
@@ -124,48 +154,54 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
     import geopandas
     import pyarrow.parquet
 
-    started = _now()
-    table = pyarrow.parquet.read_table(path)
-    if table.num_rows < 1:
-        raise ValueError("PyArrow read zero GeoParquet rows")
-    metadata = table.schema.metadata or {}
-    if b"geo" not in metadata:
-        raise ValueError("PyArrow schema has no GeoParquet 'geo' metadata")
+    observations: list[dict] = []
 
-    frame = geopandas.read_parquet(path)
-    if frame.empty or frame.geometry.isna().any():
-        raise ValueError("GeoPandas did not recover non-null geometries")
-    if frame.crs is None:
-        raise ValueError("GeoPandas did not recover a CRS")
-    _run("ogrinfo", "-al", "-so", str(path))
-    return [
-        _observation("geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", started, args),
-        _observation("geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", started, args),
-        _observation("geoparquet", "feature-read", "GDAL", "gdal-geoparquet", started, args,
-                     _command_version("GDAL", "gdalinfo", "--version")),
-    ]
+    def pyarrow_check() -> None:
+        table = pyarrow.parquet.read_table(path)
+        if table.num_rows < 1:
+            raise ValueError("PyArrow read zero GeoParquet rows")
+        if b"geo" not in (table.schema.metadata or {}):
+            raise ValueError("PyArrow schema has no GeoParquet 'geo' metadata")
+
+    def geopandas_check() -> None:
+        frame = geopandas.read_parquet(path)
+        if frame.empty or frame.geometry.isna().any() or frame.crs is None:
+            raise ValueError("GeoPandas did not recover non-null geometries and CRS")
+
+    def gdal_check() -> str:
+        _run("ogrinfo", "-al", "-so", str(path))
+        return _command_version("GDAL", "gdalinfo", "--version")
+
+    _collect_client(observations, "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", args, pyarrow_check)
+    _collect_client(observations, "geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", args, geopandas_check)
+    _collect_client(observations, "geoparquet", "feature-read", "GDAL", "gdal-geoparquet", args, gdal_check)
+    return observations
 
 
 def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
     import geopandas
     import pyogrio
 
-    started = _now()
-    frame = pyogrio.read_dataframe(path)
-    if frame.empty or frame.geometry.isna().any():
-        raise ValueError("Pyogrio did not recover non-null FlatGeobuf geometries")
-    if frame.crs is None:
-        raise ValueError("Pyogrio did not recover a FlatGeobuf CRS")
-    geopandas_frame = geopandas.read_file(path)
-    if geopandas_frame.empty or geopandas_frame.geometry.isna().any():
-        raise ValueError("GeoPandas did not recover FlatGeobuf geometries")
-    _run("ogrinfo", "-al", "-so", str(path))
-    return [
-        _observation("flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", started, args),
-        _observation("flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", started, args),
-        _observation("flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", started, args,
-                     _command_version("GDAL", "gdalinfo", "--version")),
-    ]
+    observations: list[dict] = []
+
+    def pyogrio_check() -> None:
+        frame = pyogrio.read_dataframe(path)
+        if frame.empty or frame.geometry.isna().any() or frame.crs is None:
+            raise ValueError("Pyogrio did not recover non-null FlatGeobuf geometries and CRS")
+
+    def geopandas_check() -> None:
+        frame = geopandas.read_file(path)
+        if frame.empty or frame.geometry.isna().any():
+            raise ValueError("GeoPandas did not recover FlatGeobuf geometries")
+
+    def gdal_check() -> str:
+        _run("ogrinfo", "-al", "-so", str(path))
+        return _command_version("GDAL", "gdalinfo", "--version")
+
+    _collect_client(observations, "flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", args, pyogrio_check)
+    _collect_client(observations, "flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", args, geopandas_check)
+    _collect_client(observations, "flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", args, gdal_check)
+    return observations
 
 
 def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
@@ -192,52 +228,74 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
     from rasterio.windows import Window
     from rio_cogeo.cogeo import cog_validate
 
-    started = _now()
-    with rasterio.open(path) as dataset:
-        if dataset.driver != "GTiff" or dataset.crs is None or dataset.count < 1:
-            raise ValueError("Rasterio did not recover a georeferenced COG")
-        if dataset.read(1, window=Window(0, 0, 16, 16)).size != 256:
-            raise ValueError("Rasterio window read returned an unexpected shape")
-    valid, errors, _warnings = cog_validate(path, strict=True)
-    if not valid:
-        raise ValueError(f"rio-cogeo validation failed: {errors}")
-    _run("gdalinfo", "-json", str(path))
-    return [
-        _observation("cog", "window-read", "Rasterio", "rasterio-cog", started, args),
-        _observation("cog", "structure-validate", "rio-cogeo", "rio-cogeo", started, args),
-        _observation("cog", "dataset-read", "GDAL", "gdal-cog", started, args,
-                     _command_version("GDAL", "gdalinfo", "--version")),
-    ]
+    observations: list[dict] = []
+
+    def rasterio_check() -> None:
+        with rasterio.open(path) as dataset:
+            if dataset.driver != "GTiff" or dataset.crs is None or dataset.count < 1:
+                raise ValueError("Rasterio did not recover a georeferenced COG")
+            if dataset.read(1, window=Window(0, 0, 16, 16)).size != 256:
+                raise ValueError("Rasterio window read returned an unexpected shape")
+
+    def rio_cogeo_check() -> None:
+        valid, errors, _warnings = cog_validate(path, strict=True)
+        if not valid:
+            raise ValueError(f"rio-cogeo validation failed: {errors}")
+
+    def gdal_check() -> str:
+        _run("gdalinfo", "-json", str(path))
+        return _command_version("GDAL", "gdalinfo", "--version")
+
+    _collect_client(observations, "cog", "window-read", "Rasterio", "rasterio-cog", args, rasterio_check, unbound=True)
+    _collect_client(observations, "cog", "structure-validate", "rio-cogeo", "rio-cogeo", args, rio_cogeo_check, unbound=True)
+    _collect_client(observations, "cog", "dataset-read", "GDAL", "gdal-cog", args, gdal_check, unbound=True)
+    return observations
 
 
 def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
     import h5py
     import xarray
 
-    started = _now()
-    _run("h5stat", str(path))
-    _run("h5dump", "-H", str(path))
-    with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as stream:
-        repacked = Path(stream.name)
-    try:
-        _run("h5repack", str(path), str(repacked))
-        with h5py.File(repacked, "r") as handle:
+    observations: list[dict] = []
+
+    def h5stat_check() -> str:
+        _run("h5stat", str(path))
+        return _command_version("h5stat", "h5stat", "-V")
+
+    def h5dump_check() -> None:
+        _run("h5dump", "-H", str(path))
+
+    def h5repack_check() -> None:
+        with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as stream:
+            repacked = Path(stream.name)
+        try:
+            _run("h5repack", str(path), str(repacked))
+            with h5py.File(repacked, "r") as handle:
+                if "temperature" not in handle or handle["temperature"].size < 1:
+                    raise ValueError("repacked file lost the temperature dataset")
+        finally:
+            repacked.unlink(missing_ok=True)
+
+    def h5py_check() -> None:
+        with h5py.File(path, "r") as handle:
             if "temperature" not in handle or handle["temperature"].size < 1:
                 raise ValueError("h5py did not recover the temperature dataset")
-    finally:
-        repacked.unlink(missing_ok=True)
-    with xarray.open_dataset(path, engine="h5netcdf") as dataset:
-        if "temperature" not in dataset or dataset["temperature"].size < 1:
-            raise ValueError("xarray did not recover the netCDF temperature variable")
-        dataset.load()
-    tool_version = _command_version("h5stat", "h5stat", "-V")
-    return [
-        _observation("hdf5-netcdf", "metadata-statistics", "h5stat", "h5stat", started, args, tool_version),
-        _observation("hdf5-netcdf", "header-read", "h5dump", "h5dump", started, args, tool_version),
-        _observation("hdf5-netcdf", "repack", "h5repack", "h5repack", started, args, tool_version),
-        _observation("hdf5-netcdf", "dataset-read", "h5py", "h5py", started, args),
-        _observation("hdf5-netcdf", "multidimensional-read", "xarray", "xarray-netcdf", started, args),
-    ]
+
+    def xarray_check() -> None:
+        with xarray.open_dataset(path, engine="h5netcdf") as dataset:
+            if "temperature" not in dataset or dataset["temperature"].size < 1:
+                raise ValueError("xarray did not recover the netCDF temperature variable")
+            dataset.load()
+
+    for operation, client, lane, check in (
+        ("metadata-statistics", "h5stat", "h5stat", h5stat_check),
+        ("header-read", "h5dump", "h5dump", h5dump_check),
+        ("repack", "h5repack", "h5repack", h5repack_check),
+        ("dataset-read", "h5py", "h5py", h5py_check),
+        ("multidimensional-read", "xarray", "xarray-netcdf", xarray_check),
+    ):
+        _collect_client(observations, "hdf5-netcdf", operation, client, lane, args, check, unbound=True)
+    return observations
 
 
 def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
@@ -246,24 +304,54 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
     import xarray
     import zarr
 
-    started = _now()
-    group = zarr.open_group(path, mode="r")
-    if "temperature" not in group or group["temperature"].size < 1:
-        raise ValueError("zarr did not recover the temperature array")
-    if not fsspec.filesystem("file").exists(str(path / ".zmetadata")):
-        raise ValueError("fsspec could not resolve consolidated Zarr metadata")
-    with xarray.open_zarr(path, chunks={"time": 1, "lat": 2, "lon": 2}, consolidated=True) as dataset:
-        values = dataset["temperature"].data
-        if not isinstance(values, dask.array.Array):
-            raise ValueError("xarray did not expose a Dask-backed Zarr array")
-        if float(values.mean().compute()) <= 0:
-            raise ValueError("Dask computed an invalid Zarr aggregate")
-    return [
-        _observation("zarr", "array-read", "zarr", "zarr-python", started, args),
-        _observation("zarr", "multidimensional-subset", "xarray", "xarray-zarr", started, args),
-        _observation("zarr", "store-read", "fsspec", "fsspec-zarr", started, args),
-        _observation("zarr", "distributed-array-compute", "Dask", "dask-zarr", started, args),
-    ]
+    observations: list[dict] = []
+
+    def zarr_check() -> None:
+        group = zarr.open_group(path, mode="r")
+        if "temperature" not in group or group["temperature"].size < 1:
+            raise ValueError("zarr did not recover the temperature array")
+
+    def fsspec_check() -> None:
+        if not fsspec.filesystem("file").exists(str(path / ".zmetadata")):
+            raise ValueError("fsspec could not resolve consolidated Zarr metadata")
+
+    def xarray_check() -> None:
+        with xarray.open_zarr(path, chunks=None, consolidated=True) as dataset:
+            if "temperature" not in dataset or dataset["temperature"].size < 1:
+                raise ValueError("xarray did not recover the Zarr temperature array")
+
+    def dask_check() -> None:
+        with xarray.open_zarr(path, chunks={"time": 1, "lat": 2, "lon": 2}, consolidated=True) as dataset:
+            values = dataset["temperature"].data
+            if not isinstance(values, dask.array.Array) or float(values.mean().compute()) <= 0:
+                raise ValueError("Dask did not compute a valid Zarr aggregate")
+
+    for operation, client, lane, check in (
+        ("array-read", "zarr", "zarr-python", zarr_check),
+        ("multidimensional-subset", "xarray", "xarray-zarr", xarray_check),
+        ("store-read", "fsspec", "fsspec-zarr", fsspec_check),
+        ("distributed-array-compute", "Dask", "dask-zarr", dask_check),
+    ):
+        _collect_client(observations, "zarr", operation, client, lane, args, check, unbound=True)
+    return observations
+
+
+def validate_native_results(path: Path, args: argparse.Namespace) -> list[dict]:
+    observations: list[dict] = []
+
+    def pmtiles_check() -> None:
+        log = (path / "pmtiles-verify.log").read_text(encoding="utf-8", errors="replace")
+        if "Completed verify" not in log:
+            raise ValueError("go-pmtiles verification did not record successful completion")
+
+    def tiles3d_check() -> None:
+        report = json.loads((path / "3d-tiles-validator.json").read_text(encoding="utf-8"))
+        if report.get("numErrors") != 0:
+            raise ValueError(f"3D Tiles validator reported {report.get('numErrors')!r} errors")
+
+    _collect_client(observations, "pmtiles", "archive-verify", "go-pmtiles", "go-pmtiles-verify", args, pmtiles_check)
+    _collect_client(observations, "3d-tiles", "tileset-content-validate", "3d-tiles-validator", "3d-tiles-validator", args, tiles3d_check)
+    return observations
 
 
 def validate_stac(base_url: str, args: argparse.Namespace) -> list[dict]:
@@ -290,6 +378,7 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", required=True, type=Path)
+    parser.add_argument("--native-results", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--image-digest", required=True)
@@ -300,6 +389,7 @@ def main() -> int:
     args = parser.parse_args()
 
     observations: list[dict] = []
+    _collect(observations, validate_native_results, args.native_results, args)
     _collect(observations, validate_geoparquet, args.artifacts / "cng.parquet", args)
     _collect(observations, validate_flatgeobuf, args.artifacts / "cng.fgb", args)
     _collect(observations, validate_pmtiles, args.artifacts / "honua.pmtiles", args)

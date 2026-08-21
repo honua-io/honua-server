@@ -44,6 +44,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
       - name: Install validator toolchain
         run: |
           set -euo pipefail
@@ -96,6 +101,7 @@ jobs:
           candidate_cut_at="$(git show -s --format=%cI HEAD)"
           python3 ./scripts/conformance/cng/validate-canonical-artifacts.py \
             --artifacts cng-results/artifacts \
+            --native-results cng-results \
             --output cng-results/protocol-certification-fragment.json \
             --source-sha "$GITHUB_SHA" \
             --image-digest "$image_digest" \
