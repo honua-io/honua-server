@@ -178,62 +178,62 @@ internal static class GeoservicesCatalogEndpoints
             XElement payload;
             switch (operation.Name.LocalName)
             {
-            case "GetServiceDescriptions":
-                payload = new XElement(
-                    operationNamespace + "GetServiceDescriptionsResult",
-                    await BuildSoapImageServerDescriptionsAsync(
-                        context,
-                        operationNamespace,
-                        graphProvider,
-                        rasterStore,
-                        logger,
-                        folderName: null).ConfigureAwait(false));
-                break;
-            case "GetServiceDescriptionsEx":
-                var arguments = operation.Elements().ToArray();
-                if (arguments.Length > 1 ||
-                    arguments.Any(argument =>
-                        argument.Name.Namespace != operationNamespace ||
-                        !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
-                {
-                    return CreateSoapFault(
-                        "GetServiceDescriptionsEx accepts only one folderName argument.",
-                        StatusCodes.Status400BadRequest,
-                        soap);
-                }
+                case "GetServiceDescriptions":
+                    payload = new XElement(
+                        operationNamespace + "GetServiceDescriptionsResult",
+                        await BuildSoapImageServerDescriptionsAsync(
+                            context,
+                            operationNamespace,
+                            graphProvider,
+                            rasterStore,
+                            logger,
+                            folderName: null).ConfigureAwait(false));
+                    break;
+                case "GetServiceDescriptionsEx":
+                    var arguments = operation.Elements().ToArray();
+                    if (arguments.Length > 1 ||
+                        arguments.Any(argument =>
+                            argument.Name.Namespace != operationNamespace ||
+                            !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return CreateSoapFault(
+                            "GetServiceDescriptionsEx accepts only one folderName argument.",
+                            StatusCodes.Status400BadRequest,
+                            soap);
+                    }
 
-                var folderName = arguments.SingleOrDefault()?.Value.Trim();
-                payload = new XElement(
-                    operationNamespace + "GetServiceDescriptionsExResult",
-                    await BuildSoapImageServerDescriptionsAsync(
-                        context,
-                        operationNamespace,
-                        graphProvider,
-                        rasterStore,
-                        logger,
-                        folderName).ConfigureAwait(false));
-                break;
-            case "GetFolders":
-                payload = new XElement(operationNamespace + "GetFoldersResult");
-                break;
-            case "GetMessageVersion":
-                payload = new XElement(operationNamespace + "GetMessageVersionResult", "esriArcGISVersion108");
-                break;
-            case "GetMessageFormats":
-                payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
-                break;
-            case "GetTokenServiceURL":
-                payload = new XElement(
-                    operationNamespace + "GetTokenServiceURLResult",
-                    tokenOptions.Value.Enabled
-                        ? $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/sharing/rest/generateToken"
-                        : string.Empty);
-                break;
-            case "RequiresTokens":
-                payload = new XElement(
-                    operationNamespace + "RequiresTokensResult",
-                    tokenOptions.Value.Enabled);
-                break;
+                    var folderName = arguments.SingleOrDefault()?.Value.Trim();
+                    payload = new XElement(
+                        operationNamespace + "GetServiceDescriptionsExResult",
+                        await BuildSoapImageServerDescriptionsAsync(
+                            context,
+                            operationNamespace,
+                            graphProvider,
+                            rasterStore,
+                            logger,
+                            folderName).ConfigureAwait(false));
+                    break;
+                case "GetFolders":
+                    payload = new XElement(operationNamespace + "GetFoldersResult");
+                    break;
+                case "GetMessageVersion":
+                    payload = new XElement(operationNamespace + "GetMessageVersionResult", "esriArcGISVersion108");
+                    break;
+                case "GetMessageFormats":
+                    payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
+                    break;
+                case "GetTokenServiceURL":
+                    payload = new XElement(
+                        operationNamespace + "GetTokenServiceURLResult",
+                        tokenOptions.Value.Enabled
+                            ? $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/sharing/rest/generateToken"
+                            : string.Empty);
+                    break;
+                case "RequiresTokens":
+                    payload = new XElement(
+                        operationNamespace + "RequiresTokensResult",
+                        tokenOptions.Value.Enabled);
+                    break;
                 default:
                     return CreateSoapFault(
                         $"Unsupported catalog operation '{operation.Name.LocalName}'.",
