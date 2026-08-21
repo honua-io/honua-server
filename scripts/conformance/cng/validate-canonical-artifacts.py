@@ -346,12 +346,22 @@ def validate_native_results(path: Path, args: argparse.Namespace) -> list[dict]:
 
     def tiles3d_check() -> None:
         report = json.loads((path / "3d-tiles-validator.json").read_text(encoding="utf-8"))
-        if report.get("numErrors") != 0:
-            raise ValueError(f"3D Tiles validator reported {report.get('numErrors')!r} errors")
+        error_count = _count_validator_errors(report)
+        if error_count != 0:
+            raise ValueError(f"3D Tiles validator reported {error_count} errors")
 
     _collect_client(observations, "pmtiles", "archive-verify", "go-pmtiles", "go-pmtiles-verify", args, pmtiles_check)
     _collect_client(observations, "3d-tiles", "tileset-content-validate", "3d-tiles-validator", "3d-tiles-validator", args, tiles3d_check)
     return observations
+
+
+def _count_validator_errors(value) -> int:
+    if isinstance(value, dict):
+        own_error = int(str(value.get("severity", "")).upper() == "ERROR")
+        return own_error + sum(_count_validator_errors(child) for child in value.values())
+    if isinstance(value, list):
+        return sum(_count_validator_errors(child) for child in value)
+    return 0
 
 
 def validate_stac(base_url: str, args: argparse.Namespace) -> list[dict]:
@@ -368,11 +378,17 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     script = Path(__file__).with_name("validate-js-artifacts.mjs")
     payload = json.loads(_run("node", str(script), str(path)).stdout)
     started = _now()
-    return [
-        _observation(row["surface"], row["operation"], row["canonical_client"], row["lane"],
-                     started, args, row["client_version"])
-        for row in payload
-    ]
+    observations = []
+    for row in payload:
+        observation = _observation(
+            row["surface"], row["operation"], row["canonical_client"], row["lane"],
+            started, args, row["client_version"],
+        )
+        observation["result"] = row["result"]
+        if row["result"] == "fail":
+            observation["failure_reason"] = row.get("failure_reason", "JavaScript validator failed")
+        observations.append(observation)
+    return observations
 
 
 def main() -> int:

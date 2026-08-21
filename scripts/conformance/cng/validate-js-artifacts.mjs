@@ -83,8 +83,39 @@ async function validatePmtiles(path) {
 }
 
 const artifacts = resolve(process.argv[2]);
+
+async function observe(check, identity) {
+  try {
+    return { ...(await check()), result: "pass" };
+  } catch (error) {
+    return {
+      ...identity,
+      result: "fail",
+      failure_reason: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`,
+    };
+  }
+}
+
 const observations = await Promise.all([
-  validateFlatGeobuf(join(artifacts, "cng.fgb")),
-  validatePmtiles(join(artifacts, "honua.pmtiles")),
+  observe(
+    () => validateFlatGeobuf(join(artifacts, "cng.fgb")),
+    {
+      surface: "flatgeobuf",
+      operation: "feature-read",
+      canonical_client: "flatgeobuf-js",
+      client_version: packageVersion("flatgeobuf"),
+      lane: "node-flatgeobuf",
+    },
+  ),
+  observe(
+    () => validatePmtiles(join(artifacts, "honua.pmtiles")),
+    {
+      surface: "pmtiles",
+      operation: "browser-archive-read",
+      canonical_client: "PMTiles-browser-viewer",
+      client_version: packageVersion("pmtiles"),
+      lane: "node-pmtiles",
+    },
+  ),
 ]);
 process.stdout.write(`${JSON.stringify(observations)}\n`);
