@@ -89,6 +89,10 @@ jobs:
         env:
           HONUA_CNG_SKIP_BUILD: 'false'
           HONUA_CNG_CLEANUP: 'false'
+          # Official OSGeo ubuntu-full image includes the Arrow/Parquet driver
+          # omitted from Ubuntu's gdal-bin build. Digest is the immutable
+          # ubuntu-full-latest manifest promoted on 2026-08-20.
+          HONUA_CNG_GDAL_IMAGE: ghcr.io/osgeo/gdal@sha256:323828a57fd01e2f0a96ece1b2caf6b4ad41e2e47458386836697418fd67665c
           GITHUB_ACTOR: ${{ github.actor }}
           HONUA_DOCKER_GITHUB_TOKEN: ${{ github.token }}
         run: |

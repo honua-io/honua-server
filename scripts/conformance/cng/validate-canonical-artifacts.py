@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -23,7 +24,7 @@ CLIENTS = {
     "fsspec": "2026.7.0",
     "Dask": "2026.7.1",
     "PySTAC-Client": "0.9.0",
-    "GDAL": "3.8.4",
+    "GDAL": "unknown",
     "h5stat": "1.10.10",
     "h5dump": "1.10.10",
     "h5repack": "1.10.10",
@@ -169,8 +170,19 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
             raise ValueError("GeoPandas did not recover non-null geometries and CRS")
 
     def gdal_check() -> str:
-        _run("ogrinfo", "-al", "-so", str(path))
-        return _command_version("GDAL", "gdalinfo", "--version")
+        image = os.getenv("HONUA_CNG_GDAL_IMAGE")
+        if not image:
+            _run("ogrinfo", "-al", "-so", str(path))
+            return _command_version("GDAL", "gdalinfo", "--version")
+
+        artifact = path.resolve()
+        mount = f"{artifact.parent}:/data:ro"
+        container_prefix = (
+            "docker", "run", "--rm", "--network", "none",
+            "--volume", mount, image,
+        )
+        _run(*container_prefix, "ogrinfo", "-al", "-so", f"/data/{artifact.name}")
+        return _command_version("GDAL", *container_prefix, "gdalinfo", "--version")
 
     _collect_client(observations, "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", args, pyarrow_check)
     _collect_client(observations, "geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", args, geopandas_check)
