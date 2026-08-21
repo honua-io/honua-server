@@ -66,19 +66,19 @@ internal static class ImageServerSoapEndpoints
         var soapNamespace = request.SoapNamespace!;
         var operationNamespace = operation.Name.Namespace;
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
-            serviceId,
-            context,
-            cancellationToken).ConfigureAwait(false);
-        if (resolution.ErrorResult is not null)
-        {
-            var statusCode = (resolution.ErrorResult as IStatusCodeHttpResult)?.StatusCode
-                ?? StatusCodes.Status404NotFound;
-            return CreateSoapFault("Image service was not found or is not accessible.", statusCode, soapNamespace);
-        }
-
         try
         {
+            var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
+                serviceId,
+                context,
+                cancellationToken).ConfigureAwait(false);
+            if (resolution.ErrorResult is not null)
+            {
+                var statusCode = (resolution.ErrorResult as IStatusCodeHttpResult)?.StatusCode
+                    ?? StatusCodes.Status404NotFound;
+                return CreateSoapFault("Image service was not found or is not accessible.", statusCode, soapNamespace);
+            }
+
             return operation.Name.LocalName switch
             {
                 "GetVersion" => CreateSoapResponse(
