@@ -117,7 +117,7 @@ internal static class ImageServerSoapEndpoints
                     operation,
                     soapNamespace,
                     operationNamespace,
-                    resolution.LayerId,
+                    resolution.PublicationLayerIndex ?? resolution.LayerId,
                     context,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false),
@@ -125,6 +125,7 @@ internal static class ImageServerSoapEndpoints
                     operation,
                     soapNamespace,
                     operationNamespace,
+                    resolution.PublicationLayerIndex ?? resolution.LayerId,
                     resolution.LayerId,
                     context,
                     rasterStore,
@@ -180,11 +181,12 @@ internal static class ImageServerSoapEndpoints
             referenceRaster = rasters[0];
         }
 
-        var pixelSizeX = referenceRaster.Width > 0
-            ? (extent.Value.XMax - extent.Value.XMin) / referenceRaster.Width
+        var referenceExtent = referenceRaster.Extent;
+        var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue
+            ? (referenceExtent.Value.XMax - referenceExtent.Value.XMin) / referenceRaster.Width
             : 0;
-        var pixelSizeY = referenceRaster.Height > 0
-            ? (extent.Value.YMax - extent.Value.YMin) / referenceRaster.Height
+        var pixelSizeY = referenceRaster.Height > 0 && referenceExtent.HasValue
+            ? (referenceExtent.Value.YMax - referenceExtent.Value.YMin) / referenceRaster.Height
             : 0;
         XNamespace xsi = XmlSchemaInstanceNamespace;
 
@@ -230,7 +232,7 @@ internal static class ImageServerSoapEndpoints
         XElement operation,
         XNamespace soapNamespace,
         XNamespace operationNamespace,
-        int layerId,
+        int publicationLayerIndex,
         HttpContext context,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
@@ -245,7 +247,7 @@ internal static class ImageServerSoapEndpoints
         request = CopyWithResponseFormat(request, returnMimeData ? "image" : "json");
         var exportResult = await exportHandler.ExportImageAsync(
             context,
-            layerId,
+            publicationLayerIndex,
             request,
             cancellationToken).ConfigureAwait(false);
 
@@ -289,7 +291,8 @@ internal static class ImageServerSoapEndpoints
         XElement operation,
         XNamespace soapNamespace,
         XNamespace operationNamespace,
-        int layerId,
+        int publicationLayerIndex,
+        int storageLayerId,
         HttpContext context,
         IRasterStore rasterStore,
         ImageServerExportHandler exportHandler,
@@ -300,7 +303,7 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest, soapNamespace);
         }
 
-        var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
         if (referenceRaster.Id == 0 && rasters.Length > 0)
         {
@@ -341,7 +344,7 @@ internal static class ImageServerSoapEndpoints
         request = CopyWithResponseFormat(request, "image");
         var exportResult = await exportHandler.ExportImageAsync(
             context,
-            layerId,
+            publicationLayerIndex,
             request,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
