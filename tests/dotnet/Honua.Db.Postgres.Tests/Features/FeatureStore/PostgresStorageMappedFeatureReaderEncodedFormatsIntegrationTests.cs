@@ -50,13 +50,13 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         // shared 'layer_id'/'attributes' jsonb columns). The reader maps reads onto it.
         await _fixture.ExecuteAsync($"""
             CREATE TABLE {_schema}.cities (
-                id bigint PRIMARY KEY,
+                objectid bigint PRIMARY KEY,
                 geom geometry(Point, 4326),
                 name text,
                 population integer
             );
 
-            INSERT INTO {_schema}.cities (id, geom, name, population) VALUES
+            INSERT INTO {_schema}.cities (objectid, geom, name, population) VALUES
                 (1, ST_SetSRID(ST_MakePoint(-157.8583, 21.3069), 4326), 'Honolulu', 350000),
                 (2, ST_SetSRID(ST_MakePoint(-156.3319, 20.7984), 4326), 'Kahului', 26000);
             """);
@@ -145,7 +145,7 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
             },
             SchemaFields =
             [
-                new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
                 new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
                 new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer },
@@ -155,7 +155,7 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         var mapping = new FeatureStorageMapping(
             TableName: "cities",
             SchemaName: _schema,
-            PrimaryKeyColumn: "id",
+            PrimaryKeyColumn: "objectid",
             GeometryColumn: "geom",
             StorageSrid: 4326);
 

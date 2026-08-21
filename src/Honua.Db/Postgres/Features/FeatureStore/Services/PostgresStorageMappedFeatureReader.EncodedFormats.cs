@@ -98,6 +98,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
 
         foreach (var field in ResolveAttributeFields(query))
         {
+            // The encoded row already projects the storage primary key under the
+            // canonical objectid name. Re-projecting a metadata field with that
+            // same name creates duplicate SELECT aliases and makes ORDER BY
+            // objectid ambiguous inside the aggregate subquery.
+            if (string.Equals(field.Name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field)} AS {ValidateAndQuoteIdentifier(field.Name)}");
         }
     }

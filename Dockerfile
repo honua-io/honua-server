@@ -128,6 +128,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     fontconfig \
+    libatomic1 \
     libgssapi-krb5-2 \
     tzdata \
     wget && \
