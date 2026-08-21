@@ -13,6 +13,7 @@ using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.OpenApi;
 using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
@@ -42,6 +43,19 @@ internal static class ImageServerSoapEndpoints
             .WithSummary("Read and render an ImageServer through ArcGIS SOAP")
             .WithDescription("Implements the bounded ArcGIS Pro ImageServer SOAP compatibility surface over Honua's canonical raster service.")
             .WithTags("ImageServer")
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                operation.RequestBody = new OpenApiRequestBody
+                {
+                    Required = true,
+                    Content = new Dictionary<string, OpenApiMediaType>
+                    {
+                        ["text/xml"] = new(),
+                        ["application/soap+xml"] = new()
+                    }
+                };
+                return Task.CompletedTask;
+            })
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status404NotFound, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
