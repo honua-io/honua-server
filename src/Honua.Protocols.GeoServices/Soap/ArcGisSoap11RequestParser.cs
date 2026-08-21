@@ -14,20 +14,25 @@ namespace Honua.Protocols.GeoServices.Soap;
 internal static class ArcGisSoap11RequestParser
 {
     internal const string EnvelopeNamespaceName = "http://schemas.xmlsoap.org/soap/envelope/";
-    internal const string EsriNamespaceName = "http://www.esri.com/schemas/ArcGIS/10.8";
+    internal const string CatalogNamespaceName = "http://www.esri.com/schemas/ArcGIS/10.8";
+    internal const string ImageServerNamespaceName = "http://www.esri.com/schemas/ArcGIS/2.9.0";
     private const int MaxRequestCharacters = 1_048_576;
 
     internal static XNamespace EnvelopeNamespace => EnvelopeNamespaceName;
 
-    internal static XNamespace EsriNamespace => EsriNamespaceName;
+    internal static XNamespace CatalogNamespace => CatalogNamespaceName;
+
+    internal static XNamespace ImageServerNamespace => ImageServerNamespaceName;
 
     internal static async Task<ArcGisSoap11OperationReadResult> ReadOperationAsync(
         Stream requestBody,
         string operationFamily,
+        XNamespace operationNamespace,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(requestBody);
         ArgumentException.ThrowIfNullOrWhiteSpace(operationFamily);
+        ArgumentNullException.ThrowIfNull(operationNamespace);
 
         XDocument request;
         try
@@ -67,10 +72,10 @@ internal static class ArcGisSoap11RequestParser
                 $"SOAP body must contain exactly one {operationFamily} operation.");
         }
 
-        if (operations[0].Name.Namespace != EsriNamespace)
+        if (operations[0].Name.Namespace != operationNamespace)
         {
             return ArcGisSoap11OperationReadResult.Failure(
-                $"ArcGIS SOAP operations must use the '{EsriNamespaceName}' target namespace.");
+                $"{operationFamily} SOAP operations must use the '{operationNamespace.NamespaceName}' target namespace.");
         }
 
         return ArcGisSoap11OperationReadResult.Success(operations[0]);

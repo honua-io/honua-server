@@ -81,85 +81,98 @@ internal static class GeoservicesCatalogEndpoints
         var request = await ArcGisSoap11RequestParser.ReadOperationAsync(
             context.Request.Body,
             "catalog",
+            ArcGisSoap11RequestParser.CatalogNamespace,
             context.RequestAborted).ConfigureAwait(false);
         if (request.Error is not null)
         {
             return CreateSoapFault(request.Error, StatusCodes.Status400BadRequest);
         }
 
-        var operation = request.Operation!;
-        var operationNamespace = ArcGisSoap11RequestParser.EsriNamespace;
-        var operationName = operation.Name;
-        string responseName;
-        XElement payload;
-        if (operationName == operationNamespace + "GetServiceDescriptions"
-            || operationName == operationNamespace + "GetServiceDescriptionsEx")
+        try
         {
-            responseName = operationName == operationNamespace + "GetServiceDescriptions"
-                ? "GetServiceDescriptionsResponse"
-                : "GetServiceDescriptionsExResponse";
-            payload = new XElement(
-                operationNamespace + "ServiceDescriptions",
-                await BuildSoapImageServerDescriptionsAsync(
-                    context,
-                    operationNamespace,
-                    graphProvider,
-                    rasterStore,
-                    logger).ConfigureAwait(false));
-        }
-        else if (operationName == operationNamespace + "GetFolders")
-        {
-            responseName = "GetFoldersResponse";
-            payload = new XElement(operationNamespace + "FolderNames");
-        }
-        else if (operationName == operationNamespace + "GetMessageVersion")
-        {
-            responseName = "GetMessageVersionResponse";
-            payload = new XElement(operationNamespace + "MessageVersion", "esriArcGISVersion108");
-        }
-        else if (operationName == operationNamespace + "GetMessageFormats")
-        {
-            responseName = "GetMessageFormatsResponse";
-            payload = new XElement(operationNamespace + "MessageFormats", "esriServiceCatalogMessageFormatSoap");
-        }
-        else if (operationName == operationNamespace + "GetTokenServiceURL")
-        {
-            responseName = "GetTokenServiceURLResponse";
-            payload = new XElement(operationNamespace + "TokenServiceURL", string.Empty);
-        }
-        else if (operationName == operationNamespace + "RequiresTokens")
-        {
-            responseName = "RequiresTokensResponse";
-            payload = new XElement(operationNamespace + "Result", false);
-        }
-        else
-        {
-            return CreateSoapFault(
-                $"Unsupported catalog operation '{operationName.LocalName}'.",
-                StatusCodes.Status400BadRequest);
-        }
+            var operation = request.Operation!;
+            var operationNamespace = operation.Name.Namespace;
+            var operationName = operation.Name;
+            string responseName;
+            XElement payload;
+            if (operationName == operationNamespace + "GetServiceDescriptions"
+                || operationName == operationNamespace + "GetServiceDescriptionsEx")
+            {
+                responseName = operationName == operationNamespace + "GetServiceDescriptions"
+                    ? "GetServiceDescriptionsResponse"
+                    : "GetServiceDescriptionsExResponse";
+                payload = new XElement(
+                    "ServiceDescriptions",
+                    await BuildSoapImageServerDescriptionsAsync(
+                        context,
+                        graphProvider,
+                        rasterStore,
+                        logger).ConfigureAwait(false));
+            }
+            else if (operationName == operationNamespace + "GetFolders")
+            {
+                responseName = "GetFoldersResponse";
+                payload = new XElement("FolderNames");
+            }
+            else if (operationName == operationNamespace + "GetMessageVersion")
+            {
+                responseName = "GetMessageVersionResponse";
+                payload = new XElement("MessageVersion", "esriArcGISVersion108");
+            }
+            else if (operationName == operationNamespace + "GetMessageFormats")
+            {
+                responseName = "GetMessageFormatsResponse";
+                payload = new XElement("MessageFormats", "esriServiceCatalogMessageFormatSoap");
+            }
+            else if (operationName == operationNamespace + "GetTokenServiceURL")
+            {
+                responseName = "GetTokenServiceURLResponse";
+                payload = new XElement("TokenServiceURL", string.Empty);
+            }
+            else if (operationName == operationNamespace + "RequiresTokens")
+            {
+                responseName = "RequiresTokensResponse";
+                payload = new XElement("Result", false);
+            }
+            else
+            {
+                return CreateSoapFault(
+                    $"Unsupported catalog operation '{operationName.LocalName}'.",
+                    StatusCodes.Status400BadRequest);
+            }
 
-        var soap = ArcGisSoap11RequestParser.EnvelopeNamespace;
-        var response = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
+            var soap = ArcGisSoap11RequestParser.EnvelopeNamespace;
+            var response = new XDocument(
+                new XDeclaration("1.0", "utf-8", null),
                 new XElement(
-                    soap + "Body",
+                    soap + "Envelope",
+                    new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
                     new XElement(
-                        operationNamespace + responseName,
-                        payload))));
+                        soap + "Body",
+                        new XElement(
+                            operationNamespace + responseName,
+                            payload))));
 
-        return Results.Content(
-            response.ToString(SaveOptions.DisableFormatting),
-            contentType: SoapContentType,
-            contentEncoding: Encoding.UTF8);
+            return Results.Content(
+                response.ToString(SaveOptions.DisableFormatting),
+                contentType: SoapContentType,
+                contentEncoding: Encoding.UTF8);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            GeoservicesCatalogEndpointLogging.LogSoapCatalogFailed(logger, exception);
+            return CreateSoapFault(
+                "The SOAP catalog operation could not be completed.",
+                StatusCodes.Status500InternalServerError);
+        }
     }
 
     private static async Task<IReadOnlyList<XElement>> BuildSoapImageServerDescriptionsAsync(
         HttpContext context,
-        XNamespace operationNamespace,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger logger)
@@ -208,15 +221,15 @@ internal static class GeoservicesCatalogEndpoints
             }
 
             descriptions.Add(new XElement(
-                operationNamespace + "ServiceDescription",
-                new XElement(operationNamespace + "Name", service.Metadata.Name),
-                new XElement(operationNamespace + "Type", ImageServerProtocolName),
+                "ServiceDescription",
+                new XElement("Name", service.Metadata.Name),
+                new XElement("Type", ImageServerProtocolName),
                 new XElement(
-                    operationNamespace + "Url",
+                    "Url",
                     $"{baseUrl}/services/{Uri.EscapeDataString(service.Metadata.Name)}/{ImageServerProtocolName}"),
-                new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", "Image,Metadata,Catalog"),
-                new XElement(operationNamespace + "Description", string.Empty)));
+                new XElement("ParentType", string.Empty),
+                new XElement("Capabilities", "Image,Metadata,Catalog"),
+                new XElement("Description", string.Empty)));
         }
 
         return descriptions;
@@ -599,6 +612,10 @@ internal static partial class GeoservicesCatalogEndpointLogging
     [LoggerMessage(EventId = 9402, Level = LogLevel.Warning,
         Message = "Failed to probe raster availability for service {ServiceName}.")]
     public static partial void LogRasterProbeFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 9403, Level = LogLevel.Error,
+        Message = "ArcGIS SOAP catalog operation failed.")]
+    public static partial void LogSoapCatalogFailed(ILogger logger, Exception exception);
 }
 
 /// <summary>

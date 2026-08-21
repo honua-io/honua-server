@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -59,7 +60,45 @@ internal sealed class ImageServerExportHandler
         int layerId,
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
+        => await ExportImageAsync(
+            context,
+            new ImageServerExportTarget(layerId, layerId, PublicationId: null),
+            request,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Exports through one exact publication binding resolved by the service-scoped
+    /// ImageServer adapter. The publication identity is revalidated against the current
+    /// metadata snapshot before the storage layer is queried.
+    /// </summary>
+    internal async Task<IResult> ExportImageAsync(
+        HttpContext context,
+        ImageServerLayerResolution resolution,
+        ExportImageRequest request,
+        CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(resolution.PublicationId))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Image publication was not found.");
+        }
+
+        return await ExportImageAsync(
+            context,
+            new ImageServerExportTarget(
+                resolution.LayerId,
+                resolution.PublicationLayerIndex,
+                resolution.PublicationId),
+            request,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IResult> ExportImageAsync(
+        HttpContext context,
+        ImageServerExportTarget target,
+        ExportImageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var layerId = target.StorageLayerId;
         using var scope = HonuaTelemetryScope.StartFeature(
             "export-image",
             HonuaTelemetry.Protocols.ImageServer,
@@ -69,7 +108,14 @@ internal sealed class ImageServerExportHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolvedCandidate = target.PublicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, target.PublicationLayerIndex!.Value)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, target.PublicationId);
+            if (resolvedCandidate is not { } resolved
+                || (target.PublicationLayerIndex.HasValue
+                    && resolved.Publication.LayerIndex != target.PublicationLayerIndex)
+                || (target.PublicationId is not null
+                    && snapshot.ResolveStorageLayerId(resolved.Publication) != target.StorageLayerId))
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -249,6 +295,11 @@ internal sealed class ImageServerExportHandler
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while exporting the image.");
         }
     }
+
+    private readonly record struct ImageServerExportTarget(
+        int StorageLayerId,
+        int? PublicationLayerIndex,
+        string? PublicationId);
 
     private async Task<IResult> ExportMultidimensionalSliceAsync(
         HttpContext context,

@@ -152,7 +152,19 @@ public class ImageServerTileHandlerTests
         // shared helper dereferences. Using the real validator over the same test graph keeps the
         // test honest about the production resolution path and cannot rot when an overload is added.
         var resourceValidator = new ResourceValidator(graphProvider);
-        var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(42, Arg.Any<CancellationToken>())
+            .Returns([new RasterInfo
+            {
+                Id = 1,
+                LayerId = 42,
+                Name = "imagery",
+                Width = 1,
+                Height = 1,
+                BandCount = 1,
+                PixelType = "8BUI",
+            }]);
+        var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider, rasterStore);
         var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
 

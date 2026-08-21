@@ -10,11 +10,13 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -27,6 +29,10 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixture>
 {
+    private static readonly XNamespace ArcGisSoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private static readonly XNamespace CatalogSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private static readonly XNamespace ImageServerSoapNamespace = "http://www.esri.com/schemas/ArcGIS/2.9.0";
+
     private readonly WebAppFixture _fixture;
 
     public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
@@ -65,6 +71,16 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
         catalogResponse.Be200Ok();
         imageServerResponse.Be200Ok();
+
+        var catalog = XDocument.Parse(await catalogResponse.Content.ReadAsStringAsync());
+        var catalogResponseElement = catalog.Descendants(CatalogSoapNamespace + "GetMessageVersionResponse").Single();
+        catalogResponseElement.Elements().Should().ContainSingle(element =>
+            element.Name == XNamespace.None + "MessageVersion");
+
+        var imageServer = XDocument.Parse(await imageServerResponse.Content.ReadAsStringAsync());
+        var imageResponseElement = imageServer.Descendants(ImageServerSoapNamespace + "GetVersionResponse").Single();
+        imageResponseElement.Elements().Should().ContainSingle(element =>
+            element.Name == XNamespace.None + "Result" && element.Value == "10.8");
     }
 
     [IntegrationTest]
@@ -265,7 +281,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 <?xml version="1.0" encoding="utf-8"?>
                 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
                   <soap:Body>
-                    <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                    <esri:GetServiceDescriptions xmlns:esri="http://www.esri.com/schemas/ArcGIS/10.8" />
                   </soap:Body>
                 </soap:Envelope>
                 """;
@@ -305,8 +321,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         const string soapRequest = """
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
               <soap:Body>
-                <GetFolders xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
-                <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                <esri:GetFolders xmlns:esri="http://www.esri.com/schemas/ArcGIS/10.8" />
+                <esri:GetMessageVersion xmlns:esri="http://www.esri.com/schemas/ArcGIS/10.8" />
               </soap:Body>
             </soap:Envelope>
             """;
@@ -375,6 +391,138 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             (await response.Content.ReadAsStringAsync()).Should().Contain("storage-image");
             await rasterStore.Received().ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>());
             await rasterStore.DidNotReceive().ListRastersAsync(publicationLayerIndex, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_ExportBindsExactPublicationAndStorageLayer()
+    {
+        const int publicationLayerIndex = 7;
+        const int storageLayerId = 9001;
+        var graph = BuildSoapImageGraph(
+            "storage-image",
+            ("res-storage", "pub-storage", publicationLayerIndex, storageLayerId));
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var raster = CreateSoapRaster(storageLayerId);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>()).Returns([raster]);
+        rasterStore.QueryRastersAsync(
+                storageLayerId,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>())
+            .Returns([raster]);
+        rasterStore.ExportImageAsync(
+                storageLayerId,
+                raster.Id,
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var query = callInfo.ArgAt<RasterQuery>(2);
+                return new RasterResult
+                {
+                    Data = CreateSoapPng(query.OutputWidth ?? 16, query.OutputHeight ?? 8),
+                    ContentType = "image/png",
+                    Width = query.OutputWidth ?? 16,
+                    Height = query.OutputHeight ?? 8,
+                    Srid = 4326,
+                    Extent = raster.Extent,
+                };
+            });
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            const string operation = """
+                <esri:ExportImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0">
+                  <ImageDescription>
+                    <Extent><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
+                    <Width>16</Width><Height>8</Height>
+                  </ImageDescription>
+                  <ImageType>
+                    <ImageFormat>esriImagePNG</ImageFormat>
+                    <ImageReturnType>esriImageReturnMimeData</ImageReturnType>
+                  </ImageType>
+                </esri:ExportImage>
+                """;
+            using var response = await PostSoapOperationAsync(
+                fixture.Client,
+                "/services/storage-image/ImageServer",
+                operation);
+
+            response.Be200Ok();
+            await rasterStore.Received().QueryRastersAsync(
+                storageLayerId,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.Received().ExportImageAsync(
+                storageLayerId,
+                raster.Id,
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().QueryRastersAsync(
+                publicationLayerIndex,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_SelectsFirstAccessibleRasterBearingPublication()
+    {
+        const int emptyStorageLayerId = 8101;
+        const int rasterStorageLayerId = 8102;
+        var graph = BuildSoapImageGraph(
+            "layered-image",
+            ("res-empty", "pub-empty", 1, emptyStorageLayerId),
+            ("res-raster", "pub-raster", 2, rasterStorageLayerId));
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(emptyStorageLayerId, Arg.Any<CancellationToken>()).Returns([]);
+        rasterStore.ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([CreateSoapRaster(rasterStorageLayerId)]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                "/services/layered-image/ImageServer",
+                "GetVersion");
+
+            response.Be200Ok();
+            await rasterStore.Received().ListRastersAsync(
+                emptyStorageLayerId,
+                Arg.Any<CancellationToken>());
+            await rasterStore.Received().ListRastersAsync(
+                rasterStorageLayerId,
+                Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -470,7 +618,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         try
         {
             const string operation = """
-                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+                <esri:ExportImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0"
                              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
                   <ImageDescription xsi:type="GeoImageDescription">
                     <Extent xsi:type="EnvelopeN">
@@ -483,7 +631,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                     <ImageFormat>esriImagePNG</ImageFormat>
                     <ImageReturnType>esriImageReturnURL</ImageReturnType>
                   </ImageType>
-                </ExportImage>
+                </esri:ExportImage>
                 """;
             using var response = await PostSoapOperationAsync(
                 fixture.Client,
@@ -522,13 +670,13 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         try
         {
             const string operation = """
-                <GetImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+                <esri:GetImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0"
                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
                   <ImageDescription xsi:type="GeoImageDescription">
                     <Extent xsi:type="EnvelopeN"><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
                     <Width>16</Width><Height>8</Height>
                   </ImageDescription>
-                </GetImage>
+                </esri:GetImage>
                 """;
             using var response = await PostSoapOperationAsync(
                 fixture.Client,
@@ -551,13 +699,54 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetImage_RejectsUnrepresentableRenderedBandLayouts()
+    {
+        foreach (var bandCount in new[] { 2, 4 })
+        {
+            var rasterStore = CreateSoapRasterStore(bandCount: bandCount);
+            var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+            await fixture.InitializeAsync();
+            try
+            {
+                const string operation = """
+                    <esri:GetImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0">
+                      <ImageDescription>
+                        <Extent><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
+                        <Width>16</Width><Height>8</Height>
+                      </ImageDescription>
+                    </esri:GetImage>
+                    """;
+                using var response = await PostSoapOperationAsync(
+                    fixture.Client,
+                    $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                    operation);
+
+                response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+                (await response.Content.ReadAsStringAsync()).Should().Contain(
+                    "only one-band grayscale or three-band RGB");
+                await rasterStore.DidNotReceive().ExportImageAsync(
+                    Arg.Any<int>(),
+                    Arg.Any<long>(),
+                    Arg.Any<RasterQuery>(),
+                    Arg.Any<CancellationToken>());
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MultipleOperations_ReturnsClientFault()
     {
         const string operation = """
-            <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
-            <GetFields xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+            <esri:GetVersion xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0" />
+            <esri:GetFields xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0" />
             """;
         using var response = await PostSoapOperationAsync(
             _fixture.Client,
@@ -576,7 +765,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         const string request = """
             <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
               <soap:Body>
-                <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                <esri:GetMessageVersion xmlns:esri="http://www.esri.com/schemas/ArcGIS/10.8" />
               </soap:Body>
             </soap:Envelope>
             """;
@@ -595,7 +784,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         const string request = """
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
               <Body xmlns="urn:local-name-collision">
-                <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                <esri:GetMessageVersion xmlns:esri="http://www.esri.com/schemas/ArcGIS/10.8" />
               </Body>
             </soap:Envelope>
             """;
@@ -615,7 +804,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         using var response = await PostSoapOperationAsync(_fixture.Client, "/services", operation);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("ArcGIS SOAP operations must use");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("SOAP operations must use");
     }
 
     [IntegrationTest]
@@ -630,7 +819,65 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             operation);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("ArcGIS SOAP operations must use");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("SOAP operations must use");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task SoapCatalog_MetadataProviderFailure_ReturnsSoapFault()
+    {
+        var graphProvider = new ThrowingMetadataV2GraphProvider();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(fixture.Client, "/services", "GetServiceDescriptions");
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.InternalServerError);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+            XDocument.Parse(await response.Content.ReadAsStringAsync())
+                .Descendants(ArcGisSoapEnvelopeNamespace + "Fault").Should().ContainSingle();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapImageServer_ResolverFailure_ReturnsSoapFault()
+    {
+        var resolver = new ThrowingImageServerLayerResolver();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IImageServerLayerResolver>();
+            services.AddSingleton<IImageServerLayerResolver>(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "GetVersion");
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.InternalServerError);
+            var body = await response.Content.ReadAsStringAsync();
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml", "response body: {0}", body);
+            XDocument.Parse(body)
+                .Descendants(ArcGisSoapEnvelopeNamespace + "Fault").Should().ContainSingle();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -639,7 +886,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     public async Task SoapImageServer_RequiredChildLocalNameInWrongNamespace_ReturnsClientFault()
     {
         const string operation = """
-            <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+            <esri:ExportImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0"
                          xmlns:collision="urn:local-name-collision">
               <collision:ImageDescription>
                 <Extent><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
@@ -649,7 +896,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 <ImageFormat>esriImagePNG</ImageFormat>
                 <ImageReturnType>esriImageReturnURL</ImageReturnType>
               </ImageType>
-            </ExportImage>
+            </esri:ExportImage>
             """;
         using var response = await PostSoapOperationAsync(
             _fixture.Client,
@@ -666,7 +913,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     public async Task SoapImageServer_RequiredNestedChildLocalNameInWrongNamespace_ReturnsClientFault()
     {
         const string operation = """
-            <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+            <esri:ExportImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0"
                          xmlns:collision="urn:local-name-collision">
               <ImageDescription>
                 <collision:Extent>
@@ -678,7 +925,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 <ImageFormat>esriImagePNG</ImageFormat>
                 <ImageReturnType>esriImageReturnURL</ImageReturnType>
               </ImageType>
-            </ExportImage>
+            </esri:ExportImage>
             """;
         using var response = await PostSoapOperationAsync(
             _fixture.Client,
@@ -703,11 +950,14 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     private async Task AssertDtdPayloadRejectedAsync(string route)
     {
-        const string request = """
+        var operationNamespace = route.Contains("/ImageServer", StringComparison.Ordinal)
+            ? "http://www.esri.com/schemas/ArcGIS/2.9.0"
+            : "http://www.esri.com/schemas/ArcGIS/10.8";
+        var request = $$"""
             <?xml version="1.0"?>
             <!DOCTYPE soap:Envelope [<!ENTITY probe "forbidden">]>
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body><GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8">&probe;</GetVersion></soap:Body>
+              <soap:Body><esri:GetVersion xmlns:esri="{{operationNamespace}}">&probe;</esri:GetVersion></soap:Body>
             </soap:Envelope>
             """;
         using var content = new StringContent(request, Encoding.UTF8, "text/xml");
@@ -717,9 +967,73 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         (await response.Content.ReadAsStringAsync()).Should().Contain("Malformed SOAP request");
     }
 
-    private static IRasterStore CreateSoapRasterStore(int layerId = 0)
+    private static MetadataV2Graph BuildSoapImageGraph(
+        string serviceName,
+        params (string ResourceId, string PublicationId, int PublicationLayerIndex, int StorageLayerId)[] layers)
     {
-        var raster = CreateSoapRaster(layerId);
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var serviceId = $"svc-{serviceName}";
+        var builder = new TestMetadataV2GraphBuilder()
+            .AddService(
+                serviceId,
+                serviceName,
+                protocols: [ServiceProtocols.ImageServer],
+                accessPolicy: anonymous);
+        foreach (var layer in layers)
+        {
+            builder
+                .AddResource(
+                    layer.ResourceId,
+                    layer.ResourceId,
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: anonymous)
+                .AddStorageBinding(
+                    $"binding-{layer.ResourceId}",
+                    layer.ResourceId,
+                    $"raster_{layer.StorageLayerId}",
+                    storageType: MetadataV2StorageType.RelationalTable,
+                    storageLayerId: layer.StorageLayerId)
+                .AddPublication(
+                    layer.PublicationId,
+                    serviceId,
+                    layer.ResourceId,
+                    layerIndex: layer.PublicationLayerIndex,
+                    serviceLocalId: layer.PublicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.EsriImageLayer);
+        }
+
+        return builder.Build();
+    }
+
+    private sealed class ThrowingMetadataV2GraphProvider : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("injected catalog provider failure");
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("injected catalog provider failure");
+    }
+
+    private sealed class ThrowingImageServerLayerResolver : IImageServerLayerResolver
+    {
+        public Task<ImageServerLayerResolution> ResolveFirstAccessibleLayerAsync(
+            string serviceId,
+            HttpContext context,
+            CancellationToken cancellationToken)
+            => throw new InvalidOperationException("injected image resolver failure");
+
+        public Task<ImageServerLayerResolution> ValidateLayerAsync(
+            int layerId,
+            HttpContext context,
+            CancellationToken cancellationToken)
+            => throw new InvalidOperationException("injected image resolver failure");
+    }
+
+    private static IRasterStore CreateSoapRasterStore(int layerId = 0, int bandCount = 3)
+    {
+        var raster = CreateSoapRaster(layerId, bandCount);
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
         rasterStore.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
@@ -754,7 +1068,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         return encoded.ToArray();
     }
 
-    private static RasterInfo CreateSoapRaster(int layerId)
+    private static RasterInfo CreateSoapRaster(int layerId, int bandCount = 3)
         => new()
         {
             Id = 101,
@@ -762,7 +1076,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             Name = "soap-raster",
             Width = 360,
             Height = 180,
-            BandCount = 3,
+            BandCount = bandCount,
             PixelType = "8BUI",
             Srid = 4326,
             Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
@@ -770,10 +1084,15 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         };
 
     private static Task<HttpResponseMessage> PostSoapAsync(HttpClient client, string route, string operation)
-        => PostSoapOperationAsync(
+    {
+        var operationNamespace = route.Contains("/ImageServer", StringComparison.Ordinal)
+            ? "http://www.esri.com/schemas/ArcGIS/2.9.0"
+            : "http://www.esri.com/schemas/ArcGIS/10.8";
+        return PostSoapOperationAsync(
             client,
             route,
-            $"<{operation} xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\" />");
+            $"<esri:{operation} xmlns:esri=\"{operationNamespace}\" />");
+    }
 
     private static async Task<HttpResponseMessage> PostSoapOperationAsync(
         HttpClient client,

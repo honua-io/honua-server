@@ -54,6 +54,7 @@ internal static class ImageServerSoapEndpoints
         var request = await ArcGisSoap11RequestParser.ReadOperationAsync(
             context.Request.Body,
             "ImageServer",
+            ArcGisSoap11RequestParser.ImageServerNamespace,
             context.RequestAborted).ConfigureAwait(false);
         if (request.Error is not null)
         {
@@ -61,22 +62,23 @@ internal static class ImageServerSoapEndpoints
         }
 
         var operation = request.Operation!;
-        var operationNamespace = ArcGisSoap11RequestParser.EsriNamespace;
+        var operationNamespace = operation.Name.Namespace;
         var operationName = operation.Name;
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
-            serviceId,
-            context,
-            cancellationToken).ConfigureAwait(false);
-        if (resolution.ErrorResult is not null)
-        {
-            var statusCode = (resolution.ErrorResult as IStatusCodeHttpResult)?.StatusCode
-                ?? StatusCodes.Status404NotFound;
-            return CreateSoapFault("Image service was not found or is not accessible.", statusCode);
-        }
 
         try
         {
+            var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
+                serviceId,
+                context,
+                cancellationToken).ConfigureAwait(false);
+            if (resolution.ErrorResult is not null)
+            {
+                var statusCode = (resolution.ErrorResult as IStatusCodeHttpResult)?.StatusCode
+                    ?? StatusCodes.Status404NotFound;
+                return CreateSoapFault("Image service was not found or is not accessible.", statusCode);
+            }
+
             if (operationName == operationNamespace + "GetVersion")
             {
                 return CreateSoapResponse(
@@ -132,7 +134,7 @@ internal static class ImageServerSoapEndpoints
                 return await HandleExportImageAsync(
                     operation,
                     operationNamespace,
-                    resolution.LayerId,
+                    resolution,
                     context,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false);
@@ -143,7 +145,7 @@ internal static class ImageServerSoapEndpoints
                 return await HandleGetImageAsync(
                     operation,
                     operationNamespace,
-                    resolution.LayerId,
+                    resolution,
                     context,
                     rasterStore,
                     exportHandler,
@@ -245,7 +247,7 @@ internal static class ImageServerSoapEndpoints
     private static async Task<IResult> HandleExportImageAsync(
         XElement operation,
         XNamespace operationNamespace,
-        int layerId,
+        ImageServerLayerResolution resolution,
         HttpContext context,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
@@ -255,16 +257,15 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
         }
 
-        var esri = ArcGisSoap11RequestParser.EsriNamespace;
         var returnType = operation
-            .Element(esri + "ImageType")?
-            .Element(esri + "ImageReturnType")?
+            .Element("ImageType")?
+            .Element("ImageReturnType")?
             .Value;
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
         request = CopyWithResponseFormat(request, returnMimeData ? "image" : "json");
         var exportResult = await exportHandler.ExportImageAsync(
             context,
-            layerId,
+            resolution,
             request,
             cancellationToken).ConfigureAwait(false);
 
@@ -307,7 +308,7 @@ internal static class ImageServerSoapEndpoints
     private static async Task<IResult> HandleGetImageAsync(
         XElement operation,
         XNamespace operationNamespace,
-        int layerId,
+        ImageServerLayerResolution resolution,
         HttpContext context,
         IRasterStore rasterStore,
         ImageServerExportHandler exportHandler,
@@ -318,7 +319,7 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
         }
 
-        var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var rasters = await rasterStore.ListRastersAsync(resolution.LayerId, cancellationToken).ConfigureAwait(false);
         var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
         if (referenceRaster.Id == 0 && rasters.Length > 0)
         {
@@ -346,17 +347,17 @@ internal static class ImageServerSoapEndpoints
         }
 
         var bandCount = ResolveGetImageBandCount(request.BandIds, referenceRaster.BandCount);
-        if (bandCount is < 1 or > 4)
+        if (bandCount is not (1 or 3))
         {
             return CreateSoapFault(
-                "SOAP GetImage currently supports one to four rendered bands.",
+                "SOAP GetImage currently supports only one-band grayscale or three-band RGB image services.",
                 StatusCodes.Status400BadRequest);
         }
 
         request = CopyWithResponseFormat(request, "image");
         var exportResult = await exportHandler.ExportImageAsync(
             context,
-            layerId,
+            resolution,
             request,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
@@ -412,19 +413,10 @@ internal static class ImageServerSoapEndpoints
             {
                 var color = bitmap.GetPixel(x, y);
                 pixelBlock[sampleOffset++] = color.Red;
-                if (bandCount >= 2)
+                if (bandCount == 3)
                 {
                     pixelBlock[sampleOffset++] = color.Green;
-                }
-
-                if (bandCount >= 3)
-                {
                     pixelBlock[sampleOffset++] = color.Blue;
-                }
-
-                if (bandCount >= 4)
-                {
-                    pixelBlock[sampleOffset++] = color.Alpha;
                 }
 
                 if (color.Alpha != 0)
@@ -461,28 +453,27 @@ internal static class ImageServerSoapEndpoints
         height = 0;
         error = null;
 
-        var esri = ArcGisSoap11RequestParser.EsriNamespace;
-        var description = operation.Element(esri + "ImageDescription");
+        var description = operation.Element("ImageDescription");
         if (description is null)
         {
             error = "ImageDescription is required.";
             return false;
         }
 
-        var extent = description.Element(esri + "Extent");
+        var extent = description.Element("Extent");
         if (extent is null ||
-            !TryReadFiniteDouble(extent, esri + "XMin", out var xMin) ||
-            !TryReadFiniteDouble(extent, esri + "YMin", out var yMin) ||
-            !TryReadFiniteDouble(extent, esri + "XMax", out var xMax) ||
-            !TryReadFiniteDouble(extent, esri + "YMax", out var yMax) ||
+            !TryReadFiniteDouble(extent, "XMin", out var xMin) ||
+            !TryReadFiniteDouble(extent, "YMin", out var yMin) ||
+            !TryReadFiniteDouble(extent, "XMax", out var xMax) ||
+            !TryReadFiniteDouble(extent, "YMax", out var yMax) ||
             xMin >= xMax || yMin >= yMax)
         {
             error = "ImageDescription extent must be a finite, non-empty envelope.";
             return false;
         }
 
-        if (!TryReadInt(description, esri + "Width", out width) ||
-            !TryReadInt(description, esri + "Height", out height) ||
+        if (!TryReadInt(description, "Width", out width) ||
+            !TryReadInt(description, "Height", out height) ||
             width is < 1 or > MaxImageDimension ||
             height is < 1 or > MaxImageDimension)
         {
@@ -490,14 +481,14 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
-        var imageType = operation.Element(esri + "ImageType");
+        var imageType = operation.Element("ImageType");
         if (requireImageType && imageType is null)
         {
             error = "ImageType is required.";
             return false;
         }
 
-        var imageFormat = imageType?.Element(esri + "ImageFormat")?.Value;
+        var imageFormat = imageType?.Element("ImageFormat")?.Value;
         if (requireImageType && string.IsNullOrWhiteSpace(imageFormat))
         {
             error = "ImageFormat is required.";
@@ -511,7 +502,7 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
-        var imageReturnType = imageType?.Element(esri + "ImageReturnType")?.Value;
+        var imageReturnType = imageType?.Element("ImageReturnType")?.Value;
         if (requireImageType && string.IsNullOrWhiteSpace(imageReturnType))
         {
             error = "ImageReturnType is required.";
@@ -525,9 +516,9 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
-        var spatialReference = extent.Element(esri + "SpatialReference");
-        var wkid = spatialReference?.Element(esri + "LatestWKID")?.Value
-            ?? spatialReference?.Element(esri + "WKID")?.Value;
+        var spatialReference = extent.Element("SpatialReference");
+        var wkid = spatialReference?.Element("LatestWKID")?.Value
+            ?? spatialReference?.Element("WKID")?.Value;
 
         request = new ExportImageRequest
         {
@@ -536,13 +527,13 @@ internal static class ImageServerSoapEndpoints
             BboxSr = wkid,
             ImageSr = wkid,
             Format = format,
-            PixelType = NormalizeOptionalValue(description.Element(esri + "PixelType")?.Value),
-            NoData = NormalizeOptionalValue(description.Element(esri + "NoData")?.Value),
-            Interpolation = NormalizeOptionalValue(description.Element(esri + "Interpolation")?.Value),
-            Compression = NormalizeOptionalValue(description.Element(esri + "Compression")?.Value),
-            CompressionQuality = TryReadInt(description, esri + "CompressionQuality", out var quality) ? quality : 75,
+            PixelType = NormalizeOptionalValue(description.Element("PixelType")?.Value),
+            NoData = NormalizeOptionalValue(description.Element("NoData")?.Value),
+            Interpolation = NormalizeOptionalValue(description.Element("Interpolation")?.Value),
+            Compression = NormalizeOptionalValue(description.Element("Compression")?.Value),
+            CompressionQuality = TryReadInt(description, "CompressionQuality", out var quality) ? quality : 75,
             BandIds = string.Join(",", description.Descendants()
-                .Where(element => element.Name == esri + "Int")
+                .Where(static element => element.Name == "Int")
                 .Select(static element => element.Value)),
             F = "json"
         };
