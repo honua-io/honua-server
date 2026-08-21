@@ -18,6 +18,7 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
+using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
@@ -596,6 +597,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().Be(WebAppFixture.TestServiceId);
             result.Elements().Single(element => element.Name.LocalName == "BandCount")
                 .Value.Should().Be("3");
+            result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
+                .Value.Should().Be("None");
+            result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
+                .Value.Should().Be("false");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")
                 .Value.Should().Be("4326");
 
@@ -618,7 +623,18 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             versionXml.Descendants().Single(element => element.Name.LocalName == "Result")
                 .Value.Should().Be("10.8");
 
-            foreach (var operation in new[] { "GetKeyProperties", "GetMetadata", "IsFixedScaleImage" })
+            using var fixedScale = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "IsFixedScaleImage");
+            fixedScale.Be200Ok();
+            var fixedScaleXml = XDocument.Parse(await fixedScale.Content.ReadAsStringAsync());
+            fixedScaleXml.Descendants()
+                .Should().ContainSingle(element => element.Name.LocalName == "IsFixedScaleImageResponse");
+            fixedScaleXml.Descendants()
+                .Should().NotContain(element => element.Name.LocalName == "IsFixedScaleMapResponse");
+
+            foreach (var operation in new[] { "GetKeyProperties", "GetMetadata" })
             {
                 using var companion = await PostSoapAsync(
                     fixture.Client,
@@ -690,7 +706,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task PostSoapImageServer_GetImage_ReturnsCanonicalRasterBytesAsBase64()
+    public async Task PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask()
     {
         var rasterStore = CreateSoapRasterStore();
         var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
@@ -713,8 +729,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
             response.Be200Ok();
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-            Convert.FromBase64String(payload.Descendants().Single(element => element.Name.LocalName == "Result").Value)
-                .Should().Equal(0x89, 0x50, 0x4E, 0x47);
+            var result = Convert.FromBase64String(
+                payload.Descendants().Single(element => element.Name.LocalName == "Result").Value);
+            var pixelByteCount = 16 * 8 * 3;
+            result.Should().HaveCount(pixelByteCount + ((16 * 8 + 7) / 8));
+            result.AsSpan(0, 6).ToArray().Should().Equal(17, 34, 51, 17, 34, 51);
+            result.AsSpan(pixelByteCount).ToArray().Should().OnlyContain(value => value == 0xff);
         }
         finally
         {
@@ -786,7 +806,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 var query = callInfo.ArgAt<RasterQuery>(2);
                 return new RasterResult
                 {
-                    Data = [0x89, 0x50, 0x4E, 0x47],
+                    Data = CreateSoapPng(query.OutputWidth ?? 400, query.OutputHeight ?? 400),
                     ContentType = "image/png",
                     Width = query.OutputWidth ?? 400,
                     Height = query.OutputHeight ?? 400,
@@ -795,6 +815,15 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 };
             });
         return rasterStore;
+    }
+
+    private static byte[] CreateSoapPng(int width, int height)
+    {
+        using var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        bitmap.Erase(new SKColor(17, 34, 51, 255));
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded.ToArray();
     }
 
     private static RasterInfo CreateSoapRaster(int layerId)
