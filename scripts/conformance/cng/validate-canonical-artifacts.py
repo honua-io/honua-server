@@ -55,6 +55,7 @@ def _observation(surface: str, operation: str, client: str, lane: str, started: 
         "result": "pass",
         "skip_reason": None,
         "source_sha": args.source_sha,
+        "producer_source_sha": args.source_sha,
         "image_digest": args.image_digest,
         "fixture_revision": args.fixture_revision,
         "evidence_uri": args.evidence_uri,
