@@ -4338,6 +4338,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithCommunityLicense_MarksOfflineSyncAndAiOperationsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithInvalidScopeIdentifier_ReturnsSafeBadRequest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithRollbackCapableAwsLambdaTarget_AdvertisesRollback",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithUnknownEnvironment_ReturnsUnavailableManifestState",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithWorkspaceClaimTypeDifferentCasing_MatchesRbacWorkspaceScope",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_OmittingManifestCapability_ReturnsNotFound",
@@ -5309,7 +5310,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Admin_ReturnsConfiguredProvider",
-        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Anonymous_Returns401"
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Anonymous_Returns401",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_AuthenticatedEndUser_WhenDisabled_Returns403",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_AuthenticatedEndUser_WhenEnabled_Returns200"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -7019,7 +7022,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesImageryInferenceProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesRasterSurfaceProcesses",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_MatchesCatalogProjectionBoundary"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",
@@ -7033,7 +7036,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_FirstSliceVectorProcess_ReturnsConcreteInputsAndOutputs",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_GeometryProcess_AdvertisesWkbAndGeoJsonInputs",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_ImageryClassify_AdvertisesDelegatedInferenceDescriptors",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_InvalidId_Returns404",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_RasterSurfaceProcess_ReturnsDescription",
@@ -15385,12 +15388,15 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AdminApproveKey_CanReadAndApproveButCannotWriteElsewhere",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_ReadOnlyKey_ReturnsProblemNamingMissingGrant",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_BlockedTier_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_DirectExecuteTier_ExecutesImmediately",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies"
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -16323,6 +16329,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OperationCatalog.AdminOperationRoundTripTests.ServerStatus_ExecutesThroughCatalogAndReturnsAdminEndpointResponse",
         "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.SubmitOperation_ServicePublish_ReturnsCompletedHandle_WithMetadataRevision"
       ],
       "proof_ledger_surface": "operations-toolset",
@@ -16533,6 +16540,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_Anonymous_Returns401",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_AuthenticatedEndUser_WhenEnabled_StreamsAndAuditsCaller",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_KnownButUnreachableProvider_StreamsErrorEventAndRecordsOneFailureAudit",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_UnknownProvider_Returns400AndDoesNotAudit"
       ],
@@ -17256,7 +17264,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_CyclicDependsOn_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DestructivePlanWhenApprovalRequired_Returns403",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DuplicateStepIds_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_GeometryProcess_RespondAsync_SubmitsConcreteProcessId",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_InvalidProcess_Returns404",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_MissingPlanInput_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_MissingRequiredProcessParameter_Returns400",
@@ -17271,7 +17279,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_InvalidEnumValue_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeDocument_IsAccepted",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeRaw_Returns501",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeRaw_OnAsyncOnlyProcess_Returns422",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepMissingKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepUnsupportedKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownDependsOn_Returns400",
@@ -17288,7 +17296,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesLayerAccessAuthorizationTests.Execute_SpatialJoinWithUnauthorizedJoinLayer_ReturnsForbidden",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesLayerAccessAuthorizationTests.Execute_UnresolvableLayerId_ReturnsForbiddenWithoutRevealingExistence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_AnalyticPlanWithExecuteOnlyGrant_IsNotForbidden",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.GeometryBuffer_GeoJsonRaw_DefaultsToSynchronousExecution",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.GeometryBuffer_InvalidGeoJson_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.GeometryBuffer_WrappedGeoJson_RespondAsync_IsAccepted"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",
@@ -17304,6 +17315,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PostStyle_Authenticated_BodyOverUploadLimit_Returns413",
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PostStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_DrawingInfoAsApplicationJson_Returns400WithCorrectMediaType",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_EmptyBody_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_EsriDrawingInfoContentType_Returns415",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_MalformedJson_Returns400",
@@ -20106,6 +20118,41 @@
       "capability": "identity.scim"
     },
     {
+      "id": "post-services",
+      "route": "/services",
+      "method": "POST",
+      "family": "uncategorized",
+      "protocol": "http-route",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_MultipleOperations_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_RasterProbeUsesStorageBindingLayerId",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault"
+      ],
+      "proof_ledger_surface": "",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
+      "id": "post-services-serviceid-imageserver",
+      "route": "/services/{serviceId}/ImageServer",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_ReturnsCanonicalRasterBytesAsBase64",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_MultipleOperations_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-imageserver"
+    },
+    {
       "id": "post-sharing-rest-community-creategroup",
       "route": "/sharing/rest/community/createGroup",
       "method": "POST",
@@ -21457,6 +21504,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PutStyle_WithInvalidApiKey_Returns401",
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PutStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_DrawingInfoAsApplicationJson_Returns400WithoutReplacingCanonicalStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EmptyBody_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_NonStrict_Returns204WithWarningHeader",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_Strict_Returns400WithDiagnostics",
