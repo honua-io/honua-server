@@ -635,7 +635,7 @@ internal static class ImageServerSoapEndpoints
 
         if (canonical != "esriMosaicLockRaster")
         {
-            serialized = JsonSerializer.Serialize(new { mosaicMethod = canonical });
+            serialized = SerializeSoapMosaicRule(canonical, null);
             return true;
         }
 
@@ -653,12 +653,33 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
-        serialized = JsonSerializer.Serialize(new
-        {
-            mosaicMethod = canonical,
-            lockRasterIds = lockIds.Select(static id => id!.Value).ToArray()
-        });
+        serialized = SerializeSoapMosaicRule(
+            canonical,
+            lockIds.Select(static id => id!.Value).ToArray());
         return true;
+    }
+
+    private static string SerializeSoapMosaicRule(string mosaicMethod, long[]? lockRasterIds)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("mosaicMethod", mosaicMethod);
+            if (lockRasterIds is not null)
+            {
+                writer.WritePropertyName("lockRasterIds");
+                writer.WriteStartArray();
+                foreach (var rasterId in lockRasterIds)
+                {
+                    writer.WriteNumberValue(rasterId);
+                }
+                writer.WriteEndArray();
+            }
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static XElement BuildFields()

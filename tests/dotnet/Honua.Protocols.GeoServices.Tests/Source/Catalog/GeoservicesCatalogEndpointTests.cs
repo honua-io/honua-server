@@ -740,8 +740,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
             response.Be200Ok();
             (await response.Content.ReadAsStringAsync()).Should().Contain("storage-image");
-            await rasterStore.Received().ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>());
-            await rasterStore.DidNotReceive().ListRastersAsync(publicationLayerIndex, Arg.Any<CancellationToken>());
+            await rasterStore.Received().GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(publicationLayerIndex, Arg.Any<CancellationToken>());
 
             const string exportOperation = """
                 <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
@@ -1077,7 +1077,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                   </ImageDescription>
                   <MosaicRule xsi:type="MosaicRule">
                     <MosaicMethod>esriMosaicLockRaster</MosaicMethod>
-                    <LockRasterIDs><Int>101</Int></LockRasterIDs>
+                    <LockRasterIDs><Int>101</Int><Int>102</Int></LockRasterIDs>
                   </MosaicRule>
                   <ImageType xsi:type="ImageType">
                     <ImageFormat>esriImagePNG</ImageFormat>
