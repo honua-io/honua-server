@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -37,6 +38,38 @@ UNBOUND_CONSUMER_GAP = (
     "not yet bound to a Honua registration/read/transcode operation; tracked by "
     "honua-server#3377."
 )
+
+BUDGET_EVIDENCE_GAP = (
+    "Canonical client validation passed, but governed request/byte/error budget "
+    "observations are not yet emitted; tracked by honua-server#3377."
+)
+
+# This is the normalized certification subset of the broader diagnostic lane.
+# Rows not listed here remain available in the uploaded native artifacts but
+# cannot accidentally enter the governed certification ledger.
+GOVERNED_ASSIGNMENTS = {
+    ("cog", "dataset-read", "GDAL"): ("3.8.4", "gdal-cog", ("positive", "metadata", "crs-axis"), "cog-1.0"),
+    ("cog", "structure-validate", "rio-cogeo"): ("7.0.2", "rio-cogeo", ("positive", "metadata", "range-efficiency"), "cog-1.0"),
+    ("cog", "window-read", "Rasterio"): ("1.5.1", "rasterio-cog", ("positive", "metadata", "crs-axis", "range-efficiency"), "cog-1.0"),
+    ("flatgeobuf", "feature-read", "GDAL"): ("3.8.4", "gdal-flatgeobuf", ("positive", "metadata", "crs-axis"), "flatgeobuf-current"),
+    ("flatgeobuf", "feature-read", "GeoPandas"): ("1.1.4", "geopandas-flatgeobuf", ("positive", "metadata", "crs-axis"), "flatgeobuf-current"),
+    ("flatgeobuf", "feature-read", "Pyogrio"): ("0.13.0", "pyogrio-flatgeobuf", ("positive", "metadata", "crs-axis"), "flatgeobuf-current"),
+    ("flatgeobuf", "feature-read", "flatgeobuf-js"): ("4.4.0", "node-flatgeobuf", ("positive", "metadata", "media-schema"), "flatgeobuf-current"),
+    ("geoparquet", "feature-read", "GDAL"): ("3.14.0", "gdal-geoparquet", ("positive", "metadata", "media-schema"), "geoparquet-1.1"),
+    ("geoparquet", "feature-read", "PyArrow"): ("25.0.1", "pyarrow-geoparquet", ("positive", "metadata", "media-schema"), "geoparquet-1.1"),
+    ("geoparquet", "geometry-read", "GeoPandas"): ("1.1.4", "geopandas-geoparquet", ("positive", "metadata", "crs-axis"), "geoparquet-1.1"),
+    ("hdf5-netcdf", "dataset-read", "h5py"): ("3.16.0", "h5py", ("positive", "metadata"), "hdf5-cloud-optimized-v1"),
+    ("hdf5-netcdf", "header-read", "h5dump"): ("1.10.10", "h5dump", ("positive", "metadata"), "hdf5-cloud-optimized-v1"),
+    ("hdf5-netcdf", "metadata-statistics", "h5stat"): ("1.10.10", "h5stat", ("positive", "metadata", "range-efficiency"), "hdf5-cloud-optimized-v1"),
+    ("hdf5-netcdf", "multidimensional-read", "xarray"): ("2026.7.0", "xarray-netcdf", ("positive", "metadata", "crs-axis"), "hdf5-cloud-optimized-v1"),
+    ("hdf5-netcdf", "repack", "h5repack"): ("1.10.10", "h5repack", ("positive", "metadata"), "hdf5-cloud-optimized-v1"),
+    ("pmtiles", "archive-read", "pmtiles"): ("3.7.0", "python-pmtiles", ("positive", "metadata", "range-efficiency"), "pmtiles-3"),
+    ("pmtiles", "browser-archive-read", "PMTiles-browser-viewer"): ("4.5.0", "node-pmtiles", ("positive", "metadata", "range-efficiency"), "pmtiles-3"),
+    ("zarr", "array-read", "zarr"): ("3.3.0", "zarr-python", ("positive", "metadata"), "zarr-v2"),
+    ("zarr", "distributed-array-compute", "Dask"): ("2026.7.1", "dask-zarr", ("positive", "metadata", "range-efficiency"), "zarr-v2"),
+    ("zarr", "multidimensional-subset", "xarray"): ("2026.7.0", "xarray-zarr", ("positive", "metadata", "crs-axis", "range-efficiency"), "zarr-v2"),
+    ("zarr", "store-read", "fsspec"): ("2026.7.0", "fsspec-zarr", ("positive", "metadata", "range-efficiency"), "zarr-v2"),
+}
 
 
 def _now() -> str:
@@ -154,6 +187,54 @@ def _mark_unbound(observations: list[dict]) -> list[dict]:
             observation["result"] = "skip"
             observation["skip_reason"] = UNBOUND_CONSUMER_GAP
     return observations
+
+
+def _digest_evidence(*roots: Path) -> str:
+    digest = hashlib.sha256()
+    for root in roots:
+        for path in sorted(item for item in root.rglob("*") if item.is_file()):
+            digest.update(f"{root.name}/{path.relative_to(root).as_posix()}\0".encode())
+            digest.update(path.read_bytes())
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _normalize_observations(observations: list[dict], args: argparse.Namespace) -> list[dict]:
+    normalized = []
+    for observation in observations:
+        identity = (
+            observation["surface"], observation["operation"],
+            observation["canonical_client"],
+        )
+        assignment = GOVERNED_ASSIGNMENTS.get(identity)
+        if assignment is None:
+            continue
+        version, lane, facets, contract = assignment
+        if observation["client_version"] != version:
+            observation["result"] = "fail"
+            observation["failure_reason"] = (
+                f"Observed client version {observation['client_version']} does not match "
+                f"governed version {version}"
+            )
+        observation["client_lane"] = lane
+        observation["scenario_facets"] = list(facets)
+        observation["contract_revision"] = contract
+        observation["auth_policy_revision"] = "anonymous-v1"
+        observation["evidence_digest"] = args.evidence_digest
+        facet_result = "pass" if observation["result"] == "pass" else observation["result"]
+        observation["facet_results"] = {
+            facet: {"result": facet_result, "evidence_digest": args.evidence_digest}
+            for facet in facets
+        }
+        if observation["result"] == "pass":
+            observation["result"] = "skip"
+            observation["skip_reason"] = BUDGET_EVIDENCE_GAP
+            observation["evidence_digest"] = None
+            observation["facet_results"] = None
+        elif observation["result"] == "skip":
+            observation["evidence_digest"] = None
+            observation["facet_results"] = None
+        normalized.append(observation)
+    return normalized
 
 
 def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
@@ -426,6 +507,7 @@ def main() -> int:
     parser.add_argument("--evidence-uri", required=True)
     parser.add_argument("--base-url", required=True)
     args = parser.parse_args()
+    args.evidence_digest = _digest_evidence(args.artifacts, args.native_results)
 
     observations: list[dict] = []
     _collect(observations, validate_native_results, args.native_results, args)
@@ -437,6 +519,7 @@ def main() -> int:
     _collect(observations, validate_zarr, args.artifacts / "canonical.zarr", args, _mark_unbound)
     _collect(observations, validate_stac, args.base_url, args)
     _collect(observations, validate_javascript, args.artifacts, args)
+    observations = _normalize_observations(observations, args)
     fragment = {
         "schema": "honua.protocol-certification-fragment/v1",
         "producer": "honua-server-cng",
