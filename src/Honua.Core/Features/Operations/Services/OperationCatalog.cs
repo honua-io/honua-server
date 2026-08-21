@@ -129,6 +129,8 @@ public sealed class OperationCatalog : IOperationCatalog, IDisposable
             Category = descriptor.Category,
             InputSchema = descriptor.InputSchema,
             OutputSchema = descriptor.OutputSchema,
+            InputJsonSchema = descriptor.InputJsonSchema,
+            OutputJsonSchema = descriptor.OutputJsonSchema,
             ExecutionKind = descriptor.ExecutionKind,
             ApprovalModel = descriptor.ApprovalModel,
             Policy = descriptor.Policy,

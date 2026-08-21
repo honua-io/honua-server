@@ -43,6 +43,11 @@ public sealed record OperationRequest
     /// (only honoured when the descriptor's policy advertises <c>SupportsDryRun</c>).
     /// </summary>
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Caller-supplied idempotency key propagated to the admin endpoint and proposal store.
+    /// </summary>
+    public string? IdempotencyKey { get; init; }
 }
 
 /// <summary>
@@ -76,6 +81,22 @@ public sealed record OperationPolicyContext
     /// default ignores them. Empty for an unauthenticated or role-less caller.
     /// </summary>
     public IReadOnlyList<string> Roles { get; init; } = [];
+
+    /// <summary>
+    /// Permission grants captured from the invoking principal. Approved operations replay the
+    /// same authorization scope instead of acquiring the approver's broader permissions.
+    /// </summary>
+    public IReadOnlyList<string> Permissions { get; init; } = [];
+
+    /// <summary>
+    /// Tenant identifier captured from the invoking principal.
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
+    /// Correlation identifier propagated into audit records and proposal metadata.
+    /// </summary>
+    public string? CorrelationId { get; init; }
 }
 
 /// <summary>

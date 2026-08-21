@@ -19,6 +19,7 @@ public sealed class OperationDispatcher : IOperationInvoker
     private readonly Dictionary<string, IOperationExecutor> _executors;
     private readonly IOperationPolicyDecisionPoint _policy;
     private readonly TimeProvider _clock;
+    private readonly IOperationApprovalProposalBridge? _approvalBridge;
 
     /// <summary>
     /// Initializes a new instance of <see cref="OperationDispatcher"/>.
@@ -27,11 +28,13 @@ public sealed class OperationDispatcher : IOperationInvoker
     /// <param name="executors">Registered operation executors.</param>
     /// <param name="policy">Policy decision point consulted before execution.</param>
     /// <param name="clock">Time provider used for handle id generation.</param>
+    /// <param name="approvalBridge">Optional durable proposal bridge for RequireApproval decisions.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
         IOperationPolicyDecisionPoint policy,
-        TimeProvider clock)
+        TimeProvider clock,
+        IOperationApprovalProposalBridge? approvalBridge = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -40,6 +43,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         _catalog = catalog;
         _policy = policy;
         _clock = clock;
+        _approvalBridge = approvalBridge;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -71,6 +75,13 @@ public sealed class OperationDispatcher : IOperationInvoker
             .ConfigureAwait(false);
 
         // Guardrail seam: anything other than Allow short-circuits the executor.
+        if (decision.Kind == PolicyDecisionKind.RequireApproval && _approvalBridge is not null)
+        {
+            return await _approvalBridge
+                .CreateProposalAsync(descriptor, request, context, decision, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (decision.Kind != PolicyDecisionKind.Allow)
         {
             return BuildDecisionHandle(request.OperationId, decision);
