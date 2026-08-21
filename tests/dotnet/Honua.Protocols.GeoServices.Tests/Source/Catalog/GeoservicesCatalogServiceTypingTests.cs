@@ -151,22 +151,22 @@ public sealed class GeoservicesCatalogServiceTypingTests
     private static IRasterStore BuildRasterStoreWithRasters()
     {
         var rasterStore = Substitute.For<IRasterStore>();
+        static RasterInfo Raster(int layerId) => new()
+        {
+            Id = 1,
+            LayerId = layerId,
+            Name = "typing-raster-tile",
+            Width = 256,
+            Height = 256,
+            BandCount = 3,
+            PixelType = "8BUI",
+            Srid = 4326,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(new[]
-            {
-                new RasterInfo
-                {
-                    Id = 1,
-                    LayerId = callInfo.ArgAt<int>(0),
-                    Name = "typing-raster-tile",
-                    Width = 256,
-                    Height = 256,
-                    BandCount = 3,
-                    PixelType = "8BUI",
-                    Srid = 4326,
-                    CreatedAt = DateTimeOffset.UtcNow
-                }
-            }));
+            .Returns(callInfo => new[] { Raster(callInfo.ArgAt<int>(0)) });
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult<RasterInfo?>(Raster(callInfo.ArgAt<int>(0))));
         return rasterStore;
     }
 
