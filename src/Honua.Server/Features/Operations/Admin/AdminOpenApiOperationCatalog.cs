@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Operations.Abstractions;
@@ -20,6 +22,9 @@ internal sealed class AdminOpenApiOperationCatalog
     private static readonly string[] HttpMethods = ["get", "post", "put", "patch", "delete"];
     private static readonly string[] PreferredRequestContentTypes =
         ["application/json", "multipart/form-data", "application/x-www-form-urlencoded", "text/plain"];
+    private static readonly ConditionalWeakTable<JsonObject, Dictionary<string, JsonNode>> ResolvedSchemaCaches = new();
+    private static readonly ConcurrentDictionary<string, Lazy<AdminOpenApiCatalogContent>> CatalogCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public AdminOpenApiOperationCatalog(IHostEnvironment environment)
         : this(ResolveSpecPath(environment))
@@ -30,12 +35,15 @@ internal sealed class AdminOpenApiOperationCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(specPath);
         SpecPath = Path.GetFullPath(specPath);
-
-        var root = JsonNode.Parse(File.ReadAllText(SpecPath)) as JsonObject
-            ?? throw new InvalidOperationException($"Admin OpenAPI document '{SpecPath}' is not a JSON object.");
-        var operationIndex = BuildOperationIndex(root);
-        OpenApiOperationIds = operationIndex.Keys.Order(StringComparer.Ordinal).ToArray();
-        Definitions = BuildDefinitions(root, operationIndex);
+        var file = new FileInfo(SpecPath);
+        var cacheKey = $"{SpecPath}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
+        var content = CatalogCache.GetOrAdd(
+            cacheKey,
+            _ => new Lazy<AdminOpenApiCatalogContent>(
+                () => BuildCatalogContent(SpecPath),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+        OpenApiOperationIds = content.OpenApiOperationIds;
+        Definitions = content.Definitions;
     }
 
     public string SpecPath { get; }
@@ -48,6 +56,16 @@ internal sealed class AdminOpenApiOperationCatalog
         => Definitions.FirstOrDefault(definition =>
                 string.Equals(definition.Descriptor.OperationId, operationId, StringComparison.Ordinal))
             ?? throw new KeyNotFoundException($"Admin operation '{operationId}' is not registered.");
+
+    private static AdminOpenApiCatalogContent BuildCatalogContent(string specPath)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(specPath)) as JsonObject
+            ?? throw new InvalidOperationException($"Admin OpenAPI document '{specPath}' is not a JSON object.");
+        var operationIndex = BuildOperationIndex(root);
+        return new AdminOpenApiCatalogContent(
+            operationIndex.Keys.Order(StringComparer.Ordinal).ToArray(),
+            BuildDefinitions(root, operationIndex));
+    }
 
     private static Dictionary<string, OpenApiOperationSource> BuildOperationIndex(JsonObject root)
     {
@@ -90,8 +108,9 @@ internal sealed class AdminOpenApiOperationCatalog
         IReadOnlyDictionary<string, OpenApiOperationSource> byOpenApiId)
     {
         var semanticIds = new HashSet<string>(StringComparer.Ordinal);
-        var definitions = new List<AdminOpenApiOperationDefinition>(AdminOperationManifest.All.Count);
-        foreach (var entry in AdminOperationManifest.All)
+        var completeManifest = AdminOperationManifest.Complete(byOpenApiId.Keys);
+        var definitions = new List<AdminOpenApiOperationDefinition>(completeManifest.Count);
+        foreach (var entry in completeManifest)
         {
             ValidateSemanticId(entry.OperationId);
             if (!semanticIds.Add(entry.OperationId))
@@ -182,7 +201,7 @@ internal sealed class AdminOpenApiOperationCatalog
             ApprovalModel = isReadOnly ? OperationApprovalModel.None : OperationApprovalModel.OperatorGate,
             Policy = new OperationPolicyMetadata
             {
-                BlastRadiusClass = ResolveBlastRadius(entry.OperationId, isReadOnly),
+                BlastRadiusClass = ResolveBlastRadius(entry.OperationId, source.Path, isReadOnly),
                 SideEffectClass = isReadOnly
                     ? OperationSideEffectClass.ReadOnly
                     : destructive
@@ -354,6 +373,17 @@ internal sealed class AdminOpenApiOperationCatalog
     }
 
     private static JsonNode? ResolveSchema(JsonObject root, JsonNode? node)
+        => ResolveSchema(
+            root,
+            node,
+            new HashSet<string>(StringComparer.Ordinal),
+            ResolvedSchemaCaches.GetOrCreateValue(root));
+
+    private static JsonNode? ResolveSchema(
+        JsonObject root,
+        JsonNode? node,
+        HashSet<string> referenceStack,
+        Dictionary<string, JsonNode> resolvedReferences)
     {
         if (node is null)
         {
@@ -364,7 +394,29 @@ internal sealed class AdminOpenApiOperationCatalog
             && obj["$ref"] is JsonValue referenceValue
             && referenceValue.TryGetValue<string>(out var reference))
         {
-            return ResolveSchema(root, ResolvePointer(root, reference));
+            if (!referenceStack.Add(reference))
+            {
+                return new JsonObject
+                {
+                    ["type"] = "object",
+                    ["description"] = $"Recursive OpenAPI reference {reference}",
+                };
+            }
+
+            if (resolvedReferences.TryGetValue(reference, out var cached))
+            {
+                referenceStack.Remove(reference);
+                return cached.DeepClone();
+            }
+
+            var resolved = ResolveSchema(root, ResolvePointer(root, reference), referenceStack, resolvedReferences);
+            referenceStack.Remove(reference);
+            if (resolved is not null)
+            {
+                resolvedReferences[reference] = resolved.DeepClone();
+            }
+
+            return resolved;
         }
 
         if (node is JsonObject sourceObject)
@@ -372,7 +424,7 @@ internal sealed class AdminOpenApiOperationCatalog
             var clone = new JsonObject();
             foreach (var (key, value) in sourceObject)
             {
-                clone[key] = ResolveSchema(root, value);
+                clone[key] = ResolveSchema(root, value, referenceStack, resolvedReferences);
             }
 
             if (clone["properties"] is JsonObject properties)
@@ -405,7 +457,7 @@ internal sealed class AdminOpenApiOperationCatalog
             var clone = new JsonArray();
             foreach (var item in sourceArray)
             {
-                clone.Add(ResolveSchema(root, item));
+                clone.Add(ResolveSchema(root, item, referenceStack, resolvedReferences));
             }
 
             return clone;
@@ -493,14 +545,21 @@ internal sealed class AdminOpenApiOperationCatalog
            || operationId.Contains(".rollback", StringComparison.Ordinal)
            || operationId.Contains(".suspend", StringComparison.Ordinal);
 
-    private static OperationBlastRadiusClass ResolveBlastRadius(string operationId, bool isReadOnly)
+    private static OperationBlastRadiusClass ResolveBlastRadius(
+        string operationId,
+        string path,
+        bool isReadOnly)
     {
         if (isReadOnly)
         {
             return OperationBlastRadiusClass.None;
         }
 
-        var area = operationId.Split('.')[1];
+        var semanticArea = operationId.Split('.')[1];
+        var pathArea = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        var area = string.Equals(semanticArea, "openapi", StringComparison.Ordinal)
+            ? pathArea
+            : semanticArea;
         return area switch
         {
             "service" => OperationBlastRadiusClass.ServiceScope,
@@ -541,6 +600,10 @@ internal sealed class AdminOpenApiOperationCatalog
         string Method,
         JsonObject Operation,
         JsonArray? PathParameters);
+
+    private sealed record AdminOpenApiCatalogContent(
+        IReadOnlyList<string> OpenApiOperationIds,
+        IReadOnlyList<AdminOpenApiOperationDefinition> Definitions);
 }
 
 internal sealed record AdminOpenApiOperationDefinition(

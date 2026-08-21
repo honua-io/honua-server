@@ -5,8 +5,13 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.MultiTenancy.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Operations.Admin;
@@ -26,6 +31,36 @@ internal sealed class AdminOperationApprovalBridge(IServiceProvider services)
         PolicyDecision decision,
         CancellationToken cancellationToken = default)
     {
+        if (!CanonicalSecurityActor.IsBoundIdentity(
+                context.PrincipalId,
+                context.AuthenticationScheme,
+                context.SubjectId,
+                context.SubjectIssuer,
+                context.ApiKeyId))
+        {
+            return new OperationHandle
+            {
+                OperationId = request.OperationId,
+                HandleId = $"op-{Guid.NewGuid():N}"[..32],
+                Status = OperationHandleStatus.Denied,
+                Reason = "Approval proposals require an immutable subject or API-key identity.",
+            };
+        }
+
+        if (request.Parameters.Any(parameter =>
+                !string.IsNullOrWhiteSpace(parameter.Value)
+                && (CredentialFieldClassifier.IsRawCredential(parameter.Key)
+                    || CredentialFieldClassifier.ContainsRawCredential(parameter.Value))))
+        {
+            return new OperationHandle
+            {
+                OperationId = request.OperationId,
+                HandleId = $"op-{Guid.NewGuid():N}"[..32],
+                Status = OperationHandleStatus.Denied,
+                Reason = "Raw credentials cannot be persisted in an approval proposal. Use an opaque secret reference.",
+            };
+        }
+
         var gateway = services.GetService<IOperationGateway>();
         if (gateway is null)
         {
@@ -44,7 +79,9 @@ internal sealed class AdminOperationApprovalBridge(IServiceProvider services)
             {
                 Action = request.OperationId,
                 Request = request,
-                Context = context,
+                // Admin endpoint replay never needs a resolved database connection string.
+                // Do not place credential-bearing connection material in the 30-day proposal.
+                Context = context with { ResolvedConnectionString = null },
             },
             OperationsJsonContext.Default.ApprovedAdminOperationPayload);
         var result = await gateway.CreateApprovalProposalAsync(new OperationGatewayRequest
@@ -56,7 +93,6 @@ internal sealed class AdminOperationApprovalBridge(IServiceProvider services)
             Reason = decision.Reason ?? descriptor.Title,
             CorrelationId = context.CorrelationId,
             IdempotencyKey = request.IdempotencyKey,
-            ExecutionPayload = payload,
             Plan = new OperationProposalPlan
             {
                 Summary = descriptor.Title,
@@ -103,7 +139,11 @@ internal sealed record ApprovedAdminOperationPayload
 
 /// <summary>Runs a stored catalog operation directly after the proposal has been approved.</summary>
 internal sealed class ApprovedAdminOperationRunner(
-    IEnumerable<Honua.Core.Features.Operations.Abstractions.IOperationExecutor> executors)
+    IEnumerable<Honua.Core.Features.Operations.Abstractions.IOperationExecutor> executors,
+    AdminOpenApiOperationCatalog catalog,
+    AdminEndpointOperationInvoker endpointInvoker,
+    IServiceProvider services,
+    TimeProvider clock)
 {
     private readonly Dictionary<string, Honua.Core.Features.Operations.Abstractions.IOperationExecutor> _executors =
         executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
@@ -119,13 +159,35 @@ internal sealed class ApprovedAdminOperationRunner(
             executionPayload,
             OperationsJsonContext.Default.ApprovedAdminOperationPayload)
             ?? throw new InvalidOperationException("The approved admin operation payload is invalid.");
-        if (!AdminOperationManifest.Contains(payload.Action)
-            || !_executors.TryGetValue(payload.Action, out var executor))
+        Honua.Core.Features.Operations.Abstractions.IOperationExecutor executor;
+        if (!_executors.TryGetValue(payload.Action, out executor!))
         {
-            throw new InvalidOperationException($"Approved admin operation '{payload.Action}' is not registered.");
+            AdminOpenApiOperationDefinition definition;
+            try
+            {
+                definition = catalog.GetRequired(payload.Action);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                throw new InvalidOperationException(
+                    $"Approved admin operation '{payload.Action}' is not registered.",
+                    exception);
+            }
+
+            executor = new AdminOperationExecutor(definition, catalog, endpointInvoker);
         }
 
-        var handle = await executor.SubmitAsync(payload.Request, payload.Context, cancellationToken)
+        if (payload.Request.Parameters.Any(parameter =>
+                !string.IsNullOrWhiteSpace(parameter.Value)
+                && (CredentialFieldClassifier.IsRawCredential(parameter.Key)
+                    || CredentialFieldClassifier.ContainsRawCredential(parameter.Value))))
+        {
+            throw new InvalidOperationException("The approved admin operation payload contains a raw credential.");
+        }
+
+        var currentContext = await RevalidateProposerAsync(payload.Context, cancellationToken)
+            .ConfigureAwait(false);
+        var handle = await executor.SubmitAsync(payload.Request, currentContext, cancellationToken)
             .ConfigureAwait(false);
         if (handle.Status is OperationHandleStatus.Failed
             or OperationHandleStatus.Denied
@@ -137,6 +199,116 @@ internal sealed class ApprovedAdminOperationRunner(
         }
 
         return handle.JobId ?? handle.HandleId;
+    }
+
+    private async Task<OperationPolicyContext> RevalidateProposerAsync(
+        OperationPolicyContext captured,
+        CancellationToken cancellationToken)
+    {
+        if (!CanonicalSecurityActor.IsBoundIdentity(
+                captured.PrincipalId,
+                captured.AuthenticationScheme,
+                captured.SubjectId,
+                captured.SubjectIssuer,
+                captured.ApiKeyId))
+        {
+            throw new InvalidOperationException("The approved operation has no valid immutable proposer identity binding.");
+        }
+
+        IReadOnlyList<string> roles;
+        IReadOnlyList<string> permissions;
+        if (Guid.TryParse(captured.ApiKeyId, out var keyId))
+        {
+            var keyStore = services.GetService<IAdminApiKeyStore>()
+                ?? throw new InvalidOperationException("The proposer API-key store is unavailable.");
+            var key = await keyStore.GetAsync(keyId, cancellationToken).ConfigureAwait(false);
+            if (key is null || key.RevokedAt is not null
+                || (key.ExpiresAt.HasValue && key.ExpiresAt.Value <= clock.GetUtcNow()))
+            {
+                throw new InvalidOperationException("The proposer API key is revoked, expired, or no longer exists.");
+            }
+
+            permissions = key.Permissions;
+            roles = ResolveApiKeyRoles(permissions);
+        }
+        else if (!string.IsNullOrWhiteSpace(captured.SubjectId))
+        {
+            var userStore = services.GetService<IUserStore>()
+                ?? throw new InvalidOperationException("The proposer identity store is unavailable.");
+            var user = await userStore.GetUserByPrincipalIdAsync(
+                    captured.SubjectId,
+                    captured.SubjectIssuer,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (user is null || !user.IsActive)
+            {
+                throw new InvalidOperationException("The proposer identity is disabled or no longer exists.");
+            }
+
+            if (user.ProviderId.HasValue)
+            {
+                var providerStore = services.GetService<IOidcProviderStore>()
+                    ?? throw new InvalidOperationException("The proposer OIDC provider store is unavailable.");
+                var provider = await providerStore.GetProviderAsync(user.ProviderId.Value, cancellationToken)
+                    .ConfigureAwait(false);
+                if (provider is null || !provider.Enabled)
+                {
+                    throw new InvalidOperationException("The proposer OIDC provider is disabled or no longer exists.");
+                }
+            }
+
+            roles = user.Roles;
+            permissions = [];
+        }
+        else
+        {
+            throw new InvalidOperationException("The approved operation has no revalidatable proposer identity.");
+        }
+
+        EnsureNoDowngrade(captured.Roles, roles, "role");
+        EnsureNoDowngrade(captured.Permissions, permissions, "permission");
+
+        if (!string.IsNullOrWhiteSpace(captured.TenantId))
+        {
+            var tenantCatalog = services.GetService<ITenantCatalog>()
+                ?? throw new InvalidOperationException("The proposer tenant catalog is unavailable.");
+            var tenant = await tenantCatalog.GetAsync(captured.TenantId, cancellationToken).ConfigureAwait(false);
+            if (tenant is null || tenant.Status != TenantStatus.Active)
+            {
+                throw new InvalidOperationException("The proposer tenant is suspended, deleted, or no longer exists.");
+            }
+        }
+
+        // Current proposer authorization replaces the captured snapshot. The approver's
+        // live principal is intentionally unavailable here and can never be inherited.
+        return captured with { Roles = roles, Permissions = permissions };
+    }
+
+    private static IReadOnlyList<string> ResolveApiKeyRoles(IReadOnlyList<string> permissions)
+    {
+        if (LayerScopedWriteKey.IsScopedWriteKey(permissions))
+        {
+            return [LayerScopedWriteKey.Role];
+        }
+
+        return LayerScopedWriteKey.ConfersFullAdmin(permissions)
+            ? ["admin"]
+            : [LayerScopedWriteKey.ScopedKeyRole];
+    }
+
+    private static void EnsureNoDowngrade(
+        IReadOnlyList<string> captured,
+        IReadOnlyList<string> current,
+        string grantType)
+    {
+        var currentSet = current
+            .Select(static value => value.Trim())
+            .Where(static value => value.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (captured.Any(value => !string.IsNullOrWhiteSpace(value) && !currentSet.Contains(value.Trim())))
+        {
+            throw new InvalidOperationException($"The proposer's {grantType} grants were downgraded after proposal creation.");
+        }
     }
 }
 

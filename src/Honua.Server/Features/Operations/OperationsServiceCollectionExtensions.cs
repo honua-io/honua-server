@@ -68,7 +68,13 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationExecutor>(),
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetService<IOperationApprovalProposalBridge>()));
+                sp.GetService<IOperationApprovalProposalBridge>(),
+                operationId => operationId.StartsWith("admin.", StringComparison.Ordinal)
+                    ? new AdminOperationExecutor(
+                        sp.GetRequiredService<AdminOpenApiOperationCatalog>().GetRequired(operationId),
+                        sp.GetRequiredService<AdminOpenApiOperationCatalog>(),
+                        sp.GetRequiredService<AdminEndpointOperationInvoker>())
+                    : null));
 
         return services;
     }

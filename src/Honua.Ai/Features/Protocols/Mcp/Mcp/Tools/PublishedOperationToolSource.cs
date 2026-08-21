@@ -75,6 +75,11 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
                 continue;
             }
 
+            if (isAdminOperation && !AdminPublishedOperationSafety.IsPublishable(descriptor.OperationId))
+            {
+                continue;
+            }
+
             // Deterministic mode: only publish AI-free descriptors.
             if (options.DeterministicOnly
                 && descriptor.Policy.Determinism != OperationDeterminism.Deterministic)
@@ -82,7 +87,10 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
                 continue;
             }
 
-            tools.Add(new PublishedOperationTool(descriptor, snapshot.CatalogVersion, _logger));
+            var publishedDescriptor = isAdminOperation
+                ? AdminPublishedOperationSafety.SanitizeDescriptor(descriptor)
+                : descriptor;
+            tools.Add(new PublishedOperationTool(publishedDescriptor, snapshot.CatalogVersion, _logger));
         }
 
         return tools;

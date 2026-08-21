@@ -15,10 +15,11 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// </summary>
 /// <remarks>
 /// The key is
-/// <c>{operationId}|{catalogVersion}|{principalId}|{tier}|{sortedRoles}|{normalizedParameters}</c>.
+/// <c>{operationId}|{catalogVersion}|{principalId}|{tier}|{tenant}|{sortedRoles}|{sortedPermissions}|{normalizedParameters}</c>.
 /// A catalog change (a republished descriptor) invalidates prior entries by producing
 /// a different key. The full policy-relevant principal context (principal id, resolved
-/// tier, sorted roles) is part of the key ON PURPOSE: the cache-hit path skips the
+/// tier, tenant, sorted roles, and sorted permissions) is part of the key ON PURPOSE:
+/// the cache-hit path skips the
 /// policy decision point, so a hit may only ever serve a result back to the identical
 /// principal context that was already policy-allowed for those exact inputs — a
 /// different caller, or the same caller with changed roles/tier, always misses and
@@ -63,10 +64,26 @@ internal interface IPublishedOperationCache
 
         var roles = string.Join(
             ",",
-            principalContext.Roles.OrderBy(role => role, StringComparer.Ordinal));
+            principalContext.Roles
+                .Select(Normalize)
+                .Where(static role => role.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static role => role, StringComparer.Ordinal));
 
-        return $"{operationId}|{catalogVersion}|{principalContext.PrincipalId}|{principalContext.Tier}|{roles}|{normalized}";
+        var permissions = string.Join(
+            ",",
+            principalContext.Permissions
+                .Select(Normalize)
+                .Where(static permission => permission.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static permission => permission, StringComparer.Ordinal));
+
+        return $"{operationId}|{catalogVersion}|{NormalizeIdentity(principalContext.PrincipalId)}|{Normalize(principalContext.Tier)}|{Normalize(principalContext.TenantId)}|{roles}|{permissions}|{normalized}";
     }
+
+    private static string NormalizeIdentity(string? value) => value?.Trim() ?? string.Empty;
+
+    private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? string.Empty;
 }
 
 /// <inheritdoc />

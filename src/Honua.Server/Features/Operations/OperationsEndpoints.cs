@@ -10,6 +10,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Operations;
 
@@ -125,13 +126,27 @@ internal static class OperationsEndpoints
 
         try
         {
+            var actor = CanonicalSecurityActor.Resolve(context.User);
+            if (actor is null)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status401Unauthorized,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status401Unauthorized),
+                    "The authenticated principal does not have a stable subject or API-key identity.");
+            }
+
             // Surface the caller's identity AND role(s) into the policy decision point so a
             // tier/role-aware engine (Phase 4) can decide per descriptor blast-radius. The
             // Community pass-through default ignores them. Tier is left unset here until the
             // tenant-tier resolver lands (deferred — see PR notes).
             var policyContext = new OperationPolicyContext
             {
-                PrincipalId = context.User.Identity?.Name,
+                PrincipalId = actor.ActorId,
+                AuthenticationScheme = actor.AuthenticationScheme,
+                SubjectId = actor.SubjectId,
+                SubjectIssuer = actor.SubjectIssuer,
+                ApiKeyId = actor.ApiKeyId,
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
                     .ToArray(),

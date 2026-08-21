@@ -153,7 +153,7 @@ public sealed class PublishedOperationToolTests
         captured.Should().NotBeNull();
         captured!.Tier.Should().Be("pro", "tier is resolved from the running edition for tier-aware policy");
         captured.Roles.Should().BeEquivalentTo("operator", "publisher");
-        captured.PrincipalId.Should().Be("agent-x");
+        captured.PrincipalId.Should().Be("oidc:subject:-:agent-x");
     }
 
     // ---- Deterministic, param-keyed caching ------------------------------------
@@ -256,6 +256,49 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Invoke_SameParams_SamePrincipalDifferentTenantOrPermissions_MissesCache()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(invoker, cache, tenantId: "tenant-a", permissions: ["admin:read"]),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(invoker, cache, tenantId: "tenant-b", permissions: ["admin:read"]),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(invoker, cache, tenantId: "tenant-b", permissions: ["admin:list"]),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(3,
+            "tenant changes and permission downgrades must take a fresh authorization path");
+    }
+
+    [UnitTest]
+    public async Task Invoke_DifferentOidcSubjectsWithSameDisplayName_MissCache()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "Same Name", subjectId: "subject-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "Same Name", subjectId: "subject-b"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2, "display names are not cache identities");
+    }
+
+    [UnitTest]
     public async Task Invoke_MutatingOperation_IsNeverCached()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
@@ -270,6 +313,24 @@ public sealed class PublishedOperationToolTests
         second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
         second.StructuredContent!.Value.TryGetProperty("cacheKey", out _)
             .Should().BeFalse("a non-cacheable operation carries no cache key");
+    }
+
+    [UnitTest]
+    public async Task Invoke_AdminReadOnlyOperation_IsNeverCached()
+    {
+        const string operationId = "admin.server.status";
+        var invoker = new CountingInvoker(_ => CompletedHandle(operationId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(
+            AdminDescriptor(operationId, deterministic: true, readOnly: true),
+            "cat-v1",
+            NullLogger.Instance);
+
+        await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
+        await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2,
+            "admin operations always take a fresh authorization and execution path");
     }
 
     [UnitTest]
@@ -315,7 +376,7 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
-    public async Task Source_Enabled_PublishesEveryAdminDescriptorWithReservedNamesAndTypedSchemas()
+    public async Task Source_Enabled_PublishesSecretSafeAdminRosterWithReservedNamesAndTypedSchemas()
     {
         var adminCatalog = new AdminOpenApiOperationCatalog(FindAdminOpenApi());
         using var catalog = new OperationCatalog(
@@ -328,14 +389,63 @@ public sealed class PublishedOperationToolTests
 
         var tools = await source.GetToolsAsync(CancellationToken.None);
 
-        tools.Should().HaveCount(adminCatalog.Definitions.Count,
-            "the MCP admin roster must stay bound to the integrated OpenAPI-backed catalog");
+        tools.Should().HaveCount(387,
+            "all 396 Admin OpenAPI operations are classified and nine secret/session issuers are withheld");
+        tools.Should().HaveCount(adminCatalog.Definitions.Count - AdminPublishedOperationSafety.WithheldOperationCount);
         tools.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
+        AdminPublishedOperationSafety.Exclusions.Should().OnlyContain(exclusion =>
+            !string.IsNullOrWhiteSpace(exclusion.OpenApiOperationId)
+            && !string.IsNullOrWhiteSpace(exclusion.Code)
+            && !string.IsNullOrWhiteSpace(exclusion.Reason));
+        AdminPublishedOperationSafety.Exclusions.Select(exclusion => exclusion.OpenApiOperationId)
+            .Should().OnlyHaveUniqueItems();
+        var excludedIds = AdminPublishedOperationSafety.Exclusions
+            .Select(exclusion => exclusion.OperationId)
+            .ToHashSet(StringComparer.Ordinal);
+        tools.Select(tool => tool.Name).Should().BeEquivalentTo(
+            adminCatalog.Definitions
+                .Where(definition => !excludedIds.Contains(definition.Descriptor.OperationId))
+                .Select(definition => PublishedOperationTool.ProjectName(definition.Descriptor.OperationId)),
+            "every Admin OpenAPI operation must be either projected or have an explicit exclusion record");
         tools.Select(tool => tool.Name).Should().OnlyContain(name => name.StartsWith("honua_admin_", StringComparison.Ordinal));
+        tools.Select(tool => tool.Name).Should().NotContain(
+            "honua_admin_api_key_create",
+            "honua_admin_api_key_rotate",
+            "honua_admin_oauth_client_create");
         var createConnection = tools.Should().ContainSingle(tool => tool.Name == "honua_admin_connection_create").Subject;
         var body = createConnection.Describe().InputSchema.GetProperty("properties").GetProperty("body");
         body.GetProperty("type").GetString().Should().Be("object");
         body.GetProperty("properties").TryGetProperty("secretReference", out _).Should().BeTrue();
+        body.GetProperty("properties").TryGetProperty("password", out _).Should().BeFalse();
+        var oidcCreate = tools.Should().ContainSingle(tool => tool.Name == "honua_admin_oidc_provider_create").Subject;
+        oidcCreate.Describe().InputSchema.GetProperty("properties").GetProperty("body")
+            .GetProperty("properties").TryGetProperty("clientSecret", out _).Should().BeFalse();
+        var geoserverImport = tools.Should()
+            .ContainSingle(tool => tool.Name == "honua_admin_openapi_start_geo_server_import").Subject;
+        var geoserverBody = geoserverImport.Describe().InputSchema.GetProperty("properties").GetProperty("body")
+            .GetProperty("properties");
+        geoserverBody.TryGetProperty("honuaApiKey", out _).Should().BeFalse();
+        geoserverBody.TryGetProperty("honuaApiKeySecretReference", out _).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task Invoke_AdminOperationWithRawCredential_DeniesBeforeInvoker()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle("admin.connection.create"));
+        var source = new PublishedOperationToolSource(
+            Catalog(AdminDescriptor("admin.connection.create", deterministic: true, readOnly: false)),
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+        var tool = (await source.GetToolsAsync(CancellationToken.None)).Single();
+
+        var result = await tool.InvokeAsync(
+            Context(invoker),
+            Args("""{"body":{"name":"example","honuaApiKey":"must-not-cross-mcp"}}"""),
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Denied");
+        result.StructuredContent.Value.GetProperty("message").GetString().Should().Contain("secret reference");
+        invoker.SubmitCount.Should().Be(0);
     }
 
     [UnitTest]
@@ -514,7 +624,10 @@ public sealed class PublishedOperationToolTests
         IPublishedOperationCache? cache = null,
         ILicenseEntitlementService? license = null,
         string[]? roles = null,
-        string principalName = "agent-x")
+        string principalName = "agent-x",
+        string? subjectId = null,
+        string? tenantId = null,
+        string[]? permissions = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -528,8 +641,18 @@ public sealed class PublishedOperationToolTests
             services.AddSingleton(license);
         }
 
-        var claims = new List<Claim> { new(ClaimTypes.Name, principalName) };
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, principalName),
+            new(ClaimTypes.NameIdentifier, subjectId ?? principalName),
+            new("auth_type", "oidc"),
+        };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
+        claims.AddRange((permissions ?? []).Select(permission => new Claim("permission", permission)));
+        if (tenantId is not null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
+        }
 
         return new DefaultHttpContext
         {
@@ -542,6 +665,9 @@ public sealed class PublishedOperationToolTests
     {
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services;
+        var identity = (ClaimsIdentity)context.User.Identity!;
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "mcp-test-subject"));
+        identity.AddClaim(new Claim("auth_type", "oidc"));
         return context;
     }
 

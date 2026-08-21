@@ -8,6 +8,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -67,7 +68,9 @@ internal sealed class PublishedOperationTool : IMcpTool
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
     private bool IsCacheable =>
-        IsDeterministic && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
+        IsDeterministic
+        && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly
+        && !_descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
     /// <summary>
     /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
@@ -132,6 +135,33 @@ internal sealed class PublishedOperationTool : IMcpTool
         McpLog.ToolInvoked(_logger, Name, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        if (actor is null)
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpOperationToolOutput
+                {
+                    Status = OperationHandleStatus.Denied.ToString(),
+                    OperationId = _descriptor.OperationId,
+                    Deterministic = IsDeterministic,
+                    Message = "The authenticated principal does not have a stable subject or API-key identity.",
+                },
+                McpJsonContext.Default.McpOperationToolOutput);
+        }
+
+        if (_descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal)
+            && AdminPublishedOperationSafety.ContainsRawCredential(arguments))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpOperationToolOutput
+                {
+                    Status = OperationHandleStatus.Denied.ToString(),
+                    OperationId = _descriptor.OperationId,
+                    Deterministic = IsDeterministic,
+                    Message = "Raw credentials are not accepted by admin MCP tools. Use a secret reference supported by the endpoint schema.",
+                },
+                McpJsonContext.Default.McpOperationToolOutput);
+        }
 
         // The policy context is resolved BEFORE the cache is consulted because it is
         // part of the cache key: the cache-hit fast path skips the policy decision
@@ -141,7 +171,11 @@ internal sealed class PublishedOperationTool : IMcpTool
         // roles/tier — always misses and takes a fresh policy round-trip.
         var context = new OperationPolicyContext
         {
-            PrincipalId = principal.Identity?.Name,
+            PrincipalId = actor.ActorId,
+            AuthenticationScheme = actor.AuthenticationScheme,
+            SubjectId = actor.SubjectId,
+            SubjectIssuer = actor.SubjectIssuer,
+            ApiKeyId = actor.ApiKeyId,
             Tier = ResolveTier(httpContext),
             Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
             Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray(),

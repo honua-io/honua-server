@@ -68,6 +68,18 @@ public sealed record OperationPolicyContext
     /// </summary>
     public string? PrincipalId { get; init; }
 
+    /// <summary>Authentication scheme bound to the canonical principal identity.</summary>
+    public string? AuthenticationScheme { get; init; }
+
+    /// <summary>Immutable subject identifier used to re-resolve a managed identity.</summary>
+    public string? SubjectId { get; init; }
+
+    /// <summary>Issuer paired with <see cref="SubjectId"/> when the identity is federated.</summary>
+    public string? SubjectIssuer { get; init; }
+
+    /// <summary>Durable admin API-key identifier used to re-resolve the current key record.</summary>
+    public string? ApiKeyId { get; init; }
+
     /// <summary>
     /// Tier the invoking tenant is on (for example <c>community</c>, <c>pro</c>, <c>enterprise</c>).
     /// Community is pass-through; Pro/Enterprise enforce the policy engine (Phase 4).

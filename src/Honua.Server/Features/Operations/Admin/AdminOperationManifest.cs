@@ -4,9 +4,9 @@
 namespace Honua.Server.Features.Operations.Admin;
 
 /// <summary>
-/// Semantic inventory of the 2026.1 admin control-plane operations. HTTP paths, methods,
-/// titles, descriptions, and JSON schemas are deliberately absent: they are resolved from
-/// <c>admin-openapi.json</c> by <see cref="AdminOpenApiOperationCatalog"/>.
+/// Curated semantic aliases for the 2026.1 admin control-plane operations. Operations not
+/// listed here are deterministically assigned an <c>admin.openapi.*</c> id from the authoritative
+/// <c>admin-openapi.json</c> operationId so coverage cannot silently lag the API surface.
 /// </summary>
 internal static class AdminOperationManifest
 {
@@ -144,6 +144,64 @@ internal static class AdminOperationManifest
 
     public static bool Contains(string operationId)
         => All.Any(entry => string.Equals(entry.OperationId, operationId, StringComparison.Ordinal));
+
+    public static IReadOnlyList<AdminOperationManifestEntry> Complete(
+        IEnumerable<string> openApiOperationIds)
+    {
+        var result = All.ToList();
+        var represented = All
+            .Select(static entry => entry.OpenApiOperationId)
+            .ToHashSet(StringComparer.Ordinal);
+        var semanticIds = All
+            .Select(static entry => entry.OperationId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var openApiOperationId in openApiOperationIds.Order(StringComparer.Ordinal))
+        {
+            if (represented.Contains(openApiOperationId))
+            {
+                continue;
+            }
+
+            var semanticId = "admin.openapi." + ToKebabCase(openApiOperationId);
+            if (!semanticIds.Add(semanticId))
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI operationId '{openApiOperationId}' projects to duplicate semantic id '{semanticId}'.");
+            }
+
+            result.Add(new AdminOperationManifestEntry(semanticId, openApiOperationId, "OpenAPI", null));
+        }
+
+        return result;
+    }
+
+    private static string ToKebabCase(string value)
+    {
+        var result = new System.Text.StringBuilder(value.Length + 8);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (!char.IsAsciiLetterOrDigit(current))
+            {
+                if (result.Length > 0 && result[result.Length - 1] != '-')
+                {
+                    result.Append('-');
+                }
+
+                continue;
+            }
+
+            if (char.IsUpper(current) && index > 0 && result.Length > 0 && result[result.Length - 1] != '-')
+            {
+                result.Append('-');
+            }
+
+            result.Append(char.ToLowerInvariant(current));
+        }
+
+        return result.ToString().Trim('-');
+    }
 
     private static AdminOperationManifestEntry Op(
         string operationId,
