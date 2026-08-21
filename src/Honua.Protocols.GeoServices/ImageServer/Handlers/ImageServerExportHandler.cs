@@ -64,7 +64,7 @@ internal sealed class ImageServerExportHandler
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
         => ExportImageCoreAsync(
-            context, layerId, request, publicationId: null, AuthorizationOperation.Query, cancellationToken);
+            context, layerId, request, publicationId: null, AuthorizationOperation.Export, cancellationToken);
 
     /// <summary>
     /// Exports the exact publication already resolved by a service-scoped caller.

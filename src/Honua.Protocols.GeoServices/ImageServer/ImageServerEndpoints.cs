@@ -1506,7 +1506,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await ExecuteExportImageAsync(resolution.LayerId, request, context, handler, cancellationToken);
     }
 
@@ -1532,7 +1536,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         if (resolution.ErrorResult is not null)
         {
             return resolution.ErrorResult;
@@ -3646,13 +3654,15 @@ internal static class ImageServerEndpoints
         ResolveImageServiceLayerIdAsync(
         string serviceId,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
     {
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
         var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
             serviceId,
             context,
-            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query,
+            authorizationOperation,
             cancellationToken).ConfigureAwait(false);
         return (
             resolution.LayerId,
