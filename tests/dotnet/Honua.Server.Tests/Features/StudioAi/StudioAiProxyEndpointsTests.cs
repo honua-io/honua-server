@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Routing;
 
 namespace Honua.Server.Tests.Features.StudioAi;
 
@@ -36,11 +38,19 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
 
     public StudioAiProxyEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = CreateFixture(endUserAuthorizationEnabled: true, _audit);
+    }
+
+    private static WebAppFixture CreateFixture(bool endUserAuthorizationEnabled, CapturingAuditLog? audit = null)
+    {
+        var fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
-                services.RemoveAll<IAuditLog>();
-                services.AddSingleton<IAuditLog>(_audit);
+                if (audit is not null)
+                {
+                    services.RemoveAll<IAuditLog>();
+                    services.AddSingleton<IAuditLog>(audit);
+                }
             })
             .ConfigureWebHost(builder =>
             {
@@ -58,6 +68,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["StudioAiProxy:Enabled"] = "true",
+                        ["Studio:EndUserAuthorization:Enabled"] = endUserAuthorizationEnabled.ToString(),
                         ["StudioAiProxy:DefaultProvider"] = ProviderName,
                         [$"StudioAiProxy:Providers:{ProviderName}:Kind"] = "openai",
                         // Port 1 is a privileged port nothing listens on in the test sandbox, so the
@@ -69,6 +80,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
                     });
                 });
             });
+
+        return fixture;
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -107,6 +120,62 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         provider.GetProperty("kind").GetString().Should().Be("openai");
         provider.GetProperty("isDefault").GetBoolean().Should().BeTrue();
         provider.GetProperty("configured").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    public async Task GetCapabilities_AuthenticatedEndUser_WhenEnabled_Returns200()
+    {
+        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var endUserKey = await apiKeyStore.CreateAsync(
+            "studio-ai-end-user",
+            ["studio:enduser"],
+            null,
+            null,
+            CancellationToken.None);
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", endUserKey.Key));
+
+        var response = await client.GetAsync("/api/v1/studio/ai/capabilities");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    public async Task GetCapabilities_AuthenticatedEndUser_WhenDisabled_Returns403()
+    {
+        var disabledFixture = CreateFixture(endUserAuthorizationEnabled: false);
+        await disabledFixture.InitializeAsync();
+        try
+        {
+            var apiKeyStore = disabledFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+            var endUserKey = await apiKeyStore.CreateAsync(
+                "studio-ai-disabled-end-user",
+                ["studio:enduser"],
+                null,
+                null,
+                CancellationToken.None);
+            using var client = disabledFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", endUserKey.Key));
+
+            var response = await client.GetAsync("/api/v1/studio/ai/capabilities");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await disabledFixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public void PostChat_RetainsThirtyRequestsPerMinuteRateLimit()
+    {
+        var endpoint = _fixture.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(candidate => candidate.RoutePattern.RawText == "/api/v{version:apiVersion}/studio/ai/chat");
+
+        endpoint.Metadata.GetMetadata<RateLimitAttribute>()?.RequestsPerMinute.Should().Be(30);
     }
 
     [IntegrationTest]
@@ -180,6 +249,32 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         audit.Actor.Should().Be(adminKey.Record.Id.ToString("D"));
         audit.ActorType.Should().Be(AuditActorType.ApiKey);
         audit.Details.Should().Contain("\"kind\":\"openai\"");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task PostChat_AuthenticatedEndUser_WhenEnabled_StreamsAndAuditsCaller()
+    {
+        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var endUserKey = await apiKeyStore.CreateAsync(
+            "studio-ai-chat-end-user",
+            ["studio:enduser"],
+            null,
+            null,
+            CancellationToken.None);
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", endUserKey.Key));
+        _audit.Recorded.Clear();
+
+        var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            messages = new[] { new { role = "user", content = "hi" } }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+        var audit = _audit.Recorded.Should().ContainSingle(entry => entry.Action == "studio_ai.chat").Subject;
+        audit.Actor.Should().Be(endUserKey.Record.Id.ToString("D"));
+        audit.ActorType.Should().Be(AuditActorType.ApiKey);
     }
 
     private sealed class CapturingAuditLog : IAuditLog

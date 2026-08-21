@@ -110,6 +110,16 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Create Studio Publication Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        group.MapGet("/content-items/{itemId:guid}/publish-requests/{requestId:guid}", HandleGetPublishRequest)
+            .WithDisplayName("Get Studio Publication Request Status")
+            .WithSummary("Returns a pollable publication request status and the governed public route once approved.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapGet("/content-items/{itemId:guid}/publish-requests", HandleListPublishRequests)
+            .WithDisplayName("List Studio Publication Requests")
+            .WithSummary("Lists publication requests for an item newest first.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         group.MapPost("/content-items/{itemId:guid}/versions/{versionId:guid}/reopen", HandleReopenVersion)
             .WithDisplayName("Reopen Studio Content Version")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
@@ -1489,6 +1499,165 @@ internal static class StudioPackageEndpoints
             StudioEndpointsLog.EndpointFailed(logger, "publish-request.create", ex);
             return ServerError(context, "Studio publication request could not be created.");
         }
+    }
+
+    private static async Task<IResult> HandleGetPublishRequest(
+        Guid itemId,
+        Guid requestId,
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IContentPublicationStore publicationStore,
+        [FromServices] StudioEndpointAuthorization authorization,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context)
+    {
+        try
+        {
+            var request = await service.GetPublicationRequestAsync(requestId, context.RequestAborted).ConfigureAwait(false);
+            if (request is null || request.ItemId != itemId)
+            {
+                return NotFound(context, "Studio publication request was not found.");
+            }
+
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorization,
+                context,
+                StudioAuthorizationOperation.ReadContentItem,
+                pointers.OwnerId,
+                resourceType: "studio-publication-request",
+                resourceId: requestId.ToString("D"),
+                isPubliclyReadable: false).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            var statuses = await ResolvePublicationRequestStatusesAsync(
+                publicationStore,
+                itemId,
+                [request],
+                context.RequestAborted).ConfigureAwait(false);
+            return Results.Json(
+                ApiResponse<StudioPublicationRequestStatusResponse>.CreateSuccess(statuses[0]),
+                StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "publish-request.get", ex);
+            return ServerError(context, "Studio publication request could not be read.");
+        }
+    }
+
+    private static async Task<IResult> HandleListPublishRequests(
+        Guid itemId,
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IContentPublicationStore publicationStore,
+        [FromServices] StudioEndpointAuthorization authorization,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context)
+    {
+        try
+        {
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorization,
+                context,
+                StudioAuthorizationOperation.ReadContentItem,
+                pointers.OwnerId,
+                resourceType: "studio-content-item",
+                resourceId: itemId.ToString("D"),
+                isPubliclyReadable: false).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            var requests = await service.ListPublicationRequestsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            var statuses = await ResolvePublicationRequestStatusesAsync(
+                publicationStore,
+                itemId,
+                requests,
+                context.RequestAborted).ConfigureAwait(false);
+            return Results.Json(
+                ApiResponse<StudioPublicationRequestListResponse>.CreateSuccess(new StudioPublicationRequestListResponse
+                {
+                    Requests = statuses,
+                }),
+                StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestListResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "publish-request.list", ex);
+            return ServerError(context, "Studio publication requests could not be listed.");
+        }
+    }
+
+    private static async Task<IReadOnlyList<StudioPublicationRequestStatusResponse>> ResolvePublicationRequestStatusesAsync(
+        IContentPublicationStore publicationStore,
+        Guid itemId,
+        IReadOnlyList<StudioPublicationRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        ContentPublicationRouteState? route = null;
+        IReadOnlyList<ContentPublicationVersion> publishedVersions = [];
+        if (requests.Count > 0)
+        {
+            var sourceId = itemId.ToString("D");
+            var routes = await publicationStore
+                .GetLatestRouteStatesBySourceContentIdsAsync([sourceId], cancellationToken)
+                .ConfigureAwait(false);
+            if (routes.TryGetValue(sourceId, out route))
+            {
+                publishedVersions = await publicationStore
+                    .ListVersionsAsync(route.PublicationId, 100, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        var responses = new List<StudioPublicationRequestStatusResponse>(requests.Count);
+        foreach (var request in requests)
+        {
+            var publishedVersion = publishedVersions.FirstOrDefault(version =>
+                string.Equals(version.ContentVersionId, request.VersionId.ToString("D"), StringComparison.OrdinalIgnoreCase));
+            if (route is not null && publishedVersion is not null)
+            {
+                responses.Add(new StudioPublicationRequestStatusResponse
+                {
+                    RequestId = request.RequestId,
+                    ItemId = request.ItemId,
+                    VersionId = request.VersionId,
+                    Status = "published",
+                    DecidedAt = publishedVersion.CreatedAt,
+                    DecidedBy = publishedVersion.CreatedBy,
+                    PublicationId = route.PublicationId,
+                    PublicUrl = route.RoutePath,
+                });
+                continue;
+            }
+
+            var rejected = request.Status == Honua.Core.Features.Studio.Domain.StudioPublicationRequestStatus.Rejected;
+            responses.Add(new StudioPublicationRequestStatusResponse
+            {
+                RequestId = request.RequestId,
+                ItemId = request.ItemId,
+                VersionId = request.VersionId,
+                Status = rejected ? "rejected" : "pending",
+                DecidedAt = rejected ? request.CreatedAt : null,
+                DecidedBy = rejected ? request.RequestedBy : null,
+            });
+        }
+
+        return responses;
     }
 
     private static async Task<IResult> HandleReopenVersion(

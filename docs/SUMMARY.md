@@ -27,6 +27,17 @@
   - [Get started](sdks/javascript/getting-started.md)
   - [Common tasks](sdks/javascript/common-tasks.md)
 
+## Studio (preview)
+
+- [Overview](studio/README.md)
+- [Run standalone](studio/run-standalone.md)
+- [Embed Studio](studio/embed.md)
+- [Bring your own model](studio/byom.md)
+- [Studio MCP tools](studio/mcp-tools.md)
+- [Drive from Claude Desktop](studio/drive-from-claude-desktop.md)
+- [JavaScript StudioAgentSession](studio/sdk-js-studio-agent.md)
+- [.NET lifecycle client](studio/dotnet-lifecycle.md)
+
 ## Guides
 
 - [All guides: I want to…](guides/README.md)
