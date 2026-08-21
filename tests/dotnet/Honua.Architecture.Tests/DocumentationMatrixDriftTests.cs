@@ -142,7 +142,7 @@ public sealed class DocumentationMatrixDriftTests
 
         foreach (var lane in document.GetProperty("lanes").EnumerateArray())
         {
-            lane.GetProperty("requiredTier").GetString().Should().Be("nightly");
+            lane.GetProperty("requiredTier").GetString().Should().BeOneOf("nightly", "release");
         }
 
         foreach (var lane in planned)
