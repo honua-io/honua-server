@@ -12,6 +12,7 @@ using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Microsoft.AspNetCore.Mvc;
+using SkiaSharp;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -82,9 +83,7 @@ internal static class ImageServerSoapEndpoints
                     new XElement("Result", "10.8")),
                 "IsFixedScaleImage" => CreateSoapResponse(
                     operationNamespace,
-                    // ArcGIS Server's ImageServer contract uses this historical
-                    // response name even though the request says Image.
-                    "IsFixedScaleMapResponse",
+                    "IsFixedScaleImageResponse",
                     new XElement("Result", false)),
                 "GetServiceInfo" => await HandleGetServiceInfoAsync(
                     serviceId,
@@ -116,6 +115,7 @@ internal static class ImageServerSoapEndpoints
                     operationNamespace,
                     resolution.LayerId,
                     context,
+                    rasterStore,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false),
                 _ => CreateSoapFault(
@@ -193,7 +193,7 @@ internal static class ImageServerSoapEndpoints
             new XElement("MaxNRows", MaxImageDimension),
             new XElement("ServiceSourceType", "esriImageServiceSourceTypeMosaicDataset"),
             new XElement("AllowedFields", "OBJECTID,Shape,Name"),
-            new XElement("AllowedCompressions", "None,JPEG,LZ77"),
+            new XElement("AllowedCompressions", "None"),
             new XElement("AllowedMosaicMethods", "NorthWest,Center,LockRaster,None"),
             new XElement("MaxRecordCount", 1000),
             new XElement("MaxMosaicImageCount", 20),
@@ -201,7 +201,7 @@ internal static class ImageServerSoapEndpoints
             new XElement("DefaultCompressionQuality", 75),
             new XElement("DefaultResamplingMethod", "RSP_BilinearInterpolation"),
             new XElement("DefaultMosaicMethod", "esriMosaicNorthwest"),
-            new XElement("SupportBSQ", true),
+            new XElement("SupportBSQ", false),
             new XElement("SupportsTime", false),
             new XElement("MensurationCapabilities", "Basic"),
             new XElement("HasRasterAttributeTable", false),
@@ -274,12 +274,48 @@ internal static class ImageServerSoapEndpoints
         XNamespace operationNamespace,
         int layerId,
         HttpContext context,
+        IRasterStore rasterStore,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
     {
-        if (!TryCreateExportRequest(operation, out var request, out _, out _, out var error, requireImageType: false))
+        if (!TryCreateExportRequest(operation, out var request, out var width, out var height, out var error, requireImageType: false))
         {
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
+        }
+
+        var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
+        if (referenceRaster.Id == 0 && rasters.Length > 0)
+        {
+            referenceRaster = rasters[0];
+        }
+
+        if (referenceRaster.Id == 0)
+        {
+            return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound);
+        }
+
+        if (!string.Equals(referenceRaster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateSoapFault(
+                "SOAP GetImage currently supports unsigned 8-bit image services.",
+                StatusCodes.Status400BadRequest);
+        }
+
+        if (request.Compression is not null
+            && !string.Equals(request.Compression, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateSoapFault(
+                "SOAP GetImage supports uncompressed Esri pixel blocks only.",
+                StatusCodes.Status400BadRequest);
+        }
+
+        var bandCount = ResolveGetImageBandCount(request.BandIds, referenceRaster.BandCount);
+        if (bandCount is < 1 or > 4)
+        {
+            return CreateSoapFault(
+                "SOAP GetImage currently supports one to four rendered bands.",
+                StatusCodes.Status400BadRequest);
         }
 
         request = CopyWithResponseFormat(request, "image");
@@ -291,13 +327,90 @@ internal static class ImageServerSoapEndpoints
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
             { FileContents: var imageData })
         {
+            if (!TryBuildEsriPixelBlock(imageData.Span, width, height, bandCount, out var pixelBlock))
+            {
+                return CreateSoapFault(
+                    "The canonical raster renderer returned an invalid image payload.",
+                    StatusCodes.Status500InternalServerError);
+            }
+
             return CreateSoapResponse(
                 operationNamespace,
                 "GetImageResponse",
-                new XElement("Result", Convert.ToBase64String(imageData.Span)));
+                new XElement("Result", Convert.ToBase64String(pixelBlock)));
         }
 
         return CreateSoapFaultFromResult(exportResult, "Image export failed.");
+    }
+
+    /// <summary>
+    /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
+    /// 8-bit samples in band-interleaved-by-pixel order followed by a packed validity
+    /// mask. Mask bits are stored most-significant-bit first; one means valid and zero
+    /// means NoData, with no row padding.
+    /// </summary>
+    private static bool TryBuildEsriPixelBlock(
+        ReadOnlySpan<byte> encodedImage,
+        int expectedWidth,
+        int expectedHeight,
+        int bandCount,
+        out byte[] pixelBlock)
+    {
+        pixelBlock = [];
+        using var encoded = SKData.CreateCopy(encodedImage);
+        using var bitmap = SKBitmap.Decode(encoded);
+        if (bitmap is null || bitmap.Width != expectedWidth || bitmap.Height != expectedHeight)
+        {
+            return false;
+        }
+
+        var pixelCount = checked(expectedWidth * expectedHeight);
+        var sampleByteCount = checked(pixelCount * bandCount);
+        var maskByteCount = checked((pixelCount + 7) / 8);
+        pixelBlock = GC.AllocateUninitializedArray<byte>(checked(sampleByteCount + maskByteCount));
+        pixelBlock.AsSpan(sampleByteCount, maskByteCount).Clear();
+
+        var sampleOffset = 0;
+        for (var y = 0; y < expectedHeight; y++)
+        {
+            for (var x = 0; x < expectedWidth; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                pixelBlock[sampleOffset++] = color.Red;
+                if (bandCount >= 2)
+                {
+                    pixelBlock[sampleOffset++] = color.Green;
+                }
+
+                if (bandCount >= 3)
+                {
+                    pixelBlock[sampleOffset++] = color.Blue;
+                }
+
+                if (bandCount >= 4)
+                {
+                    pixelBlock[sampleOffset++] = color.Alpha;
+                }
+
+                if (color.Alpha != 0)
+                {
+                    var pixelIndex = (y * expectedWidth) + x;
+                    pixelBlock[sampleByteCount + (pixelIndex / 8)] |= (byte)(0x80 >> (pixelIndex % 8));
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static int ResolveGetImageBandCount(string? bandIds, int serviceBandCount)
+    {
+        if (!string.IsNullOrWhiteSpace(bandIds))
+        {
+            return bandIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+        }
+
+        return serviceBandCount;
     }
 
     private static bool TryCreateExportRequest(
