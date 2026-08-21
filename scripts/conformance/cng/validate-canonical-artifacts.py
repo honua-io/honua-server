@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -22,7 +23,17 @@ CLIENTS = {
     "fsspec": "2026.7.0",
     "Dask": "2026.7.1",
     "PySTAC-Client": "0.9.0",
+    "GDAL": "3.8.4",
+    "h5stat": "1.10.10",
+    "h5dump": "1.10.10",
+    "h5repack": "1.10.10",
 }
+
+UNBOUND_CONSUMER_GAP = (
+    "Canonical client validation passed for the fixture, but this observation is "
+    "not yet bound to a Honua registration/read/transcode operation; tracked by "
+    "honua-server#3377."
+)
 
 
 def _now() -> str:
@@ -52,9 +63,24 @@ def _run(*command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, check=True, capture_output=True, text=True)
 
 
-def _command_version(*command: str) -> str:
-    output = _run(*command).stdout.strip()
-    return output.splitlines()[0] if output else "unknown"
+def _command_version(client: str, *command: str) -> str:
+    completed = _run(*command)
+    output = f"{completed.stdout}\n{completed.stderr}"
+    match = re.search(r"(?<!\d)(\d+\.\d+\.\d+)(?!\d)", output)
+    if match is None:
+        raise ValueError(f"Could not determine {client} version from {' '.join(command)}")
+    version = match.group(1)
+    expected = CLIENTS[client]
+    if version != expected:
+        raise ValueError(f"{client} version {version} does not match evidence pin {expected}")
+    return version
+
+
+def _mark_unbound(observations: list[dict]) -> list[dict]:
+    for observation in observations:
+        observation["result"] = "skip"
+        observation["skip_reason"] = UNBOUND_CONSUMER_GAP
+    return observations
 
 
 def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
@@ -79,7 +105,7 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
         _observation("geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", started, args),
         _observation("geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", started, args),
         _observation("geoparquet", "feature-read", "GDAL", "gdal-geoparquet", started, args,
-                     _command_version("gdalinfo", "--version")),
+                     _command_version("GDAL", "gdalinfo", "--version")),
     ]
 
 
@@ -101,7 +127,7 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
         _observation("flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", started, args),
         _observation("flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", started, args),
         _observation("flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", started, args,
-                     _command_version("gdalinfo", "--version")),
+                     _command_version("GDAL", "gdalinfo", "--version")),
     ]
 
 
@@ -145,7 +171,7 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
         _observation("cog", "window-read", "Rasterio", "rasterio-cog", started, args),
         _observation("cog", "structure-validate", "rio-cogeo", "rio-cogeo", started, args),
         _observation("cog", "dataset-read", "GDAL", "gdal-cog", started, args,
-                     _command_version("gdalinfo", "--version")),
+                     _command_version("GDAL", "gdalinfo", "--version")),
     ]
 
 
@@ -169,9 +195,9 @@ def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
         if "temperature" not in dataset or dataset["temperature"].size < 1:
             raise ValueError("xarray did not recover the netCDF temperature variable")
         dataset.load()
-    tool_version = _command_version("h5stat", "-V")
+    tool_version = _command_version("h5stat", "h5stat", "-V")
     return [
-        _observation("hdf5-netcdf", "structure-inspect", "h5stat", "h5stat", started, args, tool_version),
+        _observation("hdf5-netcdf", "metadata-statistics", "h5stat", "h5stat", started, args, tool_version),
         _observation("hdf5-netcdf", "header-read", "h5dump", "h5dump", started, args, tool_version),
         _observation("hdf5-netcdf", "repack", "h5repack", "h5repack", started, args, tool_version),
         _observation("hdf5-netcdf", "dataset-read", "h5py", "h5py", started, args),
@@ -199,7 +225,7 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
             raise ValueError("Dask computed an invalid Zarr aggregate")
     return [
         _observation("zarr", "array-read", "zarr", "zarr-python", started, args),
-        _observation("zarr", "multidimensional-read", "xarray", "xarray-zarr", started, args),
+        _observation("zarr", "multidimensional-subset", "xarray", "xarray-zarr", started, args),
         _observation("zarr", "store-read", "fsspec", "fsspec-zarr", started, args),
         _observation("zarr", "distributed-array-compute", "Dask", "dask-zarr", started, args),
     ]
@@ -242,9 +268,9 @@ def main() -> int:
     observations.extend(validate_geoparquet(args.artifacts / "cng.parquet", args))
     observations.extend(validate_flatgeobuf(args.artifacts / "cng.fgb", args))
     observations.extend(validate_pmtiles(args.artifacts / "honua.pmtiles", args))
-    observations.extend(validate_cog(args.artifacts / "canonical.cog.tif", args))
-    observations.extend(validate_hdf5_netcdf(args.artifacts / "canonical.nc", args))
-    observations.extend(validate_zarr(args.artifacts / "canonical.zarr", args))
+    observations.extend(_mark_unbound(validate_cog(args.artifacts / "canonical.cog.tif", args)))
+    observations.extend(_mark_unbound(validate_hdf5_netcdf(args.artifacts / "canonical.nc", args)))
+    observations.extend(_mark_unbound(validate_zarr(args.artifacts / "canonical.zarr", args)))
     observations.extend(validate_stac(args.base_url, args))
     observations.extend(validate_javascript(args.artifacts, args))
     fragment = {
@@ -260,7 +286,9 @@ def main() -> int:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(fragment, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"canonical clients passed: {len(observations)} normalized observation(s)")
+    passed = sum(observation["result"] == "pass" for observation in observations)
+    skipped = sum(observation["result"] == "skip" for observation in observations)
+    print(f"canonical client observations: {passed} pass, {skipped} explicit gap")
     return 0
 
 

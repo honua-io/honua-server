@@ -4,6 +4,9 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      secrets:
+        - github_actor
+        - github_token
     ports:
       - "${HONUA_CNG_SERVER_PORT:-8094}:8080"
     environment:
@@ -68,3 +71,9 @@ services:
 networks:
   cng-network:
     driver: bridge
+
+secrets:
+  github_actor:
+    environment: GITHUB_ACTOR
+  github_token:
+    environment: HONUA_DOCKER_GITHUB_TOKEN

@@ -173,6 +173,7 @@ jobs:
         uses: ./.github/actions/setup-honua-server
         with:
           server-image: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
+          build-source-fixtures: ${{ matrix.migration_automation_required }}
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
           # PortalCompat is additive and exists only in the current SDK/server

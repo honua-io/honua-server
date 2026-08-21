@@ -41,6 +41,8 @@ SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-300}"
 SKIP_BUILD="${HONUA_CNG_SKIP_BUILD:-false}"
 CLEANUP="${HONUA_CNG_CLEANUP:-true}"
 GPQ_VERSION="v0.24.0"
+GO_PMTILES_VERSION="v1.30.0"
+TILES_VALIDATOR_VERSION="0.6.1"
 
 # Per-format pass/fail accumulators (0 = pass, 1 = fail, 2 = skipped/not run).
 GEOPARQUET_STATUS=2
@@ -102,7 +104,7 @@ install_tools() {
 
     if ! command -v pmtiles &> /dev/null; then
         echo "Installing go-pmtiles..."
-        go install github.com/protomaps/go-pmtiles@latest
+        go install "github.com/protomaps/go-pmtiles@${GO_PMTILES_VERSION}"
         export PATH="$PATH:$(go env GOPATH)/bin"
     fi
 
@@ -113,7 +115,8 @@ install_tools() {
 
     if ! command -v 3d-tiles-validator &> /dev/null; then
         echo "Installing 3d-tiles-validator (chains gltf-validator)..."
-        npm install -g 3d-tiles-validator >/dev/null 2>&1 || npm install 3d-tiles-validator >/dev/null 2>&1
+        npm install -g "3d-tiles-validator@${TILES_VALIDATOR_VERSION}" >/dev/null 2>&1 || \
+            npm install "3d-tiles-validator@${TILES_VALIDATOR_VERSION}" >/dev/null 2>&1
     fi
 }
 
@@ -304,7 +307,9 @@ cat > "$SUMMARY_FILE" << EOF
 
 **Execution Date**: $(date)
 **Honua Server Version**: $(git describe --tags --always 2>/dev/null || echo "unknown")
-**gpq Validator Pin**: ${GPQ_VERSION} (`github.com/planetlabs/gpq/cmd/gpq`)
+**gpq Validator Pin**: ${GPQ_VERSION} (\`github.com/planetlabs/gpq/cmd/gpq\`)
+**go-pmtiles Validator Pin**: ${GO_PMTILES_VERSION}
+**3D Tiles Validator Pin**: ${TILES_VALIDATOR_VERSION}
 
 ## Per-format results
 

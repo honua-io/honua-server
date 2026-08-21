@@ -10,6 +10,12 @@ inputs:
       and runs this image with host networking. Release callers must pass image@sha256.
     required: false
     default: ''
+  build-source-fixtures:
+    description: >
+      Restore and build the source server even when server-image is set. Use this
+      when a compatibility fixture starts an auxiliary source-backed server.
+    required: false
+    default: 'false'
   dotnet-version:
     description: .NET SDK version
     required: true
@@ -37,18 +43,18 @@ runs:
   using: 'composite'
   steps:
     - name: Setup .NET
-      if: ${{ inputs.server-image == '' }}
+      if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       uses: ./.github/actions/setup-dotnet-ci
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
 
     - name: Restore .NET packages
-      if: ${{ inputs.server-image == '' }}
+      if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       shell: bash
       run: dotnet restore Honua.sln
 
     - name: Build Honua Server
-      if: ${{ inputs.server-image == '' }}
+      if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       shell: bash
       run: dotnet build src/Honua.Server --configuration Release --no-restore
 

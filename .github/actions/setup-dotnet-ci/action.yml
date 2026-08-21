@@ -49,8 +49,16 @@ runs:
     - name: Configure GitHub Packages
       shell: bash
       run: |
-        if [[ -f NuGet.config ]] && grep -q 'github-honua' NuGet.config; then
+        nuget_config=""
+        for candidate in NuGet.Config NuGet.config; do
+          if [[ -f "$candidate" ]] && grep -q 'github-honua' "$candidate"; then
+            nuget_config="$candidate"
+            break
+          fi
+        done
+        if [[ -n "$nuget_config" ]]; then
           dotnet nuget update source github-honua \
+            --configfile "$nuget_config" \
             --username "${{ github.actor }}" \
             --password "${{ github.token }}" \
             --store-password-in-clear-text

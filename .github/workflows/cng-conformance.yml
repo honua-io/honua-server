@@ -20,7 +20,7 @@ concurrency:
 jobs:
   cng:
     name: CNG Conformance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout code
@@ -30,7 +30,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: '10.0.x'
 
@@ -49,11 +49,14 @@ jobs:
           set -euo pipefail
           # GeoParquet + PMTiles validators (Go).
           go install github.com/planetlabs/gpq/cmd/gpq@v0.24.0
-          go install github.com/protomaps/go-pmtiles@latest
+          go install github.com/protomaps/go-pmtiles@v1.30.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           # FlatGeobuf read-back (GDAL ogrinfo).
           sudo apt-get update -qq
-          sudo apt-get install -y gdal-bin hdf5-tools curl jq
+          sudo apt-get install -y \
+            gdal-bin=3.8.4+dfsg-3ubuntu3 \
+            hdf5-tools=1.10.10+repack-3.1ubuntu4 \
+            curl jq
           # Canonical artifact consumers. Exact pins are evidence identities.
           python3 -m pip install \
             dask==2026.7.1 \
@@ -72,13 +75,15 @@ jobs:
             zarr==3.3.0
           npm install --no-save --package-lock=false flatgeobuf@4.4.0 pmtiles@4.5.0
           # 3D Tiles validator (chains the Khronos glTF validator).
-          npm install -g 3d-tiles-validator
+          npm install -g 3d-tiles-validator@0.6.1
 
       - name: Run CNG conformance lane
         id: run
         env:
           HONUA_CNG_SKIP_BUILD: 'false'
           HONUA_CNG_CLEANUP: 'false'
+          GITHUB_ACTOR: ${{ github.actor }}
+          HONUA_DOCKER_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
