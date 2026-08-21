@@ -14,9 +14,9 @@
 # ('cng', seeded into PostgreSQL); PMTiles and 3D Tiles are produced by driving
 # honua's own writers through the bundled artifact generator.
 #
-# Carve-outs (honua consumes/transcodes these, it does not PRODUCE conformant
-# output, so they are intentionally NOT gated here): COG (exportImage emits
-# plain GeoTIFF), Zarr / GeoZarr, COPC. See docs/cng-status.md.
+# COG, HDF5/netCDF, and Zarr are supported consumer surfaces. Deterministic
+# inputs for their canonical-client checks are generated in this lane and
+# normalized by validate-canonical-artifacts.py. COPC remains roadmap-only.
 
 set -uo pipefail
 
@@ -272,6 +272,13 @@ echo -e "${YELLOW}Generating honua-produced PMTiles + 3D Tiles artifacts...${NC}
 dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
     -c Release -- "$ARTIFACTS_DIR" 2>&1 | tee "$RESULTS_DIR/artifact-gen.log"
 
+echo -e "${YELLOW}Generating canonical COG, HDF5/netCDF, and Zarr inputs...${NC}"
+if ! python3 scripts/conformance/cng/generate-canonical-fixtures.py --output "$ARTIFACTS_DIR" \
+    2>&1 | tee "$RESULTS_DIR/canonical-fixture-gen.log"; then
+    echo -e "${RED}Canonical input fixture generation failed${NC}"
+    exit 1
+fi
+
 if ! bring_up_stack; then
     echo -e "${RED}Failed to bring up the CNG stack; live-format validation cannot run${NC}"
 else
@@ -308,10 +315,11 @@ cat > "$SUMMARY_FILE" << EOF
 | PMTiles v3 | \`PMTilesWriter\` | \`pmtiles verify\` | $(status_label $PMTILES_STATUS) | $PMTILES_DETAIL |
 | 3D Tiles 1.1 | \`TilesetDocumentWriter\` + \`GeometryTileBuilder\` | \`3d-tiles-validator\` + \`gltf_validator\` | $(status_label $TILES_STATUS) | $TILES_DETAIL |
 
-## Carve-outs (not gated)
+## Consumer-format validation
 
-honua consumes/transcodes these formats but does not PRODUCE conformant output,
-so they are intentionally excluded from this lane:
+The normalized canonical-client phase validates deterministic COG, HDF5/netCDF,
+and Zarr inputs. These are not producer rows because Honua consumes or
+transcodes them instead of returning them from the tested endpoints.
 
 - **COG** — exportImage emits plain GeoTIFF; \`format=cog\` is rejected.
 - **Zarr / GeoZarr** — read/transcode only.

@@ -53,13 +53,24 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           # FlatGeobuf read-back (GDAL ogrinfo).
           sudo apt-get update -qq
-          sudo apt-get install -y gdal-bin curl jq
+          sudo apt-get install -y gdal-bin hdf5-tools curl jq
           # Canonical artifact consumers. Exact pins are evidence identities.
           python3 -m pip install \
+            dask==2026.7.1 \
+            fsspec==2026.7.0 \
             geopandas==1.1.4 \
+            h5netcdf==1.8.1 \
+            h5py==3.16.0 \
+            numpy==2.5.2 \
             pyarrow==25.0.1 \
             pyogrio==0.13.0 \
-            pmtiles==3.7.0
+            pmtiles==3.7.0 \
+            pystac-client==0.9.0 \
+            rasterio==1.5.1 \
+            rio-cogeo==7.0.2 \
+            xarray==2026.7.0 \
+            zarr==3.3.0
+          npm install --no-save --package-lock=false flatgeobuf@4.4.0 pmtiles@4.5.0
           # 3D Tiles validator (chains the Khronos glTF validator).
           npm install -g 3d-tiles-validator
 
@@ -67,9 +78,10 @@ jobs:
         id: run
         env:
           HONUA_CNG_SKIP_BUILD: 'false'
-          HONUA_CNG_CLEANUP: 'true'
+          HONUA_CNG_CLEANUP: 'false'
         run: |
           set +e
+          trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
           bash ./scripts/conformance/cng/run-cng-conformance.sh
           cng_exit=$?
 
@@ -82,7 +94,8 @@ jobs:
             --image-digest "$image_digest" \
             --candidate-cut-at "$candidate_cut_at" \
             --fixture-revision "docker/cng/seed.sql@$GITHUB_SHA" \
-            --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --base-url "http://localhost:8094"
           client_exit=$?
 
           if [[ "$cng_exit" -ne 0 || "$client_exit" -ne 0 ]]; then exit_code=1; else exit_code=0; fi

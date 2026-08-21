@@ -108,15 +108,17 @@ runs:
             *) echo "warning: server-image is not immutable: $SERVER_IMAGE" >&2 ;;
           esac
           docker pull "$SERVER_IMAGE"
-          docker run --rm -d --network host --name "$SERVER_CONTAINER" \
+          docker run --rm --network host --name "$SERVER_CONTAINER" \
             --env ConnectionStrings__DefaultConnection \
             --env ASPNETCORE_URLS \
             --env ASPNETCORE_ENVIRONMENT \
+            --env Authentication__PortalToken__RequireHttps \
             --env HONUA_ADMIN_PASSWORD \
             --env Security__ConnectionEncryption__MasterKey \
             --env Licensing__DevGrantEdition \
             --env Security__ConnectionEncryption__Salt \
-            "$SERVER_IMAGE" >/dev/null
+            "$SERVER_IMAGE" >"$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
         else
           dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
