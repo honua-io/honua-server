@@ -268,6 +268,129 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         rollback.Pointers.PublishedVersionId.Should().Be(version.VersionId);
     }
 
+    [Theory]
+    [InlineData(StudioPackageFamily.Map, "honua_map_package.v1", ContentPublicationKind.Map)]
+    [InlineData(StudioPackageFamily.App, "honua_app_package.v1", ContentPublicationKind.GeneratedApp)]
+    [InlineData(StudioPackageFamily.Dashboard, "studio_dashboard_package.v1", ContentPublicationKind.Dashboard)]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests")]
+    public async Task PublicationRequest_MapAppAndDashboard_RemainsPrivateUntilConsolePublishes(
+        StudioPackageFamily family,
+        string format,
+        ContentPublicationKind publicationKind)
+    {
+        var familyName = family.ToString().ToLowerInvariant();
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = $"{familyName}-publication-arc",
+                WorkspaceId = "studio",
+                Envelope = BuildDeliverableEnvelope(family, format),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var saveResponse = await PostAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
+            new SaveStudioContentVersionRequest { ChangeNote = $"{familyName} ready for publication" },
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var version = await ReadAsync<StudioContentVersion>(
+            saveResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+        version.Envelope.Family.Should().Be(family);
+
+        var requestResponse = await PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests",
+            new CreateStudioPublicationRequest
+            {
+                Intent = new StudioPublicationIntent
+                {
+                    Route = $"/studio/{familyName}-publication-arc",
+                    Visibility = "public",
+                },
+                WarningAcknowledgement = "reviewed",
+            },
+            StudioApiJsonContext.Default.CreateStudioPublicationRequest);
+        requestResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var publicationRequest = await ReadAsync<StudioPublicationRequest>(
+            requestResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        publicationRequest.ItemId.Should().Be(version.ItemId);
+        publicationRequest.VersionId.Should().Be(version.VersionId);
+        publicationRequest.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+
+        var pendingResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{publicationRequest.RequestId:D}");
+        pendingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pending = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            pendingResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        pending.RequestId.Should().Be(publicationRequest.RequestId);
+        pending.ItemId.Should().Be(version.ItemId);
+        pending.VersionId.Should().Be(version.VersionId);
+        pending.Status.Should().Be("pending");
+        pending.PublicationId.Should().BeNull();
+        pending.PublicUrl.Should().BeNull("a proposal cannot expose a route before Console approval");
+
+        var pendingListResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests");
+        pendingListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pendingList = await ReadAsync<StudioPublicationRequestListResponse>(
+            pendingListResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestListResponse);
+        var pendingListEntry = pendingList.Requests.Should()
+            .ContainSingle(status => status.RequestId == publicationRequest.RequestId).Subject;
+        pendingListEntry.Status.Should().Be("pending");
+        pendingListEntry.PublicationId.Should().BeNull();
+        pendingListEntry.PublicUrl.Should().BeNull();
+
+        var routeSlug = $"studio-{familyName}-{Guid.NewGuid():N}";
+        var publicationService = _fixture.Services.GetRequiredService<IContentPublicationService>();
+        var approved = await publicationService.PublishAsync(
+            new PublishContentRequest
+            {
+                Kind = publicationKind,
+                RouteSlug = routeSlug,
+                SourceContentId = version.ItemId.ToString("D"),
+                ContentVersionId = version.VersionId.ToString("D"),
+                ContentPayload = "{}",
+            },
+            "console-approver",
+            correlationId: null,
+            CancellationToken.None);
+
+        var publishedResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{publicationRequest.RequestId:D}");
+        publishedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var published = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            publishedResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        published.RequestId.Should().Be(publicationRequest.RequestId);
+        published.ItemId.Should().Be(version.ItemId);
+        published.VersionId.Should().Be(version.VersionId);
+        published.Status.Should().Be("published");
+        published.PublicationId.Should().Be(approved.Route.PublicationId);
+        published.PublicUrl.Should().Be(approved.Route.RoutePath);
+        published.DecidedBy.Should().Be("console-approver");
+
+        var publishedListResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests");
+        var publishedList = await ReadAsync<StudioPublicationRequestListResponse>(
+            publishedListResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestListResponse);
+        var publishedListEntry = publishedList.Requests.Should()
+            .ContainSingle(status => status.RequestId == publicationRequest.RequestId).Subject;
+        publishedListEntry.Status.Should().Be("published");
+        publishedListEntry.PublicationId.Should().Be(approved.Route.PublicationId);
+        publishedListEntry.PublicUrl.Should().Be(approved.Route.RoutePath);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
     public async Task GetPublicationRequest_UnknownRequestId_Returns404()
@@ -1794,7 +1917,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var bodyJson = family switch
         {
             StudioPackageFamily.Map =>
-                $$"""{"format":"{{format}}","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
+                $$"""{"mapPackageId":"studio-map-release","format":"{{format}}","status":0,"createdAt":"2026-08-20T00:00:00Z","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
+            StudioPackageFamily.App =>
+                $$"""{"appPackageId":"studio-app-release","targetSdk":"honua-sdk-js","format":"{{format}}","status":0,"createdAt":"2026-08-20T00:00:00Z"}""",
             StudioPackageFamily.Dashboard =>
                 """{"title":"Operations Dashboard","description":"Live operations metrics.","widgets":[{"title":"Throughput","type":"chart"},{"title":"Map","type":"map"}]}""",
             _ =>
