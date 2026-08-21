@@ -6,7 +6,7 @@ source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
 authorized operations.
 
-This guide describes behavior on `trunk` as of July 10, 2026. The self-operating
+This guide describes behavior on `trunk` as of August 20, 2026. The self-operating
 platform workstream in #2552 is landed; the remaining limits are called out
 explicitly so “runs itself” never means “may mutate anything unattended.”
 
@@ -167,6 +167,18 @@ for the route-time guardrail contract.
 
 Use "rollback" precisely. There are two families.
 
+The public capability keys make the distinction machine-readable:
+`ops.findings` is available with the findings endpoint, `ops.autonomy` is
+available only with the durable operation store, and `deploy.rollback` is
+available only when at least one configured target backend advertises a real
+rollback implementation.
+
+| Backend family | `rollbackSupported` | What a rollback request means |
+|---|---:|---|
+| Kubernetes/ECS/Azure Container Apps GitOps hand-off | `false` | Honua cannot revert the workload. The operation becomes `ManualInterventionRequired`; revert the pinned revision in the GitOps repository and verify it out of band. |
+| Argo Rollouts, YARP rolling replace, Azure revision/slot/alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. Support remains operation- and prior-revision-dependent. |
+| Missing/unregistered backend or no prior revision | unavailable | No automatic rollback is claimed; plan/findings surfaces must direct the operator to manual recovery. |
+
 Platform version rollback moves compute back to a known revision. During a
 deploy-API-managed rollout, `POST /api/v1/admin/deploy/operations/{operationId}/rollback`
 asks the backend to repoint traffic or aliases when the operation has the
@@ -276,6 +288,8 @@ That does not make every operational concern autonomous:
 
 ## Related docs
 
+- [One incident, every Operate surface](scenario.md)
+- [Operate metrics and traces](metrics.md)
 - [Monitor Honua Server](../deploy/monitoring.md)
 - [Upgrade and rollback](../deploy/upgrade-and-rollback.md)
 - [Connect AI agents to Honua over MCP](../connect/ai-agents-mcp.md)

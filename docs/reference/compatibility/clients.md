@@ -67,11 +67,14 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   environment controls (`env:*`) are rejected on `submitJob` (sync `execute`
   honors `env:outSR`); heavyweight `surface.*` / `raster.*` processes are
   catalog/validation-only pending executor wiring.
-- **I3S / ArcGIS Scene Layer is not implemented** (Enterprise roadmap). Unlicensed
-  `SceneServer` routes return `402` with an entitlement message. CesiumJS-oriented
-  3D Tiles hosting and v1 generation are supported instead — generation emits a
-  single tile per job (no LOD), drops polygon inner rings, and caps at 50,000
-  features by default.
+- **I3S / ArcGIS Scene Layer is a bounded Enterprise adapter, not a certification claim.**
+  Service/layer descriptors, node pages, statistics, geometry buffers, and
+  attribute buffers are served under the canonical `SceneServer` routes and
+  `/scenes` aliases. The current edition check returns `403`. Broader I3S
+  geometry/client certification remains 2026.2 work. CesiumJS-oriented 3D
+  Tiles hosting and generation are also served; generation uses tiled LOD for
+  larger inputs and the server-side feature limit, rather than the obsolete
+  single-tile/50,000-feature description.
 - **Terrain/elevation v1 limits**: one numeric elevation band and one usable CRS
   per dataset; no quantized mesh, hydrology, or terrain analysis; elevation queries
   are band-1, GET-only, with no vertical datum transformation.

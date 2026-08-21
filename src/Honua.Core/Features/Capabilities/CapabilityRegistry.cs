@@ -351,6 +351,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // Aggregated operational status (A12): the server-authoritative operate/status surface —
             // one server-computed verdict + per-domain rollups + SLO/error-budget contract. Ungated GA.
             ("operate.status", "operate", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("ops.findings", "operate", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("ops.autonomy", "operate", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("deploy.rollback", "deploy", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
         ];
 
         foreach (var (id, category, entitlementKey, kind, packageSchemaVersion, maturity) in capabilities)

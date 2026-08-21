@@ -259,11 +259,34 @@ def image_run(
         "pull_requests": [
             {
                 "number": pr,
-                "base": {"sha": base},
-                "head": {"sha": head},
+                "base": {"sha": base, "repo": {"full_name": MODULE.REPOSITORY}},
+                "head": {"sha": head, "repo": {"full_name": MODULE.REPOSITORY}},
             }
         ],
     }
+
+
+def test_image_outcome_uses_retained_commit_pull_association() -> None:
+    observed = {
+        "pull_request": 11,
+        "base_sha": BASE,
+        "head_sha": HEAD_B,
+    }
+    authoritative = image_run(201, MODULE.SERVING_WORKFLOW, HEAD_B, 11)
+    association = authoritative["pull_requests"][0]
+    authoritative["pull_requests"] = []  # GitHub's post-merge workflow catalog shape.
+
+    outcome = MODULE._image_outcome(
+        [authoritative],
+        observed,
+        MODULE.SERVING_WORKFLOW,
+        {HEAD_B: [association]},
+    )
+
+    assert outcome["success"] is True
+    assert outcome["run_ids"] == [201]
+    assert outcome["identity_mismatch_run_ids"] == []
+    assert outcome["pull_association_match_count"] == 1
 
 
 def test_policy_and_discovery() -> None:
@@ -500,6 +523,12 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             serving[2],
         ]
         pages(root / "serving", "workflow_runs", stale_serving)
+        associations = root / "pull-associations"
+        associations.mkdir()
+        for head, run_value in ((HEAD_B, stale_serving[0]), (HEAD_C, serving[1]), (HEAD_D, serving[2])):
+            (associations / f"{head}.json").write_text(
+                json.dumps(run_value["pull_requests"]), encoding="utf-8"
+            )
         stale = MODULE.summarize(
             index,
             archives,
@@ -507,6 +536,7 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             root / "worker",
             policy(),
             REPOSITORY_ROOT,
+            associations,
         )
         assert stale["recommendation"] == "observe-more"
         assert stale["counts"]["authoritative_image_outcome_failures"] == 1
