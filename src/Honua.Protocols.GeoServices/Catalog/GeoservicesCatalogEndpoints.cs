@@ -35,6 +35,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
     private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
+    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -67,8 +68,8 @@ internal static class GeoservicesCatalogEndpoints
             .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
             .WithTags("GeoServices Catalog")
             .Accepts<string>("text/xml", "application/soap+xml")
-            .Produces(StatusCodes.Status200OK, contentType: "text/xml")
-            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
+            .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .AllowAnonymous();
 
         endpoints.MapPost("/services/{serviceName}/ImageServer", HandlePostSoapCatalog)
@@ -78,8 +79,8 @@ internal static class GeoservicesCatalogEndpoints
             .WithDescription("Handles IServiceCatalog discovery operations for one raster-backed ImageServer service; raster operations remain on the GeoServices REST ImageServer surface.")
             .WithTags("GeoServices Catalog")
             .Accepts<string>("text/xml", "application/soap+xml")
-            .Produces(StatusCodes.Status200OK, contentType: "text/xml")
-            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
+            .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .AllowAnonymous();
 
         return endpoints;
@@ -134,6 +135,14 @@ internal static class GeoservicesCatalogEndpoints
         var operation = operations[0];
 
         var operationNamespace = operation.Name.Namespace;
+        if (operationNamespace != ArcGisSoapNamespace)
+        {
+            return CreateSoapFault(
+                "Unsupported ArcGIS SOAP operation namespace.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
         XElement payload;
         switch (operation.Name.LocalName)
         {
