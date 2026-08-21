@@ -123,6 +123,7 @@ internal static class ImageServerSoapEndpoints
                     soapNamespace,
                     operationNamespace,
                     resolution.PublicationLayerIndex ?? resolution.LayerId,
+                    resolution.PublicationId!,
                     context,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false),
@@ -131,6 +132,7 @@ internal static class ImageServerSoapEndpoints
                     soapNamespace,
                     operationNamespace,
                     resolution.PublicationLayerIndex ?? resolution.LayerId,
+                    resolution.PublicationId!,
                     resolution.LayerId,
                     context,
                     rasterStore,
@@ -238,6 +240,7 @@ internal static class ImageServerSoapEndpoints
         XNamespace soapNamespace,
         XNamespace operationNamespace,
         int publicationLayerIndex,
+        string publicationId,
         HttpContext context,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
@@ -254,6 +257,7 @@ internal static class ImageServerSoapEndpoints
             context,
             publicationLayerIndex,
             request,
+            publicationId,
             cancellationToken).ConfigureAwait(false);
 
         if (returnMimeData && exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
@@ -297,6 +301,7 @@ internal static class ImageServerSoapEndpoints
         XNamespace soapNamespace,
         XNamespace operationNamespace,
         int publicationLayerIndex,
+        string publicationId,
         int storageLayerId,
         HttpContext context,
         IRasterStore rasterStore,
@@ -352,6 +357,7 @@ internal static class ImageServerSoapEndpoints
             context,
             publicationLayerIndex,
             request,
+            publicationId,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
             { FileContents: var imageData })

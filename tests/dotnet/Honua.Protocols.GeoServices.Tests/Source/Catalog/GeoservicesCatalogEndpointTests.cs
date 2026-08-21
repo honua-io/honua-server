@@ -508,6 +508,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+            payload.Descendants().Single(element => element.Name.LocalName == "faultcode")
+                .Value.Should().Be("soap:Server");
+
         }
         finally
         {
@@ -540,6 +543,23 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+            payload.Descendants().Single(element => element.Name.LocalName == "faultcode")
+                .Value.Should().Be("soap:Server");
+
+            const string soap12Request = """
+                <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                  <soap:Body>
+                    <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                  </soap:Body>
+                </soap:Envelope>
+                """;
+            using var soap12Content = new StringContent(soap12Request, Encoding.UTF8, "application/soap+xml");
+            using var soap12Response = await fixture.Client.PostAsync("/services", soap12Content);
+
+            soap12Response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
+            var soap12Payload = XDocument.Parse(await soap12Response.Content.ReadAsStringAsync());
+            soap12Payload.Descendants().Single(element => element.Name.LocalName == "Value")
+                .Value.Should().Be("soap:Receiver");
         }
         finally
         {
@@ -576,9 +596,33 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     public async Task PostSoapCatalog_RasterProbeUsesStorageBindingLayerId()
     {
         const int publicationLayerIndex = 7;
+        const int competingStorageLayerId = 9000;
         const int storageLayerId = 9001;
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-soap-competing",
+                "Competing SOAP raster",
+                MetadataV2ResourceType.RasterDataset,
+                accessPolicy: anonymous)
+            .AddStorageBinding(
+                "binding-soap-competing",
+                "res-soap-competing",
+                "competing_raster_data",
+                storageType: MetadataV2StorageType.RelationalTable,
+                storageLayerId: competingStorageLayerId)
+            .AddService(
+                "competing-image",
+                "competing-image",
+                protocols: [ServiceProtocols.ImageServer],
+                accessPolicy: anonymous)
+            .AddPublication(
+                "pub-soap-competing",
+                "competing-image",
+                "res-soap-competing",
+                layerIndex: publicationLayerIndex,
+                serviceLocalId: publicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
             .AddResource(
                 "res-soap-storage",
                 "SOAP storage raster",
@@ -605,16 +649,26 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();
+        var competingRaster = CreateSoapRaster(competingStorageLayerId, id: 100);
         var raster = CreateSoapRaster(storageLayerId);
+        rasterStore.ListRastersAsync(competingStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([competingRaster]);
         rasterStore.ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>()).Returns([raster]);
+        rasterStore.GetPrimaryRasterInfoAsync(competingStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(competingRaster);
         rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>()).Returns(raster);
+        rasterStore.QueryRastersAsync(
+                competingStorageLayerId,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>())
+            .Returns([competingRaster]);
         rasterStore.QueryRastersAsync(
                 storageLayerId,
                 Arg.Any<RasterSelectionQuery>(),
                 Arg.Any<CancellationToken>())
             .Returns([raster]);
         rasterStore.ExportImageAsync(
-                storageLayerId,
+                Arg.Any<int>(),
                 Arg.Any<long>(),
                 Arg.Any<RasterQuery>(),
                 Arg.Any<CancellationToken>())
@@ -673,6 +727,11 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             exportResponse.Be200Ok();
             await rasterStore.Received().ExportImageAsync(
                 storageLayerId,
+                Arg.Any<long>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().ExportImageAsync(
+                competingStorageLayerId,
                 Arg.Any<long>(),
                 Arg.Any<RasterQuery>(),
                 Arg.Any<CancellationToken>());

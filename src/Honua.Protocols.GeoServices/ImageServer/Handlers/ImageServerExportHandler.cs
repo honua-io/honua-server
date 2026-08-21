@@ -55,11 +55,33 @@ internal sealed class ImageServerExportHandler
     /// <summary>
     /// Exports a rendered image from raster data.
     /// </summary>
-    public async Task<IResult> ExportImageAsync(
+    public Task<IResult> ExportImageAsync(
         HttpContext context,
         int layerId,
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
+        => ExportImageCoreAsync(context, layerId, request, publicationId: null, cancellationToken);
+
+    /// <summary>
+    /// Exports the exact publication already resolved by a service-scoped caller.
+    /// </summary>
+    public Task<IResult> ExportImageAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        string publicationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        return ExportImageCoreAsync(context, layerId, request, publicationId, cancellationToken);
+    }
+
+    private async Task<IResult> ExportImageCoreAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        string? publicationId,
+        CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
             "export-image",
@@ -70,12 +92,15 @@ internal sealed class ImageServerExportHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolved = publicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
-            var storageLayerId = snapshot.ResolveStorageLayerId(resolved.Publication) ?? layerId;
+            var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;
 
             if (!TryParseExportParameters(request, out var exportQuery, out var parseError))
             {
@@ -135,7 +160,7 @@ internal sealed class ImageServerExportHandler
             // The request override (mosaicRule mergeStrategy/operation token) wins; otherwise
             // fall back to the resource-default merge strategy.
             var mergeStrategy = mosaicRule.Operation
-                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, mosaicRule: null);
             var ordering = mosaicRule.ToOrdering();
 
             // esriMosaicLockRaster composites a caller-pinned set of rasters and is independent
