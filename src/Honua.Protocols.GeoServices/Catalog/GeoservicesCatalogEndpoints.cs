@@ -119,11 +119,16 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         XNamespace soap = envelopeNamespace;
-        var operations = request.Root?
-            .Element(soap + "Body")?
-            .Elements()
-            .Take(2)
-            .ToArray();
+        var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
+        if (bodies.Length != 1)
+        {
+            return CreateSoapFault(
+                "SOAP envelope must contain exactly one Body element.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
+        var operations = bodies[0].Elements().Take(2).ToArray();
         if (operations is not { Length: 1 })
         {
             return CreateSoapFault(
