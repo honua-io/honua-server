@@ -83,10 +83,10 @@ internal sealed class MetadataV2ImageServerLayerResolver(
                 continue;
             }
 
-            var rasters = await rasterStore.ListRastersAsync(
+            var raster = await rasterStore.GetPrimaryRasterInfoAsync(
                 publication.StorageLayerId!.Value,
                 cancellationToken).ConfigureAwait(false);
-            if (rasters.Length > 0)
+            if (raster is not null)
             {
                 layer = publication;
                 break;

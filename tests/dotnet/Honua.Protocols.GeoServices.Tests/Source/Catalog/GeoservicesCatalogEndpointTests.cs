@@ -161,6 +161,19 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                     CreatedAt = DateTimeOffset.UtcNow
                 }
             }));
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new RasterInfo
+            {
+                Id = 1,
+                LayerId = callInfo.ArgAt<int>(0),
+                Name = "test-raster",
+                Width = 256,
+                Height = 256,
+                BandCount = 3,
+                PixelType = "8BUI",
+                Srid = 4326,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services => services.AddSingleton(rasterStore));
@@ -202,23 +215,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
     {
-        var rasterStore = Substitute.For<IRasterStore>();
-        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(new[]
-            {
-                new RasterInfo
-                {
-                    Id = 1,
-                    LayerId = callInfo.ArgAt<int>(0),
-                    Name = "test-raster",
-                    Width = 256,
-                    Height = 256,
-                    BandCount = 3,
-                    PixelType = "8BUI",
-                    Srid = 4326,
-                    CreatedAt = DateTimeOffset.UtcNow
-                }
-            }));
+        var rasterStore = CreateSoapRasterStore();
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services => services.AddSingleton(rasterStore));
@@ -492,6 +489,34 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_RasterProbeFailure_ReturnsSoapFault()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("probe failed")));
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "GetVersion");
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.InternalServerError);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
     public async Task PostSoapCatalog_MultipleOperations_ReturnsClientFault()
     {
@@ -550,6 +575,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         var rasterStore = Substitute.For<IRasterStore>();
         var raster = CreateSoapRaster(storageLayerId);
         rasterStore.ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>()).Returns([raster]);
+        rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>()).Returns(raster);
         rasterStore.QueryRastersAsync(
                 storageLayerId,
                 Arg.Any<RasterSelectionQuery>(),
@@ -668,15 +694,18 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();
-        rasterStore.ListRastersAsync(emptyStorageLayerId, Arg.Any<CancellationToken>())
-            .Returns([]);
+        rasterStore.GetPrimaryRasterInfoAsync(emptyStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)null);
+        var primaryRaster = CreateSoapRaster(
+            rasterStorageLayerId,
+            id: 201,
+            width: 180,
+            extent: new RasterExtent { XMin = -180, YMin = -90, XMax = 0, YMax = 90, Srid = 4326 });
+        rasterStore.GetPrimaryRasterInfoAsync(rasterStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(primaryRaster);
         rasterStore.ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>())
             .Returns([
-                CreateSoapRaster(
-                    rasterStorageLayerId,
-                    id: 201,
-                    width: 180,
-                    extent: new RasterExtent { XMin = -180, YMin = -90, XMax = 0, YMax = 90, Srid = 4326 }),
+                primaryRaster,
                 CreateSoapRaster(
                     rasterStorageLayerId,
                     id: 202,
@@ -704,7 +733,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants().Single(element => element.Name.LocalName == "PixelSizeX")
                 .Value.Should().Be("1");
-            await rasterStore.Received().ListRastersAsync(emptyStorageLayerId, Arg.Any<CancellationToken>());
+            await rasterStore.Received().GetPrimaryRasterInfoAsync(emptyStorageLayerId, Arg.Any<CancellationToken>());
+            await rasterStore.Received().GetPrimaryRasterInfoAsync(rasterStorageLayerId, Arg.Any<CancellationToken>());
             await rasterStore.Received().ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>());
         }
         finally
@@ -1015,6 +1045,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         var raster = CreateSoapRaster(layerId);
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(raster);
         rasterStore.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
             .Returns([raster]);
         rasterStore.ExportImageAsync(
