@@ -1,4 +1,4 @@
-name: Windows Client Compatibility Certification
+name: Generic Client Compatibility Smoke
 
 on:
   # Tier: nightly. This is certification-style coverage with reusable evidence.
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   client-compat:
-    name: Client Compatibility Smoke
+    name: Generic HTTP Client Compatibility Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

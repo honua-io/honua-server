@@ -1838,7 +1838,7 @@
           "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
           "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
           "evidenceLocations": [
-            ".github/workflows/windows-client-compat-nightly.yml",
+            ".github/workflows/client-compat-smoke-nightly.yml",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
             "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -2066,7 +2066,7 @@
           "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
           "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
           "evidenceLocations": [
-            ".github/workflows/windows-client-compat-nightly.yml",
+            ".github/workflows/client-compat-smoke-nightly.yml",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
             "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",

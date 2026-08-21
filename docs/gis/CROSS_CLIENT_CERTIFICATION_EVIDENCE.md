@@ -137,7 +137,7 @@ When extension-protocol testing is active, additional per-protocol files are pro
 
 ## Windows Client Compatibility Workflow Output
 
-The `windows-client-compat-nightly.yml` workflow introduced in ticket `#320` uploads a deterministic smoke-evidence artifact under:
+The `client-compat-smoke-nightly.yml` workflow introduced in ticket `#320` uploads a deterministic smoke-evidence artifact under:
 
 ```text
 artifacts/client-compat/<service>-<timestamp>/
@@ -353,7 +353,7 @@ This manual workflow predates the automated suite above and remains as a fallbac
 | 1.0.4 | 2026-03-16 | Add `admin-api` protocol; add `measured_count`/`measured_delta` to extensions; fix pytest lane mapping; align examples with current JS scope |
 | 1.0.5 | 2026-03-17 | Add `cli-ogc-features.cert.json` to example directory; add CLI lane coverage note |
 | 1.0.6 | 2026-03-18 | Fix MVT workflow status semantics: use `skip` for "All"-protocol tests not exercised in visual workflow, `not-applicable` only for tests that don't list MVT |
-| 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
+| 1.0.7 | 2026-03-31 | Document the `client-compat-smoke-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
 | 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |

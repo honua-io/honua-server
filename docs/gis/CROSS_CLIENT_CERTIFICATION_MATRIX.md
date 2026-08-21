@@ -91,6 +91,48 @@ Automated lane applicability is machine-readable in `docs/gis/data/client-certif
 
 Each lane maps its coverage to the common core and declares lane-specific extensions.
 
+### Execution tiers
+
+| Tier | Required execution | Gate behavior |
+|---|---|---|
+| PR | Schema, generator, parser, marker, and fixture-contract tests; no full external-client matrix | Blocking |
+| Nightly | Every active unlicensed real-client lane and any available licensed Windows lane | Missing, malformed, or regressed evidence fails the nightly; it does not block ordinary PRs |
+| Release | Every release-required lane against the exact candidate image and source revision; licensed evidence must be fresh and entitlement-bound | Blocking |
+
+### Canonical fixture and configuration policy
+
+Canonical-client lanes must converge on one versioned logical fixture and server-configuration revision tracked by [#3393](https://github.com/honua-io/honua-server/issues/3393). Receipts must bind both revisions. Every applicable client operation maps to explicit fixture cases and scenario facets; unsupported client capabilities are `not-applicable` with a governed reason, while applicable but unexecuted cases fail closed.
+
+The current fixture state is **migration-required**, not standardized: `client-compat-v1.sql`, `browser-compat.yaml`, Esri, SDK, and cloud-native lanes still use distinct inputs. No lane may claim shared-fixture equivalence until its projection and receipt binding are implemented.
+
+OGC CITE is the explicit exception. Each CITE suite retains its specification-mandated custom seed and setup procedure. CITE shares exact candidate identity, image digest, authentication policy, and capability mapping with release certification, but it is never relabeled as having used the canonical client fixture.
+
+### Planned canonical-client lanes
+
+Planned lanes do not enter the active `lanes` array or `expected-pairs.json` until their real, non-placeholder envelopes land in the same change.
+
+| Lane | Canonical client | Protocols | Required tier | Owner |
+|---|---|---|---|---|
+| `py-geopandas` | GeoPandas via pyogrio/Fiona | OGC API Features, WFS | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
+| `py-owslib` | OWSLib | OGC API Features, WFS, WMS, WMTS | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
+| `duckdb` | DuckDB Spatial | OGC API Features | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
+| `r-sf` | R sf and ows4R | OGC API Features, WFS | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
+| `py-pystac` | pystac-client | STAC | Nightly | [#3392](https://github.com/honua-io/honua-server/issues/3392) |
+| `desktop-arcpy` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `bi-excel` | Microsoft Excel Power Query | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
+| `bi-powerbi` | Power BI Desktop | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
+| `bi-tableau` | Tableau Desktop | OData, OGC API Features | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
+
+### Governed exclusions
+
+| Client | Exclusion rationale |
+|---|---|
+| Mapbox GL JS v2+ | Proprietary license and mandatory telemetry; MapLibre covers the applicable protocol surface |
+| ArcGIS Earth | No distinct server surface beyond the governed MapServer and KML lanes |
+| Golden Surfer | File-import workflow rather than a server protocol client |
+| Avenza Maps | File-import workflow rather than a server protocol client |
+| Looker Studio | No direct geospatial connector; warehouse access is certified separately |
+
 | Lane | Automation | Core Coverage | Extensions |
 |---|---|---|---|
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
@@ -102,7 +144,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
 | **BI — Excel** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
-| **Licensed** (future) | Placeholder | TBD | TBD |
+| **Licensed desktop clients** | Planned; not active until real evidence exists | See the planned canonical-client roster above | Entitlement-bound, content-addressed release evidence |
 
 † **BI lanes (OData-only):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply — these require geometry-capable protocols (FS, OGC). Record as `not-applicable` in the evidence envelope.
 

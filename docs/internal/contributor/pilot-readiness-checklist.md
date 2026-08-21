@@ -52,7 +52,7 @@ server ref that was tested.
 | Scale validation | Platform owner | Local or CI transcript for the 3-replica scale stack and `Category=Scale` suite | Multi-node routing/cache/failover checks pass; any Redis or replica limitation is accepted in writing |
 | Load/performance baseline | Performance owner | `load-soak-nightly.yml` run URL and geobench baseline link or waiver tracked by [#1596](https://github.com/honua-io/honua-server/issues/1596) | Beta requires a recorded baseline; alpha may proceed with a bounded waiver and no public performance claims |
 | Security nightly | Security owner | `security-nightly.yml` run URL and artifacts | No unresolved high or critical dependency/container findings |
-| Real-client compatibility | Compatibility owner | `client-interop-nightly.yml`, `windows-client-compat-nightly.yml`, and SDK compatibility run URLs | No baseline pass regressions, missing expected evidence, or new unbaselined failures affecting pilot clients |
+| Real-client compatibility | Compatibility owner | `client-interop-nightly.yml`, `client-compat-smoke-nightly.yml`, and SDK compatibility run URLs | No baseline pass regressions, missing expected evidence, or new unbaselined failures affecting pilot clients |
 | RC validation | DevOps owner | [honua-devops#41](https://github.com/honua-io/honua-devops/issues/41) evidence bundle or `release-bundle.yml` artifact | Candidate image, manifest, environment, pass/fail checks, and owning follow-ups are recorded |
 | Pilot expectations | Product owner | Pilot expectations note or signed-off issue comment | MVP deferrals and accepted #1593 limitations are visible to the pilot owner before kickoff |
 
@@ -67,7 +67,7 @@ gh workflow run cite-evidence-report.yml --repo honua-io/honua-server --ref trun
 gh workflow run security-nightly.yml --repo honua-io/honua-server --ref trunk -f include_transitive=true
 gh workflow run load-soak-nightly.yml --repo honua-io/honua-server --ref trunk -f profile=nightly
 gh workflow run client-interop-nightly.yml --repo honua-io/honua-server --ref trunk
-gh workflow run windows-client-compat-nightly.yml --repo honua-io/honua-server --ref trunk
+gh workflow run client-compat-smoke-nightly.yml --repo honua-io/honua-server --ref trunk
 gh workflow run sdk-server-compatibility.yml --repo honua-io/honua-server --ref trunk -f server_current_ref=<candidate-sha>
 gh workflow run release-bundle.yml --repo honua-io/honua-server --ref trunk -f release_id=honua-YYYY-MM-preview -f channel=preview -f server_ref=<candidate-sha> -f run_integration=true -f run_sdk=true -f promote=false
 ```

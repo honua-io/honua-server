@@ -21,7 +21,7 @@ Template sources are split between [`docs/gis/client-templates`](client-template
 
 The repository keeps source templates and run instructions. Generated binary outputs (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) are not checked into the repo; attach them to release evidence or downstream certification records created from the `#320` workflow pack.
 
-The `windows-client-compat-nightly.yml` workflow assembles these sources into a single reusable artifact pack under:
+The `client-compat-smoke-nightly.yml` workflow assembles these sources into a single reusable artifact pack under:
 
 ```text
 artifacts/client-compat/<service>-<timestamp>/pack/
@@ -43,7 +43,7 @@ pack/
 
 ## Workflow Artifact Contract
 
-`windows-client-compat-nightly.yml` uploads a deterministic smoke-evidence artifact rooted at:
+`client-compat-smoke-nightly.yml` uploads a deterministic smoke-evidence artifact rooted at:
 
 ```text
 artifacts/client-compat/<service>-<timestamp>/
