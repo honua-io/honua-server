@@ -14,6 +14,7 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Server.Features.Operations.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -81,6 +82,7 @@ public sealed class PublishedOperationToolTests
     {
         PublishedOperationTool.ProjectName("service.publish").Should().Be("honua_op_service_publish");
         PublishedOperationTool.ProjectName("Geo.Buffer-2").Should().Be("honua_op_geo_buffer_2");
+        PublishedOperationTool.ProjectName("admin.server.status").Should().Be("honua_admin_server_status");
     }
 
     // ---- Governance through the policy decision point --------------------------
@@ -310,6 +312,29 @@ public sealed class PublishedOperationToolTests
         names.Should().Contain(["honua_op_geo_summary", "honua_op_geo_export"]);
         names.Should().NotContain("honua_op_service_publish",
             "service.publish is already exposed by honua_publish_service");
+    }
+
+    [UnitTest]
+    public async Task Source_Enabled_PublishesEveryAdminDescriptorWithReservedNamesAndTypedSchemas()
+    {
+        var adminCatalog = new AdminOpenApiOperationCatalog(FindAdminOpenApi());
+        using var catalog = new OperationCatalog(
+            [new AdminOperationDescriptorProvider(adminCatalog)],
+            TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        tools.Should().HaveCount(119);
+        tools.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
+        tools.Select(tool => tool.Name).Should().OnlyContain(name => name.StartsWith("honua_admin_", StringComparison.Ordinal));
+        var createConnection = tools.Should().ContainSingle(tool => tool.Name == "honua_admin_connection_create").Subject;
+        var body = createConnection.Describe().InputSchema.GetProperty("properties").GetProperty("body");
+        body.GetProperty("type").GetString().Should().Be("object");
+        body.GetProperty("properties").TryGetProperty("secretReference", out _).Should().BeTrue();
     }
 
     [UnitTest]
@@ -551,6 +576,17 @@ public sealed class PublishedOperationToolTests
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static string FindAdminOpenApi()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "admin-openapi.json"),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "docs", "developer", "api-specs", "admin-api.json")),
+        };
+
+        return candidates.First(File.Exists);
     }
 
     private static McpJsonRpcRequest Rpc(string id, string method, string? paramsJson) => new()

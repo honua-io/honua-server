@@ -9,11 +9,15 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Server.Features.Operations.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using CatalogOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
+using ControlPlaneOperationExecutor = Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -31,6 +35,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     private readonly StubGuardrailLadder _ladder = new();
     private readonly RecordingProposalNotifier _notifier = new();
     private readonly RecordingExecutor _executor = new();
+    private readonly RecordingPublishedOperationExecutor _publishedExecutor = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -43,12 +48,19 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IGuardrailLadder>();
                 services.RemoveAll<IProposalNotifier>();
                 services.RemoveAll<IOperationGateway>();
-                services.RemoveAll<IOperationExecutor>();
+                services.RemoveAll<ControlPlaneOperationExecutor>();
+                services.RemoveAll<CatalogOperationExecutor>();
+                services.RemoveAll<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge>();
 
                 services.AddSingleton<IOperationProposalStore>(_proposalStore);
                 services.AddSingleton<IGuardrailLadder>(_ladder);
                 services.AddSingleton<IProposalNotifier>(_notifier);
-                services.AddSingleton<IOperationExecutor>(_executor);
+                services.AddSingleton<ControlPlaneOperationExecutor>(_executor);
+                services.AddSingleton<ControlPlaneOperationExecutor, PublishedOperationControlPlaneExecutor>();
+                services.AddSingleton<CatalogOperationExecutor>(_publishedExecutor);
+                services.AddScoped<ApprovedAdminOperationRunner>();
+                services.AddScoped<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge,
+                    AdminOperationApprovalBridge>();
                 services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
             });
     }
@@ -273,6 +285,82 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var bridge = scope.ServiceProvider
+            .GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge>();
+        var request = new OperationRequest
+        {
+            OperationId = "admin.server.status",
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["includeCapabilities"] = "true",
+            },
+            IdempotencyKey = "published-operation-approval-test",
+        };
+        var operationContext = new OperationPolicyContext
+        {
+            PrincipalId = "agent:proposer",
+            TenantId = "tenant-1",
+            CorrelationId = "correlation-1",
+            Roles = ["operator"],
+            Permissions = ["admin:read"],
+        };
+        var descriptor = new OperationDescriptor
+        {
+            OperationId = request.OperationId,
+            ProviderId = "test",
+            Title = "Get server status",
+            Description = "Test descriptor for the approval bridge.",
+            Category = "admin",
+            ExecutionKind = OperationExecutionKind.Synchronous,
+            ApprovalModel = OperationApprovalModel.OperatorGate,
+            Policy = new OperationPolicyMetadata
+            {
+                BlastRadiusClass = OperationBlastRadiusClass.None,
+                SideEffectClass = OperationSideEffectClass.ReadOnly,
+                Determinism = OperationDeterminism.Deterministic,
+                SupportsDryRun = false,
+                IsIdempotent = true,
+            },
+        };
+
+        var handle = await bridge.CreateProposalAsync(
+            descriptor,
+            request,
+            operationContext,
+            new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                ApprovalLane = "admin-operator",
+                Reason = "operator review",
+            });
+
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.HandleId.Should().StartWith("proposal-");
+        var persisted = await _proposalStore.GetAsync(handle.HandleId);
+        persisted.Should().NotBeNull();
+        persisted!.Kind.Should().Be(OperationClass.PublishedOperation);
+        persisted.Plan.ExecutionPayload.Should().Contain(request.OperationId);
+
+        var listResponse = await _client.GetAsync("/api/v1/admin/proposals?kind=PublishedOperation");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await listResponse.Content.ReadAsStringAsync()).Should().Contain(handle.HandleId);
+
+        var approvalResponse = await _client.PostAsync(
+            $"/api/v1/admin/proposals/{handle.HandleId}/approve",
+            null);
+
+        approvalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await approvalResponse.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("status").GetString().Should().Be("Submitted");
+        _publishedExecutor.ExecutedRequest.Should().BeEquivalentTo(request);
+        _publishedExecutor.ExecutedContext.Should().BeEquivalentTo(operationContext);
+    }
+
     private sealed class StubGuardrailLadder : IGuardrailLadder
     {
         public GuardrailTier Tier { get; set; } = GuardrailTier.RequiresApproval;
@@ -295,7 +383,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             => new(Tier, operationClass, edition, "test-stub");
     }
 
-    private sealed class RecordingExecutor : IOperationExecutor
+    private sealed class RecordingExecutor : ControlPlaneOperationExecutor
     {
         public bool Executed { get; private set; }
 
@@ -314,6 +402,47 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             Executed = true;
             return Task.FromResult<string?>("exec-1");
         }
+    }
+
+    private sealed class RecordingPublishedOperationExecutor : CatalogOperationExecutor
+    {
+        public string OperationId => "admin.server.status";
+
+        public OperationRequest? ExecutedRequest { get; private set; }
+
+        public OperationPolicyContext? ExecutedContext { get; private set; }
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            ExecutedRequest = request;
+            ExecutedContext = context;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationId = request.OperationId,
+                HandleId = "published-operation-execution",
+                Status = OperationHandleStatus.Completed,
+                Result = new OperationResultSummary { Summary = "executed" },
+            });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationStatus
+            {
+                OperationId = handle.OperationId,
+                HandleId = handle.HandleId,
+                Status = handle.Status,
+                Result = handle.Result,
+            });
     }
 
     private sealed class RecordingProposalNotifier : IProposalNotifier

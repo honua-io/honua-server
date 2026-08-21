@@ -4,6 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Operations.Admin;
 
 namespace Honua.Server.Features.Operations;
 
@@ -25,6 +26,11 @@ namespace Honua.Server.Features.Operations;
 [JsonSerializable(typeof(OperationHandle))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(OperationInvokeRequest))]
+[JsonSerializable(typeof(OperationDescriptor))]
+[JsonSerializable(typeof(OperationParameterDescriptor))]
+[JsonSerializable(typeof(OperationPolicyContext))]
+[JsonSerializable(typeof(OperationRequest))]
+[JsonSerializable(typeof(ApprovedAdminOperationPayload))]
 internal sealed partial class OperationsJsonContext : JsonSerializerContext
 {
 }
@@ -60,4 +66,9 @@ public sealed record OperationInvokeRequest
     /// Whether the caller requested a dry-run/preview.
     /// </summary>
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Stable idempotency key for mutation retries and proposal deduplication.
+    /// </summary>
+    public string? IdempotencyKey { get; init; }
 }

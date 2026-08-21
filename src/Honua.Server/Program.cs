@@ -555,6 +555,10 @@ if (connectedRedis != null)
     // job service lazily to avoid the gateway <-> job-service construction cycle.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.Geoprocessing.GeoprocessOperationExecutor>();
+    // Published admin operation executor (#3358): resumes a policy-gated operation through
+    // the same catalog executor after the shared proposal endpoint records human approval.
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.Server.Features.Operations.Admin.PublishedOperationControlPlaneExecutor>();
     // Executor-discovery capability surface (#2563): reflects the exact executors registered above so
     // discovery consumers (honua_supported_operation_kinds and the proposal compatibility field)
     // can never drift from routing reality.
