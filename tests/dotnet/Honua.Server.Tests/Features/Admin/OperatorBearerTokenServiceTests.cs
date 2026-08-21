@@ -94,6 +94,37 @@ public sealed class OperatorBearerTokenServiceTests
     }
 
     [Fact]
+    public async Task Issue_SamlSessionWithoutIssuer_PreservesIssuerOptionalDurableActor()
+    {
+        var service = CreateService();
+        var issuance = service.Issue(
+        [
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "saml-operator-1" },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+            new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "publisher" },
+        ],
+        DateTimeOffset.UtcNow.AddMinutes(10));
+
+        var claims = await service.TryValidateAsync(issuance!.Token);
+        claims.Should().NotContain(c => c.Type == OperatorBearerTokenService.IdentityIssuerClaimType);
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(
+            claims!,
+            "OperatorBearer",
+            "operator-bearer");
+
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be("saml:subject:-:saml-operator-1");
+        actor.SubjectIssuer.Should().BeNull();
+        CanonicalSecurityActor.IsBoundIdentity(
+            actor.ActorId,
+            actor.AuthenticationScheme,
+            actor.SubjectId,
+            actor.SubjectIssuer,
+            actor.ApiKeyId).Should().BeTrue();
+    }
+
+    [Fact]
     public void Issue_ClampsExpiryToSessionExpiry()
     {
         var service = CreateService(maxLifetimeMinutes: 60);

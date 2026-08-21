@@ -51,10 +51,13 @@ internal static class CanonicalSecurityActor
                 identity.AuthenticationType,
                 OperatorBearerAuthenticationType,
                 StringComparison.OrdinalIgnoreCase);
-            var issuer = NormalizeValue(principal.FindFirstValue(
-                isOperatorBearer ? IdentityIssuerClaim : IssuerClaim));
-            if ((isOperatorBearer || string.Equals(scheme, "oidc", StringComparison.Ordinal))
-                && issuer is null)
+            var isOidc = string.Equals(scheme, "oidc", StringComparison.Ordinal);
+            var issuer = isOperatorBearer
+                ? isOidc
+                    ? NormalizeValue(principal.FindFirstValue(IdentityIssuerClaim))
+                    : null
+                : NormalizeValue(principal.FindFirstValue(IssuerClaim));
+            if (isOidc && issuer is null)
             {
                 return null;
             }
