@@ -31,8 +31,10 @@ internal static class GeoservicesCatalogEndpoints
     private const string GPServerProtocolName = "GPServer";
     private const string SceneServerProtocolName = "SceneServer";
     private const string VectorTileServerProtocolName = "VectorTileServer";
-    private const string SoapContentType = "text/xml; charset=utf-8";
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string Soap11ContentType = "text/xml; charset=utf-8";
+    private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
+    private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -64,7 +66,7 @@ internal static class GeoservicesCatalogEndpoints
             .WithSummary("Discover SOAP-compatible ImageServer services")
             .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
             .WithTags("GeoServices Catalog")
-            .Accepts<string>("text/xml")
+            .Accepts<string>("text/xml", "application/soap+xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml")
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
             .AllowAnonymous();
@@ -75,7 +77,7 @@ internal static class GeoservicesCatalogEndpoints
             .WithSummary("Negotiate the SOAP service catalog for an ImageServer service")
             .WithDescription("Handles IServiceCatalog discovery operations for one raster-backed ImageServer service; raster operations remain on the GeoServices REST ImageServer surface.")
             .WithTags("GeoServices Catalog")
-            .Accepts<string>("text/xml")
+            .Accepts<string>("text/xml", "application/soap+xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml")
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
             .AllowAnonymous();
@@ -99,10 +101,23 @@ internal static class GeoservicesCatalogEndpoints
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.Xml.XmlException)
         {
-            return CreateSoapFault("Malformed SOAP request.", StatusCodes.Status400BadRequest);
+            return CreateSoapFault(
+                "Malformed SOAP request.",
+                StatusCodes.Status400BadRequest,
+                RequestedSoapNamespace(context.Request));
         }
 
-        XNamespace soap = SoapEnvelopeNamespace;
+        var envelopeNamespace = request.Root?.Name.Namespace;
+        if (request.Root?.Name.LocalName != "Envelope" ||
+            (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))
+        {
+            return CreateSoapFault(
+                "Unsupported SOAP envelope namespace.",
+                StatusCodes.Status400BadRequest,
+                RequestedSoapNamespace(context.Request));
+        }
+
+        XNamespace soap = envelopeNamespace;
         var operations = request.Root?
             .Element(soap + "Body")?
             .Elements()
@@ -110,7 +125,10 @@ internal static class GeoservicesCatalogEndpoints
             .ToArray();
         if (operations is not { Length: 1 })
         {
-            return CreateSoapFault("SOAP body must contain exactly one catalog operation.", StatusCodes.Status400BadRequest);
+            return CreateSoapFault(
+                "SOAP body must contain exactly one catalog operation.",
+                StatusCodes.Status400BadRequest,
+                soap);
         }
 
         var operation = operations[0];
@@ -146,7 +164,10 @@ internal static class GeoservicesCatalogEndpoints
                 payload = new XElement(operationNamespace + "RequiresTokensResult", false);
                 break;
             default:
-                return CreateSoapFault($"Unsupported catalog operation '{operation.Name.LocalName}'.", StatusCodes.Status400BadRequest);
+                return CreateSoapFault(
+                    $"Unsupported catalog operation '{operation.Name.LocalName}'.",
+                    StatusCodes.Status400BadRequest,
+                    soap);
         }
 
         var response = new XDocument(
@@ -162,7 +183,7 @@ internal static class GeoservicesCatalogEndpoints
 
         return Results.Content(
             response.ToString(SaveOptions.DisableFormatting),
-            contentType: SoapContentType,
+            contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8);
     }
 
@@ -235,9 +256,22 @@ internal static class GeoservicesCatalogEndpoints
         return descriptions;
     }
 
-    private static IResult CreateSoapFault(string message, int statusCode)
+    private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
     {
-        XNamespace soap = SoapEnvelopeNamespace;
+        var fault = soap == Soap12EnvelopeNamespace
+            ? new XElement(
+                soap + "Fault",
+                new XElement(soap + "Code", new XElement(soap + "Value", "soap:Sender")),
+                new XElement(
+                    soap + "Reason",
+                    new XElement(
+                        soap + "Text",
+                        new XAttribute(XNamespace.Xml + "lang", "en"),
+                        message)))
+            : new XElement(
+                soap + "Fault",
+                new XElement("faultcode", "soap:Client"),
+                new XElement("faultstring", message));
         var response = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
@@ -245,17 +279,22 @@ internal static class GeoservicesCatalogEndpoints
                 new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
                 new XElement(
                     soap + "Body",
-                    new XElement(
-                        soap + "Fault",
-                        new XElement("faultcode", "soap:Client"),
-                        new XElement("faultstring", message)))));
+                    fault)));
 
         return Results.Content(
             response.ToString(SaveOptions.DisableFormatting),
-            contentType: SoapContentType,
+            contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8,
             statusCode: statusCode);
     }
+
+    private static XNamespace RequestedSoapNamespace(HttpRequest request)
+        => request.ContentType?.StartsWith("application/soap+xml", StringComparison.OrdinalIgnoreCase) == true
+            ? Soap12EnvelopeNamespace
+            : Soap11EnvelopeNamespace;
+
+    private static string SoapContentTypeFor(XNamespace soap)
+        => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
 
     private static async Task<IResult> HandleGetServicesDirectory(
         HttpContext context,
