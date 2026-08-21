@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -33,6 +34,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string VectorTileServerProtocolName = "VectorTileServer";
     private const string SoapContentType = "text/xml; charset=utf-8";
     private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const int MaxSoapRequestCharacters = 1_048_576;
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -81,8 +83,16 @@ internal static class GeoservicesCatalogEndpoints
         XDocument request;
         try
         {
+            var settings = new XmlReaderSettings
+            {
+                Async = true,
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaxSoapRequestCharacters
+            };
+            using var reader = XmlReader.Create(context.Request.Body, settings);
             request = await XDocument.LoadAsync(
-                context.Request.Body,
+                reader,
                 LoadOptions.None,
                 context.RequestAborted).ConfigureAwait(false);
         }
@@ -92,14 +102,17 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         XNamespace soap = SoapEnvelopeNamespace;
-        var operation = request.Root?
+        var operations = request.Root?
             .Element(soap + "Body")?
             .Elements()
-            .SingleOrDefault();
-        if (operation is null)
+            .Take(2)
+            .ToArray();
+        if (operations is not { Length: 1 })
         {
             return CreateSoapFault("SOAP body must contain exactly one catalog operation.", StatusCodes.Status400BadRequest);
         }
+
+        var operation = operations[0];
 
         var operationNamespace = operation.Name.Namespace;
         XElement payload;
@@ -177,7 +190,7 @@ internal static class GeoservicesCatalogEndpoints
             {
                 var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
                 if (resource is null ||
-                    publication.LayerIndex is not { } layerIndex ||
+                    snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId ||
                     !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
                 {
                     continue;
@@ -185,7 +198,7 @@ internal static class GeoservicesCatalogEndpoints
 
                 try
                 {
-                    if ((await rasterStore.ListRastersAsync(layerIndex, cancellationToken).ConfigureAwait(false)).Length > 0)
+                    if ((await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false)).Length > 0)
                     {
                         advertise = true;
                         break;

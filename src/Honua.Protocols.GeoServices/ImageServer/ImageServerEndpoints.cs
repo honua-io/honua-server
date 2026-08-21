@@ -34,6 +34,8 @@ internal static class ImageServerEndpoints
     /// </summary>
     public static void MapImageServerEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapImageServerSoapEndpoints();
+
         var group = app.MapGroup("/rest/services/{id:int}/ImageServer")
             .WithTags("ImageServer")
             // Read-only Esri ImageServer surface; access is enforced by the
