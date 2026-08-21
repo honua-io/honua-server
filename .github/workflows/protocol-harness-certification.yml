@@ -1,0 +1,135 @@
+name: Protocol harness certification
+
+on:
+  schedule:
+    - cron: "41 10 * * *"
+  workflow_dispatch:
+    inputs:
+      candidate_source_sha:
+        description: Full server source SHA to certify; defaults to the workflow SHA
+        required: false
+        type: string
+      candidate_image:
+        description: Immutable image reference ending in @sha256; blank builds the candidate locally
+        required: false
+        type: string
+      candidate_cut_at:
+        description: Candidate cut timestamp; blank uses the candidate commit timestamp
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protocol-harness-certification-${{ github.event.inputs.candidate_source_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out producer contract
+        uses: actions/checkout@v5
+        with:
+          path: producer
+
+      - name: Resolve candidate identity
+        id: identity
+        env:
+          REQUESTED_SHA: ${{ github.event.inputs.candidate_source_sha }}
+          REQUESTED_CUT: ${{ github.event.inputs.candidate_cut_at }}
+        run: |
+          set -euo pipefail
+          producer_sha="$(git -C producer rev-parse HEAD)"
+          candidate_sha="${REQUESTED_SHA:-${producer_sha}}"
+          [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid candidate SHA" >&2; exit 1; }
+          echo "producer_sha=${producer_sha}" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
+          echo "requested_cut=${REQUESTED_CUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact candidate source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.identity.outputs.candidate_sha }}
+          path: candidate
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify or build candidate image identity
+        id: image
+        env:
+          CANDIDATE_IMAGE: ${{ github.event.inputs.candidate_image }}
+          CANDIDATE_SHA: ${{ steps.identity.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CANDIDATE_IMAGE}" ]]; then
+            [[ "${CANDIDATE_IMAGE}" =~ @sha256:([0-9a-f]{64})$ ]] || { echo "candidate image must be immutable" >&2; exit 1; }
+            docker pull "${CANDIDATE_IMAGE}"
+            image_digest="sha256:${BASH_REMATCH[1]}"
+            image_ref="${CANDIDATE_IMAGE}"
+          else
+            image_ref="honua-protocol-harness:${CANDIDATE_SHA}"
+            docker build --build-arg "HONUA_GIT_SHA=${CANDIDATE_SHA}" -t "${image_ref}" candidate
+            image_digest="$(docker image inspect --format '{{.Id}}' "${image_ref}")"
+          fi
+          revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_ref}")"
+          [[ "${revision}" == "${CANDIDATE_SHA}" ]] || { echo "image revision does not match candidate" >&2; exit 1; }
+          [[ "${image_digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "invalid resolved image digest" >&2; exit 1; }
+          echo "digest=${image_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Execute exact governed test roster
+        id: tests
+        env:
+          REQUESTED_CUT: ${{ steps.identity.outputs.requested_cut }}
+        run: |
+          set -uo pipefail
+          filter="$(python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
+            --contract producer/docs/gis/data/protocol-harness-assignments.v1.json --print-filter)"
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p evidence
+          dotnet test candidate/tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release \
+            --filter "${filter}" \
+            --logger "trx;LogFileName=protocol-harness.trx" \
+            --results-directory "${GITHUB_WORKSPACE}/evidence"
+          code=$?
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          candidate_cut="${REQUESTED_CUT:-$(git -C candidate show -s --format=%cI HEAD)}"
+          {
+            echo "exit_code=${code}"
+            echo "started_at=${started_at}"
+            echo "completed_at=${completed_at}"
+            echo "candidate_cut=${candidate_cut}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Generate closed certification fragment
+        run: |
+          generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
+            --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
+            --trx evidence/protocol-harness.trx \
+            --trx-exit-code "${{ steps.tests.outputs.exit_code }}" \
+            --source-sha "${{ steps.identity.outputs.candidate_sha }}" \
+            --producer-source-sha "${{ steps.identity.outputs.producer_sha }}" \
+            --image-digest "${{ steps.image.outputs.digest }}" \
+            --candidate-cut-at "${{ steps.tests.outputs.candidate_cut }}" \
+            --started-at "${{ steps.tests.outputs.started_at }}" \
+            --completed-at "${{ steps.tests.outputs.completed_at }}" \
+            --generated-at "${generated_at}" \
+            --output evidence/protocol-certification-fragment.json
+
+      - name: Upload immutable producer fragment
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-protocol-harness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/protocol-certification-fragment.json
+            evidence/protocol-harness.trx
+          if-no-files-found: error
+          retention-days: 30
