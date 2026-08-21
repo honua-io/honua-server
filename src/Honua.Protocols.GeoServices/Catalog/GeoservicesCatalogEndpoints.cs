@@ -72,8 +72,8 @@ internal static class GeoservicesCatalogEndpoints
         endpoints.MapPost("/services/{serviceName}/ImageServer", HandlePostSoapCatalog)
             .WithDisplayName("ArcGIS SOAP ImageServer Service")
             .WithName("ArcGisSoapImageServerService")
-            .WithSummary("Negotiate SOAP-compatible ImageServer service metadata")
-            .WithDescription("Handles ArcGIS SOAP catalog operations for one raster-backed ImageServer service.")
+            .WithSummary("Negotiate the SOAP service catalog for an ImageServer service")
+            .WithDescription("Handles IServiceCatalog discovery operations for one raster-backed ImageServer service; raster operations remain on the GeoServices REST ImageServer surface.")
             .WithTags("GeoServices Catalog")
             .Accepts<string>("text/xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml")
@@ -228,7 +228,7 @@ internal static class GeoservicesCatalogEndpoints
                     operationNamespace + "Url",
                     $"{baseUrl}/services/{Uri.EscapeDataString(service.Metadata.Name)}/{ImageServerProtocolName}"),
                 new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", "Image,Metadata,Catalog"),
+                new XElement(operationNamespace + "Capabilities", "Catalog"),
                 new XElement(operationNamespace + "Description", string.Empty)));
         }
 
