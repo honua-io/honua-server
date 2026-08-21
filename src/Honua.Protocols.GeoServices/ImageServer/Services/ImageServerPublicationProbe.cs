@@ -12,12 +12,18 @@ internal sealed class ImageServerPublicationProbeOptions
 {
     public const string SectionName = "GeoServices:ImageServer:Discovery";
     public const int DefaultMaxPublicationProbes = 256;
+    public const int DefaultMaxRequestPublicationProbes = 512;
     private const int AbsoluteMaxPublicationProbes = 4096;
 
     public int MaxPublicationProbes { get; set; } = DefaultMaxPublicationProbes;
 
+    public int MaxRequestPublicationProbes { get; set; } = DefaultMaxRequestPublicationProbes;
+
     public int ResolveMaxPublicationProbes()
         => Math.Clamp(MaxPublicationProbes, 1, AbsoluteMaxPublicationProbes);
+
+    public int ResolveMaxRequestPublicationProbes()
+        => Math.Clamp(MaxRequestPublicationProbes, 1, AbsoluteMaxPublicationProbes);
 }
 
 internal interface IImageServerPublicationProbe
@@ -42,13 +48,16 @@ internal sealed class ImageServerPublicationProbe(
     IOptions<ImageServerPublicationProbeOptions> options,
     ILogger<ImageServerPublicationProbe> logger) : IImageServerPublicationProbe
 {
+    private int _requestProbeCount;
+
     public async Task<ImageServerPublicationProbeResult?> FindFirstRasterBearingAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var candidates = snapshot.PublicationsForService(service.Metadata.Id)
+        var maxPublicationProbes = options.Value.ResolveMaxPublicationProbes();
+        var boundedCandidates = snapshot.PublicationsForService(service.Metadata.Id)
             .Where(snapshot.IsRoutable)
             .Select(publication => new ImageServerPublicationProbeCandidate(
                 publication.Metadata.Id,
@@ -64,19 +73,25 @@ internal sealed class ImageServerPublicationProbe(
                 service))
             .OrderBy(static candidate => candidate.PublicationLayerIndex ?? int.MaxValue)
             .ThenBy(static candidate => candidate.PublicationId, StringComparer.Ordinal)
-            .Take(options.Value.ResolveMaxPublicationProbes())
+            .Take(maxPublicationProbes + 1)
             .ToArray();
+        var candidates = boundedCandidates.Take(maxPublicationProbes).ToArray();
+        var wasTruncated = boundedCandidates.Length > maxPublicationProbes;
 
         Exception? firstFailure = null;
-        var completedProbeCount = 0;
         foreach (var candidate in candidates)
         {
             try
             {
+                if (!TryReserveRequestProbe(options.Value.ResolveMaxRequestPublicationProbes()))
+                {
+                    throw new ImageServerPublicationProbeIndeterminateException(
+                        "The request-wide raster availability probe budget was exhausted.");
+                }
+
                 var rasters = await rasterStore.ListRastersAsync(
                     candidate.StorageLayerId!.Value,
                     cancellationToken).ConfigureAwait(false);
-                completedProbeCount++;
                 if (rasters.Length > 0)
                 {
                     return new ImageServerPublicationProbeResult(
@@ -86,6 +101,10 @@ internal sealed class ImageServerPublicationProbe(
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ImageServerPublicationProbeIndeterminateException)
             {
                 throw;
             }
@@ -100,17 +119,40 @@ internal sealed class ImageServerPublicationProbe(
             }
         }
 
-        // A single unavailable publication does not hide a later healthy publication. When
-        // every bounded backend probe failed, however, returning "no raster" would turn an
-        // infrastructure outage into a false catalog/404 answer, so surface a server fault.
-        if (candidates.Length > 0 && completedProbeCount == 0 && firstFailure is not null)
+        // A failed candidate does not hide a later proven raster. If no raster was found,
+        // however, any backend failure or an unexamined max+1 candidate makes the answer
+        // indeterminate. Never turn either condition into a false catalog omission/404.
+        if (firstFailure is not null)
         {
-            throw new InvalidOperationException(
+            throw new ImageServerPublicationProbeIndeterminateException(
                 $"Raster availability could not be determined for ImageServer service '{service.Metadata.Name}'.",
                 firstFailure);
         }
 
+        if (wasTruncated)
+        {
+            throw new ImageServerPublicationProbeIndeterminateException(
+                $"Raster availability for ImageServer service '{service.Metadata.Name}' exceeded the configured per-service probe bound.");
+        }
+
         return null;
+    }
+
+    private bool TryReserveRequestProbe(int maxRequestProbes)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _requestProbeCount);
+            if (current >= maxRequestProbes)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _requestProbeCount, current + 1, current) == current)
+            {
+                return true;
+            }
+        }
     }
 
     private readonly record struct ImageServerPublicationProbeCandidate(
@@ -118,6 +160,19 @@ internal sealed class ImageServerPublicationProbe(
         int? PublicationLayerIndex,
         int? StorageLayerId,
         MetadataV2Resource? Resource);
+}
+
+internal sealed class ImageServerPublicationProbeIndeterminateException : InvalidOperationException
+{
+    public ImageServerPublicationProbeIndeterminateException(string message)
+        : base(message)
+    {
+    }
+
+    public ImageServerPublicationProbeIndeterminateException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }
 
 internal static partial class ImageServerPublicationProbeLogging

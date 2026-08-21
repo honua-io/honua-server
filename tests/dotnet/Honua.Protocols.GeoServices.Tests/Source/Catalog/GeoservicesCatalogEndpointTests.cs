@@ -634,6 +634,181 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapCatalogAndImageServer_EmptyThenFailedProbeRemainIndeterminate()
+    {
+        const int emptyStorageLayerId = 8401;
+        const int failingStorageLayerId = 8402;
+        var graph = BuildSoapImageGraph(
+            "probe-indeterminate-image",
+            ("res-empty", "pub-empty", 1, emptyStorageLayerId),
+            ("res-failing", "pub-failing", 2, failingStorageLayerId));
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(emptyStorageLayerId, Arg.Any<CancellationToken>()).Returns([]);
+        rasterStore.ListRastersAsync(failingStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo[]>(
+                new InvalidOperationException("injected trailing raster backend outage")));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var catalogResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services",
+                "GetServiceDescriptions");
+            catalogResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(catalogResponse);
+
+            using var imageResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/probe-indeterminate-image/ImageServer",
+                "GetVersion");
+            imageResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(imageResponse);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapCatalogAndImageServer_MaxPlusOneCandidateRemainIndeterminate()
+    {
+        const int firstStorageLayerId = 8501;
+        const int secondStorageLayerId = 8502;
+        var graph = BuildSoapImageGraph(
+            "probe-truncated-image",
+            ("res-empty", "pub-empty", 1, firstStorageLayerId),
+            ("res-unexamined", "pub-unexamined", 2, secondStorageLayerId));
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(firstStorageLayerId, Arg.Any<CancellationToken>()).Returns([]);
+        rasterStore.ListRastersAsync(secondStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([CreateSoapRaster(secondStorageLayerId)]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+            services.Configure<ImageServerPublicationProbeOptions>(options =>
+            {
+                options.MaxPublicationProbes = 1;
+                options.MaxRequestPublicationProbes = 8;
+            });
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var catalogResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services",
+                "GetServiceDescriptions");
+            catalogResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(catalogResponse);
+
+            using var imageResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/probe-truncated-image/ImageServer",
+                "GetVersion");
+            imageResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(imageResponse);
+            await rasterStore.DidNotReceive().ListRastersAsync(
+                secondStorageLayerId,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task SoapCatalog_RequestWideProbeBudgetBoundsWorkAcrossServices()
+    {
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var builder = new TestMetadataV2GraphBuilder();
+        for (var index = 1; index <= 2; index++)
+        {
+            builder
+                .AddService(
+                    $"svc-budget-{index}",
+                    $"budget-image-{index}",
+                    protocols: [ServiceProtocols.ImageServer],
+                    accessPolicy: anonymous)
+                .AddResource(
+                    $"res-budget-{index}",
+                    $"res-budget-{index}",
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: anonymous)
+                .AddStorageBinding(
+                    $"binding-budget-{index}",
+                    $"res-budget-{index}",
+                    $"raster_{8600 + index}",
+                    storageType: MetadataV2StorageType.RelationalTable,
+                    storageLayerId: 8600 + index)
+                .AddPublication(
+                    $"pub-budget-{index}",
+                    $"svc-budget-{index}",
+                    $"res-budget-{index}",
+                    layerIndex: 1,
+                    serviceLocalId: "1",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer);
+        }
+
+        var provider = new TestMetadataV2GraphProvider(builder.Build());
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+            services.Configure<ImageServerPublicationProbeOptions>(options =>
+            {
+                options.MaxPublicationProbes = 4;
+                options.MaxRequestPublicationProbes = 1;
+            });
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                "/services",
+                "GetServiceDescriptions");
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(response);
+            await rasterStore.Received(1).ListRastersAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task SoapCatalogAndImageServer_AgreeWhenRasterBearingPublicationFollowsSixtyFourEmptyLayers()
     {
         const int rasterStorageLayerId = 9065;

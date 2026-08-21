@@ -373,6 +373,13 @@ internal static class GeoservicesCatalogEndpoints
                             };
                         }
                     }
+                    catch (ImageServerPublicationProbeIndeterminateException)
+                    {
+                        // Shared discovery/serving truth is unavailable. Returning a partial
+                        // directory would falsely assert that the affected ImageServer does not
+                        // exist, so fail the request and let the HTTP fault boundary report 500.
+                        throw;
+                    }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Intentional catch-all: one service's raster-store probe failing must not
