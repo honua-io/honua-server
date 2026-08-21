@@ -70,9 +70,9 @@ internal static class GeoservicesCatalogEndpoints
             .WithSummary("Discover SOAP-compatible ImageServer services")
             .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
             .WithTags("GeoServices Catalog")
-            .Accepts<string>("text/xml", "application/soap+xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status415UnsupportedMediaType, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status503ServiceUnavailable, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .AllowAnonymous();
 
@@ -86,6 +86,15 @@ internal static class GeoservicesCatalogEndpoints
         [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
+        if (!IsSupportedSoapContentType(context.Request.ContentType))
+        {
+            var requestedSoap = RequestedSoapNamespace(context.Request);
+            return CreateSoapFault(
+                "Content-Type must be text/xml or application/soap+xml.",
+                StatusCodes.Status415UnsupportedMediaType,
+                requestedSoap);
+        }
+
         XDocument request;
         try
         {
@@ -748,6 +757,13 @@ internal static class GeoservicesCatalogEndpoints
         => string.IsNullOrWhiteSpace(format) ||
            string.Equals(format, JsonFormat, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, PrettyJsonFormat, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedSoapContentType(string? contentType)
+    {
+        var mediaType = contentType?.Split(';', 2)[0].Trim();
+        return string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 internal static partial class GeoservicesCatalogEndpointLogging

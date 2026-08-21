@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -17,6 +18,7 @@ internal interface IImageServerLayerResolver
     Task<ImageServerLayerResolution> ResolveFirstAccessibleLayerAsync(
         string serviceId,
         HttpContext context,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken);
 
     Task<ImageServerLayerResolution> ValidateLayerAsync(
@@ -39,6 +41,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
     public async Task<ImageServerLayerResolution> ResolveFirstAccessibleLayerAsync(
         string serviceId,
         HttpContext context,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
         var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
@@ -66,23 +69,24 @@ internal sealed class MetadataV2ImageServerLayerResolver(
                 && publication.Resource is not null)
             .ToArray();
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
-            context,
-            publishedResources.Select(static publication => publication.Resource!),
-            service);
-        if (accessError is not null)
-        {
-            return new ImageServerLayerResolution(0, null, null, accessError);
-        }
-
         var layer = default(ImageServerPublicationLayer);
+        IResult? firstAccessError = null;
+        var hasAuthorizedResource = false;
         foreach (var publication in publishedResources)
         {
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource!, service))
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context,
+                publication.Resource!,
+                operation,
+                service,
+                cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
             {
+                firstAccessError ??= accessError;
                 continue;
             }
 
+            hasAuthorizedResource = true;
             var raster = await rasterStore.GetPrimaryRasterInfoAsync(
                 publication.StorageLayerId!.Value,
                 cancellationToken).ConfigureAwait(false);
@@ -95,6 +99,11 @@ internal sealed class MetadataV2ImageServerLayerResolver(
 
         if (layer.Resource is null || !layer.StorageLayerId.HasValue)
         {
+            if (!hasAuthorizedResource && firstAccessError is not null)
+            {
+                return new ImageServerLayerResolution(0, null, null, firstAccessError);
+            }
+
             return new ImageServerLayerResolution(
                 0,
                 null,

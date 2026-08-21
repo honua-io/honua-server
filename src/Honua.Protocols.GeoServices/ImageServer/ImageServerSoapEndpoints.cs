@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Helpers;
@@ -41,12 +42,12 @@ internal static class ImageServerSoapEndpoints
             .WithSummary("Read and render an ImageServer through ArcGIS SOAP")
             .WithDescription("Implements the bounded ArcGIS Pro ImageServer SOAP compatibility surface over Honua's canonical raster service.")
             .WithTags("ImageServer")
-            .Accepts<string>("text/xml", "application/soap+xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status404NotFound, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status401Unauthorized, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status403Forbidden, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status415UnsupportedMediaType, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status500InternalServerError, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status501NotImplemented, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status503ServiceUnavailable, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
@@ -70,12 +71,28 @@ internal static class ImageServerSoapEndpoints
         var operation = request.Operation!;
         var soapNamespace = request.SoapNamespace!;
         var operationNamespace = operation.Name.Namespace;
+        var authorizationOperation = operation.Name.LocalName switch
+        {
+            "ExportImage" or "GetImage" => AuthorizationOperation.Export,
+            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetFields"
+                or "GetKeyProperties" or "GetMetadata" => AuthorizationOperation.Metadata,
+            _ => (AuthorizationOperation?)null
+        };
+        if (authorizationOperation is null)
+        {
+            return CreateSoapFault(
+                $"Unsupported ImageServer operation '{operation.Name.LocalName}'.",
+                StatusCodes.Status400BadRequest,
+                soapNamespace);
+        }
+
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
             var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
                 serviceId,
                 context,
+                authorizationOperation.Value,
                 cancellationToken).ConfigureAwait(false);
             if (resolution.ErrorResult is not null)
             {
@@ -144,9 +161,21 @@ internal static class ImageServerSoapEndpoints
                     soapNamespace)
             };
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            ImageServerSoapEndpointLogging.LogOperationFailed(
+                logger,
+                serviceId,
+                operation.Name.LocalName,
+                exception);
+            return CreateSoapFault(
+                "The ImageServer operation timed out.",
+                StatusCodes.Status503ServiceUnavailable,
+                soapNamespace);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -654,6 +683,15 @@ internal static class ImageServerSoapEndpoints
     private static async Task<(XElement? Operation, XNamespace? SoapNamespace, IResult? ErrorResult)> TryReadSoapRequestAsync(
         HttpContext context)
     {
+        if (!IsSupportedSoapContentType(context.Request.ContentType))
+        {
+            var requestedSoap = RequestedSoapNamespace(context.Request);
+            return (null, requestedSoap, CreateSoapFault(
+                "Content-Type must be text/xml or application/soap+xml.",
+                StatusCodes.Status415UnsupportedMediaType,
+                requestedSoap));
+        }
+
         try
         {
             var settings = new XmlReaderSettings
@@ -792,6 +830,13 @@ internal static class ImageServerSoapEndpoints
         => request.ContentType?.StartsWith("application/soap+xml", StringComparison.OrdinalIgnoreCase) == true
             ? Soap12EnvelopeNamespace
             : Soap11EnvelopeNamespace;
+
+    private static bool IsSupportedSoapContentType(string? contentType)
+    {
+        var mediaType = contentType?.Split(';', 2)[0].Trim();
+        return string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string SoapContentTypeFor(XNamespace soap)
         => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;

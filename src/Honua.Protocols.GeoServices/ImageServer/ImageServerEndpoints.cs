@@ -3652,6 +3652,7 @@ internal static class ImageServerEndpoints
         var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
             serviceId,
             context,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query,
             cancellationToken).ConfigureAwait(false);
         return (
             resolution.LayerId,
