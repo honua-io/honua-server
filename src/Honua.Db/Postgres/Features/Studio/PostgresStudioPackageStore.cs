@@ -901,6 +901,45 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
+    public async Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            {PublicationRequestSelectSql(_publicationRequestsTable)}
+            WHERE request_id = @request_id
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@request_id", requestId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadPublicationRequest(reader)
+            : null;
+    }
+
+    public async Task<IReadOnlyList<StudioPublicationRequest>> ListPublicationRequestsAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            {PublicationRequestSelectSql(_publicationRequestsTable)}
+            WHERE item_id = @item_id
+            ORDER BY created_at DESC, request_id DESC
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var requests = new List<StudioPublicationRequest>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            requests.Add(ReadPublicationRequest(reader));
+        }
+
+        return requests;
+    }
+
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -1293,11 +1332,41 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
         };
 
+    private static StudioPublicationRequest ReadPublicationRequest(NpgsqlDataReader reader)
+    {
+        var intent = reader.IsDBNull(3)
+            ? null
+            : JsonSerializer.Deserialize(reader.GetString(3), StudioJsonContext.Default.StudioPublicationIntent);
+        var validation = JsonSerializer.Deserialize(
+                reader.GetString(5),
+                StudioJsonContext.Default.StudioValidationSummary)
+            ?? StudioValidationSummary.NotValidated;
+
+        return new StudioPublicationRequest
+        {
+            RequestId = reader.GetGuid(0),
+            ItemId = reader.GetGuid(1),
+            VersionId = reader.GetGuid(2),
+            Intent = intent,
+            Status = FromDbPublicationStatus(reader.GetString(4)),
+            Validation = validation,
+            WarningAcknowledgement = reader.IsDBNull(6) ? null : reader.GetString(6),
+            RequestedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+        };
+    }
+
     private static string VersionSelectSql(string versionsTable) => $"""
         SELECT version_id, item_id, package_key, workspace_id, owner_id, version_number, content_hash,
                envelope, validation, dependencies, provenance,
                source_draft_id, base_version_id, change_note, created_by, created_at
         FROM {versionsTable}
+        """;
+
+    private static string PublicationRequestSelectSql(string publicationRequestsTable) => $"""
+        SELECT request_id, item_id, version_id, intent, status, validation,
+               warning_acknowledgement, requested_by, created_at
+        FROM {publicationRequestsTable}
         """;
 
     private static string SerializeEnvelope(StudioPackageEnvelope envelope)
@@ -1342,6 +1411,14 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         StudioPublicationRequestStatus.Pending => "pending",
         StudioPublicationRequestStatus.Rejected => "rejected",
         _ => throw new ArgumentException("Unsupported Studio publication status.", nameof(status)),
+    };
+
+    private static StudioPublicationRequestStatus FromDbPublicationStatus(string status) => status switch
+    {
+        "accepted" => StudioPublicationRequestStatus.Accepted,
+        "pending" => StudioPublicationRequestStatus.Pending,
+        "rejected" => StudioPublicationRequestStatus.Rejected,
+        _ => throw new InvalidDataException("Unsupported Studio publication status in storage."),
     };
 
     private static string ToDbRollbackPointer(StudioRollbackPointer target) => target switch

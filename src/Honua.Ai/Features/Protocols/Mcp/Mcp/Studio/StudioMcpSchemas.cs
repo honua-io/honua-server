@@ -249,6 +249,31 @@ internal static class StudioMcpSchemas
         }
         """;
 
+    private const string SaveVersionArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["draftId", "generation"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Mutable Studio package draft to save as an immutable version." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation. A mismatch fails closed so a concurrent edit is never saved accidentally." },
+            "changeNote": { "type": "string", "maxLength": 2000, "description": "Optional human-readable note captured on the immutable version." }
+          }
+        }
+        """;
+
+    private const string VersionIdArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["itemId", "versionId"],
+          "additionalProperties": false,
+          "properties": {
+            "itemId": { "type": "string", "format": "uuid", "description": "Studio content item id." },
+            "versionId": { "type": "string", "format": "uuid", "description": "Immutable Studio content version id." }
+          }
+        }
+        """;
+
     private static readonly string UpdateDraftArgumentSchemaJson = $$"""
         {
           "type": "object",
@@ -385,6 +410,14 @@ internal static class StudioMcpSchemas
 
     /// <summary>Schema for <see cref="McpStudioDraftIdArgument"/> (get, validate, preview).</summary>
     public static readonly JsonElement DraftIdArgumentSchema = Parse(DraftIdArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpStudioSaveVersionArgument"/>.</summary>
+    public static readonly JsonElement SaveVersionArgumentSchema = Parse(SaveVersionArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for <see cref="McpStudioVersionIdArgument"/> (get/reopen immutable version).
+    /// </summary>
+    public static readonly JsonElement VersionIdArgumentSchema = Parse(VersionIdArgumentSchemaJson);
 
     /// <summary>Schema for <see cref="McpStudioUpdateDraftArgument"/>.</summary>
     public static readonly JsonElement UpdateDraftArgumentSchema = Parse(UpdateDraftArgumentSchemaJson);

@@ -78,6 +78,12 @@ public interface IStudioPackageStore
     /// <summary>Creates a persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest> CreatePublicationRequestAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets a persisted publication request by identifier.</summary>
+    Task<StudioPublicationRequest?> GetPublicationRequestAsync(Guid requestId, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists publication requests for an item, newest first.</summary>
+    Task<IReadOnlyList<StudioPublicationRequest>> ListPublicationRequestsAsync(Guid itemId, CancellationToken cancellationToken = default);
+
     /// <summary>Creates a persisted rollback request and updates item pointers.</summary>
     Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
@@ -221,6 +227,12 @@ public interface IStudioPackageLifecycleService
         string? warningAcknowledgement,
         string? actorId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a persisted publication request by identifier.</summary>
+    Task<StudioPublicationRequest?> GetPublicationRequestAsync(Guid requestId, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists publication requests for an item, newest first.</summary>
+    Task<IReadOnlyList<StudioPublicationRequest>> ListPublicationRequestsAsync(Guid itemId, CancellationToken cancellationToken = default);
 
     /// <summary>Reopens an immutable version as a new mutable draft.</summary>
     Task<StudioPackageDraft?> ReopenVersionAsync(Guid itemId, Guid versionId, string? actorId, CancellationToken cancellationToken = default);

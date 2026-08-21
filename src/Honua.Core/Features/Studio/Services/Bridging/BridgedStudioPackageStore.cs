@@ -227,6 +227,14 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     }
 
     /// <inheritdoc />
+    public Task<StudioPublicationRequest?> GetPublicationRequestAsync(Guid requestId, CancellationToken cancellationToken = default)
+        => _inner.GetPublicationRequestAsync(requestId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<StudioPublicationRequest>> ListPublicationRequestsAsync(Guid itemId, CancellationToken cancellationToken = default)
+        => _inner.ListPublicationRequestsAsync(itemId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,

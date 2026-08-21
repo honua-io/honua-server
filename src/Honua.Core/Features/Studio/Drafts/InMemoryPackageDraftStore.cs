@@ -7,13 +7,13 @@ using Honua.Core.Features.Geoprocessing.Domain;
 namespace Honua.Core.Features.Studio.Drafts;
 
 /// <summary>
-/// Default <see cref="IPackageDraftStore"/>: an in-process, age-bounded map from
+/// Single-process fallback <see cref="IPackageDraftStore"/>: an age-bounded map from
 /// the minted <c>map_…</c> / <c>app_…</c> identifier to the draft package
 /// (ADR-0076, honua-server#3262).
 /// </summary>
 /// <remarks>
 /// <para>
-/// In-process is the deliberate default rather than a placeholder. A draft is
+/// This implementation is used when Redis is not configured. A draft is
 /// pre-publish scratch with no cross-request contract beyond the composition
 /// session that created it: the moment it is promoted to a deployment it becomes
 /// resolvable through the deployment store, which is durable and shared. Adding a
@@ -25,8 +25,8 @@ namespace Honua.Core.Features.Studio.Drafts;
 /// a draft resolves only on the replica that created it, and it does not survive
 /// a restart. Both are acceptable for scratch state and both are visible as an
 /// ordinary "not found", which is exactly the response an expired draft gives.
-/// A durable, shared backing is a separate decision with its own retention and
-/// authorization questions.
+/// Production hosts configured with Redis replace this fallback with the shared
+/// Redis store while preserving the same TTL and capacity contract.
 /// </para>
 /// </remarks>
 public sealed class InMemoryPackageDraftStore : IPackageDraftStore

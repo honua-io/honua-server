@@ -53,6 +53,44 @@ public class StyleRevisionMetadataTests
     }
 
     [Fact]
+    public async Task UpdateStyleAsync_NumericUniqueValues_PersistsStringNormalizedMatchForTileAttributes()
+    {
+        var layerId = 17;
+        var resource = CreateResource("numeric-zones", MetadataV2GeometryType.Point);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
+        var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
+        using var drawingInfo = JsonDocument.Parse("""
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "zone_code",
+            "uniqueValueInfos": [
+              { "value": 1, "symbol": { "type": "esriSMS", "color": [255, 0, 0, 255], "size": 8 } },
+              { "value": 2, "symbol": { "type": "esriSMS", "color": [0, 255, 0, 255], "size": 8 } }
+            ]
+          }
+        }
+        """);
+
+        var result = await service.UpdateStyleAsync(
+            resource,
+            layerId,
+            mapLibreStyle: null,
+            drawingInfo: drawingInfo.RootElement,
+            revisedBy: "style-import");
+
+        Assert.Equal(LayerStyleUpdateStatus.Updated, result.Status);
+        var mapLibre = result.Style!.MapLibreStyle!.Value;
+        var circleLayer = mapLibre.GetProperty("layers").EnumerateArray()
+            .Single(layer => layer.GetProperty("type").GetString() == "circle");
+        var outerCase = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
+        var match = outerCase[2].EnumerateArray().ToArray();
+        Assert.Equal("to-string", match[1][0].GetString());
+        Assert.Equal("1", match[2].GetString());
+        Assert.Equal("2", match[4].GetString());
+    }
+
+    [Fact]
     public async Task UpdateStyleAsync_TwoRevisions_IncrementsStyleVersionAndUpdatesMetadata()
     {
         var layerId = 12;

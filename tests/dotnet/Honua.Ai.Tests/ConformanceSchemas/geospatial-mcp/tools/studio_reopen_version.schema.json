@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/geospatial-mcp/tools/studio_reopen_version.schema.json",
+  "title": "Reopen Studio Version (Honua Extension)",
+  "type": "object",
+  "required": ["itemId", "versionId"],
+  "additionalProperties": false,
+  "properties": {
+    "itemId": { "type": "string", "format": "uuid" },
+    "versionId": { "type": "string", "format": "uuid" }
+  }
+}
