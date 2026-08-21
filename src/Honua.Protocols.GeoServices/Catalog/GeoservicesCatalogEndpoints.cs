@@ -341,6 +341,8 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         var advertised = new bool[services.Count];
+        var successfulProbes = 0;
+        var failedProbes = 0;
         await Parallel.ForEachAsync(
             probes,
             new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
@@ -353,19 +355,27 @@ internal static class GeoservicesCatalogEndpoints
 
                 try
                 {
-                    if ((await rasterStore.ListRastersAsync(probe.LayerIndex, ct).ConfigureAwait(false)).Length > 0)
+                    var rasters = await rasterStore.ListRastersAsync(probe.LayerIndex, ct).ConfigureAwait(false);
+                    Interlocked.Increment(ref successfulProbes);
+                    if (rasters.Length > 0)
                     {
                         advertised[probe.ServiceIndex] = true;
                     }
                 }
                 catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
                 {
+                    Interlocked.Increment(ref failedProbes);
                     GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(
                         logger,
                         services[probe.ServiceIndex].Metadata.Name,
                         exception);
                 }
             }).ConfigureAwait(false);
+
+        if (probes.Count > 0 && successfulProbes == 0 && failedProbes > 0)
+        {
+            throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
+        }
 
         var descriptions = new List<XElement>();
         for (var index = 0; index < services.Count; index++)

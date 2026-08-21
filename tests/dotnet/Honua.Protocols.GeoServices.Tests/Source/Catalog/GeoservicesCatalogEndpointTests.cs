@@ -289,6 +289,31 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_AllRasterProbesFail_ReturnsServerFault()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo[]>(new InvalidOperationException("raster store unavailable")));
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(fixture.Client, "/services", "GetServiceDescriptions");
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Single(element => element.Name.LocalName == "faultcode")
+                .Value.Should().Be("soap:Server");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetFolders")]
@@ -936,6 +961,40 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetServiceInfo_MapsLowBitPixelTypes()
+    {
+        foreach (var (postgisPixelType, esriPixelType) in new[]
+                 {
+                     ("1BB", "U1"),
+                     ("2BUI", "U2"),
+                     ("4BUI", "U4"),
+                 })
+        {
+            var rasterStore = CreateSoapRasterStore(pixelType: postgisPixelType);
+            var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+            await fixture.InitializeAsync();
+            try
+            {
+                using var response = await PostSoapAsync(
+                    fixture.Client,
+                    $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                    "GetServiceInfo");
+
+                response.Be200Ok();
+                var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+                payload.Descendants().Single(element => element.Name.LocalName == "PixelType")
+                    .Value.Should().Be(esriPixelType);
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Operation(Operations.Export)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_UsesOperationAwareAuthorizationAndMapsTimeouts()
@@ -1258,9 +1317,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         (await response.Content.ReadAsStringAsync()).Should().Contain("Malformed SOAP request");
     }
 
-    private static IRasterStore CreateSoapRasterStore(int layerId = 0, int bandCount = 3)
+    private static IRasterStore CreateSoapRasterStore(int layerId = 0, int bandCount = 3, string pixelType = "8BUI")
     {
-        var raster = CreateSoapRaster(layerId, bandCount: bandCount);
+        var raster = CreateSoapRaster(layerId, bandCount: bandCount, pixelType: pixelType);
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(raster);
@@ -1302,7 +1361,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         int width = 360,
         int height = 180,
         int bandCount = 3,
-        RasterExtent? extent = null)
+        RasterExtent? extent = null,
+        string pixelType = "8BUI")
         => new()
         {
             Id = id,
@@ -1311,7 +1371,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             Width = width,
             Height = height,
             BandCount = bandCount,
-            PixelType = "8BUI",
+            PixelType = pixelType,
             Srid = 4326,
             Extent = extent ?? new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
             CreatedAt = DateTimeOffset.UtcNow

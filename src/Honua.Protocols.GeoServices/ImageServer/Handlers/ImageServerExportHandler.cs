@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -11,8 +12,10 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Helpers;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -100,6 +103,26 @@ internal sealed class ImageServerExportHandler
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
+
+            if (resolvedLayer.Resource is not { } currentResource
+                || !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var currentService)
+                || !ServiceProtocols.IsProtocolEnabled(currentService, ServiceProtocols.ImageServer))
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context,
+                currentResource,
+                AuthorizationOperation.Query,
+                currentService,
+                cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+
             var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;
 
             if (!TryParseExportParameters(request, out var exportQuery, out var parseError))
