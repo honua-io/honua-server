@@ -376,7 +376,7 @@ public class ImageServerEndpointsTests
                 Arg.Any<HttpContext>(),
                 Arg.Any<AuthorizationOperation>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+            .Returns(new ImageServerLayerResolution(TestLayerId, "pub-image-test", TestLayerId, null));
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
             services.AddSingleton(CreateRasterStoreSubstitute());
@@ -398,6 +398,11 @@ public class ImageServerEndpointsTests
                 WebAppFixture.TestServiceId,
                 Arg.Any<HttpContext>(),
                 AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+            await resolver.DidNotReceive().ValidateLayerAsync(
+                Arg.Any<int>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
                 Arg.Any<CancellationToken>());
         }
         finally

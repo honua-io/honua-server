@@ -1511,7 +1511,13 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await ExecuteExportImageAsync(resolution.LayerId, request, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await ExecuteExportImageAsync(
+            resolution.LayerId,
+            request,
+            context,
+            handler,
+            cancellationToken,
+            resolution.PublicationId);
     }
 
     private static async Task<IResult> ExportImagePost(
@@ -1553,7 +1559,13 @@ internal static class ImageServerEndpoints
         }
 
         var request = CreateExportImageRequest(MergeQueryAndBodyValues(context, bodyValues.Values!));
-        return await ExecuteExportImageAsync(resolution.LayerId, request, context, handler, cancellationToken);
+        return await ExecuteExportImageAsync(
+            resolution.LayerId,
+            request,
+            context,
+            handler,
+            cancellationToken,
+            resolution.PublicationId);
     }
 
     private static async Task<IResult> ExecuteExportImageAsync(
@@ -1561,24 +1573,37 @@ internal static class ImageServerEndpoints
         ExportImageRequest request,
         HttpContext context,
         ImageServerExportHandler handler,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? publicationId = null)
     {
         if (!IsSupportedExportResponseFormat(request.F))
         {
             return CreateUnsupportedExportFormatResult(context);
         }
 
-        var layerError = await ValidateImageLayerAsync(
-            id,
-            context,
-            cancellationToken,
-            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
-        if (layerError is not null)
+        if (publicationId is null)
         {
-            return layerError;
+            var resolution = await ResolveImageLayerAsync(
+                id,
+                context,
+                cancellationToken,
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+            if (resolution.ErrorResult is not null)
+            {
+                return resolution.ErrorResult;
+            }
+
+            id = resolution.LayerId;
+            publicationId = resolution.PublicationId;
         }
 
-        return await handler.ExportImageAsync(context, id, request, cancellationToken);
+        return await handler.ExportImageAsync(
+            context,
+            id,
+            request,
+            publicationId!,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+            cancellationToken);
     }
 
     /// <summary>
@@ -1785,19 +1810,41 @@ internal static class ImageServerEndpoints
         HttpContext context,
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
+        => await ExecuteRasterItemImageAsync(
+            id, rasterId, context, handler, publicationId: null, cancellationToken);
+
+    private static async Task<IResult> ExecuteRasterItemImageAsync(
+        int id,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        string? publicationId,
+        CancellationToken cancellationToken)
     {
-        var layerError = await ValidateImageLayerAsync(
-            id,
-            context,
-            cancellationToken,
-            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
-        if (layerError is not null)
+        if (publicationId is null)
         {
-            return layerError;
+            var resolution = await ResolveImageLayerAsync(
+                id,
+                context,
+                cancellationToken,
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+            if (resolution.ErrorResult is not null)
+            {
+                return resolution.ErrorResult;
+            }
+
+            id = resolution.LayerId;
+            publicationId = resolution.PublicationId;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        return await handler.ExportImageAsync(context, id, CreateRasterItemImageRequest(values, rasterId), cancellationToken);
+        return await handler.ExportImageAsync(
+            context,
+            id,
+            CreateRasterItemImageRequest(values, rasterId),
+            publicationId!,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+            cancellationToken);
     }
 
     private static async Task<IResult> GetRasterItemImageByService(
@@ -1812,8 +1859,13 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await GetRasterItemImage(
-            resolution.LayerId, rasterId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await ExecuteRasterItemImageAsync(
+            resolution.LayerId,
+            rasterId,
+            context,
+            handler,
+            resolution.PublicationId,
+            cancellationToken);
     }
 
     private static Task<IResult> GetRasterItemInfo(
@@ -1949,19 +2001,41 @@ internal static class ImageServerEndpoints
         HttpContext context,
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
+        => await ExecuteRasterItemThumbnailAsync(
+            id, rasterId, context, handler, publicationId: null, cancellationToken);
+
+    private static async Task<IResult> ExecuteRasterItemThumbnailAsync(
+        int id,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        string? publicationId,
+        CancellationToken cancellationToken)
     {
-        var layerError = await ValidateImageLayerAsync(
-            id,
-            context,
-            cancellationToken,
-            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
-        if (layerError is not null)
+        if (publicationId is null)
         {
-            return layerError;
+            var resolution = await ResolveImageLayerAsync(
+                id,
+                context,
+                cancellationToken,
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+            if (resolution.ErrorResult is not null)
+            {
+                return resolution.ErrorResult;
+            }
+
+            id = resolution.LayerId;
+            publicationId = resolution.PublicationId;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        return await handler.ExportImageAsync(context, id, CreateRasterItemThumbnailRequest(values, rasterId), cancellationToken);
+        return await handler.ExportImageAsync(
+            context,
+            id,
+            CreateRasterItemThumbnailRequest(values, rasterId),
+            publicationId!,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+            cancellationToken);
     }
 
     private static async Task<IResult> GetRasterItemThumbnailByService(
@@ -1976,8 +2050,13 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await GetRasterItemThumbnail(
-            resolution.LayerId, rasterId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await ExecuteRasterItemThumbnailAsync(
+            resolution.LayerId,
+            rasterId,
+            context,
+            handler,
+            resolution.PublicationId,
+            cancellationToken);
     }
 
     /// <summary>
