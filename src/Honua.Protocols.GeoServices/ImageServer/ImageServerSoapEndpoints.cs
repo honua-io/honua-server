@@ -23,8 +23,11 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 /// </summary>
 internal static class ImageServerSoapEndpoints
 {
-    private const string SoapContentType = "text/xml; charset=utf-8";
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string Soap11ContentType = "text/xml; charset=utf-8";
+    private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
+    private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
+    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
     private const string XmlSchemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     private const int MaxRequestCharacters = 1_048_576;
@@ -38,10 +41,10 @@ internal static class ImageServerSoapEndpoints
             .WithSummary("Read and render an ImageServer through ArcGIS SOAP")
             .WithDescription("Implements the bounded ArcGIS Pro ImageServer SOAP compatibility surface over Honua's canonical raster service.")
             .WithTags("ImageServer")
-            .Accepts<string>("text/xml")
-            .Produces(StatusCodes.Status200OK, contentType: "text/xml")
-            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
-            .Produces(StatusCodes.Status404NotFound, contentType: "text/xml")
+            .Accepts<string>("text/xml", "application/soap+xml")
+            .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status404NotFound, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .AllowAnonymous();
     }
 
@@ -60,6 +63,7 @@ internal static class ImageServerSoapEndpoints
         }
 
         var operation = request.Operation!;
+        var soapNamespace = request.SoapNamespace!;
         var operationNamespace = operation.Name.Namespace;
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
@@ -70,7 +74,7 @@ internal static class ImageServerSoapEndpoints
         {
             var statusCode = (resolution.ErrorResult as IStatusCodeHttpResult)?.StatusCode
                 ?? StatusCodes.Status404NotFound;
-            return CreateSoapFault("Image service was not found or is not accessible.", statusCode);
+            return CreateSoapFault("Image service was not found or is not accessible.", statusCode, soapNamespace);
         }
 
         try
@@ -78,33 +82,40 @@ internal static class ImageServerSoapEndpoints
             return operation.Name.LocalName switch
             {
                 "GetVersion" => CreateSoapResponse(
+                    soapNamespace,
                     operationNamespace,
                     "GetVersionResponse",
                     new XElement("Result", "10.8")),
                 "IsFixedScaleImage" => CreateSoapResponse(
+                    soapNamespace,
                     operationNamespace,
                     "IsFixedScaleImageResponse",
                     new XElement("Result", false)),
                 "GetServiceInfo" => await HandleGetServiceInfoAsync(
                     serviceId,
                     resolution.LayerId,
+                    soapNamespace,
                     operationNamespace,
                     rasterStore,
                     cancellationToken).ConfigureAwait(false),
                 "GetFields" => CreateSoapResponse(
+                    soapNamespace,
                     operationNamespace,
                     "GetFieldsResponse",
                     BuildFields()),
                 "GetKeyProperties" => CreateSoapResponse(
+                    soapNamespace,
                     operationNamespace,
                     "GetKeyPropertiesResponse",
                     BuildKeyProperties()),
                 "GetMetadata" => CreateSoapResponse(
+                    soapNamespace,
                     operationNamespace,
                     "GetMetadataResponse",
                     new XElement("Result", BuildMetadata(serviceId))),
                 "ExportImage" => await HandleExportImageAsync(
                     operation,
+                    soapNamespace,
                     operationNamespace,
                     resolution.LayerId,
                     context,
@@ -112,6 +123,7 @@ internal static class ImageServerSoapEndpoints
                     cancellationToken).ConfigureAwait(false),
                 "GetImage" => await HandleGetImageAsync(
                     operation,
+                    soapNamespace,
                     operationNamespace,
                     resolution.LayerId,
                     context,
@@ -120,7 +132,8 @@ internal static class ImageServerSoapEndpoints
                     cancellationToken).ConfigureAwait(false),
                 _ => CreateSoapFault(
                     $"Unsupported ImageServer operation '{operation.Name.LocalName}'.",
-                    StatusCodes.Status400BadRequest)
+                    StatusCodes.Status400BadRequest,
+                    soapNamespace)
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -136,13 +149,15 @@ internal static class ImageServerSoapEndpoints
                 exception);
             return CreateSoapFault(
                 "The ImageServer operation could not be completed.",
-                StatusCodes.Status500InternalServerError);
+                StatusCodes.Status500InternalServerError,
+                soapNamespace);
         }
     }
 
     private static async Task<IResult> HandleGetServiceInfoAsync(
         string serviceId,
         int layerId,
+        XNamespace soapNamespace,
         XNamespace operationNamespace,
         IRasterStore rasterStore,
         CancellationToken cancellationToken)
@@ -150,13 +165,13 @@ internal static class ImageServerSoapEndpoints
         var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (rasters.Length == 0)
         {
-            return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound);
+            return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound, soapNamespace);
         }
 
         var extent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
         if (extent is null)
         {
-            return CreateSoapFault("Image service extent is unavailable.", StatusCodes.Status500InternalServerError);
+            return CreateSoapFault("Image service extent is unavailable.", StatusCodes.Status500InternalServerError, soapNamespace);
         }
 
         var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
@@ -208,11 +223,12 @@ internal static class ImageServerSoapEndpoints
             new XElement("MinScale", 0),
             new XElement("MaxScale", 0));
 
-        return CreateSoapResponse(operationNamespace, "GetServiceInfoResponse", result);
+        return CreateSoapResponse(soapNamespace, operationNamespace, "GetServiceInfoResponse", result);
     }
 
     private static async Task<IResult> HandleExportImageAsync(
         XElement operation,
+        XNamespace soapNamespace,
         XNamespace operationNamespace,
         int layerId,
         HttpContext context,
@@ -221,7 +237,7 @@ internal static class ImageServerSoapEndpoints
     {
         if (!TryCreateExportRequest(operation, out var request, out var width, out var height, out var error))
         {
-            return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
+            return CreateSoapFault(error!, StatusCodes.Status400BadRequest, soapNamespace);
         }
 
         var returnType = FindDescendantValue(operation, "ImageReturnType");
@@ -246,7 +262,7 @@ internal static class ImageServerSoapEndpoints
                 new XElement("ImageWidth", width),
                 new XElement("ImageDPI", 0),
                 new XElement("ImageType", MapMimeType(request.Format)));
-            return CreateSoapResponse(operationNamespace, "ExportImageResponse", mimeResult);
+            return CreateSoapResponse(soapNamespace, operationNamespace, "ExportImageResponse", mimeResult);
         }
 
         if (!returnMimeData && exportResult is IValueHttpResult { Value: ExportImageResponse response })
@@ -263,14 +279,15 @@ internal static class ImageServerSoapEndpoints
                 new XElement("ImageWidth", response.Width),
                 new XElement("ImageDPI", 0),
                 new XElement("ImageType", MapMimeType(request.Format)));
-            return CreateSoapResponse(operationNamespace, "ExportImageResponse", urlResult);
+            return CreateSoapResponse(soapNamespace, operationNamespace, "ExportImageResponse", urlResult);
         }
 
-        return CreateSoapFaultFromResult(exportResult, "Image export failed.");
+        return CreateSoapFaultFromResult(exportResult, "Image export failed.", soapNamespace);
     }
 
     private static async Task<IResult> HandleGetImageAsync(
         XElement operation,
+        XNamespace soapNamespace,
         XNamespace operationNamespace,
         int layerId,
         HttpContext context,
@@ -280,7 +297,7 @@ internal static class ImageServerSoapEndpoints
     {
         if (!TryCreateExportRequest(operation, out var request, out var width, out var height, out var error, requireImageType: false))
         {
-            return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
+            return CreateSoapFault(error!, StatusCodes.Status400BadRequest, soapNamespace);
         }
 
         var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -292,14 +309,15 @@ internal static class ImageServerSoapEndpoints
 
         if (referenceRaster.Id == 0)
         {
-            return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound);
+            return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound, soapNamespace);
         }
 
         if (!string.Equals(referenceRaster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
         {
             return CreateSoapFault(
                 "SOAP GetImage currently supports unsigned 8-bit image services.",
-                StatusCodes.Status400BadRequest);
+                StatusCodes.Status400BadRequest,
+                soapNamespace);
         }
 
         if (request.Compression is not null
@@ -307,7 +325,8 @@ internal static class ImageServerSoapEndpoints
         {
             return CreateSoapFault(
                 "SOAP GetImage supports uncompressed Esri pixel blocks only.",
-                StatusCodes.Status400BadRequest);
+                StatusCodes.Status400BadRequest,
+                soapNamespace);
         }
 
         var bandCount = ResolveGetImageBandCount(request.BandIds, referenceRaster.BandCount);
@@ -315,7 +334,8 @@ internal static class ImageServerSoapEndpoints
         {
             return CreateSoapFault(
                 "SOAP GetImage currently supports one to four rendered bands.",
-                StatusCodes.Status400BadRequest);
+                StatusCodes.Status400BadRequest,
+                soapNamespace);
         }
 
         request = CopyWithResponseFormat(request, "image");
@@ -331,16 +351,18 @@ internal static class ImageServerSoapEndpoints
             {
                 return CreateSoapFault(
                     "The canonical raster renderer returned an invalid image payload.",
-                    StatusCodes.Status500InternalServerError);
+                    StatusCodes.Status500InternalServerError,
+                    soapNamespace);
             }
 
             return CreateSoapResponse(
+                soapNamespace,
                 operationNamespace,
                 "GetImageResponse",
                 new XElement("Result", Convert.ToBase64String(pixelBlock)));
         }
 
-        return CreateSoapFaultFromResult(exportResult, "Image export failed.");
+        return CreateSoapFaultFromResult(exportResult, "Image export failed.", soapNamespace);
     }
 
     /// <summary>
@@ -614,7 +636,8 @@ internal static class ImageServerSoapEndpoints
             new XElement("AnyType", new XAttribute(xsi + "type", "xsd:double"), FormatDouble(noData.Value)));
     }
 
-    private static async Task<(XElement? Operation, IResult? ErrorResult)> TryReadSoapRequestAsync(HttpContext context)
+    private static async Task<(XElement? Operation, XNamespace? SoapNamespace, IResult? ErrorResult)> TryReadSoapRequestAsync(
+        HttpContext context)
     {
         try
         {
@@ -627,30 +650,62 @@ internal static class ImageServerSoapEndpoints
             };
             using var reader = XmlReader.Create(context.Request.Body, settings);
             var request = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
-            XNamespace soap = SoapEnvelopeNamespace;
-            var operations = request.Root?.Element(soap + "Body")?.Elements().Take(2).ToArray();
-            if (operations is not { Length: 1 })
+            var envelopeNamespace = request.Root?.Name.Namespace;
+            if (request.Root?.Name.LocalName != "Envelope" ||
+                (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))
             {
-                return (null, CreateSoapFault(
-                    "SOAP body must contain exactly one ImageServer operation.",
-                    StatusCodes.Status400BadRequest));
+                var requestedSoap = RequestedSoapNamespace(context.Request);
+                return (null, requestedSoap, CreateSoapFault(
+                    "Unsupported SOAP envelope namespace.",
+                    StatusCodes.Status400BadRequest,
+                    requestedSoap));
             }
 
-            return string.IsNullOrWhiteSpace(operations[0].Name.NamespaceName)
-                ? (null, CreateSoapFault(
-                    "ImageServer operation namespace is required.",
-                    StatusCodes.Status400BadRequest))
-                : (operations[0], null);
+            XNamespace soap = envelopeNamespace;
+            var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
+            if (bodies.Length != 1)
+            {
+                return (null, soap, CreateSoapFault(
+                    "SOAP envelope must contain exactly one Body element.",
+                    StatusCodes.Status400BadRequest,
+                    soap));
+            }
+
+            var operations = bodies[0].Elements().Take(2).ToArray();
+            if (operations is not { Length: 1 })
+            {
+                return (null, soap, CreateSoapFault(
+                    "SOAP body must contain exactly one ImageServer operation.",
+                    StatusCodes.Status400BadRequest,
+                    soap));
+            }
+
+            if (operations[0].Name.Namespace != ArcGisSoapNamespace)
+            {
+                return (null, soap, CreateSoapFault(
+                    "Unsupported ArcGIS SOAP operation namespace.",
+                    StatusCodes.Status400BadRequest,
+                    soap));
+            }
+
+            return (operations[0], soap, null);
         }
         catch (Exception exception) when (exception is XmlException or InvalidOperationException)
         {
-            return (null, CreateSoapFault("Malformed SOAP request.", StatusCodes.Status400BadRequest));
+            var requestedSoap = RequestedSoapNamespace(context.Request);
+            return (null, requestedSoap, CreateSoapFault(
+                "Malformed SOAP request.",
+                StatusCodes.Status400BadRequest,
+                requestedSoap));
         }
     }
 
-    private static IResult CreateSoapResponse(XNamespace operationNamespace, string responseName, XElement result)
+    private static IResult CreateSoapResponse(
+        XNamespace soap,
+        XNamespace operationNamespace,
+        string responseName,
+        XElement result)
     {
-        XNamespace soap = SoapEnvelopeNamespace;
         XNamespace xsi = XmlSchemaInstanceNamespace;
         XNamespace xsd = XmlSchemaNamespace;
         var response = new XDocument(
@@ -667,20 +722,35 @@ internal static class ImageServerSoapEndpoints
 
         return Results.Content(
             response.ToString(SaveOptions.DisableFormatting),
-            contentType: SoapContentType,
+            contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8);
     }
 
-    private static IResult CreateSoapFaultFromResult(IResult result, string message)
+    private static IResult CreateSoapFaultFromResult(IResult result, string message, XNamespace soap)
     {
         var statusCode = (result as IStatusCodeHttpResult)?.StatusCode
             ?? StatusCodes.Status500InternalServerError;
-        return CreateSoapFault(message, statusCode);
+        return CreateSoapFault(message, statusCode, soap);
     }
 
-    private static IResult CreateSoapFault(string message, int statusCode)
+    private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
     {
-        XNamespace soap = SoapEnvelopeNamespace;
+        var fault = soap == Soap12EnvelopeNamespace
+            ? new XElement(
+                soap + "Fault",
+                new XElement(
+                    soap + "Code",
+                    new XElement(soap + "Value", statusCode >= 500 ? "soap:Receiver" : "soap:Sender")),
+                new XElement(
+                    soap + "Reason",
+                    new XElement(
+                        soap + "Text",
+                        new XAttribute(XNamespace.Xml + "lang", "en"),
+                        message)))
+            : new XElement(
+                soap + "Fault",
+                new XElement("faultcode", statusCode >= 500 ? "soap:Server" : "soap:Client"),
+                new XElement("faultstring", message));
         var response = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
@@ -688,17 +758,22 @@ internal static class ImageServerSoapEndpoints
                 new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
                 new XElement(
                     soap + "Body",
-                    new XElement(
-                        soap + "Fault",
-                        new XElement("faultcode", statusCode >= 500 ? "soap:Server" : "soap:Client"),
-                        new XElement("faultstring", message)))));
+                    fault)));
 
         return Results.Content(
             response.ToString(SaveOptions.DisableFormatting),
-            contentType: SoapContentType,
+            contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8,
             statusCode: statusCode);
     }
+
+    private static XNamespace RequestedSoapNamespace(HttpRequest request)
+        => request.ContentType?.StartsWith("application/soap+xml", StringComparison.OrdinalIgnoreCase) == true
+            ? Soap12EnvelopeNamespace
+            : Soap11EnvelopeNamespace;
+
+    private static string SoapContentTypeFor(XNamespace soap)
+        => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
 
     private static string? FindDescendantValue(XElement? element, string localName)
         => element?.DescendantsAndSelf()

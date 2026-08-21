@@ -259,7 +259,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().EndWith("/services/test/ImageServer");
             description.Elements()
                 .Single(element => element.Name.LocalName == "Capabilities")
-                .Value.Should().Be("Image,Metadata,Catalog");
+                .Value.Should().Be("Image,Metadata");
 
             var advertisedUrl = description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
@@ -457,6 +457,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetVersion")]
+    [InterfaceOperation(TestProtocols.ImageServer, "IsFixedScaleImage")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyProperties")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMetadata")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_UnknownService_ReturnsNotFoundFault()
     {
@@ -654,6 +660,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport()
     {
@@ -706,6 +713,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetImage")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask()
     {
@@ -759,6 +767,76 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("exactly one");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_Soap12_ReturnsSoap12Response()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            const string request = """
+                <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                  <soap:Body>
+                    <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                  </soap:Body>
+                </soap:Envelope>
+                """;
+            using var content = new StringContent(request, Encoding.UTF8, "application/soap+xml");
+            using var response = await fixture.Client.PostAsync(
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                content);
+
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/soap+xml");
+            XDocument.Parse(await response.Content.ReadAsStringAsync()).Root?.Name.NamespaceName
+                .Should().Be("http://www.w3.org/2003/05/soap-envelope");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_DuplicateBodies_ReturnsClientFault()
+    {
+        const string request = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body><GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+              <soap:Body><GetFields xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+            </soap:Envelope>
+            """;
+        using var response = await _fixture.Client.PostAsync(
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            new StringContent(request, Encoding.UTF8, "text/xml"));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("exactly one Body");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_NonArcGisOperationNamespace_ReturnsClientFault()
+    {
+        const string request = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body><GetVersion xmlns="urn:not-arcgis" /></soap:Body>
+            </soap:Envelope>
+            """;
+        using var response = await _fixture.Client.PostAsync(
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            new StringContent(request, Encoding.UTF8, "text/xml"));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("operation namespace");
     }
 
     [IntegrationTest]
