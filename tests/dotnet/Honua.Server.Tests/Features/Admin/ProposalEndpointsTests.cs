@@ -181,7 +181,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_HappyPath_ExecutesAndMarksSubmitted()
     {
         // Requester differs from the admin approver so separation-of-duties passes.
@@ -197,7 +197,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_AdminApproveKey_CanReadAndApproveButCannotWriteElsewhere()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
@@ -228,7 +228,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_ReadOnlyKey_ReturnsProblemNamingMissingGrant()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
@@ -490,7 +490,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task PublishedOperation_RawCredential_IsDeniedBeforeProposalPersistence()
     {
         var (keyId, _) = await CreateScopedApiKeyAsync("raw-secret-originator", ["admin:read"]);
@@ -519,7 +519,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task PublishedOperation_RevokedProposerKey_CannotResumeAfterApproval()
     {
         var (keyId, _) = await CreateScopedApiKeyAsync("revoked-originator", ["admin:read"]);
@@ -536,7 +536,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task PublishedOperation_DowngradedOidcProposer_CannotResumeAfterApproval()
     {
         const string subject = "oidc-subject-1";

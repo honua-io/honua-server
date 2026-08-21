@@ -15421,15 +15421,15 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AdminApproveKey_CanReadAndApproveButCannotWriteElsewhere",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_ReadOnlyKey_ReturnsProblemNamingMissingGrant",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_BlockedTier_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_DirectExecuteTier_ExecutesImmediately",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_DowngradedOidcProposer_CannotResumeAfterApproval",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RawCredential_IsDeniedBeforeProposalPersistence",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RevokedProposerKey_CannotResumeAfterApproval"
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20165,6 +20165,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_MultipleOperations_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_RasterProbeUsesStorageBindingLayerId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_MetadataProviderFailure_ReturnsSoapFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_OperationLocalNameInWrongNamespace_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_Soap12Envelope_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_WrongBodyQName_ReturnsClientFault"
@@ -20183,14 +20184,18 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.DefaultComposition_ArcGisSoapRoutes_HandleHttpRequests",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.DefaultComposition_EnumeratesArcGisSoapRoutes",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportBindsExactPublicationAndStorageLayer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_RejectsUnrepresentableRenderedBandLayouts",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_MultipleOperations_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_SelectsFirstAccessibleRasterBearingPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_OperationLocalNameInWrongNamespace_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_RequiredChildLocalNameInWrongNamespace_ReturnsClientFault",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_RequiredNestedChildLocalNameInWrongNamespace_ReturnsClientFault"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_RequiredNestedChildLocalNameInWrongNamespace_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_ResolverFailure_ReturnsSoapFault"
       ],
       "proof_ledger_surface": "arcgis-soap-services",
       "maturity": "implemented",
