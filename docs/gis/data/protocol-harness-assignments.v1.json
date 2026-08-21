@@ -206,7 +206,8 @@
     },
     {
       "capability_key": "styling.auto-suggest",
-      "surface": "feature-server",
+      "catalog_capability_key": "admin.control-plane",
+      "surface": "control-plane-admin",
       "operation": "POST /api/v1/admin/metadata/layers/{layerId}/suggest-style",
       "test_ids": ["StyleSuggestionEndpointsTests.SuggestStyle_ReturnsStyleSuggestion"],
       "scenario_facets": ["positive", "media-schema"]
@@ -220,7 +221,8 @@
     },
     {
       "capability_key": "temporal.filtering",
-      "surface": "temporal-data-history",
+      "catalog_capability_key": "serve.geoservices-featureserver",
+      "surface": "feature-server",
       "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?time={time}",
       "test_ids": ["FeatureServerTemporalTests.GeoServicesQuery_SingleTimeInstant_UnixTimestamp_ReturnsMatchingFeatures"],
       "scenario_facets": ["positive", "media-schema"]

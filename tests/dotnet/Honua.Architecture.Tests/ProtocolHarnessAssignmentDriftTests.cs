@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -20,22 +19,12 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         Assert.Equal("https://github.com/honua-io/honua-server/issues/3388", root.GetProperty("tracking_issue").GetString());
 
         var assignments = root.GetProperty("assignments").EnumerateArray().ToArray();
-        Assert.NotEmpty(assignments);
+        Assert.Equal(32, assignments.Length);
         Assert.Equal(20, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
 
         using var featureCatalog = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(repositoryRoot, "docs", "gis", "data", "feature-catalog.json")));
-        var governedSurfaces = featureCatalog.RootElement.GetProperty("entries").EnumerateArray()
-            .Where(entry => entry.TryGetProperty("capability", out var capability)
-                && capability.ValueKind == JsonValueKind.String
-                && entry.TryGetProperty("proof_ledger_surface", out var surface)
-                && surface.ValueKind == JsonValueKind.String)
-            .GroupBy(entry => entry.GetProperty("capability").GetString()!, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(entry => entry.GetProperty("proof_ledger_surface").GetString()!)
-                    .ToHashSet(StringComparer.Ordinal),
-                StringComparer.Ordinal);
+        var featureEntries = featureCatalog.RootElement.GetProperty("entries").EnumerateArray().ToArray();
 
         var operationKeys = assignments
             .Select(row => string.Join('|',
@@ -45,24 +34,20 @@ public sealed class ProtocolHarnessAssignmentDriftTests
             .ToArray();
         Assert.Equal(operationKeys.Length, operationKeys.Distinct(StringComparer.Ordinal).Count());
 
-        var sourceFiles = Directory.EnumerateFiles(
-                Path.Combine(repositoryRoot, "tests"),
-                "*.cs",
-                SearchOption.AllDirectories)
-            .Select(path => new SourceFile(File.ReadAllText(path)))
-            .ToArray();
+        var executableTests = ArchitectureTestHelpers.IntegrationTestMethods().ToArray();
 
         foreach (var assignment in assignments)
         {
             var capabilityKey = assignment.GetProperty("capability_key").GetString()!;
+            var catalogCapabilityKey = assignment.TryGetProperty("catalog_capability_key", out var catalogCapability)
+                ? catalogCapability.GetString()!
+                : capabilityKey;
             var surface = assignment.GetProperty("surface").GetString()!;
-            Assert.True(
-                governedSurfaces.TryGetValue(capabilityKey, out var surfaces)
-                && surfaces.Contains(surface),
-                $"{capabilityKey} uses surface {surface}, which is absent from feature-catalog.json.");
-
             var operation = assignment.GetProperty("operation").GetString()!;
-            var normalizedOperation = operation.Split('?', 2)[0];
+            var separatorIndex = operation.IndexOf(' ');
+            Assert.True(separatorIndex > 0, $"Invalid method/route operation: {operation}");
+            var httpMethod = operation[..separatorIndex];
+            var route = operation[(separatorIndex + 1)..].Split('?', 2)[0];
             var testIds = assignment.GetProperty("test_ids").EnumerateArray()
                 .Select(value => value.GetString())
                 .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -71,33 +56,31 @@ public sealed class ProtocolHarnessAssignmentDriftTests
             Assert.NotEmpty(testIds);
             Assert.Equal(testIds.Length, testIds.Distinct(StringComparer.Ordinal).Count());
 
+            var catalogEntry = Assert.Single(
+                featureEntries,
+                entry => entry.GetProperty("capability").GetString() == catalogCapabilityKey
+                    && entry.GetProperty("proof_ledger_surface").GetString() == surface
+                    && entry.GetProperty("method").GetString() == httpMethod
+                    && entry.GetProperty("route").GetString() == route);
+            var provingTests = catalogEntry.GetProperty("proving_tests").EnumerateArray()
+                .Select(value => value.GetString())
+                .Where(value => value is not null)
+                .Cast<string>()
+                .ToHashSet(StringComparer.Ordinal);
+
             foreach (var testId in testIds)
             {
                 var separator = testId.LastIndexOf('.');
                 Assert.True(separator > 0 && separator < testId.Length - 1, $"Invalid test ID: {testId}");
                 var className = testId[..separator];
                 var methodName = testId[(separator + 1)..];
-                var classPattern = new Regex($@"\bclass\s+{Regex.Escape(className)}\b", RegexOptions.CultureInvariant);
-                var methodPattern = new Regex($@"\b{Regex.Escape(methodName)}\s*\(", RegexOptions.CultureInvariant);
-
-                var source = Assert.Single(
-                    sourceFiles,
-                    source => classPattern.IsMatch(source.Content) && methodPattern.IsMatch(source.Content));
-                var methodContractPattern = new Regex(
-                    $@"(?<attributes>(?:\s*\[[^\]]+\])*)\s*public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+{Regex.Escape(methodName)}\s*\(",
-                    RegexOptions.CultureInvariant);
-                var methodContract = methodContractPattern.Match(source.Content);
-                Assert.True(methodContract.Success, $"Cannot resolve endpoint metadata for {testId}.");
-                var endpoints = Regex.Matches(
-                        methodContract.Groups["attributes"].Value,
-                        "\\[Endpoint\\(\\\"(?<endpoint>[^\\\"]+)\\\"\\)\\]",
-                        RegexOptions.CultureInvariant)
-                    .Select(match => match.Groups["endpoint"].Value)
-                    .ToHashSet(StringComparer.Ordinal);
-                Assert.Contains(normalizedOperation, endpoints);
+                var testMethod = Assert.Single(
+                    executableTests,
+                    method => method.DeclaringType?.Name == className && method.Name == methodName);
+                var fact = Assert.Single(testMethod.GetCustomAttributes(inherit: true).OfType<FactAttribute>());
+                Assert.True(string.IsNullOrEmpty(fact.Skip), $"Governed test is skipped: {testId}");
+                Assert.Contains(provingTests, fullyQualified => fullyQualified.EndsWith('.' + testId, StringComparison.Ordinal));
             }
         }
     }
-
-    private sealed record SourceFile(string Content);
 }
