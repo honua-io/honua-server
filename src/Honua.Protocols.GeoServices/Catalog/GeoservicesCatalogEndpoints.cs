@@ -361,10 +361,13 @@ internal static class GeoservicesCatalogEndpoints
 
     private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
     {
+        var isServerFault = statusCode >= StatusCodes.Status500InternalServerError;
         var fault = soap == Soap12EnvelopeNamespace
             ? new XElement(
                 soap + "Fault",
-                new XElement(soap + "Code", new XElement(soap + "Value", "soap:Sender")),
+                new XElement(
+                    soap + "Code",
+                    new XElement(soap + "Value", isServerFault ? "soap:Receiver" : "soap:Sender")),
                 new XElement(
                     soap + "Reason",
                     new XElement(
@@ -373,7 +376,7 @@ internal static class GeoservicesCatalogEndpoints
                         message)))
             : new XElement(
                 soap + "Fault",
-                new XElement("faultcode", "soap:Client"),
+                new XElement("faultcode", isServerFault ? "soap:Server" : "soap:Client"),
                 new XElement("faultstring", message));
         var response = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
