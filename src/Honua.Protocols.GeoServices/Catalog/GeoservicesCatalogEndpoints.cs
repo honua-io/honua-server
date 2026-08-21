@@ -152,15 +152,39 @@ internal static class GeoservicesCatalogEndpoints
         switch (operation.Name.LocalName)
         {
             case "GetServiceDescriptions":
-            case "GetServiceDescriptionsEx":
                 payload = new XElement(
-                    operationNamespace + $"{operation.Name.LocalName}Result",
+                    operationNamespace + "GetServiceDescriptionsResult",
                     await BuildSoapImageServerDescriptionsAsync(
                         context,
                         operationNamespace,
                         graphProvider,
                         rasterStore,
-                        logger).ConfigureAwait(false));
+                        logger,
+                        folderName: null).ConfigureAwait(false));
+                break;
+            case "GetServiceDescriptionsEx":
+                var arguments = operation.Elements().ToArray();
+                if (arguments.Length > 1 ||
+                    arguments.Any(argument =>
+                        argument.Name.Namespace != operationNamespace ||
+                        !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return CreateSoapFault(
+                        "GetServiceDescriptionsEx accepts only one folderName argument.",
+                        StatusCodes.Status400BadRequest,
+                        soap);
+                }
+
+                var folderName = arguments.SingleOrDefault()?.Value.Trim();
+                payload = new XElement(
+                    operationNamespace + "GetServiceDescriptionsExResult",
+                    await BuildSoapImageServerDescriptionsAsync(
+                        context,
+                        operationNamespace,
+                        graphProvider,
+                        rasterStore,
+                        logger,
+                        folderName).ConfigureAwait(false));
                 break;
             case "GetFolders":
                 payload = new XElement(operationNamespace + "GetFoldersResult");
@@ -206,13 +230,22 @@ internal static class GeoservicesCatalogEndpoints
         XNamespace operationNamespace,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        ILogger logger)
+        ILogger logger,
+        string? folderName)
     {
+        // Honua currently exposes a root-only catalog. IServiceCatalog2 defines
+        // ServiceDescriptionsEx(folderName), so a named folder has no entries.
+        if (!string.IsNullOrWhiteSpace(folderName))
+        {
+            return [];
+        }
+
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var requestedServiceName = context.Request.RouteValues["serviceName"] as string;
-        var descriptions = new List<XElement>();
+        var services = new List<MetadataV2Service>();
+        var probes = new List<(int ServiceIndex, int LayerIndex)>();
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
@@ -224,7 +257,7 @@ internal static class GeoservicesCatalogEndpoints
                 continue;
             }
 
-            var advertise = false;
+            var layerIndexes = new List<int>();
             foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id).Where(snapshot.IsRoutable))
             {
                 var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
@@ -236,25 +269,55 @@ internal static class GeoservicesCatalogEndpoints
                     continue;
                 }
 
-                try
-                {
-                    if ((await rasterStore.ListRastersAsync(layerIndex, cancellationToken).ConfigureAwait(false)).Length > 0)
-                    {
-                        advertise = true;
-                        break;
-                    }
-                }
-                catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
-                {
-                    GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, exception);
-                }
+                layerIndexes.Add(layerIndex);
             }
 
-            if (!advertise)
+            if (layerIndexes.Count == 0)
             {
                 continue;
             }
 
+            var serviceIndex = services.Count;
+            services.Add(service);
+            probes.AddRange(layerIndexes.Select(layerIndex => (serviceIndex, layerIndex)));
+        }
+
+        var advertised = new bool[services.Count];
+        await Parallel.ForEachAsync(
+            probes,
+            new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
+            async (probe, ct) =>
+            {
+                if (advertised[probe.ServiceIndex])
+                {
+                    return;
+                }
+
+                try
+                {
+                    if ((await rasterStore.ListRastersAsync(probe.LayerIndex, ct).ConfigureAwait(false)).Length > 0)
+                    {
+                        advertised[probe.ServiceIndex] = true;
+                    }
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+                {
+                    GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(
+                        logger,
+                        services[probe.ServiceIndex].Metadata.Name,
+                        exception);
+                }
+            }).ConfigureAwait(false);
+
+        var descriptions = new List<XElement>();
+        for (var index = 0; index < services.Count; index++)
+        {
+            if (!advertised[index])
+            {
+                continue;
+            }
+
+            var service = services[index];
             descriptions.Add(new XElement(
                 operationNamespace + "ServiceDescription",
                 new XElement(operationNamespace + "Name", service.Metadata.Name),
