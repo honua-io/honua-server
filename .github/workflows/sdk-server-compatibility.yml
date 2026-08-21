@@ -264,6 +264,7 @@ jobs:
         env:
           HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
           HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED: ${{ matrix.migration_automation_required }}
+          HONUA_SDK_MIGRATION_SERVER_IMAGE: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
           HONUA_SDK_COMPAT_SERVER_LABEL: ${{ matrix.server_label }}
           HONUA_SDK_COMPAT_SDK_LABEL: ${{ matrix.sdk_label }}
           HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-catalog-apply-slice.json

@@ -243,7 +243,7 @@ validate_3dtiles() {
     # entry with ERROR severity (or a non-zero numErrors) as a failure — the CLI
     # exit code alone is not a documented pass/fail contract.
     local report="$RESULTS_DIR/3d-tiles-validator.json"
-    npx --yes 3d-tiles-validator --tilesetFile "$tileset" --reportFile "$report" \
+    npx --yes "3d-tiles-validator@${TILES_VALIDATOR_VERSION}" --tilesetFile "$tileset" --reportFile "$report" \
         2>&1 | tee "$RESULTS_DIR/3d-tiles-validator.log"
 
     if [[ ! -f "$report" ]]; then
