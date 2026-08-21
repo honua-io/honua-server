@@ -66,6 +66,13 @@ async function validatePmtiles(path) {
   const metadata = await archive.getMetadata();
   if (header.specVersion !== 3) throw new Error(`PMTiles specVersion=${header.specVersion}, expected 3`);
   if (metadata === null || typeof metadata !== "object") throw new Error("PMTiles metadata is not an object");
+  // The Honua writer fixture deterministically includes z=0/x=0/y=0. Header
+  // and metadata reads do not traverse the tile directory, so require an
+  // actual browser-client tile lookup before certifying archive compatibility.
+  const tile = await archive.getZxy(0, 0, 0);
+  if (!tile?.data || tile.data.byteLength < 1) {
+    throw new Error("PMTiles browser client returned no data for fixture tile z=0/x=0/y=0");
+  }
   return {
     surface: "pmtiles",
     operation: "browser-archive-read",
