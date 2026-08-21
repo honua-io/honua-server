@@ -7,6 +7,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 
@@ -133,7 +134,13 @@ internal static class OperationsEndpoints
                 PrincipalId = context.User.Identity?.Name,
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
-                    .ToArray()
+                    .ToArray(),
+                Permissions = context.User.FindAll("permission")
+                    .Select(claim => claim.Value)
+                    .ToArray(),
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
+                CorrelationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault()
+                    ?? context.TraceIdentifier,
             };
 
             var handle = await invoker
@@ -194,7 +201,8 @@ internal static class OperationsEndpoints
             ConnectionId = request.ConnectionId,
             ServiceName = request.ServiceName,
             Fields = request.Fields,
-            DryRun = request.DryRun
+            DryRun = request.DryRun,
+            IdempotencyKey = request.IdempotencyKey,
         };
 
     private static IResult BadRequest(HttpContext context, string detail)

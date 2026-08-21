@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Abstractions;
@@ -52,6 +53,17 @@ public interface IOperationDescriptor
     /// Output schema describing what the operation produces.
     /// </summary>
     IReadOnlyList<OperationParameterDescriptor> OutputSchema { get; }
+
+    /// <summary>
+    /// Exact JSON Schema for the operation input when the provider owns a richer schema than
+    /// the constrained workflow parameter projection can express.
+    /// </summary>
+    JsonElement? InputJsonSchema { get; }
+
+    /// <summary>
+    /// Exact JSON Schema for the operation output when available.
+    /// </summary>
+    JsonElement? OutputJsonSchema { get; }
 
     /// <summary>
     /// How the operation is executed (synchronous / job / proposal handoff).

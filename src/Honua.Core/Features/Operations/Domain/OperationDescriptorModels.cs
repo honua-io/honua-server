@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -32,6 +33,18 @@ public sealed record OperationPolicyMetadata
     /// Whether the operation supports a read-only dry run / preview before committing.
     /// </summary>
     public required bool SupportsDryRun { get; init; }
+
+    /// <summary>
+    /// Whether repeating the operation with the same inputs is safe. This value is projected
+    /// directly onto MCP tool annotations instead of being guessed from the HTTP verb.
+    /// </summary>
+    public bool IsIdempotent { get; init; }
+
+    /// <summary>
+    /// Operation identifier that performs the read-only validation or preview for this
+    /// operation, when <see cref="SupportsDryRun"/> is true.
+    /// </summary>
+    public string? DryRunOperationId { get; init; }
 }
 
 /// <summary>
@@ -68,6 +81,12 @@ public sealed record OperationDescriptor : IOperationDescriptor
 
     /// <inheritdoc />
     public IReadOnlyList<OperationParameterDescriptor> OutputSchema { get; init; } = [];
+
+    /// <inheritdoc />
+    public JsonElement? InputJsonSchema { get; init; }
+
+    /// <inheritdoc />
+    public JsonElement? OutputJsonSchema { get; init; }
 
     /// <inheritdoc />
     public required OperationExecutionKind ExecutionKind { get; init; }

@@ -4,6 +4,7 @@
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Honua.Server.Features.Operations.Admin;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -27,6 +28,9 @@ internal static class OperationsServiceCollectionExtensions
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationDescriptorProvider, ServerOperationDescriptorProvider>());
+        services.TryAddSingleton<AdminOpenApiOperationCatalog>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IOperationDescriptorProvider, AdminOperationDescriptorProvider>());
         services.TryAddSingleton<IOperationCatalog>(sp =>
             new OperationCatalog(
                 sp.GetServices<IOperationDescriptorProvider>(),
@@ -35,6 +39,17 @@ internal static class OperationsServiceCollectionExtensions
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
+        services.TryAddScoped<AdminEndpointOperationInvoker>();
+        services.TryAddScoped<ApprovedAdminOperationRunner>();
+        services.TryAddScoped<IOperationApprovalProposalBridge, AdminOperationApprovalBridge>();
+        foreach (var entry in AdminOperationManifest.All)
+        {
+            services.AddScoped<IOperationExecutor>(sp =>
+                new AdminOperationExecutor(
+                    sp.GetRequiredService<AdminOpenApiOperationCatalog>().GetRequired(entry.OperationId),
+                    sp.GetRequiredService<AdminOpenApiOperationCatalog>(),
+                    sp.GetRequiredService<AdminEndpointOperationInvoker>()));
+        }
 
         // Policy seam. Bind the configurable guardrail policy from "Operations:Policy".
         // When it is enabled, the configurable decision point enforces the rule set; otherwise
@@ -60,7 +75,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationCatalog>(),
                 sp.GetServices<IOperationExecutor>(),
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetService<IOperationApprovalProposalBridge>()));
 
         return services;
     }

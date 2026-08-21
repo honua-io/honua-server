@@ -37,6 +37,9 @@ internal sealed class PublishedOperationTool : IMcpTool
     /// <summary>Prefix for the MCP tool name projected from an operation id.</summary>
     public const string NamePrefix = "honua_op_";
 
+    /// <summary>Prefix reserved for admin control-plane descriptors.</summary>
+    public const string AdminNamePrefix = "honua_admin_";
+
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
     private readonly ILogger _logger;
@@ -51,7 +54,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         _catalogVersion = catalogVersion ?? string.Empty;
         _logger = logger;
         Name = ProjectName(descriptor.OperationId);
-        _inputSchema = BuildInputSchema(descriptor.InputSchema);
+        _inputSchema = descriptor.InputJsonSchema?.Clone() ?? BuildInputSchema(descriptor.InputSchema);
     }
 
     public string Name { get; }
@@ -79,7 +82,13 @@ internal sealed class PublishedOperationTool : IMcpTool
             sanitized[i] = char.IsAsciiLetterOrDigit(c) ? char.ToLowerInvariant(c) : '_';
         }
 
-        return NamePrefix + new string(sanitized);
+        var prefix = operationId.StartsWith("admin.", StringComparison.Ordinal)
+            ? AdminNamePrefix
+            : NamePrefix;
+        var projected = operationId.StartsWith("admin.", StringComparison.Ordinal)
+            ? new string(sanitized)["admin_".Length..]
+            : new string(sanitized);
+        return prefix + projected;
     }
 
     public McpToolDescriptor Describe()
@@ -94,7 +103,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             ? McpToolAnnotationSets.ReadOnly(title)
             // Non-read-only descriptors mutate state: idempotent only when they neither
             // destroy state nor reach deployment scope.
-            : McpToolAnnotationSets.Write(title, destructive, idempotent: !destructive);
+            : McpToolAnnotationSets.Write(title, destructive, idempotent: _descriptor.Policy.IsIdempotent);
 
         var determinismNote = IsDeterministic
             ? " This operation is deterministic (AI-free); identical inputs return an identical, param-keyed-cached result."
@@ -135,6 +144,10 @@ internal sealed class PublishedOperationTool : IMcpTool
             PrincipalId = principal.Identity?.Name,
             Tier = ResolveTier(httpContext),
             Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+            Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray(),
+            TenantId = principal.FindFirst("tenant_id")?.Value ?? principal.FindFirst("tid")?.Value,
+            CorrelationId = httpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault()
+                ?? httpContext.TraceIdentifier,
         };
 
         var parameters = ReadParameters(arguments);
@@ -176,6 +189,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             ServiceName = ReadString(arguments, "serviceName"),
             Parameters = parameters,
             DryRun = dryRun,
+            IdempotencyKey = ReadString(arguments, "idempotencyKey"),
         };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);

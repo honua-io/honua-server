@@ -40,6 +40,13 @@ public enum OperationClass
     /// dead-ending at submission (ADR-0064, #2814).
     /// </summary>
     Geoprocess = 4,
+
+    /// <summary>
+    /// An operation published from the server operation catalog. The operation policy decision
+    /// point already chose the approval route; the shared proposal gateway persists and resumes
+    /// the exact catalog executor after approval.
+    /// </summary>
+    PublishedOperation = 5,
 }
 
 /// <summary>
