@@ -38,6 +38,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
     private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const int MaxSoapRequestCharacters = 1_048_576;
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -68,17 +69,6 @@ internal static class GeoservicesCatalogEndpoints
             .WithName("ArcGisSoapServicesCatalog")
             .WithSummary("Discover SOAP-compatible ImageServer services")
             .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
-            .WithTags("GeoServices Catalog")
-            .Accepts<string>("text/xml", "application/soap+xml")
-            .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
-            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
-            .AllowAnonymous();
-
-        endpoints.MapPost("/services/{serviceName}/ImageServer", HandlePostSoapCatalog)
-            .WithDisplayName("ArcGIS SOAP ImageServer Service")
-            .WithName("ArcGisSoapImageServerService")
-            .WithSummary("Negotiate the SOAP service catalog for an ImageServer service")
-            .WithDescription("Handles IServiceCatalog discovery operations for one raster-backed ImageServer service; raster operations remain on the GeoServices REST ImageServer surface.")
             .WithTags("GeoServices Catalog")
             .Accepts<string>("text/xml", "application/soap+xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
@@ -343,7 +333,7 @@ internal static class GeoservicesCatalogEndpoints
                     operationNamespace + "Url",
                     $"{baseUrl}/services/{Uri.EscapeDataString(service.Metadata.Name)}/{ImageServerProtocolName}"),
                 new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", "Catalog"),
+                new XElement(operationNamespace + "Capabilities", "Image,Metadata,Catalog"),
                 new XElement(operationNamespace + "Description", string.Empty)));
         }
 

@@ -259,7 +259,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().EndWith("/services/test/ImageServer");
             description.Elements()
                 .Single(element => element.Name.LocalName == "Capabilities")
-                .Value.Should().Be("Catalog", "the endpoint implements IServiceCatalog only");
+                .Value.Should().Be("Image,Metadata,Catalog");
 
             var advertisedUrl = description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
@@ -268,7 +268,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 <?xml version="1.0" encoding="utf-8"?>
                 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
                   <soap:Body>
-                    <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                    <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
                   </soap:Body>
                 </soap:Envelope>
                 """;
@@ -277,8 +277,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             serviceResponse.Be200Ok();
             var servicePayload = XDocument.Parse(await serviceResponse.Content.ReadAsStringAsync());
             servicePayload.Descendants()
-                .Single(element => element.Name.LocalName == "GetMessageVersionResult")
-                .Value.Should().Be("esriArcGISVersion108");
+                .Single(element => element.Name.LocalName == "GetVersionResponse")
+                .Descendants()
+                .Single(element => element.Name.LocalName == "Result")
+                .Value.Should().Be("10.8");
         }
         finally
         {
@@ -455,9 +457,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
-    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
-    [Endpoint("POST /services/{serviceName}/ImageServer")]
-    public async Task PostSoapCatalog_ServiceRoute_DoesNotLeakOtherServices()
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_UnknownService_ReturnsNotFoundFault()
     {
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -472,16 +473,16 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             const string request = """
                 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
                   <soap:Body>
-                    <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                    <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
                   </soap:Body>
                 </soap:Envelope>
                 """;
             using var content = new StringContent(request, Encoding.UTF8, "text/xml");
             var response = await fixture.Client.PostAsync("/services/not-test/ImageServer", content);
 
-            response.Be200Ok();
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-            payload.Descendants().Should().NotContain(element => element.Name.LocalName == "ServiceDescription");
+            payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
         }
         finally
         {
