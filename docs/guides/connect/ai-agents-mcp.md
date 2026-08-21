@@ -105,8 +105,10 @@ execution source of truth.
    For an Esri-oriented migration, opt into `esri-gp`. It adds
    `honua_esri_gp_list_tasks`, `honua_esri_gp_describe_task`, and
    `honua_esri_gp_execute_task`, backed by the same local task aliases, schemas,
-   plans, and job service as Honua GPServer. This does not federate or proxy an
-   external ArcGIS Server.
+   plans, service catalog, access policy, and job service as Honua GPServer.
+   Execute requires a routable, GPServer-enabled `serviceId` that the caller can
+   access; missing and denied services are rejected before submission. This does
+   not federate or proxy an external ArcGIS Server.
 
 6. Read results through resources (`resources/read`):
 

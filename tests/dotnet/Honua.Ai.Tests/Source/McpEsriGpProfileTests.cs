@@ -8,11 +8,17 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -90,9 +96,10 @@ public sealed class McpEsriGpProfileTests
             jobs, new BuiltInProcessCatalog(), NullLogger<ExecuteEsriGpTaskTool>.Instance);
         using var arguments = JsonDocument.Parse(
             $$"""{"serviceId":"analysis","taskName":"{{taskName}}","parameters":{{parametersJson}}}""");
+        var (context, _) = CreateExecuteContext();
 
         var result = await tool.InvokeAsync(
-            McpTestFactory.AuthenticatedHttpContext(), arguments.RootElement, CancellationToken.None);
+            context, arguments.RootElement, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         submittedPlan.Should().NotBeNull();
@@ -137,14 +144,101 @@ public sealed class McpEsriGpProfileTests
               }
             }
             """);
+        var (context, _) = CreateExecuteContext();
 
         var action = () => tool.InvokeAsync(
-            McpTestFactory.AuthenticatedHttpContext(), arguments.RootElement, CancellationToken.None);
+            context, arguments.RootElement, CancellationToken.None);
 
         await action.Should().ThrowAsync<GeoprocessingValidationException>()
             .WithMessage("*FeatureSet carrying 2 features*");
         await jobs.DidNotReceiveWithAnyArgs().SubmitJobAsync(
             default!, default, default!, default, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteTask_NonexistentGpServerService_ReturnsNotFoundWithoutSubmitting()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var tool = new ExecuteEsriGpTaskTool(
+            jobs, new BuiltInProcessCatalog(), NullLogger<ExecuteEsriGpTaskTool>.Instance);
+        var serviceResult = ResourceValidationResult.NotFound<MetadataV2Service>(
+            "Service 'missing' was not found.");
+        var (context, resourceValidator) = CreateExecuteContext(serviceResult);
+        using var arguments = JsonDocument.Parse("""
+            {
+              "serviceId": "missing",
+              "taskName": "Buffer",
+              "parameters": {"wkb":"AQ==","distance":10}
+            }
+            """);
+
+        var action = () => tool.InvokeAsync(
+            context, arguments.RootElement, CancellationToken.None);
+
+        await action.Should().ThrowAsync<GeoprocessingNotFoundException>()
+            .WithMessage("Service 'missing' was not found.");
+        await resourceValidator.Received(1).ValidateServiceV2Async(
+            "missing", ServiceProtocols.GPServer, Arg.Any<CancellationToken>());
+        await jobs.DidNotReceiveWithAnyArgs().SubmitJobAsync(
+            default!, default, default!, default, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteTask_DeniedGpServerService_ReturnsAuthorizationFailureWithoutSubmitting()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var tool = new ExecuteEsriGpTaskTool(
+            jobs, new BuiltInProcessCatalog(), NullLogger<ExecuteEsriGpTaskTool>.Instance);
+        var (context, _) = CreateExecuteContext(
+            accessDecision: AccessDecision.Forbidden("restricted"));
+        using var arguments = JsonDocument.Parse("""
+            {
+              "serviceId": "analysis",
+              "taskName": "Buffer",
+              "parameters": {"wkb":"AQ==","distance":10}
+            }
+            """);
+
+        var action = () => tool.InvokeAsync(
+            context, arguments.RootElement, CancellationToken.None);
+
+        var exception = await action.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        exception.Which.RequiresAuthentication.Should().BeFalse();
+        exception.Which.Message.Should().Contain("GPServer service 'analysis'");
+        await jobs.DidNotReceiveWithAnyArgs().SubmitJobAsync(
+            default!, default, default!, default, default);
+    }
+
+    private static (DefaultHttpContext Context, IResourceValidator ResourceValidator)
+        CreateExecuteContext(
+            ResourceValidationResult<MetadataV2Service>? serviceResult = null,
+            AccessDecision? accessDecision = null)
+    {
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "analysis", Name = "analysis" },
+            Route = "/rest/services/analysis/GPServer",
+            Protocols = [ServiceProtocols.GPServer]
+        };
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateServiceV2Async(
+                Arg.Any<string>(), ServiceProtocols.GPServer, Arg.Any<CancellationToken>())
+            .Returns(serviceResult ?? ResourceValidationResult.Success(service));
+
+        var accessEvaluator = Substitute.For<IAccessPolicyEvaluator>();
+        accessEvaluator.Evaluate(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<AccessPolicy?>(),
+                Arg.Any<AccessPolicy?>(),
+                Arg.Any<object?>())
+            .Returns(accessDecision ?? AccessDecision.Allowed());
+
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(resourceValidator);
+            services.AddSingleton(accessEvaluator);
+        });
+        return (context, resourceValidator);
     }
 
     private static ExecutionJobRecord CreateQueuedJob()
