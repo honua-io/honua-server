@@ -1034,6 +1034,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().Be("128");
             result.Elements().Single(element => element.Name.LocalName == "ImageHeight")
                 .Value.Should().Be("64");
+            result.Elements().Single(element => element.Name.LocalName == "ImageType")
+                .Value.Should().Be("esriImagePNG");
             await rasterStore.Received().ExportImageAsync(
                 Arg.Any<int>(),
                 Arg.Any<long>(),

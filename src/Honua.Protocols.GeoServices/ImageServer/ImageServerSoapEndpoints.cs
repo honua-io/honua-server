@@ -315,7 +315,7 @@ internal static class ImageServerSoapEndpoints
                 new XElement("ImageHeight", height),
                 new XElement("ImageWidth", width),
                 new XElement("ImageDPI", 0),
-                new XElement("ImageType", MapMimeType(request.Format)));
+                new XElement("ImageType", MapEsriImageFormat(request.Format)));
             return CreateSoapResponse(soapNamespace, operationNamespace, "ExportImageResponse", mimeResult);
         }
 
@@ -332,7 +332,7 @@ internal static class ImageServerSoapEndpoints
                 new XElement("ImageHeight", response.Height),
                 new XElement("ImageWidth", response.Width),
                 new XElement("ImageDPI", 0),
-                new XElement("ImageType", MapMimeType(request.Format)));
+                new XElement("ImageType", MapEsriImageFormat(request.Format)));
             return CreateSoapResponse(soapNamespace, operationNamespace, "ExportImageResponse", urlResult);
         }
 
@@ -886,12 +886,12 @@ internal static class ImageServerSoapEndpoints
             _ => null
         };
 
-    private static string MapMimeType(string? format)
+    private static string MapEsriImageFormat(string? format)
         => format switch
         {
-            "jpg" or "jpeg" => "image/jpeg",
-            "tif" or "tiff" => "image/tiff",
-            _ => "image/png"
+            "jpg" or "jpeg" => "esriImageJPG",
+            "tif" or "tiff" => "esriImageTIFF",
+            _ => "esriImagePNG"
         };
 
     private static string MapPixelType(string postgisPixelType)
