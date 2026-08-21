@@ -154,9 +154,9 @@ ASPNETCORE_ENVIRONMENT=Development \
   `ASPNETCORE_ENVIRONMENT=Development` and `Licensing__DevGrantEdition=Pro` are
   set so the bootstrap snapshot grants `caching.redis` and wires
   `IConnectionMultiplexer`.
-- **404 for a process id in the full catalog** — only first-slice vector
-  processes project individually through OGC API Processes; others run via the
-  canonical `honua-geoprocessing` plan process. See the
+- **404 for a process id in the full catalog** — OGC API Processes projects all
+  built-ins except `source` and `sink` entries. Run those orchestration steps via
+  the canonical `honua-geoprocessing` plan process. See the
   [reference](../../reference/geoprocessing-operations.md).
 
 ## Next steps

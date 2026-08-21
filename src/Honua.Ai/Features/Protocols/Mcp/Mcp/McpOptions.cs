@@ -48,6 +48,16 @@ internal sealed class McpOptions
     public const string SectionName = "Mcp";
 
     /// <summary>
+    /// Enabled MCP conformance profiles. The base profile is always present;
+    /// optional profiles such as <c>analysis</c> must be configured explicitly.
+    /// </summary>
+    public string[] Profiles { get; set; } = ["base"];
+
+    internal bool IsProfileEnabled(string profileName)
+        => string.Equals(profileName, "base", StringComparison.OrdinalIgnoreCase)
+            || Profiles.Any(profile => string.Equals(profile, profileName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// When <see langword="true"/> the server offers the optional server-initiated
     /// <c>GET /mcp</c> SSE stream (progress / <c>*/list_changed</c> notifications);
     /// when <see langword="false"/> (the default) <c>GET /mcp</c> returns

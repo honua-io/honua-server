@@ -19,6 +19,12 @@ internal static class GeoprocessingProtocolMetadataKeys
     public const string GPServerTaskName = "gpserver.taskName";
 
     /// <summary>
+    /// Safe Console projection key for the canonical terminal result package
+    /// associated with a geoprocessing job.
+    /// </summary>
+    public const string ResultPackageId = "resultPackageId";
+
+    /// <summary>
     /// Job spec parameter key storing the raw GPServer context payload.
     /// </summary>
     public const string GPServerContext = "gpserver.context";

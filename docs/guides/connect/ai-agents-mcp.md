@@ -100,6 +100,14 @@ execution source of truth.
    - `honua_execute_plan` — submits the plan (supports an `idempotencyKey`); returns a `jobId` and a `honua://jobs/{jobId}` resource URI
    - `honua_cancel_job` — requests cancellation by `jobId`
 
+   To expose the geospatial-mcp `analysis` profile's direct single-step verbs, configure `Mcp:Profiles` with `base` and `analysis`. The initialize response advertises the enabled profiles and `tools/list` adds `honua_buffer_features`, `honua_overlay_features`, `honua_summarize_statistics`, `honua_reproject_features`, `honua_join_features`, and `honua_export_dataset`. See [geoprocessing with AI](../query-analyze/geoprocessing-with-ai.md) for the complete deployment-to-Studio flow.
+
+   For an Esri-oriented migration, opt into `esri-gp`. It adds
+   `honua_esri_gp_list_tasks`, `honua_esri_gp_describe_task`, and
+   `honua_esri_gp_execute_task`, backed by the same local task aliases, schemas,
+   plans, and job service as Honua GPServer. This does not federate or proxy an
+   external ArcGIS Server.
+
 6. Read results through resources (`resources/read`):
 
    - `honua://catalog/processes` — the process catalog the planner can draw from

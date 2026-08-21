@@ -106,13 +106,19 @@ public sealed record OgcProcessIoSchema
     /// JSON Schema type (string, number, object, array, etc.).
     /// </summary>
     [JsonPropertyName("type")]
-    public required string Type { get; init; }
+    public string? Type { get; init; }
 
     /// <summary>
     /// Content media type hint for complex inputs.
     /// </summary>
     [JsonPropertyName("contentMediaType")]
     public string? ContentMediaType { get; init; }
+
+    /// <summary>
+    /// Alternative schemas accepted for the same input.
+    /// </summary>
+    [JsonPropertyName("oneOf")]
+    public ImmutableArray<OgcProcessIoSchema>? OneOf { get; init; }
 }
 
 /// <summary>
