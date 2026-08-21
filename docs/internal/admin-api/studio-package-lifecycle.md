@@ -50,8 +50,36 @@ payload.
 | `GET` | `/content-items/{itemId}/versions/{versionId}` | `200 ApiResponse<StudioContentVersion>` | Retrieve one immutable version. |
 | `POST` | `/content-items/{itemId}/version-comparisons` | `200 ApiResponse<StudioVersionComparison>` | Compare two immutable versions by content hash, dependencies, validation, and provenance. |
 | `POST` | `/content-items/{itemId}/versions/{versionId}/publish-requests` | `201 ApiResponse<StudioPublicationRequest>` | Persist a publication request and move the published pointer when validation permits. |
+| `GET` | `/content-items/{itemId}/publish-requests/{requestId}` | `200 ApiResponse<StudioPublicationRequestStatusResponse>` | Poll one governed request; returns the public route only after Console publishes the exact version. |
+| `GET` | `/content-items/{itemId}/publish-requests` | `200 ApiResponse<StudioPublicationRequestListResponse>` | List an item's requests newest first for pending-state UI. |
 | `POST` | `/content-items/{itemId}/versions/{versionId}/reopen` | `201 ApiResponse<StudioPackageDraft>` | Copy an immutable version into a new mutable draft with `baseVersionId`. |
 | `POST` | `/content-items/{itemId}/rollback-requests` | `201 ApiResponse<StudioRollbackRequest>` | Persist a rollback request and move the current, published, or both pointers to an earlier immutable version. |
+
+## Publication request status
+
+The publish-request `POST` returns a durable `requestId`, but the request alone
+does not prove that a public route exists. Poll
+`GET /content-items/{itemId}/publish-requests/{requestId}`. Its `data.status` is
+`pending` until Console's Content Publication Registry contains a version whose
+`sourceContentId` is the Studio `itemId` and whose `contentVersionId` is the
+requested Studio `versionId`. At that point it returns `published` with
+`publicationId`, `publicUrl`, `decidedAt`, and `decidedBy`. A validation refusal
+returns `rejected`; no URL is invented before the registry has one.
+
+The list route returns `{ "requests": [...] }` in `ApiResponse.data`, newest
+first. Both status reads deliberately require owner/admin authorization even
+when the item has a published version: publication status can reveal private
+workflow history. An unknown request, or a request whose `itemId` does not match
+the route, returns `404`; a known request owned by another caller returns `403`.
+
+Console publication must preserve the join convention:
+
+```json
+{
+  "sourceContentId": "<studio-item-guid>",
+  "contentVersionId": "<studio-version-guid>"
+}
+```
 
 ## Authorization
 

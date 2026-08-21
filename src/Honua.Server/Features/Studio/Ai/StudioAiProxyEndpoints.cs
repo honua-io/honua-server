@@ -14,9 +14,9 @@ namespace Honua.Server.Features.Studio.Ai;
 
 /// <summary>
 /// Studio AI proxy endpoints (honua-server#3000): a provider-neutral, server-mediated chat surface
-/// so Studio clients never see model credentials. Admin-authorized in MVP — the same posture as the
-/// Studio package lifecycle surface (<c>WorkflowPackageEndpoints</c>) — pending a dedicated
-/// per-session Studio-user authorization scope.
+/// so Studio clients never see model credentials. Authorization follows the Studio lifecycle
+/// surface: administrators are always admitted, while authenticated end users are admitted only
+/// when <c>Studio:EndUserAuthorization:Enabled</c> is enabled.
 /// </summary>
 internal static class StudioAiProxyEndpoints
 {
@@ -28,7 +28,7 @@ internal static class StudioAiProxyEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Studio", "AI")
-            .RequireAdminAuthorization();
+            .RequireStudioLifecycleAuthorization();
 
         group.MapGet("/capabilities", HandleGetCapabilities)
             .WithName("GetStudioAiCapabilities")

@@ -397,6 +397,30 @@
       "notes": "Honua extension (honua-server#3002): builds a read-only preview plan for a Studio package lifecycle draft. Pending formalization in the standard's preview_map_package/preview_app_package family."
     },
     {
+      "standardName": "studio_save_version",
+      "referenceToolName": "honua_studio_save_version",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_save_version.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (2026.1 producer contract): saves exactly one generation of a Studio package draft as an immutable content version. Pending formalization in the standard's map/app lifecycle family."
+    },
+    {
+      "standardName": "studio_get_version",
+      "referenceToolName": "honua_studio_get_version",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_get_version.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (2026.1 producer contract): reads an immutable Studio content version by itemId and versionId. Pending formalization in the standard's map/app lifecycle family."
+    },
+    {
+      "standardName": "studio_reopen_version",
+      "referenceToolName": "honua_studio_reopen_version",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_reopen_version.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (2026.1 producer contract): reopens an immutable Studio content version as a new draft with baseVersionId provenance. Pending formalization in the standard's map/app lifecycle family."
+    },
+    {
       "standardName": "studio_add_layer",
       "referenceToolName": "honua_studio_add_layer",
       "family": "Studio composition and lifecycle (Honua extension)",

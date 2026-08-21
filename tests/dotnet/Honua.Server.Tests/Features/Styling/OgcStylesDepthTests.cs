@@ -336,6 +336,40 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/styles")]
+    public async Task PostStyle_DrawingInfoAsApplicationJson_Returns400WithCorrectMediaType()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        using var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, "application/json");
+        var response = await client.PostAsync("/ogc/styles", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        problem.RootElement.GetProperty("detail").GetString().Should().Contain(EsriDrawingInfoMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_DrawingInfoAsApplicationJson_Returns400WithoutReplacingCanonicalStyle()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await SeedAndResolveStyleIdAsync(client);
+        var path = $"/ogc/styles/{Uri.EscapeDataString(styleId)}";
+        var before = await client.GetStringAsync(path);
+
+        using var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, "application/json");
+        var response = await client.PutAsync(path, content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        problem.RootElement.GetProperty("detail").GetString().Should().Contain(EsriDrawingInfoMediaType);
+        (await client.GetStringAsync(path)).Should().Be(before);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
     public async Task PutStyle_EmptyBody_Returns400()

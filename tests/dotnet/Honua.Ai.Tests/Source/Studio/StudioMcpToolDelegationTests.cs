@@ -150,8 +150,8 @@ public sealed class StudioMcpToolDelegationTests
         previewResult.IsError.Should().BeFalse();
         previewResult.StructuredContent!.Value.GetProperty("synchronous").GetBoolean().Should().BeTrue();
 
-        // 10. Propose publication — records intent only. No content version was
-        // ever created (no honua_studio_* tool creates one), so the item's
+        // 10. Propose publication — records intent only. This scenario has not
+        // invoked honua_studio_save_version, so the item's
         // current/published pointers must both still be absent.
         var proposeTool = new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance);
         var currentGeneration = (await lifecycleService.GetDraftAsync(draftId))!.Generation;
@@ -170,14 +170,129 @@ public sealed class StudioMcpToolDelegationTests
         // The store creates an item record as a side effect of the very first
         // CreateDraftAsync (honua_studio_create_draft in step 1) — GetPointersAsync
         // is therefore non-null from that point on. What must stay true is that
-        // NEITHER pointer was ever populated: no honua_studio_* tool creates an
-        // immutable content version, so both stay unset through every mutation
+        // NEITHER pointer was ever populated: this scenario never invoked the
+        // explicit save-version tool, so both stay unset through every mutation
         // above, including propose-publication.
         var pointers = await store.GetPointersAsync(itemId);
         pointers.Should().NotBeNull("the item record exists once a draft has been created");
-        pointers!.CurrentVersionId.Should().BeNull("no honua_studio_* tool ever creates a content version");
+        pointers!.CurrentVersionId.Should().BeNull("the explicit save-version tool was not invoked");
         pointers.PublishedVersionId.Should().BeNull(
             "propose-publication must never create a content version or move the published pointer");
+    }
+
+    [Theory]
+    [InlineData("map")]
+    [InlineData("app")]
+    [InlineData("dashboard")]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_save_version")]
+    [Endpoint("POST /mcp tools/call honua_studio_get_version")]
+    [Endpoint("POST /mcp tools/call honua_studio_reopen_version")]
+    public async Task DurableVersionLifecycle_RoundTripsMapAppAndDashboard(string family)
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycleService = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycleService);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+        });
+
+        var createTool = new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var createResult = await createTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"packageKey":"{{{family}}}-release-arc","family":"{{{family}}}","schemaVersion":"1.0","body":{"title":"{{{family}}} release arc"}}"""),
+            CancellationToken.None);
+        var created = createResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured create-draft content.");
+        var originalDraftId = created.GetProperty("draftId").GetGuid();
+        var generation = created.GetProperty("generation").GetInt64();
+
+        var saveTool = new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance);
+        var saveResult = await saveTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{originalDraftId}}}","generation":{{{generation}}},"changeNote":"2026.1 E2E {{{family}}} save"}"""),
+            CancellationToken.None);
+        saveResult.IsError.Should().BeFalse();
+        var saved = saveResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured save-version content.");
+        var itemId = saved.GetProperty("itemId").GetGuid();
+        var versionId = saved.GetProperty("versionId").GetGuid();
+        var contentHash = saved.GetProperty("contentHash").GetString();
+        saved.GetProperty("envelope").GetProperty("family").GetString().Should().Be(family);
+        saved.GetProperty("sourceDraftId").GetGuid().Should().Be(originalDraftId);
+
+        var getTool = new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance);
+        var getResult = await getTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson($$$"""{"itemId":"{{{itemId}}}","versionId":"{{{versionId}}}"}"""),
+            CancellationToken.None);
+        getResult.IsError.Should().BeFalse();
+        var read = getResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured get-version content.");
+        read.GetProperty("itemId").GetGuid().Should().Be(itemId);
+        read.GetProperty("versionId").GetGuid().Should().Be(versionId);
+        read.GetProperty("contentHash").GetString().Should().Be(contentHash);
+        read.GetProperty("envelope").GetProperty("family").GetString().Should().Be(family);
+
+        var reopenTool = new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance);
+        var reopenResult = await reopenTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson($$$"""{"itemId":"{{{itemId}}}","versionId":"{{{versionId}}}"}"""),
+            CancellationToken.None);
+        reopenResult.IsError.Should().BeFalse();
+        var reopened = reopenResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured reopen-version content.");
+        reopened.GetProperty("draftId").GetGuid().Should().NotBe(originalDraftId);
+        reopened.GetProperty("itemId").GetGuid().Should().Be(itemId);
+        reopened.GetProperty("baseVersionId").GetGuid().Should().Be(versionId);
+        reopened.GetProperty("family").GetString().Should().Be(family);
+        reopened.GetProperty("generation").GetInt64().Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_save_version")]
+    public async Task SaveVersion_WithStaleGeneration_FailsClosedWithoutMovingCurrentPointer()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycleService = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycleService);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+        });
+
+        var createTool = new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var created = await createTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson("""{"packageKey":"stale-map","family":"map","schemaVersion":"1.0"}"""),
+            CancellationToken.None);
+        var draftId = created.StructuredContent!.Value.GetProperty("draftId").GetGuid();
+        var itemId = created.StructuredContent!.Value.GetProperty("itemId").GetGuid();
+
+        var updateTool = new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+        await updateTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{draftId}}}","generation":1,"packageKey":"stale-map-updated","schemaVersion":"1.0"}"""),
+            CancellationToken.None);
+
+        var saveTool = new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance);
+        var act = () => saveTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}","generation":1}"""),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*Stale draft generation*");
+        (await lifecycleService.ListVersionsAsync(itemId)).Should().BeEmpty();
+        var pointers = await lifecycleService.GetPointersAsync(itemId);
+        pointers!.CurrentVersionId.Should().BeNull();
     }
 
     [UnitTest]

@@ -162,6 +162,9 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, UpdateStudioDraftTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidateStudioDraftTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewStudioDraftTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SaveStudioVersionTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStudioVersionTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ReopenStudioVersionTool>());
 
         // Composition mutation (REQ-002): a small, bounded set of tools for
         // map/app-family drafts, taxonomy-aligned with the honua-sdk-js

@@ -11,6 +11,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
+using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -81,6 +82,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/version-comparisons")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback()
@@ -207,6 +210,47 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
         publication.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
 
+        var pendingResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{publication.RequestId:D}");
+        pendingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pending = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            pendingResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        pending.Status.Should().Be("pending", "the Studio request is only a human-approval handle until Console publishes it");
+        pending.PublicUrl.Should().BeNull();
+
+        var listResponseForRequest = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests");
+        var requestList = await ReadAsync<StudioPublicationRequestListResponse>(
+            listResponseForRequest,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestListResponse);
+        requestList.Requests.Should().ContainSingle(status => status.RequestId == publication.RequestId);
+
+        var routeSlug = $"studio-approved-{Guid.NewGuid():N}";
+        var publicationService = _fixture.Services.GetRequiredService<IContentPublicationService>();
+        var approved = await publicationService.PublishAsync(
+            new PublishContentRequest
+            {
+                Kind = ContentPublicationKind.Dashboard,
+                RouteSlug = routeSlug,
+                SourceContentId = version.ItemId.ToString("D"),
+                ContentVersionId = secondVersion.VersionId.ToString("D"),
+                ContentPayload = "{}",
+            },
+            "console-approver",
+            correlationId: null,
+            CancellationToken.None);
+
+        var publishedResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{publication.RequestId:D}");
+        var published = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            publishedResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        published.Status.Should().Be("published");
+        published.PublicationId.Should().Be(approved.Route.PublicationId);
+        published.PublicUrl.Should().Be(approved.Route.RoutePath);
+        published.DecidedBy.Should().Be("console-approver");
+
         var rollbackResponse = await PostAsync(
             $"/api/v1/studio/content-items/{version.ItemId:D}/rollback-requests",
             new CreateStudioRollbackRequest
@@ -222,6 +266,16 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             StudioApiJsonContext.Default.ApiResponseStudioRollbackRequest);
         rollback.Pointers.CurrentVersionId.Should().Be(version.VersionId);
         rollback.Pointers.PublishedVersionId.Should().Be(version.VersionId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
+    public async Task GetPublicationRequest_UnknownRequestId_Returns404()
+    {
+        var response = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{Guid.NewGuid():D}/publish-requests/{Guid.NewGuid():D}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -488,6 +542,33 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         appResponse.StatusCode.Should().Be(
             HttpStatusCode.Forbidden,
             "end-user lifecycle access without a StudioDraft Execute grant must not reach the app draft-creation path");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
+    public async Task GetPublicationRequest_FlagOn_OwnerCanPollAndCrossUserGets403()
+    {
+        await using var fixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("publication-owner", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("publication-other", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = fixture.CreateAdminClient();
+        using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+        var ownerId = aliceKey.Record.Id.ToString("D");
+        var (itemId, _, _) = await CreatePublishedTwoVersionItemAsync(adminClient, ownerId);
+        var request = (await fixture.Services
+            .GetRequiredService<IStudioPackageLifecycleService>()
+            .ListPublicationRequestsAsync(itemId, CancellationToken.None))
+            .Should().ContainSingle().Subject;
+        var path = $"/api/v1/studio/content-items/{itemId:D}/publish-requests/{request.RequestId:D}";
+
+        (await aliceClient.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var denied = await bobClient.GetAsync(path);
+
+        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await denied.Content.ReadAsStringAsync());
+        problem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
     }
 
     [IntegrationTest]

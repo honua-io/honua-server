@@ -111,6 +111,42 @@ public sealed class CreateStudioPublicationRequest
     public string? WarningAcknowledgement { get; init; }
 }
 
+/// <summary>Pollable status of a governed Studio publication request.</summary>
+public sealed class StudioPublicationRequestStatusResponse
+{
+    [JsonPropertyName("requestId")]
+    public required Guid RequestId { get; init; }
+
+    [JsonPropertyName("itemId")]
+    public required Guid ItemId { get; init; }
+
+    [JsonPropertyName("versionId")]
+    public required Guid VersionId { get; init; }
+
+    /// <summary>One of <c>pending</c>, <c>approved</c>, <c>rejected</c>, or <c>published</c>.</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("decidedAt")]
+    public DateTimeOffset? DecidedAt { get; init; }
+
+    [JsonPropertyName("decidedBy")]
+    public string? DecidedBy { get; init; }
+
+    [JsonPropertyName("publicationId")]
+    public string? PublicationId { get; init; }
+
+    [JsonPropertyName("publicUrl")]
+    public string? PublicUrl { get; init; }
+}
+
+/// <summary>Newest-first publication requests for a Studio content item.</summary>
+public sealed class StudioPublicationRequestListResponse
+{
+    [JsonPropertyName("requests")]
+    public required IReadOnlyList<StudioPublicationRequestStatusResponse> Requests { get; init; }
+}
+
 /// <summary>
 /// Request body for rolling a content item pointer back to an immutable version.
 /// </summary>

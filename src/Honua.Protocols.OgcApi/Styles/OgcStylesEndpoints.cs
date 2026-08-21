@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -363,6 +364,13 @@ public static class OgcStylesEndpoints
                     : "Request body must contain a MapLibre style document.");
         }
 
+        if (!isEsri && LooksLikeEsriDrawingInfo(body))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "The request body is an Esri drawingInfo document. Resubmit it with Content-Type: application/vnd.esri.drawinginfo+json.");
+        }
+
         var strict = IsStrictRequested(context);
 
         var result = isEsri
@@ -434,6 +442,13 @@ public static class OgcStylesEndpoints
         if (string.IsNullOrWhiteSpace(body))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must contain a MapLibre style document.");
+        }
+
+        if (LooksLikeEsriDrawingInfo(body))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "The request body is an Esri drawingInfo document. Standalone style creation accepts MapLibre JSON; use Content-Type: application/vnd.esri.drawinginfo+json with PUT on an existing style.");
         }
 
         string? requestedStyleId = null;
@@ -808,6 +823,24 @@ public static class OgcStylesEndpoints
         }
 
         return string.Equals(media.MediaType.Value, "application/vnd.esri.drawinginfo+json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeEsriDrawingInfo(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("renderer", out var renderer)
+                && renderer.ValueKind == JsonValueKind.Object
+                && !root.TryGetProperty("layers", out _)
+                && !root.TryGetProperty("version", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool IsStrictRequested(HttpContext context)

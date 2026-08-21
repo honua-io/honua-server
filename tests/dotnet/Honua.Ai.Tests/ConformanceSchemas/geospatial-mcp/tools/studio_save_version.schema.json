@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.honua.io/geospatial-mcp/tools/studio_save_version.schema.json",
+  "title": "Save Studio Version (Honua Extension)",
+  "type": "object",
+  "required": ["draftId", "generation"],
+  "additionalProperties": false,
+  "properties": {
+    "draftId": { "type": "string", "format": "uuid" },
+    "generation": { "type": "integer", "minimum": 1 },
+    "changeNote": { "type": "string", "maxLength": 2000 }
+  }
+}

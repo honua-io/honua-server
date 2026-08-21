@@ -59,6 +59,41 @@ internal sealed class McpStudioDraftIdArgument
 }
 
 // -----------------------------------------------------------------------
+// honua_studio_save_version / honua_studio_get_version /
+// honua_studio_reopen_version
+// -----------------------------------------------------------------------
+
+/// <summary>Arguments for <c>honua_studio_save_version</c>.</summary>
+internal sealed class McpStudioSaveVersionArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    /// <summary>
+    /// Expected current draft generation. Required so an agent never saves a
+    /// concurrent edit that landed after its last draft read.
+    /// </summary>
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("changeNote")]
+    public string? ChangeNote { get; set; }
+}
+
+/// <summary>
+/// Arguments shared by <c>honua_studio_get_version</c> and
+/// <c>honua_studio_reopen_version</c>.
+/// </summary>
+internal sealed class McpStudioVersionIdArgument
+{
+    [JsonPropertyName("itemId")]
+    public Guid? ItemId { get; set; }
+
+    [JsonPropertyName("versionId")]
+    public Guid? VersionId { get; set; }
+}
+
+// -----------------------------------------------------------------------
 // honua_studio_update_draft
 // -----------------------------------------------------------------------
 

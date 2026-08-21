@@ -90,6 +90,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_update_draft",
         "honua_studio_validate_draft",
         "honua_studio_preview_draft",
+        "honua_studio_save_version",
+        "honua_studio_get_version",
+        "honua_studio_reopen_version",
         "honua_studio_add_layer",
         "honua_studio_remove_layer",
         "honua_studio_set_layer_style",
@@ -340,6 +343,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_join_features",
         "honua_esri_gp_list_tasks",
         "honua_esri_gp_describe_task",
+        "honua_studio_get_version",
     };
 
     /// <summary>
@@ -365,6 +369,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             // honua_studio_propose_publication, which records intent (REQ-003).
             ["honua_studio_create_draft"] = (Destructive: false, Idempotent: false),
             ["honua_studio_update_draft"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_save_version"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_reopen_version"] = (Destructive: false, Idempotent: false),
             ["honua_studio_add_layer"] = (Destructive: false, Idempotent: false),
             ["honua_studio_remove_layer"] = (Destructive: true, Idempotent: false),
             ["honua_studio_set_layer_style"] = (Destructive: false, Idempotent: true),
@@ -910,6 +916,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
             new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
             new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
+            new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
+            new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance),
+            new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
             new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),

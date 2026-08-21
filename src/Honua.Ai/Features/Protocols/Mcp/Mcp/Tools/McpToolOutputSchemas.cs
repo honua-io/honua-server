@@ -1040,6 +1040,43 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>
+    /// Schema for the immutable <c>StudioContentVersion</c> returned by
+    /// <c>honua_studio_save_version</c> and <c>honua_studio_get_version</c>.
+    /// The identifiers, family-bearing envelope, hash, and version number are
+    /// pinned so clients can capture and later reopen exactly what was saved.
+    /// </summary>
+    public static readonly JsonElement StudioContentVersionOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["itemId", "packageKey", "versionId", "versionNumber", "contentHash", "envelope", "validation", "createdAt"],
+          "properties": {
+            "itemId": { "type": "string" },
+            "packageKey": { "type": "string" },
+            "workspaceId": { "type": ["string", "null"] },
+            "ownerId": { "type": ["string", "null"] },
+            "versionId": { "type": "string" },
+            "versionNumber": { "type": "integer", "minimum": 1 },
+            "contentHash": { "type": "string", "description": "SHA-256 hash of the immutable package envelope." },
+            "envelope": {
+              "type": "object",
+              "required": ["family", "schemaVersion"],
+              "properties": {
+                "family": { "type": "string", "enum": ["query", "analysis", "map", "dashboard", "report", "form", "app", "workflow", "gp", "etl"] },
+                "schemaVersion": { "type": "string" }
+              }
+            },
+            "validation": { "type": "object" },
+            "sourceDraftId": { "type": ["string", "null"] },
+            "baseVersionId": { "type": ["string", "null"] },
+            "changeNote": { "type": ["string", "null"] },
+            "createdBy": { "type": ["string", "null"] },
+            "createdAt": { "type": "string" }
+          }
+        }
+        """);
+
     /// <summary>Schema for <c>StudioValidationSummary</c> (<c>honua_studio_validate_draft</c>).</summary>
     public static readonly JsonElement StudioValidationOutputSchema = Parse(
         """

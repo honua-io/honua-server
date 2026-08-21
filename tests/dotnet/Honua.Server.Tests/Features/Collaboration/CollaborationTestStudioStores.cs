@@ -121,6 +121,16 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
         => _inner.CreatePublicationRequestAsync(request, cancellationToken);
 
+    public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+        => _inner.GetPublicationRequestAsync(requestId, cancellationToken);
+
+    public Task<IReadOnlyList<StudioPublicationRequest>> ListPublicationRequestsAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+        => _inner.ListPublicationRequestsAsync(itemId, cancellationToken);
+
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -239,6 +249,16 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
         StudioPublicationRequest request,
         CancellationToken cancellationToken = default)
         => _inner.CreatePublicationRequestAsync(request, cancellationToken);
+
+    public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+        => _inner.GetPublicationRequestAsync(requestId, cancellationToken);
+
+    public Task<IReadOnlyList<StudioPublicationRequest>> ListPublicationRequestsAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+        => _inner.ListPublicationRequestsAsync(itemId, cancellationToken);
 
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
