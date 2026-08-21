@@ -22,17 +22,12 @@ reader for every format is installed.
 
 ## Exercise the live read paths
 
-After importing a raster as layer `1`, these are real read routes:
+After importing a raster as layer `1`, open these real read routes in a browser
+or select them in the [API explorer](../reference/openapi-and-explorer.md):
 
-```bash
-curl -fsS \
-  'http://localhost:8080/rest/services/1/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&f=json'
-
-curl -fsS 'http://localhost:8080/ogc/coverages/collections'
-
-curl -fsS \
-  'http://localhost:8080/rest/services/1/ImageServer/WCS?service=WCS&request=GetCapabilities'
-```
+- `GET /rest/services/1/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&f=json`
+- `GET /ogc/coverages/collections`
+- `GET /rest/services/1/ImageServer/WCS?service=WCS&request=GetCapabilities`
 
 Admin import/registration calls require the configured admin authentication;
 use the authorized [API explorer](../reference/openapi-and-explorer.md) for
