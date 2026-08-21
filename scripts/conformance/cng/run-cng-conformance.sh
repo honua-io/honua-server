@@ -95,19 +95,13 @@ wait_for_health() {
 
 install_tools() {
     echo -e "${YELLOW}Installing CNG validators...${NC}"
-
-    if ! command -v gpq &> /dev/null; then
-        echo "Installing gpq (GeoParquet validator)..."
-        go install "github.com/planetlabs/gpq/cmd/gpq@${GPQ_VERSION}"
-        export PATH="$PATH:$(go env GOPATH)/bin"
-    fi
-
-    if ! command -v pmtiles &> /dev/null; then
-        echo "Installing go-pmtiles..."
-        go install "github.com/protomaps/go-pmtiles@${GO_PMTILES_VERSION}"
-        mv "$(go env GOPATH)/bin/go-pmtiles" "$(go env GOPATH)/bin/pmtiles"
-        export PATH="$PATH:$(go env GOPATH)/bin"
-    fi
+    local pinned_bin="$RESULTS_DIR/pinned-tools"
+    mkdir -p "$pinned_bin"
+    echo "Installing isolated gpq ${GPQ_VERSION} and go-pmtiles ${GO_PMTILES_VERSION}..."
+    GOBIN="$pinned_bin" go install "github.com/planetlabs/gpq/cmd/gpq@${GPQ_VERSION}"
+    GOBIN="$pinned_bin" go install "github.com/protomaps/go-pmtiles@${GO_PMTILES_VERSION}"
+    mv "$pinned_bin/go-pmtiles" "$pinned_bin/pmtiles"
+    export PATH="$pinned_bin:$PATH"
 
     if ! command -v ogrinfo &> /dev/null; then
         echo "Installing GDAL (ogrinfo)..."
