@@ -170,6 +170,7 @@ public class ImageServerTileHandlerTests
         var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
             "imagery",
             context,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query,
             CancellationToken.None);
 
         resolution.ErrorResult.Should().BeNull();

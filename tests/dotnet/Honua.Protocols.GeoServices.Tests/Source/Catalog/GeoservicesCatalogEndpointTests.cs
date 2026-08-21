@@ -10,11 +10,13 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -429,6 +431,18 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
         }
+
+        const string validEnvelope = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body><GetFolders xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+            </soap:Envelope>
+            """;
+        using var invalidMediaContent = new StringContent(validEnvelope, Encoding.UTF8, "application/json");
+        using var invalidMediaResponse = await _fixture.Client.PostAsync("/services", invalidMediaContent);
+
+        invalidMediaResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        XDocument.Parse(await invalidMediaResponse.Content.ReadAsStringAsync())
+            .Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
     }
 
     [IntegrationTest]
@@ -921,6 +935,65 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_UsesOperationAwareAuthorizationAndMapsTimeouts()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ResolveFirstAccessibleLayerAsync(
+                Arg.Any<string>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<Honua.Core.Features.Authorization.Domain.AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => string.Equals(callInfo.ArgAt<string>(0), "timeout", StringComparison.Ordinal)
+                ? Task.FromException<ImageServerLayerResolution>(new OperationCanceledException("server timeout"))
+                : Task.FromResult(new ImageServerLayerResolution(0, null, null, Results.NotFound())));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IImageServerLayerResolver>();
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var metadataResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/metadata/ImageServer",
+                "GetVersion");
+            using var exportResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/export/ImageServer",
+                "ExportImage");
+            using var timeoutResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/timeout/ImageServer",
+                "GetVersion");
+
+            metadataResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+            exportResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+            timeoutResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
+            XDocument.Parse(await timeoutResponse.Content.ReadAsStringAsync())
+                .Descendants().Single(element => element.Name.LocalName == "faultcode")
+                .Value.Should().Be("soap:Server");
+            await resolver.Received().ResolveFirstAccessibleLayerAsync(
+                "metadata",
+                Arg.Any<HttpContext>(),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
+                Arg.Any<CancellationToken>());
+            await resolver.Received().ResolveFirstAccessibleLayerAsync(
+                "export",
+                Arg.Any<HttpContext>(),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
@@ -1067,6 +1140,20 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("exactly one");
+
+        const string validEnvelope = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body><GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+            </soap:Envelope>
+            """;
+        using var invalidMediaContent = new StringContent(validEnvelope, Encoding.UTF8, "application/json");
+        using var invalidMediaResponse = await _fixture.Client.PostAsync(
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            invalidMediaContent);
+
+        invalidMediaResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        XDocument.Parse(await invalidMediaResponse.Content.ReadAsStringAsync())
+            .Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
     }
 
     [IntegrationTest]
