@@ -387,7 +387,8 @@ public class ImageServerEndpointsTests
         {
             var path = $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportImage";
             await fixture.Client.GetAsync(path);
-            await fixture.Client.PostAsync(path, new FormUrlEncodedContent([]));
+            using var content = new FormUrlEncodedContent([]);
+            await fixture.Client.PostAsync(path, content);
             await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/1/image");
             await fixture.Client.GetAsync(

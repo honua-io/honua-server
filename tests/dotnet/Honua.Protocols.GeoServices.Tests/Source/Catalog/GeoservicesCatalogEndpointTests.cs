@@ -293,8 +293,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     public async Task PostSoapCatalog_AllRasterProbesFail_ReturnsServerFault()
     {
         var rasterStore = Substitute.For<IRasterStore>();
-        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<RasterInfo[]>(new InvalidOperationException("raster store unavailable")));
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("raster store unavailable")));
         var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try

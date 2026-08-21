@@ -355,9 +355,9 @@ internal static class GeoservicesCatalogEndpoints
 
                 try
                 {
-                    var rasters = await rasterStore.ListRastersAsync(probe.LayerIndex, ct).ConfigureAwait(false);
+                    var raster = await rasterStore.GetPrimaryRasterInfoAsync(probe.LayerIndex, ct).ConfigureAwait(false);
                     Interlocked.Increment(ref successfulProbes);
-                    if (rasters.Length > 0)
+                    if (raster is not null)
                     {
                         advertised[probe.ServiceIndex] = true;
                     }
@@ -776,8 +776,8 @@ internal static class GeoservicesCatalogEndpoints
                 continue;
             }
 
-            var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-            if (rasters.Length > 0)
+            var raster = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+            if (raster is not null)
             {
                 return layerIndex;
             }
