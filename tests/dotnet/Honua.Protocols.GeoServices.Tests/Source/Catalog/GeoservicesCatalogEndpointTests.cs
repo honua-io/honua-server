@@ -325,6 +325,48 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_GetServiceDescriptionsEx_AppliesFolderAndRejectsUnknownArguments()
+    {
+        const string nonRootFolderRequest = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetServiceDescriptionsEx xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <folderName>not-a-honua-folder</folderName>
+                </GetServiceDescriptionsEx>
+              </soap:Body>
+            </soap:Envelope>
+            """;
+        using var folderContent = new StringContent(nonRootFolderRequest, Encoding.UTF8, "text/xml");
+        var folderResponse = await _fixture.Client.PostAsync("/services", folderContent);
+
+        folderResponse.Be200Ok();
+        var folderPayload = XDocument.Parse(await folderResponse.Content.ReadAsStringAsync());
+        folderPayload.Descendants().Should().ContainSingle(
+            element => element.Name.LocalName == "GetServiceDescriptionsExResult");
+        folderPayload.Descendants().Should().NotContain(
+            element => element.Name.LocalName == "ServiceDescription");
+
+        const string unsupportedArgumentRequest = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetServiceDescriptionsEx xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <serviceType>MapServer</serviceType>
+                </GetServiceDescriptionsEx>
+              </soap:Body>
+            </soap:Envelope>
+            """;
+        using var unsupportedContent = new StringContent(unsupportedArgumentRequest, Encoding.UTF8, "text/xml");
+        var unsupportedResponse = await _fixture.Client.PostAsync("/services", unsupportedContent);
+
+        unsupportedResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        var unsupportedPayload = XDocument.Parse(await unsupportedResponse.Content.ReadAsStringAsync());
+        unsupportedPayload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetMessageVersion")]
     [Endpoint("POST /services")]
     public async Task PostSoapCatalog_Soap12_UsesSoap12EnvelopeAndContentType()
