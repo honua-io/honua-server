@@ -361,6 +361,16 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
               </soap:Body>
             </soap:Envelope>
+            """,
+            """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetFolders xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+              </soap:Body>
+              <soap:Body>
+                <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+              </soap:Body>
+            </soap:Envelope>
             """
         };
 
