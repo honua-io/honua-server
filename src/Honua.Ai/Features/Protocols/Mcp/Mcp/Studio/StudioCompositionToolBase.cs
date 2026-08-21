@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -43,6 +42,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
     /// (<see cref="TranslateCompositionError"/>).
     /// </summary>
     protected async Task<StudioPackageDraft> MutateCompositionAsync(
+        HttpContext httpContext,
         ClaimsPrincipal principal,
         string toolName,
         IStudioPackageLifecycleService lifecycleService,
@@ -54,13 +54,21 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
         try
         {
             var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+            await EnsureStudioAuthorizedAsync(
+                httpContext,
+                principal,
+                StudioAuthorizationOperation.UpdateDraft,
+                draft.OwnerId,
+                draft.DraftId.ToString("D"),
+                isPubliclyReadable: false,
+                cancellationToken).ConfigureAwait(false);
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
 
             var body = StudioCompositionBodyEditor.ReadBody(draft.Envelope);
             var mutatedBody = mutate(body);
             var envelope = StudioCompositionBodyEditor.WriteBody(draft.Envelope, mutatedBody);
 
-            var actorId = ActorIdFor(principal);
+            var actorId = ActorIdFor(httpContext, principal);
             var updated = await ApplyUpdateAsync(
                 lifecycleService,
                 draftId,

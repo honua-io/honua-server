@@ -322,9 +322,8 @@ public sealed class StudioMcpToolContractTests
     [Endpoint("POST /mcp tools/call honua_studio_*")]
     public void EveryTool_AuthorizesAgainstTheStudioDraftGrantFamily()
     {
-        // REQ-004: every Studio tool authorizes against the distinct
-        // OperatorResourceType.StudioDraft grant family via the same
-        // EnsureCallerAuthorizedAsync gate every other /mcp tool uses.
+        // REQ-004: every Studio descriptor declares a bounded resource operation;
+        // invocation tests below prove the resource-specific authorization path.
         foreach (var tool in BuildAllTools())
         {
             var descriptor = tool.Describe();
@@ -339,11 +338,12 @@ public sealed class StudioMcpToolContractTests
     [Endpoint("POST /mcp tools/call honua_studio_add_layer")]
     public async Task AddLayer_HappyPath_AuthorizesAgainstStudioDraftResourceType()
     {
-        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1) with { OwnerId = "test-user" };
         _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
         _lifecycleService
             .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
             .Returns(draft with { Generation = 2 });
+        var authorization = AllowingAuthorization("test-user", isAdmin: false);
 
         var tool = new AddStudioLayerTool(_jobService, NullLogger<AddStudioLayerTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
@@ -355,20 +355,177 @@ public sealed class StudioMcpToolContractTests
             },
             StudioMcpJsonContext.Default.McpStudioAddLayerArgument);
 
-        var result = await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
+        var result = await tool.InvokeAsync(
+            HttpContextWithLifecycleService(authorization),
+            arguments,
+            CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("generation").GetInt64().Should().Be(2);
 
-        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+        await authorization.Received(1).AuthorizeAsync(
             Arg.Any<ClaimsPrincipal>(),
-            OperatorResourceType.StudioDraft,
-            OperatorOperation.Create,
+            "test-user",
+            StudioAuthorizationOperation.UpdateDraft,
+            "test-user",
+            false,
+            DraftId.ToString("D"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
+    public async Task CreateDraft_EndUserSuppliesDifferentOwner_ForcesStableCallerOwnership()
+    {
+        var authorization = AllowingAuthorization("caller-123", isAdmin: false);
+        _lifecycleService
+            .CreateDraftAsync(Arg.Any<CreateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var command = call.ArgAt<CreateStudioPackageDraftCommand>(0);
+                return BuildDraft(StudioPackageFamily.Map, generation: 1) with
+                {
+                    OwnerId = command.OwnerId,
+                    PackageKey = command.PackageKey,
+                };
+            });
+        var tool = new CreateStudioDraftTool(_jobService, NullLogger<CreateStudioDraftTool>.Instance);
+
+        var result = await tool.InvokeAsync(
+            HttpContextWithLifecycleService(authorization, "caller-123"),
+            McpTestFactory.ParseJson(
+                """{"packageKey":"owned-map","family":"map","schemaVersion":"1.0","ownerId":"victim"}"""),
+            CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("ownerId").GetString().Should().Be("caller-123");
+        await _lifecycleService.Received(1).CreateDraftAsync(
+            Arg.Is<CreateStudioPackageDraftCommand>(command => command.OwnerId == "caller-123"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_CrossOwnerDenied_AuthorizesAfterResolvingPersistedOwnerAndExactId()
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1) with { OwnerId = "victim" };
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        var authorization = AllowingAuthorization("caller-123", isAdmin: false);
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                "caller-123",
+                StudioAuthorizationOperation.ReadDraft,
+                "victim",
+                false,
+                DraftId.ToString("D"),
+                Arg.Any<CancellationToken>())
+            .Returns(StudioAuthorizationDecision.Deny(
+                "studio_authorization/cross_user_denied",
+                "The caller does not own this Studio resource."));
+        var tool = new GetStudioDraftTool(_jobService, NullLogger<GetStudioDraftTool>.Instance);
+
+        var act = () => tool.InvokeAsync(
+            HttpContextWithLifecycleService(authorization, "caller-123"),
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{DraftId}}}"}"""),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _lifecycleService.Received(1).GetDraftAsync(DraftId, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_OwnerSelfService_PreservesPersistedOwnership()
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1) with { OwnerId = "caller-123" };
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        _lifecycleService
+            .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
+            .Returns(draft with { Generation = 2 });
+        var authorization = AllowingAuthorization("caller-123", isAdmin: false);
+        var tool = new UpdateStudioDraftTool(_jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+
+        var result = await tool.InvokeAsync(
+            HttpContextWithLifecycleService(authorization, "caller-123"),
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{DraftId}}}","generation":1,"packageKey":"updated","schemaVersion":"1.0"}"""),
+            CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        await _lifecycleService.Received(1).UpdateDraftAsync(
+            DraftId,
+            Arg.Is<UpdateStudioPackageDraftCommand>(command => command.OwnerId == "caller-123"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_EndUserAttemptsOwnerTakeover_FailsBeforeMutation()
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1) with { OwnerId = "caller-123" };
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        var authorization = AllowingAuthorization("caller-123", isAdmin: false);
+        var tool = new UpdateStudioDraftTool(_jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+
+        var act = () => tool.InvokeAsync(
+            HttpContextWithLifecycleService(authorization, "caller-123"),
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{DraftId}}}","generation":1,"packageKey":"updated","schemaVersion":"1.0","ownerId":"victim"}"""),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*administrator*owner*");
+        await _lifecycleService.DidNotReceive().UpdateDraftAsync(
+            Arg.Any<Guid>(), Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_DelegateGrantDecision_UsesPublishAndExactDraftId()
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1) with { OwnerId = "victim" };
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        _lifecycleService
+            .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
+            .Returns(draft with { Generation = 2 });
+        var authorization = AllowingAuthorization("delegate", isAdmin: false);
+        var tool = new ProposeStudioPublicationTool(
+            _jobService,
+            NullLogger<ProposeStudioPublicationTool>.Instance);
+
+        var result = await tool.InvokeAsync(
+            HttpContextWithLifecycleService(authorization, "delegate"),
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{DraftId}}}","generation":1,"route":"/studio/delegated"}"""),
+            CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        await authorization.Received(1).AuthorizeAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            "delegate",
+            StudioAuthorizationOperation.PublishRequest,
+            "victim",
+            false,
+            DraftId.ToString("D"),
             Arg.Any<CancellationToken>());
     }
 
     private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleService() =>
         McpTestFactory.AuthenticatedHttpContextWithServices(services => services.AddSingleton(_lifecycleService));
+
+    private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleService(
+        IStudioAuthorizationService authorization,
+        string user = "test-user") =>
+        McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            services.AddSingleton(authorization);
+        }, user);
 
     private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleServiceAndValidator() =>
         McpTestFactory.AuthenticatedHttpContextWithServices(services =>
@@ -376,6 +533,24 @@ public sealed class StudioMcpToolContractTests
             services.AddSingleton(_lifecycleService);
             services.AddSingleton(_validator);
         });
+
+    private static IStudioAuthorizationService AllowingAuthorization(string callerId, bool isAdmin)
+    {
+        var authorization = Substitute.For<IStudioAuthorizationService>();
+        authorization.IsEndUserAuthorizationEnabled.Returns(true);
+        authorization.ResolveCallerId(Arg.Any<ClaimsPrincipal>()).Returns(callerId);
+        authorization.IsAdmin(Arg.Any<ClaimsPrincipal>()).Returns(isAdmin);
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<string?>(),
+                Arg.Any<StudioAuthorizationOperation>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(StudioAuthorizationDecision.Allow());
+        return authorization;
+    }
 
     private static IReadOnlyList<IMcpTool> BuildAllTools()
     {

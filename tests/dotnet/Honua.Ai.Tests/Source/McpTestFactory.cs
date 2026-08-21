@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
@@ -90,8 +91,31 @@ internal static class McpTestFactory
         var license = new TestLicenseEntitlementService(edition);
         var services = new ServiceCollection()
             .AddSingleton<ILicenseEntitlementService>(license)
-            .AddSingleton<ILicenseStatusProvider>(license);
+            .AddSingleton<ILicenseStatusProvider>(license)
+            .AddSingleton<IStudioAuthorizationService, TestAdminStudioAuthorizationService>();
         configureServices?.Invoke(services);
         return services.BuildServiceProvider();
+    }
+
+    private sealed class TestAdminStudioAuthorizationService : IStudioAuthorizationService
+    {
+        public bool IsEndUserAuthorizationEnabled => true;
+
+        public bool IsAdmin(ClaimsPrincipal principal) => true;
+
+        public string? ResolveCallerId(ClaimsPrincipal principal) =>
+            principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal.Identity?.Name
+            ?? principal.FindFirst(ClaimTypes.Name)?.Value;
+
+        public Task<StudioAuthorizationDecision> AuthorizeAsync(
+            ClaimsPrincipal principal,
+            string? callerId,
+            StudioAuthorizationOperation operation,
+            string? resourceOwnerId,
+            bool isPubliclyReadable = false,
+            string? resourceId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(StudioAuthorizationDecision.Allow());
     }
 }

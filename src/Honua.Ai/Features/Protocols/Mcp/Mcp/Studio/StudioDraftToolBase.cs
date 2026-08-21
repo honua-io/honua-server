@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,8 +18,8 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// state change to <see cref="IStudioPackageLifecycleService"/> — the
 /// canonical Studio package lifecycle service — so no lifecycle logic
 /// (generation checking, validation, persistence) is duplicated here; this
-/// base only owns the MCP-specific plumbing: authorization against the
-/// <c>StudioDraft</c> operator-grant family, typed error translation, and the
+/// base only owns the MCP-specific plumbing: ownership- and resource-scoped
+/// authorization through <see cref="IStudioAuthorizationService"/>, typed error translation, and the
 /// generation-before/after audit record (NFR-001).
 /// </summary>
 /// <remarks>
@@ -54,23 +55,60 @@ internal abstract class StudioDraftToolBase
     protected ILogger Logger { get; }
 
     /// <summary>
-    /// Resolves the caller's principal and authorizes it against the
-    /// <see cref="OperatorResourceType.StudioDraft"/> grant family (the
-    /// "studio-compose" grant family; honua-server#3002/#3001). Admin
-    /// principals bypass as usual (matches the existing REST Studio lifecycle
-    /// surface's admin-tier default posture); the OAuth bearer-scope
-    /// narrowing in <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>
-    /// applies identically to every other <c>/mcp</c> tool.
+    /// Resolves the authenticated caller. Resource authorization is deliberately
+    /// performed only after the target draft/item and its persisted owner have been
+    /// loaded, through <see cref="IStudioAuthorizationService"/>.
     /// </summary>
-    protected async Task<ClaimsPrincipal> EnsureAuthorizedAsync(
-        HttpContext httpContext, OperatorOperation operation, CancellationToken cancellationToken)
+    protected static ClaimsPrincipal EnsurePrincipal(HttpContext httpContext)
+        => McpAuthorizationHelper.EnsurePrincipal(httpContext);
+
+    protected static IStudioAuthorizationService RequireAuthorizationService(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioAuthorizationService>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio authorization service is not available on this server.");
+
+    protected static async Task EnsureStudioAuthorizedAsync(
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
+        StudioAuthorizationOperation operation,
+        string? resourceOwnerId,
+        string? resourceId,
+        bool isPubliclyReadable,
+        CancellationToken cancellationToken)
     {
-        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        await JobService
-            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.StudioDraft, operation, cancellationToken)
-            .ConfigureAwait(false);
-        return principal;
+        var authorization = RequireAuthorizationService(httpContext);
+        var decision = await authorization.AuthorizeAsync(
+            principal,
+            authorization.ResolveCallerId(principal),
+            operation,
+            resourceOwnerId,
+            isPubliclyReadable,
+            resourceId,
+            cancellationToken).ConfigureAwait(false);
+        if (!decision.IsAllowed)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: string.Equals(
+                    decision.Code,
+                    StudioAuthorizationService.AuthenticationRequiredCode,
+                    StringComparison.Ordinal),
+                decision.Reason ?? "The caller is not authorized for this Studio resource.",
+                OperatorResourceType.StudioDraft,
+                ToOperatorOperation(operation));
+        }
     }
+
+    protected static bool IsStudioAdmin(HttpContext httpContext, ClaimsPrincipal principal)
+        => RequireAuthorizationService(httpContext).IsAdmin(principal);
+
+    private static OperatorOperation ToOperatorOperation(StudioAuthorizationOperation operation) => operation switch
+    {
+        StudioAuthorizationOperation.ReadDraft or StudioAuthorizationOperation.ReadContentItem
+            or StudioAuthorizationOperation.ValidateDraft or StudioAuthorizationOperation.ListOwn => OperatorOperation.Read,
+        StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
+        StudioAuthorizationOperation.Rollback => OperatorOperation.Rollback,
+        StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
+        _ => OperatorOperation.Create,
+    };
 
     /// <summary>
     /// Resolves <see cref="IStudioPackageLifecycleService"/> from the current
@@ -166,7 +204,9 @@ internal abstract class StudioDraftToolBase
         };
 
     /// <summary>Resolves the audit-record actor id from the resolved principal key.</summary>
-    protected static string ActorIdFor(ClaimsPrincipal principal) => McpAuthorizationHelper.ResolvePrincipalKey(principal);
+    protected static string ActorIdFor(HttpContext httpContext, ClaimsPrincipal principal)
+        => RequireAuthorizationService(httpContext).ResolveCallerId(principal)
+           ?? throw new GeoprocessingAuthorizationException(requiresAuthentication: true);
 
     /// <summary>Records the per-call audit entry (NFR-001).</summary>
     protected void Audit(ClaimsPrincipal principal, string toolName, Guid? draftId, long? generationBefore, long? generationAfter)

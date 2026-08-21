@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
@@ -73,8 +72,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         McpTelemetry.EnrichActivity("StudioProposePublication");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
-            .ConfigureAwait(false);
+        var principal = EnsurePrincipal(httpContext);
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioProposePublicationArgument);
@@ -82,7 +80,15 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
 
         var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
-        var actorId = ActorIdFor(principal);
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            principal,
+            StudioAuthorizationOperation.PublishRequest,
+            draft.OwnerId,
+            draft.DraftId.ToString("D"),
+            isPubliclyReadable: false,
+            cancellationToken).ConfigureAwait(false);
+        var actorId = ActorIdFor(httpContext, principal);
 
         var intent = new StudioPublicationIntent
         {

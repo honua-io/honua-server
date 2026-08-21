@@ -4,7 +4,7 @@
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
 
@@ -49,8 +49,7 @@ internal sealed class SaveStudioVersionTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioSaveVersion");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
-            .ConfigureAwait(false);
+        var principal = EnsurePrincipal(httpContext);
         var lifecycleService = RequireLifecycleService(httpContext);
         var argument = McpToolHelpers.ParseArguments(
             arguments,
@@ -64,12 +63,20 @@ internal sealed class SaveStudioVersionTool : StudioDraftToolBase, IMcpTool
         }
 
         var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            principal,
+            StudioAuthorizationOperation.CreateVersion,
+            draft.OwnerId,
+            draft.DraftId.ToString("D"),
+            isPubliclyReadable: false,
+            cancellationToken).ConfigureAwait(false);
         try
         {
             var version = await lifecycleService.SaveDraftAsVersionAsync(
                 draftId,
                 argument.ChangeNote,
-                ActorIdFor(principal),
+                ActorIdFor(httpContext, principal),
                 expectedGeneration: generation,
                 cancellationToken).ConfigureAwait(false);
             if (version is null)
@@ -138,8 +145,7 @@ internal sealed class GetStudioVersionTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioGetVersion");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
-            .ConfigureAwait(false);
+        var principal = EnsurePrincipal(httpContext);
         var lifecycleService = RequireLifecycleService(httpContext);
         var argument = McpToolHelpers.ParseArguments(
             arguments,
@@ -149,6 +155,16 @@ internal sealed class GetStudioVersionTool : StudioDraftToolBase, IMcpTool
             .ConfigureAwait(false)
             ?? throw new GeoprocessingNotFoundException(
                 $"Studio content version '{itemId:D}/{versionId:D}' was not found.");
+        var pointers = await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException($"Studio content item '{itemId:D}' was not found.");
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            principal,
+            StudioAuthorizationOperation.ReadContentItem,
+            pointers.OwnerId,
+            itemId.ToString("D"),
+            isPubliclyReadable: pointers.PublishedVersionId == versionId,
+            cancellationToken).ConfigureAwait(false);
 
         Audit(principal, ToolName, draftId: null, generationBefore: null, generationAfter: null);
         return McpToolHelpers.SuccessResult(version, StudioJsonContext.Default.StudioContentVersion);
@@ -202,20 +218,32 @@ internal sealed class ReopenStudioVersionTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioReopenVersion");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
-            .ConfigureAwait(false);
+        var principal = EnsurePrincipal(httpContext);
         var lifecycleService = RequireLifecycleService(httpContext);
         var argument = McpToolHelpers.ParseArguments(
             arguments,
             StudioMcpJsonContext.Default.McpStudioVersionIdArgument);
         var (itemId, versionId) = GetStudioVersionTool.RequireVersionIdentity(argument);
+        _ = await lifecycleService.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException(
+                $"Studio content version '{itemId:D}/{versionId:D}' was not found.");
+        var pointers = await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException($"Studio content item '{itemId:D}' was not found.");
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            principal,
+            StudioAuthorizationOperation.ReopenVersion,
+            pointers.OwnerId,
+            itemId.ToString("D"),
+            isPubliclyReadable: pointers.PublishedVersionId == versionId,
+            cancellationToken).ConfigureAwait(false);
 
         try
         {
             var draft = await lifecycleService.ReopenVersionAsync(
                 itemId,
                 versionId,
-                ActorIdFor(principal),
+                ActorIdFor(httpContext, principal),
                 cancellationToken).ConfigureAwait(false)
                 ?? throw new GeoprocessingNotFoundException(
                     $"Studio content version '{itemId:D}/{versionId:D}' was not found.");
