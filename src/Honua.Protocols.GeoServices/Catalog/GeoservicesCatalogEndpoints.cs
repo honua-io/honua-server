@@ -333,7 +333,7 @@ internal static class GeoservicesCatalogEndpoints
                     operationNamespace + "Url",
                     $"{baseUrl}/services/{Uri.EscapeDataString(service.Metadata.Name)}/{ImageServerProtocolName}"),
                 new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", "Image,Metadata,Catalog"),
+                new XElement(operationNamespace + "Capabilities", "Image,Metadata"),
                 new XElement(operationNamespace + "Description", string.Empty)));
         }
 

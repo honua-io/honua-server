@@ -39,6 +39,7 @@ public static class OperationRegistry
     private const string VersionManagementServer = "VersionManagementServer";
     private const string SensorThings11 = "SensorThings-1.1";
     private const string GeoservicesCatalog = "GeoservicesCatalog";
+    private const string ImageServer = "ImageServer";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -164,8 +165,7 @@ public static class OperationRegistry
         new(SensorThings11, "datastream.create"),
         new(SensorThings11, "sensor.ingest"),
 
-        // ArcGIS SOAP service-catalog operations dispatched through POST /services
-        // and POST /services/{serviceName}/ImageServer.
+        // ArcGIS SOAP service-catalog operations dispatched through POST /services.
         new(GeoservicesCatalog, "GetServiceDescriptions"),
         new(GeoservicesCatalog, "GetServiceDescriptionsEx"),
         new(GeoservicesCatalog, "GetFolders"),
@@ -173,6 +173,16 @@ public static class OperationRegistry
         new(GeoservicesCatalog, "GetMessageFormats"),
         new(GeoservicesCatalog, "GetTokenServiceURL"),
         new(GeoservicesCatalog, "RequiresTokens"),
+
+        // ArcGIS SOAP ImageServer operations dispatched through POST /services/{serviceId}/ImageServer.
+        new(ImageServer, "GetVersion"),
+        new(ImageServer, "IsFixedScaleImage"),
+        new(ImageServer, "GetServiceInfo"),
+        new(ImageServer, "GetFields"),
+        new(ImageServer, "GetKeyProperties"),
+        new(ImageServer, "GetMetadata"),
+        new(ImageServer, "ExportImage"),
+        new(ImageServer, "GetImage"),
     ];
 }
 
