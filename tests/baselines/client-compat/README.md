@@ -30,6 +30,7 @@ tests/baselines/client-compat/
   arcgis-stub/
     arcgis-stub-featureserver.cert.json
     arcgis-stub-mapserver.cert.json
+    arcgis-stub-portal.cert.json
 ```
 
 Filenames omit the `run_id` prefix so the baseline is content-stable across
