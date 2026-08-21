@@ -4,8 +4,8 @@ This journey starts Honua in Docker, configures and publishes data through the
 Admin API/admin MCP control plane, runs geoprocessing, saves a Studio composition,
 and finishes at the focused Console approval checkpoint.
 
-**Prerequisites:** Docker with Compose v2, Git, Node.js 20.19 or newer, `curl`,
-and an MCP-capable agent. The first Docker build takes a few minutes.
+**Prerequisites:** Docker with Compose v2, Git, Node.js 20.19 or newer, and an
+MCP-capable agent. The first Docker build takes a few minutes.
 
 ## 1. Start the control plane
 
@@ -16,11 +16,12 @@ docker compose up -d
 ```
 
 The repository Compose profile starts PostGIS, Redis, and Honua Server with
-development-only credentials. Wait until both commands succeed:
+development-only credentials. Wait until `docker compose ps` reports the
+services healthy, then open <http://localhost:8080/healthz/ready> and continue
+when it reports `Ready`.
 
 ```bash
 docker compose ps
-curl --fail http://localhost:8080/healthz/ready
 ```
 
 The important endpoints are now:
@@ -99,9 +100,7 @@ shared environment use the operation schema's `secret_ref` input or the Admin
 API's `secretReference` plus `secretType`; never place secret values in an agent
 prompt, tool transcript, shell history, or committed JSON.
 
-Create and upload a three-feature GeoJSON file. Multipart upload remains a direct
-Admin API call; the response identifies the imported `honua_data.quickstart_points`
-table.
+Create a three-feature GeoJSON file:
 
 ```bash
 cat > points.geojson <<'GEOJSON'
@@ -110,13 +109,14 @@ cat > points.geojson <<'GEOJSON'
  {"type":"Feature","properties":{"name":"Coit Tower"},"geometry":{"type":"Point","coordinates":[-122.4058,37.8024]}},
  {"type":"Feature","properties":{"name":"Painted Ladies"},"geometry":{"type":"Point","coordinates":[-122.4330,37.7762]}}]}
 GEOJSON
-
-curl --fail-with-body \
-  -H "X-API-Key: $HONUA_ADMIN_KEY" \
-  -F "file=@points.geojson" \
-  -F "TableName=quickstart_points" \
-  http://localhost:8080/api/v1/admin/import/upload
 ```
+
+Multipart upload remains a direct Admin API operation. In the authorized
+[API explorer](../reference/openapi-and-explorer.md), run
+`POST /api/v1/admin/import/upload`, attach `points.geojson`, and set `TableName`
+to `quickstart_points`. The response identifies the imported
+`honua_data.quickstart_points` table. The generated Admin OpenAPI document is
+the automation contract for clients that do not use the explorer.
 
 Publish the table and make only the resulting service readable without a key:
 
@@ -144,18 +144,20 @@ audit identifiers.
 
 ## 4. Run geoprocessing
 
-Discover `geometry.buffer`, then submit the sample San Francisco point as an
-asynchronous OGC job:
+Discover `geometry.buffer` by opening
+<http://localhost:8080/ogc/processes/processes/geometry.buffer>. Then use the
+authorized [API explorer](../reference/openapi-and-explorer.md) to run
+`POST /ogc/processes/processes/geometry.buffer/execution` with
+`Prefer: respond-async` and this body:
 
-```bash
-curl --fail http://localhost:8080/ogc/processes/processes/geometry.buffer
-
-curl --fail-with-body \
-  -H "X-API-Key: $HONUA_ADMIN_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Prefer: respond-async" \
-  -d '{"inputs":{"wkb":"AQEAAABQ/Bhz15pewNDVVuwv40JA","srid":4326,"distance":500}}' \
-  http://localhost:8080/ogc/processes/processes/geometry.buffer/execution
+```json
+{
+  "inputs": {
+    "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
+    "srid": 4326,
+    "distance": 500
+  }
+}
 ```
 
 Keep the `jobID` or `Location` from the response. Poll

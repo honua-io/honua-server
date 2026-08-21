@@ -31,21 +31,23 @@ Restart the service after changing the profile. Keep Redis and the geoprocessing
 
 ## 2. Prove the OGC geometry path
 
-Before delegating to an agent, exercise the same job service through OGC API Processes. A GeoJSON geometry is accepted wherever the process catalog declares a WKB parameter. This sync-capable, single-output call defaults to synchronous execution and returns raw GeoJSON:
+Before delegating to an agent, exercise the same job service through OGC API
+Processes. A GeoJSON geometry is accepted wherever the process catalog declares
+a WKB parameter. In the authorized
+[API explorer](../../reference/openapi-and-explorer.md), run
+`POST /ogc/processes/processes/geometry.buffer/execution` with this body. The
+sync-capable, single-output call defaults to synchronous execution and returns
+raw GeoJSON:
 
-```bash
-curl -sS -X POST \
-  -H "X-API-Key: $HONUA_API_KEY" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/ogc/processes/processes/geometry.buffer/execution \
-  -d '{
-    "inputs": {
-      "wkb": {"type":"Point","coordinates":[-122.4194,37.7749]},
-      "srid": 4326,
-      "distance": 0.005
-    },
-    "response": "raw"
-  }'
+```json
+{
+  "inputs": {
+    "wkb": {"type":"Point","coordinates":[-122.4194,37.7749]},
+    "srid": 4326,
+    "distance": 0.005
+  },
+  "response": "raw"
+}
 ```
 
 Use `Prefer: respond-async` to force a job even for a sync-capable process. Async calls return `201`, a `Location` header, and `Preference-Applied: respond-async`; poll that job and fetch its results as shown in [run geoprocessing](run-geoprocessing.md).
