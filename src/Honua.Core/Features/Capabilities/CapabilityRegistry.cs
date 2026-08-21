@@ -96,6 +96,19 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_validate_package", "validate_package", "planning"),
             ("honua_preview_package", "preview_package", "planning"),
             ("honua_execute_plan", "execute_plan", "execution"),
+            ("honua_buffer_features", "buffer_features", "execution"),
+            ("honua_overlay_features", "overlay_features", "execution"),
+            ("honua_summarize_statistics", "summarize_statistics", "execution"),
+            ("honua_reproject_features", "reproject_features", "execution"),
+            ("honua_join_features", "join_features", "execution"),
+            ("honua_export_dataset", "export_dataset", "execution"),
+            // Esri-GP is an opt-in compatibility projection over the standard
+            // capability-discovery and plan-execution families. Its live schemas
+            // are intentionally Honua-native because they preserve GPServer task
+            // names and parameter contracts rather than forking the core engine.
+            ("honua_esri_gp_list_tasks", "list_capabilities", "execution"),
+            ("honua_esri_gp_describe_task", "list_capabilities", "execution"),
+            ("honua_esri_gp_execute_task", "execute_plan", "execution"),
             ("honua_create_map_package", "create_map_package", "execution"),
             ("honua_create_app_package", "create_app_package", "execution"),
             ("honua_geocode_address", "geocode_address", "execution"),

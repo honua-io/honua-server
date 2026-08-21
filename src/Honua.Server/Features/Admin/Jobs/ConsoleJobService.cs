@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
@@ -40,6 +41,9 @@ internal sealed partial class ConsoleJobService(
         ExecutionJobParameterKeys.GeoprocessingPlanId,
         ExecutionJobParameterKeys.GeoprocessingProcessDefinitions,
         ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds,
+        GeoprocessingProtocolMetadataKeys.GPServerServiceId,
+        GeoprocessingProtocolMetadataKeys.GPServerTaskName,
+        GeoprocessingProtocolMetadataKeys.ResultPackageId,
         ExecutionJobParameterKeys.ShareExportId,
         ExecutionJobParameterKeys.ShareRunId,
         ExecutionJobParameterKeys.ShareDestinationType,
@@ -1099,6 +1103,16 @@ internal sealed partial class ConsoleJobService(
             selected[key] = value.Length <= MaxMetadataValueLength
                 ? value
                 : value[..MaxMetadataValueLength];
+        }
+
+        // Result-package identity is canonical and deterministic but is not a
+        // submission parameter. Project it for terminal GP jobs so Console can
+        // correlate the job/artifact view with MCP resources/read receipts.
+        if (ExecutionJobCancellationHelper.IsTerminal(job.Status)
+            && (job.Spec.Parameters.ContainsKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
+                || job.Spec.Parameters.ContainsKey(GeoprocessingProtocolMetadataKeys.GPServerServiceId)))
+        {
+            selected[GeoprocessingProtocolMetadataKeys.ResultPackageId] = $"{job.OperationId}:v{job.Version}";
         }
 
         return selected;

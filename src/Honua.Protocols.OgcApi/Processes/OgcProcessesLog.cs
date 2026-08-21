@@ -26,6 +26,9 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8112, LogLevel.Warning, "OGC Process not found: ProcessId={ProcessId}")]
     public static partial void ProcessNotFound(ILogger logger, string processId);
 
+    [LoggerMessage(8113, LogLevel.Information, "OGC Processes projected {ProjectedProcessCount} built-in catalog processes")]
+    public static partial void ProcessCatalogProjected(ILogger logger, int projectedProcessCount);
+
     // 8120-8129: Execution
     [LoggerMessage(8120, LogLevel.Information, "OGC Process execution requested: ProcessId={ProcessId}, Async={IsAsync}")]
     public static partial void ExecutionRequested(ILogger logger, string processId, bool isAsync);

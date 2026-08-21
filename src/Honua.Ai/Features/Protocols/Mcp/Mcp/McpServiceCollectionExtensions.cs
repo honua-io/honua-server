@@ -62,6 +62,24 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
 
+        // geospatial-mcp analysis profile (#3269): direct single-step verbs over
+        // the same canonical job service used by validate/execute/cancel. The
+        // handlers are registered once, then McpDataAccessSurface advertises and
+        // dispatches them only when Mcp:Profiles includes "analysis".
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, BufferFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OverlayFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SummarizeStatisticsTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ReprojectFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, JoinFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExportDatasetTool>());
+
+        // Opt-in Esri GP control profile. These tools project the same alias
+        // registry, parameter descriptors, submission plans, and job service as
+        // GeoServices GPServer; they do not proxy or federate ArcGIS Server.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListEsriGpTasksTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DescribeEsriGpTaskTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecuteEsriGpTaskTool>());
+
         // ── MCP capability-breadth tools (#2813) ──────────────────────────────
         // honua_list_jobs: caller-scoped job enumeration (status filter + cursor
         // paging) over the canonical IGeoprocessingJobService.ListJobsAsync, so an

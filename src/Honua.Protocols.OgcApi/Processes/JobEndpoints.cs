@@ -897,7 +897,7 @@ internal static class JobEndpoints
 
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
-    private static OgcResultsDocument ToOgcResultsDocument(
+    internal static OgcResultsDocument ToOgcResultsDocument(
         AnalysisResultPackage resultPackage,
         string baseUrl,
         string jobId,

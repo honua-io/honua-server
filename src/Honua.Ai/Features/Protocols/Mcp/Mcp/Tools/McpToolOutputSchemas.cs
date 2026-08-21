@@ -258,6 +258,34 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>Shared result contract for direct analysis-profile verbs.</summary>
+    public static readonly JsonElement AnalysisJobOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["jobId", "status", "resourceUri", "artifacts"],
+          "properties": {
+            "jobId": { "type": "string" },
+            "status": { "type": "string" },
+            "resourceUri": { "type": "string" },
+            "artifacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["artifactId", "kind", "label"],
+                "properties": {
+                  "artifactId": { "type": "string" },
+                  "kind": { "type": "string" },
+                  "label": { "type": "string" },
+                  "uri": { "type": ["string", "null"] },
+                  "contentType": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        }
+        """);
+
     /// <summary>Schema for <see cref="Models.McpCancelJobOutput"/>.</summary>
     public static readonly JsonElement CancelJobOutputSchema = Parse(
         """

@@ -9,6 +9,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Geoprocessing;
+using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -137,6 +140,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core");
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json");
+        conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/ogc-process-description");
         conformsTo.Should().NotContain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss",
             "V1 exposes DELETE /jobs/{jobId} but does not yet claim full conf/dismiss semantics for finished-job cleanup.");
         conformsTo.Should().NotContain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list",
@@ -150,14 +154,22 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /ogc/processes/processes")]
-    public async Task ProcessList_ReturnsAtLeastOneProcess()
+    public async Task ProcessList_MatchesCatalogProjectionBoundary()
     {
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
-        processes.Should().NotBeEmpty();
+        var expectedIds = _fixture.Services.GetRequiredService<IProcessCatalog>()
+            .ListProcesses()
+            .Where(OgcProcessProjectionPolicy.IsProjectable)
+            .Select(process => process.ProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
+        expectedIds.Should().HaveCount(86,
+            "the current 98-entry catalog contains 12 source/sink composition primitives");
+        processes.Should().HaveCount(expectedIds.Length + 1);
 
         var first = processes[0];
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
@@ -165,8 +177,50 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("async-execute");
         jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
 
-        processes.Select(p => p.GetProperty("id").GetString())
-            .Should().Contain(["geometry.buffer", "geometry.clip", "geometry.intersect", "geometry.project"]);
+        var projectedIds = processes.Skip(1).Select(p => p.GetProperty("id").GetString()).ToArray();
+        projectedIds.Should().Equal(expectedIds);
+        projectedIds.Should().Contain([
+            "analytics.spatial-join",
+            "proximity.near",
+            "statistics.summarize",
+            "conversion.feature-project"]);
+        projectedIds.Should().NotContain(["source.geojson", "source.honua-layer", "sink.geojson-file"]);
+    }
+
+    [UnitTest]
+    public void SynchronousEligibility_MatchesReviewedGeometryCatalogInventory()
+    {
+        string[] reviewedSyncIds =
+        [
+            "conversion.geometry-format",
+            "geometry.area",
+            "geometry.buffer",
+            "geometry.centroid",
+            "geometry.clip",
+            "geometry.convex-hull",
+            "geometry.difference",
+            "geometry.dissolve",
+            "geometry.intersect",
+            "geometry.length",
+            "geometry.make-valid",
+            "geometry.project",
+            "geometry.simplify",
+            "geometry.snap",
+            "geometry.union"
+        ];
+        var catalog = _fixture.Services.GetRequiredService<IProcessCatalog>();
+        var actual = catalog.ListProcesses()
+            .Where(GeoprocessingSynchronousExecutionPolicy.IsSynchronous)
+            .Select(process => process.ProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
+
+        actual.Should().Equal(reviewedSyncIds,
+            "every GPServer-sync geometry executor and the geometry-format converter must be reviewed when the catalog drifts");
+        catalog.ListProcesses()
+            .Where(process => process.ProcessId.StartsWith("geometry.", StringComparison.Ordinal))
+            .Select(process => process.ProcessId)
+            .Should().OnlyContain(processId => actual.Contains(processId, StringComparer.Ordinal));
     }
 
     // -----------------------------------------------------------------------
@@ -194,7 +248,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /ogc/processes/processes/{processId}")]
-    public async Task ProcessDescription_FirstSliceVectorProcess_ReturnsConcreteInputsAndOutputs()
+    public async Task ProcessDescription_GeometryProcess_AdvertisesWkbAndGeoJsonInputs()
     {
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes/geometry.buffer");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -202,8 +256,12 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
         root.GetProperty("id").GetString().Should().Be("geometry.buffer");
-        root.GetProperty("inputs").GetProperty("wkb").GetProperty("schema")
-            .GetProperty("contentMediaType").GetString().Should().Be("application/wkb");
+        var geometrySchemas = root.GetProperty("inputs").GetProperty("wkb").GetProperty("schema")
+            .GetProperty("oneOf").EnumerateArray().ToArray();
+        geometrySchemas.Select(schema => schema.GetProperty("contentMediaType").GetString())
+            .Should().BeEquivalentTo(["application/wkb", "application/geo+json"]);
+        root.GetProperty("jobControlOptions").EnumerateArray().Select(value => value.GetString())
+            .Should().Contain(["sync-execute", "async-execute"]);
         root.GetProperty("inputs").GetProperty("distance").GetProperty("schema")
             .GetProperty("type").GetString().Should().Be("number");
         root.GetProperty("outputs").TryGetProperty("outputFeatureLayer", out _).Should().BeTrue();
@@ -214,8 +272,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_RasterSurfaceProcess_ReturnsDescription()
     {
-        // #2698: raster/surface process ids are projected for direct discovery,
-        // exactly like the first-slice vector ids. surface.slope is a real registered
+        // #2698: raster/surface process ids are projected for direct discovery with
+        // every other non-source/non-sink catalog entry. surface.slope is a real
         // ProcessDefinition (GdalSurfaceJobExecutor); it previously returned 404.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes/surface.slope");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -285,8 +343,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes")]
     public async Task ProcessList_IncludesRasterSurfaceProcesses()
     {
-        // #2698: raster/surface ids appear in the process list alongside the
-        // first-slice vector ids so SDK clients can discover them for direct execution.
+        // #2698: raster/surface ids appear in the catalog-derived process list so
+        // SDK clients can discover them for direct execution.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -431,12 +489,14 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId()
+    public async Task Execute_GeometryProcess_RespondAsync_SubmitsConcreteProcessId()
     {
         var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync(
-            "/ogc/processes/processes/geometry.buffer/execution", content);
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
@@ -648,7 +708,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_ResponseModeRaw_Returns501()
+    public async Task Execute_ResponseModeRaw_OnAsyncOnlyProcess_Returns422()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
@@ -658,11 +718,11 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("detail").GetString().Should().Contain("raw");
-        json.RootElement.GetProperty("detail").GetString().Should().Contain("document");
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("synchronously");
     }
 
     [IntegrationTest]

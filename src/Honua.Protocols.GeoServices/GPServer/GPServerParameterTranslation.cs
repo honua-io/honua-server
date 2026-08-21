@@ -1,9 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers;
-using System.Text;
-using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 
@@ -49,36 +46,7 @@ internal static class GPServerParameterTranslation
     public static Dictionary<string, string> TranslateInbound(
         IReadOnlyDictionary<string, string> gpParameters,
         ProcessDefinition? definition)
-    {
-        var result = new Dictionary<string, string>(gpParameters.Count, StringComparer.OrdinalIgnoreCase);
-        var specsByName = BuildSpecLookup(definition);
-
-        foreach (var (key, value) in gpParameters)
-        {
-            specsByName.TryGetValue(key, out var spec);
-            var normalized = NormalizeGPValue(value, spec);
-            result[key] = NormalizeChoice(spec, normalized);
-        }
-
-        return result;
-    }
-
-    private static Dictionary<string, ProcessParameterSpec> BuildSpecLookup(ProcessDefinition? definition)
-    {
-        if (definition is null || definition.Parameters.Count == 0)
-        {
-            return new Dictionary<string, ProcessParameterSpec>(0, StringComparer.OrdinalIgnoreCase);
-        }
-
-        var lookup = new Dictionary<string, ProcessParameterSpec>(
-            definition.Parameters.Count,
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var spec in definition.Parameters)
-        {
-            lookup[spec.Name] = spec;
-        }
-        return lookup;
-    }
+        => EsriGpTaskProjection.TranslateInbound(gpParameters, definition);
 
     /// <summary>
     /// Normalizes a single GP parameter value. Spec-less callers preserve the
@@ -86,228 +54,19 @@ internal static class GPServerParameterTranslation
     /// GPMultiValue unpacking and other spec-aware translation.
     /// </summary>
     internal static string NormalizeGPValue(string value, ProcessParameterSpec? spec = null)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        // GPMultiValue unpacking: canonical executors (e.g., the geometry.union
-        // dispatcher) expect a JSON array string for WkbArray params. Accept the
-        // Esri wire forms — JSON array literal or comma-delimited string — and
-        // re-emit the canonical JSON-array form.
-        if (spec is { ValueType: ProcessParameterValueType.WkbArray } &&
-            TryNormalizeMultiValue(value, out var multi))
-        {
-            return multi;
-        }
-
-        if (value[0] != '{')
-        {
-            return value;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(value);
-            var root = doc.RootElement;
-
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                return value;
-            }
-
-            // GPDataFile / GPRasterDataLayer: { "url": "..." }
-            // Only extract when "url" is the dominant property (data-file shape).
-            // Feature/record set payloads also have "url" but carry "features" or "fields",
-            // so we leave those as JSON passthrough.
-            if (root.TryGetProperty("url", out var urlProp) && urlProp.ValueKind == JsonValueKind.String &&
-                !root.TryGetProperty("features", out _) && !root.TryGetProperty("fields", out _))
-            {
-                return urlProp.GetString() ?? value;
-            }
-
-            // GPLinearUnit / GPArealUnit: { "distance": <number>, "units": "<string>" }
-            if (root.TryGetProperty("distance", out var distanceProp) &&
-                root.TryGetProperty("units", out var unitsProp) &&
-                distanceProp.ValueKind == JsonValueKind.Number &&
-                unitsProp.ValueKind == JsonValueKind.String)
-            {
-                var distance = distanceProp.GetDouble();
-                var units = unitsProp.GetString();
-                return FormattableString.Invariant($"{distance} {units}");
-            }
-
-            // GPFeatureRecordSetLayer / GPRecordSet / other complex types:
-            // pass through as-is (already JSON strings in canonical model).
-            return value;
-        }
-        catch (JsonException)
-        {
-            // Not valid JSON — treat as simple string value.
-            return value;
-        }
-    }
-
-    /// <summary>
-    /// Re-emits a GPMultiValue input as the canonical JSON-array string the
-    /// runtime executors expect. JSON-array literals are validated and
-    /// re-serialised; comma-delimited strings are split and quoted. Returns
-    /// <c>false</c> when the input does not look like a multi-value payload, in
-    /// which case the caller falls back to scalar normalisation.
-    /// </summary>
-    private static bool TryNormalizeMultiValue(string value, out string normalized)
-    {
-        normalized = value;
-        var trimmed = value.AsSpan().Trim();
-        if (trimmed.IsEmpty)
-        {
-            return false;
-        }
-
-        if (trimmed[0] == '[')
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(value);
-                if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                {
-                    return false;
-                }
-
-                // Already a JSON array — re-emit as a normalised string so the
-                // downstream contract (JsonDocument.Parse on the spec parameter)
-                // sees a stable shape regardless of inbound whitespace or
-                // element ordering quirks.
-                var items = new List<string>(doc.RootElement.GetArrayLength());
-                foreach (var element in doc.RootElement.EnumerateArray())
-                {
-                    if (element.ValueKind != JsonValueKind.String)
-                    {
-                        return false;
-                    }
-                    var item = element.GetString();
-                    if (string.IsNullOrEmpty(item))
-                    {
-                        return false;
-                    }
-                    items.Add(item);
-                }
-                normalized = EncodeStringArray(items);
-                return true;
-            }
-            catch (JsonException)
-            {
-                return false;
-            }
-        }
-
-        if (value.Contains(',', StringComparison.Ordinal))
-        {
-            var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length == 0)
-            {
-                return false;
-            }
-            normalized = EncodeStringArray(parts);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string EncodeStringArray(IReadOnlyList<string> items)
-    {
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartArray();
-            for (var i = 0; i < items.Count; i++)
-            {
-                writer.WriteStringValue(items[i]);
-            }
-            writer.WriteEndArray();
-        }
-        return Encoding.UTF8.GetString(buffer.WrittenSpan);
-    }
-
-    /// <summary>
-    /// Validates a value against a parameter's <see cref="ProcessParameterSpec.AllowedValues"/>
-    /// and returns the CATALOG spelling of the matched choice.
-    /// </summary>
-    /// <remarks>
-    /// Esri's GP framework matches value-list (choice) parameters
-    /// case-insensitively, so the adapter does too. Accepting a spelling here and
-    /// then handing it on verbatim, however, left it to be rejected downstream by
-    /// canonical validators and executors that compare ordinally — a GPServer
-    /// submission of <c>task=Detection</c> cleared the adapter and then failed
-    /// plan validation (honua-server#3053). Normalizing to the catalog spelling
-    /// fixes that for every process declaring <c>AllowedValues</c>, and keeps the
-    /// adapter and the canonical validator agreeing on comparison semantics.
-    /// A catalog that declared two choices differing only by case would make the
-    /// normalization target ambiguous, so that is refused explicitly rather than
-    /// resolved by declaration order.
-    /// </remarks>
-    private static string NormalizeChoice(ProcessParameterSpec? spec, string value)
-    {
-        if (spec?.AllowedValues is not { Count: > 0 } allowed || string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        // An exact match is already the catalog spelling, and it settles any
-        // case-insensitive ambiguity in the caller's favour.
-        if (allowed.Any(candidate => string.Equals(candidate, value, StringComparison.Ordinal)))
-        {
-            return value;
-        }
-
-        var matches = allowed
-            .Where(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        if (matches.Count == 1)
-        {
-            return matches[0];
-        }
-
-        throw new GeoprocessingValidationException(
-            matches.Count > 1
-                ? $"Parameter '{spec.Name}': '{value}' matches more than one allowed value ignoring case; " +
-                  $"supply the exact spelling from [{string.Join(", ", allowed)}]."
-                : $"Parameter '{spec.Name}': '{value}' is not in the allowed values [{string.Join(", ", allowed)}].");
-    }
+        => EsriGpTaskProjection.NormalizeValue(value, spec);
 
     /// <summary>
     /// Maps a canonical <see cref="ArtifactKind"/> to the corresponding Esri GP data type string.
     /// </summary>
-    public static string ToEsriDataType(ArtifactKind kind) => kind switch
-    {
-        ArtifactKind.FeatureLayer => "GPFeatureRecordSetLayer",
-        ArtifactKind.Table => "GPRecordSet",
-        ArtifactKind.Raster => "GPRasterDataLayer",
-        ArtifactKind.File or ArtifactKind.Report or ArtifactKind.Map => "GPDataFile",
-        ArtifactKind.Scalar => "GPString",
-        ArtifactKind.AppBundle => "GPDataFile",
-        _ => "GPString"
-    };
+    public static string ToEsriDataType(ArtifactKind kind)
+        => EsriGpTaskProjection.ToEsriDataType(kind);
 
     /// <summary>
     /// Maps a process-catalog parameter value type to an Esri GP data type string.
     /// </summary>
-    public static string ToEsriDataType(ProcessParameterValueType valueType) => valueType switch
-    {
-        ProcessParameterValueType.Text => "GPString",
-        ProcessParameterValueType.WholeNumber => "GPLong",
-        ProcessParameterValueType.FloatingPoint => "GPDouble",
-        ProcessParameterValueType.Flag => "GPBoolean",
-        ProcessParameterValueType.Wkb => "GPDataFile",
-        ProcessParameterValueType.WkbArray => "GPMultiValue:GPDataFile",
-        ProcessParameterValueType.Srid => "GPLong",
-        ProcessParameterValueType.LayerId => "GPString",
-        _ => "GPString"
-    };
+    public static string ToEsriDataType(ProcessParameterValueType valueType)
+        => EsriGpTaskProjection.ToEsriDataType(valueType);
 
     /// <summary>
     /// Reads request parameters from the HTTP context (query string for GET,

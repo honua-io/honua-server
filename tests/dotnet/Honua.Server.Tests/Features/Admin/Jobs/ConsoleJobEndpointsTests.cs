@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
+using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -127,6 +128,14 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             root.GetProperty("failure").GetProperty("classification").GetString().Should().Be("execution_failed");
             root.GetProperty("selectedMetadata").GetProperty(ExecutionJobParameterKeys.GeoprocessingPlanId)
                 .GetString().Should().Be("plan-failed");
+            root.GetProperty("selectedMetadata").GetProperty(GeoprocessingProtocolMetadataKeys.GPServerServiceId)
+                .GetString().Should().Be("Analysis");
+            root.GetProperty("selectedMetadata").GetProperty(GeoprocessingProtocolMetadataKeys.GPServerTaskName)
+                .GetString().Should().Be("Buffer");
+            root.GetProperty("selectedMetadata").GetProperty(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions)
+                .GetString().Should().Be("geometry.buffer");
+            root.GetProperty("selectedMetadata").GetProperty(GeoprocessingProtocolMetadataKeys.ResultPackageId)
+                .GetString().Should().Be("job-failed:v1");
             root.GetProperty("stages")[0].GetProperty("name").GetString().Should().Be("Failed");
             root.GetProperty("links").GetProperty("logs").GetString().Should().EndWith("/api/v1/admin/jobs/job-failed/logs");
         }
@@ -461,7 +470,9 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 Spec = CreateSpec("failed-workload", new Dictionary<string, string>
                 {
                     [ExecutionJobParameterKeys.GeoprocessingPlanId] = "plan-failed",
-                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer"
+                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer",
+                    [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = "Analysis",
+                    [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = "Buffer"
                 })
             },
             CreateJob("job-remote-failed", ExecutionJobStatus.Failed, now.AddMinutes(-5), "corr-remote-failed") with

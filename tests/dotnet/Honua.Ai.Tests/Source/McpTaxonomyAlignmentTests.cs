@@ -41,6 +41,15 @@ public sealed partial class McpTaxonomyAlignmentTests
     {
         "honua_validate_plan",
         "honua_execute_plan",
+        "honua_buffer_features",
+        "honua_overlay_features",
+        "honua_summarize_statistics",
+        "honua_reproject_features",
+        "honua_join_features",
+        "honua_export_dataset",
+        "honua_esri_gp_list_tasks",
+        "honua_esri_gp_describe_task",
+        "honua_esri_gp_execute_task",
         "honua_dry_run_plan",
         "honua_validate_package",
         "honua_preview_package",
@@ -324,6 +333,13 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_get_draft",
         "honua_studio_validate_draft",
         "honua_studio_preview_draft",
+        "honua_buffer_features",
+        "honua_overlay_features",
+        "honua_summarize_statistics",
+        "honua_reproject_features",
+        "honua_join_features",
+        "honua_esri_gp_list_tasks",
+        "honua_esri_gp_describe_task",
     };
 
     /// <summary>
@@ -333,6 +349,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         new(StringComparer.Ordinal)
         {
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
+            ["honua_export_dataset"] = (Destructive: false, Idempotent: true),
+            ["honua_esri_gp_execute_task"] = (Destructive: true, Idempotent: false),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
             ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
             ["honua_propose_rollback"] = (Destructive: false, Idempotent: true),
@@ -826,6 +844,18 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
+            new BufferFeaturesTool(jobService, NullLogger<BufferFeaturesTool>.Instance),
+            new OverlayFeaturesTool(jobService, NullLogger<OverlayFeaturesTool>.Instance),
+            new SummarizeStatisticsTool(jobService, NullLogger<SummarizeStatisticsTool>.Instance),
+            new ReprojectFeaturesTool(jobService, NullLogger<ReprojectFeaturesTool>.Instance),
+            new JoinFeaturesTool(jobService, NullLogger<JoinFeaturesTool>.Instance),
+            new ExportDatasetTool(jobService, NullLogger<ExportDatasetTool>.Instance),
+            new ListEsriGpTasksTool(
+                jobService, new BuiltInProcessCatalog(), NullLogger<ListEsriGpTasksTool>.Instance),
+            new DescribeEsriGpTaskTool(
+                jobService, new BuiltInProcessCatalog(), NullLogger<DescribeEsriGpTaskTool>.Instance),
+            new ExecuteEsriGpTaskTool(
+                jobService, new BuiltInProcessCatalog(), NullLogger<ExecuteEsriGpTaskTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),

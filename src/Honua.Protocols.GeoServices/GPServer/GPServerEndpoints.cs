@@ -1475,25 +1475,7 @@ internal static class GPServerEndpoints
     /// </para>
     /// </summary>
     private static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
-    {
-        var processes = processCatalog.ListProcesses();
-        var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);
-        foreach (var process in processes)
-        {
-            processIds.Add(process.ProcessId);
-        }
-
-        foreach (var process in processes)
-        {
-            yield return process.ProcessId;
-
-            var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
-            if (alias != null && !processIds.Contains(alias))
-            {
-                yield return alias;
-            }
-        }
-    }
+        => EsriGpTaskProjection.ListTasks(processCatalog).Select(task => task.TaskName);
 
     /// <summary>
     /// Resolves a task name to its <see cref="ProcessDefinition"/>. Tries the internal
@@ -1513,83 +1495,22 @@ internal static class GPServerEndpoints
     /// </para>
     /// </summary>
     private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
-    {
-        if (string.IsNullOrWhiteSpace(taskName))
-        {
-            return null;
-        }
-
-        var byProcessId = processCatalog.GetProcess(taskName);
-        if (byProcessId != null)
-        {
-            return byProcessId;
-        }
-
-        if (!GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId))
-        {
-            return null;
-        }
-
-        return IsAliasShadowedByCatalogProcess(processCatalog, taskName)
-            ? null
-            : processCatalog.GetProcess(processId);
-    }
-
-    /// <summary>
-    /// Returns <see langword="true"/> when a catalog process ID matches the requested
-    /// task name case-insensitively, meaning the name belongs to a real process and the
-    /// Esri alias overlay must not resolve it (see <see cref="ResolveTaskDefinition"/>).
-    /// Only evaluated on the alias fallback path, so the linear scan stays off the
-    /// established internal-process-ID hot path.
-    /// </summary>
-    private static bool IsAliasShadowedByCatalogProcess(IProcessCatalog processCatalog, string taskName)
-    {
-        return processCatalog.ListProcesses()
-            .Any(process => string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase));
-    }
+        => EsriGpTaskProjection.ResolveTask(processCatalog, taskName);
 
     private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
-        var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
-        foreach (var parameter in definition.Parameters)
+        var description = EsriGpTaskProjection.DescribeTask(taskName, definition);
+        var parameters = description.Parameters.Select(parameter => new GPParameterInfo
         {
-            parameters.Add(new GPParameterInfo
-            {
-                Name = parameter.Name,
-                DisplayName = parameter.DisplayName,
-                Description = parameter.Description,
-                DataType = GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
-                Direction = "esriGPParameterDirectionInput",
-                DefaultValue = parameter.DefaultValue,
-                ParameterType = parameter.Required
-                    ? "esriGPParameterTypeRequired"
-                    : "esriGPParameterTypeOptional",
-                ChoiceList = parameter.AllowedValues is { Count: > 0 } allowed
-                    ? [.. allowed]
-                    : null
-            });
-        }
-
-        for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
-        {
-            var kind = definition.OutputArtifactKinds[index];
-            var outputName = BuildOutputParameterName(kind, index, definition.OutputArtifactKinds);
-            parameters.Add(new GPParameterInfo
-            {
-                Name = outputName,
-                DisplayName = outputName,
-                Description = $"Output artifact of type {kind}.",
-                DataType = GPServerParameterTranslation.ToEsriDataType(kind),
-                Direction = "esriGPParameterDirectionOutput",
-                // Mutually exclusive outputs must NOT all be advertised as
-                // required: exactly one is produced per run, so a client that
-                // enumerates required outputs from task metadata would otherwise
-                // wait forever for the alternative that never arrives.
-                ParameterType = definition.OutputsAreAlternatives
-                    ? "esriGPParameterTypeOptional"
-                    : "esriGPParameterTypeRequired"
-            });
-        }
+            Name = parameter.Name,
+            DisplayName = parameter.DisplayName,
+            Description = parameter.Description,
+            DataType = parameter.DataType,
+            Direction = parameter.Direction,
+            DefaultValue = parameter.DefaultValue,
+            ParameterType = parameter.ParameterType,
+            ChoiceList = parameter.AllowedValues is { Count: > 0 } allowed ? [.. allowed] : null
+        }).ToArray();
 
         return new GPTaskInfoResponse
         {
@@ -1599,9 +1520,9 @@ internal static class GPServerEndpoints
             // picked, matching how a real Esri GPServer task-info response's "name"
             // mirrors the address used.
             Name = taskName,
-            DisplayName = definition.Title,
-            Description = definition.Description,
-            Category = definition.Category,
+            DisplayName = description.DisplayName,
+            Description = description.Description,
+            Category = description.Category,
             HelpUrl = string.Empty,
             // ADVERTISED contract stays asynchronous (the value trunk advertised and
             // that cross-repo integration tests assert). The synchronous `execute`
@@ -1609,7 +1530,7 @@ internal static class GPServerEndpoints
             // GPServerExecutionPolicy.IsSynchronous; it does not change advertised
             // task/service metadata. See #1228.
             ExecutionType = "esriExecutionTypeAsynchronous",
-            Parameters = [.. parameters]
+            Parameters = parameters
         };
     }
 
@@ -1650,25 +1571,7 @@ internal static class GPServerEndpoints
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
         }
 
-        var translatedInputs = GPServerParameterTranslation.TranslateInbound(esriResult.Inputs, definition);
-        var taskSlug = definition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
-
-        var plan = new AnalysisPlan
-        {
-            PlanId = $"gpserver-{serviceId}-{taskSlug}-{Guid.NewGuid():N}",
-            IntentId = $"gpserver:{serviceId}:{definition.ProcessId}",
-            Steps =
-            [
-                new AnalysisPlanStep
-                {
-                    StepId = $"gp-task-{taskSlug}",
-                    Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = definition.ProcessId,
-                    Inputs = translatedInputs
-                }
-            ],
-            Outputs = definition.OutputArtifactKinds
-        };
+        var plan = EsriGpTaskProjection.BuildSubmissionPlan(definition, serviceId, esriResult.Inputs);
 
         return new SubmissionPlanResult(plan, CapabilityError: null, esriResult.InputSpatialReference);
     }
@@ -1764,12 +1667,8 @@ internal static class GPServerEndpoints
         EnvControls envControls,
         int workingSrid)
     {
-        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["submittedVia"] = "GPServer",
-            [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
-            [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
-        };
+        var metadata = EsriGpTaskProjection.BuildProtocolMetadata(
+            serviceId, taskName, definition);
 
         // Persist the working (input-derived) SRID so the asynchronous
         // results/{param} handler can apply the same env:outSR reprojection the
@@ -1778,16 +1677,6 @@ internal static class GPServerEndpoints
         {
             metadata[GeoprocessingProtocolMetadataKeys.GPServerWorkingSr] =
                 workingSrid.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
-        {
-            var outputName = BuildOutputParameterName(
-                definition.OutputArtifactKinds[index],
-                index,
-                definition.OutputArtifactKinds);
-            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputName;
-            metadata[$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}"] = outputName;
         }
 
         if (rawParameters.TryGetValue("context", out var contextValue) &&
@@ -1869,37 +1758,7 @@ internal static class GPServerEndpoints
         ArtifactKind kind,
         int index,
         IReadOnlyList<ArtifactKind> allKinds)
-    {
-        var baseName = kind switch
-        {
-            ArtifactKind.FeatureLayer => "outputFeatureLayer",
-            ArtifactKind.Table => "outputTable",
-            ArtifactKind.Raster => "outputRaster",
-            ArtifactKind.File => "outputFile",
-            ArtifactKind.Report => "outputReport",
-            ArtifactKind.Map => "outputMap",
-            ArtifactKind.Scalar => "outputScalar",
-            ArtifactKind.AppBundle => "outputBundle",
-            _ => "output"
-        };
-
-        var duplicateCount = allKinds.Count(candidate => candidate == kind);
-        if (duplicateCount <= 1)
-        {
-            return baseName;
-        }
-
-        var ordinal = 1;
-        for (var i = 0; i <= index; i++)
-        {
-            if (allKinds[i] == kind)
-            {
-                ordinal++;
-            }
-        }
-
-        return $"{baseName}{ordinal - 1}";
-    }
+        => EsriGpTaskProjection.BuildOutputParameterName(kind, index, allKinds);
 
     private static string[] ResolvePublishedOutputParameterNames(
         ExecutionJobRecord job,

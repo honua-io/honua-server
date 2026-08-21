@@ -3,11 +3,14 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
@@ -70,6 +73,13 @@ internal static class ProcessEndpoints
 
     public static void MapOgcProcessesProcessEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        var catalog = endpoints.ServiceProvider.GetRequiredService<IProcessCatalog>();
+        var projectedProcessCount = catalog.ListProcesses().Count(OgcProcessProjectionPolicy.IsProjectable);
+        OgcProcessProjectionTelemetry.SetProjectedProcessCount(projectedProcessCount);
+        OgcProcessesLog.ProcessCatalogProjected(
+            endpoints.ServiceProvider.GetRequiredService<ILogger<OgcProcessesEndpointsLog>>(),
+            projectedProcessCount);
+
         endpoints.MapGet($"{BasePath}/processes", GetProcessList)
             .WithTags(Tag)
             .WithName("OgcProcessesList")
@@ -95,6 +105,7 @@ internal static class ProcessEndpoints
             .WithName("OgcProcessExecute")
             .WithSummary("Execute a process")
             .Accepts<OgcExecuteRequest>(MediaTypes.Json)
+            .Produces(StatusCodes.Status200OK)
             .Produces<OgcStatusInfo>(StatusCodes.Status201Created)
             .Produces<OgcProcessError>(StatusCodes.Status400BadRequest)
             .Produces<OgcProcessError>(StatusCodes.Status401Unauthorized)
@@ -131,7 +142,7 @@ internal static class ProcessEndpoints
         processBuilder.Add(summary);
 
         foreach (var definition in processCatalog.ListProcesses()
-                     .Where(ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess)
+                     .Where(OgcProcessProjectionPolicy.IsProjectable)
                      .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
         {
             processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
@@ -170,7 +181,7 @@ internal static class ProcessEndpoints
         }
 
         var definition = processCatalog.GetProcess(processId);
-        if (definition == null || !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+        if (definition == null || !OgcProcessProjectionPolicy.IsProjectable(definition))
         {
             OgcProcessesLog.ProcessNotFound(logger, processId);
             return OgcProcessesResults.NoSuchProcess(processId);
@@ -188,7 +199,8 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IGeoprocessingJobService jobService,
-        IProcessCatalog processCatalog)
+        IProcessCatalog processCatalog,
+        IGeometryService geometryService)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -198,19 +210,6 @@ internal static class ProcessEndpoints
         var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
         var preferSync = hasPreferHeader
             && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
-
-        // OGC API Processes Part 1 §7.9.4: when the client explicitly requests
-        // synchronous execution but this process only supports async-execute,
-        // respond with 422 Unprocessable Entity (SHALL requirement).
-        if (preferSync)
-        {
-            OgcProcessesLog.SyncExecutionNotSupported(logger, processId);
-            return OgcProcessesResults.Error(
-                StatusCodes.Status422UnprocessableEntity,
-                "Synchronous execution not supported",
-                "This process only supports asynchronous execution. Use 'Prefer: respond-async' or omit the Prefer header.",
-                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/unsupported-execution-mode");
-        }
 
         try
         {
@@ -223,7 +222,7 @@ internal static class ProcessEndpoints
             var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : processCatalog.GetProcess(processId);
-            if (definition != null && !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+            if (definition != null && !OgcProcessProjectionPolicy.IsProjectable(definition))
             {
                 definition = null;
             }
@@ -234,6 +233,25 @@ internal static class ProcessEndpoints
                 OgcProcessesLog.ProcessNotFound(logger, processId);
                 return OgcProcessesResults.NoSuchProcess(processId);
             }
+
+            var preferAsync = hasPreferHeader
+                && preferValues.Any(v => v != null && v.Contains("respond-async", StringComparison.OrdinalIgnoreCase));
+            var syncEligible = definition != null
+                && GeoprocessingSynchronousExecutionPolicy.IsSynchronous(definition);
+            // OGC API Processes Part 1 §7.9.4: when the client explicitly requests
+            // synchronous execution but this process only supports async-execute,
+            // respond with 422 Unprocessable Entity (SHALL requirement).
+            if (preferSync && !syncEligible)
+            {
+                OgcProcessesLog.SyncExecutionNotSupported(logger, processId);
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status422UnprocessableEntity,
+                    "Synchronous execution not supported",
+                    "This process only supports asynchronous execution. Use 'Prefer: respond-async' or omit the Prefer header.",
+                    "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/unsupported-execution-mode");
+            }
+
+            var executeSynchronously = syncEligible && !preferAsync;
 
             OgcExecuteRequest? request;
             try
@@ -270,17 +288,27 @@ internal static class ProcessEndpoints
                     "Request body is required.");
             }
 
+            var rawResponse = string.Equals(request.Response, "raw", StringComparison.OrdinalIgnoreCase);
             if (request.Response != null
-                && !string.Equals(request.Response, "document", StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(request.Response, "document", StringComparison.OrdinalIgnoreCase)
+                && !rawResponse)
             {
                 OgcProcessesLog.UnsupportedResponseMode(logger, processId, request.Response);
                 return OgcProcessesResults.Error(
-                    StatusCodes.Status501NotImplemented,
+                    StatusCodes.Status400BadRequest,
                     "Unsupported response mode",
-                    $"Response mode '{request.Response}' is not supported. V1 only supports 'document' mode.");
+                    $"Response mode '{request.Response}' is not supported. Use 'document' or 'raw'.");
             }
 
-            if (!TryBuildAnalysisPlan(processId, request, definition, out var analysisPlan, out var parseError))
+            if (rawResponse && (!executeSynchronously || definition?.OutputArtifactKinds.Count != 1))
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status422UnprocessableEntity,
+                    "Raw response is unavailable",
+                    "response=raw requires a synchronously executable process with exactly one output.");
+            }
+
+            if (!TryBuildAnalysisPlan(processId, request, definition, geometryService, out var analysisPlan, out var parseError))
             {
                 OgcProcessesLog.PlanStructureInvalid(logger, processId, parseError ?? "Unknown plan parsing error.");
                 return OgcProcessesResults.Error(
@@ -289,7 +317,7 @@ internal static class ProcessEndpoints
                     parseError ?? "The analysis plan payload is invalid.");
             }
 
-            OgcProcessesLog.ExecutionRequested(logger, processId, true);
+            OgcProcessesLog.ExecutionRequested(logger, processId, !executeSynchronously);
 
             var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -311,6 +339,21 @@ internal static class ProcessEndpoints
                 .ConfigureAwait(false);
 
             OgcProcessesLog.JobCreated(logger, jobRecord.OperationId, processId);
+
+            if (executeSynchronously)
+            {
+                var terminalJob = await WaitForTerminalJobAsync(
+                    jobRecord,
+                    jobService,
+                    context,
+                    context.RequestAborted).ConfigureAwait(false);
+                return await BuildSynchronousResultAsync(
+                    terminalJob,
+                    rawResponse,
+                    jobService,
+                    context,
+                    logger).ConfigureAwait(false);
+            }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(jobRecord, processId, baseUrl);
@@ -394,6 +437,120 @@ internal static class ProcessEndpoints
         }
     }
 
+    private static async Task<ExecutionJobRecord> WaitForTerminalJobAsync(
+        ExecutionJobRecord submittedJob,
+        IGeoprocessingJobService jobService,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var job = submittedJob;
+        var delay = TimeSpan.FromMilliseconds(25);
+        while (!OgcProcessesConversionHelpers.IsTerminal(job.Status))
+        {
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            job = await jobService
+                .GetJobAsync(job.OperationId, context.User, cancellationToken)
+                .ConfigureAwait(false);
+            if (delay < TimeSpan.FromMilliseconds(250))
+            {
+                delay += delay;
+            }
+        }
+
+        context.Response.Headers["Preference-Applied"] = "respond-sync";
+        return job;
+    }
+
+    private static async Task<IResult> BuildSynchronousResultAsync(
+        ExecutionJobRecord job,
+        bool rawResponse,
+        IGeoprocessingJobService jobService,
+        HttpContext context,
+        ILogger logger)
+    {
+        if (job.Status == ExecutionJobStatus.Failed)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status500InternalServerError,
+                "Process execution failed",
+                job.ErrorMessage ?? $"Job '{job.OperationId}' failed.",
+                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-failed");
+        }
+
+        if (job.Status == ExecutionJobStatus.Cancelled)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status410Gone,
+                "Process execution was cancelled",
+                $"Job '{job.OperationId}' was cancelled.",
+                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-dismissed");
+        }
+
+        var resultPackage = await jobService
+            .GetJobResultsAsync(job.OperationId, context.User, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        if (rawResponse)
+        {
+            return TryBuildRawResult(resultPackage.Artifacts.Single(), out var rawResult)
+                ? rawResult!
+                : OgcProcessesResults.Error(
+                    StatusCodes.Status500InternalServerError,
+                    "Raw result is unavailable",
+                    "The completed process did not publish an inline output value.");
+        }
+
+        var resultsDocument = JobEndpoints.ToOgcResultsDocument(
+            resultPackage,
+            BaseUrlResolver.GetBaseUrl(context),
+            job.OperationId,
+            context.RequestServices.GetService<IGeoprocessingOutputObjectStore>(),
+            logger);
+        return Results.Json(
+            resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
+            OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
+            MediaTypes.Json,
+            StatusCodes.Status200OK);
+    }
+
+    private static bool TryBuildRawResult(ArtifactRef artifact, out IResult? result)
+    {
+        result = null;
+        if (string.IsNullOrWhiteSpace(artifact.Uri)
+            || !artifact.Uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var commaIndex = artifact.Uri.IndexOf(',', StringComparison.Ordinal);
+        if (commaIndex <= 5)
+        {
+            return false;
+        }
+
+        var metadata = artifact.Uri[5..commaIndex];
+        var payload = artifact.Uri[(commaIndex + 1)..];
+        var segments = metadata.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var contentType = !string.IsNullOrWhiteSpace(artifact.ContentType)
+            ? artifact.ContentType
+            : segments.FirstOrDefault(segment => segment.Contains('/', StringComparison.Ordinal)) ?? "application/octet-stream";
+
+        byte[] bytes;
+        try
+        {
+            bytes = segments.Any(segment => string.Equals(segment, "base64", StringComparison.OrdinalIgnoreCase))
+                ? Convert.FromBase64String(payload)
+                : Encoding.UTF8.GetBytes(Uri.UnescapeDataString(payload));
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        result = Results.Bytes(bytes, contentType);
+        return true;
+    }
+
     private static bool TryParseAnalysisPlan(
         JsonElement planElement,
         out AnalysisPlan? plan,
@@ -472,6 +629,7 @@ internal static class ProcessEndpoints
         string processId,
         OgcExecuteRequest request,
         ProcessDefinition? processDefinition,
+        IGeometryService geometryService,
         out AnalysisPlan? plan,
         out string? error)
     {
@@ -506,6 +664,19 @@ internal static class ProcessEndpoints
                 return false;
             }
 
+            var parameter = processDefinition.Parameters.FirstOrDefault(
+                candidate => string.Equals(candidate.Name, input.Key, StringComparison.Ordinal));
+            if (parameter?.ValueType == ProcessParameterValueType.Wkb)
+            {
+                if (!TryConvertGeometryInput(input.Key, input.Value, geometryService, out var converted, out error))
+                {
+                    return false;
+                }
+
+                inputs[input.Key] = converted!;
+                continue;
+            }
+
             inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
         }
 
@@ -538,6 +709,63 @@ internal static class ProcessEndpoints
             _ => element.GetRawText()
         };
 
+    private static bool TryConvertGeometryInput(
+        string inputName,
+        JsonElement input,
+        IGeometryService geometryService,
+        out string? value,
+        out string? error)
+    {
+        value = null;
+        error = null;
+
+        var candidate = input;
+        string? mediaType = null;
+        if (input.ValueKind == JsonValueKind.Object && input.TryGetProperty("value", out var wrappedValue))
+        {
+            candidate = wrappedValue;
+            if (input.TryGetProperty("mediaType", out var mediaTypeElement)
+                && mediaTypeElement.ValueKind == JsonValueKind.String)
+            {
+                mediaType = mediaTypeElement.GetString();
+            }
+        }
+
+        if (candidate.ValueKind == JsonValueKind.String
+            && !string.Equals(mediaType, "application/geo+json", StringComparison.OrdinalIgnoreCase))
+        {
+            value = candidate.GetString() ?? string.Empty;
+            return true;
+        }
+
+        if (candidate.ValueKind != JsonValueKind.Object)
+        {
+            error = $"Input '{inputName}' must be base64 WKB or a GeoJSON geometry object.";
+            return false;
+        }
+
+        try
+        {
+            var wkb = geometryService.ConvertGeoJsonToWkb(candidate.GetRawText());
+            if (wkb == null || wkb.Length == 0)
+            {
+                error = $"Input '{inputName}' did not contain a valid GeoJSON geometry.";
+                return false;
+            }
+
+            value = Convert.ToBase64String(wkb);
+            return true;
+        }
+        // Geometry implementations wrap malformed coordinate arrays in different
+        // format/JSON exception types. At this adapter boundary they are all the
+        // same invalid input; fatal allocation failures must still escape.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            error = $"Input '{inputName}' must contain a valid GeoJSON geometry.";
+            return false;
+        }
+    }
+
     private static OgcProcessSummary ToOgcProcessSummary(ProcessDefinition definition, string baseUrl)
         => new()
         {
@@ -545,7 +773,7 @@ internal static class ProcessEndpoints
             Title = definition.Title,
             Description = definition.Description,
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute"),
+            JobControlOptions = GetJobControlOptions(definition),
             OutputTransmission = ImmutableArray.Create("value"),
             Links = ImmutableArray.Create(
                 Link.Create(
@@ -560,9 +788,9 @@ internal static class ProcessEndpoints
         {
             Id = definition.ProcessId,
             Title = definition.Title,
-            Description = $"{definition.Description} First-slice migration evidence projection; execution is asynchronous and returns document-mode artifact references when the runtime publishes results.",
+            Description = definition.Description,
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute"),
+            JobControlOptions = GetJobControlOptions(definition),
             OutputTransmission = ImmutableArray.Create("value"),
             Inputs = definition.Parameters
                 .ToImmutableDictionary(
@@ -590,24 +818,35 @@ internal static class ProcessEndpoints
             Description = parameter.Required
                 ? $"{parameter.Description} Required."
                 : parameter.Description,
-            Schema = new OgcProcessIoSchema
-            {
-                Type = parameter.ValueType switch
+            Schema = parameter.ValueType == ProcessParameterValueType.Wkb
+                ? new OgcProcessIoSchema
                 {
-                    ProcessParameterValueType.WholeNumber or ProcessParameterValueType.Srid => "integer",
-                    ProcessParameterValueType.FloatingPoint => "number",
-                    ProcessParameterValueType.Flag => "boolean",
-                    ProcessParameterValueType.WkbArray => "array",
-                    _ => "string"
-                },
-                ContentMediaType = parameter.ValueType switch
-                {
-                    ProcessParameterValueType.Wkb => "application/wkb",
-                    ProcessParameterValueType.WkbArray => "application/json",
-                    _ => null
+                    OneOf = ImmutableArray.Create(
+                        new OgcProcessIoSchema { Type = "string", ContentMediaType = "application/wkb" },
+                        new OgcProcessIoSchema { Type = "object", ContentMediaType = "application/geo+json" })
                 }
-            }
+                : new OgcProcessIoSchema
+                {
+                    Type = parameter.ValueType switch
+                    {
+                        ProcessParameterValueType.WholeNumber or ProcessParameterValueType.Srid => "integer",
+                        ProcessParameterValueType.FloatingPoint => "number",
+                        ProcessParameterValueType.Flag => "boolean",
+                        ProcessParameterValueType.WkbArray => "array",
+                        _ => "string"
+                    },
+                    ContentMediaType = parameter.ValueType switch
+                    {
+                        ProcessParameterValueType.WkbArray => "application/json",
+                        _ => null
+                    }
+                }
         };
+
+    private static ImmutableArray<string> GetJobControlOptions(ProcessDefinition definition)
+        => GeoprocessingSynchronousExecutionPolicy.IsSynchronous(definition)
+            ? ImmutableArray.Create("sync-execute", "async-execute")
+            : ImmutableArray.Create("async-execute");
 
     private static ImmutableDictionary<string, OgcProcessIoDescription> BuildOgcOutputDescriptions(
         ProcessDefinition definition)

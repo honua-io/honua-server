@@ -17,6 +17,13 @@ expose result artifact references through:
 - GeoServices GPServer:
   `GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}`
 
+> **2026.1 OGC inventory note:** the live catalog has 98 entries; excluding the
+> 8 `source.*` and 4 `sink.*` composition primitives produces 86 directly
+> projected processes. The original #3267 acceptance text said “at least 90,”
+> which predates that explicit boundary. Reconcile that stale threshold in issue
+> follow-up rather than exposing source/sink steps as standalone processes or
+> reclassifying catalog entries to inflate the count.
+
 The current scaffold does not claim full source-script translation or full
 runtime parity for every built-in process. Python SDK ArcPy scanning and parity
 execution remains tracked in
@@ -26,8 +33,8 @@ execution remains tracked in
 
 | Process family | Process ids | Evidence posture |
 |---|---|---|
-| Geometry vector operations | `geometry.buffer`, `geometry.clip`, `geometry.intersect`, `geometry.project`, `geometry.simplify`, `geometry.make-valid`, `geometry.union`, `geometry.difference`, `geometry.area`, `geometry.length` | Automated first-slice projection. OGC API Processes lists concrete ids and accepts direct per-process async execution requests. GPServer exposes the same ids as tasks. |
-| Simple analysis and layer vector operations | `analytics.buffer-aggregate`, `analytics.spatial-join`, `analytics.density`, `analytics.cluster`, `conversion.feature-project`, `generalization.simplify-layer`, `generalization.dissolve` | Automated first-slice projection where canonical validation can produce deterministic vector/table output expectations. |
+| Geometry vector operations | `geometry.buffer`, `geometry.clip`, `geometry.intersect`, `geometry.project`, `geometry.simplify`, `geometry.make-valid`, `geometry.union`, `geometry.difference`, `geometry.area`, `geometry.length` | Catalog-derived direct projection. OGC API Processes lists these concrete ids and supports sync and async execution; GPServer exposes the same ids as tasks. |
+| Simple analysis and layer vector operations | `analytics.buffer-aggregate`, `analytics.spatial-join`, `analytics.density`, `analytics.cluster`, `conversion.feature-project`, `generalization.simplify-layer`, `generalization.dissolve` | Catalog-derived direct projection with canonical validation and deterministic vector/table output expectations. |
 
 ## Classification Contract
 
