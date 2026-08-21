@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Production-owned runtime contract; conformance tests link this canonical file.",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/join_features.schema.json",
   "title": "join_features inputSchema",
   "description": "Direct geoprocessing verb (advertised name honua_join_features): join a second dataset onto a target dataset — either an attribute join on matching key fields or a spatial join by geometric relationship — and return the joined features. Use this for a single self-contained join step (\"attach the demographics table to the tracts\", \"tag each incident with the county it falls in\"); for multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result. Advertised readOnlyHint: true (computes a derived result; mutates no server state). x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",

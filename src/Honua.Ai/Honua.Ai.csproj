@@ -85,20 +85,20 @@
          (FeatureCatalogDriftTests). -->
     <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
                       LogicalName="Honua.Ai.Catalog.feature-catalog.json" />
-    <!-- Verbatim geospatial-mcp analysis-profile contracts. The live tool
-         descriptors load these exact vendored schemas, so server and standard
-         fixture conformance cannot drift through a hand-maintained copy. -->
-    <EmbeddedResource Include="..\..\tests\dotnet\Honua.Ai.Tests\ConformanceSchemas\geospatial-mcp\tools\buffer_features.schema.json"
+    <!-- Production-owned geospatial-mcp analysis-profile contracts. Keeping the
+         runtime inputs under src/ makes them available in the Native AOT Docker
+         restore context; conformance tests link these same canonical files. -->
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\buffer_features.schema.json"
                       LogicalName="Honua.Ai.Mcp.AnalysisSchemas.buffer_features.schema.json" />
-    <EmbeddedResource Include="..\..\tests\dotnet\Honua.Ai.Tests\ConformanceSchemas\geospatial-mcp\tools\overlay_features.schema.json"
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\overlay_features.schema.json"
                       LogicalName="Honua.Ai.Mcp.AnalysisSchemas.overlay_features.schema.json" />
-    <EmbeddedResource Include="..\..\tests\dotnet\Honua.Ai.Tests\ConformanceSchemas\geospatial-mcp\tools\summarize_statistics.schema.json"
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\summarize_statistics.schema.json"
                       LogicalName="Honua.Ai.Mcp.AnalysisSchemas.summarize_statistics.schema.json" />
-    <EmbeddedResource Include="..\..\tests\dotnet\Honua.Ai.Tests\ConformanceSchemas\geospatial-mcp\tools\reproject_features.schema.json"
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\reproject_features.schema.json"
                       LogicalName="Honua.Ai.Mcp.AnalysisSchemas.reproject_features.schema.json" />
-    <EmbeddedResource Include="..\..\tests\dotnet\Honua.Ai.Tests\ConformanceSchemas\geospatial-mcp\tools\join_features.schema.json"
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\join_features.schema.json"
                       LogicalName="Honua.Ai.Mcp.AnalysisSchemas.join_features.schema.json" />
-    <EmbeddedResource Include="..\..\tests\dotnet\Honua.Ai.Tests\ConformanceSchemas\geospatial-mcp\tools\export_dataset.schema.json"
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\export_dataset.schema.json"
                       LogicalName="Honua.Ai.Mcp.AnalysisSchemas.export_dataset.schema.json" />
   </ItemGroup>
 

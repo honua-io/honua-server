@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Production-owned runtime contract; conformance tests link this canonical file.",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/summarize_statistics.schema.json",
   "title": "summarize_statistics inputSchema",
   "description": "Direct geoprocessing verb (advertised name honua_summarize_statistics): compute summary statistics over a dataset, optionally grouped by attribute fields, and return the summary rows. Use this for a single self-contained summary step (\"total population by county\", \"mean parcel value by zoning\") over a layer or a prior overlay/verb result; for multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result. Advertised readOnlyHint: true (computes a derived result; mutates no server state). x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",

@@ -292,6 +292,13 @@
       "source": "src/Honua.Ai/Features/Grounding/Spec/SpecGroundingTelemetry.cs"
     },
     {
+      "instrument": "honua.gp.ogc_projected_processes",
+      "kind": "ObservableGauge",
+      "unit": null,
+      "series": ["honua_gp_ogc_projected_processes"],
+      "source": "src/Honua.Protocols.OgcApi/Processes/OgcProcessProjectionTelemetry.cs"
+    },
+    {
       "instrument": "honua.lambda.cold_start",
       "kind": "Counter",
       "unit": "{cold_start}",

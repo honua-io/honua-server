@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Production-owned runtime contract; conformance tests link this canonical file.",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/reproject_features.schema.json",
   "title": "reproject_features inputSchema",
   "description": "Direct geoprocessing verb (advertised name honua_reproject_features): reproject a whole dataset into a target spatial reference and return the reprojected features. Use this when reprojection is the goal (\"give me this layer in EPSG:3857\"); when you only need another verb's output in a particular CRS, prefer that verb's optional outSrid param instead of a second call. For multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result. Advertised readOnlyHint: true (computes a derived result; mutates no server state). x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",

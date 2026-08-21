@@ -38,6 +38,9 @@
     -->
     <Content Include="ConformanceSchemas\**\*.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="ConformanceSchemas\**\*.yaml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\src\Honua.Ai\Schemas\geospatial-mcp\tools\*.schema.json"
+             Link="ConformanceSchemas\geospatial-mcp\tools\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
