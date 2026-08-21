@@ -65,19 +65,18 @@ fi
 
 mkdir -p "$RESULTS_DIR" "$ARTIFACTS_DIR"
 
-if [[ -n "${GITHUB_ACTOR:-}" && -z "${HONUA_DOCKER_GITHUB_TOKEN:-}" ]] || \
-   [[ -z "${GITHUB_ACTOR:-}" && -n "${HONUA_DOCKER_GITHUB_TOKEN:-}" ]]; then
-    echo -e "${RED}GITHUB_ACTOR and HONUA_DOCKER_GITHUB_TOKEN must be supplied together.${NC}" >&2
+GITHUB_PACKAGES_TOKEN="${HONUA_DOCKER_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+GITHUB_PACKAGES_ACTOR="${GITHUB_ACTOR:-${GH_USERNAME:-${USER:-honua}}}"
+if [[ -z "$GITHUB_PACKAGES_TOKEN" ]]; then
+    echo -e "${RED}GitHub Packages authentication is required to restore Geospatial.Grpc.${NC}" >&2
+    echo "Set HONUA_DOCKER_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN before running this harness." >&2
     exit 1
 fi
 BUILD_SECRET_DIR="$(mktemp -d)"
-printf '%s' "${GITHUB_ACTOR:-}" > "$BUILD_SECRET_DIR/github-actor"
-printf '%s' "${HONUA_DOCKER_GITHUB_TOKEN:-}" > "$BUILD_SECRET_DIR/github-token"
+printf '%s' "$GITHUB_PACKAGES_ACTOR" > "$BUILD_SECRET_DIR/github-actor"
+printf '%s' "$GITHUB_PACKAGES_TOKEN" > "$BUILD_SECRET_DIR/github-token"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$BUILD_SECRET_DIR/github-actor"
 export HONUA_GITHUB_TOKEN_SECRET_FILE="$BUILD_SECRET_DIR/github-token"
-if [[ -z "${HONUA_DOCKER_GITHUB_TOKEN:-}" ]]; then
-    echo "GitHub Packages credentials are unset; using anonymous package restore."
-fi
 
 cleanup() {
     if [[ "$CLEANUP" == "true" ]]; then

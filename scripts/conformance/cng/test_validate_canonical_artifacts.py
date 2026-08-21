@@ -101,6 +101,15 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret", compose)
         self.assertNotIn("environment: HONUA_DOCKER_GITHUB_TOKEN", compose)
 
+    def test_standalone_harness_requires_and_resolves_github_packages_token(self):
+        harness = (SCRIPT.parent / "run-cng-conformance.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            'GITHUB_PACKAGES_TOKEN="${HONUA_DOCKER_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"',
+            harness,
+        )
+        self.assertIn("GitHub Packages authentication is required", harness)
+        self.assertNotIn("using anonymous package restore", harness)
+
 
 if __name__ == "__main__":
     unittest.main()
