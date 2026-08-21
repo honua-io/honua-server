@@ -76,6 +76,9 @@ public sealed class CapabilityRegistryConformanceTests
         "edit.features",
         "versioning.branch",
         "operate.status",
+        "ops.findings",
+        "ops.autonomy",
+        "deploy.rollback",
     ];
 
     // Format descriptors that intentionally exist beyond the SupportedFileFormat
@@ -268,11 +271,24 @@ public sealed class CapabilityRegistryConformanceTests
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var groundingService = Substitute.For<IGroundingService>();
         var reviewService = Substitute.For<IPackageReviewService>();
+        var processCatalog = new BuiltInProcessCatalog();
         return
         [
             new ValidatePlanTool(jobService, NullLogger<ValidatePlanTool>.Instance),
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
+            new BufferFeaturesTool(jobService, NullLogger<BufferFeaturesTool>.Instance),
+            new OverlayFeaturesTool(jobService, NullLogger<OverlayFeaturesTool>.Instance),
+            new SummarizeStatisticsTool(jobService, NullLogger<SummarizeStatisticsTool>.Instance),
+            new ReprojectFeaturesTool(jobService, NullLogger<ReprojectFeaturesTool>.Instance),
+            new JoinFeaturesTool(jobService, NullLogger<JoinFeaturesTool>.Instance),
+            new ExportDatasetTool(jobService, NullLogger<ExportDatasetTool>.Instance),
+            new ListEsriGpTasksTool(
+                jobService, processCatalog, NullLogger<ListEsriGpTasksTool>.Instance),
+            new DescribeEsriGpTaskTool(
+                jobService, processCatalog, NullLogger<DescribeEsriGpTaskTool>.Instance),
+            new ExecuteEsriGpTaskTool(
+                jobService, processCatalog, NullLogger<ExecuteEsriGpTaskTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
