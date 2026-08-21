@@ -11,6 +11,12 @@ family project this same operation inventory. The Admin API and operation catalo
 are the control-plane source of truth; Console is a focused inspect, approve, and
 recovery client rather than an API-parity boundary.
 
+Cross-repository clients consume the generated
+[`admin-mcp-coverage.v1.json`](../../developer/api-specs/admin-mcp-coverage.v1.json)
+contract to distinguish MCP-projected operations from explicit secret/session
+exclusions. The artifact is derived from the integrated OpenAPI catalog and is
+drift-gated in tests; consumers should not copy a point-in-time tool count.
+
 ## Endpoint groups
 
 | Group | Base path | Reference |

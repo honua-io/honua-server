@@ -6,10 +6,12 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -26,7 +28,10 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     private const string JsonMediaType = "application/json";
 
     private readonly WebAppFixture _fixture = new();
+    private readonly ITestOutputHelper _output;
     private HttpClient _client = null!;
+
+    public McpEndpointIntegrationTests(ITestOutputHelper output) => _output = output;
 
     public async Task InitializeAsync()
     {
@@ -662,6 +667,60 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ToolsList_DefaultComposition_CoversGeneratedAdminRosterAcrossEveryPage()
+    {
+        var names = new List<string>();
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
+        string? cursor = null;
+        do
+        {
+            var cursorJson = cursor is null
+                ? "{}"
+                : $$"""{"cursor":{{JsonSerializer.Serialize(cursor)}}}""";
+            using var response = await PostRpcAsync(
+                $$"""{"jsonrpc":"2.0","id":"coverage","method":"tools/list","params":{{cursorJson}}}""");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadJsonAsync(response);
+            var result = document.RootElement.GetProperty("result");
+            names.AddRange(result.GetProperty("tools").EnumerateArray()
+                .Select(tool => tool.GetProperty("name").GetString()!));
+            cursor = result.TryGetProperty("nextCursor", out var nextCursor)
+                ? nextCursor.GetString()
+                : null;
+            if (cursor is not null)
+            {
+                cursors.Add(cursor).Should().BeTrue("tools/list pagination must make forward progress");
+            }
+        }
+        while (cursor is not null);
+
+        names.Should().OnlyHaveUniqueItems("the composed MCP catalog must have unique tool names");
+
+        using var coverage = JsonDocument.Parse(File.ReadAllText(FindAdminMcpCoverageArtifact()));
+        var projectedAdminNames = coverage.RootElement.GetProperty("projected").EnumerateArray()
+            .Select(operation => operation.GetProperty("toolName").GetString()!)
+            .ToArray();
+        var actualAdminNames = names
+            .Where(name => name.StartsWith("honua_admin_", StringComparison.Ordinal))
+            .ToArray();
+        actualAdminNames.Should().BeEquivalentTo(
+            projectedAdminNames,
+            "the live paged Admin MCP family must equal the generated cross-repository coverage contract");
+
+        var staticToolNames = _fixture.GetService<McpDataAccessSurface>().ToolNames;
+        names.Where(name => !name.StartsWith("honua_admin_", StringComparison.Ordinal))
+            .Should().BeEquivalentTo(staticToolNames,
+                "every non-admin tool must come from the profile-filtered static surface");
+        names.Should().HaveCount(staticToolNames.Count + projectedAdminNames.Length);
+
+        _output.WriteLine(
+            $"default tools/list: {names.Count} unique = {staticToolNames.Count} static + {projectedAdminNames.Length} admin");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task ToolsList_WithInvalidCursor_ReturnsInvalidParamsJsonRpcError()
     {
         // MCP 2025-03-26 pagination: an unparseable/expired cursor must surface as
@@ -684,11 +743,11 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task ToolsList_WhenSinglePage_OmitsNextCursor()
+    public async Task ToolsList_DefaultCatalog_AdvertisesNextCursor()
     {
-        // The default page size comfortably holds the composed tool catalog, so a
-        // single-page result must omit nextCursor entirely (WhenWritingNull) —
-        // proving the pagination plumbing is additive and backward compatible.
+        // The OpenAPI-derived Admin MCP family intentionally makes the default
+        // catalog larger than one page. Clients must follow nextCursor rather than
+        // treating the first page as the complete control-plane roster.
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"page-1","method":"tools/list"}
             """);
@@ -698,8 +757,8 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
 
         result.GetProperty("tools").ValueKind.Should().Be(JsonValueKind.Array);
-        result.TryGetProperty("nextCursor", out _).Should().BeFalse(
-            "a single-page list must not advertise a nextCursor");
+        result.GetProperty("nextCursor").GetString().Should().NotBeNullOrWhiteSpace(
+            "the default Admin MCP catalog spans multiple pages");
     }
 
     [IntegrationTest]
@@ -1304,5 +1363,27 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     {
         var stream = await response.Content.ReadAsStreamAsync();
         return await JsonDocument.ParseAsync(stream);
+    }
+
+    private static string FindAdminMcpCoverageArtifact()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            var candidate = Path.Combine(
+                current.FullName,
+                "docs",
+                "developer",
+                "api-specs",
+                "admin-mcp-coverage.v1.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new FileNotFoundException("Could not locate docs/developer/api-specs/admin-mcp-coverage.v1.json.");
     }
 }

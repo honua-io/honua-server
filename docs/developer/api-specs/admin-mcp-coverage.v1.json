@@ -1,0 +1,2776 @@
+{
+  "schemaVersion": "honua.admin-mcp-coverage.v1",
+  "source": "docs/developer/api-specs/admin-api.json",
+  "summary": {
+    "openApiOperationCount": 396,
+    "projectedOperationCount": 387,
+    "excludedOperationCount": 9
+  },
+  "projected": [
+    {
+      "operationId": "admin.api-key.effective-permissions",
+      "openApiOperationId": "getAdminApiKeyEffectivePermissions",
+      "toolName": "honua_admin_api_key_effective_permissions",
+      "method": "GET",
+      "path": "/api/v1/admin/api-keys/{id}/effective-permissions"
+    },
+    {
+      "operationId": "admin.api-key.list",
+      "openApiOperationId": "listAdminApiKeys",
+      "toolName": "honua_admin_api_key_list",
+      "method": "GET",
+      "path": "/api/v1/admin/api-keys"
+    },
+    {
+      "operationId": "admin.api-key.revoke",
+      "openApiOperationId": "revokeAdminApiKey",
+      "toolName": "honua_admin_api_key_revoke",
+      "method": "POST",
+      "path": "/api/v1/admin/api-keys/{id}/revoke"
+    },
+    {
+      "operationId": "admin.cache.invalidate",
+      "openApiOperationId": "invalidateAdminCache",
+      "toolName": "honua_admin_cache_invalidate",
+      "method": "POST",
+      "path": "/api/v1/admin/cache/invalidate"
+    },
+    {
+      "operationId": "admin.cache.status",
+      "openApiOperationId": "getAdminCacheStatus",
+      "toolName": "honua_admin_cache_status",
+      "method": "GET",
+      "path": "/api/v1/admin/cache/status"
+    },
+    {
+      "operationId": "admin.configuration.summary",
+      "openApiOperationId": "getConfigurationSummary",
+      "toolName": "honua_admin_configuration_summary",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/summary"
+    },
+    {
+      "operationId": "admin.configuration.validate-secrets",
+      "openApiOperationId": "validateConfigurationSecrets",
+      "toolName": "honua_admin_configuration_validate_secrets",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/secrets/validate"
+    },
+    {
+      "operationId": "admin.connection.create",
+      "openApiOperationId": "createConnection",
+      "toolName": "honua_admin_connection_create",
+      "method": "POST",
+      "path": "/api/v1/admin/connections"
+    },
+    {
+      "operationId": "admin.connection.delete",
+      "openApiOperationId": "deleteConnection",
+      "toolName": "honua_admin_connection_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/connections/{id}"
+    },
+    {
+      "operationId": "admin.connection.discover-tables",
+      "openApiOperationId": "getConnectionTables",
+      "toolName": "honua_admin_connection_discover_tables",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/tables"
+    },
+    {
+      "operationId": "admin.connection.get",
+      "openApiOperationId": "getConnection",
+      "toolName": "honua_admin_connection_get",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}"
+    },
+    {
+      "operationId": "admin.connection.list",
+      "openApiOperationId": "getConnections",
+      "toolName": "honua_admin_connection_list",
+      "method": "GET",
+      "path": "/api/v1/admin/connections"
+    },
+    {
+      "operationId": "admin.connection.refresh-extents",
+      "openApiOperationId": "refreshConnectionLayerExtents",
+      "toolName": "honua_admin_connection_refresh_extents",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers/extents/refresh"
+    },
+    {
+      "operationId": "admin.connection.refresh-features",
+      "openApiOperationId": "refreshConnectionLayerFeatures",
+      "toolName": "honua_admin_connection_refresh_features",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh"
+    },
+    {
+      "operationId": "admin.connection.test",
+      "openApiOperationId": "testConnection",
+      "toolName": "honua_admin_connection_test",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/test"
+    },
+    {
+      "operationId": "admin.connection.test-draft",
+      "openApiOperationId": "testDraftConnection",
+      "toolName": "honua_admin_connection_test_draft",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/test"
+    },
+    {
+      "operationId": "admin.connection.update",
+      "openApiOperationId": "updateConnection",
+      "toolName": "honua_admin_connection_update",
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}"
+    },
+    {
+      "operationId": "admin.connection.validate-table",
+      "openApiOperationId": "validateConnectionTableForPublish",
+      "toolName": "honua_admin_connection_validate_table",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/tables/validate"
+    },
+    {
+      "operationId": "admin.coordinated-release.approve-gate",
+      "openApiOperationId": "approveCoordinatedReleaseGate",
+      "toolName": "honua_admin_coordinated_release_approve_gate",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}"
+    },
+    {
+      "operationId": "admin.coordinated-release.create",
+      "openApiOperationId": "createCoordinatedReleaseOperation",
+      "toolName": "honua_admin_coordinated_release_create",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations"
+    },
+    {
+      "operationId": "admin.coordinated-release.rollback",
+      "openApiOperationId": "rollbackCoordinatedReleaseOperation",
+      "toolName": "honua_admin_coordinated_release_rollback",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/rollback"
+    },
+    {
+      "operationId": "admin.coordinated-release.status",
+      "openApiOperationId": "getCoordinatedReleaseOperation",
+      "toolName": "honua_admin_coordinated_release_status",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/coordinated-releases/{packageId}/operation"
+    },
+    {
+      "operationId": "admin.field-mask.create",
+      "openApiOperationId": "createFieldMaskPolicy",
+      "toolName": "honua_admin_field_mask_create",
+      "method": "POST",
+      "path": "/api/v1/admin/field-mask-policies"
+    },
+    {
+      "operationId": "admin.field-mask.delete",
+      "openApiOperationId": "deleteFieldMaskPolicy",
+      "toolName": "honua_admin_field_mask_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/field-mask-policies/{id}"
+    },
+    {
+      "operationId": "admin.field-mask.get",
+      "openApiOperationId": "getFieldMaskPolicy",
+      "toolName": "honua_admin_field_mask_get",
+      "method": "GET",
+      "path": "/api/v1/admin/field-mask-policies/{id}"
+    },
+    {
+      "operationId": "admin.field-mask.list",
+      "openApiOperationId": "listFieldMaskPolicies",
+      "toolName": "honua_admin_field_mask_list",
+      "method": "GET",
+      "path": "/api/v1/admin/field-mask-policies"
+    },
+    {
+      "operationId": "admin.import.cancel-job",
+      "openApiOperationId": "cancelImportJob",
+      "toolName": "honua_admin_import_cancel_job",
+      "method": "POST",
+      "path": "/api/v1/admin/import/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "admin.import.cancel-upload",
+      "openApiOperationId": "cancelImportUpload",
+      "toolName": "honua_admin_import_cancel_upload",
+      "method": "POST",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel"
+    },
+    {
+      "operationId": "admin.import.formats",
+      "openApiOperationId": "getImportFormats",
+      "toolName": "honua_admin_import_formats",
+      "method": "GET",
+      "path": "/api/v1/admin/import/formats"
+    },
+    {
+      "operationId": "admin.import.get-job",
+      "openApiOperationId": "getImportJobStatus",
+      "toolName": "honua_admin_import_get_job",
+      "method": "GET",
+      "path": "/api/v1/admin/import/jobs/{jobId}"
+    },
+    {
+      "operationId": "admin.import.get-upload-progress",
+      "openApiOperationId": "getImportUploadProgress",
+      "toolName": "honua_admin_import_get_upload_progress",
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress"
+    },
+    {
+      "operationId": "admin.import.limits",
+      "openApiOperationId": "getImportLimits",
+      "toolName": "honua_admin_import_limits",
+      "method": "GET",
+      "path": "/api/v1/admin/import/limits"
+    },
+    {
+      "operationId": "admin.import.list-jobs",
+      "openApiOperationId": "getActiveImportJobs",
+      "toolName": "honua_admin_import_list_jobs",
+      "method": "GET",
+      "path": "/api/v1/admin/import/jobs"
+    },
+    {
+      "operationId": "admin.import.list-uploads",
+      "openApiOperationId": "listActiveImportUploads",
+      "toolName": "honua_admin_import_list_uploads",
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads"
+    },
+    {
+      "operationId": "admin.import.preview-file",
+      "openApiOperationId": "previewImportFile",
+      "toolName": "honua_admin_import_preview_file",
+      "method": "POST",
+      "path": "/api/v1/admin/import/preview"
+    },
+    {
+      "operationId": "admin.import.preview-url",
+      "openApiOperationId": "previewImportFileFromUrl",
+      "toolName": "honua_admin_import_preview_url",
+      "method": "POST",
+      "path": "/api/v1/admin/import/preview-url"
+    },
+    {
+      "operationId": "admin.import.upload-file",
+      "openApiOperationId": "uploadImportFile",
+      "toolName": "honua_admin_import_upload_file",
+      "method": "POST",
+      "path": "/api/v1/admin/import/upload"
+    },
+    {
+      "operationId": "admin.import.upload-url",
+      "openApiOperationId": "uploadImportFileFromUrl",
+      "toolName": "honua_admin_import_upload_url",
+      "method": "POST",
+      "path": "/api/v1/admin/import/upload-url"
+    },
+    {
+      "operationId": "admin.layer.export-sld",
+      "openApiOperationId": "exportLayerSldStyle",
+      "toolName": "honua_admin_layer_export_sld",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style/export-sld"
+    },
+    {
+      "operationId": "admin.layer.get-drawing-info",
+      "openApiOperationId": "getAdminLayerDrawingInfo",
+      "toolName": "honua_admin_layer_get_drawing_info",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info"
+    },
+    {
+      "operationId": "admin.layer.get-fields",
+      "openApiOperationId": "getAdminLayerFields",
+      "toolName": "honua_admin_layer_get_fields",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/fields"
+    },
+    {
+      "operationId": "admin.layer.get-filter",
+      "openApiOperationId": "getAdminLayerFilter",
+      "toolName": "honua_admin_layer_get_filter",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/filter"
+    },
+    {
+      "operationId": "admin.layer.get-popup-info",
+      "openApiOperationId": "getAdminLayerPopupInfo",
+      "toolName": "honua_admin_layer_get_popup_info",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info"
+    },
+    {
+      "operationId": "admin.layer.get-style",
+      "openApiOperationId": "getAdminLayerStyle",
+      "toolName": "honua_admin_layer_get_style",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style"
+    },
+    {
+      "operationId": "admin.layer.import-sld",
+      "openApiOperationId": "importLayerSldStyle",
+      "toolName": "honua_admin_layer_import_sld",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style/import-sld"
+    },
+    {
+      "operationId": "admin.layer.publish",
+      "openApiOperationId": "publishLayer",
+      "toolName": "honua_admin_layer_publish",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers"
+    },
+    {
+      "operationId": "admin.layer.set-drawing-info",
+      "openApiOperationId": "setAdminLayerDrawingInfo",
+      "toolName": "honua_admin_layer_set_drawing_info",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info"
+    },
+    {
+      "operationId": "admin.layer.set-enabled",
+      "openApiOperationId": "setLayerEnabled",
+      "toolName": "honua_admin_layer_set_enabled",
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/enabled"
+    },
+    {
+      "operationId": "admin.layer.set-fields",
+      "openApiOperationId": "updateAdminLayerFields",
+      "toolName": "honua_admin_layer_set_fields",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/fields"
+    },
+    {
+      "operationId": "admin.layer.set-filter",
+      "openApiOperationId": "updateAdminLayerFilter",
+      "toolName": "honua_admin_layer_set_filter",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/filter"
+    },
+    {
+      "operationId": "admin.layer.set-popup-info",
+      "openApiOperationId": "setAdminLayerPopupInfo",
+      "toolName": "honua_admin_layer_set_popup_info",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info"
+    },
+    {
+      "operationId": "admin.layer.set-style",
+      "openApiOperationId": "updateAdminLayerStyle",
+      "toolName": "honua_admin_layer_set_style",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style"
+    },
+    {
+      "operationId": "admin.license.entitlements",
+      "openApiOperationId": "getLicenseEntitlements",
+      "toolName": "honua_admin_license_entitlements",
+      "method": "GET",
+      "path": "/api/v1/admin/license/entitlements"
+    },
+    {
+      "operationId": "admin.license.status",
+      "openApiOperationId": "getLicenseStatus",
+      "toolName": "honua_admin_license_status",
+      "method": "GET",
+      "path": "/api/v1/admin/license"
+    },
+    {
+      "operationId": "admin.license.upload",
+      "openApiOperationId": "uploadLicense",
+      "toolName": "honua_admin_license_upload",
+      "method": "POST",
+      "path": "/api/v1/admin/license"
+    },
+    {
+      "operationId": "admin.oauth-client.delete",
+      "openApiOperationId": "deleteOAuthClient",
+      "toolName": "honua_admin_oauth_client_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/oauth-clients/{id}"
+    },
+    {
+      "operationId": "admin.oauth-client.get",
+      "openApiOperationId": "getOAuthClient",
+      "toolName": "honua_admin_oauth_client_get",
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-clients/{id}"
+    },
+    {
+      "operationId": "admin.oauth-client.list",
+      "openApiOperationId": "listOAuthClients",
+      "toolName": "honua_admin_oauth_client_list",
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-clients"
+    },
+    {
+      "operationId": "admin.oauth-scope.define",
+      "openApiOperationId": "defineOAuthScope",
+      "toolName": "honua_admin_oauth_scope_define",
+      "method": "PUT",
+      "path": "/api/v1/admin/oauth-scopes"
+    },
+    {
+      "operationId": "admin.oauth-scope.delete",
+      "openApiOperationId": "deleteOAuthScope",
+      "toolName": "honua_admin_oauth_scope_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/oauth-scopes/{scope}"
+    },
+    {
+      "operationId": "admin.oauth-scope.list",
+      "openApiOperationId": "listOAuthScopes",
+      "toolName": "honua_admin_oauth_scope_list",
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-scopes"
+    },
+    {
+      "operationId": "admin.oidc-provider.create",
+      "openApiOperationId": "createOidcProvider",
+      "toolName": "honua_admin_oidc_provider_create",
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers"
+    },
+    {
+      "operationId": "admin.oidc-provider.delete",
+      "openApiOperationId": "deleteOidcProvider",
+      "toolName": "honua_admin_oidc_provider_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/oidc/providers/{id}"
+    },
+    {
+      "operationId": "admin.oidc-provider.get",
+      "openApiOperationId": "getOidcProvider",
+      "toolName": "honua_admin_oidc_provider_get",
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers/{id}"
+    },
+    {
+      "operationId": "admin.oidc-provider.list",
+      "openApiOperationId": "listOidcProviders",
+      "toolName": "honua_admin_oidc_provider_list",
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers"
+    },
+    {
+      "operationId": "admin.oidc-provider.test",
+      "openApiOperationId": "testOidcProvider",
+      "toolName": "honua_admin_oidc_provider_test",
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers/{id}/test"
+    },
+    {
+      "operationId": "admin.oidc-provider.update",
+      "openApiOperationId": "updateOidcProvider",
+      "toolName": "honua_admin_oidc_provider_update",
+      "method": "PUT",
+      "path": "/api/v1/admin/oidc/providers/{id}"
+    },
+    {
+      "operationId": "admin.openapi.acknowledge-observability-alert",
+      "openApiOperationId": "acknowledgeObservabilityAlert",
+      "toolName": "honua_admin_openapi_acknowledge_observability_alert",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/acknowledge"
+    },
+    {
+      "operationId": "admin.openapi.add-client-certificate-revocation",
+      "openApiOperationId": "addClientCertificateRevocation",
+      "toolName": "honua_admin_openapi_add_client_certificate_revocation",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations"
+    },
+    {
+      "operationId": "admin.openapi.add-investigation-link",
+      "openApiOperationId": "addInvestigationLink",
+      "toolName": "honua_admin_openapi_add_investigation_link",
+      "method": "POST",
+      "path": "/api/v1/admin/investigations/{investigationId}/links"
+    },
+    {
+      "operationId": "admin.openapi.add-investigation-pin",
+      "openApiOperationId": "addInvestigationPin",
+      "toolName": "honua_admin_openapi_add_investigation_pin",
+      "method": "POST",
+      "path": "/api/v1/admin/investigations/{investigationId}/pins"
+    },
+    {
+      "operationId": "admin.openapi.allocate-network-topology-draft-generation",
+      "openApiOperationId": "allocateNetworkTopologyDraftGeneration",
+      "toolName": "honua_admin_openapi_allocate_network_topology_draft_generation",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations"
+    },
+    {
+      "operationId": "admin.openapi.apply-network-topology-edit-batch",
+      "openApiOperationId": "applyNetworkTopologyEditBatch",
+      "toolName": "honua_admin_openapi_apply_network_topology_edit_batch",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits"
+    },
+    {
+      "operationId": "admin.openapi.approve-operation-proposal",
+      "openApiOperationId": "approveOperationProposal",
+      "toolName": "honua_admin_openapi_approve_operation_proposal",
+      "method": "POST",
+      "path": "/api/v1/admin/proposals/{id}/approve"
+    },
+    {
+      "operationId": "admin.openapi.assign-field-workflow-submission",
+      "openApiOperationId": "assignFieldWorkflowSubmission",
+      "toolName": "honua_admin_openapi_assign_field_workflow_submission",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment"
+    },
+    {
+      "operationId": "admin.openapi.cancel-console-job",
+      "openApiOperationId": "cancelConsoleJob",
+      "toolName": "honua_admin_openapi_cancel_console_job",
+      "method": "POST",
+      "path": "/api/v1/admin/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "admin.openapi.cancel-geo-server-import-job",
+      "openApiOperationId": "cancelGeoServerImportJob",
+      "toolName": "honua_admin_openapi_cancel_geo_server_import_job",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "admin.openapi.cancel-geoservices-import-job",
+      "openApiOperationId": "cancelGeoservicesImportJob",
+      "toolName": "honua_admin_openapi_cancel_geoservices_import_job",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "admin.openapi.cancel-migration-run",
+      "openApiOperationId": "cancelMigrationRun",
+      "toolName": "honua_admin_openapi_cancel_migration_run",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/cancel"
+    },
+    {
+      "operationId": "admin.openapi.cancel-operation",
+      "openApiOperationId": "cancelOperation",
+      "toolName": "honua_admin_openapi_cancel_operation",
+      "method": "POST",
+      "path": "/api/v1/admin/operations/{operationId}/cancel"
+    },
+    {
+      "operationId": "admin.openapi.cancel-tile-operation-job",
+      "openApiOperationId": "cancelTileOperationJob",
+      "toolName": "honua_admin_openapi_cancel_tile_operation_job",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "admin.openapi.comment-field-workflow-submission",
+      "openApiOperationId": "commentFieldWorkflowSubmission",
+      "toolName": "honua_admin_openapi_comment_field_workflow_submission",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/comments"
+    },
+    {
+      "operationId": "admin.openapi.complete-migration-run",
+      "openApiOperationId": "completeMigrationRun",
+      "toolName": "honua_admin_openapi_complete_migration_run",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/complete"
+    },
+    {
+      "operationId": "admin.openapi.converge-platform-release",
+      "openApiOperationId": "convergePlatformRelease",
+      "toolName": "honua_admin_openapi_converge_platform_release",
+      "method": "POST",
+      "path": "/api/v1/admin/platform-release/converge"
+    },
+    {
+      "operationId": "admin.openapi.create-alert-rule",
+      "openApiOperationId": "createAlertRule",
+      "toolName": "honua_admin_openapi_create_alert_rule",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/rules"
+    },
+    {
+      "operationId": "admin.openapi.create-alert-zone",
+      "openApiOperationId": "createAlertZone",
+      "toolName": "honua_admin_openapi_create_alert_zone",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/zones"
+    },
+    {
+      "operationId": "admin.openapi.create-client-certificate-principal-mapping",
+      "openApiOperationId": "createClientCertificatePrincipalMapping",
+      "toolName": "honua_admin_openapi_create_client_certificate_principal_mapping",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings"
+    },
+    {
+      "operationId": "admin.openapi.create-client-certificate-trust-profile",
+      "openApiOperationId": "createClientCertificateTrustProfile",
+      "toolName": "honua_admin_openapi_create_client_certificate_trust_profile",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/profiles"
+    },
+    {
+      "operationId": "admin.openapi.create-field-workflow-export",
+      "openApiOperationId": "createFieldWorkflowExport",
+      "toolName": "honua_admin_openapi_create_field_workflow_export",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/exports"
+    },
+    {
+      "operationId": "admin.openapi.create-form-package-draft",
+      "openApiOperationId": "createFormPackageDraft",
+      "toolName": "honua_admin_openapi_create_form_package_draft",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages"
+    },
+    {
+      "operationId": "admin.openapi.create-investigation",
+      "openApiOperationId": "createInvestigation",
+      "toolName": "honua_admin_openapi_create_investigation",
+      "method": "POST",
+      "path": "/api/v1/admin/investigations"
+    },
+    {
+      "operationId": "admin.openapi.create-metadata-release-operation",
+      "openApiOperationId": "createMetadataReleaseOperation",
+      "toolName": "honua_admin_openapi_create_metadata_release_operation",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/releases/operations"
+    },
+    {
+      "operationId": "admin.openapi.create-share-export",
+      "openApiOperationId": "createShareExport",
+      "toolName": "honua_admin_openapi_create_share_export",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports"
+    },
+    {
+      "operationId": "admin.openapi.deactivate-scene-dataset",
+      "openApiOperationId": "deactivateSceneDataset",
+      "toolName": "honua_admin_openapi_deactivate_scene_dataset",
+      "method": "DELETE",
+      "path": "/api/v1/admin/scenes/{id}"
+    },
+    {
+      "operationId": "admin.openapi.decide-field-workflow-submission",
+      "openApiOperationId": "decideFieldWorkflowSubmission",
+      "toolName": "honua_admin_openapi_decide_field_workflow_submission",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/decision"
+    },
+    {
+      "operationId": "admin.openapi.delete-alert-rule",
+      "openApiOperationId": "deleteAlertRule",
+      "toolName": "honua_admin_openapi_delete_alert_rule",
+      "method": "DELETE",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}"
+    },
+    {
+      "operationId": "admin.openapi.delete-alert-zone",
+      "openApiOperationId": "deleteAlertZone",
+      "toolName": "honua_admin_openapi_delete_alert_zone",
+      "method": "DELETE",
+      "path": "/api/v1/admin/alerts/zones/{zoneId}"
+    },
+    {
+      "operationId": "admin.openapi.delete-imported-raster",
+      "openApiOperationId": "deleteImportedRaster",
+      "toolName": "honua_admin_openapi_delete_imported_raster",
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/raster/{rasterId}"
+    },
+    {
+      "operationId": "admin.openapi.delete-network-dataset",
+      "openApiOperationId": "deleteNetworkDataset",
+      "toolName": "honua_admin_openapi_delete_network_dataset",
+      "method": "DELETE",
+      "path": "/api/v1/admin/network-datasets/{id}"
+    },
+    {
+      "operationId": "admin.openapi.delete-share-export",
+      "openApiOperationId": "deleteShareExport",
+      "toolName": "honua_admin_openapi_delete_share_export",
+      "method": "DELETE",
+      "path": "/api/v1/admin/share/exports/{exportId}"
+    },
+    {
+      "operationId": "admin.openapi.disable-client-certificate-principal-mapping",
+      "openApiOperationId": "disableClientCertificatePrincipalMapping",
+      "toolName": "honua_admin_openapi_disable_client_certificate_principal_mapping",
+      "method": "DELETE",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"
+    },
+    {
+      "operationId": "admin.openapi.disable-client-certificate-trust-profile",
+      "openApiOperationId": "disableClientCertificateTrustProfile",
+      "toolName": "honua_admin_openapi_disable_client_certificate_trust_profile",
+      "method": "DELETE",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}"
+    },
+    {
+      "operationId": "admin.openapi.disconnect-feature-stream-session",
+      "openApiOperationId": "disconnectFeatureStreamSession",
+      "toolName": "honua_admin_openapi_disconnect_feature_stream_session",
+      "method": "DELETE",
+      "path": "/api/v1/admin/streaming/features/sessions/{sessionId}"
+    },
+    {
+      "operationId": "admin.openapi.disconnect-operations-streaming-subscriber",
+      "openApiOperationId": "disconnectOperationsStreamingSubscriber",
+      "toolName": "honua_admin_openapi_disconnect_operations_streaming_subscriber",
+      "method": "DELETE",
+      "path": "/api/v1/admin/operations/streaming/subscribers/{subscriberId}"
+    },
+    {
+      "operationId": "admin.openapi.discover-configuration",
+      "openApiOperationId": "discoverConfiguration",
+      "toolName": "honua_admin_openapi_discover_configuration",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/discover"
+    },
+    {
+      "operationId": "admin.openapi.discover-external-service",
+      "openApiOperationId": "discoverExternalService",
+      "toolName": "honua_admin_openapi_discover_external_service",
+      "method": "POST",
+      "path": "/api/v1/admin/external-services/discover"
+    },
+    {
+      "operationId": "admin.openapi.discover-geo-server-service",
+      "openApiOperationId": "discoverGeoServerService",
+      "toolName": "honua_admin_openapi_discover_geo_server_service",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/discover"
+    },
+    {
+      "operationId": "admin.openapi.discover-geoservices-service",
+      "openApiOperationId": "discoverGeoservicesService",
+      "toolName": "honua_admin_openapi_discover_geoservices_service",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/discover"
+    },
+    {
+      "operationId": "admin.openapi.evaluate-residency-policy",
+      "openApiOperationId": "evaluateResidencyPolicy",
+      "toolName": "honua_admin_openapi_evaluate_residency_policy",
+      "method": "POST",
+      "path": "/api/v1/admin/compliance/residency/evaluate"
+    },
+    {
+      "operationId": "admin.openapi.evict-tile-cache",
+      "openApiOperationId": "evictTileCache",
+      "toolName": "honua_admin_openapi_evict_tile_cache",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/evict"
+    },
+    {
+      "operationId": "admin.openapi.export-compliance-report",
+      "openApiOperationId": "exportComplianceReport",
+      "toolName": "honua_admin_openapi_export_compliance_report",
+      "method": "GET",
+      "path": "/api/v1/admin/compliance/report"
+    },
+    {
+      "operationId": "admin.openapi.export-observability-audit",
+      "openApiOperationId": "exportObservabilityAudit",
+      "toolName": "honua_admin_openapi_export_observability_audit",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit/export"
+    },
+    {
+      "operationId": "admin.openapi.export-ogc-tile-cache",
+      "openApiOperationId": "exportOgcTileCache",
+      "toolName": "honua_admin_openapi_export_ogc_tile_cache",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-tiles/export"
+    },
+    {
+      "operationId": "admin.openapi.export-service-layer",
+      "openApiOperationId": "exportServiceLayer",
+      "toolName": "honua_admin_openapi_export_service_layer",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/export"
+    },
+    {
+      "operationId": "admin.openapi.export-tenant-usage",
+      "openApiOperationId": "exportTenantUsage",
+      "toolName": "honua_admin_openapi_export_tenant_usage",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/usage"
+    },
+    {
+      "operationId": "admin.openapi.generate-scene",
+      "openApiOperationId": "generateScene",
+      "toolName": "honua_admin_openapi_generate_scene",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/generate"
+    },
+    {
+      "operationId": "admin.openapi.get-admin-auth-config",
+      "openApiOperationId": "getAdminAuthConfig",
+      "toolName": "honua_admin_openapi_get_admin_auth_config",
+      "method": "GET",
+      "path": "/api/v1/admin/auth/config"
+    },
+    {
+      "operationId": "admin.openapi.get-admin-auth-session",
+      "openApiOperationId": "getAdminAuthSession",
+      "toolName": "honua_admin_openapi_get_admin_auth_session",
+      "method": "GET",
+      "path": "/api/v1/admin/auth/session"
+    },
+    {
+      "operationId": "admin.openapi.get-admin-layer-relationships",
+      "openApiOperationId": "getAdminLayerRelationships",
+      "toolName": "honua_admin_openapi_get_admin_layer_relationships",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships"
+    },
+    {
+      "operationId": "admin.openapi.get-admin-layer-validation",
+      "openApiOperationId": "getAdminLayerValidation",
+      "toolName": "honua_admin_openapi_get_admin_layer_validation",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/validation"
+    },
+    {
+      "operationId": "admin.openapi.get-admin-open-api",
+      "openApiOperationId": "getAdminOpenApi",
+      "toolName": "honua_admin_openapi_get_admin_open_api",
+      "method": "GET",
+      "path": "/api/v1/admin/openapi.json"
+    },
+    {
+      "operationId": "admin.openapi.get-alert-rule",
+      "openApiOperationId": "getAlertRule",
+      "toolName": "honua_admin_openapi_get_alert_rule",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}"
+    },
+    {
+      "operationId": "admin.openapi.get-alert-rule-health",
+      "openApiOperationId": "getAlertRuleHealth",
+      "toolName": "honua_admin_openapi_get_alert_rule_health",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/health"
+    },
+    {
+      "operationId": "admin.openapi.get-alert-zone",
+      "openApiOperationId": "getAlertZone",
+      "toolName": "honua_admin_openapi_get_alert_zone",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/zones/{zoneId}"
+    },
+    {
+      "operationId": "admin.openapi.get-arc-gis-migration-manifest",
+      "openApiOperationId": "getArcGisMigrationManifest",
+      "toolName": "honua_admin_openapi_get_arc_gis_migration_manifest",
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"
+    },
+    {
+      "operationId": "admin.openapi.get-arc-gis-migration-parity",
+      "openApiOperationId": "getArcGisMigrationParity",
+      "toolName": "honua_admin_openapi_get_arc_gis_migration_parity",
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity"
+    },
+    {
+      "operationId": "admin.openapi.get-client-certificate-trust-profile",
+      "openApiOperationId": "getClientCertificateTrustProfile",
+      "toolName": "honua_admin_openapi_get_client_certificate_trust_profile",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}"
+    },
+    {
+      "operationId": "admin.openapi.get-cloud-raster",
+      "openApiOperationId": "getCloudRaster",
+      "toolName": "honua_admin_openapi_get_cloud_raster",
+      "method": "GET",
+      "path": "/api/v1/admin/cloud-rasters/{id}"
+    },
+    {
+      "operationId": "admin.openapi.get-compliance-dashboard",
+      "openApiOperationId": "getComplianceDashboard",
+      "toolName": "honua_admin_openapi_get_compliance_dashboard",
+      "method": "GET",
+      "path": "/api/v1/admin/compliance/dashboard"
+    },
+    {
+      "operationId": "admin.openapi.get-configuration",
+      "openApiOperationId": "getConfiguration",
+      "toolName": "honua_admin_openapi_get_configuration",
+      "method": "GET",
+      "path": "/api/v1/admin/config"
+    },
+    {
+      "operationId": "admin.openapi.get-configuration-audit-info",
+      "openApiOperationId": "getConfigurationAuditInfo",
+      "toolName": "honua_admin_openapi_get_configuration_audit_info",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/audit"
+    },
+    {
+      "operationId": "admin.openapi.get-configuration-auto-documentation",
+      "openApiOperationId": "getConfigurationAutoDocumentation",
+      "toolName": "honua_admin_openapi_get_configuration_auto_documentation",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/auto-documentation"
+    },
+    {
+      "operationId": "admin.openapi.get-configuration-discovery-metadata",
+      "openApiOperationId": "getConfigurationDiscoveryMetadata",
+      "toolName": "honua_admin_openapi_get_configuration_discovery_metadata",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/metadata"
+    },
+    {
+      "operationId": "admin.openapi.get-console-job",
+      "openApiOperationId": "getConsoleJob",
+      "toolName": "honua_admin_openapi_get_console_job",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}"
+    },
+    {
+      "operationId": "admin.openapi.get-console-job-actions",
+      "openApiOperationId": "getConsoleJobActions",
+      "toolName": "honua_admin_openapi_get_console_job_actions",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/actions"
+    },
+    {
+      "operationId": "admin.openapi.get-console-job-artifacts",
+      "openApiOperationId": "getConsoleJobArtifacts",
+      "toolName": "honua_admin_openapi_get_console_job_artifacts",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/artifacts"
+    },
+    {
+      "operationId": "admin.openapi.get-console-job-logs",
+      "openApiOperationId": "getConsoleJobLogs",
+      "toolName": "honua_admin_openapi_get_console_job_logs",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/logs"
+    },
+    {
+      "operationId": "admin.openapi.get-console-job-steps",
+      "openApiOperationId": "getConsoleJobSteps",
+      "toolName": "honua_admin_openapi_get_console_job_steps",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/steps"
+    },
+    {
+      "operationId": "admin.openapi.get-current-form-package",
+      "openApiOperationId": "getCurrentFormPackage",
+      "toolName": "honua_admin_openapi_get_current_form_package",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}"
+    },
+    {
+      "operationId": "admin.openapi.get-database-query-cache-statistics",
+      "openApiOperationId": "getDatabaseQueryCacheStatistics",
+      "toolName": "honua_admin_openapi_get_database_query_cache_statistics",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/database/query-cache/statistics"
+    },
+    {
+      "operationId": "admin.openapi.get-deploy-preflight",
+      "openApiOperationId": "getDeployPreflight",
+      "toolName": "honua_admin_openapi_get_deploy_preflight",
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/preflight"
+    },
+    {
+      "operationId": "admin.openapi.get-embed-key",
+      "openApiOperationId": "getEmbedKey",
+      "toolName": "honua_admin_openapi_get_embed_key",
+      "method": "GET",
+      "path": "/api/v1/admin/embed/keys/{id}"
+    },
+    {
+      "operationId": "admin.openapi.get-embed-usage",
+      "openApiOperationId": "getEmbedUsage",
+      "toolName": "honua_admin_openapi_get_embed_usage",
+      "method": "GET",
+      "path": "/api/v1/admin/embed/usage"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-cache-effectiveness",
+      "openApiOperationId": "getEnhancedCacheEffectiveness",
+      "toolName": "honua_admin_openapi_get_enhanced_cache_effectiveness",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/cache/effectiveness"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-cache-statistics",
+      "openApiOperationId": "getEnhancedCacheStatistics",
+      "toolName": "honua_admin_openapi_get_enhanced_cache_statistics",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/cache/statistics"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-exception-statistics",
+      "openApiOperationId": "getEnhancedExceptionStatistics",
+      "toolName": "honua_admin_openapi_get_enhanced_exception_statistics",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/exceptions/statistics"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-performance-summary",
+      "openApiOperationId": "getEnhancedPerformanceSummary",
+      "toolName": "honua_admin_openapi_get_enhanced_performance_summary",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/summary"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-potential-resource-leaks",
+      "openApiOperationId": "getEnhancedPotentialResourceLeaks",
+      "toolName": "honua_admin_openapi_get_enhanced_potential_resource_leaks",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/resources/potential-leaks"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-query-performance-statistics",
+      "openApiOperationId": "getEnhancedQueryPerformanceStatistics",
+      "toolName": "honua_admin_openapi_get_enhanced_query_performance_statistics",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/database/query-performance"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-recent-exceptions",
+      "openApiOperationId": "getEnhancedRecentExceptions",
+      "toolName": "honua_admin_openapi_get_enhanced_recent_exceptions",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/exceptions/recent"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-resource-tracking",
+      "openApiOperationId": "getEnhancedResourceTracking",
+      "toolName": "honua_admin_openapi_get_enhanced_resource_tracking",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/resources/tracking"
+    },
+    {
+      "operationId": "admin.openapi.get-enhanced-slow-queries",
+      "openApiOperationId": "getEnhancedSlowQueries",
+      "toolName": "honua_admin_openapi_get_enhanced_slow_queries",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/database/slow-queries"
+    },
+    {
+      "operationId": "admin.openapi.get-field-workflow-submission",
+      "openApiOperationId": "getFieldWorkflowSubmission",
+      "toolName": "honua_admin_openapi_get_field_workflow_submission",
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}"
+    },
+    {
+      "operationId": "admin.openapi.get-form-package-version",
+      "openApiOperationId": "getFormPackageVersion",
+      "toolName": "honua_admin_openapi_get_form_package_version",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"
+    },
+    {
+      "operationId": "admin.openapi.get-geo-server-import-job",
+      "openApiOperationId": "getGeoServerImportJob",
+      "toolName": "honua_admin_openapi_get_geo_server_import_job",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoserver/jobs/{jobId}"
+    },
+    {
+      "operationId": "admin.openapi.get-geocoding-providers",
+      "openApiOperationId": "getGeocodingProviders",
+      "toolName": "honua_admin_openapi_get_geocoding_providers",
+      "method": "GET",
+      "path": "/api/v1/admin/geocoding/providers"
+    },
+    {
+      "operationId": "admin.openapi.get-geoprocessing-tool-usage-ranking",
+      "openApiOperationId": "getGeoprocessingToolUsageRanking",
+      "toolName": "honua_admin_openapi_get_geoprocessing_tool_usage_ranking",
+      "method": "GET",
+      "path": "/api/v1/admin/geoprocessing/tools/usage-ranking"
+    },
+    {
+      "operationId": "admin.openapi.get-geoservices-import-job",
+      "openApiOperationId": "getGeoservicesImportJob",
+      "toolName": "honua_admin_openapi_get_geoservices_import_job",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices/jobs/{jobId}"
+    },
+    {
+      "operationId": "admin.openapi.get-identity-providers",
+      "openApiOperationId": "getIdentityProviders",
+      "toolName": "honua_admin_openapi_get_identity_providers",
+      "method": "GET",
+      "path": "/api/v1/admin/identity/providers"
+    },
+    {
+      "operationId": "admin.openapi.get-investigation",
+      "openApiOperationId": "getInvestigation",
+      "toolName": "honua_admin_openapi_get_investigation",
+      "method": "GET",
+      "path": "/api/v1/admin/investigations/{investigationId}"
+    },
+    {
+      "operationId": "admin.openapi.get-latest-migration-performance-evidence",
+      "openApiOperationId": "getLatestMigrationPerformanceEvidence",
+      "toolName": "honua_admin_openapi_get_latest_migration_performance_evidence",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/latest"
+    },
+    {
+      "operationId": "admin.openapi.get-layer-share-traffic-series",
+      "openApiOperationId": "getLayerShareTrafficSeries",
+      "toolName": "honua_admin_openapi_get_layer_share_traffic_series",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series"
+    },
+    {
+      "operationId": "admin.openapi.get-layer-share-traffic-summary",
+      "openApiOperationId": "getLayerShareTrafficSummary",
+      "toolName": "honua_admin_openapi_get_layer_share_traffic_summary",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic"
+    },
+    {
+      "operationId": "admin.openapi.get-license-capacity-state",
+      "openApiOperationId": "getLicenseCapacityState",
+      "toolName": "honua_admin_openapi_get_license_capacity_state",
+      "method": "GET",
+      "path": "/api/v1/admin/license/capacity"
+    },
+    {
+      "operationId": "admin.openapi.get-license-features",
+      "openApiOperationId": "getLicenseFeatures",
+      "toolName": "honua_admin_openapi_get_license_features",
+      "method": "GET",
+      "path": "/api/v1/admin/license/features"
+    },
+    {
+      "operationId": "admin.openapi.get-managed-user-effective-permissions",
+      "openApiOperationId": "getManagedUserEffectivePermissions",
+      "toolName": "honua_admin_openapi_get_managed_user_effective_permissions",
+      "method": "GET",
+      "path": "/api/v1/admin/users/{id}/effective-permissions"
+    },
+    {
+      "operationId": "admin.openapi.get-metadata-semantic-inventory",
+      "openApiOperationId": "getMetadataSemanticInventory",
+      "toolName": "honua_admin_openapi_get_metadata_semantic_inventory",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/environments/{environment}/inventory"
+    },
+    {
+      "operationId": "admin.openapi.get-migration-batch",
+      "openApiOperationId": "getMigrationBatch",
+      "toolName": "honua_admin_openapi_get_migration_batch",
+      "method": "GET",
+      "path": "/api/v1/admin/import/migrations/{batchId}"
+    },
+    {
+      "operationId": "admin.openapi.get-migration-performance-evidence-by-id",
+      "openApiOperationId": "getMigrationPerformanceEvidenceById",
+      "toolName": "honua_admin_openapi_get_migration_performance_evidence_by_id",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/{evidenceId}"
+    },
+    {
+      "operationId": "admin.openapi.get-migration-run",
+      "openApiOperationId": "getMigrationRun",
+      "toolName": "honua_admin_openapi_get_migration_run",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}"
+    },
+    {
+      "operationId": "admin.openapi.get-migration-run-evidence-pack",
+      "openApiOperationId": "getMigrationRunEvidencePack",
+      "toolName": "honua_admin_openapi_get_migration_run_evidence_pack",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}/evidence-pack"
+    },
+    {
+      "operationId": "admin.openapi.get-migration-run-scorecard",
+      "openApiOperationId": "getMigrationRunScorecard",
+      "toolName": "honua_admin_openapi_get_migration_run_scorecard",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}/scorecard"
+    },
+    {
+      "operationId": "admin.openapi.get-migration-status",
+      "openApiOperationId": "getMigrationStatus",
+      "toolName": "honua_admin_openapi_get_migration_status",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/migrations"
+    },
+    {
+      "operationId": "admin.openapi.get-multidim-coverage",
+      "openApiOperationId": "getMultidimCoverage",
+      "toolName": "honua_admin_openapi_get_multidim_coverage",
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages/{id}"
+    },
+    {
+      "operationId": "admin.openapi.get-multidim-coverage-scan-job",
+      "openApiOperationId": "getMultidimCoverageScanJob",
+      "toolName": "honua_admin_openapi_get_multidim_coverage_scan_job",
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages/jobs/{jobId}"
+    },
+    {
+      "operationId": "admin.openapi.get-network-dataset",
+      "openApiOperationId": "getNetworkDataset",
+      "toolName": "honua_admin_openapi_get_network_dataset",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}"
+    },
+    {
+      "operationId": "admin.openapi.get-network-topology-rebuild-attempt",
+      "openApiOperationId": "getNetworkTopologyRebuildAttempt",
+      "toolName": "honua_admin_openapi_get_network_topology_rebuild_attempt",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}"
+    },
+    {
+      "operationId": "admin.openapi.get-observability-alert",
+      "openApiOperationId": "getObservabilityAlert",
+      "toolName": "honua_admin_openapi_get_observability_alert",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/alerts/{eventId}"
+    },
+    {
+      "operationId": "admin.openapi.get-operation-proposal",
+      "openApiOperationId": "getOperationProposal",
+      "toolName": "honua_admin_openapi_get_operation_proposal",
+      "method": "GET",
+      "path": "/api/v1/admin/proposals/{id}"
+    },
+    {
+      "operationId": "admin.openapi.get-operation-status",
+      "openApiOperationId": "getOperationStatus",
+      "toolName": "honua_admin_openapi_get_operation_status",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/{operationId}"
+    },
+    {
+      "operationId": "admin.openapi.get-operations-by-type",
+      "openApiOperationId": "getOperationsByType",
+      "toolName": "honua_admin_openapi_get_operations_by_type",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/type/{operationType}"
+    },
+    {
+      "operationId": "admin.openapi.get-operations-cache-health",
+      "openApiOperationId": "getOperationsCacheHealth",
+      "toolName": "honua_admin_openapi_get_operations_cache_health",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/health"
+    },
+    {
+      "operationId": "admin.openapi.get-operations-cache-redis-metrics",
+      "openApiOperationId": "getOperationsCacheRedisMetrics",
+      "toolName": "honua_admin_openapi_get_operations_cache_redis_metrics",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/redis"
+    },
+    {
+      "operationId": "admin.openapi.get-operations-cache-statistics",
+      "openApiOperationId": "getOperationsCacheStatistics",
+      "toolName": "honua_admin_openapi_get_operations_cache_statistics",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/statistics"
+    },
+    {
+      "operationId": "admin.openapi.get-operations-geocoding-configuration",
+      "openApiOperationId": "getOperationsGeocodingConfiguration",
+      "toolName": "honua_admin_openapi_get_operations_geocoding_configuration",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/geocoding/configuration"
+    },
+    {
+      "operationId": "admin.openapi.get-operations-geocoding-providers",
+      "openApiOperationId": "getOperationsGeocodingProviders",
+      "toolName": "honua_admin_openapi_get_operations_geocoding_providers",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/geocoding/providers"
+    },
+    {
+      "operationId": "admin.openapi.get-ops-autonomy-policy",
+      "openApiOperationId": "getOpsAutonomyPolicy",
+      "toolName": "honua_admin_openapi_get_ops_autonomy_policy",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/policies/{rule}"
+    },
+    {
+      "operationId": "admin.openapi.get-ops-autonomy-settings",
+      "openApiOperationId": "getOpsAutonomySettings",
+      "toolName": "honua_admin_openapi_get_ops_autonomy_settings",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/settings"
+    },
+    {
+      "operationId": "admin.openapi.get-ops-health-history",
+      "openApiOperationId": "getOpsHealthHistory",
+      "toolName": "honua_admin_openapi_get_ops_health_history",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/ops-health/history"
+    },
+    {
+      "operationId": "admin.openapi.get-ops-health-snapshot",
+      "openApiOperationId": "getOpsHealthSnapshot",
+      "toolName": "honua_admin_openapi_get_ops_health_snapshot",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/ops-health"
+    },
+    {
+      "operationId": "admin.openapi.get-platform-license-status",
+      "openApiOperationId": "getPlatformLicenseStatus",
+      "toolName": "honua_admin_openapi_get_platform_license_status",
+      "method": "GET",
+      "path": "/api/v1/admin/license/status"
+    },
+    {
+      "operationId": "admin.openapi.get-published-layers",
+      "openApiOperationId": "getPublishedLayers",
+      "toolName": "honua_admin_openapi_get_published_layers",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/layers"
+    },
+    {
+      "operationId": "admin.openapi.get-raster-import-formats",
+      "openApiOperationId": "getRasterImportFormats",
+      "toolName": "honua_admin_openapi_get_raster_import_formats",
+      "method": "GET",
+      "path": "/api/v1/admin/import/raster/formats"
+    },
+    {
+      "operationId": "admin.openapi.get-recent-errors",
+      "openApiOperationId": "getRecentErrors",
+      "toolName": "honua_admin_openapi_get_recent_errors",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/errors"
+    },
+    {
+      "operationId": "admin.openapi.get-scene-dataset",
+      "openApiOperationId": "getSceneDataset",
+      "toolName": "honua_admin_openapi_get_scene_dataset",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/{id}"
+    },
+    {
+      "operationId": "admin.openapi.get-service-replica",
+      "openApiOperationId": "getServiceReplica",
+      "toolName": "honua_admin_openapi_get_service_replica",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}"
+    },
+    {
+      "operationId": "admin.openapi.get-service-replica-conflict",
+      "openApiOperationId": "getServiceReplicaConflict",
+      "toolName": "honua_admin_openapi_get_service_replica_conflict",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}"
+    },
+    {
+      "operationId": "admin.openapi.get-share-export",
+      "openApiOperationId": "getShareExport",
+      "toolName": "honua_admin_openapi_get_share_export",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}"
+    },
+    {
+      "operationId": "admin.openapi.get-share-export-run",
+      "openApiOperationId": "getShareExportRun",
+      "toolName": "honua_admin_openapi_get_share_export_run",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}/runs/{runId}"
+    },
+    {
+      "operationId": "admin.openapi.get-share-traffic-series",
+      "openApiOperationId": "getShareTrafficSeries",
+      "toolName": "honua_admin_openapi_get_share_traffic_series",
+      "method": "GET",
+      "path": "/api/v1/admin/share/traffic/series"
+    },
+    {
+      "operationId": "admin.openapi.get-share-traffic-summary",
+      "openApiOperationId": "getShareTrafficSummary",
+      "toolName": "honua_admin_openapi_get_share_traffic_summary",
+      "method": "GET",
+      "path": "/api/v1/admin/share/traffic"
+    },
+    {
+      "operationId": "admin.openapi.get-telemetry-status",
+      "openApiOperationId": "getTelemetryStatus",
+      "toolName": "honua_admin_openapi_get_telemetry_status",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/telemetry"
+    },
+    {
+      "operationId": "admin.openapi.get-tile-cache-inventory",
+      "openApiOperationId": "getTileCacheInventory",
+      "toolName": "honua_admin_openapi_get_tile_cache_inventory",
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/cache/inventory"
+    },
+    {
+      "operationId": "admin.openapi.get-tile-operation-job",
+      "openApiOperationId": "getTileOperationJob",
+      "toolName": "honua_admin_openapi_get_tile_operation_job",
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}"
+    },
+    {
+      "operationId": "admin.openapi.get-zarr-store",
+      "openApiOperationId": "getZarrStore",
+      "toolName": "honua_admin_openapi_get_zarr_store",
+      "method": "GET",
+      "path": "/api/v1/admin/zarr-stores/{id}"
+    },
+    {
+      "operationId": "admin.openapi.import-geocoder-reference-data",
+      "openApiOperationId": "importGeocoderReferenceData",
+      "toolName": "honua_admin_openapi_import_geocoder_reference_data",
+      "method": "POST",
+      "path": "/api/v1/admin/geocoding/reference-data/import"
+    },
+    {
+      "operationId": "admin.openapi.import-ogc-api-features-collection",
+      "openApiOperationId": "importOgcApiFeaturesCollection",
+      "toolName": "honua_admin_openapi_import_ogc_api_features_collection",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-api-features/collection"
+    },
+    {
+      "operationId": "admin.openapi.import-ogc-coverages",
+      "openApiOperationId": "importOgcCoverages",
+      "toolName": "honua_admin_openapi_import_ogc_coverages",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc/coverages/import"
+    },
+    {
+      "operationId": "admin.openapi.import-ogc-wcs-coverages",
+      "openApiOperationId": "importOgcWcsCoverages",
+      "toolName": "honua_admin_openapi_import_ogc_wcs_coverages",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-wcs/import"
+    },
+    {
+      "operationId": "admin.openapi.import-raster-file",
+      "openApiOperationId": "importRasterFile",
+      "toolName": "honua_admin_openapi_import_raster_file",
+      "method": "POST",
+      "path": "/api/v1/admin/import/raster"
+    },
+    {
+      "operationId": "admin.openapi.import-tile-cache-package",
+      "openApiOperationId": "importTileCachePackage",
+      "toolName": "honua_admin_openapi_import_tile_cache_package",
+      "method": "POST",
+      "path": "/api/v1/admin/import/tile-package"
+    },
+    {
+      "operationId": "admin.openapi.ingest-city-gml-scene",
+      "openApiOperationId": "ingestCityGmlScene",
+      "toolName": "honua_admin_openapi_ingest_city_gml_scene",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/citygml"
+    },
+    {
+      "operationId": "admin.openapi.ingest-point-cloud-scene",
+      "openApiOperationId": "ingestPointCloudScene",
+      "toolName": "honua_admin_openapi_ingest_point_cloud_scene",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/pointcloud"
+    },
+    {
+      "operationId": "admin.openapi.invalidate-enhanced-query-result-cache",
+      "openApiOperationId": "invalidateEnhancedQueryResultCache",
+      "toolName": "honua_admin_openapi_invalidate_enhanced_query_result_cache",
+      "method": "DELETE",
+      "path": "/api/v1/admin/performance/enhanced/cache/invalidate"
+    },
+    {
+      "operationId": "admin.openapi.invalidate-operations-cache",
+      "openApiOperationId": "invalidateOperationsCache",
+      "toolName": "honua_admin_openapi_invalidate_operations_cache",
+      "method": "POST",
+      "path": "/api/v1/admin/operations/cache/invalidate"
+    },
+    {
+      "operationId": "admin.openapi.list-active-operations",
+      "openApiOperationId": "listActiveOperations",
+      "toolName": "honua_admin_openapi_list_active_operations",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/active"
+    },
+    {
+      "operationId": "admin.openapi.list-alert-channel-states",
+      "openApiOperationId": "listAlertChannelStates",
+      "toolName": "honua_admin_openapi_list_alert_channel_states",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/channels"
+    },
+    {
+      "operationId": "admin.openapi.list-alert-rule-events",
+      "openApiOperationId": "listAlertRuleEvents",
+      "toolName": "honua_admin_openapi_list_alert_rule_events",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/events"
+    },
+    {
+      "operationId": "admin.openapi.list-alert-rules",
+      "openApiOperationId": "listAlertRules",
+      "toolName": "honua_admin_openapi_list_alert_rules",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules"
+    },
+    {
+      "operationId": "admin.openapi.list-alert-zones",
+      "openApiOperationId": "listAlertZones",
+      "toolName": "honua_admin_openapi_list_alert_zones",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/zones"
+    },
+    {
+      "operationId": "admin.openapi.list-arc-gis-migration-runs",
+      "openApiOperationId": "listArcGisMigrationRuns",
+      "toolName": "honua_admin_openapi_list_arc_gis_migration_runs",
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations"
+    },
+    {
+      "operationId": "admin.openapi.list-client-certificate-principal-mappings",
+      "openApiOperationId": "listClientCertificatePrincipalMappings",
+      "toolName": "honua_admin_openapi_list_client_certificate_principal_mappings",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings"
+    },
+    {
+      "operationId": "admin.openapi.list-client-certificate-revocations",
+      "openApiOperationId": "listClientCertificateRevocations",
+      "toolName": "honua_admin_openapi_list_client_certificate_revocations",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations"
+    },
+    {
+      "operationId": "admin.openapi.list-client-certificate-trust-profiles",
+      "openApiOperationId": "listClientCertificateTrustProfiles",
+      "toolName": "honua_admin_openapi_list_client_certificate_trust_profiles",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles"
+    },
+    {
+      "operationId": "admin.openapi.list-cloud-rasters",
+      "openApiOperationId": "listCloudRasters",
+      "toolName": "honua_admin_openapi_list_cloud_rasters",
+      "method": "GET",
+      "path": "/api/v1/admin/cloud-rasters"
+    },
+    {
+      "operationId": "admin.openapi.list-console-jobs",
+      "openApiOperationId": "listConsoleJobs",
+      "toolName": "honua_admin_openapi_list_console_jobs",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs"
+    },
+    {
+      "operationId": "admin.openapi.list-embed-keys",
+      "openApiOperationId": "listEmbedKeys",
+      "toolName": "honua_admin_openapi_list_embed_keys",
+      "method": "GET",
+      "path": "/api/v1/admin/embed/keys"
+    },
+    {
+      "operationId": "admin.openapi.list-feature-stream-sessions",
+      "openApiOperationId": "listFeatureStreamSessions",
+      "toolName": "honua_admin_openapi_list_feature_stream_sessions",
+      "method": "GET",
+      "path": "/api/v1/admin/streaming/features/sessions"
+    },
+    {
+      "operationId": "admin.openapi.list-federation-sources",
+      "openApiOperationId": "listFederationSources",
+      "toolName": "honua_admin_openapi_list_federation_sources",
+      "method": "GET",
+      "path": "/api/v1/admin/federation/sources"
+    },
+    {
+      "operationId": "admin.openapi.list-field-workflow-exports",
+      "openApiOperationId": "listFieldWorkflowExports",
+      "toolName": "honua_admin_openapi_list_field_workflow_exports",
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/exports"
+    },
+    {
+      "operationId": "admin.openapi.list-field-workflow-submissions",
+      "openApiOperationId": "listFieldWorkflowSubmissions",
+      "toolName": "honua_admin_openapi_list_field_workflow_submissions",
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/submissions"
+    },
+    {
+      "operationId": "admin.openapi.list-form-package-versions",
+      "openApiOperationId": "listFormPackageVersions",
+      "toolName": "honua_admin_openapi_list_form_package_versions",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions"
+    },
+    {
+      "operationId": "admin.openapi.list-form-packages",
+      "openApiOperationId": "listFormPackages",
+      "toolName": "honua_admin_openapi_list_form_packages",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages"
+    },
+    {
+      "operationId": "admin.openapi.list-geo-server-import-jobs",
+      "openApiOperationId": "listGeoServerImportJobs",
+      "toolName": "honua_admin_openapi_list_geo_server_import_jobs",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoserver/jobs"
+    },
+    {
+      "operationId": "admin.openapi.list-geoservices-import-jobs",
+      "openApiOperationId": "listGeoservicesImportJobs",
+      "toolName": "honua_admin_openapi_list_geoservices_import_jobs",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices/jobs"
+    },
+    {
+      "operationId": "admin.openapi.list-investigations",
+      "openApiOperationId": "listInvestigations",
+      "toolName": "honua_admin_openapi_list_investigations",
+      "method": "GET",
+      "path": "/api/v1/admin/investigations"
+    },
+    {
+      "operationId": "admin.openapi.list-migration-performance-evidence-history",
+      "openApiOperationId": "listMigrationPerformanceEvidenceHistory",
+      "toolName": "honua_admin_openapi_list_migration_performance_evidence_history",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/history"
+    },
+    {
+      "operationId": "admin.openapi.list-migration-runs",
+      "openApiOperationId": "listMigrationRuns",
+      "toolName": "honua_admin_openapi_list_migration_runs",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs"
+    },
+    {
+      "operationId": "admin.openapi.list-multidim-coverages",
+      "openApiOperationId": "listMultidimCoverages",
+      "toolName": "honua_admin_openapi_list_multidim_coverages",
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages"
+    },
+    {
+      "operationId": "admin.openapi.list-network-datasets",
+      "openApiOperationId": "listNetworkDatasets",
+      "toolName": "honua_admin_openapi_list_network_datasets",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets"
+    },
+    {
+      "operationId": "admin.openapi.list-network-topology-generations",
+      "openApiOperationId": "listNetworkTopologyGenerations",
+      "toolName": "honua_admin_openapi_list_network_topology_generations",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/generations"
+    },
+    {
+      "operationId": "admin.openapi.list-network-topology-promotions",
+      "openApiOperationId": "listNetworkTopologyPromotions",
+      "toolName": "honua_admin_openapi_list_network_topology_promotions",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/promotions"
+    },
+    {
+      "operationId": "admin.openapi.list-observability-alerts",
+      "openApiOperationId": "listObservabilityAlerts",
+      "toolName": "honua_admin_openapi_list_observability_alerts",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/alerts"
+    },
+    {
+      "operationId": "admin.openapi.list-observability-audit-entries",
+      "openApiOperationId": "listObservabilityAuditEntries",
+      "toolName": "honua_admin_openapi_list_observability_audit_entries",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit"
+    },
+    {
+      "operationId": "admin.openapi.list-operate-events",
+      "openApiOperationId": "listOperateEvents",
+      "toolName": "honua_admin_openapi_list_operate_events",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/events"
+    },
+    {
+      "operationId": "admin.openapi.list-operate-logs",
+      "openApiOperationId": "listOperateLogs",
+      "toolName": "honua_admin_openapi_list_operate_logs",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/logs"
+    },
+    {
+      "operationId": "admin.openapi.list-operation-proposals",
+      "openApiOperationId": "listOperationProposals",
+      "toolName": "honua_admin_openapi_list_operation_proposals",
+      "method": "GET",
+      "path": "/api/v1/admin/proposals"
+    },
+    {
+      "operationId": "admin.openapi.list-operations-streaming-subscribers",
+      "openApiOperationId": "listOperationsStreamingSubscribers",
+      "toolName": "honua_admin_openapi_list_operations_streaming_subscribers",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/streaming/subscribers"
+    },
+    {
+      "operationId": "admin.openapi.list-ops-autonomy-policies",
+      "openApiOperationId": "listOpsAutonomyPolicies",
+      "toolName": "honua_admin_openapi_list_ops_autonomy_policies",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/policies"
+    },
+    {
+      "operationId": "admin.openapi.list-ops-findings",
+      "openApiOperationId": "listOpsFindings",
+      "toolName": "honua_admin_openapi_list_ops_findings",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/findings"
+    },
+    {
+      "operationId": "admin.openapi.list-scene-datasets",
+      "openApiOperationId": "listSceneDatasets",
+      "toolName": "honua_admin_openapi_list_scene_datasets",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes"
+    },
+    {
+      "operationId": "admin.openapi.list-service-replica-conflicts",
+      "openApiOperationId": "listServiceReplicaConflicts",
+      "toolName": "honua_admin_openapi_list_service_replica_conflicts",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts"
+    },
+    {
+      "operationId": "admin.openapi.list-service-replicas",
+      "openApiOperationId": "listServiceReplicas",
+      "toolName": "honua_admin_openapi_list_service_replicas",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas"
+    },
+    {
+      "operationId": "admin.openapi.list-share-export-runs",
+      "openApiOperationId": "listShareExportRuns",
+      "toolName": "honua_admin_openapi_list_share_export_runs",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}/runs"
+    },
+    {
+      "operationId": "admin.openapi.list-share-exports",
+      "openApiOperationId": "listShareExports",
+      "toolName": "honua_admin_openapi_list_share_exports",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports"
+    },
+    {
+      "operationId": "admin.openapi.list-tile-operation-jobs",
+      "openApiOperationId": "listTileOperationJobs",
+      "toolName": "honua_admin_openapi_list_tile_operation_jobs",
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/jobs"
+    },
+    {
+      "operationId": "admin.openapi.list-zarr-stores",
+      "openApiOperationId": "listZarrStores",
+      "toolName": "honua_admin_openapi_list_zarr_stores",
+      "method": "GET",
+      "path": "/api/v1/admin/zarr-stores"
+    },
+    {
+      "operationId": "admin.openapi.logout-admin-auth-session",
+      "openApiOperationId": "logoutAdminAuthSession",
+      "toolName": "honua_admin_openapi_logout_admin_auth_session",
+      "method": "POST",
+      "path": "/api/v1/admin/auth/logout"
+    },
+    {
+      "operationId": "admin.openapi.pause-alert-channel",
+      "openApiOperationId": "pauseAlertChannel",
+      "toolName": "honua_admin_openapi_pause_alert_channel",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/channels/{channel}/pause"
+    },
+    {
+      "operationId": "admin.openapi.pause-share-export",
+      "openApiOperationId": "pauseShareExport",
+      "toolName": "honua_admin_openapi_pause_share_export",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/pause"
+    },
+    {
+      "operationId": "admin.openapi.plan-deploy-operation",
+      "openApiOperationId": "planDeployOperation",
+      "toolName": "honua_admin_openapi_plan_deploy_operation",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/plan"
+    },
+    {
+      "operationId": "admin.openapi.plan-federation-source-query",
+      "openApiOperationId": "planFederationSourceQuery",
+      "toolName": "honua_admin_openapi_plan_federation_source_query",
+      "method": "GET",
+      "path": "/api/v1/admin/federation/sources/{id}/plan"
+    },
+    {
+      "operationId": "admin.openapi.preview-package",
+      "openApiOperationId": "previewPackage",
+      "toolName": "honua_admin_openapi_preview_package",
+      "method": "POST",
+      "path": "/api/v1/admin/packages/preview"
+    },
+    {
+      "operationId": "admin.openapi.promote-network-topology-generation",
+      "openApiOperationId": "promoteNetworkTopologyGeneration",
+      "toolName": "honua_admin_openapi_promote_network_topology_generation",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/promote"
+    },
+    {
+      "operationId": "admin.openapi.propose-ops-finding",
+      "openApiOperationId": "proposeOpsFinding",
+      "toolName": "honua_admin_openapi_propose_ops_finding",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/findings/{findingId}/propose"
+    },
+    {
+      "operationId": "admin.openapi.publish-form-package-version",
+      "openApiOperationId": "publishFormPackageVersion",
+      "toolName": "honua_admin_openapi_publish_form_package_version",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"
+    },
+    {
+      "operationId": "admin.openapi.query-metadata-environment-bindings",
+      "openApiOperationId": "queryMetadataEnvironmentBindings",
+      "toolName": "honua_admin_openapi_query_metadata_environment_bindings",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/environment-bindings/query"
+    },
+    {
+      "operationId": "admin.openapi.record-arc-gis-migration-manifest",
+      "openApiOperationId": "recordArcGisMigrationManifest",
+      "toolName": "honua_admin_openapi_record_arc_gis_migration_manifest",
+      "method": "POST",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"
+    },
+    {
+      "operationId": "admin.openapi.record-arc-gis-migration-parity",
+      "openApiOperationId": "recordArcGisMigrationParity",
+      "toolName": "honua_admin_openapi_record_arc_gis_migration_parity",
+      "method": "POST",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity"
+    },
+    {
+      "operationId": "admin.openapi.record-migration-run-scorecard",
+      "openApiOperationId": "recordMigrationRunScorecard",
+      "toolName": "honua_admin_openapi_record_migration_run_scorecard",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/scorecard"
+    },
+    {
+      "operationId": "admin.openapi.record-migration-run-started",
+      "openApiOperationId": "recordMigrationRunStarted",
+      "toolName": "honua_admin_openapi_record_migration_run_started",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs"
+    },
+    {
+      "operationId": "admin.openapi.redrive-alert-dead-letters",
+      "openApiOperationId": "redriveAlertDeadLetters",
+      "toolName": "honua_admin_openapi_redrive_alert_dead_letters",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/dispatch/redrive"
+    },
+    {
+      "operationId": "admin.openapi.refresh-cloud-raster",
+      "openApiOperationId": "refreshCloudRaster",
+      "toolName": "honua_admin_openapi_refresh_cloud_raster",
+      "method": "POST",
+      "path": "/api/v1/admin/cloud-rasters/{id}/refresh"
+    },
+    {
+      "operationId": "admin.openapi.refresh-multidim-coverage",
+      "openApiOperationId": "refreshMultidimCoverage",
+      "toolName": "honua_admin_openapi_refresh_multidim_coverage",
+      "method": "POST",
+      "path": "/api/v1/admin/multidim-coverages/{id}/refresh"
+    },
+    {
+      "operationId": "admin.openapi.refresh-zarr-store",
+      "openApiOperationId": "refreshZarrStore",
+      "toolName": "honua_admin_openapi_refresh_zarr_store",
+      "method": "POST",
+      "path": "/api/v1/admin/zarr-stores/{id}/refresh"
+    },
+    {
+      "operationId": "admin.openapi.register-cloud-raster",
+      "openApiOperationId": "registerCloudRaster",
+      "toolName": "honua_admin_openapi_register_cloud_raster",
+      "method": "POST",
+      "path": "/api/v1/admin/cloud-rasters"
+    },
+    {
+      "operationId": "admin.openapi.register-multidim-coverage",
+      "openApiOperationId": "registerMultidimCoverage",
+      "toolName": "honua_admin_openapi_register_multidim_coverage",
+      "method": "POST",
+      "path": "/api/v1/admin/multidim-coverages"
+    },
+    {
+      "operationId": "admin.openapi.register-network-dataset",
+      "openApiOperationId": "registerNetworkDataset",
+      "toolName": "honua_admin_openapi_register_network_dataset",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets"
+    },
+    {
+      "operationId": "admin.openapi.register-scene-dataset",
+      "openApiOperationId": "registerSceneDataset",
+      "toolName": "honua_admin_openapi_register_scene_dataset",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes"
+    },
+    {
+      "operationId": "admin.openapi.register-zarr-store",
+      "openApiOperationId": "registerZarrStore",
+      "toolName": "honua_admin_openapi_register_zarr_store",
+      "method": "POST",
+      "path": "/api/v1/admin/zarr-stores"
+    },
+    {
+      "operationId": "admin.openapi.reject-operation-proposal",
+      "openApiOperationId": "rejectOperationProposal",
+      "toolName": "honua_admin_openapi_reject_operation_proposal",
+      "method": "POST",
+      "path": "/api/v1/admin/proposals/{id}/reject"
+    },
+    {
+      "operationId": "admin.openapi.remove-client-certificate-revocation",
+      "openApiOperationId": "removeClientCertificateRevocation",
+      "toolName": "honua_admin_openapi_remove_client_certificate_revocation",
+      "method": "DELETE",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}"
+    },
+    {
+      "operationId": "admin.openapi.remove-investigation-link",
+      "openApiOperationId": "removeInvestigationLink",
+      "toolName": "honua_admin_openapi_remove_investigation_link",
+      "method": "DELETE",
+      "path": "/api/v1/admin/investigations/{investigationId}/links/{linkId}"
+    },
+    {
+      "operationId": "admin.openapi.remove-investigation-pin",
+      "openApiOperationId": "removeInvestigationPin",
+      "toolName": "honua_admin_openapi_remove_investigation_pin",
+      "method": "DELETE",
+      "path": "/api/v1/admin/investigations/{investigationId}/pins/{pinId}"
+    },
+    {
+      "operationId": "admin.openapi.reopen-form-package-version",
+      "openApiOperationId": "reopenFormPackageVersion",
+      "toolName": "honua_admin_openapi_reopen_form_package_version",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"
+    },
+    {
+      "operationId": "admin.openapi.replay-feature-change-events",
+      "openApiOperationId": "replayFeatureChangeEvents",
+      "toolName": "honua_admin_openapi_replay_feature_change_events",
+      "method": "GET",
+      "path": "/api/v1/admin/feature-events/replay"
+    },
+    {
+      "operationId": "admin.openapi.reset-feature-stream-conformance-source",
+      "openApiOperationId": "resetFeatureStreamConformanceSource",
+      "toolName": "honua_admin_openapi_reset_feature_stream_conformance_source",
+      "method": "POST",
+      "path": "/api/v1/admin/streaming/conformance/reset"
+    },
+    {
+      "operationId": "admin.openapi.resolve-observability-alert",
+      "openApiOperationId": "resolveObservabilityAlert",
+      "toolName": "honua_admin_openapi_resolve_observability_alert",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/resolve"
+    },
+    {
+      "operationId": "admin.openapi.resolve-scene-dataset",
+      "openApiOperationId": "resolveSceneDataset",
+      "toolName": "honua_admin_openapi_resolve_scene_dataset",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/{id}/resolve"
+    },
+    {
+      "operationId": "admin.openapi.resolve-service-replica-conflict",
+      "openApiOperationId": "resolveServiceReplicaConflict",
+      "toolName": "honua_admin_openapi_resolve_service_replica_conflict",
+      "method": "POST",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve"
+    },
+    {
+      "operationId": "admin.openapi.resume-alert-channel",
+      "openApiOperationId": "resumeAlertChannel",
+      "toolName": "honua_admin_openapi_resume_alert_channel",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/channels/{channel}/resume"
+    },
+    {
+      "operationId": "admin.openapi.resume-share-export",
+      "openApiOperationId": "resumeShareExport",
+      "toolName": "honua_admin_openapi_resume_share_export",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/resume"
+    },
+    {
+      "operationId": "admin.openapi.retry-console-job",
+      "openApiOperationId": "retryConsoleJob",
+      "toolName": "honua_admin_openapi_retry_console_job",
+      "method": "POST",
+      "path": "/api/v1/admin/jobs/{jobId}/retry"
+    },
+    {
+      "operationId": "admin.openapi.retry-tile-operation-job",
+      "openApiOperationId": "retryTileOperationJob",
+      "toolName": "honua_admin_openapi_retry_tile_operation_job",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}/retry"
+    },
+    {
+      "operationId": "admin.openapi.revoke-embed-key",
+      "openApiOperationId": "revokeEmbedKey",
+      "toolName": "honua_admin_openapi_revoke_embed_key",
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys/{id}/revoke"
+    },
+    {
+      "operationId": "admin.openapi.rollback-network-topology-generation",
+      "openApiOperationId": "rollbackNetworkTopologyGeneration",
+      "toolName": "honua_admin_openapi_rollback_network_topology_generation",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/rollback"
+    },
+    {
+      "operationId": "admin.openapi.rotate-compliance-encryption-key",
+      "openApiOperationId": "rotateComplianceEncryptionKey",
+      "toolName": "honua_admin_openapi_rotate_compliance_encryption_key",
+      "method": "POST",
+      "path": "/api/v1/admin/compliance/encryption/rotate-key"
+    },
+    {
+      "operationId": "admin.openapi.rotate-connection-encryption-key",
+      "openApiOperationId": "rotateConnectionEncryptionKey",
+      "toolName": "honua_admin_openapi_rotate_connection_encryption_key",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/encryption/rotate-key"
+    },
+    {
+      "operationId": "admin.openapi.scan-enhanced-resource-leaks",
+      "openApiOperationId": "scanEnhancedResourceLeaks",
+      "toolName": "honua_admin_openapi_scan_enhanced_resource_leaks",
+      "method": "POST",
+      "path": "/api/v1/admin/performance/enhanced/resources/scan-leaks"
+    },
+    {
+      "operationId": "admin.openapi.scan-migration-source",
+      "openApiOperationId": "scanMigrationSource",
+      "toolName": "honua_admin_openapi_scan_migration_source",
+      "method": "POST",
+      "path": "/api/v1/admin/import/scan"
+    },
+    {
+      "operationId": "admin.openapi.set-admin-layer-relationships",
+      "openApiOperationId": "setAdminLayerRelationships",
+      "toolName": "honua_admin_openapi_set_admin_layer_relationships",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships"
+    },
+    {
+      "operationId": "admin.openapi.set-alert-rule-enabled",
+      "openApiOperationId": "setAlertRuleEnabled",
+      "toolName": "honua_admin_openapi_set_alert_rule_enabled",
+      "method": "PUT",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/enabled"
+    },
+    {
+      "operationId": "admin.openapi.set-license-capacity-surge-mode",
+      "openApiOperationId": "setLicenseCapacitySurgeMode",
+      "toolName": "honua_admin_openapi_set_license_capacity_surge_mode",
+      "method": "POST",
+      "path": "/api/v1/admin/license/capacity/surge"
+    },
+    {
+      "operationId": "admin.openapi.set-ops-autonomy-policy",
+      "openApiOperationId": "setOpsAutonomyPolicy",
+      "toolName": "honua_admin_openapi_set_ops_autonomy_policy",
+      "method": "PUT",
+      "path": "/api/v1/admin/observability/autonomy/policies/{rule}"
+    },
+    {
+      "operationId": "admin.openapi.set-ops-autonomy-settings",
+      "openApiOperationId": "setOpsAutonomySettings",
+      "toolName": "honua_admin_openapi_set_ops_autonomy_settings",
+      "method": "PUT",
+      "path": "/api/v1/admin/observability/autonomy/settings"
+    },
+    {
+      "operationId": "admin.openapi.set-service-layers-enabled",
+      "openApiOperationId": "setServiceLayersEnabled",
+      "toolName": "honua_admin_openapi_set_service_layers_enabled",
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}/layers/enabled"
+    },
+    {
+      "operationId": "admin.openapi.start-geo-server-import",
+      "openApiOperationId": "startGeoServerImport",
+      "toolName": "honua_admin_openapi_start_geo_server_import",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/start"
+    },
+    {
+      "operationId": "admin.openapi.start-geoservices-import",
+      "openApiOperationId": "startGeoservicesImport",
+      "toolName": "honua_admin_openapi_start_geoservices_import",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/start"
+    },
+    {
+      "operationId": "admin.openapi.start-migration-batch",
+      "openApiOperationId": "startMigrationBatch",
+      "toolName": "honua_admin_openapi_start_migration_batch",
+      "method": "POST",
+      "path": "/api/v1/admin/import/migrations"
+    },
+    {
+      "operationId": "admin.openapi.start-ogc-wfs-import",
+      "openApiOperationId": "startOgcWfsImport",
+      "toolName": "honua_admin_openapi_start_ogc_wfs_import",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-wfs/start"
+    },
+    {
+      "operationId": "admin.openapi.start-tile-operation-job",
+      "openApiOperationId": "startTileOperationJob",
+      "toolName": "honua_admin_openapi_start_tile_operation_job",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs"
+    },
+    {
+      "operationId": "admin.openapi.stream-operations-alerts",
+      "openApiOperationId": "streamOperationsAlerts",
+      "toolName": "honua_admin_openapi_stream_operations_alerts",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/streaming/alerts"
+    },
+    {
+      "operationId": "admin.openapi.submit-network-topology-rebuild",
+      "openApiOperationId": "submitNetworkTopologyRebuild",
+      "toolName": "honua_admin_openapi_submit_network_topology_rebuild",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild"
+    },
+    {
+      "operationId": "admin.openapi.suggest-layer-style",
+      "openApiOperationId": "suggestLayerStyle",
+      "toolName": "honua_admin_openapi_suggest_layer_style",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/suggest-style"
+    },
+    {
+      "operationId": "admin.openapi.suppress-observability-alert",
+      "openApiOperationId": "suppressObservabilityAlert",
+      "toolName": "honua_admin_openapi_suppress_observability_alert",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/suppress"
+    },
+    {
+      "operationId": "admin.openapi.test-alert-rule",
+      "openApiOperationId": "testAlertRule",
+      "toolName": "honua_admin_openapi_test_alert_rule",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/rules/test"
+    },
+    {
+      "operationId": "admin.openapi.test-identity-provider-connectivity",
+      "openApiOperationId": "testIdentityProviderConnectivity",
+      "toolName": "honua_admin_openapi_test_identity_provider_connectivity",
+      "method": "GET",
+      "path": "/api/v1/admin/identity/providers/{providerType}/test"
+    },
+    {
+      "operationId": "admin.openapi.trigger-share-export",
+      "openApiOperationId": "triggerShareExport",
+      "toolName": "honua_admin_openapi_trigger_share_export",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/trigger"
+    },
+    {
+      "operationId": "admin.openapi.unregister-cloud-raster",
+      "openApiOperationId": "unregisterCloudRaster",
+      "toolName": "honua_admin_openapi_unregister_cloud_raster",
+      "method": "DELETE",
+      "path": "/api/v1/admin/cloud-rasters/{id}"
+    },
+    {
+      "operationId": "admin.openapi.unregister-multidim-coverage",
+      "openApiOperationId": "unregisterMultidimCoverage",
+      "toolName": "honua_admin_openapi_unregister_multidim_coverage",
+      "method": "DELETE",
+      "path": "/api/v1/admin/multidim-coverages/{id}"
+    },
+    {
+      "operationId": "admin.openapi.unregister-zarr-store",
+      "openApiOperationId": "unregisterZarrStore",
+      "toolName": "honua_admin_openapi_unregister_zarr_store",
+      "method": "DELETE",
+      "path": "/api/v1/admin/zarr-stores/{id}"
+    },
+    {
+      "operationId": "admin.openapi.update-alert-rule",
+      "openApiOperationId": "updateAlertRule",
+      "toolName": "honua_admin_openapi_update_alert_rule",
+      "method": "PUT",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}"
+    },
+    {
+      "operationId": "admin.openapi.update-alert-zone",
+      "openApiOperationId": "updateAlertZone",
+      "toolName": "honua_admin_openapi_update_alert_zone",
+      "method": "PUT",
+      "path": "/api/v1/admin/alerts/zones/{zoneId}"
+    },
+    {
+      "operationId": "admin.openapi.update-client-certificate-principal-mapping",
+      "openApiOperationId": "updateClientCertificatePrincipalMapping",
+      "toolName": "honua_admin_openapi_update_client_certificate_principal_mapping",
+      "method": "PUT",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"
+    },
+    {
+      "operationId": "admin.openapi.update-client-certificate-trust-profile",
+      "openApiOperationId": "updateClientCertificateTrustProfile",
+      "toolName": "honua_admin_openapi_update_client_certificate_trust_profile",
+      "method": "PUT",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}"
+    },
+    {
+      "operationId": "admin.openapi.update-form-package-draft",
+      "openApiOperationId": "updateFormPackageDraft",
+      "toolName": "honua_admin_openapi_update_form_package_draft",
+      "method": "PUT",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"
+    },
+    {
+      "operationId": "admin.openapi.update-imported-raster",
+      "openApiOperationId": "updateImportedRaster",
+      "toolName": "honua_admin_openapi_update_imported_raster",
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/raster/{rasterId}"
+    },
+    {
+      "operationId": "admin.openapi.update-investigation",
+      "openApiOperationId": "updateInvestigation",
+      "toolName": "honua_admin_openapi_update_investigation",
+      "method": "PATCH",
+      "path": "/api/v1/admin/investigations/{investigationId}"
+    },
+    {
+      "operationId": "admin.openapi.update-network-dataset",
+      "openApiOperationId": "updateNetworkDataset",
+      "toolName": "honua_admin_openapi_update_network_dataset",
+      "method": "PUT",
+      "path": "/api/v1/admin/network-datasets/{id}"
+    },
+    {
+      "operationId": "admin.openapi.update-scene-dataset",
+      "openApiOperationId": "updateSceneDataset",
+      "toolName": "honua_admin_openapi_update_scene_dataset",
+      "method": "PUT",
+      "path": "/api/v1/admin/scenes/{id}"
+    },
+    {
+      "operationId": "admin.openapi.update-share-export",
+      "openApiOperationId": "updateShareExport",
+      "toolName": "honua_admin_openapi_update_share_export",
+      "method": "PUT",
+      "path": "/api/v1/admin/share/exports/{exportId}"
+    },
+    {
+      "operationId": "admin.openapi.upload-license-file",
+      "openApiOperationId": "uploadLicenseFile",
+      "toolName": "honua_admin_openapi_upload_license_file",
+      "method": "POST",
+      "path": "/api/v1/admin/license/upload"
+    },
+    {
+      "operationId": "admin.openapi.validate-client-certificate",
+      "openApiOperationId": "validateClientCertificate",
+      "toolName": "honua_admin_openapi_validate_client_certificate",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/validate"
+    },
+    {
+      "operationId": "admin.openapi.validate-connection-encryption",
+      "openApiOperationId": "validateConnectionEncryption",
+      "toolName": "honua_admin_openapi_validate_connection_encryption",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/encryption/validate"
+    },
+    {
+      "operationId": "admin.openapi.validate-form-package-version",
+      "openApiOperationId": "validateFormPackageVersion",
+      "toolName": "honua_admin_openapi_validate_form_package_version",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"
+    },
+    {
+      "operationId": "admin.openapi.validate-package",
+      "openApiOperationId": "validatePackage",
+      "toolName": "honua_admin_openapi_validate_package",
+      "method": "POST",
+      "path": "/api/v1/admin/packages/validate"
+    },
+    {
+      "operationId": "admin.openapi.validate-toolbox-translation",
+      "openApiOperationId": "validateToolboxTranslation",
+      "toolName": "honua_admin_openapi_validate_toolbox_translation",
+      "method": "POST",
+      "path": "/api/v1/admin/import/toolbox/translation/validate"
+    },
+    {
+      "operationId": "admin.openapi.verify-observability-audit",
+      "openApiOperationId": "verifyObservabilityAudit",
+      "toolName": "honua_admin_openapi_verify_observability_audit",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit/verify"
+    },
+    {
+      "operationId": "admin.rate-limit.create",
+      "openApiOperationId": "createRateLimitPolicy",
+      "toolName": "honua_admin_rate_limit_create",
+      "method": "POST",
+      "path": "/api/v1/admin/rate-limits"
+    },
+    {
+      "operationId": "admin.rate-limit.delete",
+      "openApiOperationId": "deleteRateLimitPolicy",
+      "toolName": "honua_admin_rate_limit_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/rate-limits/{id}"
+    },
+    {
+      "operationId": "admin.rate-limit.get",
+      "openApiOperationId": "getRateLimitPolicy",
+      "toolName": "honua_admin_rate_limit_get",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/{id}"
+    },
+    {
+      "operationId": "admin.rate-limit.list",
+      "openApiOperationId": "listRateLimitPolicies",
+      "toolName": "honua_admin_rate_limit_list",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits"
+    },
+    {
+      "operationId": "admin.rate-limit.status",
+      "openApiOperationId": "getRateLimitStatus",
+      "toolName": "honua_admin_rate_limit_status",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/status"
+    },
+    {
+      "operationId": "admin.rate-limit.update",
+      "openApiOperationId": "updateRateLimitPolicy",
+      "toolName": "honua_admin_rate_limit_update",
+      "method": "PUT",
+      "path": "/api/v1/admin/rate-limits/{id}"
+    },
+    {
+      "operationId": "admin.release-package.create",
+      "openApiOperationId": "createMetadataReleasePackage",
+      "toolName": "honua_admin_release_package_create",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/release-packages"
+    },
+    {
+      "operationId": "admin.release-package.get",
+      "openApiOperationId": "getMetadataReleasePackage",
+      "toolName": "honua_admin_release_package_get",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages/{packageId}"
+    },
+    {
+      "operationId": "admin.release-package.gitops-manifest",
+      "openApiOperationId": "getMetadataReleaseGitOpsManifest",
+      "toolName": "honua_admin_release_package_gitops_manifest",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"
+    },
+    {
+      "operationId": "admin.release-package.list",
+      "openApiOperationId": "listMetadataReleasePackages",
+      "toolName": "honua_admin_release_package_list",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages"
+    },
+    {
+      "operationId": "admin.release-package.operation-status",
+      "openApiOperationId": "getMetadataReleaseOperationByPackageId",
+      "toolName": "honua_admin_release_package_operation_status",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/releases/{packageId}/operation"
+    },
+    {
+      "operationId": "admin.release-package.prevalidate",
+      "openApiOperationId": "prevalidateMetadataReleasePackageCompatibility",
+      "toolName": "honua_admin_release_package_prevalidate",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/prevalidate"
+    },
+    {
+      "operationId": "admin.release.activate",
+      "openApiOperationId": "submitDeployOperation",
+      "toolName": "honua_admin_release_activate",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/submit"
+    },
+    {
+      "operationId": "admin.release.create-operation",
+      "openApiOperationId": "createDeployOperation",
+      "toolName": "honua_admin_release_create_operation",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations"
+    },
+    {
+      "operationId": "admin.release.get-operation",
+      "openApiOperationId": "getDeployOperation",
+      "toolName": "honua_admin_release_get_operation",
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/operations/{operationId}"
+    },
+    {
+      "operationId": "admin.release.list-operations",
+      "openApiOperationId": "listDeployOperations",
+      "toolName": "honua_admin_release_list_operations",
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/operations"
+    },
+    {
+      "operationId": "admin.release.promote",
+      "openApiOperationId": "promoteDeployOperation",
+      "toolName": "honua_admin_release_promote",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/promote"
+    },
+    {
+      "operationId": "admin.release.rollback",
+      "openApiOperationId": "rollbackDeployOperation",
+      "toolName": "honua_admin_release_rollback",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/rollback"
+    },
+    {
+      "operationId": "admin.rls-policy.create",
+      "openApiOperationId": "createRlsPolicy",
+      "toolName": "honua_admin_rls_policy_create",
+      "method": "POST",
+      "path": "/api/v1/admin/rls-policies"
+    },
+    {
+      "operationId": "admin.rls-policy.delete",
+      "openApiOperationId": "deleteRlsPolicy",
+      "toolName": "honua_admin_rls_policy_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/rls-policies/{id}"
+    },
+    {
+      "operationId": "admin.rls-policy.get",
+      "openApiOperationId": "getRlsPolicy",
+      "toolName": "honua_admin_rls_policy_get",
+      "method": "GET",
+      "path": "/api/v1/admin/rls-policies/{id}"
+    },
+    {
+      "operationId": "admin.rls-policy.list",
+      "openApiOperationId": "listRlsPolicies",
+      "toolName": "honua_admin_rls_policy_list",
+      "method": "GET",
+      "path": "/api/v1/admin/rls-policies"
+    },
+    {
+      "operationId": "admin.role.create",
+      "openApiOperationId": "createRole",
+      "toolName": "honua_admin_role_create",
+      "method": "POST",
+      "path": "/api/v1/admin/roles"
+    },
+    {
+      "operationId": "admin.role.delete",
+      "openApiOperationId": "deleteRole",
+      "toolName": "honua_admin_role_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/roles/{id}"
+    },
+    {
+      "operationId": "admin.role.get",
+      "openApiOperationId": "getRole",
+      "toolName": "honua_admin_role_get",
+      "method": "GET",
+      "path": "/api/v1/admin/roles/{id}"
+    },
+    {
+      "operationId": "admin.role.get-permissions",
+      "openApiOperationId": "getRolePermissions",
+      "toolName": "honua_admin_role_get_permissions",
+      "method": "GET",
+      "path": "/api/v1/admin/roles/{id}/permissions"
+    },
+    {
+      "operationId": "admin.role.list",
+      "openApiOperationId": "listRoles",
+      "toolName": "honua_admin_role_list",
+      "method": "GET",
+      "path": "/api/v1/admin/roles"
+    },
+    {
+      "operationId": "admin.role.set-permissions",
+      "openApiOperationId": "setRolePermissions",
+      "toolName": "honua_admin_role_set_permissions",
+      "method": "PUT",
+      "path": "/api/v1/admin/roles/{id}/permissions"
+    },
+    {
+      "operationId": "admin.role.update",
+      "openApiOperationId": "updateRole",
+      "toolName": "honua_admin_role_update",
+      "method": "PUT",
+      "path": "/api/v1/admin/roles/{id}"
+    },
+    {
+      "operationId": "admin.server.capabilities",
+      "openApiOperationId": "getAdminCapabilities",
+      "toolName": "honua_admin_server_capabilities",
+      "method": "GET",
+      "path": "/api/v1/admin/capabilities"
+    },
+    {
+      "operationId": "admin.server.features",
+      "openApiOperationId": "getFeatureOverview",
+      "toolName": "honua_admin_server_features",
+      "method": "GET",
+      "path": "/api/v1/admin/features"
+    },
+    {
+      "operationId": "admin.server.status",
+      "openApiOperationId": "getAdminVersion",
+      "toolName": "honua_admin_server_status",
+      "method": "GET",
+      "path": "/api/v1/admin/version"
+    },
+    {
+      "operationId": "admin.service.get-settings",
+      "openApiOperationId": "getServiceSettings",
+      "toolName": "honua_admin_service_get_settings",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/settings"
+    },
+    {
+      "operationId": "admin.service.list",
+      "openApiOperationId": "listServices",
+      "toolName": "honua_admin_service_list",
+      "method": "GET",
+      "path": "/api/v1/admin/services"
+    },
+    {
+      "operationId": "admin.service.set-access-policy",
+      "openApiOperationId": "updateServiceAccessPolicy",
+      "toolName": "honua_admin_service_set_access_policy",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/access-policy"
+    },
+    {
+      "operationId": "admin.service.set-layer-metadata",
+      "openApiOperationId": "updateLayerMetadata",
+      "toolName": "honua_admin_service_set_layer_metadata",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata"
+    },
+    {
+      "operationId": "admin.service.set-mapserver",
+      "openApiOperationId": "updateServiceMapServer",
+      "toolName": "honua_admin_service_set_mapserver",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/mapserver"
+    },
+    {
+      "operationId": "admin.service.set-protocols",
+      "openApiOperationId": "updateServiceProtocols",
+      "toolName": "honua_admin_service_set_protocols",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/protocols"
+    },
+    {
+      "operationId": "admin.service.set-time-info",
+      "openApiOperationId": "updateServiceTimeInfo",
+      "toolName": "honua_admin_service_set_time_info",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/timeinfo"
+    },
+    {
+      "operationId": "admin.tenant.create",
+      "openApiOperationId": "createTenant",
+      "toolName": "honua_admin_tenant_create",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants"
+    },
+    {
+      "operationId": "admin.tenant.delete",
+      "openApiOperationId": "deleteTenant",
+      "toolName": "honua_admin_tenant_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/tenants/{tenantId}"
+    },
+    {
+      "operationId": "admin.tenant.get",
+      "openApiOperationId": "getTenant",
+      "toolName": "honua_admin_tenant_get",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/{tenantId}"
+    },
+    {
+      "operationId": "admin.tenant.list",
+      "openApiOperationId": "listTenants",
+      "toolName": "honua_admin_tenant_list",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants"
+    },
+    {
+      "operationId": "admin.tenant.resume",
+      "openApiOperationId": "resumeTenant",
+      "toolName": "honua_admin_tenant_resume",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/{tenantId}/resume"
+    },
+    {
+      "operationId": "admin.tenant.suspend",
+      "openApiOperationId": "suspendTenant",
+      "toolName": "honua_admin_tenant_suspend",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/{tenantId}/suspend"
+    },
+    {
+      "operationId": "admin.user.delete",
+      "openApiOperationId": "deprovisionManagedUser",
+      "toolName": "honua_admin_user_delete",
+      "method": "DELETE",
+      "path": "/api/v1/admin/users/{id}"
+    },
+    {
+      "operationId": "admin.user.get",
+      "openApiOperationId": "getManagedUser",
+      "toolName": "honua_admin_user_get",
+      "method": "GET",
+      "path": "/api/v1/admin/users/{id}"
+    },
+    {
+      "operationId": "admin.user.list",
+      "openApiOperationId": "listManagedUsers",
+      "toolName": "honua_admin_user_list",
+      "method": "GET",
+      "path": "/api/v1/admin/users"
+    },
+    {
+      "operationId": "admin.user.set-roles",
+      "openApiOperationId": "updateManagedUserRoles",
+      "toolName": "honua_admin_user_set_roles",
+      "method": "PUT",
+      "path": "/api/v1/admin/users/{id}/roles"
+    }
+  ],
+  "excluded": [
+    {
+      "operationId": "admin.api-key.create",
+      "openApiOperationId": "createAdminApiKey",
+      "code": "one-time-secret-result",
+      "reason": "The endpoint returns API key material only once."
+    },
+    {
+      "operationId": "admin.api-key.rotate",
+      "openApiOperationId": "rotateAdminApiKey",
+      "code": "one-time-secret-result",
+      "reason": "The endpoint returns rotated API key material only once."
+    },
+    {
+      "operationId": "admin.oauth-client.create",
+      "openApiOperationId": "registerOAuthClient",
+      "code": "one-time-secret-result",
+      "reason": "The endpoint returns an OAuth client secret only once."
+    },
+    {
+      "operationId": "admin.openapi.create-admin-auth-authorize-url",
+      "openApiOperationId": "createAdminAuthAuthorizeUrl",
+      "code": "session-bound-auth-flow",
+      "reason": "The response contains one-time OIDC state and requires an HttpOnly pending-session cookie."
+    },
+    {
+      "operationId": "admin.openapi.create-embed-key",
+      "openApiOperationId": "createEmbedKey",
+      "code": "one-time-secret-result",
+      "reason": "The endpoint returns embed key material only once."
+    },
+    {
+      "operationId": "admin.openapi.get-admin-auth-logout-url",
+      "openApiOperationId": "getAdminAuthLogoutUrl",
+      "code": "session-bound-auth-flow",
+      "reason": "The response can contain a session-bound OIDC logout token hint."
+    },
+    {
+      "operationId": "admin.openapi.issue-admin-operator-bearer",
+      "openApiOperationId": "issueAdminOperatorBearer",
+      "code": "one-time-secret-result",
+      "reason": "The endpoint returns a forwardable operator bearer."
+    },
+    {
+      "operationId": "admin.openapi.request-admin-auth-token",
+      "openApiOperationId": "requestAdminAuthToken",
+      "code": "session-bound-auth-flow",
+      "reason": "The endpoint consumes a one-time authorization code and requires an HttpOnly pending-session cookie."
+    },
+    {
+      "operationId": "admin.openapi.rotate-embed-key",
+      "openApiOperationId": "rotateEmbedKey",
+      "code": "one-time-secret-result",
+      "reason": "The endpoint returns rotated embed key material only once."
+    }
+  ]
+}
