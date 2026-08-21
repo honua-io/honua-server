@@ -1,8 +1,10 @@
 # Geoprocessing operations
 
-Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). The same catalog is exposed through three surfaces: OGC API Processes (`/ogc/processes/processes`), the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`), and gRPC `geospatial.v1.ProcessService`. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
+Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). The ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`) and gRPC `geospatial.v1.ProcessService` expose the catalog. OGC API Processes directly projects every non-source/non-sink built-in and also exposes the canonical `honua-geoprocessing` plan runner; source and sink connectors remain plan-composition nodes rather than standalone OGC processes. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); for the AI-to-Studio path see [geoprocessing with AI](../guides/query-analyze/geoprocessing-with-ai.md).
 
 The catalog currently registers **98 processes** across 15 families. This page is regenerated from `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs`; a catalog-vs-doc parity test (`tests/dotnet/Honua.Architecture.Tests/GeoprocessingCatalogDocParityTests.cs`) fails the build if a registered process id is missing here, and asserts this prose count matches the catalog.
+
+The current OGC direct projection contains **86 processes**: 98 catalog entries minus 8 `source.*` and 4 `sink.*` composition primitives. The startup gauge `honua.gp.ogc_projected_processes` reports that inventory so catalog drift is visible in deployment telemetry.
 
 Execution notes that apply across families:
 
@@ -17,7 +19,7 @@ Execution notes that apply across families:
 
 ## Geometry (14)
 
-Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed (NetTopologySuite/PostGIS-equivalent).
+Single-geometry operations. Canonical plans and GPServer accept base64-encoded WKB plus an SRID. OGC API Processes accepts the same WKB strings or GeoJSON geometry objects (directly or as `{ "value": ..., "mediaType": "application/geo+json" }`) and normalizes them to WKB before plan validation. Managed (NetTopologySuite/PostGIS-equivalent).
 
 | Process ID | Description | Key parameters |
 | --- | --- | --- |
