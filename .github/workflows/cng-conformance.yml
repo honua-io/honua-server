@@ -8,6 +8,19 @@ on:
     # Weekly, offset from the CITE suites (Mon/Tue) to spread runner load.
     - cron: '0 6 * * 3'
   workflow_dispatch:
+    inputs:
+      server_image:
+        description: Exact digest-addressed candidate image; omit only for a diagnostic local build
+        required: false
+        type: string
+      source_sha:
+        description: Exact candidate server source SHA
+        required: false
+        type: string
+      candidate_cut_at:
+        description: Exact candidate cut timestamp
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -87,7 +100,7 @@ jobs:
       - name: Run CNG conformance lane
         id: run
         env:
-          HONUA_CNG_SKIP_BUILD: 'false'
+          HONUA_CNG_SKIP_BUILD: \${{ inputs.server_image != '' }}
           HONUA_CNG_CLEANUP: 'false'
           # Official OSGeo ubuntu-full image includes the Arrow/Parquet driver
           # omitted from Ubuntu's gdal-bin build. Digest is the immutable
@@ -98,19 +111,34 @@ jobs:
         run: |
           set +e
           trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
+          if [[ -n "\${{ inputs.server_image }}" ]]; then
+            docker pull "\${{ inputs.server_image }}"
+            docker tag "\${{ inputs.server_image }}" honua-server:latest
+          fi
           bash ./scripts/conformance/cng/run-cng-conformance.sh
           cng_exit=$?
 
-          image_digest="$(docker image inspect --format '{{.Id}}' honua-server:latest 2>/dev/null)"
-          candidate_cut_at="$(git show -s --format=%cI HEAD)"
+          if [[ -n "\${{ inputs.server_image }}" ]]; then
+            image_digest="\${{ inputs.server_image }}"; image_digest="\${image_digest##*@}"
+            source_sha="\${{ inputs.source_sha }}"
+            candidate_cut_at="\${{ inputs.candidate_cut_at }}"
+            if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ || -z "$candidate_cut_at" ]]; then
+              echo "Digest-addressed dispatch requires source_sha and candidate_cut_at" >&2
+              exit 1
+            fi
+          else
+            image_digest="$(docker image inspect --format '{{.Id}}' honua-server:latest 2>/dev/null)"
+            source_sha="$GITHUB_SHA"
+            candidate_cut_at="$(git show -s --format=%cI HEAD)"
+          fi
           python3 ./scripts/conformance/cng/validate-canonical-artifacts.py \
             --artifacts cng-results/artifacts \
             --native-results cng-results \
             --output cng-results/protocol-certification-fragment.json \
-            --source-sha "$GITHUB_SHA" \
+            --source-sha "$source_sha" \
             --image-digest "$image_digest" \
             --candidate-cut-at "$candidate_cut_at" \
-            --fixture-revision "docker/cng/seed.sql@$GITHUB_SHA" \
+            --fixture-revision "docker/cng/seed.sql@$source_sha" \
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --base-url "http://localhost:8094"
           client_exit=$?

@@ -220,6 +220,9 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
         observation["contract_revision"] = contract
         observation["auth_policy_revision"] = "anonymous-v1"
         observation["evidence_digest"] = args.evidence_digest
+        observation["evidence_uri"] = (
+            f"https://evidence.honua.io/data/sha256/{args.evidence_digest[7:]}"
+        )
         facet_result = "pass" if observation["result"] == "pass" else observation["result"]
         observation["facet_results"] = {
             facet: {"result": facet_result, "evidence_digest": args.evidence_digest}
@@ -230,9 +233,11 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
             observation["skip_reason"] = BUDGET_EVIDENCE_GAP
             observation["evidence_digest"] = None
             observation["facet_results"] = None
+            observation["evidence_uri"] = None
         elif observation["result"] == "skip":
             observation["evidence_digest"] = None
             observation["facet_results"] = None
+            observation["evidence_uri"] = None
         normalized.append(observation)
     return normalized
 
