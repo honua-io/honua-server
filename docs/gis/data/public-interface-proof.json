@@ -1834,6 +1834,21 @@
           "versionCaptureRule": null
         },
         {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for FeatureServer",
+          "executionLane": "release:desktop-arcgis",
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level FeatureServer evidence."
+        },
+        {
           "proofClass": "tool-interoperability",
           "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
           "executionLane": "ci:esri-leaflet-browser-tests",
@@ -2044,6 +2059,21 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for MapServer",
+          "executionLane": "release:desktop-arcgis",
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level MapServer evidence."
         },
         {
           "proofClass": "tool-interoperability",
@@ -2447,6 +2477,21 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Pin Microsoft.OData.Client in tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj; ODataClientCertificationFixture reads the loaded assembly version into the cert envelope's client_version field on every CI run, and the envelope's server_version field is sourced from GITHUB_SHA or the Honua.Server informational version."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned licensed Excel, Power BI Desktop, and Tableau operation-level OData certification",
+          "executionLane": "release:licensed-bi-clients",
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3390"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3390",
+          "versionCaptureRule": "Capture each exact desktop client version, candidate identity, fixture/config revisions, entitlement receipt, and operation-level OData evidence."
         }
       ]
     },
@@ -2525,6 +2570,33 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Capture the exact ogrinfo --version string in tests/python/gdal_ogr/conftest.py and preserve the generated tests/python/gdal-ogr-results*.json artifact from ci.yml."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned maintained GeoPandas, OWSLib, DuckDB, and R sf operation-level OGC API Features certification",
+          "executionLane": "nightly:canonical-ogc-clients",
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3392"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3392",
+          "versionCaptureRule": "Capture each exact client version, candidate identity, fixture/config revisions, and operation-level OGC API Features evidence."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level OGC API Features certification",
+          "executionLane": "release:desktop-arcgis",
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level OGC API Features evidence."
         },
         {
           "proofClass": "tool-interoperability",

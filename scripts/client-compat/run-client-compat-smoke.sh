@@ -1203,7 +1203,7 @@ write_overall_summary() {
     "$LANES_DIR/bi/lane-summary.json" > "$overall_json"
 
   {
-    echo "## Windows Client Compatibility Summary"
+    echo "## Generic HTTP Client Compatibility Summary"
     echo
     echo "| Lane | Status | Passed | Failed | Summary |"
     echo "|---|---|---:|---:|---|"
