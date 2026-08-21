@@ -74,6 +74,6 @@ networks:
 
 secrets:
   github_actor:
-    environment: GITHUB_ACTOR
+    file: ${HONUA_GITHUB_ACTOR_SECRET_FILE:-.empty-build-secret}
   github_token:
-    environment: HONUA_DOCKER_GITHUB_TOKEN
+    file: ${HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret}

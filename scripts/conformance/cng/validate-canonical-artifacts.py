@@ -399,8 +399,8 @@ def validate_stac(base_url: str, args: argparse.Namespace) -> list[dict]:
 
 def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     script = Path(__file__).with_name("validate-js-artifacts.mjs")
-    payload = json.loads(_run("node", str(script), str(path)).stdout)
     started = _now()
+    payload = json.loads(_run("node", str(script), str(path)).stdout)
     observations = []
     for row in payload:
         observation = _observation(

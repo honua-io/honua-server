@@ -65,11 +65,26 @@ fi
 
 mkdir -p "$RESULTS_DIR" "$ARTIFACTS_DIR"
 
+if [[ -n "${GITHUB_ACTOR:-}" && -z "${HONUA_DOCKER_GITHUB_TOKEN:-}" ]] || \
+   [[ -z "${GITHUB_ACTOR:-}" && -n "${HONUA_DOCKER_GITHUB_TOKEN:-}" ]]; then
+    echo -e "${RED}GITHUB_ACTOR and HONUA_DOCKER_GITHUB_TOKEN must be supplied together.${NC}" >&2
+    exit 1
+fi
+BUILD_SECRET_DIR="$(mktemp -d)"
+printf '%s' "${GITHUB_ACTOR:-}" > "$BUILD_SECRET_DIR/github-actor"
+printf '%s' "${HONUA_DOCKER_GITHUB_TOKEN:-}" > "$BUILD_SECRET_DIR/github-token"
+export HONUA_GITHUB_ACTOR_SECRET_FILE="$BUILD_SECRET_DIR/github-actor"
+export HONUA_GITHUB_TOKEN_SECRET_FILE="$BUILD_SECRET_DIR/github-token"
+if [[ -z "${HONUA_DOCKER_GITHUB_TOKEN:-}" ]]; then
+    echo "GitHub Packages credentials are unset; using anonymous package restore."
+fi
+
 cleanup() {
     if [[ "$CLEANUP" == "true" ]]; then
         echo -e "\n${YELLOW}Cleaning up CNG containers...${NC}"
         $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null || true
     fi
+    rm -rf "$BUILD_SECRET_DIR"
 }
 trap cleanup EXIT
 

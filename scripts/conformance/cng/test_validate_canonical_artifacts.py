@@ -82,6 +82,25 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertEqual(["fail", "pass"], [row["result"] for row in rows])
         self.assertEqual(["flatgeobuf-js", "PMTiles-browser-viewer"], [row["canonical_client"] for row in rows])
 
+    def test_javascript_start_time_precedes_validator_execution(self):
+        events = []
+        original_run = MODULE._run
+        original_now = MODULE._now
+        try:
+            MODULE._now = lambda: events.append("now") or "2026-08-21T00:00:00Z"
+            MODULE._run = lambda *command: events.append("run") or Namespace(stdout="[]")
+            MODULE.validate_javascript(Path("artifacts"), args())
+        finally:
+            MODULE._run = original_run
+            MODULE._now = original_now
+        self.assertEqual(["now", "run"], events)
+
+    def test_compose_build_secrets_have_standalone_file_defaults(self):
+        compose = (SCRIPT.parents[3] / "docker" / "cng" / "compose.yml").read_text(encoding="utf-8")
+        self.assertIn("HONUA_GITHUB_ACTOR_SECRET_FILE:-.empty-build-secret", compose)
+        self.assertIn("HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret", compose)
+        self.assertNotIn("environment: HONUA_DOCKER_GITHUB_TOKEN", compose)
+
 
 if __name__ == "__main__":
     unittest.main()
