@@ -38,6 +38,7 @@ public static class OperationRegistry
     private const string Mcp = "Mcp";
     private const string VersionManagementServer = "VersionManagementServer";
     private const string SensorThings11 = "SensorThings-1.1";
+    private const string GeoservicesCatalog = "GeoservicesCatalog";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -162,6 +163,16 @@ public static class OperationRegistry
         // ingest and datastream creation identically (dotted operation identifiers).
         new(SensorThings11, "datastream.create"),
         new(SensorThings11, "sensor.ingest"),
+
+        // ArcGIS SOAP service-catalog operations dispatched through POST /services
+        // and POST /services/{serviceName}/ImageServer.
+        new(GeoservicesCatalog, "GetServiceDescriptions"),
+        new(GeoservicesCatalog, "GetServiceDescriptionsEx"),
+        new(GeoservicesCatalog, "GetFolders"),
+        new(GeoservicesCatalog, "GetMessageVersion"),
+        new(GeoservicesCatalog, "GetMessageFormats"),
+        new(GeoservicesCatalog, "GetTokenServiceURL"),
+        new(GeoservicesCatalog, "RequiresTokens"),
     ];
 }
 

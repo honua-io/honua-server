@@ -69,6 +69,17 @@ internal static class GeoservicesCatalogEndpoints
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
             .AllowAnonymous();
 
+        endpoints.MapPost("/services/{serviceName}/ImageServer", HandlePostSoapCatalog)
+            .WithDisplayName("ArcGIS SOAP ImageServer Service")
+            .WithName("ArcGisSoapImageServerService")
+            .WithSummary("Negotiate SOAP-compatible ImageServer service metadata")
+            .WithDescription("Handles ArcGIS SOAP catalog operations for one raster-backed ImageServer service.")
+            .WithTags("GeoServices Catalog")
+            .Accepts<string>("text/xml")
+            .Produces(StatusCodes.Status200OK, contentType: "text/xml")
+            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml")
+            .AllowAnonymous();
+
         return endpoints;
     }
 
@@ -92,14 +103,17 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         XNamespace soap = SoapEnvelopeNamespace;
-        var operation = request.Root?
+        var operations = request.Root?
             .Element(soap + "Body")?
             .Elements()
-            .SingleOrDefault();
-        if (operation is null)
+            .Take(2)
+            .ToArray();
+        if (operations is not { Length: 1 })
         {
             return CreateSoapFault("SOAP body must contain exactly one catalog operation.", StatusCodes.Status400BadRequest);
         }
+
+        var operation = operations[0];
 
         var operationNamespace = operation.Name.Namespace;
         XElement payload;
@@ -108,7 +122,7 @@ internal static class GeoservicesCatalogEndpoints
             case "GetServiceDescriptions":
             case "GetServiceDescriptionsEx":
                 payload = new XElement(
-                    operationNamespace + "ServiceDescriptions",
+                    operationNamespace + $"{operation.Name.LocalName}Result",
                     await BuildSoapImageServerDescriptionsAsync(
                         context,
                         operationNamespace,
@@ -117,19 +131,19 @@ internal static class GeoservicesCatalogEndpoints
                         logger).ConfigureAwait(false));
                 break;
             case "GetFolders":
-                payload = new XElement(operationNamespace + "FolderNames");
+                payload = new XElement(operationNamespace + "GetFoldersResult");
                 break;
             case "GetMessageVersion":
-                payload = new XElement(operationNamespace + "MessageVersion", "esriArcGISVersion108");
+                payload = new XElement(operationNamespace + "GetMessageVersionResult", "esriArcGISVersion108");
                 break;
             case "GetMessageFormats":
-                payload = new XElement(operationNamespace + "MessageFormats", "esriServiceCatalogMessageFormatSoap");
+                payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
                 break;
             case "GetTokenServiceURL":
-                payload = new XElement(operationNamespace + "TokenServiceURL", string.Empty);
+                payload = new XElement(operationNamespace + "GetTokenServiceURLResult", string.Empty);
                 break;
             case "RequiresTokens":
-                payload = new XElement(operationNamespace + "Result", false);
+                payload = new XElement(operationNamespace + "RequiresTokensResult", false);
                 break;
             default:
                 return CreateSoapFault($"Unsupported catalog operation '{operation.Name.LocalName}'.", StatusCodes.Status400BadRequest);
@@ -162,12 +176,15 @@ internal static class GeoservicesCatalogEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var requestedServiceName = context.Request.RouteValues["serviceName"] as string;
         var descriptions = new List<XElement>();
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
             if (!service.IsRoutable() ||
-                !service.Protocols.Contains(ImageServerProtocolName, StringComparer.Ordinal))
+                !service.Protocols.Contains(ImageServerProtocolName, StringComparer.Ordinal) ||
+                (requestedServiceName is not null &&
+                 !string.Equals(service.Metadata.Name, requestedServiceName, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -176,8 +193,9 @@ internal static class GeoservicesCatalogEndpoints
             foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id).Where(snapshot.IsRoutable))
             {
                 var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
+                var storageLayerId = snapshot.ResolveStorageLayerId(publication);
                 if (resource is null ||
-                    publication.LayerIndex is not { } layerIndex ||
+                    storageLayerId is not { } layerIndex ||
                     !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
                 {
                     continue;
@@ -191,7 +209,7 @@ internal static class GeoservicesCatalogEndpoints
                         break;
                     }
                 }
-                catch (Exception exception) when (exception is not OutOfMemoryException)
+                catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
                 {
                     GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, exception);
                 }
@@ -377,7 +395,7 @@ internal static class GeoservicesCatalogEndpoints
                             };
                         }
                     }
-                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
                     {
                         // Intentional catch-all: one service's raster-store probe failing must not
                         // abort the whole concurrent Parallel.ForEachAsync batch or the directory
