@@ -113,10 +113,12 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
                 : null;
         }
 
-        // A bare subject is not globally unique: two trusted OIDC issuers can legally mint the
-        // same sub. Require the validated issuer claim and include it with the auth scheme in
-        // the ownership key. Legacy bare owner ids therefore compare unequal and fail closed;
-        // they are never opportunistically rebound to whichever issuer asks first.
+        // A bare OIDC subject is not globally unique: two trusted issuers can legally mint the
+        // same sub. Require the validated issuer claim for OIDC and include it with the auth
+        // scheme in the ownership key. SAML sessions do not yet carry durable entity-id
+        // provenance, so preserve their explicit issuer-optional namespace rather than rejecting
+        // an otherwise validated SAML principal. Legacy bare owner ids still compare unequal and
+        // fail closed; they are never opportunistically rebound to whichever caller asks first.
         var subject = NormalizeIdentityComponent(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value)
             ?? NormalizeIdentityComponent(principal.FindFirst("sub")?.Value);
         // An operator bearer is a Honua-signed wrapper around an already validated upstream
@@ -129,14 +131,22 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             identity.AuthenticationType,
             OperatorBearerAuthenticationType,
             StringComparison.OrdinalIgnoreCase);
-        var issuer = NormalizeIdentityComponent(principal.FindFirst(
-            isOperatorBearer ? IdentityIssuerClaimType : "iss")?.Value);
-        if (subject is null || issuer is null)
+        var isOidc = string.Equals(scheme, "oidc", StringComparison.OrdinalIgnoreCase);
+        var isSaml = string.Equals(scheme, "saml", StringComparison.OrdinalIgnoreCase);
+        var issuer = isOperatorBearer
+            ? isOidc
+                ? NormalizeIdentityComponent(principal.FindFirst(IdentityIssuerClaimType)?.Value)
+                : null
+            : isOidc
+                ? NormalizeIdentityComponent(principal.FindFirst("iss")?.Value)
+                : null;
+        if (subject is null || (!isOidc && !isSaml) || (isOidc && issuer is null))
         {
             return null;
         }
 
-        return $"{scheme.ToLowerInvariant()}:subject:{Uri.EscapeDataString(issuer)}:{Uri.EscapeDataString(subject)}";
+        var issuerNamespace = issuer is null ? "-" : Uri.EscapeDataString(issuer);
+        return $"{scheme.ToLowerInvariant()}:subject:{issuerNamespace}:{Uri.EscapeDataString(subject)}";
     }
 
     private static string? NormalizeIdentityComponent(string? value)

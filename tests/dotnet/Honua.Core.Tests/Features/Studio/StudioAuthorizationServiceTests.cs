@@ -437,6 +437,28 @@ public sealed class StudioAuthorizationServiceTests
             "the wrapper issuer is not the upstream subject namespace");
     }
 
+    [UnitTest]
+    public async Task ResolveCallerId_DirectSamlWithoutIssuer_PreservesOwnResourceAuthorization()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "saml-user-1"),
+            new Claim("auth_type", "saml"),
+            new Claim(ClaimTypes.Role, "creator"),
+        ],
+        authenticationType: "saml"));
+
+        var callerId = service.ResolveCallerId(principal);
+        callerId.Should().Be("saml:subject:-:saml-user-1");
+        var ownDecision = await service.AuthorizeAsync(
+            principal,
+            callerId,
+            StudioAuthorizationOperation.UpdateDraft,
+            callerId);
+        ownDecision.IsAllowed.Should().BeTrue();
+    }
+
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,

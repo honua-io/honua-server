@@ -448,6 +448,49 @@ public sealed class StudioMcpToolDelegationTests
         await crossIssuerRead.Should().ThrowAsync<GeoprocessingAuthorizationException>();
     }
 
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task SamlOperatorBearer_CreateThenReadDraft_PreservesIssuerOptionalOwnership()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycleService = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var authorization = CreateEndUserAuthorizationService();
+        var principal = await CreateSamlOperatorBearerPrincipalAsync("saml-operator-subject");
+        authorization.ResolveCallerId(principal).Should().Be("saml:subject:-:saml-operator-subject");
+
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycleService);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            services.AddSingleton<IStudioAuthorizationService>(authorization);
+        });
+        httpContext.User = principal;
+
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var createTool = new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var createResult = await createTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                """{"packageKey":"saml-operator-map","family":"map","schemaVersion":"1.0"}"""),
+            CancellationToken.None);
+
+        createResult.IsError.Should().BeFalse();
+        var created = createResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured create-draft content.");
+        created.GetProperty("ownerId").GetString().Should().Be("saml:subject:-:saml-operator-subject");
+        var draftId = created.GetProperty("draftId").GetGuid();
+
+        var getTool = new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var getResult = await getTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}"}"""),
+            CancellationToken.None);
+        getResult.IsError.Should().BeFalse();
+        getResult.StructuredContent!.Value.GetProperty("draftId").GetGuid().Should().Be(draftId);
+    }
+
     private static StudioAuthorizationService CreateEndUserAuthorizationService()
     {
         var evaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
@@ -481,6 +524,34 @@ public sealed class StudioMcpToolDelegationTests
             new AdminAuthSessionClaim { Type = "sub", Value = subject },
             new AdminAuthSessionClaim { Type = "iss", Value = upstreamIssuer },
             new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+            new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "creator" },
+        ],
+        DateTimeOffset.UtcNow.AddMinutes(10));
+        issuance.Should().NotBeNull();
+
+        var projectedClaims = await tokenService.TryValidateAsync(issuance!.Token);
+        projectedClaims.Should().NotBeNull();
+        return AdminAuthClaimsProjector.CreatePrincipal(
+            projectedClaims!,
+            "OperatorBearer",
+            "operator-bearer");
+    }
+
+    private static async Task<ClaimsPrincipal> CreateSamlOperatorBearerPrincipalAsync(string subject)
+    {
+        var tokenService = new OperatorBearerTokenService(Options.Create(new OperatorBearerOptions
+        {
+            Enabled = true,
+            SigningKey = "operator-bearer-studio-test-key-at-least-32-bytes-long",
+            Issuer = "honua-operator-bearer",
+            Audience = "honua-admin-api",
+            MaxLifetimeMinutes = 10,
+        }));
+        var issuance = tokenService.Issue(
+        [
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = subject },
+            new AdminAuthSessionClaim { Type = "sub", Value = subject },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
             new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "creator" },
         ],
         DateTimeOffset.UtcNow.AddMinutes(10));
