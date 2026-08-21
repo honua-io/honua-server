@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests;
 using Honua.TestKit;
@@ -991,6 +992,38 @@ public class OidcAuthenticationTests
         Assert.True(result.IsInRole("admin"));
         Assert.NotNull(result.FindFirst(ClaimTypes.NameIdentifier));
         Assert.Equal("user-123", result.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    }
+
+    [Theory]
+    [InlineData("AzureAd")]
+    [InlineData("Google")]
+    [InlineData("Oidc")]
+    [InlineData("Okta")]
+    [InlineData("Auth0")]
+    public async Task ClaimsTransformation_ValidatedProvider_OverridesForgedProtocolClaims(
+        string authenticationType)
+    {
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions { DefaultRole = "user" }),
+            new TestLogger<OidcClaimsTransformation>(),
+            EnterpriseEntitledServices());
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            new Claim("iss", "https://oidc.example"),
+            new Claim("auth_type", "saml"),
+            new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Saml),
+        ],
+        authenticationType));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.Equal(
+            IdentityProtocolProvenance.Oidc,
+            Assert.Single(result.FindAll("auth_type")).Value);
+        Assert.Equal(
+            IdentityProtocolProvenance.Oidc,
+            Assert.Single(result.FindAll(IdentityProtocolProvenance.ClaimType)).Value);
     }
 
     [UnitTest]

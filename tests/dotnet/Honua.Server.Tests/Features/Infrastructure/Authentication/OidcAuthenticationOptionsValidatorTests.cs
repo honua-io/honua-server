@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
@@ -500,6 +501,8 @@ public class OidcAuthenticationOptionsValidatorTests
             OidcClaimsTransformation.RolesFromClaimsMappingClaimType,
             OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType,
             OidcClaimsTransformation.TenantFromClaimsMappingClaimType,
+            IdentityProtocolProvenance.ClaimType,
+            "auth_type",
         };
 
         foreach (var reservedTarget in reservedTargets)

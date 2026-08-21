@@ -11,6 +11,7 @@ using FluentAssertions.Execution;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -1075,6 +1076,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 new AdminAuthSessionClaim { Type = "sub", Value = "operator-1" },
                 new AdminAuthSessionClaim { Type = "iss", Value = "https://auth.example.com" },
                 new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+                new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Oidc },
                 new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" }
             ],
             expiresAt ?? DateTimeOffset.UtcNow.AddMinutes(10),

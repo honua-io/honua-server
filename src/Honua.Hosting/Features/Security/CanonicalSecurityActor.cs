@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Security;
 
 namespace Honua.Infrastructure.Security;
 
@@ -25,18 +26,19 @@ internal static class CanonicalSecurityActor
             return null;
         }
 
-        var scheme = NormalizeScheme(principal.FindFirstValue(AuthTypeClaim) ?? identity.AuthenticationType);
-        if (scheme is null)
-        {
-            return null;
-        }
-
         var apiKeyValue = principal.FindFirstValue(ApiKeyIdClaim);
         if (Guid.TryParse(apiKeyValue, out var apiKeyId))
         {
+            var apiKeyScheme = NormalizeScheme(
+                principal.FindFirstValue(AuthTypeClaim) ?? identity.AuthenticationType);
+            if (apiKeyScheme is null)
+            {
+                return null;
+            }
+
             return new CanonicalSecurityActorIdentity(
-                $"{scheme}:api-key:{apiKeyId:D}",
-                scheme,
+                $"{apiKeyScheme}:api-key:{apiKeyId:D}",
+                apiKeyScheme,
                 SubjectId: null,
                 SubjectIssuer: null,
                 ApiKeyId: apiKeyId.ToString("D"),
@@ -47,16 +49,22 @@ internal static class CanonicalSecurityActor
             ?? NormalizeValue(principal.FindFirstValue(SubjectClaim));
         if (subject is not null)
         {
+            var scheme = IdentityProtocolProvenance.Resolve(principal);
+            if (scheme is null)
+            {
+                return null;
+            }
+
             var isOperatorBearer = string.Equals(
                 identity.AuthenticationType,
                 OperatorBearerAuthenticationType,
                 StringComparison.OrdinalIgnoreCase);
-            var isOidc = string.Equals(scheme, "oidc", StringComparison.Ordinal);
-            var issuer = isOperatorBearer
-                ? isOidc
+            var isOidc = string.Equals(scheme, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal);
+            var issuer = isOidc
+                ? isOperatorBearer
                     ? NormalizeValue(principal.FindFirstValue(IdentityIssuerClaim))
-                    : null
-                : NormalizeValue(principal.FindFirstValue(IssuerClaim));
+                    : NormalizeValue(principal.FindFirstValue(IssuerClaim))
+                : null;
             if (isOidc && issuer is null)
             {
                 return null;
@@ -73,11 +81,13 @@ internal static class CanonicalSecurityActor
 
         // Bootstrap credentials can make a live approval decision, but cannot safely
         // originate deferred work because there is no durable identity to re-resolve.
-        if (string.Equals(scheme, "admin", StringComparison.Ordinal))
+        var bootstrapScheme = NormalizeScheme(
+            principal.FindFirstValue(AuthTypeClaim) ?? identity.AuthenticationType);
+        if (string.Equals(bootstrapScheme, "admin", StringComparison.Ordinal))
         {
             return new CanonicalSecurityActorIdentity(
                 "admin:bootstrap",
-                scheme,
+                "admin",
                 SubjectId: null,
                 SubjectIssuer: null,
                 ApiKeyId: null,
@@ -117,7 +127,11 @@ internal static class CanonicalSecurityActor
         }
 
         var issuer = NormalizeValue(subjectIssuer);
-        if (string.Equals(normalizedScheme, "oidc", StringComparison.Ordinal) && issuer is null)
+        if (!IdentityProtocolProvenance.IsSupported(normalizedScheme)
+            || (string.Equals(normalizedScheme, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal)
+                && issuer is null)
+            || (string.Equals(normalizedScheme, IdentityProtocolProvenance.Saml, StringComparison.Ordinal)
+                && issuer is not null))
         {
             return false;
         }

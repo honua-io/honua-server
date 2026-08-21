@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Licensing;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -61,6 +62,8 @@ internal sealed class OidcClaimsTransformation(
         RolesFromClaimsMappingClaimType,
         RolesWithoutClaimsMappingClaimType,
         TenantFromClaimsMappingClaimType,
+        IdentityProtocolProvenance.ClaimType,
+        "auth_type",
     ];
 
     /// <summary>
@@ -82,21 +85,22 @@ internal sealed class OidcClaimsTransformation(
             return Task.FromResult(principal);
         }
 
+        // IClaimsTransformation is invoked for every successful authentication scheme. Only
+        // identities produced by a validated OIDC/OAuth handler may enter this boundary;
+        // AdminSession, OperatorBearer, API-key, SAML-session, mTLS, portal-token, and scoped-job
+        // principals already carry framework-projected identity provenance and must not be
+        // relabeled as OIDC on a later AuthenticateAsync call.
+        if (!IsValidatedOidcAuthenticationType(identity.AuthenticationType))
+        {
+            return Task.FromResult(principal);
+        }
+
         // These markers are framework-owned authorization provenance, not issuer claims. An
         // OIDC provider must not be able to choose the fallback roles restored after the live
         // claims-mapping entitlement expires. Remove every externally supplied copy (including
         // copies on secondary identities), then recompute the exact markers below. Re-running
         // this transformation is safe because previously computed markers are recomputed too.
         RemoveReservedProvenanceClaims(principal);
-
-        // Skip transformation for API key authenticated users (including
-        // layer-scoped write keys, #1637, which must not be granted a default
-        // role that would widen their tightly scoped write authority).
-        var authType = identity.FindFirst("auth_type")?.Value;
-        if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType)
-        {
-            return Task.FromResult(principal);
-        }
 
         // #2997: custom claims mapping is Enterprise (identity.claims-mapping). When configured
         // but unentitled, skip the custom mappings and additional role claim types while default
@@ -246,12 +250,12 @@ internal sealed class OidcClaimsTransformation(
                 .Select(role => new Claim(RolesWithoutClaimsMappingClaimType, role)));
         }
 
-        // Add auth_type claim if not present
-        if (!identity.HasClaim(c => c.Type == "auth_type"))
-        {
-            var scheme = identity.AuthenticationType ?? "oidc";
-            transformedClaims.Add(new Claim("auth_type", scheme));
-        }
+        // Provider-controlled auth_type/private-provenance values were removed above. Stamp
+        // one canonical protocol only after the framework's OIDC handler validated the token.
+        transformedClaims.Add(new Claim("auth_type", IdentityProtocolProvenance.Oidc));
+        transformedClaims.Add(new Claim(
+            IdentityProtocolProvenance.ClaimType,
+            IdentityProtocolProvenance.Oidc));
 
         // Apply custom mappings (Enterprise identity.claims-mapping only, #2997)
         if (claimsMappingEntitled)
@@ -317,6 +321,17 @@ internal sealed class OidcClaimsTransformation(
             .FirstOrDefault(claim => claim != null && !string.IsNullOrEmpty(claim.Value))
             ?.Value;
     }
+
+    private static bool IsValidatedOidcAuthenticationType(string? authenticationType)
+        => authenticationType is not null
+            && (string.Equals(authenticationType, OidcAuthenticationExtensions.AzureAdScheme, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, OidcAuthenticationExtensions.GoogleScheme, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, OidcAuthenticationExtensions.OidcScheme, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, OidcAuthenticationExtensions.OktaScheme, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, OidcAuthenticationExtensions.Auth0Scheme, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, "OpenIdConnect", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(authenticationType, "Federation", StringComparison.OrdinalIgnoreCase));
 
     private static void RemoveReservedProvenanceClaims(ClaimsPrincipal principal)
     {

@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -168,6 +169,26 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         Assert.Contains(
             response.Headers.GetValues("Set-Cookie"),
             c => c.Contains("honua_admin_session", StringComparison.Ordinal));
+
+        var sessionCookie = response.Headers.GetValues("Set-Cookie")
+            .Single(value => value.StartsWith(
+                AdminAuthSessionStore.AuthSessionCookieName + "=",
+                StringComparison.Ordinal));
+        var sessionId = sessionCookie.Split(';', 2)[0]
+            .Split('=', 2)[1];
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var session = await scope.ServiceProvider
+            .GetRequiredService<AdminAuthSessionStore>()
+            .GetAuthenticatedSessionAsync(sessionId, CancellationToken.None);
+        Assert.NotNull(session);
+        Assert.Equal(
+            IdentityProtocolProvenance.Saml,
+            Assert.Single(session!.Claims, claim => claim.Type == "auth_type").Value);
+        Assert.Equal(
+            IdentityProtocolProvenance.Saml,
+            Assert.Single(
+                session.Claims,
+                claim => claim.Type == IdentityProtocolProvenance.ClaimType).Value);
     }
 
     [IntegrationTest]

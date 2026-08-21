@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
@@ -350,6 +351,32 @@ public sealed class StudioAuthorizationServiceTests
         Assert.Null(service.ResolveCallerId(new ClaimsPrincipal(new ClaimsIdentity())));
     }
 
+    [Theory]
+    [InlineData("AzureAd")]
+    [InlineData("Google")]
+    [InlineData("Oidc")]
+    [InlineData("Okta")]
+    [InlineData("Auth0")]
+    public async Task ResolveCallerId_ValidatedOidcProviderScheme_PreservesOwnerSelfService(
+        string authenticationType)
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = OidcPrincipal(
+            "provider-user",
+            "https://provider.example",
+            authenticationType);
+        var callerId = service.ResolveCallerId(principal);
+
+        callerId.Should().Be(
+            "oidc:subject:https%3A%2F%2Fprovider.example:provider-user");
+        var decision = await service.AuthorizeAsync(
+            principal,
+            callerId,
+            StudioAuthorizationOperation.UpdateDraft,
+            callerId);
+        decision.IsAllowed.Should().BeTrue();
+    }
+
     [UnitTest]
     public async Task ResolveCallerId_TwoIssuersWithSameSubject_RemainDistinctAndCrossOwnerFailsClosed()
     {
@@ -412,6 +439,7 @@ public sealed class StudioAuthorizationServiceTests
             [
                 new Claim(ClaimTypes.NameIdentifier, "shared-subject"),
                 new Claim("auth_type", "oidc"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
                 new Claim("iss", "honua-operator-bearer"),
                 new Claim("honua_identity_issuer", "https://issuer-a.example"),
             ],
@@ -429,6 +457,7 @@ public sealed class StudioAuthorizationServiceTests
             [
                 new Claim(ClaimTypes.NameIdentifier, "shared-subject"),
                 new Claim("auth_type", "oidc"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
                 new Claim("iss", "honua-operator-bearer"),
             ],
             authenticationType: "OperatorBearer"));
@@ -445,6 +474,7 @@ public sealed class StudioAuthorizationServiceTests
         [
             new Claim(ClaimTypes.NameIdentifier, "saml-user-1"),
             new Claim("auth_type", "saml"),
+            new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Saml),
             new Claim(ClaimTypes.Role, "creator"),
         ],
         authenticationType: "saml"));
@@ -486,16 +516,20 @@ public sealed class StudioAuthorizationServiceTests
             ],
             authenticationType: "Test"));
 
-    private static ClaimsPrincipal OidcPrincipal(string subject, string issuer)
+    private static ClaimsPrincipal OidcPrincipal(
+        string subject,
+        string issuer,
+        string authenticationType = "oidc")
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.NameIdentifier, subject),
                 new Claim("sub", subject),
                 new Claim("iss", issuer),
                 new Claim("auth_type", "oidc"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
                 new Claim(ClaimTypes.Role, "creator"),
             ],
-            authenticationType: "oidc"));
+            authenticationType));
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

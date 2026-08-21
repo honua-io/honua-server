@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Security;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -169,7 +170,8 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
 
         var claims = sessionClaims
             .Where(claim => !ReservedClaimTypes.Contains(claim.Type)
-                && !string.Equals(claim.Type, IdentityIssuerClaimType, StringComparison.Ordinal))
+                && !string.Equals(claim.Type, IdentityIssuerClaimType, StringComparison.Ordinal)
+                && !string.Equals(claim.Type, IdentityProtocolProvenance.ClaimType, StringComparison.Ordinal))
             .Select(claim => new Claim(claim.Type, claim.Value))
             .ToList();
 
@@ -188,6 +190,24 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         if (upstreamIssuers.Length == 1)
         {
             claims.Add(new Claim(IdentityIssuerClaimType, upstreamIssuers[0]!));
+        }
+
+        // Preserve only framework-stamped protocol provenance. The generic claim copy above
+        // intentionally excludes the private name so duplicate/conflicting values cannot pass
+        // through the Honua-signed wrapper.
+        var protocols = sessionClaims
+            .Where(static claim => string.Equals(
+                claim.Type,
+                IdentityProtocolProvenance.ClaimType,
+                StringComparison.Ordinal))
+            .Select(static claim => IdentityProtocolProvenance.Normalize(claim.Value))
+            .Where(IdentityProtocolProvenance.IsSupported)
+            .Distinct(StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+        if (protocols.Length == 1)
+        {
+            claims.Add(new Claim(IdentityProtocolProvenance.ClaimType, protocols[0]!));
         }
 
         var now = issuedAt.UtcDateTime;

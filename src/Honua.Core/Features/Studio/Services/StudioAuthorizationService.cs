@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -96,20 +97,16 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             return null;
         }
 
-        var scheme = NormalizeIdentityComponent(principal.FindFirst("auth_type")?.Value)
-            ?? NormalizeIdentityComponent(identity.AuthenticationType);
-        if (scheme is null)
-        {
-            return null;
-        }
-
         // API-key display names are mutable and non-unique. Only the immutable key id is a
         // durable ownership key, qualified by the validated authentication scheme.
         var apiKeyValue = NormalizeIdentityComponent(principal.FindFirst("api_key_id")?.Value);
         if (apiKeyValue is not null)
         {
+            var apiKeyScheme = NormalizeIdentityComponent(principal.FindFirst("auth_type")?.Value)
+                ?? NormalizeIdentityComponent(identity.AuthenticationType);
             return Guid.TryParse(apiKeyValue, out var apiKeyId)
-                ? $"{scheme.ToLowerInvariant()}:api-key:{apiKeyId:D}"
+                && apiKeyScheme is not null
+                ? $"{apiKeyScheme.ToLowerInvariant()}:api-key:{apiKeyId:D}"
                 : null;
         }
 
@@ -131,8 +128,9 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             identity.AuthenticationType,
             OperatorBearerAuthenticationType,
             StringComparison.OrdinalIgnoreCase);
-        var isOidc = string.Equals(scheme, "oidc", StringComparison.OrdinalIgnoreCase);
-        var isSaml = string.Equals(scheme, "saml", StringComparison.OrdinalIgnoreCase);
+        var protocol = IdentityProtocolProvenance.Resolve(principal);
+        var isOidc = string.Equals(protocol, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal);
+        var isSaml = string.Equals(protocol, IdentityProtocolProvenance.Saml, StringComparison.Ordinal);
         var issuer = isOperatorBearer
             ? isOidc
                 ? NormalizeIdentityComponent(principal.FindFirst(IdentityIssuerClaimType)?.Value)
@@ -146,7 +144,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         }
 
         var issuerNamespace = issuer is null ? "-" : Uri.EscapeDataString(issuer);
-        return $"{scheme.ToLowerInvariant()}:subject:{issuerNamespace}:{Uri.EscapeDataString(subject)}";
+        return $"{protocol}:subject:{issuerNamespace}:{Uri.EscapeDataString(subject)}";
     }
 
     private static string? NormalizeIdentityComponent(string? value)

@@ -14,6 +14,7 @@ using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security;
 using Honua.Server.Features.Operations.Admin;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -601,6 +602,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             new AdminAuthSessionClaim { Type = "sub", Value = subject },
             new AdminAuthSessionClaim { Type = "iss", Value = issuer },
             new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Oidc },
             new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "publisher" },
         ],
         DateTimeOffset.UtcNow.AddMinutes(10));
@@ -704,6 +706,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             new("sub", subject),
             new("iss", "https://issuer.example.com"),
             new("auth_type", "oidc"),
+            new(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
             new(ClaimTypes.Role, "admin"),
         };
         if (displayName is not null)

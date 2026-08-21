@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,7 @@ public sealed class OperatorBearerTokenServiceTests
         new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "operator-1" },
         new AdminAuthSessionClaim { Type = "iss", Value = "https://identity.example/tenant-a" },
         new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+        new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Oidc },
         new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" }
     ];
 
@@ -62,6 +64,7 @@ public sealed class OperatorBearerTokenServiceTests
             [
                 new Claim(ClaimTypes.NameIdentifier, "shared-subject"),
                 new Claim("auth_type", "oidc"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
             ],
             authenticationType: "oidc"));
 
@@ -72,6 +75,39 @@ public sealed class OperatorBearerTokenServiceTests
             "shared-subject",
             subjectIssuer: null,
             apiKeyId: null).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task OidcProjection_OverridesForgedSamlAuthTypeBeforeOperatorWrapping()
+    {
+        var sourceClaims = new Claim[]
+        {
+            new(ClaimTypes.NameIdentifier, "shared-subject"),
+            new("iss", "https://oidc.example/tenant-a"),
+            new("auth_type", "saml"),
+            new(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Saml),
+        };
+
+        AdminAuthClaimsProjector.TryProjectValidatedClaims(sourceClaims, out var sessionClaims)
+            .Should().BeTrue();
+        sessionClaims.Should().ContainSingle(claim => claim.Type == "auth_type")
+            .Which.Value.Should().Be(IdentityProtocolProvenance.Oidc);
+        sessionClaims.Should().ContainSingle(
+                claim => claim.Type == IdentityProtocolProvenance.ClaimType)
+            .Which.Value.Should().Be(IdentityProtocolProvenance.Oidc);
+
+        var service = CreateService();
+        var issuance = service.Issue(sessionClaims, DateTimeOffset.UtcNow.AddMinutes(10));
+        var wrapperClaims = await service.TryValidateAsync(issuance!.Token);
+        var wrapper = AdminAuthClaimsProjector.CreatePrincipal(
+            wrapperClaims!,
+            "OperatorBearer",
+            "operator-bearer");
+
+        var actor = CanonicalSecurityActor.Resolve(wrapper);
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be(
+            "oidc:subject:https%3A%2F%2Foidc.example%2Ftenant-a:shared-subject");
     }
 
     [Fact]
@@ -101,6 +137,7 @@ public sealed class OperatorBearerTokenServiceTests
         [
             new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "saml-operator-1" },
             new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Saml },
             new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "publisher" },
         ],
         DateTimeOffset.UtcNow.AddMinutes(10));
@@ -116,6 +153,16 @@ public sealed class OperatorBearerTokenServiceTests
         actor.Should().NotBeNull();
         actor!.ActorId.Should().Be("saml:subject:-:saml-operator-1");
         actor.SubjectIssuer.Should().BeNull();
+
+        var direct = AdminAuthClaimsProjector.CreatePrincipal(
+        [
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "saml-operator-1" },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Saml },
+            new AdminAuthSessionClaim { Type = "iss", Value = "untrusted-saml-lookalike-issuer" },
+        ],
+        "AdminSession");
+        CanonicalSecurityActor.Resolve(direct)!.ActorId.Should().Be(actor.ActorId);
         CanonicalSecurityActor.IsBoundIdentity(
             actor.ActorId,
             actor.AuthenticationScheme,

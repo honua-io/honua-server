@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Net;
 using System.Security.Claims;
+using Honua.Core.Features.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -157,7 +158,10 @@ internal static partial class SamlEndpoints
             claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
-        if (!AdminAuthClaimsProjector.TryProjectValidatedClaims(claims, out var sessionClaims))
+        if (!AdminAuthClaimsProjector.TryProjectValidatedClaims(
+                claims,
+                out var sessionClaims,
+                IdentityProtocolProvenance.Saml))
         {
             return Results.Problem(
                 title: "SAML assertion rejected",

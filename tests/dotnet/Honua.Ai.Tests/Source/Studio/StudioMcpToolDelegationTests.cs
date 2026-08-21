@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -524,6 +525,7 @@ public sealed class StudioMcpToolDelegationTests
             new AdminAuthSessionClaim { Type = "sub", Value = subject },
             new AdminAuthSessionClaim { Type = "iss", Value = upstreamIssuer },
             new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Oidc },
             new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "creator" },
         ],
         DateTimeOffset.UtcNow.AddMinutes(10));
@@ -552,6 +554,7 @@ public sealed class StudioMcpToolDelegationTests
             new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = subject },
             new AdminAuthSessionClaim { Type = "sub", Value = subject },
             new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Saml },
             new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "creator" },
         ],
         DateTimeOffset.UtcNow.AddMinutes(10));

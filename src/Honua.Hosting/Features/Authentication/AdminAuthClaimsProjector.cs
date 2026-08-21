@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Security;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -18,7 +19,7 @@ internal static class AdminAuthClaimsProjector
             .Select(static claim => new Claim(claim.Type, claim.Value))
             .ToList();
 
-        NormalizeClaims(claims, authTypeClaimValue);
+        NormalizeClaims(claims, authTypeClaimValue, overrideProtocol: false);
 
         var identity = new ClaimsIdentity(
             claims,
@@ -31,7 +32,8 @@ internal static class AdminAuthClaimsProjector
 
     public static bool TryProjectValidatedClaims(
         IEnumerable<Claim> sourceClaims,
-        out IReadOnlyList<AdminAuthSessionClaim> claims)
+        out IReadOnlyList<AdminAuthSessionClaim> claims,
+        string validatedProtocol = IdentityProtocolProvenance.Oidc)
     {
         ArgumentNullException.ThrowIfNull(sourceClaims);
 
@@ -43,7 +45,14 @@ internal static class AdminAuthClaimsProjector
             return false;
         }
 
-        NormalizeClaims(projectedClaims, "oidc");
+        if (!IdentityProtocolProvenance.IsSupported(
+                IdentityProtocolProvenance.Normalize(validatedProtocol)))
+        {
+            claims = [];
+            return false;
+        }
+
+        NormalizeClaims(projectedClaims, validatedProtocol, overrideProtocol: true);
 
         claims = projectedClaims
             .GroupBy(static claim => $"{claim.Type}\u001f{claim.Value}", StringComparer.Ordinal)
@@ -57,7 +66,10 @@ internal static class AdminAuthClaimsProjector
         return claims.Count > 0;
     }
 
-    private static void NormalizeClaims(List<Claim> claims, string authTypeClaimValue)
+    private static void NormalizeClaims(
+        List<Claim> claims,
+        string authTypeClaimValue,
+        bool overrideProtocol)
     {
         var roleValues = claims
             .Where(static claim => claim.Type is "roles" or "role" or ClaimTypes.Role)
@@ -73,9 +85,35 @@ internal static class AdminAuthClaimsProjector
             claims.Add(new Claim(ClaimTypes.Role, roleValue));
         }
 
-        if (!claims.Any(static claim => claim.Type == "auth_type"))
+        var normalizedFallback = IdentityProtocolProvenance.Normalize(authTypeClaimValue);
+        var existingProtocols = claims
+            .Where(static claim => claim.Type is "auth_type" or IdentityProtocolProvenance.ClaimType)
+            .Select(static claim => IdentityProtocolProvenance.Normalize(claim.Value))
+            .Where(IdentityProtocolProvenance.IsSupported)
+            .Distinct(StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+        var protocol = overrideProtocol
+            ? normalizedFallback
+            : existingProtocols.Length == 1
+                ? existingProtocols[0]
+                : IdentityProtocolProvenance.IsSupported(normalizedFallback)
+                    ? normalizedFallback
+                    : null;
+
+        // auth_type is retained as a compatibility/display claim, but never trusted as the
+        // durable subject protocol. Both it and the private provenance claim are normalized at
+        // validation boundaries so an upstream auth_type=saml cannot cross into the SAML
+        // issuer-optional namespace after OIDC validation.
+        claims.RemoveAll(static claim => claim.Type is "auth_type" or IdentityProtocolProvenance.ClaimType);
+        if (protocol is not null)
         {
-            claims.Add(new Claim("auth_type", authTypeClaimValue));
+            claims.Add(new Claim("auth_type", protocol));
+            claims.Add(new Claim(IdentityProtocolProvenance.ClaimType, protocol));
+        }
+        else if (!string.IsNullOrWhiteSpace(authTypeClaimValue))
+        {
+            claims.Add(new Claim("auth_type", authTypeClaimValue.Trim().ToLowerInvariant()));
         }
     }
 }
