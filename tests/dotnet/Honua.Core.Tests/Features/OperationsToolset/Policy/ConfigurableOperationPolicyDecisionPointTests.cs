@@ -202,6 +202,116 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     }
 
     [UnitTest]
+    public async Task EvaluateAsync_DefaultDestructiveAdminOperationWithDryRunSupport_RequiresDryRunFirst()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions());
+        var descriptor = BuildDescriptor() with
+        {
+            OperationId = "admin.services.update",
+            Policy = BuildDescriptor().Policy with
+            {
+                SideEffectClass = OperationSideEffectClass.DestroysState,
+            },
+        };
+
+        var blocked = await Evaluate(
+            pdp,
+            descriptor: descriptor,
+            request: new OperationRequest { OperationId = descriptor.OperationId });
+        var preview = await Evaluate(
+            pdp,
+            descriptor: descriptor,
+            request: new OperationRequest { OperationId = descriptor.OperationId, DryRun = true });
+
+        blocked.Kind.Should().Be(PolicyDecisionKind.DryRunFirst);
+        preview.Kind.Should().Be(PolicyDecisionKind.Allow);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_DefaultAdminMutationWithoutDryRunSupport_RequiresApproval()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions());
+        var descriptor = BuildDescriptor() with
+        {
+            OperationId = "admin.services.delete",
+            Policy = BuildDescriptor().Policy with
+            {
+                SideEffectClass = OperationSideEffectClass.DestroysState,
+                SupportsDryRun = false,
+            },
+        };
+
+        var decision = await Evaluate(
+            pdp,
+            descriptor: descriptor,
+            request: new OperationRequest { OperationId = descriptor.OperationId });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+        decision.ApprovalLane.Should().Be("admin");
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_AdminFamilyAllowRule_OverridesBuiltInProtection()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            Rules =
+            [
+                new OperationPolicyRule
+                {
+                    OperationId = "admin.*",
+                    Decision = PolicyDecisionKind.Allow,
+                },
+            ],
+        });
+        var descriptor = BuildDescriptor() with { OperationId = "admin.services.update" };
+
+        var decision = await Evaluate(
+            pdp,
+            descriptor: descriptor,
+            request: new OperationRequest { OperationId = descriptor.OperationId });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Allow);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_ReadOnlyAdminOperation_RemainsAllowedByDefault()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions());
+        var descriptor = BuildDescriptor() with
+        {
+            OperationId = "admin.services.list",
+            Policy = BuildDescriptor().Policy with
+            {
+                SideEffectClass = OperationSideEffectClass.ReadOnly,
+                SupportsDryRun = false,
+            },
+        };
+
+        var decision = await Evaluate(
+            pdp,
+            descriptor: descriptor,
+            request: new OperationRequest { OperationId = descriptor.OperationId });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Allow);
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_NonDestructiveAdminMutation_RemainsAllowedByDefault()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions());
+        var descriptor = BuildDescriptor() with { OperationId = "admin.connections.create" };
+
+        var decision = await Evaluate(
+            pdp,
+            descriptor: descriptor,
+            request: new OperationRequest { OperationId = descriptor.OperationId });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Allow);
+    }
+
+    [UnitTest]
     public async Task Dispatcher_With_RequireApproval_Rule_ShortCircuits_Executor()
     {
         var executor = new RecordingExecutor();
@@ -242,9 +352,10 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     private static Task<PolicyDecision> Evaluate(
         ConfigurableOperationPolicyDecisionPoint pdp,
         OperationPolicyContext? context = null,
-        OperationRequest? request = null)
+        OperationRequest? request = null,
+        OperationDescriptor? descriptor = null)
         => pdp.EvaluateAsync(
-            BuildDescriptor(),
+            descriptor ?? BuildDescriptor(),
             request ?? BuildRequest(),
             context ?? new OperationPolicyContext(),
             CancellationToken.None);

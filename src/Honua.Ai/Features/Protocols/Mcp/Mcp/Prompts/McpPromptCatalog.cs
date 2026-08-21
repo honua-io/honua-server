@@ -152,6 +152,41 @@ internal static class McpPromptCatalog
                 + "3. Call honua_plan_analysis to compile the app/dashboard scaffold (if it returns engine=\"fixture\", the plan is a demo — follow its nextSteps to hand-author a plan from honua://catalog/processes), then honua_validate_plan.\n"
                 + "4. Call honua_propose_operation to stage the publishable package and respect any approval-required outcome.\n"
                 + "Hand back the dashboard layout, the included layers, and the staged package resource URI."),
+
+        new McpPromptDefinition(
+            Name: "set_up_and_publish",
+            Title: "Set up and publish",
+            Description:
+                "Follow the deterministic Honua control-plane arc: inspect, connect, import, "
+                + "publish, run geoprocessing, compose in Studio, and retain approval/audit evidence.",
+            Arguments:
+            [
+                new McpPromptArgumentDefinition(
+                    "deployment",
+                    "The running Honua target (for example local Docker or an AWS ECS environment).",
+                    Required: true),
+                new McpPromptArgumentDefinition(
+                    "dataSource",
+                    "The database, file, or external service to configure and publish.",
+                    Required: true),
+                new McpPromptArgumentDefinition(
+                    "appGoal",
+                    "The map, application, or dashboard to save in Studio.",
+                    Required: true),
+            ],
+            Template:
+                "Set up {deployment} from {dataSource}, then save this Studio outcome: {appGoal}.\n\n"
+                + "Use only tools returned by tools/list and never place credentials in prompt text or ordinary parameters. "
+                + "When a descriptor offers a secret_ref field, pass a server-side secret reference.\n\n"
+                + "1. Call honua_list_capabilities and inspect the current health/release state before changing anything.\n"
+                + "2. Select the matching deterministic honua_admin_* connection-create operation from tools/list; submit a dry run first when offered.\n"
+                + "3. Run the matching honua_admin_* connection-test operation and stop on validation or policy failure.\n"
+                + "4. Import or register the source with the matching honua_admin_* operation; retain its operation handle and audit identifiers.\n"
+                + "5. Publish and configure the service/layers through honua_admin_* operations, using idempotency inputs where the descriptor exposes them.\n"
+                + "6. Configure the minimum access/key policy needed by the intended audience; do not broaden an admin:approve credential into admin write.\n"
+                + "7. Discover and run the required geoprocessing through the OGC Processes or MCP job surface; validate/dry-run first and poll the job resource.\n"
+                + "8. Create, compose, validate, and save the durable map/app/dashboard with the honua_studio_* tools.\n"
+                + "9. If any operation returns RequiresApproval, stop and present its proposal in the focused Console for approve/reject; finish by reporting the saved artifact URI plus operation, proposal, and audit receipts."),
     ];
 
     private static readonly Dictionary<string, McpPromptDefinition> ByName =

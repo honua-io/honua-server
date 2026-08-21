@@ -63,6 +63,20 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 
 OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generic) and API-key management are covered in the [authentication guide](../../guides/secure/authentication.md).
 
+## MCP operation publication and policy
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Mcp__PublishOperations__AdminFamilyEnabled` | `true` | Publish deterministic `admin.*` operation descriptors as the Preview `honua_admin_*` MCP family when the admin operation catalog is composed. |
+| `Mcp__PublishOperations__DeterministicOnly` | `true` | Exclude AI-assisted operation descriptors from dynamic MCP publication. |
+| `Mcp__PublishOperations__Enabled` | `false` | Also publish eligible non-admin operation families. This is independent of the default-on admin family switch. |
+| `Operations__Policy__ProtectDestructiveAdminOperations` | `true` | Apply the built-in dry-run-first or `admin` approval-lane guardrail to destructive or deployment-scoped admin operations when no explicit policy rule overrides it. |
+
+The equivalent JSON keys use colon-delimited configuration paths. See
+[Connect AI agents](../../guides/connect/ai-agents-mcp.md) for the live surface
+and [Set up Honua with an AI agent](../../guides/connect/ai-control-plane-setup.md)
+for proxy configuration and secret-reference rules.
+
 ## Licensing
 
 | Variable | Default | Purpose |

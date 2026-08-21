@@ -16,13 +16,14 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// <c>tools/list</c> and <c>tools/call</c>.
 /// </summary>
 /// <remarks>
-/// Off unless <c>Mcp:PublishOperations:Enabled</c> is set, so no host changes its advertised
-/// catalog by default. In "deterministic mode" (<c>DeterministicOnly</c>) only AI-free
-/// descriptors are published — the audit/inspect toolset. Descriptors already exposed by a
-/// hand-authored tool are skipped so the same operation is not advertised twice.
+/// Deterministic <c>admin.*</c> descriptors are on by default; other families require
+/// <c>Mcp:PublishOperations:Enabled</c>. In "deterministic mode" (<c>DeterministicOnly</c>)
+/// only AI-free descriptors are published. Descriptors already exposed by a hand-authored
+/// tool are skipped so the same operation is not advertised twice.
 /// </remarks>
 internal sealed class PublishedOperationToolSource : IMcpToolSource
 {
+    private const string AdminOperationPrefix = "admin.";
     /// <summary>
     /// Operation ids already surfaced by a hand-authored MCP tool, so they are not
     /// double-published here. <c>service.publish</c> is <c>honua_publish_service</c> /
@@ -51,7 +52,7 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     public async ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
-        if (!options.Enabled)
+        if (!options.Enabled && !options.AdminFamilyEnabled)
         {
             return Empty;
         }
@@ -61,6 +62,14 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         var tools = new List<IMcpTool>(snapshot.Operations.Count);
         foreach (var descriptor in snapshot.Operations)
         {
+            var isAdminOperation = descriptor.OperationId.StartsWith(
+                AdminOperationPrefix,
+                StringComparison.Ordinal);
+            if (!options.Enabled && !(options.AdminFamilyEnabled && isAdminOperation))
+            {
+                continue;
+            }
+
             if (ExcludedOperationIds.Contains(descriptor.OperationId))
             {
                 continue;

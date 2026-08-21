@@ -100,7 +100,10 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             // lightweight host that did not register the registry falls back to the
             // live surface unchanged.
             var registry = httpContext.RequestServices.GetService<ICapabilityRegistry>();
-            output.Tools = BuildToolManifest(surface, registry);
+            var effectiveTools = await surface
+                .GetEffectiveToolHandlersAsync(cancellationToken)
+                .ConfigureAwait(false);
+            output.Tools = BuildToolManifest(surface, effectiveTools, registry);
             output.ToolCount = output.Tools.Count;
 
             if (includeResources || includeGroundingResources)
@@ -128,6 +131,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
 
     private static List<McpCapabilityTool> BuildToolManifest(
         McpDataAccessSurface surface,
+        IReadOnlyList<IMcpTool> effectiveTools,
         ICapabilityRegistry? registry)
     {
         var registryToolNames = registry is null
@@ -138,13 +142,15 @@ internal sealed class ListCapabilitiesTool : IMcpTool
                 .ToHashSet(StringComparer.Ordinal);
 
         var tools = new List<McpCapabilityTool>();
-        foreach (var tool in surface.ToolHandlers)
+        foreach (var tool in effectiveTools)
         {
             // Only advertise tools with capability-registry provenance. The startup
             // composition check (Capabilities:RegistryBinding) fails fast if the
-            // served surface ever contains a tool the registry does not describe,
-            // so in a conformant host this filter drops nothing.
-            if (registryToolNames is not null && !registryToolNames.Contains(tool.Name))
+            // served static surface ever contains a tool the registry does not
+            // describe. Runtime-published tools intentionally derive their provenance
+            // from IMcpToolSource/the operation catalog instead of static descriptors.
+            var isStaticTool = surface.ToolNames.Contains(tool.Name);
+            if (isStaticTool && registryToolNames is not null && !registryToolNames.Contains(tool.Name))
             {
                 continue;
             }

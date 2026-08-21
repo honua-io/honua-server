@@ -304,7 +304,7 @@ public sealed class PublishedOperationToolTests
     {
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor(), ServicePublishDescriptor()),
-            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            Options.Create(new McpPublishedOperationOptions { Enabled = true, DeterministicOnly = false }),
             NullLogger<PublishedOperationToolSource>.Instance);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
@@ -338,6 +338,29 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Source_Default_PublishesOnlyDeterministicAdminDescriptors()
+    {
+        var source = new PublishedOperationToolSource(
+            Catalog(
+                DeterministicReadOnlyDescriptor(),
+                AdminDescriptor("admin.connections.list", deterministic: true, readOnly: true),
+                AdminDescriptor("admin.services.delete", deterministic: true, readOnly: false),
+                AdminDescriptor("admin.services.suggest", deterministic: false, readOnly: true)),
+            Options.Create(new McpPublishedOperationOptions()),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        tools.Should().HaveCount(2);
+        tools.Select(tool => tool.Describe().Title)
+            .Should().BeEquivalentTo("admin.connections.list", "admin.services.delete");
+        tools.Select(tool => tool.Describe().Annotations).Should().Contain(annotation =>
+            annotation != null && annotation.ReadOnlyHint == true && annotation.DestructiveHint == false);
+        tools.Select(tool => tool.Describe().Annotations).Should().Contain(annotation =>
+            annotation != null && annotation.ReadOnlyHint == false && annotation.DestructiveHint == true);
+    }
+
+    [UnitTest]
     public async Task Source_DeterministicMode_PublishesOnlyDeterministicDescriptors()
     {
         var source = new PublishedOperationToolSource(
@@ -353,6 +376,39 @@ public sealed class PublishedOperationToolTests
     }
 
     // ---- Surface merge: published tools appear in tools/list and are callable ---
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/list")]
+    public async Task Surface_DefaultAdminFamily_SnapshotCarriesSafetyAnnotations()
+    {
+        var source = new PublishedOperationToolSource(
+            Catalog(
+                AdminDescriptor("admin.connections.list", deterministic: true, readOnly: true),
+                AdminDescriptor("admin.services.delete", deterministic: true, readOnly: false),
+                AdminDescriptor("admin.services.suggest", deterministic: false, readOnly: true)),
+            Options.Create(new McpPublishedOperationOptions()),
+            NullLogger<PublishedOperationToolSource>.Instance);
+        var surface = new McpDataAccessSurface(
+            [], [], NullLogger<McpDataAccessSurface>.Instance, limits: null, toolSources: [source]);
+
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(new ServiceCollection().BuildServiceProvider()),
+            Rpc("admin-list", "tools/list", null),
+            CancellationToken.None);
+
+        var tools = response!.Result!.Value.GetProperty("tools").EnumerateArray().ToArray();
+        tools.Should().HaveCount(2, "AI-assisted admin descriptors stay unpublished by default");
+        tools.Select(tool => tool.GetProperty("title").GetString())
+            .Should().Equal("admin.connections.list", "admin.services.delete");
+
+        var read = tools[0].GetProperty("annotations");
+        read.GetProperty("readOnlyHint").GetBoolean().Should().BeTrue();
+        read.GetProperty("destructiveHint").GetBoolean().Should().BeFalse();
+
+        var delete = tools[1].GetProperty("annotations");
+        delete.GetProperty("readOnlyHint").GetBoolean().Should().BeFalse();
+        delete.GetProperty("destructiveHint").GetBoolean().Should().BeTrue();
+    }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/list")]
@@ -563,6 +619,26 @@ public sealed class PublishedOperationToolTests
         OperationId = PublishServiceTool.PublishOperationId,
         Title = "Publish service",
     };
+
+    private static OperationDescriptor AdminDescriptor(string operationId, bool deterministic, bool readOnly)
+        => DeterministicReadOnlyDescriptor() with
+        {
+            OperationId = operationId,
+            Title = operationId,
+            Policy = new OperationPolicyMetadata
+            {
+                BlastRadiusClass = readOnly
+                    ? OperationBlastRadiusClass.None
+                    : OperationBlastRadiusClass.ServiceScope,
+                SideEffectClass = readOnly
+                    ? OperationSideEffectClass.ReadOnly
+                    : OperationSideEffectClass.DestroysState,
+                Determinism = deterministic
+                    ? OperationDeterminism.Deterministic
+                    : OperationDeterminism.AiAssisted,
+                SupportsDryRun = !readOnly,
+            },
+        };
 
     private static OperationParameterDescriptor Param(string name, bool required) => new()
     {
