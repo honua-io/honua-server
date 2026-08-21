@@ -14,6 +14,7 @@ using Honua.Server.Features.Operations.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using CatalogOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
@@ -42,6 +43,12 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     public ProposalEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IOperationProposalStore>();
@@ -177,6 +184,55 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("status").GetString().Should().Be("Submitted");
         _executor.Executed.Should().BeTrue();
         _notifier.ResolvedCount.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_AdminApproveKey_CanReadAndApproveButCannotWriteElsewhere()
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        var (keyId, key) = await CreateScopedApiKeyAsync("focused-console", ["admin:read", "admin:approve"]);
+        using var focusedConsole = _fixture.CreateClient(
+            client => client.DefaultRequestHeaders.Add("X-API-Key", key));
+
+        using var listResponse = await focusedConsole.GetAsync("/api/v1/admin/proposals");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var approveResponse = await focusedConsole.PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve",
+            null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var writeResponse = await focusedConsole.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new { name = "must-not-create", permissions = new[] { "admin:read" } });
+        writeResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var effectiveResponse = await _client.GetAsync(
+            $"/api/v1/admin/api-keys/{keyId}/effective-permissions");
+        effectiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var effectiveDocument = JsonDocument.Parse(await effectiveResponse.Content.ReadAsStringAsync());
+        effectiveDocument.RootElement.GetProperty("data").GetProperty("permissions")
+            .EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("admin:read", "admin:approve");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_ReadOnlyKey_ReturnsProblemNamingMissingGrant()
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        var (_, key) = await CreateScopedApiKeyAsync("console-read-only", ["admin:read"]);
+        using var readOnlyConsole = _fixture.CreateClient(
+            client => client.DefaultRequestHeaders.Add("X-API-Key", key));
+
+        using var response = await readOnlyConsole.PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve",
+            null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("admin:approve");
     }
 
     [IntegrationTest]
@@ -359,6 +415,22 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("status").GetString().Should().Be("Submitted");
         _publishedExecutor.ExecutedRequest.Should().BeEquivalentTo(request);
         _publishedExecutor.ExecutedContext.Should().BeEquivalentTo(operationContext);
+    }
+
+    private async Task<(Guid Id, string Key)> CreateScopedApiKeyAsync(
+        string name,
+        IReadOnlyList<string> permissions)
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new { name, permissions });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        return (
+            data.GetProperty("apiKey").GetProperty("id").GetGuid(),
+            data.GetProperty("key").GetString()!);
     }
 
     private sealed class StubGuardrailLadder : IGuardrailLadder

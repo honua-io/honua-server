@@ -82,6 +82,22 @@ internal sealed class McpDataAccessSurface
     /// </summary>
     public IReadOnlyCollection<IMcpTool> ToolHandlers => (IReadOnlyCollection<IMcpTool>)_tools.Values;
 
+    /// <summary>
+    /// Returns the effective tool catalog: static registry-bound tools plus the
+    /// current runtime-published tools. This is the same merge used by
+    /// <c>tools/list</c>, exposed to <c>honua_list_capabilities</c> so capability
+    /// discovery cannot omit a dynamically published operation family.
+    /// </summary>
+    internal async ValueTask<IReadOnlyList<IMcpTool>> GetEffectiveToolHandlersAsync(
+        CancellationToken cancellationToken)
+    {
+        var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
+        return _tools.Values
+            .Concat(dynamicTools)
+            .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public IReadOnlyList<IMcpResource> Resources => _resources;
 
     /// <summary>
@@ -288,16 +304,8 @@ internal sealed class McpDataAccessSurface
         // Merge the static, registry-bound catalog with any runtime-published tools
         // (#2483). Static tools always win on a name collision, and the dynamic set is
         // empty unless a host composed a tool source, so default hosts are unchanged.
-        var describes = _tools.Values.Select(t => t.Describe());
-        var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
-        if (dynamicTools.Count > 0)
-        {
-            describes = describes.Concat(dynamicTools.Select(t => t.Describe()));
-        }
-
-        var ordered = describes
-            .OrderBy(d => d.Name, StringComparer.Ordinal)
-            .ToList();
+        var handlers = await GetEffectiveToolHandlersAsync(cancellationToken).ConfigureAwait(false);
+        var ordered = handlers.Select(static tool => tool.Describe()).ToList();
 
         try
         {

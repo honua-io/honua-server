@@ -31,6 +31,15 @@ public sealed class OperationPolicyOptions
     public bool Enabled { get; set; }
 
     /// <summary>
+    /// Applies the built-in safety posture to destructive or deployment-scoped
+    /// <c>admin.*</c> descriptors:
+    /// dry-run-first when supported, otherwise require approval on the <c>admin</c> lane.
+    /// Defaults to <see langword="true"/> and remains active even when custom rules are off.
+    /// An explicit matching rule takes precedence.
+    /// </summary>
+    public bool ProtectDestructiveAdminOperations { get; set; } = true;
+
+    /// <summary>
     /// Decision applied when no rule in <see cref="Rules"/> matches the invocation. Defaults to
     /// <see cref="PolicyDecisionKind.Allow"/> so an enabled-but-ruleless policy stays permissive.
     /// </summary>

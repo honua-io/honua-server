@@ -56,6 +56,7 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
+  - [Set up Honua with an AI agent](guides/connect/ai-control-plane-setup.md)
 - Edit data
   - [Edit features](guides/edit/edit-features.md)
   - [Attachments & related records](guides/edit/attachments-and-related-records.md)
@@ -68,6 +69,7 @@
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
   - [Operating Honua](guides/operate/README.md)
+  - [Focused Console operation](guides/operate/focused-console.md)
   - [Docker Compose](guides/deploy/docker-compose.md)
   - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)
   - [Kubernetes](guides/deploy/kubernetes.md)
@@ -100,6 +102,7 @@
   - [gRPC](reference/protocols/grpc.md)
 - Admin API
   - [Overview](reference/admin-api/overview.md)
+  - [Admin CLI](reference/admin-api/cli.md)
   - [Connections & layers](reference/admin-api/connections-and-layers.md)
   - [Imports & jobs](reference/admin-api/imports-and-jobs.md)
   - [Styles](reference/admin-api/styles.md)

@@ -52,22 +52,14 @@ internal static class OperationsServiceCollectionExtensions
         }
 
         // Policy seam. Bind the configurable guardrail policy from "Operations:Policy".
-        // When it is enabled, the configurable decision point enforces the rule set; otherwise
-        // the no-op pass-through default (Community tier) stays in place. TryAdd is used so an
-        // explicitly-registered stricter PDP (Pro/Enterprise) registered earlier still wins.
+        // The built-in decision point protects destructive admin operations even when no custom
+        // rule set is enabled; enabling the rule set adds operator-authored overrides. TryAdd is
+        // used so an explicitly-registered stricter PDP registered earlier still wins.
         services
             .AddOptions<OperationPolicyOptions>()
             .Bind(configuration.GetSection(OperationPolicyOptions.SectionName));
 
-        var policyOptions = configuration.GetSection(OperationPolicyOptions.SectionName).Get<OperationPolicyOptions>();
-        if (policyOptions?.Enabled == true)
-        {
-            services.TryAddSingleton<IOperationPolicyDecisionPoint, ConfigurableOperationPolicyDecisionPoint>();
-        }
-        else
-        {
-            services.TryAddSingleton<IOperationPolicyDecisionPoint, AllowAllPolicyDecisionPoint>();
-        }
+        services.TryAddSingleton<IOperationPolicyDecisionPoint, ConfigurableOperationPolicyDecisionPoint>();
 
         // Dispatcher: resolves descriptor + executor, runs policy, executes on Allow.
         services.TryAddScoped<IOperationInvoker>(sp =>

@@ -96,6 +96,7 @@ public static class AuthenticationExtensions
         // (#1985). Registered as a singleton authorization handler so it participates
         // in every policy that adds AdminPermissionRequirement below.
         services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, AdminApprovalAuthorizationHandler>();
 
         // Enforces the read-only ops-reader split (A12): admits admin or ops:read grants for safe
         // reads while requiring full admin write for mutating requests routed through OpsReadPolicy.

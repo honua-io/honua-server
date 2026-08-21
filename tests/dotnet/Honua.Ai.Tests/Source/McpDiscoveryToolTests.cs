@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
@@ -126,6 +127,26 @@ public sealed class McpDiscoveryToolTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_list_capabilities")]
+    public async Task ListCapabilities_IncludesRuntimePublishedAdminTools()
+    {
+        var surface = BuildSurface([new StubToolSource(new StubTool("honua_admin_connections_list"))]);
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(surface)),
+            ToolCall("caps-admin", ListCapabilitiesTool.ToolName, "{}"),
+            CancellationToken.None);
+
+        var tools = response!.Result!.Value
+            .GetProperty("structuredContent")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .ToArray();
+
+        tools.Should().ContainSingle(tool =>
+            tool.GetProperty("name").GetString() == "honua_admin_connections_list");
+    }
+
+    [UnitTest]
     public void DiscoveryModels_AreResolvableFromSourceGeneratedContext()
     {
         // AOT guard: the discovery DTOs must be source-generated for the explicit
@@ -136,7 +157,7 @@ public sealed class McpDiscoveryToolTests
         DiscoveryJsonContext.Default.McpListCapabilitiesOutput.Should().NotBeNull();
     }
 
-    private McpDataAccessSurface BuildSurface() => new(
+    private McpDataAccessSurface BuildSurface(IReadOnlyList<IMcpToolSource>? toolSources = null) => new(
         [
             new ResolveEntityTool(_jobService, NullLogger<ResolveEntityTool>.Instance),
             new ListCapabilitiesTool(_jobService, NullLogger<ListCapabilitiesTool>.Instance)
@@ -144,7 +165,9 @@ public sealed class McpDiscoveryToolTests
         [
             new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance)
         ],
-        NullLogger<McpDataAccessSurface>.Instance);
+        NullLogger<McpDataAccessSurface>.Instance,
+        limits: null,
+        toolSources: toolSources);
 
     private static TestMetadataV2GraphProvider BuildGraphProvider() =>
         new TestMetadataV2GraphBuilder()
@@ -162,6 +185,7 @@ public sealed class McpDiscoveryToolTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
+        services.AddSingleton<ICapabilityRegistry, CapabilityRegistry>();
         if (surface is not null)
         {
             services.AddSingleton(surface);
@@ -195,5 +219,32 @@ public sealed class McpDiscoveryToolTests
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private sealed class StubToolSource(IMcpTool tool) : IMcpToolSource
+    {
+        public ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken)
+            => ValueTask.FromResult<IReadOnlyList<IMcpTool>>([tool]);
+    }
+
+    private sealed class StubTool(string name) : IMcpTool
+    {
+        public string Name => name;
+
+        public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+
+        public McpToolDescriptor Describe() => new()
+        {
+            Name = name,
+            Title = "List admin connections",
+            Description = "List configured admin connections.",
+            Annotations = McpToolAnnotationSets.ReadOnly("List admin connections"),
+        };
+
+        public Task<McpToolsCallResult> InvokeAsync(
+            HttpContext httpContext,
+            JsonElement? arguments,
+            CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 }

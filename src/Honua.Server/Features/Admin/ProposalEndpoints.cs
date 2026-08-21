@@ -16,9 +16,10 @@ namespace Honua.Server.Features.Admin;
 /// <summary>
 /// Console-facing REST API for the agent-operation approval surface: list pending
 /// proposals, inspect a proposal's plan/diff/dry-run/risk, and approve or reject
-/// one. Approval is gated by the RBAC <see cref="AuthorizationOperation.Approve"/>
-/// grant (distinct from the proposer's grant) and every decision is audited
-/// through the gateway (#1694).
+/// one. A scoped API key needs the narrow <c>admin:approve</c> grant to reach the
+/// decision endpoints; operator identities are then evaluated against the RBAC
+/// <see cref="AuthorizationOperation.Approve"/> grant (distinct from the proposer's
+/// grant). Every decision is audited through the gateway (#1694).
 /// </summary>
 internal static class ProposalEndpoints
 {
@@ -47,6 +48,8 @@ internal static class ProposalEndpoints
         group.MapPost("/{id}/approve", HandleApproveProposal)
             .WithDisplayName("Approve Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithMetadata(AdminApprovalEndpointMetadata.Instance)
+            .RequireAuthorization(policy => policy.AddRequirements(new AdminApprovalRequirement()))
             .Produces<ProposalDetailResponse>()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -55,6 +58,8 @@ internal static class ProposalEndpoints
         group.MapPost("/{id}/reject", HandleRejectProposal)
             .WithDisplayName("Reject Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithMetadata(AdminApprovalEndpointMetadata.Instance)
+            .RequireAuthorization(policy => policy.AddRequirements(new AdminApprovalRequirement()))
             .Produces<ProposalDetailResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)

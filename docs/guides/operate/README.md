@@ -54,6 +54,13 @@ resources, diagnose findings, and propose in-scope control-plane operations. It
 does not get a second approval path. If the gateway returns a `proposalId`, the
 agent waits for the Console approval lane to resolve it.
 
+Console is a required focused client of this loop, not the canonical
+administration inventory. Complete setup and configuration stay in the Admin
+API, operation catalog, generated `honua admin` client, and policy-governed
+`honua_admin_*` tools. For a service-bound read/decision credential, use exactly
+`admin:read` plus `admin:approve`; see
+[Focused Console operation](focused-console.md).
+
 The useful split is:
 
 | Task | Console `/operate` | MCP agent seat |
