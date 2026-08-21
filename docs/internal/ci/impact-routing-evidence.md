@@ -113,10 +113,15 @@ exactly the observed base and head). Each record is `[mode, path, blob id]`, so
 an exec-bit or symlink change is a different address. A receipt that could only
 address the head tree records `image_input_tree: head` and is excluded from both
 sides of the reuse cohort. Two heads sharing a digest consume byte-identical
-build inputs, which is what makes an earlier successful image run reusable. An image
-outcome is authoritative only when its GitHub-managed workflow association
-matches the receipt's PR number, base SHA, and head SHA; an earlier run for a
-reopened same-head PR cannot satisfy a later-base observation.
+build inputs, which is what makes an earlier successful image run reusable. An
+image outcome is authoritative only when the repository's retained
+`commits/{head}/pulls` association matches exactly one pull request with the
+receipt's PR number, base SHA, head SHA, and repository identity. The
+`workflow_run.pull_requests` payload is not durable: GitHub can return an empty
+array after the pull request merges or closes. The retained commit association
+keeps the outcome check exact without depending on that transient field; an
+earlier run for a reopened same-head PR still cannot satisfy a later-base
+observation.
 
 Observer receipts use a seven-day rolling retention window. At current activity
 that keeps per-run catalog discovery and downloads below the repository token's
@@ -164,6 +169,26 @@ The initial pre-ledger audit on 2026-08-15 demonstrates the same point:
 gate and zero were docs-only candidates. Thirty-two trusted native receipts
 represented 25 heads, but only one head impacted either image workflow and no
 head demonstrated narrower routing. Neither experiment was promotion-ready.
+
+## Red-ledger classification (2026-08-20)
+
+The first report-only ledger run recorded five integrity failures and nineteen
+native-image outcome failures. The integrity failures were expected stale
+policy inputs (four native receipts and one PR Gate receipt) and remain red
+until the observation cohort is restarted after the policy change. The outcome
+failures were a ledger-consumer defect: nineteen of twenty required image
+outcomes had valid runs, but their post-merge `workflow_run.pull_requests`
+arrays were empty. The ledger now resolves the retained commit-to-pull-request
+association described above.
+
+The same audit found a producer coverage gap: 30 receipt artifacts and 14
+explicit skip markers were emitted for 112 observed runs, leaving 68 runs
+without either marker (60.7%). Cancelled source runs had been filtered by the
+observer job's top-level condition before the resolver could classify them.
+Observers now schedule for cancelled completions as well, allowing the trusted
+resolver to emit an explicit skip marker. The report stays legacy-authoritative
+and red until a new cohort demonstrates zero integrity failures and satisfies
+the documented outcome and coverage requirements.
 
 Reuse is **build** reuse. The GDAL Worker image's Trivy scan is enforcing and
 its verdict depends on the vulnerability database at scan time, so identical

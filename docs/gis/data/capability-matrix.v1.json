@@ -6,7 +6,7 @@
     "WFS 2.0 Transactional",
     "WMS 1.1.1"
   ],
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
   "trackingIssue": "#2893",
   "sourceArtifacts": [
@@ -28,10 +28,11 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 368,
-      "provingTestCount": 1029,
+      "status": null,
+      "entryCount": 360,
+      "provingTestCount": 1003,
       "maturity": {
-        "implemented": 368
+        "implemented": 360
       },
       "noSurface": null,
       "cite": [],
@@ -55,6 +56,7 @@
       "displayName": "Agent Operations (Validation Layer)",
       "category": "AI",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -76,6 +78,7 @@
       "displayName": "Agent Approval Workflows",
       "category": "AI",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -97,6 +100,7 @@
       "displayName": "Spec Grounding Mutations",
       "category": "AI",
       "edition": "Pro",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 11,
       "maturity": {
@@ -114,6 +118,7 @@
       "displayName": "MCP Discovery & Query",
       "category": "AI",
       "edition": "Community",
+      "status": null,
       "entryCount": 4,
       "provingTestCount": 87,
       "maturity": {
@@ -131,6 +136,7 @@
       "displayName": "Spec Apply Execution",
       "category": "AI",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 18,
       "maturity": {
@@ -148,6 +154,7 @@
       "displayName": "Spec Artifact Retrieval",
       "category": "AI",
       "edition": "Community",
+      "status": null,
       "entryCount": 4,
       "provingTestCount": 18,
       "maturity": {
@@ -165,6 +172,7 @@
       "displayName": "Dwell Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -186,6 +194,7 @@
       "displayName": "Enter/Exit Geofence Triggers",
       "category": "Alerts",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -207,6 +216,7 @@
       "displayName": "Alert Evaluation Engine",
       "category": "Alerts",
       "edition": "Pro",
+      "status": null,
       "entryCount": 18,
       "provingTestCount": 46,
       "maturity": {
@@ -224,6 +234,7 @@
       "displayName": "Threshold Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -245,6 +256,7 @@
       "displayName": "Buffer Aggregate",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 11,
       "maturity": {
@@ -262,6 +274,7 @@
       "displayName": "Spatial Clustering",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 16,
       "maturity": {
@@ -279,6 +292,7 @@
       "displayName": "Analysis Artifact Content",
       "category": "Analytics",
       "edition": "Community",
+      "status": null,
       "entryCount": 13,
       "provingTestCount": 21,
       "maturity": {
@@ -296,6 +310,7 @@
       "displayName": "Density Binning",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 10,
       "maturity": {
@@ -313,6 +328,7 @@
       "displayName": "Line of Sight",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 7,
       "maturity": {
@@ -330,6 +346,7 @@
       "displayName": "Analysis Reporting",
       "category": "Analytics",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 6,
       "maturity": {
@@ -347,6 +364,7 @@
       "displayName": "Slice/Volumetric Analysis",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 5,
       "maturity": {
@@ -364,6 +382,7 @@
       "displayName": "Spatial Join",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 11,
       "maturity": {
@@ -381,6 +400,7 @@
       "displayName": "Sun/Shadow Analysis",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 5,
       "maturity": {
@@ -398,6 +418,7 @@
       "displayName": "Viewshed",
       "category": "Analytics",
       "edition": "Pro",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
@@ -415,6 +436,7 @@
       "displayName": "Output Caching",
       "category": "Caching",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -436,6 +458,7 @@
       "displayName": "Redis Distributed Cache",
       "category": "Caching",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -457,6 +480,7 @@
       "displayName": "AWS SNS Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -478,6 +502,7 @@
       "displayName": "Azure Event Grid Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -499,6 +524,7 @@
       "displayName": "Digest Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -520,6 +546,7 @@
       "displayName": "Email Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -541,6 +568,7 @@
       "displayName": "Slack Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -562,6 +590,7 @@
       "displayName": "Microsoft Teams Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -583,6 +612,7 @@
       "displayName": "Webhook Delivery",
       "category": "Channels",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -604,6 +634,7 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
+      "status": null,
       "entryCount": 9,
       "provingTestCount": 65,
       "maturity": {
@@ -623,6 +654,7 @@
       "displayName": "Demo Showcase Surfaces",
       "category": "Demo",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 3,
       "maturity": {
@@ -636,10 +668,29 @@
       "geobench": []
     },
     {
+      "key": "deploy.rollback",
+      "displayName": "Automatic Deployment Rollback",
+      "category": "Deploy",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 1,
+      "provingTestCount": 9,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "discovery.capability-manifest",
       "displayName": "Capability Manifest",
       "category": "Discovery",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 17,
       "maturity": {
@@ -657,6 +708,7 @@
       "displayName": "Backup Automation",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -678,6 +730,7 @@
       "displayName": "Cache State Backup",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -699,6 +752,7 @@
       "displayName": "Failover Playbooks",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -720,6 +774,7 @@
       "displayName": "RTO/RPO Reporting",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -741,6 +796,7 @@
       "displayName": "Branch Versioning",
       "category": "Editing",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 15,
       "provingTestCount": 27,
       "maturity": {
@@ -764,6 +820,7 @@
       "displayName": "FeatureServer Editing",
       "category": "Editing",
       "edition": "Pro",
+      "status": null,
       "entryCount": 7,
       "provingTestCount": 94,
       "maturity": {
@@ -783,6 +840,7 @@
       "displayName": "Data Enrichment Datasets",
       "category": "Enrichment",
       "edition": "Community",
+      "status": null,
       "entryCount": 7,
       "provingTestCount": 24,
       "maturity": {
@@ -800,6 +858,7 @@
       "displayName": "Field Collection Forms",
       "category": "FieldOps",
       "edition": "Community",
+      "status": null,
       "entryCount": 21,
       "provingTestCount": 35,
       "maturity": {
@@ -819,6 +878,7 @@
       "displayName": "Offline/Field Sync",
       "category": "FieldOps",
       "edition": "Pro",
+      "status": null,
       "entryCount": 18,
       "provingTestCount": 146,
       "maturity": {
@@ -832,10 +892,55 @@
       "geobench": []
     },
     {
+      "key": "format.geoarrow",
+      "displayName": "GeoArrow Response Format",
+      "category": "Format",
+      "edition": "Community",
+      "status": "live",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "format.geoarrow",
+        "reasonCode": "content-negotiation",
+        "reason": "GeoArrow is selected with f=arrow on the shared FeatureServer query route and is proven by the formatter/query conformance tests; it has no separate route.",
+        "category": "Format",
+        "edition": "Community"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "format.geoparquet",
+      "displayName": "GeoParquet Response Format",
+      "category": "Format",
+      "edition": "Community",
+      "status": "live",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "format.geoparquet",
+        "reasonCode": "content-negotiation",
+        "reason": "GeoParquet is selected with f=parquet on the shared FeatureServer query route and is proven by the formatter/query conformance tests; it has no separate route.",
+        "category": "Format",
+        "edition": "Community"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "geocoding.batch",
       "displayName": "Batch Geocoding",
       "category": "Geocoding",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 3,
       "provingTestCount": 19,
       "maturity": {
@@ -853,6 +958,7 @@
       "displayName": "Provider Failover",
       "category": "Geocoding",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -874,6 +980,7 @@
       "displayName": "Forward Geocoding",
       "category": "Geocoding",
       "edition": "Community",
+      "status": null,
       "entryCount": 10,
       "provingTestCount": 57,
       "maturity": {
@@ -893,6 +1000,7 @@
       "displayName": "Reverse Geocoding",
       "category": "Geocoding",
       "edition": "Community",
+      "status": null,
       "entryCount": 3,
       "provingTestCount": 13,
       "maturity": {
@@ -910,6 +1018,7 @@
       "displayName": "Claims Mapping",
       "category": "Identity",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -931,6 +1040,7 @@
       "displayName": "mTLS Client-Certificate Authentication",
       "category": "Identity",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 13,
       "provingTestCount": 24,
       "maturity": {
@@ -948,6 +1058,7 @@
       "displayName": "OIDC Authentication",
       "category": "Identity",
       "edition": "Pro",
+      "status": null,
       "entryCount": 6,
       "provingTestCount": 20,
       "maturity": {
@@ -965,6 +1076,7 @@
       "displayName": "OIDC Multi-Provider SSO",
       "category": "Identity",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -986,6 +1098,7 @@
       "displayName": "ArcGIS Portal Sharing Read Surface",
       "category": "Identity",
       "edition": "Community",
+      "status": null,
       "entryCount": 18,
       "provingTestCount": 58,
       "maturity": {
@@ -1011,6 +1124,7 @@
       "displayName": "ArcGIS Portal Token Issuance",
       "category": "Identity",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 14,
       "maturity": {
@@ -1028,6 +1142,7 @@
       "displayName": "SAML 2.0 Authentication",
       "category": "Identity",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 3,
       "provingTestCount": 13,
       "maturity": {
@@ -1045,6 +1160,7 @@
       "displayName": "SCIM 2.0 Provisioning",
       "category": "Identity",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 17,
       "provingTestCount": 34,
       "maturity": {
@@ -1062,6 +1178,7 @@
       "displayName": "File Import",
       "category": "Import",
       "edition": "Community",
+      "status": null,
       "entryCount": 74,
       "provingTestCount": 215,
       "maturity": {
@@ -1079,6 +1196,7 @@
       "displayName": "GeoServer Import",
       "category": "Import",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 5,
       "provingTestCount": 16,
       "maturity": {
@@ -1096,6 +1214,7 @@
       "displayName": "GeoServices Import",
       "category": "Import",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 10,
       "provingTestCount": 41,
       "maturity": {
@@ -1109,10 +1228,47 @@
       "geobench": []
     },
     {
+      "key": "ops.autonomy",
+      "displayName": "Operational Autonomy",
+      "category": "Ops",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 5,
+      "provingTestCount": 8,
+      "maturity": {
+        "implemented": 5
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ops.findings",
+      "displayName": "Operational Findings",
+      "category": "Ops",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 2,
+      "provingTestCount": 9,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "ops.health",
       "displayName": "Health Checks",
       "category": "Ops",
       "edition": "Community",
+      "status": null,
       "entryCount": 15,
       "provingTestCount": 55,
       "maturity": {
@@ -1130,6 +1286,7 @@
       "displayName": "Observability",
       "category": "Ops",
       "edition": "Community",
+      "status": null,
       "entryCount": 16,
       "provingTestCount": 38,
       "maturity": {
@@ -1147,6 +1304,7 @@
       "displayName": "Plugin/Extension SDK",
       "category": "Extensibility",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -1168,6 +1326,7 @@
       "displayName": "Print Layout Templates",
       "category": "Printing",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -1189,6 +1348,7 @@
       "displayName": "PDF Print Output",
       "category": "Printing",
       "edition": "Pro",
+      "status": null,
       "entryCount": 8,
       "provingTestCount": 22,
       "maturity": {
@@ -1206,6 +1366,7 @@
       "displayName": "Geoprocessing Task Execution",
       "category": "Process",
       "edition": "Community",
+      "status": null,
       "entryCount": 14,
       "provingTestCount": 86,
       "maturity": {
@@ -1231,6 +1392,7 @@
       "displayName": "OGC API Processes",
       "category": "Process",
       "edition": "Community",
+      "status": null,
       "entryCount": 10,
       "provingTestCount": 131,
       "maturity": {
@@ -1244,10 +1406,77 @@
       "geobench": []
     },
     {
+      "key": "provider.databricks",
+      "displayName": "Databricks SQL Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "status": "experimental",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "provider.databricks",
+        "reasonCode": "provider-runtime-gate",
+        "reason": "Experimental Databricks is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+        "category": "DataProviders",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "provider.redshift",
+      "displayName": "Amazon Redshift Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "status": "experimental",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "provider.redshift",
+        "reasonCode": "provider-runtime-gate",
+        "reason": "Experimental Redshift is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+        "category": "DataProviders",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "provider.snowflake",
+      "displayName": "Snowflake Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "status": "experimental",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "provider.snowflake",
+        "reasonCode": "provider-runtime-gate",
+        "reason": "Experimental Snowflake is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+        "category": "DataProviders",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "raster.cloud-cog-serving",
       "displayName": "COG Serving",
       "category": "Raster",
       "edition": "Pro",
+      "status": null,
       "entryCount": 5,
       "provingTestCount": 11,
       "maturity": {
@@ -1265,6 +1494,7 @@
       "displayName": "Cloud Storage Configuration",
       "category": "Raster",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -1286,6 +1516,7 @@
       "displayName": "Multidimensional Coverage (NetCDF/HDF5/Zarr)",
       "category": "Raster",
       "edition": "Pro",
+      "status": null,
       "entryCount": 12,
       "provingTestCount": 22,
       "maturity": {
@@ -1303,6 +1534,7 @@
       "displayName": "Temporal Raster Mosaic",
       "category": "Raster",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -1324,6 +1556,7 @@
       "displayName": "Terrain-RGB Tiles",
       "category": "Raster",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 14,
       "maturity": {
@@ -1341,6 +1574,7 @@
       "displayName": "Network Routing",
       "category": "Routing",
       "edition": "Pro",
+      "status": null,
       "entryCount": 19,
       "provingTestCount": 75,
       "maturity": {
@@ -1364,6 +1598,7 @@
       "displayName": "CityGML/BIM Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
@@ -1381,6 +1616,7 @@
       "displayName": "Scene Catalog",
       "category": "Scene",
       "edition": "Community",
+      "status": null,
       "entryCount": 3,
       "provingTestCount": 4,
       "maturity": {
@@ -1398,6 +1634,7 @@
       "displayName": "Point Cloud Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 10,
       "maturity": {
@@ -1415,6 +1652,7 @@
       "displayName": "3D Tiles Scene Serving",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 12,
       "provingTestCount": 76,
       "maturity": {
@@ -1432,6 +1670,7 @@
       "displayName": "Elevation Query",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 29,
       "maturity": {
@@ -1449,6 +1688,7 @@
       "displayName": "FeatureServer Query",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 49,
       "provingTestCount": 417,
       "maturity": {
@@ -1523,6 +1763,7 @@
       "displayName": "GeocodeServer Discovery",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 4,
       "provingTestCount": 12,
       "maturity": {
@@ -1546,6 +1787,7 @@
       "displayName": "Geometry Service",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 48,
       "provingTestCount": 115,
       "maturity": {
@@ -1569,6 +1811,7 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 141,
       "provingTestCount": 336,
       "maturity": {
@@ -1594,6 +1837,7 @@
       "displayName": "MapServer",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 45,
       "provingTestCount": 323,
       "maturity": {
@@ -1659,6 +1903,7 @@
       "displayName": "GeoServices REST Root",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 16,
       "maturity": {
@@ -1682,6 +1927,7 @@
       "displayName": "VectorTileServer",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 9,
       "provingTestCount": 25,
       "maturity": {
@@ -1706,7 +1952,8 @@
       "key": "serve.i3s-scene",
       "displayName": "I3S Scene Serving",
       "category": "Serve",
-      "edition": "Community",
+      "edition": "Enterprise",
+      "status": null,
       "entryCount": 6,
       "provingTestCount": 25,
       "maturity": {
@@ -1726,6 +1973,7 @@
       "displayName": "OData v4",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 30,
       "provingTestCount": 184,
       "maturity": {
@@ -1780,6 +2028,7 @@
       "displayName": "OGC API Coverages",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 8,
       "provingTestCount": 33,
       "maturity": {
@@ -1797,6 +2046,7 @@
       "displayName": "OGC API - EDR",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 6,
       "provingTestCount": 29,
       "maturity": {
@@ -1814,6 +2064,7 @@
       "displayName": "OGC API Features",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 21,
       "provingTestCount": 252,
       "maturity": {
@@ -1880,6 +2131,7 @@
       "displayName": "OGC API Maps",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 10,
       "provingTestCount": 129,
       "maturity": {
@@ -1916,6 +2168,7 @@
       "displayName": "OGC API Records",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 6,
       "provingTestCount": 32,
       "maturity": {
@@ -1933,6 +2186,7 @@
       "displayName": "OGC API Tiles",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 13,
       "provingTestCount": 65,
       "maturity": {
@@ -1968,6 +2222,7 @@
       "displayName": "OGC SensorThings API",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 15,
       "provingTestCount": 29,
       "maturity": {
@@ -1985,6 +2240,7 @@
       "displayName": "STAC API",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 12,
       "provingTestCount": 111,
       "maturity": {
@@ -2002,6 +2258,7 @@
       "displayName": "Vector Tiles (MVT/TileJSON/PMTiles)",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 7,
       "provingTestCount": 37,
       "maturity": {
@@ -2029,6 +2286,7 @@
       "displayName": "WCS 2.0.1",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 5,
       "maturity": {
@@ -2056,6 +2314,7 @@
       "displayName": "WFS 2.0",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 110,
       "maturity": {
@@ -2126,6 +2385,7 @@
       "displayName": "WMS 1.3",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 7,
       "maturity": {
@@ -2184,6 +2444,7 @@
       "displayName": "WMTS 1.0",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
@@ -2239,6 +2500,7 @@
       "displayName": "High-DPI Static Maps",
       "category": "StaticMap",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -2260,6 +2522,7 @@
       "displayName": "Large Static Maps",
       "category": "StaticMap",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -2281,6 +2544,7 @@
       "displayName": "Rich Static Map Overlays",
       "category": "StaticMap",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -2302,6 +2566,7 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
+      "status": null,
       "entryCount": 5,
       "provingTestCount": 94,
       "maturity": {
@@ -2319,6 +2584,7 @@
       "displayName": "Auto-Cartographic Styling",
       "category": "Styling",
       "edition": "Pro",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 7,
       "maturity": {
@@ -2336,6 +2602,7 @@
       "displayName": "Smart Style Defaults",
       "category": "Styling",
       "edition": "Community",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -2357,6 +2624,7 @@
       "displayName": "OGC API Styles",
       "category": "Styling",
       "edition": "Community",
+      "status": null,
       "entryCount": 8,
       "provingTestCount": 64,
       "maturity": {
@@ -2374,6 +2642,7 @@
       "displayName": "Animation API Contract",
       "category": "Temporal",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -2395,6 +2664,7 @@
       "displayName": "Temporal Extent Discovery",
       "category": "Temporal",
       "edition": "Community",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 7,
       "maturity": {
@@ -2412,6 +2682,7 @@
       "displayName": "Temporal Query Filtering",
       "category": "Temporal",
       "edition": "Community",
+      "status": null,
       "entryCount": 6,
       "provingTestCount": 16,
       "maturity": {
@@ -2429,6 +2700,7 @@
       "displayName": "Temporal Histogram (Date Bins)",
       "category": "Temporal",
       "edition": "Pro",
+      "status": null,
       "entryCount": 2,
       "provingTestCount": 7,
       "maturity": {
@@ -2446,6 +2718,7 @@
       "displayName": "Time-Series Tile Filtering",
       "category": "Temporal",
       "edition": "Pro",
+      "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},

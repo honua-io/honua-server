@@ -53,7 +53,7 @@ file (drift gate), printing the regeneration command above.
 
 ```json
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
   "trackingIssue": "#2893",
   "sourceArtifacts": [
@@ -75,6 +75,7 @@ file (drift gate), printing the regeneration command above.
       "displayName": "WMS 1.3",
       "category": "Serve",
       "edition": "Community",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 3,
       "maturity": { "implemented": 1 },
@@ -99,6 +100,7 @@ file (drift gate), printing the regeneration command above.
 | Field | Type | Description |
 |---|---|---|
 | `key`, `displayName`, `category`, `edition` | string | Copied from `capability-keys.v1.json`. |
+| `status` | string \| null | Explicit public release posture copied from `capability-keys.v1.json` (`experimental` for the warehouse providers, `live` for GeoParquet/GeoArrow); `null` when the key has no explicit override. |
 | `entryCount` | number | Count of `feature-catalog.json` entries stamped with this capability. |
 | `provingTestCount` | number | Sum of `proving_tests` across those entries. |
 | `maturity` | object | Count per maturity tier (`implemented`, `partial`, `experimental`, `deferred`, `planned`) among this capability's entries. |
@@ -147,8 +149,8 @@ that case. Consumers that need wall-clock staleness can compute it directly
 from `runDate`.
 
 **Schema versioning:** `schemaVersion` follows semver — additive optional
-fields bump the minor version (the `freshness`/`evidenceFreshness` addition is
-`1.0.0` → `1.1.0`); removals or meaning changes to existing fields require a
+fields bump the minor version (the `freshness`/`evidenceFreshness` addition was
+`1.0.0` → `1.1.0`; public `status` is `1.1.0` → `1.2.0`); removals or meaning changes to existing fields require a
 major bump and coordination with the `honua-evidence` ingest (Phase A
 consumer).
 

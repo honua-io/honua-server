@@ -390,8 +390,11 @@ public sealed class DeployWorkflowServiceTests
         var backend = new KubernetesGitOpsDeployBackend(NullLogger<KubernetesGitOpsDeployBackend>.Instance);
         var operation = CreateOperationRecord(status: WorkflowOperationStatus.RollbackRequested);
 
+        var capabilities = await backend.GetCapabilitiesAsync();
         var observation = await backend.RollbackAsync(operation);
 
+        capabilities.SupportsRollback.Should().BeFalse(
+            "a GitOps hand-off cannot advertise an automatic rollback it never performs");
         observation.Status.Should().Be(
             WorkflowOperationStatus.ManualInterventionRequired,
             "the hand-off backend cannot perform a real revert, so it must escalate rather than silently succeed");

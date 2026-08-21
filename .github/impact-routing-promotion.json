@@ -1,6 +1,6 @@
 {
   "contract": "honua.impact-routing-promotion-policy/v2",
-  "observation_started_at": "2026-08-17T17:12:36Z",
+  "observation_started_at": "2026-08-20T20:00:00Z",
   "receipt_retention_days": 7,
   "image_outcome_lookback_hours": 24,
   "maximum_pages_per_query": 8,

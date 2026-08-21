@@ -185,6 +185,35 @@ jobs:
                   > "evidence/archives/${artifact_id}.zip"
               done
 
+      - name: Retain exact commit-to-pull associations
+        if: always() && hashFiles('evidence/index.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAXIMUM_DOWNLOADS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/pull-associations
+          shopt -s nullglob
+          archives=(evidence/archives/*.zip)
+          for archive in "${archives[@]}"; do
+            if unzip -Z1 "${archive}" | grep -Fxq native-image-impact-observation.json; then
+              unzip -p "${archive}" native-image-impact-observation.json \
+                | jq -er '.head_sha | select(type == "string" and test("^[0-9a-f]{40}$"))'
+            fi
+          done | sort -u > evidence/native-heads.txt
+          count="$(wc -l < evidence/native-heads.txt | tr -d '[:space:]')"
+          [[ "${count}" =~ ^[0-9]+$ && "${MAXIMUM_DOWNLOADS}" =~ ^[1-9][0-9]*$ ]] || exit 1
+          if (( count > MAXIMUM_DOWNLOADS )); then
+            echo "native association subjects exceed the receipt download budget" >&2
+            exit 1
+          fi
+          while read -r head; do
+            [[ "${head}" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/pulls" \
+              -H 'Accept: application/vnd.github+json' \
+              > "evidence/pull-associations/${head}.json"
+          done < evidence/native-heads.txt
+
       - id: summarize
         name: Reconcile receipts with authoritative exact-head image outcomes
         if: always() && hashFiles('evidence/index.json') != ''
@@ -196,6 +225,7 @@ jobs:
             --archives evidence/archives \
             --serving-runs evidence/runs/serving \
             --worker-runs evidence/runs/worker \
+            --pull-associations evidence/pull-associations \
             --repository-root . \
             --output evidence/ledger.json \
             --markdown evidence/ledger.md
@@ -212,6 +242,7 @@ jobs:
             evidence/ledger.md
             evidence/runs
             evidence/artifacts
+            evidence/pull-associations
           if-no-files-found: error
           retention-days: 30
 

@@ -702,8 +702,48 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     }
 
 
+def _association_catalog(root: Path) -> dict[str, list[dict[str, Any]]]:
+    """Load retained commit-to-pull catalogs.
+
+    GitHub removes ``workflow_run.pull_requests`` associations after a pull
+    request is merged or closed. The commit-pulls endpoint retains that
+    relationship, so the workflow captures it as evidence before summarizing.
+    """
+    catalogs: dict[str, list[dict[str, Any]]] = {}
+    if not root.is_dir():
+        raise ValueError("pull association catalog is missing")
+    for path in sorted(root.glob("*.json")):
+        head = exact_sha(path.stem, "pull association head")
+        value = load_json(path)
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise ValueError(f"pull association catalog is invalid for {head}")
+        catalogs[head] = value
+    return catalogs
+
+
+def _association_matches(
+    associations: list[dict[str, Any]], observation: dict[str, Any]
+) -> list[dict[str, Any]]:
+    return [
+        pull
+        for pull in associations
+        if pull.get("number") == observation["pull_request"]
+        and isinstance(pull.get("base"), dict)
+        and pull["base"].get("sha") == observation["base_sha"]
+        and isinstance(pull["base"].get("repo"), dict)
+        and pull["base"]["repo"].get("full_name") == REPOSITORY
+        and isinstance(pull.get("head"), dict)
+        and pull["head"].get("sha") == observation["head_sha"]
+        and isinstance(pull["head"].get("repo"), dict)
+        and pull["head"]["repo"].get("full_name") == REPOSITORY
+    ]
+
+
 def _image_outcome(
-    runs: list[dict[str, Any]], observation: dict[str, Any], workflow: str
+    runs: list[dict[str, Any]],
+    observation: dict[str, Any],
+    workflow: str,
+    pull_associations: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
     same_head = [
         run for run in runs
@@ -711,25 +751,13 @@ def _image_outcome(
         and run.get("path") == workflow
         and run.get("event") == "pull_request"
     ]
-    matches = []
-    rejected_ids = []
-    for run in same_head:
-        pulls = run.get("pull_requests")
-        associations = pulls if isinstance(pulls, list) else []
-        identity_matches = [
-            pull
-            for pull in associations
-            if isinstance(pull, dict)
-            and pull.get("number") == observation["pull_request"]
-            and isinstance(pull.get("base"), dict)
-            and pull["base"].get("sha") == observation["base_sha"]
-            and isinstance(pull.get("head"), dict)
-            and pull["head"].get("sha") == observation["head_sha"]
-        ]
-        if len(associations) == 1 and len(identity_matches) == 1:
-            matches.append(run)
-        elif isinstance(run.get("id"), int):
-            rejected_ids.append(run["id"])
+    associations = pull_associations.get(observation["head_sha"], [])
+    identity_matches = _association_matches(associations, observation)
+    association_valid = len(identity_matches) == 1
+    matches = same_head if association_valid else []
+    rejected_ids = [] if association_valid else [
+        run["id"] for run in same_head if isinstance(run.get("id"), int)
+    ]
     success = [run for run in matches if run.get("status") == "completed" and run.get("conclusion") == "success"]
     started = [
         value for value in (_run_time(run, "run_started_at", "created_at") for run in matches)
@@ -743,6 +771,8 @@ def _image_outcome(
         "run_ids": sorted(run.get("id") for run in matches if isinstance(run.get("id"), int)),
         "conclusions": sorted({str(run.get("conclusion")) for run in matches}),
         "identity_mismatch_run_ids": sorted(rejected_ids),
+        "pull_association_match_count": len(identity_matches),
+        "pull_association_catalog_present": observation["head_sha"] in pull_associations,
         # Attestation timing. ``started_at`` is when this head's own image work
         # began; ``completed_at`` is when its evidence became available to a
         # later head. Missing timestamps degrade to "unusable as a source".
@@ -877,6 +907,7 @@ def summarize(
     worker_runs: Path,
     policy_value: object,
     repository_root: Path,
+    pull_associations_root: Path | None = None,
 ) -> dict[str, Any]:
     policy = load_policy(policy_value)
     if not isinstance(index_value, dict) or index_value.get("contract") != INDEX_CONTRACT:
@@ -916,13 +947,24 @@ def summarize(
 
     serving_catalog = flatten_pages(serving_runs, "workflow_runs")
     worker_catalog = flatten_pages(worker_runs, "workflow_runs")
+    if pull_associations_root is None:
+        # Compatibility for unit fixtures that predate the retained association
+        # catalog. Production always passes --pull-associations.
+        pull_associations = {
+            run["head_sha"]: run["pull_requests"]
+            for run in [*serving_catalog, *worker_catalog]
+            if isinstance(run.get("head_sha"), str)
+            and isinstance(run.get("pull_requests"), list)
+        }
+    else:
+        pull_associations = _association_catalog(pull_associations_root)
     native_countable: list[dict[str, Any]] = []
     image_failures: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
-        serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW)
-        worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW)
+        serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW, pull_associations)
+        worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW, pull_associations)
         serving_required = item["legacy_serving"] or item["candidate_serving"]
         worker_required = item["legacy_worker"] or item["candidate_worker"]
         missing: list[str] = []
@@ -992,6 +1034,16 @@ def summarize(
         "authoritative_image_outcomes_clean": not image_failures,
     }
     eligible = all(gates.values())
+    observations_skipped = sum(
+        1 for item in index_value.get("exclusions", [])
+        if str(item.get("reason", "")).startswith("observation-skipped:")
+    )
+    receipts_not_emitted = sum(
+        1 for item in index_value.get("exclusions", [])
+        if item.get("reason") == "observation-receipt-not-emitted"
+    )
+    observer_outcomes = len(entries) + observations_skipped + receipts_not_emitted
+    receipt_gap_rate = receipts_not_emitted / observer_outcomes if observer_outcomes else 0.0
     return {
         "contract": LEDGER_CONTRACT,
         "mode": "report-only",
@@ -1019,14 +1071,10 @@ def summarize(
             "worker_reuse_eligible_heads": len(worker_reuse),
             "authoritative_image_outcome_failures": len(image_failures),
             "integrity_failures": len(failures),
-            "observations_skipped": sum(
-                1 for item in index_value.get("exclusions", [])
-                if str(item.get("reason", "")).startswith("observation-skipped:")
-            ),
-            "observation_receipts_not_emitted": sum(
-                1 for item in index_value.get("exclusions", [])
-                if item.get("reason") == "observation-receipt-not-emitted"
-            ),
+            "observations_skipped": observations_skipped,
+            "observation_receipts_not_emitted": receipts_not_emitted,
+            "observer_outcomes": observer_outcomes,
+            "observation_receipt_gap_rate": round(receipt_gap_rate, 6),
         },
         "skipped_observations_by_code": skipped_by_code(index_value.get("exclusions", [])),
         "gates": gates,
@@ -1089,6 +1137,9 @@ def markdown(ledger: dict[str, Any]) -> str:
         ),
         f"- Successful observers with no receipt and no skip marker: "
         f"`{counts['observation_receipts_not_emitted']}`",
+        "- Observation receipt gap: "
+        f"`{counts['observation_receipts_not_emitted']}` / `{counts['observer_outcomes']}` "
+        f"(`{counts['observation_receipt_gap_rate']:.1%}`)",
         "",
         "| Gate | Passed |",
         "|---|---|",
@@ -1124,6 +1175,7 @@ def main() -> int:
     summary_parser.add_argument("--archives", type=Path, required=True)
     summary_parser.add_argument("--serving-runs", type=Path, required=True)
     summary_parser.add_argument("--worker-runs", type=Path, required=True)
+    summary_parser.add_argument("--pull-associations", type=Path, required=True)
     summary_parser.add_argument("--repository-root", type=Path, required=True)
     summary_parser.add_argument("--output", type=Path, required=True)
     summary_parser.add_argument("--markdown", type=Path, required=True)
@@ -1169,6 +1221,7 @@ def main() -> int:
         args.worker_runs,
         policy,
         args.repository_root,
+        args.pull_associations,
     )
     write_json(args.output, ledger)
     args.markdown.write_text(markdown(ledger), encoding="utf-8", newline="\n")

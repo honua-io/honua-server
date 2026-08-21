@@ -5,9 +5,8 @@ name: PR Gate Impact Observation
 # change the collector, its input, or the produced evidence. The full PR Gate
 # remains authoritative throughout the shadow period in #3235. Fork heads are
 # explicitly outside the observation denominator and always retain the full gate.
-# A cancelled source run is a superseded push: its head is already stale, so
-# there is nothing observable and the trusted resolver correctly refuses it. The
-# observe job filters those out instead of manufacturing a red run.
+# Cancelled source runs still schedule the observer so the trusted resolver can
+# retain a bounded superseded-source skip marker for the ledger.
 on:
   workflow_run:
     workflows: [PR Gate]
@@ -45,7 +44,6 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
-       github.event.workflow_run.conclusion != 'cancelled' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 8

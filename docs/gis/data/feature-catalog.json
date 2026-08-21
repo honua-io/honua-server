@@ -2965,7 +2965,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.autonomy"
     },
     {
       "id": "get-api-v1-admin-observability-autonomy-policies-rule",
@@ -2980,7 +2980,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.autonomy"
     },
     {
       "id": "get-api-v1-admin-observability-autonomy-settings",
@@ -2994,7 +2994,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.autonomy"
     },
     {
       "id": "get-api-v1-admin-observability-errors",
@@ -3049,7 +3049,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.findings"
     },
     {
       "id": "get-api-v1-admin-observability-logs",
@@ -13805,7 +13805,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "deploy.rollback"
     },
     {
       "id": "post-api-v1-admin-deploy-operations-operationid-submit",
@@ -15213,7 +15213,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.findings"
     },
     {
       "id": "post-api-v1-admin-oidc-providers",
@@ -20982,7 +20982,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.autonomy"
     },
     {
       "id": "put-api-v1-admin-observability-autonomy-settings",
@@ -20996,7 +20996,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ops.autonomy"
     },
     {
       "id": "put-api-v1-admin-oidc-providers-id",

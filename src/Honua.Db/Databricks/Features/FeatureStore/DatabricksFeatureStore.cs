@@ -18,8 +18,9 @@ namespace Honua.Db.Databricks.Features.FeatureStore;
 /// <see cref="IFeatureReader"/> surface so Databricks-backed layers participate in the
 /// Honua catalog through the shared <c>FeatureProviderQueryRouter</c> just like the
 /// other secondary providers. The provider is best-effort and read-only; writes,
-/// statistics, top-features, bins, H3 aggregation, and native MVT/FlatGeobuf/Geobuf/GML
-/// output are intentionally disabled. Shared formatters handle every output format above
+/// top-features, bins, H3 aggregation, and native MVT/FlatGeobuf/Geobuf/GML
+/// output are intentionally disabled. Statistics are supported through translated SQL aggregates,
+/// and shared formatters handle every output format above
 /// the canonical <see cref="Feature"/> stream.</para>
 /// <para>Spatial-function availability (<c>ST_*</c>) depends on the Databricks runtime /
 /// DBSQL the warehouse runs; spatial-filter and extent queries are therefore best-effort.</para>

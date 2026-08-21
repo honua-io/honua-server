@@ -150,6 +150,24 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/admin/observability/autonomy",
+      "capability": "ops.autonomy"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/observability/findings",
+      "capability": "ops.findings"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/deploy/operations/",
+      "routeContains": [
+        "/rollback"
+      ],
+      "capability": "deploy.rollback"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/services/",
       "routeContains": [
         "/replicas"
