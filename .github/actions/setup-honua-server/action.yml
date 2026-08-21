@@ -117,6 +117,7 @@ runs:
           docker run --rm --network host --name "$SERVER_CONTAINER" \
             --env ConnectionStrings__DefaultConnection \
             --env ASPNETCORE_URLS \
+            --env "Kestrel__Endpoints__Http__Url=${ASPNETCORE_URLS}" \
             --env ASPNETCORE_ENVIRONMENT \
             --env Authentication__PortalToken__RequireHttps \
             --env HONUA_ADMIN_PASSWORD \

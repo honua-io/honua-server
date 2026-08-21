@@ -174,6 +174,8 @@ start_migration_honua_server() {
         docker run --rm --network host --name "$migration_container" \
             --env "ConnectionStrings__DefaultConnection=Host=localhost;Database=honua_test;Username=honua;Password=honua" \
             --env "ASPNETCORE_URLS=$MIGRATION_SERVER_BASE_URL" \
+            --env "Kestrel__Endpoints__Http__Url=$MIGRATION_SERVER_BASE_URL" \
+            --env "Kestrel__Endpoints__Grpc__Url=http://localhost:5002" \
             --env "ASPNETCORE_ENVIRONMENT=Test" \
             --env "HONUA_REGISTER_TEST_INFRASTRUCTURE=true" \
             --env "HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS=true" \

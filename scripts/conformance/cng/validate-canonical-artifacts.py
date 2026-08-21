@@ -47,6 +47,7 @@ def _observation(surface: str, operation: str, client: str, lane: str, started: 
         "operation": operation,
         "canonical_client": client,
         "client_version": version or CLIENTS[client],
+        "lane": lane,
         "deployment_target": "local-docker",
         "result": "pass",
         "skip_reason": None,
