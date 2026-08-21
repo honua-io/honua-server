@@ -404,6 +404,39 @@ public sealed class StudioAuthorizationServiceTests
         service.ResolveCallerId(UserPrincipal(Alice)).Should().BeNull();
     }
 
+    [UnitTest]
+    public void ResolveCallerId_OperatorBearerUsesUpstreamIssuerProvenanceNotWrapperIssuer()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "shared-subject"),
+                new Claim("auth_type", "oidc"),
+                new Claim("iss", "honua-operator-bearer"),
+                new Claim("honua_identity_issuer", "https://issuer-a.example"),
+            ],
+            authenticationType: "OperatorBearer"));
+
+        service.ResolveCallerId(principal).Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:shared-subject");
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_OperatorBearerWithoutUpstreamIssuerProvenanceFailsClosed()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "shared-subject"),
+                new Claim("auth_type", "oidc"),
+                new Claim("iss", "honua-operator-bearer"),
+            ],
+            authenticationType: "OperatorBearer"));
+
+        service.ResolveCallerId(principal).Should().BeNull(
+            "the wrapper issuer is not the upstream subject namespace");
+    }
+
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,

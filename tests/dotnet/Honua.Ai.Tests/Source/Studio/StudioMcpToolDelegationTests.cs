@@ -2,16 +2,22 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Studio;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -355,6 +361,153 @@ public sealed class StudioMcpToolDelegationTests
         getContent.GetProperty("generation").GetInt64().Should().Be(1);
         getContent.GetProperty("packageKey").GetString().Should().Be("apps-demo");
         getContent.GetProperty("family").GetString().Should().Be("app");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task OperatorBearer_CreateThenReadDraft_PreservesUpstreamIssuerOwnership()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycleService = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var authorization = CreateEndUserAuthorizationService();
+        var principal = await CreateOperatorBearerPrincipalAsync(
+            "https://issuer-a.example",
+            "shared-operator-subject");
+        authorization.ResolveCallerId(principal).Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:shared-operator-subject");
+
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycleService);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            services.AddSingleton<IStudioAuthorizationService>(authorization);
+        });
+        httpContext.User = principal;
+
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var createTool = new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var createResult = await createTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                """{"packageKey":"operator-map","family":"map","schemaVersion":"1.0"}"""),
+            CancellationToken.None);
+
+        createResult.IsError.Should().BeFalse();
+        var created = createResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured create-draft content.");
+        created.GetProperty("ownerId").GetString().Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:shared-operator-subject");
+        var draftId = created.GetProperty("draftId").GetGuid();
+
+        var getTool = new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var getResult = await getTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}"}"""),
+            CancellationToken.None);
+
+        getResult.IsError.Should().BeFalse();
+        getResult.StructuredContent!.Value.GetProperty("draftId").GetGuid().Should().Be(draftId);
+
+        var saveTool = new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance);
+        var saveResult = await saveTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{draftId}}}","generation":1,"changeNote":"operator bearer save"}"""),
+            CancellationToken.None);
+        saveResult.IsError.Should().BeFalse();
+
+        var proposeTool = new ProposeStudioPublicationTool(
+            jobService,
+            NullLogger<ProposeStudioPublicationTool>.Instance);
+        var proposeResult = await proposeTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{draftId}}}","generation":2,"route":"/studio/operator-map","visibility":"public"}"""),
+            CancellationToken.None);
+        proposeResult.IsError.Should().BeFalse();
+        proposeResult.StructuredContent!.Value.GetProperty("recorded").GetBoolean().Should().BeTrue();
+
+        // The same subject from a different validated upstream issuer remains a different
+        // owner even though both credentials are wrapped by the same Honua bearer issuer.
+        var otherIssuerContext = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycleService);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            services.AddSingleton<IStudioAuthorizationService>(authorization);
+        });
+        otherIssuerContext.User = await CreateOperatorBearerPrincipalAsync(
+            "https://issuer-b.example",
+            "shared-operator-subject");
+
+        var crossIssuerRead = () => getTool.InvokeAsync(
+            otherIssuerContext,
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}"}"""),
+            CancellationToken.None);
+        await crossIssuerRead.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+    }
+
+    private static StudioAuthorizationService CreateEndUserAuthorizationService()
+    {
+        var evaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        evaluator.EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        return new StudioAuthorizationService(
+            evaluator,
+            new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(
+                new StudioEndUserAuthorizationOptions { Enabled = true }),
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions()));
+    }
+
+    private static async Task<ClaimsPrincipal> CreateOperatorBearerPrincipalAsync(
+        string upstreamIssuer,
+        string subject)
+    {
+        var tokenService = new OperatorBearerTokenService(Options.Create(new OperatorBearerOptions
+        {
+            Enabled = true,
+            SigningKey = "operator-bearer-studio-test-key-at-least-32-bytes-long",
+            Issuer = "honua-operator-bearer",
+            Audience = "honua-admin-api",
+            MaxLifetimeMinutes = 10,
+        }));
+        var issuance = tokenService.Issue(
+        [
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = subject },
+            new AdminAuthSessionClaim { Type = "sub", Value = subject },
+            new AdminAuthSessionClaim { Type = "iss", Value = upstreamIssuer },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+            new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "creator" },
+        ],
+        DateTimeOffset.UtcNow.AddMinutes(10));
+        issuance.Should().NotBeNull();
+
+        var projectedClaims = await tokenService.TryValidateAsync(issuance!.Token);
+        projectedClaims.Should().NotBeNull();
+        return AdminAuthClaimsProjector.CreatePrincipal(
+            projectedClaims!,
+            "OperatorBearer",
+            "operator-bearer");
+    }
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue { get; } = value;
+
+        public T Get(string? name) => CurrentValue;
+
+        public IDisposable OnChange(Action<T, string?> listener) => NullDisposable.Instance;
+
+        private sealed class NullDisposable : IDisposable
+        {
+            public static readonly NullDisposable Instance = new();
+
+            public void Dispose() { }
+        }
     }
 
     private static ServiceProvider BuildServiceProvider()

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -19,6 +20,8 @@ public sealed class OperatorBearerTokenServiceTests
     [
         new AdminAuthSessionClaim { Type = "name", Value = "Operator Admin" },
         new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "operator-1" },
+        new AdminAuthSessionClaim { Type = "iss", Value = "https://identity.example/tenant-a" },
+        new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
         new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" }
     ];
 
@@ -36,6 +39,58 @@ public sealed class OperatorBearerTokenServiceTests
         claims!.Should().Contain(c => c.Type == "name" && c.Value == "Operator Admin");
         claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
         claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "operator-1");
+        claims.Should().ContainSingle(c => c.Type == OperatorBearerTokenService.IdentityIssuerClaimType
+            && c.Value == "https://identity.example/tenant-a");
+        claims.Should().NotContain(c => c.Type == "iss",
+            "the wrapper issuer is validated separately and must not replace upstream identity provenance");
+
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(
+            claims,
+            "OperatorBearer",
+            "operator-bearer");
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be(
+            "oidc:subject:https%3A%2F%2Fidentity.example%2Ftenant-a:operator-1");
+        actor.SubjectIssuer.Should().Be("https://identity.example/tenant-a");
+    }
+
+    [Fact]
+    public void CanonicalSecurityActor_OidcSubjectWithoutIssuerFailsClosed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "shared-subject"),
+                new Claim("auth_type", "oidc"),
+            ],
+            authenticationType: "oidc"));
+
+        CanonicalSecurityActor.Resolve(principal).Should().BeNull();
+        CanonicalSecurityActor.IsBoundIdentity(
+            "oidc:subject:-:shared-subject",
+            "oidc",
+            "shared-subject",
+            subjectIssuer: null,
+            apiKeyId: null).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Issue_OverwritesSourcePrivateIssuerClaimFromValidatedIssuer()
+    {
+        var service = CreateService();
+        var claimsWithSpoofedPrivateValue = SampleClaims
+            .Append(new AdminAuthSessionClaim
+            {
+                Type = OperatorBearerTokenService.IdentityIssuerClaimType,
+                Value = "https://attacker.example"
+            })
+            .ToArray();
+
+        var issuance = service.Issue(claimsWithSpoofedPrivateValue, DateTimeOffset.UtcNow.AddMinutes(10));
+        var claims = await service.TryValidateAsync(issuance!.Token);
+
+        claims.Should().ContainSingle(c => c.Type == OperatorBearerTokenService.IdentityIssuerClaimType
+            && c.Value == "https://identity.example/tenant-a");
     }
 
     [Fact]

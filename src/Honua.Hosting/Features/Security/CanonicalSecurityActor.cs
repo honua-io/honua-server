@@ -14,6 +14,8 @@ internal static class CanonicalSecurityActor
     private const string ApiKeyIdClaim = "api_key_id";
     private const string AuthTypeClaim = "auth_type";
     private const string IssuerClaim = "iss";
+    private const string IdentityIssuerClaim = "honua_identity_issuer";
+    private const string OperatorBearerAuthenticationType = "OperatorBearer";
     private const string SubjectClaim = "sub";
 
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
@@ -45,7 +47,18 @@ internal static class CanonicalSecurityActor
             ?? NormalizeValue(principal.FindFirstValue(SubjectClaim));
         if (subject is not null)
         {
-            var issuer = NormalizeValue(principal.FindFirstValue(IssuerClaim));
+            var isOperatorBearer = string.Equals(
+                identity.AuthenticationType,
+                OperatorBearerAuthenticationType,
+                StringComparison.OrdinalIgnoreCase);
+            var issuer = NormalizeValue(principal.FindFirstValue(
+                isOperatorBearer ? IdentityIssuerClaim : IssuerClaim));
+            if ((isOperatorBearer || string.Equals(scheme, "oidc", StringComparison.Ordinal))
+                && issuer is null)
+            {
+                return null;
+            }
+
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:subject:{Encode(issuer ?? "-")}:{Encode(subject)}",
                 scheme,
@@ -101,6 +114,11 @@ internal static class CanonicalSecurityActor
         }
 
         var issuer = NormalizeValue(subjectIssuer);
+        if (string.Equals(normalizedScheme, "oidc", StringComparison.Ordinal) && issuer is null)
+        {
+            return false;
+        }
+
         return string.Equals(
             actorId,
             $"{normalizedScheme}:subject:{Encode(issuer ?? "-")}:{Encode(subject)}",

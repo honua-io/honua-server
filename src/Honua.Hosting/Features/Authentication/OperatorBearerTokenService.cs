@@ -29,6 +29,13 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions> options)
 {
+    /// <summary>
+    /// Private provenance claim carrying the validated upstream identity issuer through the
+    /// Honua-signed operator-bearer wrapper. The wrapper's own <c>iss</c> identifies Honua's
+    /// signing authority and must never namespace the upstream subject.
+    /// </summary>
+    internal const string IdentityIssuerClaimType = "honua_identity_issuer";
+
     // JWT registered claims the handler manages itself: copying them out of the
     // source session claims (which carry the upstream id token's iss/exp/etc.) would
     // collide with the descriptor below and break issuer/lifetime validation, so they
@@ -161,9 +168,27 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = sessionClaims
-            .Where(claim => !ReservedClaimTypes.Contains(claim.Type))
+            .Where(claim => !ReservedClaimTypes.Contains(claim.Type)
+                && !string.Equals(claim.Type, IdentityIssuerClaimType, StringComparison.Ordinal))
             .Select(claim => new Claim(claim.Type, claim.Value))
             .ToList();
+
+        // The session was created only after upstream token validation. Preserve that
+        // validated issuer under a private, Honua-controlled claim because the wrapper JWT
+        // must use its own issuer for signature validation. Never forward an upstream-provided
+        // claim with our private name; synthesize exactly one value from `iss`, or none when
+        // issuer provenance is absent/ambiguous so issuer-scoped consumers fail closed.
+        var upstreamIssuers = sessionClaims
+            .Where(static claim => string.Equals(claim.Type, JwtRegisteredClaimNames.Iss, StringComparison.Ordinal))
+            .Select(static claim => claim.Value?.Trim())
+            .Where(static value => !string.IsNullOrEmpty(value))
+            .Distinct(StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+        if (upstreamIssuers.Length == 1)
+        {
+            claims.Add(new Claim(IdentityIssuerClaimType, upstreamIssuers[0]!));
+        }
 
         var now = issuedAt.UtcDateTime;
         var descriptor = new SecurityTokenDescriptor

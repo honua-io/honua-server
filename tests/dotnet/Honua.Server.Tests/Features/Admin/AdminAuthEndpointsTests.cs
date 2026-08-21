@@ -13,6 +13,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -982,6 +983,18 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             // The bearer never outlives the issuing session (with a small clock-skew margin).
             bearer.ExpiresAt.Should().BeOnOrBefore(sessionExpiry.AddSeconds(1));
 
+            var tokenService = oidcFixture.Services.GetRequiredService<OperatorBearerTokenService>();
+            var projectedClaims = await tokenService.TryValidateAsync(bearer.AccessToken);
+            var projectedPrincipal = AdminAuthClaimsProjector.CreatePrincipal(
+                projectedClaims!,
+                OidcAuthenticationExtensions.OperatorBearerScheme,
+                "operator-bearer");
+            var canonicalActor = CanonicalSecurityActor.Resolve(projectedPrincipal);
+            canonicalActor.Should().NotBeNull();
+            canonicalActor!.ActorId.Should().Be(
+                "oidc:subject:https%3A%2F%2Fauth.example.com:operator-1",
+                "cookie-session issuer provenance must survive bearer mint and validation");
+
             // The forwardable bearer resolves to the same RBAC as the cookie session:
             // an admin-gated control-plane read succeeds when it is presented as a Bearer.
             var bearerClient = oidcFixture.CreateClient(client =>
@@ -1059,6 +1072,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             [
                 new AdminAuthSessionClaim { Type = "name", Value = "Operator Admin" },
                 new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "operator-1" },
+                new AdminAuthSessionClaim { Type = "sub", Value = "operator-1" },
+                new AdminAuthSessionClaim { Type = "iss", Value = "https://auth.example.com" },
+                new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
                 new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" }
             ],
             expiresAt ?? DateTimeOffset.UtcNow.AddMinutes(10),

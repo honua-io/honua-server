@@ -153,7 +153,7 @@ public sealed class PublishedOperationToolTests
         captured.Should().NotBeNull();
         captured!.Tier.Should().Be("pro", "tier is resolved from the running edition for tier-aware policy");
         captured.Roles.Should().BeEquivalentTo("operator", "publisher");
-        captured.PrincipalId.Should().Be("oidc:subject:-:agent-x");
+        captured.PrincipalId.Should().Be("oidc:subject:https%3A%2F%2Fissuer.example:agent-x");
     }
 
     // ---- Deterministic, param-keyed caching ------------------------------------
@@ -296,6 +296,34 @@ public sealed class PublishedOperationToolTests
             CancellationToken.None);
 
         invoker.SubmitCount.Should().Be(2, "display names are not cache identities");
+    }
+
+    [UnitTest]
+    public async Task Invoke_SameOidcSubjectFromDifferentIssuers_MissesCache()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "shared-subject",
+                subjectIssuer: "https://issuer-a.example"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "shared-subject",
+                subjectIssuer: "https://issuer-b.example"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2,
+            "issuer-qualified identities with the same subject must never share cached authorization results");
     }
 
     [UnitTest]
@@ -731,6 +759,7 @@ public sealed class PublishedOperationToolTests
         string[]? roles = null,
         string principalName = "agent-x",
         string? subjectId = null,
+        string? subjectIssuer = "https://issuer.example",
         string? tenantId = null,
         string[]? permissions = null)
     {
@@ -752,6 +781,10 @@ public sealed class PublishedOperationToolTests
             new(ClaimTypes.NameIdentifier, subjectId ?? principalName),
             new("auth_type", "oidc"),
         };
+        if (subjectIssuer is not null)
+        {
+            claims.Add(new Claim("iss", subjectIssuer));
+        }
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
         claims.AddRange((permissions ?? []).Select(permission => new Claim("permission", permission)));
         if (tenantId is not null)
@@ -773,6 +806,7 @@ public sealed class PublishedOperationToolTests
         var identity = (ClaimsIdentity)context.User.Identity!;
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "mcp-test-subject"));
         identity.AddClaim(new Claim("auth_type", "oidc"));
+        identity.AddClaim(new Claim("iss", "https://issuer.example"));
         return context;
     }
 

@@ -23,6 +23,8 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     internal const string OwnResourceSentinel = "own";
 
     private const string AdminRole = "admin";
+    private const string OperatorBearerAuthenticationType = "OperatorBearer";
+    private const string IdentityIssuerClaimType = "honua_identity_issuer";
 
     /// <summary>Denial code: the flag is off, so only admins may use the Studio lifecycle surface.</summary>
     public const string EndUserModeDisabledCode = "studio_authorization/end_user_mode_disabled";
@@ -117,7 +119,18 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // they are never opportunistically rebound to whichever issuer asks first.
         var subject = NormalizeIdentityComponent(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value)
             ?? NormalizeIdentityComponent(principal.FindFirst("sub")?.Value);
-        var issuer = NormalizeIdentityComponent(principal.FindFirst("iss")?.Value);
+        // An operator bearer is a Honua-signed wrapper around an already validated upstream
+        // session. Its registered `iss` is therefore the wrapper signing authority, not the
+        // namespace of the upstream subject. OperatorBearerTokenService carries the validated
+        // upstream issuer in a private provenance claim; require that claim for wrappers and
+        // never fall back to the wrapper issuer. Direct OIDC principals continue to use their
+        // validated `iss` and deliberately ignore any untrusted lookalike provenance claim.
+        var isOperatorBearer = string.Equals(
+            identity.AuthenticationType,
+            OperatorBearerAuthenticationType,
+            StringComparison.OrdinalIgnoreCase);
+        var issuer = NormalizeIdentityComponent(principal.FindFirst(
+            isOperatorBearer ? IdentityIssuerClaimType : "iss")?.Value);
         if (subject is null || issuer is null)
         {
             return null;

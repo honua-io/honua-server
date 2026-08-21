@@ -15,6 +15,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations.Admin;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -22,6 +23,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Honua.Infrastructure.Security;
 using CatalogOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
@@ -179,7 +181,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ApproveProposal_HappyPath_ExecutesAndMarksSubmitted()
     {
         // Requester differs from the admin approver so separation-of-duties passes.
@@ -195,7 +197,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ApproveProposal_AdminApproveKey_CanReadAndApproveButCannotWriteElsewhere()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
@@ -226,7 +228,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ApproveProposal_ReadOnlyKey_ReturnsProblemNamingMissingGrant()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
@@ -566,6 +568,68 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await approval.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("status").GetString().Should().Be("Failed");
         _publishedExecutor.ExecutedRequest.Should().BeNull("a downgraded proposer must deny resume");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task PublishedOperation_OperatorBearerProposerPreservesIssuerAndCannotResumeAfterRoleRevocation()
+    {
+        const string subject = "operator-bearer-subject-1";
+        const string issuer = "https://issuer-a.example.com";
+        var userStore = _fixture.Services.GetRequiredService<IUserStore>();
+        var scimStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        await scimStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "operator-bearer-user-1",
+            ExternalId = subject,
+            ExternalIssuer = issuer,
+            DisplayName = "Operator Bearer User",
+            Roles = ["publisher"],
+        });
+
+        var tokenService = new OperatorBearerTokenService(Options.Create(new OperatorBearerOptions
+        {
+            Enabled = true,
+            SigningKey = "operator-bearer-proposal-test-key-at-least-32-bytes-long",
+            Issuer = "honua-operator-bearer",
+            Audience = "honua-admin-api",
+            MaxLifetimeMinutes = 10,
+        }));
+        var issuance = tokenService.Issue(
+        [
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = subject },
+            new AdminAuthSessionClaim { Type = "sub", Value = subject },
+            new AdminAuthSessionClaim { Type = "iss", Value = issuer },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
+            new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "publisher" },
+        ],
+        DateTimeOffset.UtcNow.AddMinutes(10));
+        var validatedClaims = await tokenService.TryValidateAsync(issuance!.Token);
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(
+            validatedClaims!,
+            "OperatorBearer",
+            "operator-bearer");
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        actor.Should().NotBeNull();
+        actor!.SubjectIssuer.Should().Be(issuer, "the wrapper issuer is never the upstream identity namespace");
+
+        var proposalId = await CreatePublishedProposalAsync(new OperationPolicyContext
+        {
+            PrincipalId = actor.ActorId,
+            AuthenticationScheme = actor.AuthenticationScheme,
+            SubjectId = actor.SubjectId,
+            SubjectIssuer = actor.SubjectIssuer,
+            Roles = ["publisher"],
+        });
+
+        await userStore.UpdateUserRolesAsync("operator-bearer-user-1", ["viewer"]);
+        using var approval = await _client.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+
+        approval.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await approval.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("status").GetString().Should().Be("Failed");
+        _publishedExecutor.ExecutedRequest.Should().BeNull(
+            "the original upstream OIDC membership must be revalidated after operator-bearer wrapping");
     }
 
     private async Task<string> CreatePublishedProposalAsync(OperationPolicyContext context)
