@@ -73,7 +73,7 @@ FAILURE_IDENTITIES = {
     "validate_cog": ("cog", "window-read", "Rasterio"),
     "validate_hdf5_netcdf": ("hdf5-netcdf", "metadata-statistics", "h5py"),
     "validate_zarr": ("zarr", "multidimensional-subset", "xarray"),
-    "validate_stac": ("stac", "asset-discovery", "PySTAC-Client"),
+    "validate_stac": ("stac", "collection-discovery", "PySTAC-Client"),
     "validate_javascript": ("cloud-native", "javascript-client-validation", "Node.js"),
 }
 

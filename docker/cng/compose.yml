@@ -12,7 +12,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
-      - PUBLIC_BASE_URL=http://honua-server:8080
+      - PUBLIC_BASE_URL=${HONUA_CNG_PUBLIC_BASE_URL:-http://localhost:8094}
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
       - Cache__Enabled=false
