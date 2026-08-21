@@ -54,6 +54,9 @@ internal static class ImageServerServiceCollectionExtensions
         services.Configure<ImageServerCalculateVolumeOptions>(
             configuration.GetSection(ImageServerCalculateVolumeOptions.SectionName));
 
+        services.Configure<ImageServerPublicationProbeOptions>(
+            configuration.GetSection(ImageServerPublicationProbeOptions.SectionName));
+
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();
         services.AddScoped<ImageServerMultidimensionalInfoHandler>();
@@ -89,6 +92,7 @@ internal static class ImageServerServiceCollectionExtensions
 
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();
+        services.AddScoped<IImageServerPublicationProbe, ImageServerPublicationProbe>();
 
         // Protocol-neutral class-statistics analyzer (#2662): reads training-AOI pixel vectors
         // through the shared raster store and folds them into per-class signatures. TryAdd keeps a

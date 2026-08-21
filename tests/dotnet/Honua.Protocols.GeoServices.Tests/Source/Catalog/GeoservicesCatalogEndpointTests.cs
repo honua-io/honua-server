@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -523,6 +524,105 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             await rasterStore.Received().ListRastersAsync(
                 rasterStorageLayerId,
                 Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapCatalogAndImageServer_SkipFailedPublicationAndSelectSameHealthyRaster()
+    {
+        const int failingStorageLayerId = 8201;
+        const int rasterStorageLayerId = 8202;
+        var graph = BuildSoapImageGraph(
+            "probe-fallback-image",
+            ("res-failing", "pub-failing", 1, failingStorageLayerId),
+            ("res-raster", "pub-raster", 2, rasterStorageLayerId));
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(failingStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo[]>(
+                new InvalidOperationException("injected publication probe failure")));
+        rasterStore.ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([CreateSoapRaster(rasterStorageLayerId)]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var catalogResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services",
+                "GetServiceDescriptions");
+            catalogResponse.Be200Ok();
+            (await catalogResponse.Content.ReadAsStringAsync())
+                .Should().Contain("probe-fallback-image");
+
+            using var imageResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/probe-fallback-image/ImageServer",
+                "GetVersion");
+            imageResponse.Be200Ok();
+            await rasterStore.Received(2).ListRastersAsync(
+                rasterStorageLayerId,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapCatalogAndImageServer_AllRasterProbesFailWithServerFault()
+    {
+        const int storageLayerId = 8301;
+        var graph = BuildSoapImageGraph(
+            "probe-fault-image",
+            ("res-fault", "pub-fault", 1, storageLayerId));
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(storageLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo[]>(
+                new InvalidOperationException("injected raster backend outage")));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var catalogResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services",
+                "GetServiceDescriptions");
+            catalogResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(catalogResponse);
+
+            using var imageResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/probe-fault-image/ImageServer",
+                "GetVersion");
+            imageResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await AssertSoapServerFaultAsync(imageResponse);
         }
         finally
         {
@@ -1224,6 +1324,14 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             client,
             route,
             $"<esri:{operation} xmlns:esri=\"{operationNamespace}\" />");
+    }
+
+    private static async Task AssertSoapServerFaultAsync(HttpResponseMessage response)
+    {
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.Descendants().Single(element => element.Name.LocalName == "faultcode")
+            .Value.Should().Be("soap:Server");
     }
 
     private static async Task<HttpResponseMessage> PostSoapOperationAsync(

@@ -164,7 +164,14 @@ public class ImageServerTileHandlerTests
                 BandCount = 1,
                 PixelType = "8BUI",
             }]);
-        var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider, rasterStore);
+        var publicationProbe = new ImageServerPublicationProbe(
+            rasterStore,
+            Options.Create(new ImageServerPublicationProbeOptions()),
+            NullLogger<ImageServerPublicationProbe>.Instance);
+        var resolver = new MetadataV2ImageServerLayerResolver(
+            resourceValidator,
+            graphProvider,
+            publicationProbe);
         var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
 

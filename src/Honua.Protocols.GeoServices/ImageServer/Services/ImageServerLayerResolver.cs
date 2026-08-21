@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -34,7 +33,7 @@ internal readonly record struct ImageServerLayerResolution(
 internal sealed class MetadataV2ImageServerLayerResolver(
     IResourceValidator resourceValidator,
     IMetadataV2GraphProvider metadataGraphProvider,
-    IRasterStore rasterStore) : IImageServerLayerResolver
+    IImageServerPublicationProbe publicationProbe) : IImageServerLayerResolver
 {
     public async Task<ImageServerLayerResolution> ResolveFirstAccessibleLayerAsync(
         string serviceId,
@@ -75,24 +74,12 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             return new ImageServerLayerResolution(0, null, null, accessError);
         }
 
-        ImageServerPublicationLayer layer = default;
-        // Probe the complete accessible roster sequentially. Concurrency stays bounded at one,
-        // while every raster-bearing service that catalog discovery can advertise remains
-        // resolvable even when its first usable publication appears late in the roster.
-        foreach (var publication in publishedResources
-            .Where(publication => AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource!, service)))
-        {
-            var rasters = await rasterStore.ListRastersAsync(
-                publication.StorageLayerId!.Value,
-                cancellationToken).ConfigureAwait(false);
-            if (rasters.Length > 0)
-            {
-                layer = publication;
-                break;
-            }
-        }
-
-        if (layer.Resource is null || !layer.StorageLayerId.HasValue)
+        var layer = await publicationProbe.FindFirstRasterBearingAsync(
+            snapshot,
+            service,
+            context,
+            cancellationToken).ConfigureAwait(false);
+        if (!layer.HasValue)
         {
             return new ImageServerLayerResolution(
                 0,
@@ -102,9 +89,9 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         }
 
         return new ImageServerLayerResolution(
-            layer.StorageLayerId.Value,
-            layer.PublicationId,
-            layer.PublicationLayerIndex,
+            layer.Value.StorageLayerId,
+            layer.Value.PublicationId,
+            layer.Value.PublicationLayerIndex,
             null);
     }
 

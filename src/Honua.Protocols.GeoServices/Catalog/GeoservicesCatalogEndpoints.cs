@@ -8,12 +8,12 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.Soap;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.GeoServices.Catalog;
@@ -75,7 +75,7 @@ internal static class GeoservicesCatalogEndpoints
     private static async Task<IResult> HandlePostSoapCatalog(
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IRasterStore rasterStore,
+        [FromServices] IImageServerPublicationProbe publicationProbe,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
         var request = await ArcGisSoap11RequestParser.ReadOperationAsync(
@@ -106,8 +106,7 @@ internal static class GeoservicesCatalogEndpoints
                     await BuildSoapImageServerDescriptionsAsync(
                         context,
                         graphProvider,
-                        rasterStore,
-                        logger).ConfigureAwait(false));
+                        publicationProbe).ConfigureAwait(false));
             }
             else if (operationName == operationNamespace + "GetFolders")
             {
@@ -174,8 +173,7 @@ internal static class GeoservicesCatalogEndpoints
     private static async Task<IReadOnlyList<XElement>> BuildSoapImageServerDescriptionsAsync(
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
-        IRasterStore rasterStore,
-        ILogger logger)
+        IImageServerPublicationProbe publicationProbe)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -190,32 +188,12 @@ internal static class GeoservicesCatalogEndpoints
                 continue;
             }
 
-            var advertise = false;
-            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id).Where(snapshot.IsRoutable))
-            {
-                var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
-                if (resource is null ||
-                    snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId ||
-                    !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    if ((await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false)).Length > 0)
-                    {
-                        advertise = true;
-                        break;
-                    }
-                }
-                catch (Exception exception) when (exception is not OutOfMemoryException)
-                {
-                    GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, exception);
-                }
-            }
-
-            if (!advertise)
+            var imageLayer = await publicationProbe.FindFirstRasterBearingAsync(
+                snapshot,
+                service,
+                context,
+                cancellationToken).ConfigureAwait(false);
+            if (!imageLayer.HasValue)
             {
                 continue;
             }
@@ -261,7 +239,7 @@ internal static class GeoservicesCatalogEndpoints
         HttpContext context,
         string? f,
         [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IRasterStore rasterStore,
+        [FromServices] IImageServerPublicationProbe publicationProbe,
         [FromServices] ILicenseStatusProvider licenseStatusProvider,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
@@ -376,12 +354,12 @@ internal static class GeoservicesCatalogEndpoints
                     var svc = imageServerServices[i];
                     try
                     {
-                        var imageServerLayerId = await GetImageServerLayerIdAsync(
+                        var imageServerLayer = await publicationProbe.FindFirstRasterBearingAsync(
                             snapshot,
                             svc,
-                            rasterStore,
+                            context,
                             ct).ConfigureAwait(false);
-                        if (imageServerLayerId.HasValue)
+                        if (imageServerLayer.HasValue)
                         {
                             // The URL uses the service NAME as the route segment (matching every
                             // other service type and the canonical ArcGIS addressing), not the
@@ -566,35 +544,6 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Finds the first publication on the given image service whose layer index
-    /// has at least one raster registered in the raster store. The catalog uses
-    /// the layer index (not the service name) as the route segment for
-    /// ImageServer entries.
-    /// </summary>
-    private static async Task<int?> GetImageServerLayerIdAsync(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
-        IRasterStore rasterStore,
-        CancellationToken cancellationToken)
-    {
-        foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
-        {
-            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
-            {
-                continue;
-            }
-
-            var rasters = await rasterStore.ListRastersAsync(layerIndex, cancellationToken).ConfigureAwait(false);
-            if (rasters.Length > 0)
-            {
-                return layerIndex;
-            }
-        }
-
-        return null;
     }
 
     private static bool IsSupportedFormat(string? format)
