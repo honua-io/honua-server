@@ -16,6 +16,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
@@ -70,6 +71,19 @@ internal static class GeoservicesCatalogEndpoints
             .WithSummary("Discover SOAP-compatible ImageServer services")
             .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
             .WithTags("GeoServices Catalog")
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                operation.RequestBody = new OpenApiRequestBody
+                {
+                    Required = true,
+                    Content = new Dictionary<string, OpenApiMediaType>
+                    {
+                        ["text/xml"] = new(),
+                        ["application/soap+xml"] = new()
+                    }
+                };
+                return Task.CompletedTask;
+            })
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status415UnsupportedMediaType, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
@@ -297,9 +311,18 @@ internal static class GeoservicesCatalogEndpoints
             {
                 var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
                 var storageLayerId = snapshot.ResolveStorageLayerId(publication);
-                if (resource is null ||
-                    storageLayerId is not { } layerIndex ||
-                    !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                if (resource is null || storageLayerId is not { } layerIndex)
+                {
+                    continue;
+                }
+
+                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    context,
+                    resource,
+                    AuthorizationOperation.Metadata,
+                    service,
+                    cancellationToken).ConfigureAwait(false);
+                if (accessError is not null)
                 {
                     continue;
                 }
