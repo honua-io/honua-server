@@ -376,6 +376,27 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_OperationOutsideArcGisNamespace_ReturnsSoapFault()
+    {
+        const string request = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetMessageVersion xmlns="urn:not-arcgis" />
+              </soap:Body>
+            </soap:Envelope>
+            """;
+
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        var response = await _fixture.Client.PostAsync("/services", content);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
     [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_ServiceRoute_DoesNotLeakOtherServices()
