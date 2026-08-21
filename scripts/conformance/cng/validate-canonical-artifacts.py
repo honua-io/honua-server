@@ -88,7 +88,14 @@ def _collect(observations: list[dict], validator, path, args: argparse.Namespace
             CLIENTS.get(client, "unknown"),
         )
         failure["result"] = "fail"
-        failure["failure_reason"] = f"{type(exc).__name__}: {exc}"
+        detail = f"{type(exc).__name__}: {exc}"
+        if isinstance(exc, subprocess.CalledProcessError):
+            process_output = "\n".join(
+                value.strip() for value in (exc.stdout, exc.stderr) if value and value.strip()
+            )
+            if process_output:
+                detail = f"{detail}\n{process_output[-4000:]}"
+        failure["failure_reason"] = detail
         observations.append(failure)
 
 

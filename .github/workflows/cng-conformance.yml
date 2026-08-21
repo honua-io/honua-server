@@ -50,6 +50,7 @@ jobs:
           # GeoParquet + PMTiles validators (Go).
           go install github.com/planetlabs/gpq/cmd/gpq@v0.24.0
           go install github.com/protomaps/go-pmtiles@v1.30.0
+          mv "$(go env GOPATH)/bin/go-pmtiles" "$(go env GOPATH)/bin/pmtiles"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           # FlatGeobuf read-back (GDAL ogrinfo).
