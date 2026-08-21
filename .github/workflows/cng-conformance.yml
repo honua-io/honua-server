@@ -100,7 +100,7 @@ jobs:
       - name: Run CNG conformance lane
         id: run
         env:
-          HONUA_CNG_SKIP_BUILD: \${{ inputs.server_image != '' }}
+          HONUA_CNG_SKIP_BUILD: ${{ inputs.server_image != '' }}
           HONUA_CNG_CLEANUP: 'false'
           # Official OSGeo ubuntu-full image includes the Arrow/Parquet driver
           # omitted from Ubuntu's gdal-bin build. Digest is the immutable
@@ -111,17 +111,21 @@ jobs:
         run: |
           set +e
           trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
-          if [[ -n "\${{ inputs.server_image }}" ]]; then
-            docker pull "\${{ inputs.server_image }}"
-            docker tag "\${{ inputs.server_image }}" honua-server:latest
+          if [[ -n "${{ inputs.server_image }}" ]]; then
+            if [[ ! "${{ inputs.server_image }}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+              echo "server_image must be digest-addressed" >&2
+              exit 1
+            fi
+            docker pull "${{ inputs.server_image }}"
+            docker tag "${{ inputs.server_image }}" honua-server:latest
           fi
           bash ./scripts/conformance/cng/run-cng-conformance.sh
           cng_exit=$?
 
-          if [[ -n "\${{ inputs.server_image }}" ]]; then
-            image_digest="\${{ inputs.server_image }}"; image_digest="\${image_digest##*@}"
-            source_sha="\${{ inputs.source_sha }}"
-            candidate_cut_at="\${{ inputs.candidate_cut_at }}"
+          if [[ -n "${{ inputs.server_image }}" ]]; then
+            image_digest="${{ inputs.server_image }}"; image_digest="${image_digest##*@}"
+            source_sha="${{ inputs.source_sha }}"
+            candidate_cut_at="${{ inputs.candidate_cut_at }}"
             if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ || -z "$candidate_cut_at" ]]; then
               echo "Digest-addressed dispatch requires source_sha and candidate_cut_at" >&2
               exit 1

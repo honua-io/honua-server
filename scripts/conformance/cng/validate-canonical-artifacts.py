@@ -220,6 +220,7 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
         observation["contract_revision"] = contract
         observation["auth_policy_revision"] = "anonymous-v1"
         observation["evidence_digest"] = args.evidence_digest
+        observation["evidence_receipt"] = None
         observation["evidence_uri"] = (
             f"https://evidence.honua.io/data/sha256/{args.evidence_digest[7:]}"
         )
@@ -533,6 +534,11 @@ def main() -> int:
             "source_sha": args.source_sha,
             "image_digest": args.image_digest,
             "cut_at": args.candidate_cut_at,
+        },
+        "operation_scope": {
+            "complete": False,
+            "owner_issue": "https://github.com/honua-io/honua-server/issues/3377",
+            "disposition": "Budget-complete governed CNG observations are not yet emitted.",
         },
         "observations": observations,
     }
