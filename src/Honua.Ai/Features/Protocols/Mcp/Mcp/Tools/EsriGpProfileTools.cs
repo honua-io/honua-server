@@ -10,7 +10,10 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
@@ -217,7 +220,8 @@ internal sealed class ExecuteEsriGpTaskTool(
     protected override string Title => "Execute Esri GP task";
     protected override string Description =>
         "Submit a GPServer task or Esri alias through Honua's canonical geoprocessing job service and return a pollable job handle. "
-        + "Parameters use the schema returned by honua_esri_gp_describe_task. Tasks that mutate data retain the same approval gate as GPServer.";
+        + "The serviceId must resolve to an accessible GPServer service. Parameters use the schema returned by "
+        + "honua_esri_gp_describe_task. Tasks that mutate data retain the same approval gate as GPServer.";
     protected override JsonElement InputSchema => EsriGpToolSchemas.ExecuteInput;
     protected override JsonElement OutputSchema => EsriGpToolSchemas.ExecuteOutput;
     protected override McpToolAnnotations Annotations =>
@@ -234,6 +238,7 @@ internal sealed class ExecuteEsriGpTaskTool(
         var argument = RequireObject(arguments);
         var serviceId = RequireString(argument, "serviceId");
         var taskName = RequireString(argument, "taskName");
+        await ValidateServiceAsync(httpContext, serviceId, cancellationToken).ConfigureAwait(false);
         var definition = EsriGpTaskProjection.ResolveTask(ProcessCatalog, taskName)
             ?? throw new GeoprocessingNotFoundException($"GPServer task '{taskName}' was not found.");
         var parameters = ReadParameters(argument);
@@ -261,6 +266,43 @@ internal sealed class ExecuteEsriGpTaskTool(
             ["taskName"] = taskName,
             ["processId"] = definition.ProcessId
         });
+    }
+
+    private static async Task ValidateServiceAsync(
+        HttpContext httpContext,
+        string serviceId,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidator = httpContext.RequestServices.GetRequiredService<IResourceValidator>();
+        var serviceResult = await resourceValidator.ValidateServiceV2Async(
+            serviceId, ServiceProtocols.GPServer, cancellationToken).ConfigureAwait(false);
+        if (!serviceResult.IsValid)
+        {
+            var message = serviceResult.ErrorMessage ?? $"GPServer service '{serviceId}' was not found.";
+            if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            {
+                throw new GeoprocessingValidationException(message);
+            }
+
+            throw new GeoprocessingNotFoundException(message);
+        }
+
+        var accessDecision = await AccessPolicyHelpers.EvaluateServiceAccessAsync(
+            httpContext,
+            serviceResult.Resource!,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        if (!accessDecision.IsAllowed)
+        {
+            var message = accessDecision.RequiresAuthentication
+                ? $"Authentication is required to access GPServer service '{serviceId}'."
+                : $"Access to GPServer service '{serviceId}' is forbidden.";
+            throw new GeoprocessingAuthorizationException(
+                accessDecision.RequiresAuthentication,
+                message,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+        }
     }
 
     private static Dictionary<string, string> ReadParameters(JsonElement argument)

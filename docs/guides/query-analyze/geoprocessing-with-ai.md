@@ -89,11 +89,15 @@ choices, defaults, and output bindings cannot drift between the AI and Esri
 surfaces.
 
 `honua_esri_gp_execute_task` takes `serviceId`, `taskName`, and the described
-`parameters` object. It submits through the same `IGeoprocessingJobService` and
-returns a `honua://jobs/{jobId}` handle; authorization, destructive-process
-approval, admission, job ownership, artifact bindings, and telemetry remain in
-that shared runtime. The generic execution tool is marked potentially
-destructive because aliases include governed data-management tasks.
+`parameters` object. `serviceId` must resolve to a routable, GPServer-enabled
+service that the caller can access; the tool uses the same canonical service
+lookup and access-policy evaluation as GPServer and rejects missing or denied
+services before job submission. It then submits through the same
+`IGeoprocessingJobService` and returns a `honua://jobs/{jobId}` handle;
+authorization, destructive-process approval, admission, job ownership, artifact
+bindings, and telemetry remain in that shared runtime. The generic execution
+tool is marked potentially destructive because aliases include governed
+data-management tasks.
 
 Aliases are name-level conveniences over Honua process contracts. They do not
 pretend that every task has ArcPy's exact parameter signature, and this profile

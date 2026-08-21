@@ -173,11 +173,34 @@ internal static class AccessPolicyHelpers
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
     {
+        var decision = await EvaluateServiceAccessAsync(
+            context, service, operation, cancellationToken).ConfigureAwait(false);
+        return CreateAccessDeniedResult(context, decision);
+    }
+
+    /// <summary>
+    /// Operation-aware service access evaluation for adapters that need the canonical
+    /// decision rather than an HTTP result. This is the shared service-level counterpart
+    /// to <see cref="EvaluateResourceAccessAsync"/> and preserves tenant, RBAC-grant, and
+    /// coarse-policy semantics used by GeoServices protocol handlers.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="service">The service being accessed.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The canonical access decision.</returns>
+    public static async Task<AccessDecision> EvaluateServiceAccessAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(service);
 
         if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
         {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+            return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
 
         var serviceName = service.Metadata.Name;
@@ -192,11 +215,11 @@ internal static class AccessPolicyHelpers
 
             if (grantDecision == GrantOutcome.Allow)
             {
-                return null;
+                return AccessDecision.Allowed();
             }
         }
 
-        return RequireAccess(context, null, service.AccessPolicy, ScopeForOperation(operation));
+        return EvaluateAccess(context, null, service.AccessPolicy, ScopeForOperation(operation));
     }
 
     /// <summary>
