@@ -28,6 +28,14 @@ public sealed record PublishContentRequest
     [JsonPropertyName("sourceContentId")]
     public string? SourceContentId { get; init; }
 
+    /// <summary>
+    /// Optional exact upstream approval/request id consumed by this publication.
+    /// When supplied it is persisted atomically with the immutable version and route
+    /// and may be consumed only once.
+    /// </summary>
+    [JsonPropertyName("sourceRequestId")]
+    public string? SourceRequestId { get; init; }
+
     /// <summary>Optional source map/app package id.</summary>
     [JsonPropertyName("sourcePackageId")]
     public string? SourcePackageId { get; init; }
@@ -98,6 +106,10 @@ public sealed record RepublishContentRequest
     /// <summary>Optional source Console content item id.</summary>
     [JsonPropertyName("sourceContentId")]
     public string? SourceContentId { get; init; }
+
+    /// <summary>Optional exact upstream approval/request id consumed by this version.</summary>
+    [JsonPropertyName("sourceRequestId")]
+    public string? SourceRequestId { get; init; }
 
     /// <summary>Optional source map/app package id.</summary>
     [JsonPropertyName("sourcePackageId")]

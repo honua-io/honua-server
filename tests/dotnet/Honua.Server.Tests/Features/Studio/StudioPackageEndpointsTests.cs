@@ -234,6 +234,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 Kind = ContentPublicationKind.Dashboard,
                 RouteSlug = routeSlug,
                 SourceContentId = version.ItemId.ToString("D"),
+                SourceRequestId = publication.RequestId.ToString("D"),
                 ContentVersionId = secondVersion.VersionId.ToString("D"),
                 ContentPayload = "{}",
             },
@@ -351,19 +352,40 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         pendingListEntry.PublicUrl.Should().BeNull();
 
         var routeSlug = $"studio-{familyName}-{Guid.NewGuid():N}";
-        var publicationService = _fixture.Services.GetRequiredService<IContentPublicationService>();
-        var approved = await publicationService.PublishAsync(
-            new PublishContentRequest
-            {
-                Kind = publicationKind,
-                RouteSlug = routeSlug,
-                SourceContentId = version.ItemId.ToString("D"),
-                ContentVersionId = version.VersionId.ToString("D"),
-                ContentPayload = "{}",
-            },
-            "console-approver",
-            correlationId: null,
-            CancellationToken.None);
+        var approveResponse = await _client.PostAsync(
+            "/api/v1/console/publications",
+            JsonContent(
+                new PublishContentRequest
+                {
+                    Kind = publicationKind,
+                    RouteSlug = routeSlug,
+                    SourceContentId = version.ItemId.ToString("D"),
+                    SourceRequestId = publicationRequest.RequestId.ToString("D"),
+                    ContentVersionId = version.VersionId.ToString("D"),
+                    ContentPayload = "{}",
+                },
+                ContentPublicationJsonContext.Default.PublishContentRequest));
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var approved = JsonSerializer.Deserialize(
+            await approveResponse.Content.ReadAsStringAsync(),
+            ContentPublicationJsonContext.Default.ContentPublicationDetail)
+            ?? throw new InvalidOperationException("Expected Console publication detail.");
+
+        var replayResponse = await _client.PostAsync(
+            "/api/v1/console/publications",
+            JsonContent(
+                new PublishContentRequest
+                {
+                    Kind = publicationKind,
+                    RouteSlug = $"{routeSlug}-replay",
+                    SourceContentId = version.ItemId.ToString("D"),
+                    SourceRequestId = publicationRequest.RequestId.ToString("D"),
+                    ContentVersionId = version.VersionId.ToString("D"),
+                    ContentPayload = "{}",
+                },
+                ContentPublicationJsonContext.Default.PublishContentRequest));
+        replayResponse.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "an exact Studio request id can be consumed by Console only once");
 
         var publishedResponse = await _client.GetAsync(
             $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{publicationRequest.RequestId:D}");
@@ -377,7 +399,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         published.Status.Should().Be("published");
         published.PublicationId.Should().Be(approved.Route.PublicationId);
         published.PublicUrl.Should().Be(approved.Route.RoutePath);
-        published.DecidedBy.Should().Be("console-approver");
+        published.DecidedBy.Should().NotBeNullOrWhiteSpace();
 
         var publishedListResponse = await _client.GetAsync(
             $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests");
@@ -389,6 +411,157 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         publishedListEntry.Status.Should().Be("published");
         publishedListEntry.PublicationId.Should().Be(approved.Route.PublicationId);
         publishedListEntry.PublicUrl.Should().Be(approved.Route.RoutePath);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests")]
+    public async Task PublicationRequest_ParallelRequests_CorrelateOnlyExactConsumedRequestAndHideSuspendedRoute()
+    {
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        var publicationService = _fixture.Services.GetRequiredService<IContentPublicationService>();
+        var publicationStore = _fixture.Services.GetRequiredService<IContentPublicationStore>();
+        var draft = await lifecycle.CreateDraftAsync(
+            new CreateStudioPackageDraftCommand
+            {
+                PackageKey = $"parallel-publication-{Guid.NewGuid():N}",
+                OwnerId = "parallel-owner",
+                Envelope = BuildExportableMapEnvelope(),
+                ActorId = "parallel-owner",
+            });
+        var version = await lifecycle.SaveDraftAsVersionAsync(
+            draft.DraftId,
+            "parallel request fixture",
+            "parallel-owner");
+        version.Should().NotBeNull();
+        var first = await lifecycle.CreatePublicationRequestAsync(
+            version!.ItemId,
+            version.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "first-requester");
+        var second = await lifecycle.CreatePublicationRequestAsync(
+            version.ItemId,
+            version.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "second-requester");
+        first!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        second!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+
+        var approved = await publicationService.PublishAsync(
+            new PublishContentRequest
+            {
+                Kind = ContentPublicationKind.Map,
+                RouteSlug = $"parallel-{Guid.NewGuid():N}",
+                SourceContentId = version.ItemId.ToString("D"),
+                SourceRequestId = second.RequestId.ToString("D"),
+                ContentVersionId = version.VersionId.ToString("D"),
+                ContentPayload = "{}",
+            },
+            "console-approver",
+            correlationId: null);
+
+        var firstStatus = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            await _client.GetAsync(
+                $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{first.RequestId:D}"),
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        var secondStatus = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            await _client.GetAsync(
+                $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{second.RequestId:D}"),
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        firstStatus.Status.Should().Be("pending");
+        firstStatus.PublicationId.Should().BeNull();
+        firstStatus.PublicUrl.Should().BeNull();
+        secondStatus.Status.Should().Be("published");
+        secondStatus.PublicationId.Should().Be(approved.Route.PublicationId);
+        secondStatus.PublicUrl.Should().Be(approved.Route.RoutePath);
+
+        var suspendedAt = DateTimeOffset.UtcNow;
+        var suspendedRoute = approved.Route with
+        {
+            Lifecycle = ContentPublicationLifecycle.Suspended,
+            Generation = approved.Route.Generation + 1,
+            Etag = $"\"suspended-{Guid.NewGuid():N}\"",
+            UpdatedBy = "console-operator",
+            UpdatedAt = suspendedAt,
+        };
+        await publicationStore.SetRouteAsync(
+            suspendedRoute,
+            new ContentPublicationEvent
+            {
+                EventId = Guid.NewGuid().ToString("D"),
+                PublicationId = approved.Route.PublicationId,
+                Operation = ContentPublicationOperation.PolicyUpdate,
+                VersionId = approved.Route.ActiveVersionId,
+                Revision = approved.Route.ActiveRevision,
+                RouteSlug = approved.Route.RouteSlug,
+                Actor = "console-operator",
+                Detail = "suspend route fixture",
+                CreatedAt = suspendedAt,
+            },
+            approved.Route.Etag);
+
+        var suspendedStatus = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            await _client.GetAsync(
+                $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{second.RequestId:D}"),
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        suspendedStatus.Status.Should().Be("published");
+        suspendedStatus.PublicationId.Should().Be(approved.Route.PublicationId);
+        suspendedStatus.PublicUrl.Should().BeNull("a non-active route is not publicly reachable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/publish-requests/{requestId}")]
+    public async Task PublicationRequest_RejectedRequest_RemainsRejectedWhenRegistryContainsMatchingItemVersion()
+    {
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        var studioStore = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        var publicationService = _fixture.Services.GetRequiredService<IContentPublicationService>();
+        var draft = await lifecycle.CreateDraftAsync(
+            new CreateStudioPackageDraftCommand
+            {
+                PackageKey = $"rejected-publication-{Guid.NewGuid():N}",
+                OwnerId = "rejected-owner",
+                Envelope = BuildExportableMapEnvelope(),
+                ActorId = "rejected-owner",
+            });
+        var version = await lifecycle.SaveDraftAsVersionAsync(draft.DraftId, "rejected fixture", "rejected-owner");
+        version.Should().NotBeNull();
+        var rejected = await studioStore.CreatePublicationRequestAsync(
+            new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = version!.ItemId,
+                VersionId = version.VersionId,
+                Status = StudioPublicationRequestStatus.Rejected,
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                RequestedBy = "reviewer",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+        // Simulate a legacy/forged registry row to prove the persisted rejection wins even
+        // when every item/version field (and the source request id) otherwise matches.
+        await publicationService.PublishAsync(
+            new PublishContentRequest
+            {
+                Kind = ContentPublicationKind.Map,
+                RouteSlug = $"rejected-forged-{Guid.NewGuid():N}",
+                SourceContentId = version.ItemId.ToString("D"),
+                SourceRequestId = rejected.RequestId.ToString("D"),
+                ContentVersionId = version.VersionId.ToString("D"),
+                ContentPayload = "{}",
+            },
+            "unrelated-publisher",
+            correlationId: null);
+
+        var status = await ReadAsync<StudioPublicationRequestStatusResponse>(
+            await _client.GetAsync(
+                $"/api/v1/studio/content-items/{version.ItemId:D}/publish-requests/{rejected.RequestId:D}"),
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequestStatusResponse);
+        status.Status.Should().Be("rejected");
+        status.PublicationId.Should().BeNull();
+        status.PublicUrl.Should().BeNull();
     }
 
     [IntegrationTest]
@@ -420,9 +593,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         draftOnly.StatusCode.Should().Be(HttpStatusCode.Created);
         var draftOnlyDraft = await ReadAsync<StudioPackageDraft>(draftOnly, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
 
-        // Published item (alice), saved to a version and published so it carries a "current"-and-
-        // "published" state; used to exercise the family/state/owner filters and (indirectly,
-        // since no publication registry entry exists for it here) the absence of a badge.
+        // Current item (alice), saved to a version with an accepted publication request. The
+        // request alone is deliberately not a publication: until Console consumes its exact
+        // request id in the publication registry, the item remains current and private.
         var publishedCreate = await PostAsync(
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
@@ -461,15 +634,18 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         byStateItems.Items.Should().Contain(row => row.ItemId == draftOnlyDraft.ItemId && row.State == StudioContentItemState.Draft);
         byStateItems.Items.Should().NotContain(row => row.ItemId == publishedVersion.ItemId);
 
-        // GET /content-items: state=published returns the published item, whose recorded
-        // creator (the authenticated admin actor, not the request's `ownerId` field) is then
-        // used to exercise the `owner` filter below.
+        // GET /content-items: an accepted-but-unconsumed request must not make the item
+        // published. It remains visible under state=current and absent under state=published.
         var byPublishedState = await _client.GetAsync("/api/v1/studio/content-items?state=published");
         byPublishedState.StatusCode.Should().Be(HttpStatusCode.OK);
         var byPublishedStateItems = await ReadAsync<StudioContentItemListResponse>(byPublishedState, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
-        var publishedRow = byPublishedStateItems.Items.Should().ContainSingle(row => row.ItemId == publishedVersion.ItemId).Subject;
-        publishedRow.State.Should().Be(StudioContentItemState.Published);
-        publishedRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
+        byPublishedStateItems.Items.Should().NotContain(row => row.ItemId == publishedVersion.ItemId);
+        var byCurrentState = await _client.GetAsync("/api/v1/studio/content-items?state=current");
+        byCurrentState.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byCurrentStateItems = await ReadAsync<StudioContentItemListResponse>(byCurrentState, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        var currentRow = byCurrentStateItems.Items.Should().ContainSingle(row => row.ItemId == publishedVersion.ItemId).Subject;
+        currentRow.State.Should().Be(StudioContentItemState.Current);
+        currentRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
 
         // `owner` filters the item's real owner_id column (honua-server#3001). The published
         // draft above was created with an explicit OwnerId of "alice", so the item's owner_id
@@ -1444,7 +1620,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionItemAsync(
         HttpClient adminClient,
         string ownerId)
-        => await CreatePublishedTwoVersionItemAsync(adminClient, ownerId, BuildEnvelope("1=1"), "owner-scoped-query");
+        => await CreatePublishedTwoVersionItemAsync(adminClient, ownerId, BuildExportableMapEnvelope(), "owner-scoped-map");
 
     /// <summary>
     /// Map-family variant of <see cref="CreatePublishedTwoVersionItemAsync(HttpClient, string)"/>
@@ -1495,8 +1671,23 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var publication = await ReadAsync<StudioPublicationRequest>(publishResponse, StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
         publication.Status.Should().Be(
             StudioPublicationRequestStatus.Accepted,
-            "a Rejected publication request never sets the item's publishedVersionId pointer: " + string.Join(
+            "a rejected publication request cannot be consumed by Console: " + string.Join(
                 "; ", v1.Validation.Diagnostics.Select(d => $"{d.Severity}:{d.Code}:{d.Message}")));
+
+        var approveResponse = await adminClient.PostAsync(
+            "/api/v1/console/publications",
+            JsonContent(
+            new PublishContentRequest
+            {
+                Kind = ContentPublicationKind.Map,
+                RouteSlug = $"{packageKeyPrefix}-{Guid.NewGuid():N}",
+                SourceContentId = v1.ItemId.ToString("D"),
+                SourceRequestId = publication.RequestId.ToString("D"),
+                ContentVersionId = v1.VersionId.ToString("D"),
+                ContentPayload = "{}",
+            },
+            ContentPublicationJsonContext.Default.PublishContentRequest));
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         // Re-fetch the draft: SaveDraftAsVersionAsync revalidates and persists it as a side
         // effect of saving (bumping its generation), so draft.Generation captured at create time

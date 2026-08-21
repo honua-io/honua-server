@@ -479,25 +479,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             _publicationRequests.Add(request.RequestId, request);
-            if (request.Status != StudioPublicationRequestStatus.Accepted)
-            {
-                return Task.FromResult(request);
-            }
-
-            var item = GetOrCreateItem(
-                request.ItemId,
-                version.PackageKey,
-                version.WorkspaceId,
-                version.Envelope.Family,
-                version.OwnerId,
-                request.RequestedBy,
-                request.CreatedAt);
-            _items[request.ItemId] = item with
-            {
-                PublishedVersionId = request.VersionId,
-                UpdatedBy = request.RequestedBy,
-                UpdatedAt = request.CreatedAt,
-            };
             return Task.FromResult(request);
         }
     }

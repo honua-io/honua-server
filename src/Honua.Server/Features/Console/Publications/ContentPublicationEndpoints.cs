@@ -5,6 +5,8 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Publishing.Content;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
+using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -70,6 +72,7 @@ internal static class ContentPublicationEndpoints
     private static async Task<IResult> HandlePublish(
         [FromBody] PublishContentRequest? request,
         [FromServices] IContentPublicationService service,
+        [FromServices] IStudioPackageLifecycleService studioLifecycle,
         [FromServices] IAuditLog auditLog,
         [FromServices] ILogger<ContentPublicationManagementLog> logger,
         HttpContext context)
@@ -81,6 +84,9 @@ internal static class ContentPublicationEndpoints
             {
                 return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body is required.");
             }
+
+            await ValidateStudioSourceRequestAsync(request, studioLifecycle, context.RequestAborted)
+                .ConfigureAwait(false);
 
             var actor = ConsolePrincipal.ResolveActorId(context.User) ?? "system";
             var detail = await service.PublishAsync(request, actor, context.TraceIdentifier, context.RequestAborted).ConfigureAwait(false);
@@ -329,6 +335,61 @@ internal static class ContentPublicationEndpoints
         => exception is ContentPublicationValidationException validation
             ? ProblemDetailsHelpers.CreateValidationProblem(context, validation.StatusCode, validation.Errors, validation.Message)
             : ProblemDetailsHelpers.CreateAdminProblem(context, exception.StatusCode, exception.Message);
+
+    private static async Task ValidateStudioSourceRequestAsync(
+        PublishContentRequest request,
+        IStudioPackageLifecycleService studioLifecycle,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.SourceRequestId))
+        {
+            return;
+        }
+
+        if (!Guid.TryParse(request.SourceRequestId, out var requestId))
+        {
+            throw new ContentPublicationValidationException(
+                "Source request id must be a UUID.",
+                code: "publication.sourceRequestId.invalid",
+                path: "/sourceRequestId");
+        }
+
+        var sourceRequest = await studioLifecycle.GetPublicationRequestAsync(requestId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new ContentPublicationNotFoundException("Studio publication request was not found.");
+        if (sourceRequest.Status != StudioPublicationRequestStatus.Accepted)
+        {
+            throw new ContentPublicationConflictException("Studio publication request is not eligible for approval.");
+        }
+
+        if (!Guid.TryParse(request.SourceContentId, out var itemId)
+            || itemId != sourceRequest.ItemId
+            || !Guid.TryParse(request.ContentVersionId, out var contentVersionId)
+            || contentVersionId != sourceRequest.VersionId)
+        {
+            throw new ContentPublicationConflictException(
+                "Publication source item/version does not match the exact Studio request.");
+        }
+
+        var version = await studioLifecycle.GetVersionAsync(itemId, contentVersionId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new ContentPublicationNotFoundException("Studio content version was not found.");
+        if (!KindMatchesFamily(request.Kind, version.Envelope.Family))
+        {
+            throw new ContentPublicationConflictException(
+                "Publication kind does not match the Studio request's content family.");
+        }
+    }
+
+    private static bool KindMatchesFamily(ContentPublicationKind kind, StudioPackageFamily family)
+        => (kind, family) switch
+        {
+            (ContentPublicationKind.Map, StudioPackageFamily.Map) => true,
+            (ContentPublicationKind.GeneratedApp, StudioPackageFamily.App) => true,
+            (ContentPublicationKind.Dashboard, StudioPackageFamily.Dashboard) => true,
+            (ContentPublicationKind.Report, StudioPackageFamily.Report) => true,
+            _ => false,
+        };
 
     private static async Task InvalidateAsync(HttpContext context, string publicationId, string routeSlug)
     {

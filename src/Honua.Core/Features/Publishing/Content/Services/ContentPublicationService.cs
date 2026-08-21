@@ -112,6 +112,7 @@ public sealed class ContentPublicationService : IContentPublicationService
             RoutePath = routePath,
             Title = request.Title,
             SourceContentId = request.SourceContentId,
+            SourceRequestId = NormalizeSourceRequestId(request.SourceRequestId),
             SourcePackageId = request.SourcePackageId,
             ContentHash = contentHash,
             ContentVersionId = request.ContentVersionId,
@@ -236,6 +237,7 @@ public sealed class ContentPublicationService : IContentPublicationService
             RoutePath = route.RoutePath,
             Title = request.Title,
             SourceContentId = request.SourceContentId,
+            SourceRequestId = NormalizeSourceRequestId(request.SourceRequestId),
             SourcePackageId = request.SourcePackageId,
             ContentHash = contentHash,
             ContentVersionId = request.ContentVersionId,
@@ -272,6 +274,21 @@ public sealed class ContentPublicationService : IContentPublicationService
         ContentPublicationServiceLog.Republished(_logger, publicationId, newRevision, route.RouteSlug, versionId);
         var versions = await _store.ListVersionsAsync(publicationId, VersionPageSize, cancellationToken).ConfigureAwait(false);
         return new ContentPublicationDetail { Route = updatedRoute, Versions = versions };
+    }
+
+    private static string? NormalizeSourceRequestId(string? sourceRequestId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceRequestId))
+        {
+            return null;
+        }
+
+        return Guid.TryParse(sourceRequestId, out var parsed)
+            ? parsed.ToString("D")
+            : throw new ContentPublicationValidationException(
+                "Source request id must be a UUID.",
+                code: "publication.sourceRequestId.invalid",
+                path: "/sourceRequestId");
     }
 
     /// <inheritdoc />

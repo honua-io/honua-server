@@ -166,6 +166,7 @@ internal static class StudioPackageEndpoints
         Guid id,
         [FromServices] IStudioDeliverableExporter exporter,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IContentPublicationStore publicationStore,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -211,11 +212,17 @@ internal static class StudioPackageEndpoints
                 return NotFound(context, "Studio content item was not found.");
             }
 
+            var activePublishedVersionId = await ResolveActivePublishedVersionIdAsync(
+                publicationStore,
+                id,
+                context.RequestAborted).ConfigureAwait(false)
+                ?? pointers.PublishedVersionId;
+
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
                 resourceType: "studio-content-item", resourceId: id.ToString("D"),
-                isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
+                isPubliclyReadable: activePublishedVersionId is not null).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
@@ -223,7 +230,7 @@ internal static class StudioPackageEndpoints
 
             if (!IsOwnerOrAdmin(authorization, context, pointers.OwnerId))
             {
-                if (pointers.PublishedVersionId is not { } publishedVersionId)
+                if (activePublishedVersionId is not { } publishedVersionId)
                 {
                     return await DenyAsync(
                         authorization,
@@ -1247,6 +1254,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleListVersions(
         Guid itemId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IContentPublicationStore publicationStore,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1255,6 +1263,11 @@ internal static class StudioPackageEndpoints
         {
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            var activePublishedVersionId = await ResolveActivePublishedVersionIdAsync(
+                publicationStore,
+                itemId,
+                context.RequestAborted).ConfigureAwait(false)
+                ?? pointers?.PublishedVersionId;
 
             // PR #3018 review, round 6, item 1: version.OwnerId is an immutable snapshot of
             // the draft owner that created that specific version and may differ from the
@@ -1271,7 +1284,7 @@ internal static class StudioPackageEndpoints
                     authorization, context,
                     StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
                     resourceType: "studio-content-version", resourceId: version.VersionId.ToString("D"),
-                    isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
+                    isPubliclyReadable: activePublishedVersionId == version.VersionId).ConfigureAwait(false);
                 if (authResult is null)
                 {
                     visibleVersions.Add(version);
@@ -1306,6 +1319,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IContentPublicationStore publicationStore,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1319,11 +1333,16 @@ internal static class StudioPackageEndpoints
             }
 
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            var activePublishedVersionId = await ResolveActivePublishedVersionIdAsync(
+                publicationStore,
+                itemId,
+                context.RequestAborted).ConfigureAwait(false)
+                ?? pointers?.PublishedVersionId;
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
                 resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
-                isPubliclyReadable: pointers?.PublishedVersionId == versionId).ConfigureAwait(false);
+                isPubliclyReadable: activePublishedVersionId == versionId).ConfigureAwait(false);
             if (authResult is not null)
             {
                 return authResult;
@@ -1435,8 +1454,8 @@ internal static class StudioPackageEndpoints
                 return NotFound(context, "Studio content version was not found.");
             }
 
-            // PR #3018 review, round 5, item 1: publish-request moves the ITEM's
-            // PublishedVersionId pointer, so authorization must be against the item's immutable
+            // PR #3018 review, round 5, item 1: publication ultimately exposes the ITEM's
+            // immutable version through the content registry, so authorization must be against the item's immutable
             // owner_id -- not targetVersion.OwnerId, which only snapshots who created that
             // particular version and can diverge from the item's recorded owner (for example a
             // version saved from a draft reopened by someone else). Authorizing on the version's
@@ -1608,28 +1627,39 @@ internal static class StudioPackageEndpoints
         IReadOnlyList<StudioPublicationRequest> requests,
         CancellationToken cancellationToken)
     {
-        ContentPublicationRouteState? route = null;
-        IReadOnlyList<ContentPublicationVersion> publishedVersions = [];
-        if (requests.Count > 0)
-        {
-            var sourceId = itemId.ToString("D");
-            var routes = await publicationStore
-                .GetLatestRouteStatesBySourceContentIdsAsync([sourceId], cancellationToken)
+        var requestIds = requests.Select(static request => request.RequestId.ToString("D")).ToArray();
+        var decisions = requestIds.Length == 0
+            ? new Dictionary<string, ContentPublicationRequestDecision>(StringComparer.OrdinalIgnoreCase)
+            : await publicationStore
+                .GetDecisionsBySourceRequestIdsAsync(requestIds, cancellationToken)
                 .ConfigureAwait(false);
-            if (routes.TryGetValue(sourceId, out route))
-            {
-                publishedVersions = await publicationStore
-                    .ListVersionsAsync(route.PublicationId, 100, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-        }
 
         var responses = new List<StudioPublicationRequestStatusResponse>(requests.Count);
         foreach (var request in requests)
         {
-            var publishedVersion = publishedVersions.FirstOrDefault(version =>
-                string.Equals(version.ContentVersionId, request.VersionId.ToString("D"), StringComparison.OrdinalIgnoreCase));
-            if (route is not null && publishedVersion is not null)
+            // A persisted rejection is authoritative. It must be checked before any
+            // publication lookup so an unrelated/forged registry row can never make a
+            // rejected request appear approved.
+            if (request.Status == Honua.Core.Features.Studio.Domain.StudioPublicationRequestStatus.Rejected)
+            {
+                responses.Add(new StudioPublicationRequestStatusResponse
+                {
+                    RequestId = request.RequestId,
+                    ItemId = request.ItemId,
+                    VersionId = request.VersionId,
+                    Status = "rejected",
+                    DecidedAt = request.CreatedAt,
+                    DecidedBy = request.RequestedBy,
+                });
+                continue;
+            }
+
+            var requestId = request.RequestId.ToString("D");
+            if (decisions.TryGetValue(requestId, out var decision)
+                && string.Equals(
+                    decision.ContentVersionId,
+                    request.VersionId.ToString("D"),
+                    StringComparison.OrdinalIgnoreCase))
             {
                 responses.Add(new StudioPublicationRequestStatusResponse
                 {
@@ -1637,27 +1667,52 @@ internal static class StudioPackageEndpoints
                     ItemId = request.ItemId,
                     VersionId = request.VersionId,
                     Status = "published",
-                    DecidedAt = publishedVersion.CreatedAt,
-                    DecidedBy = publishedVersion.CreatedBy,
-                    PublicationId = route.PublicationId,
-                    PublicUrl = route.RoutePath,
+                    DecidedAt = decision.DecidedAt,
+                    DecidedBy = decision.DecidedBy,
+                    PublicationId = decision.PublicationId,
+                    PublicUrl = decision.Route.Lifecycle == ContentPublicationLifecycle.Active
+                        ? decision.Route.RoutePath
+                        : null,
                 });
                 continue;
             }
 
-            var rejected = request.Status == Honua.Core.Features.Studio.Domain.StudioPublicationRequestStatus.Rejected;
             responses.Add(new StudioPublicationRequestStatusResponse
             {
                 RequestId = request.RequestId,
                 ItemId = request.ItemId,
                 VersionId = request.VersionId,
-                Status = rejected ? "rejected" : "pending",
-                DecidedAt = rejected ? request.CreatedAt : null,
-                DecidedBy = rejected ? request.RequestedBy : null,
+                Status = "pending",
             });
         }
 
         return responses;
+    }
+
+    private static async Task<Guid?> ResolveActivePublishedVersionIdAsync(
+        IContentPublicationStore publicationStore,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        var sourceContentId = itemId.ToString("D");
+        var routes = await publicationStore
+            .GetLatestRouteStatesBySourceContentIdsAsync([sourceContentId], cancellationToken)
+            .ConfigureAwait(false);
+        if (!routes.TryGetValue(sourceContentId, out var route)
+            || route.Lifecycle != ContentPublicationLifecycle.Active)
+        {
+            return null;
+        }
+
+        var activeVersion = await publicationStore.GetVersionByIdAsync(
+            route.PublicationId,
+            route.ActiveVersionId,
+            cancellationToken).ConfigureAwait(false);
+        return activeVersion is not null
+            && string.Equals(activeVersion.SourceContentId, sourceContentId, StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(activeVersion.ContentVersionId, out var versionId)
+                ? versionId
+                : null;
     }
 
     private static async Task<IResult> HandleReopenVersion(

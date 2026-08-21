@@ -57,6 +57,14 @@ public interface IContentPublicationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Resolves exact upstream request ids to their atomically persisted publication
+    /// decisions. Unconsumed request ids are omitted.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, ContentPublicationRequestDecision>> GetDecisionsBySourceRequestIdsAsync(
+        IReadOnlyCollection<string> sourceRequestIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Atomically appends a new immutable version, upserts the route-state pointer,
     /// and appends an event. Used by publish (new route) and republish (existing route).
     /// </summary>

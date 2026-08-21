@@ -160,6 +160,42 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, ContentPublicationRequestDecision>> GetDecisionsBySourceRequestIdsAsync(
+        IReadOnlyCollection<string> sourceRequestIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceRequestIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var wanted = new HashSet<string>(sourceRequestIds, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, ContentPublicationRequestDecision>(StringComparer.OrdinalIgnoreCase);
+        lock (_gate)
+        {
+            foreach (var version in _versionsByPublicationId.Values.SelectMany(static versions => versions))
+            {
+                if (version.SourceRequestId is not { } sourceRequestId
+                    || !wanted.Contains(sourceRequestId)
+                    || !_routesByPublicationId.TryGetValue(version.PublicationId, out var route))
+                {
+                    continue;
+                }
+
+                result[sourceRequestId] = new ContentPublicationRequestDecision
+                {
+                    SourceRequestId = sourceRequestId,
+                    PublicationId = version.PublicationId,
+                    PublicationVersionId = version.VersionId,
+                    ContentVersionId = version.ContentVersionId,
+                    DecidedBy = version.CreatedBy,
+                    DecidedAt = version.CreatedAt,
+                    Route = route,
+                };
+            }
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, ContentPublicationRequestDecision>>(result);
+    }
+
+    /// <inheritdoc />
     public Task AppendVersionAndSetRouteAsync(
         ContentPublicationVersion version,
         ContentPublicationRouteState routeState,
@@ -214,6 +250,16 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
                     || string.Equals(existing.VersionId, version.VersionId, StringComparison.Ordinal)))
             {
                 throw new ContentPublicationConflictException("Version revision or id already exists.");
+            }
+
+            if (version.SourceRequestId is not null
+                && _versionsByPublicationId.Values.SelectMany(static existingVersions => existingVersions)
+                    .Any(existing => string.Equals(
+                        existing.SourceRequestId,
+                        version.SourceRequestId,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ContentPublicationConflictException("Source request has already been consumed by a publication.");
             }
 
             versions.Add(version);

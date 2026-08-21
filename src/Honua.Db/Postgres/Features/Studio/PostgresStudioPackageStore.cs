@@ -876,21 +876,6 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (request.Status == StudioPublicationRequestStatus.Accepted)
-            {
-                await UpdatePointersAsync(
-                    connection,
-                    transaction,
-                    request.ItemId,
-                    currentVersionId: null,
-                    publishedVersionId: request.VersionId,
-                    request.RequestedBy,
-                    request.CreatedAt,
-                    updateCurrent: false,
-                    updatePublished: true,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return request;
         }

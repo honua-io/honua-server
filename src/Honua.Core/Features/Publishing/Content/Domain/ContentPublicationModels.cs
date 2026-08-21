@@ -117,6 +117,13 @@ public sealed record ContentPublicationVersion
     [JsonPropertyName("sourceContentId")]
     public string? SourceContentId { get; init; }
 
+    /// <summary>
+    /// Optional exact upstream approval/request id consumed to create this immutable
+    /// version. A non-null id is unique across the publication registry.
+    /// </summary>
+    [JsonPropertyName("sourceRequestId")]
+    public string? SourceRequestId { get; init; }
+
     /// <summary>Optional source map/app package id.</summary>
     [JsonPropertyName("sourcePackageId")]
     public string? SourcePackageId { get; init; }
@@ -252,6 +259,35 @@ public sealed record ContentPublicationRouteState
     /// <summary>Route creation time.</summary>
     [JsonPropertyName("createdAt")]
     public required DateTimeOffset CreatedAt { get; init; }
+}
+
+/// <summary>
+/// Exact publication decision associated with one upstream request. The immutable
+/// version identity and route are committed together, preventing item/version joins
+/// from correlating an unrelated or parallel request.
+/// </summary>
+public sealed record ContentPublicationRequestDecision
+{
+    /// <summary>Exact upstream request id consumed by the publication.</summary>
+    public required string SourceRequestId { get; init; }
+
+    /// <summary>Registry publication id created for the request.</summary>
+    public required string PublicationId { get; init; }
+
+    /// <summary>Immutable registry version id created for the request.</summary>
+    public required string PublicationVersionId { get; init; }
+
+    /// <summary>Immutable Studio/content version id approved by the request.</summary>
+    public string? ContentVersionId { get; init; }
+
+    /// <summary>Actor who applied the decision.</summary>
+    public required string DecidedBy { get; init; }
+
+    /// <summary>Time at which the decision was atomically persisted.</summary>
+    public required DateTimeOffset DecidedAt { get; init; }
+
+    /// <summary>Current route state for the decision's publication.</summary>
+    public required ContentPublicationRouteState Route { get; init; }
 }
 
 /// <summary>

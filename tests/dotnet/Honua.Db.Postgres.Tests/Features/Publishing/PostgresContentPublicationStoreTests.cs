@@ -238,6 +238,57 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task SourceRequestDecision_RoundTripsExactIdentityAndRejectsSecondConsumption()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresContentPublicationStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var store = new PostgresContentPublicationStore(
+                new TestConnectionProvider(fixture.DataSource, schema),
+                schema);
+            var requestId = Guid.NewGuid().ToString("D");
+            var contentVersionId = Guid.NewGuid().ToString("D");
+            var publicationId = Guid.NewGuid().ToString("D");
+            var (baseVersion, route, auditEvent) = BuildPublish(
+                publicationId,
+                "exact-request",
+                "h1",
+                sourceContentId: Guid.NewGuid().ToString("D"));
+            var version = baseVersion with
+            {
+                SourceRequestId = requestId,
+                ContentVersionId = contentVersionId,
+            };
+            await store.AppendVersionAndSetRouteAsync(version, route, auditEvent, expectedEtag: null);
+
+            var decisions = await store.GetDecisionsBySourceRequestIdsAsync(
+                [requestId, Guid.NewGuid().ToString("D")]);
+            var decision = decisions.Should().ContainSingle().Subject.Value;
+            decision.SourceRequestId.Should().Be(requestId);
+            decision.PublicationId.Should().Be(publicationId);
+            decision.PublicationVersionId.Should().Be(version.VersionId);
+            decision.ContentVersionId.Should().Be(contentVersionId);
+            decision.Route.RouteSlug.Should().Be("exact-request");
+
+            var (duplicateVersion, duplicateRoute, duplicateEvent) = BuildPublish(
+                Guid.NewGuid().ToString("D"),
+                "exact-request-replay",
+                "h2");
+            var replay = () => store.AppendVersionAndSetRouteAsync(
+                duplicateVersion with { SourceRequestId = requestId },
+                duplicateRoute,
+                duplicateEvent,
+                expectedEtag: null);
+            await replay.Should().ThrowAsync<ContentPublicationConflictException>();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ReadMethods_MalformedPublicationId_ReturnStableEmptyResults()
     {
         var store = new PostgresContentPublicationStore(new ThrowingConnectionProvider(), schemaName: "unused");
@@ -247,6 +298,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
         (await store.GetVersionByRevisionAsync("not-a-guid", 1)).Should().BeNull();
         (await store.ListVersionsAsync("not-a-guid", 10)).Should().BeEmpty();
         (await store.GetMaxRevisionAsync("not-a-guid")).Should().Be(0L);
+        (await store.GetDecisionsBySourceRequestIdsAsync(["not-a-guid"])).Should().BeEmpty();
         (await store.ListEventsAsync("not-a-guid", 10)).Should().BeEmpty();
     }
 
@@ -357,6 +409,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
                 route_path               TEXT         NOT NULL,
                 title                    TEXT         NULL,
                 source_content_id        TEXT         NULL,
+                source_request_id        UUID         NULL,
                 source_package_id        TEXT         NULL,
                 content_hash             TEXT         NULL,
                 content_version_id       TEXT         NULL,
@@ -374,7 +427,8 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
                 audit_ref                TEXT         NULL,
                 created_by               TEXT         NOT NULL,
                 created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-                CONSTRAINT content_publication_versions_revision_unique UNIQUE (publication_id, revision)
+                CONSTRAINT content_publication_versions_revision_unique UNIQUE (publication_id, revision),
+                CONSTRAINT content_publication_versions_source_request_unique UNIQUE (source_request_id)
             );
             CREATE RULE content_publication_versions_no_update AS ON UPDATE TO "{schema}".content_publication_versions DO INSTEAD NOTHING;
             CREATE RULE content_publication_versions_no_delete AS ON DELETE TO "{schema}".content_publication_versions DO INSTEAD NOTHING;

@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Publishing;
 internal sealed class PostgresContentPublicationStore : IContentPublicationStore
 {
     private const string VersionColumns =
-        "version_id, publication_id, revision, kind, route_slug, route_path, title, source_content_id, " +
+        "version_id, publication_id, revision, kind, route_slug, route_path, title, source_content_id, source_request_id, " +
         "source_package_id, content_hash, content_version_id, source_metadata_revision, source_metadata_etag, " +
         "app_manifest_id, app_bundle_artifact_id, default_view_bbox, policy, dependencies, provenance, " +
         "job_id, operation_id, correlation_id, audit_ref, created_by, created_at";
@@ -186,6 +186,53 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, ContentPublicationRequestDecision>> GetDecisionsBySourceRequestIdsAsync(
+        IReadOnlyCollection<string> sourceRequestIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceRequestIds);
+        var result = new Dictionary<string, ContentPublicationRequestDecision>(StringComparer.OrdinalIgnoreCase);
+        var ids = sourceRequestIds
+            .Select(static id => Guid.TryParse(id, out var parsed) ? parsed : (Guid?)null)
+            .Where(static id => id.HasValue)
+            .Select(static id => id!.Value)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return result;
+        }
+
+        var sql = $"""
+            SELECT v.source_request_id, v.publication_id, v.version_id, v.content_version_id,
+                   v.created_by, v.created_at, {RouteColumnsQualified}
+            FROM {_versionsTable} v
+            JOIN {_routesTable} r ON r.publication_id = v.publication_id
+            WHERE v.source_request_id = ANY(@source_request_ids)
+            """;
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@source_request_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = ids });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var sourceRequestId = reader.GetGuid(0).ToString("D");
+            result[sourceRequestId] = new ContentPublicationRequestDecision
+            {
+                SourceRequestId = sourceRequestId,
+                PublicationId = reader.GetGuid(1).ToString("D"),
+                PublicationVersionId = reader.GetGuid(2).ToString("D"),
+                ContentVersionId = StringOrNull(reader, 3),
+                DecidedBy = reader.GetString(4),
+                DecidedAt = reader.GetFieldValue<DateTimeOffset>(5),
+                Route = MapRoute(reader, offset: 6),
+            };
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task AppendVersionAndSetRouteAsync(
         ContentPublicationVersion version,
         ContentPublicationRouteState routeState,
@@ -295,7 +342,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     {
         var sql = $"""
             INSERT INTO {_versionsTable} ({VersionColumns})
-            VALUES (@version_id, @publication_id, @revision, @kind, @route_slug, @route_path, @title, @source_content_id,
+            VALUES (@version_id, @publication_id, @revision, @kind, @route_slug, @route_path, @title, @source_content_id, @source_request_id,
                     @source_package_id, @content_hash, @content_version_id, @source_metadata_revision, @source_metadata_etag,
                     @app_manifest_id, @app_bundle_artifact_id, @default_view_bbox, @policy, @dependencies, @provenance,
                     @job_id, @operation_id, @correlation_id, @audit_ref, @created_by, @created_at)
@@ -309,6 +356,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         command.Parameters.AddWithValue("@route_path", version.RoutePath);
         command.Parameters.AddWithValue("@title", NullableText(version.Title));
         command.Parameters.AddWithValue("@source_content_id", NullableText(version.SourceContentId));
+        command.Parameters.AddWithValue("@source_request_id", NullableGuid(version.SourceRequestId));
         command.Parameters.AddWithValue("@source_package_id", NullableText(version.SourcePackageId));
         command.Parameters.AddWithValue("@content_hash", NullableText(version.ContentHash));
         command.Parameters.AddWithValue("@content_version_id", NullableText(version.ContentVersionId));
@@ -426,28 +474,29 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         RoutePath = reader.GetString(5),
         Title = StringOrNull(reader, 6),
         SourceContentId = StringOrNull(reader, 7),
-        SourcePackageId = StringOrNull(reader, 8),
-        ContentHash = StringOrNull(reader, 9),
-        ContentVersionId = StringOrNull(reader, 10),
-        SourceMetadataRevision = reader.IsDBNull(11) ? null : reader.GetInt64(11),
-        SourceMetadataEtag = StringOrNull(reader, 12),
-        AppManifestId = StringOrNull(reader, 13),
-        AppBundleArtifactId = StringOrNull(reader, 14),
-        DefaultViewBbox = reader.IsDBNull(15)
+        SourceRequestId = reader.IsDBNull(8) ? null : reader.GetGuid(8).ToString("D"),
+        SourcePackageId = StringOrNull(reader, 9),
+        ContentHash = StringOrNull(reader, 10),
+        ContentVersionId = StringOrNull(reader, 11),
+        SourceMetadataRevision = reader.IsDBNull(12) ? null : reader.GetInt64(12),
+        SourceMetadataEtag = StringOrNull(reader, 13),
+        AppManifestId = StringOrNull(reader, 14),
+        AppBundleArtifactId = StringOrNull(reader, 15),
+        DefaultViewBbox = reader.IsDBNull(16)
             ? null
-            : JsonSerializer.Deserialize(reader.GetString(15), ContentPublicationJsonContext.Default.ContentPublicationBbox),
-        Policy = JsonSerializer.Deserialize(reader.GetString(16), ContentPublicationJsonContext.Default.ContentPublicationPolicy)
+            : JsonSerializer.Deserialize(reader.GetString(16), ContentPublicationJsonContext.Default.ContentPublicationBbox),
+        Policy = JsonSerializer.Deserialize(reader.GetString(17), ContentPublicationJsonContext.Default.ContentPublicationPolicy)
             ?? new ContentPublicationPolicy(),
-        Dependencies = JsonSerializer.Deserialize(reader.GetString(17), ContentPublicationJsonContext.Default.ContentPublicationDependencyRefArray)
+        Dependencies = JsonSerializer.Deserialize(reader.GetString(18), ContentPublicationJsonContext.Default.ContentPublicationDependencyRefArray)
             ?? [],
-        Provenance = JsonSerializer.Deserialize(reader.GetString(18), ContentPublicationJsonContext.Default.ContentPublicationProvenanceRefArray)
+        Provenance = JsonSerializer.Deserialize(reader.GetString(19), ContentPublicationJsonContext.Default.ContentPublicationProvenanceRefArray)
             ?? [],
-        JobId = StringOrNull(reader, 19),
-        OperationId = StringOrNull(reader, 20),
-        CorrelationId = StringOrNull(reader, 21),
-        AuditRef = StringOrNull(reader, 22),
-        CreatedBy = reader.GetString(23),
-        CreatedAt = reader.GetFieldValue<DateTimeOffset>(24),
+        JobId = StringOrNull(reader, 20),
+        OperationId = StringOrNull(reader, 21),
+        CorrelationId = StringOrNull(reader, 22),
+        AuditRef = StringOrNull(reader, 23),
+        CreatedBy = reader.GetString(24),
+        CreatedAt = reader.GetFieldValue<DateTimeOffset>(25),
     };
 
     private static ContentPublicationRouteState MapRoute(NpgsqlDataReader reader, int offset = 0) => new()
