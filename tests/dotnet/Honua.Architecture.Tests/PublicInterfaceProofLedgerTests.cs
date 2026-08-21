@@ -124,8 +124,61 @@ public sealed partial class PublicInterfaceProofLedgerTests
         }
     };
 
+    private static readonly Dictionary<string, string[]> PlannedClientSurfaceIdsByProtocol = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["featureserver"] = ["feature-server"],
+        ["mapserver"] = ["map-server"],
+        ["imageserver"] = ["image-server"],
+        ["geometryserver"] = ["geometry-service"],
+        ["version-management-server"] = ["version-management-server"],
+        ["ogc-features"] = ["ogc-api-features"],
+        ["wfs"] = ["wfs-1.0.0", "wfs-1.1.0", "wfs-2.0"],
+        ["wms"] = ["wms-1.1.1", "wms-1.3"],
+        ["wmts"] = ["wmts-1.0"],
+        ["odata"] = ["odata-v4"],
+        ["stac"] = ["stac-api"]
+    };
+
     private static readonly Regex MarkdownLinkRegex =
         new(@"\[[^\]]+\]\((?<path>[^)]+)\)", RegexOptions.Compiled);
+
+    [ArchitectureTest]
+    public void PlannedClientRoster_ShouldProjectEveryLaneProtocolIntoTheProofLedger()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var ledger = LoadLedger();
+        var surfaces = ledger.Surfaces.ToDictionary(surface => surface.SurfaceId, StringComparer.OrdinalIgnoreCase);
+        var rosterPath = ArchitectureTestHelpers.CombinePath(root, "docs", "gis", "data", "client-certification-matrix.v1.json");
+        using var roster = JsonDocument.Parse(File.ReadAllText(rosterPath));
+
+        foreach (var lane in roster.RootElement.GetProperty("plannedLanes").EnumerateArray())
+        {
+            var laneId = lane.GetProperty("id").GetString()!;
+            var issue = new Uri(lane.GetProperty("issue").GetString()!);
+            var issueParts = issue.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            issueParts.Should().HaveCount(4, $"planned lane '{laneId}' must use an owning GitHub issue URL");
+            var ownerRepo = issueParts[1];
+            var linkedTicket = $"#{issueParts[3]}";
+
+            foreach (var protocolElement in lane.GetProperty("protocols").EnumerateArray())
+            {
+                var protocol = protocolElement.GetString()!;
+                PlannedClientSurfaceIdsByProtocol.Should().ContainKey(protocol,
+                    $"planned lane '{laneId}' protocol '{protocol}' must map to governed public surfaces");
+                foreach (var surfaceId in PlannedClientSurfaceIdsByProtocol[protocol])
+                {
+                    surfaces.Should().ContainKey(surfaceId);
+                    surfaces[surfaceId].Proofs.Should().Contain(proof =>
+                        string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(proof.OwnerRepo, ownerRepo, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(proof.LinkedTicket, linkedTicket, StringComparison.Ordinal) &&
+                        proof.ClientLanes.Contains(laneId, StringComparer.OrdinalIgnoreCase),
+                        $"planned lane '{laneId}' protocol '{protocol}' must remain traceable on surface '{surfaceId}'");
+                }
+            }
+        }
+    }
 
     [ArchitectureTest]
     public void EveryEndpointRegistryRoute_ShouldBeCoveredByProofLedgerSurface()
@@ -582,6 +635,19 @@ public sealed partial class PublicInterfaceProofLedgerTests
                    proof.EvidenceLocations.Any(IsGeospatialGrpcRepositoryUrl);
         }
 
+        if (PlannedClientSurfaceIdsByProtocol.Values.SelectMany(ids => ids).Contains(surfaceId, StringComparer.OrdinalIgnoreCase) &&
+            string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(proof.OwnerRepo, "honua-esri-compat", StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(proof.LinkedTicket, "#75", StringComparison.Ordinal) &&
+                   string.Equals(proof.ExecutionLane, "release:desktop-arcgis", StringComparison.OrdinalIgnoreCase) &&
+                   proof.ClientLanes.SequenceEqual(["desktop-arcgis"], StringComparer.OrdinalIgnoreCase) &&
+                   proof.EvidenceLocations.Contains(
+                       "https://github.com/honua-io/honua-esri-compat/issues/75",
+                       StringComparer.OrdinalIgnoreCase);
+        }
+
         if (SdkCompatibilitySurfaceIds.Contains(surfaceId))
         {
             return string.Equals(proof.ProofClass, "tool-interoperability", StringComparison.OrdinalIgnoreCase) &&
@@ -685,6 +751,8 @@ internal sealed class PublicInterfaceProof
     public string ProofMechanism { get; init; } = string.Empty;
 
     public string ExecutionLane { get; init; } = string.Empty;
+
+    public string[] ClientLanes { get; init; } = [];
 
     public string[] EvidenceLocations { get; init; } = [];
 
