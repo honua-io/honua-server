@@ -5,15 +5,18 @@ using System.Net;
 using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -359,6 +362,43 @@ public class ImageServerEndpointsTests
             });
         await fixture.InitializeAsync();
         return fixture;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportImage")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/exportImage")]
+    public async Task ExportImageByService_ResolvesBothRoutesWithExportAuthorization()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ResolveFirstAccessibleLayerAsync(
+                Arg.Any<string>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(CreateRasterStoreSubstitute());
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var path = $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportImage";
+            await fixture.Client.GetAsync(path);
+            await fixture.Client.PostAsync(path, new FormUrlEncodedContent([]));
+
+            await resolver.Received(2).ResolveFirstAccessibleLayerAsync(
+                WebAppFixture.TestServiceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
