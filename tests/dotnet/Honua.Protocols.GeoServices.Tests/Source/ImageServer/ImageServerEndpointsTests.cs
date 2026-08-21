@@ -388,9 +388,47 @@ public class ImageServerEndpointsTests
             var path = $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportImage";
             await fixture.Client.GetAsync(path);
             await fixture.Client.PostAsync(path, new FormUrlEncodedContent([]));
+            await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/1/image");
+            await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/1/thumbnail");
 
-            await resolver.Received(2).ResolveFirstAccessibleLayerAsync(
+            await resolver.Received(4).ResolveFirstAccessibleLayerAsync(
                 WebAppFixture.TestServiceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImageById_ValidatesLayerWithExportAuthorization()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ValidateLayerAsync(
+                Arg.Any<int>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(CreateRasterStoreSubstitute());
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            await fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer/exportImage");
+
+            await resolver.Received(1).ValidateLayerAsync(
+                TestLayerId,
                 Arg.Any<HttpContext>(),
                 AuthorizationOperation.Export,
                 Arg.Any<CancellationToken>());

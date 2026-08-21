@@ -1568,7 +1568,11 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedExportFormatResult(context);
         }
 
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         if (layerError is not null)
         {
             return layerError;
@@ -1782,7 +1786,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         if (layerError is not null)
         {
             return layerError;
@@ -1799,7 +1807,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await GetRasterItemImage(
             resolution.LayerId, rasterId, context, handler, cancellationToken);
     }
@@ -1938,7 +1950,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         if (layerError is not null)
         {
             return layerError;
@@ -1955,7 +1971,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await GetRasterItemThumbnail(
             resolution.LayerId, rasterId, context, handler, cancellationToken);
     }
@@ -3674,19 +3694,28 @@ internal static class ImageServerEndpoints
     private static async Task<IResult?> ValidateImageLayerAsync(
         int layerId,
         HttpContext context,
-        CancellationToken cancellationToken)
-        => (await ResolveImageLayerAsync(layerId, context, cancellationToken).ConfigureAwait(false))
+        CancellationToken cancellationToken,
+        Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
+        => (await ResolveImageLayerAsync(
+            layerId,
+            context,
+            cancellationToken,
+            authorizationOperation).ConfigureAwait(false))
             .ErrorResult;
 
     private static async Task<ImageServerLayerResolution> ResolveImageLayerAsync(
         int layerId,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
     {
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
         return await resolver.ValidateLayerAsync(
             layerId,
             context,
+            authorizationOperation,
             cancellationToken).ConfigureAwait(false);
     }
 

@@ -24,6 +24,7 @@ internal interface IImageServerLayerResolver
     Task<ImageServerLayerResolution> ValidateLayerAsync(
         int layerId,
         HttpContext context,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken);
 }
 
@@ -121,6 +122,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
     public async Task<ImageServerLayerResolution> ValidateLayerAsync(
         int layerId,
         HttpContext context,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -160,10 +162,12 @@ internal sealed class MetadataV2ImageServerLayerResolver(
                 StandardErrorHelpers.CreateNotFound(context, $"{MetadataV2ServiceProtocols.ImageServer} is not enabled for this service."));
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
             context,
             candidate.Resource,
-            candidate.Service);
+            operation,
+            candidate.Service,
+            cancellationToken).ConfigureAwait(false);
         if (accessError is not null)
         {
             return new ImageServerLayerResolution(0, null, null, accessError);
