@@ -3,7 +3,7 @@
   "run_id": "20260402T000000Z",
   "run_date": "2026-04-02T00:00:00Z",
   "server_version": "f6d615eeac70a65f469e18ce6741076be115d57d",
-  "client_lane": "desktop-arcgis",
+  "client_lane": "desktop-arcpy",
   "client_version": "3.4.0",
   "protocol": "mapserver",
   "environment": "staging",

@@ -122,19 +122,23 @@ public sealed class DocumentationMatrixDriftTests
         using var source = ReadJson(root, "docs", "gis", "data", "client-certification-matrix.v1.json");
         var document = source.RootElement;
 
-        var activeIds = document.GetProperty("lanes").EnumerateArray()
+        var active = document.GetProperty("lanes").EnumerateArray().ToArray();
+        var activeIds = active
             .Select(item => item.GetProperty("id").GetString()!)
             .ToHashSet(StringComparer.Ordinal);
         var planned = document.GetProperty("plannedLanes").EnumerateArray().ToArray();
         var plannedIds = planned.Select(item => item.GetProperty("id").GetString()!).ToHashSet(StringComparer.Ordinal);
-        var exclusionIds = document.GetProperty("exclusions").EnumerateArray()
+        var exclusions = document.GetProperty("exclusions").EnumerateArray().ToArray();
+        var exclusionIds = exclusions
             .Select(item => item.GetProperty("id").GetString()!)
             .ToHashSet(StringComparer.Ordinal);
 
         activeIds.Should().NotIntersectWith(plannedIds, "a client cannot be active and planned simultaneously");
         activeIds.Should().NotIntersectWith(exclusionIds, "an active client cannot also be excluded");
         plannedIds.Should().NotIntersectWith(exclusionIds, "a planned client cannot also be excluded");
+        activeIds.Count.Should().Be(active.Length, "active lane ids are stable unique identities");
         plannedIds.Count.Should().Be(planned.Length, "planned lane ids are stable unique identities");
+        exclusionIds.Count.Should().Be(exclusions.Length, "exclusion ids are stable unique identities");
 
         foreach (var lane in document.GetProperty("lanes").EnumerateArray())
         {
