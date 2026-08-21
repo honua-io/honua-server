@@ -72,10 +72,21 @@ public sealed class CapabilityKeyCatalogTests
     }
 
     [Fact]
-    public void All_IsUnionOfCommunityKeysAndFeatureCatalog()
+    public void All_IsUnionOfCommunityDescriptiveAndFeatureCatalogKeys()
     {
         CapabilityKeyCatalog.All.Should().HaveCount(
-            CapabilityKeyCatalog.CommunityKeys.Count + FeatureCatalog.All.Count);
+            CapabilityKeyCatalog.CommunityKeys.Count
+            + CapabilityKeyCatalog.DescriptiveKeys.Count
+            + FeatureCatalog.All.Count);
+    }
+
+    [Fact]
+    public void DescriptiveKeys_AreEditionQualifiedWithoutMutatingFeatureCatalog()
+    {
+        CapabilityKeyCatalog.DescriptiveKeys.Should().OnlyContain(
+            capability => capability.Edition == HonuaEdition.Enterprise);
+        CapabilityKeyCatalog.DescriptiveKeys.Select(capability => capability.Key).Should().Contain(
+            ["serve.i3s-scene", "provider.redshift", "provider.snowflake", "provider.databricks"]);
     }
 
     [Fact]

@@ -1,5 +1,9 @@
 # Run the Studio AI proxy (Anthropic / OpenAI-compatible / Bedrock)
 
+> **Off by default.** `StudioAiProxy:Enabled` defaults to `false`. Set
+> `StudioAiProxy__Enabled=true` only after configuring at least one provider;
+> disabled hosts do not expose a usable model-inference path.
+
 honua-server#3000 adds a provider-agnostic chat proxy for Honua Studio: the server holds every
 model provider's credentials, and Studio clients call one streaming endpoint regardless of which
 provider is configured behind it. It is the only path by which the server talks to a model:

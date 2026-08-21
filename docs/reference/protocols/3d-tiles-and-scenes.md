@@ -23,6 +23,13 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
 
+The I3S adapter also serves node pages, per-field statistics, node geometry,
+and node attribute buffers under both the canonical
+`/rest/services/{sceneId}/SceneServer/...` family and the `/scenes` alias.
+Those handlers enforce Enterprise edition today and return HTTP `403` when the
+edition check fails. They are xUnit-proven compatibility routes, not an I3S
+certification claim.
+
 > Open `https://server.example.com/api/scenes/downtown/resolve`, `https://server.example.com/scenes/downtown/tileset.json` in a browser.
 
 ## Scene dataset registry (admin)
@@ -58,7 +65,7 @@ Common form fields: `file` (required), `sceneId` (optional URL slug; derived whe
 
 Decodes a LAS point cloud into a quadtree of `.pnts` tiles plus `tileset.json`, preserving per-point **classification**, **intensity**, and **RGB**. Output is byte-stable for identical input.
 
-- **Supported formats:** uncompressed ASPRS **LAS** 1.1–1.4, point data record formats 0, 1, 2, 3, 6, 7, 8. Compressed **LAZ** and **COPC** are detected and rejected with a `400` problem-detail (decompression is a tracked follow-up; reproject/decompress to LAS before ingest).
+- **Supported formats:** uncompressed ASPRS **LAS** 1.1–1.4, point data record formats 0, 1, 2, 3, 6, 7, 8. Compressed **LAZ** and **COPC**, plus projected-CRS LAS, dispatch through the configured `pcloud.translate` geoprocessing worker and then enter the managed tiler. When no decompressor/worker is registered, the request fails explicitly with `400`; Honua never treats compressed bytes as LAS.
 - **CRS:** geographic source coordinates only (EPSG:4326 / 4979 / OGC CRS84). Axis order is selected by the optional `sourceCrsAxisOrder` field (`lonlat` default, or `latlon`). Projected source CRS are rejected with a `400`; reproject to geographic before ingest.
 - **Limits:** upload capped at 256 MiB; total point count capped (default 250 M) to bound worst-case memory. Per-tile point budget and LOD depth follow the shared `SceneGeneration` tiling options.
 
@@ -73,6 +80,26 @@ The registered tileset serves through the standard [hosted serving](#hosted-3d-t
 ## Conformance
 
 Hosted tilesets follow the OGC 3D Tiles 1.x content format; the serving routes themselves are Honua surfaces and not CITE-covered. I3S SceneServer is an Esri-compatibility adapter (Enterprise-gated). Standards status: [API standards summary](../compatibility/ogc-conformance.md).
+
+## Capability truth table
+
+Counts below are proving xUnit links in `capability-matrix.v1.json`, not CITE
+results. The routes stay shipped, but the 2026.1 release claim defers the 3D
+slice to 2026.2; this table records runtime truth without promoting it.
+
+| Capability key | Edition | Route/surface | Unlicensed result | Proving tests |
+|---|---|---|---|---:|
+| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated | 76 |
+| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics/geometry/attribute routes | `403` | 25 |
+| `scene.catalog` | Community | `/api/scenes*` | Not edition-gated | 4 |
+| `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response | 6 |
+| `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response | 10 |
+| `serve.elevation` | Community | Elevation profile/value routes | Not edition-gated | 29 |
+| `raster.terrain-rgb` | Community | Terrain-RGB tiles | Not edition-gated | 14 |
+
+The call-site-less SLPK conversion helpers are not a keyed or routed product
+surface. Adding or removing that experimental conversion path is deferred with
+the 2026.2 3D decision; no SLPK import is claimed here.
 
 ## Guides that use this
 

@@ -38,13 +38,12 @@ concurrency:
 jobs:
   observe:
     name: Compare native-image impact routing
-    # A cancelled source run is a superseded push: its head is already stale, so
-    # there is nothing observable and the trusted resolver would correctly refuse
-    # it. Never schedule the job at all rather than manufacture a red run.
+    # Schedule cancelled source runs too: the trusted resolver records a bounded
+    # superseded-source skip marker, so every successful observer shell leaves a
+    # receipt or an explicit marker for the ledger.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
-       github.event.workflow_run.conclusion != 'cancelled' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5

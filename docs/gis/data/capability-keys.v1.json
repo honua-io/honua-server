@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
   "trackingIssue": "#2893",
   "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from esriAssess below -- see capability-no-go-allowlist.v1.json.",
@@ -271,6 +271,13 @@
       "description": "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."
     },
     {
+      "key": "deploy.rollback",
+      "displayName": "Automatic Deployment Rollback",
+      "category": "Deploy",
+      "edition": "Community",
+      "description": "Automatically revert a deployment through at least one configured deploy target backend."
+    },
+    {
       "key": "editing.featureserver-edits",
       "displayName": "FeatureServer Editing",
       "category": "Editing",
@@ -297,6 +304,22 @@
       "category": "FieldOps",
       "edition": "Pro",
       "description": "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."
+    },
+    {
+      "key": "format.geoarrow",
+      "displayName": "GeoArrow Response Format",
+      "category": "Format",
+      "edition": "Community",
+      "description": "Return FeatureServer query results as Arrow IPC with GeoArrow extension metadata through the shared provider-neutral response formatter.",
+      "status": "live"
+    },
+    {
+      "key": "format.geoparquet",
+      "displayName": "GeoParquet Response Format",
+      "category": "Format",
+      "edition": "Community",
+      "description": "Return FeatureServer query results as GeoParquet 1.1.0 through the shared provider-neutral response formatter.",
+      "status": "live"
     },
     {
       "key": "geocoding.batch",
@@ -411,6 +434,20 @@
       "description": "Liveness/readiness health-check endpoints."
     },
     {
+      "key": "ops.autonomy",
+      "displayName": "Operational Autonomy",
+      "category": "Ops",
+      "edition": "Community",
+      "description": "Evaluate configured auto-safe operational policies through the durable operation gateway."
+    },
+    {
+      "key": "ops.findings",
+      "displayName": "Operational Findings",
+      "category": "Ops",
+      "edition": "Community",
+      "description": "Read deterministic operational findings and propose reviewed remediation actions."
+    },
+    {
       "key": "ops.observability",
       "displayName": "Observability",
       "category": "Ops",
@@ -451,6 +488,30 @@
       "category": "Process",
       "edition": "Community",
       "description": "Submit and poll jobs through OGC API - Processes."
+    },
+    {
+      "key": "provider.databricks",
+      "displayName": "Databricks SQL Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "description": "Experimental, off-by-default Databricks SQL feature provider; enabling the capability key alone does not enable the provider.",
+      "status": "experimental"
+    },
+    {
+      "key": "provider.redshift",
+      "displayName": "Amazon Redshift Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "description": "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.",
+      "status": "experimental"
+    },
+    {
+      "key": "provider.snowflake",
+      "displayName": "Snowflake Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "description": "Experimental, off-by-default Snowflake feature provider; enabling the capability key alone does not enable the provider.",
+      "status": "experimental"
     },
     {
       "key": "raster.cloud-cog-serving",
@@ -520,7 +581,7 @@
       "displayName": "3D Tiles Scene Serving",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."
+      "description": "Serve published 3D Tiles scene layers through the /scenes/{sceneId}/tileset.json surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."
     },
     {
       "key": "serve.elevation",
@@ -582,8 +643,8 @@
       "key": "serve.i3s-scene",
       "displayName": "I3S Scene Serving",
       "category": "Serve",
-      "edition": "Community",
-      "description": "Serve published I3S scene layers Esri clients consume directly."
+      "edition": "Enterprise",
+      "description": "Serve published I3S scene layers through Enterprise-gated SceneServer handlers; unlicensed requests currently return HTTP 403."
     },
     {
       "key": "serve.odata",

@@ -9,18 +9,19 @@ namespace Honua.Core.Features.Scene.Domain;
 /// Options that govern a single 3D Tiles generation job.
 /// </summary>
 /// <remarks>
-/// The v1 pipeline targets small/medium datasets. The default
-/// <see cref="MaxFeatureCount"/> of 50 000 is a hard guard rail; layers that
+/// The managed pipeline uses tiled level-of-detail subdivision for larger inputs.
+/// The default <see cref="MaxFeatureCount"/> of 1 000 000 matches the publishing
+/// server option and is a hard guard rail; layers that
 /// exceed it are rejected with <see cref="SceneGenerationErrorCodes.FeatureLimitExceeded"/>
-/// before any tile is written. Enterprise-scale streaming and LOD
-/// optimization are deliberately deferred (see #842 docs).
+/// before any tile is written. Enterprise-scale streaming remains outside this
+/// in-process generation contract.
 /// </remarks>
 public sealed record SceneGenerationOptions
 {
     /// <summary>
     /// Hard upper bound on the number of features included in the tileset.
     /// </summary>
-    public int MaxFeatureCount { get; init; } = 50_000;
+    public int MaxFeatureCount { get; init; } = 1_000_000;
 
     /// <summary>
     /// Optional allowlist of attribute field names to project into the

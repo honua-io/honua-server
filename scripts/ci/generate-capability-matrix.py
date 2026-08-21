@@ -285,6 +285,7 @@ def build_matrix(
                 "displayName": capability["displayName"],
                 "category": capability["category"],
                 "edition": capability["edition"],
+                "status": capability.get("status"),
                 "entryCount": counts["entryCount"],
                 "provingTestCount": counts["provingTestCount"],
                 "maturity": counts["maturity"],
@@ -301,7 +302,7 @@ def build_matrix(
     unjoined = sorted(set(cite_suites) - joined_suites)
     return {
         "unjoinedCiteSuites": unjoined,
-        "schemaVersion": "1.1.0",
+        "schemaVersion": "1.2.0",
         "generator": "scripts/ci/generate-capability-matrix.py",
         "trackingIssue": "#2893",
         "sourceArtifacts": [
