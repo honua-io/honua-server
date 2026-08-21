@@ -1,0 +1,236 @@
+{
+  "schema": "honua.server-protocol-harness-assignments/v1",
+  "revision": "2026-08-21.1",
+  "tracking_issue": "https://github.com/honua-io/honua-server/issues/3388",
+  "canonical_client": "Honua server public protocol integration harness",
+  "client_lane": "server-protocol-harness",
+  "deployment_target": "source-test-host",
+  "auth_policy_revision": "server-test-host-v1",
+  "required_tier": "nightly",
+  "assignments": [
+    {
+      "capability_key": "ai.grounding",
+      "surface": "spec-grounding",
+      "operation": "POST /v1/grounding/spec/mutate",
+      "test_ids": ["SpecGroundingEndpointTests.Mutate_EmptySpecUseDataset_ReturnsValidatedMutationPlan"],
+      "scenario_facets": ["positive"]
+    },
+    {
+      "capability_key": "alerts.evaluation",
+      "surface": "control-plane-admin",
+      "operation": "POST /api/v1/admin/alerts/rules/test",
+      "test_ids": ["AlertAdminEndpointsTests.TestRule_WithDraftZoneAndDisabledRule_ReturnsValidationStatesWithoutPersisting"],
+      "scenario_facets": ["positive"]
+    },
+    {
+      "capability_key": "analytics.buffer-aggregate",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate",
+      "test_ids": ["SpatialAnalyticsRestTests.QueryBufferAggregate_DissolveTrue_ReturnsDissolvedPolygon"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.clustering",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters",
+      "test_ids": ["SpatialAnalyticsRestTests.QueryClusters_Dbscan_PerFeature_ReturnsClusterAssignments"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.content",
+      "surface": "analysis-content",
+      "operation": "POST /api/v1/analysis/content/items",
+      "test_ids": ["AnalysisContentEndpointsTests.SavedQuery_SaveVersionReopenPreviewAndArtifactBinding_ReturnsStableContracts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.content",
+      "surface": "analysis-content",
+      "operation": "GET /api/v1/analysis/content/items/{itemId}",
+      "test_ids": ["AnalysisContentEndpointsTests.SavedQuery_SaveVersionReopenPreviewAndArtifactBinding_ReturnsStableContracts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.content",
+      "surface": "analysis-content",
+      "operation": "GET /api/v1/analysis/content/items/{itemId}/versions/latest",
+      "test_ids": ["AnalysisContentEndpointsTests.SavedQuery_SaveVersionReopenPreviewAndArtifactBinding_ReturnsStableContracts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.content",
+      "surface": "analysis-content",
+      "operation": "GET /api/v1/analysis/content/items/{itemId}/versions/{contentVersion}",
+      "test_ids": ["AnalysisContentEndpointsTests.SavedQuery_SaveVersionReopenPreviewAndArtifactBinding_ReturnsStableContracts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.content",
+      "surface": "analysis-content",
+      "operation": "POST /api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview",
+      "test_ids": ["AnalysisContentEndpointsTests.SavedQuery_SaveVersionReopenPreviewAndArtifactBinding_ReturnsStableContracts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.content",
+      "surface": "analysis-content",
+      "operation": "GET /api/v1/analysis/artifacts/{artifactId}",
+      "test_ids": ["AnalysisContentEndpointsTests.SavedQuery_SaveVersionReopenPreviewAndArtifactBinding_ReturnsStableContracts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.density",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity",
+      "test_ids": ["SpatialAnalyticsRestTests.QueryDensity_HexGrid_ReturnsCellsWithCounts"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.line-of-sight",
+      "surface": "elevation-query-profile",
+      "operation": "POST /elevation/{datasetId}/line-of-sight",
+      "test_ids": ["VisibilityAnalysisEndpointTests.PostLineOfSight_WithCoveredFlatTerrain_ReportsVisible"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.slice",
+      "surface": "elevation-query-profile",
+      "operation": "POST /elevation/{datasetId}/slice",
+      "test_ids": ["SceneAnalysisEndpointTests.PostSlice_OverSurface_ReturnsIntersectionMetadata"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.spatial-join",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin",
+      "test_ids": ["SpatialAnalyticsRestTests.SpatialJoin_Intersects_ReturnsTargetFeaturesWithMatchCount"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.sun-shadow",
+      "surface": "elevation-query-profile",
+      "operation": "POST /elevation/{datasetId}/sun-shadow",
+      "test_ids": ["SceneAnalysisEndpointTests.PostSunShadow_DaytimeSun_CastsShadowOverSurface"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "analytics.viewshed",
+      "surface": "elevation-query-profile",
+      "operation": "POST /elevation/{datasetId}/viewshed",
+      "test_ids": ["VisibilityAnalysisEndpointTests.PostViewshed_WithCoveredFlatTerrain_ReturnsVisibleSamples"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "import.file",
+      "surface": "control-plane-admin",
+      "operation": "POST /api/v1/admin/import/upload",
+      "test_ids": ["ImportEndpointTests.ImportFile_V1_WithValidRequest_ReturnsImportResult"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "printing.pdf-output",
+      "surface": "printing-tools",
+      "operation": "POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute",
+      "test_ids": ["PrintingToolsEndpointTests.Execute_PdfFormat_ReturnsPdfDocument"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.geoservices-vectortileserver",
+      "surface": "vector-tile-server",
+      "operation": "GET /rest/services/{serviceId}/VectorTileServer",
+      "test_ids": ["VectorTileServerEndpointTests.VectorTileServer_Metadata_ReturnsServiceDescriptor"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.geoservices-vectortileserver",
+      "surface": "vector-tile-server",
+      "operation": "GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf",
+      "test_ids": ["VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "GET /edr",
+      "test_ids": ["EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "GET /edr/conformance",
+      "test_ids": ["EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "GET /edr/collections",
+      "test_ids": ["EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "GET /edr/collections/{collectionId}",
+      "test_ids": ["EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "GET /edr/collections/{collectionId}/position",
+      "test_ids": ["EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "GET /edr/collections/{collectionId}/cube",
+      "test_ids": ["EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.sensorthings",
+      "surface": "sensorthings-1.1",
+      "operation": "GET /sta/v1.1/Things",
+      "test_ids": ["SensorThingsReadEndpointsTests.Things_ReturnsConformanceShapedCollection"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.sensorthings",
+      "surface": "sensorthings-1.1",
+      "operation": "POST /sta/v1.1/Observations",
+      "test_ids": ["SensorThingsIngestEndpointsTests.PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "styling.auto-suggest",
+      "surface": "feature-server",
+      "operation": "POST /api/v1/admin/metadata/layers/{layerId}/suggest-style",
+      "test_ids": ["StyleSuggestionEndpointsTests.SuggestStyle_ReturnsStyleSuggestion"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "temporal.extent-discovery",
+      "surface": "feature-server",
+      "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent",
+      "test_ids": ["FeatureServerTemporalExtentEndpointTests.TemporalExtent_TimeAwareLayer_ReturnsExtentWithFields"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "temporal.filtering",
+      "surface": "temporal-data-history",
+      "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?time={time}",
+      "test_ids": ["FeatureServerTemporalTests.GeoServicesQuery_SingleTimeInstant_UnixTimestamp_ReturnsMatchingFeatures"],
+      "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "temporal.histogram",
+      "surface": "feature-server",
+      "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
+      "test_ids": ["FeatureServerQueryDateBinsTests.QueryDateBins_CalendarBin_ReturnsBins"],
+      "scenario_facets": ["positive", "media-schema"]
+    }
+  ]
+}
