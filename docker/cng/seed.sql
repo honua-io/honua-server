@@ -122,4 +122,169 @@ FROM (
 ) AS seed(lon, lat, name, category, population, ratio, active, observed_at)
 WHERE NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 1000);
 
+-- The runtime catalog is sourced from the active Metadata v2 graph, not the
+-- legacy service/layer tables above. Publish the same store-backed resource in
+-- both environments the container may resolve during Test startup.
+DO $cng_metadata$
+DECLARE
+    target_environment text;
+    target_revision bigint;
+    snapshot_document jsonb;
+    snapshot_etag text;
+    ready_status jsonb := jsonb_build_object('lifecycle', 'active', 'state', 'ready');
+BEGIN
+    FOREACH target_environment IN ARRAY ARRAY['default', 'Test']
+    LOOP
+        SELECT COALESCE(MAX(revision), 0) + 1
+          INTO target_revision
+          FROM honua.metadata_v2_snapshots
+         WHERE environment = target_environment;
+
+        snapshot_document := jsonb_build_object(
+            'schemaVersion', '2.0.0-alpha.1',
+            'apiVersion', 'metadata.honua.io/v2alpha1',
+            'revision', target_revision,
+            'environment', target_environment,
+            'generatedAt', NOW(),
+            'namespaces', jsonb_build_array('cng'),
+            'metadata', jsonb_build_object(
+                'id', 'cng-conformance-seed',
+                'name', 'cng-conformance-seed',
+                'title', 'CNG conformance seed'),
+            'catalogs', '[]'::jsonb,
+            'resources', jsonb_build_array(jsonb_build_object(
+                'metadata', jsonb_build_object(
+                    'id', 'res-cng-1000',
+                    'name', 'cng-features',
+                    'title', 'CNG Features',
+                    'description', 'Cloud-native export conformance features'),
+                'type', 'feature-dataset',
+                'storageBindingIds', jsonb_build_array('storage-cng-1000'),
+                'primaryStorageBindingId', 'storage-cng-1000',
+                'policyIds', '[]'::jsonb,
+                'schemaFields', jsonb_build_array(
+                    jsonb_build_object('name', 'objectid', 'type', 'integer', 'nullable', false,
+                        'semanticRoles', jsonb_build_array('id.primary')),
+                    jsonb_build_object('name', 'name', 'type', 'string', 'nullable', true),
+                    jsonb_build_object('name', 'category', 'type', 'string', 'nullable', true),
+                    jsonb_build_object('name', 'population', 'type', 'integer', 'nullable', true),
+                    jsonb_build_object('name', 'ratio', 'type', 'double', 'nullable', true),
+                    jsonb_build_object('name', 'active', 'type', 'boolean', 'nullable', true),
+                    jsonb_build_object('name', 'observed_at', 'type', 'datetime', 'nullable', true),
+                    jsonb_build_object('name', 'geometry', 'type', 'geometry', 'nullable', true,
+                        'semanticRoles', jsonb_build_array('geometry.primary'))),
+                'relationships', '[]'::jsonb,
+                'styleResourceIds', '[]'::jsonb,
+                'spatial', jsonb_build_object(
+                    'spatialReference', jsonb_build_object(
+                        'srid', 4326, 'crs', 'EPSG:4326', 'isGeographic', true),
+                    'geometryType', 'point',
+                    'bbox', jsonb_build_object(
+                        'west', -180, 'south', -90, 'east', 180, 'north', 90),
+                    'primaryGeometryField', 'geometry'),
+                'temporal', jsonb_build_object('startTimeField', 'observed_at'),
+                'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                'status', ready_status,
+                'extensions', '{}'::jsonb)),
+            'connections', jsonb_build_array(jsonb_build_object(
+                'metadata', jsonb_build_object('id', 'conn-cng-postgres', 'name', 'cng-postgres'),
+                'type', 'managed',
+                'provider', 'postgres',
+                'status', ready_status)),
+            'storageBindings', jsonb_build_array(jsonb_build_object(
+                'metadata', jsonb_build_object('id', 'storage-cng-1000', 'name', 'storage-cng-1000'),
+                'resourceId', 'res-cng-1000',
+                'connectionId', NULL,
+                'storageType', 'relational-table',
+                'locator', 'public.features',
+                'storageLayerId', 1000,
+                'capabilities', jsonb_build_array(
+                    'query', 'filter', 'sort', 'aggregate', 'edit', 'transactions',
+                    'render', 'tile', 'search'),
+                'options', jsonb_build_object(
+                    'schemaName', 'public',
+                    'tableName', 'features',
+                    'primaryKeyColumn', 'objectid',
+                    'attributesColumn', 'attributes',
+                    'geometryColumn', 'geometry',
+                    'layerDiscriminatorColumn', 'layer_id'),
+                'status', ready_status,
+                'extensions', '{}'::jsonb)),
+            'services', jsonb_build_array(
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'svc-cng-feature', 'name', 'cng', 'title', 'CNG Feature Service'),
+                    'serviceType', 'esri-feature-service',
+                    'publicationIds', jsonb_build_array('pub-cng-feature-1000'),
+                    'protocols', jsonb_build_array('FeatureServer'),
+                    'enabledProtocols', jsonb_build_array('FeatureServer'),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', ready_status,
+                    'extensions', '{}'::jsonb),
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'svc-cng-stac', 'name', 'cng-stac', 'title', 'CNG STAC Catalog'),
+                    'serviceType', 'stac-api',
+                    'route', '/stac',
+                    'publicationIds', jsonb_build_array('pub-cng-stac-1000'),
+                    'protocols', jsonb_build_array('Stac'),
+                    'enabledProtocols', jsonb_build_array('Stac'),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', ready_status,
+                    'extensions', '{}'::jsonb)),
+            'publications', jsonb_build_array(
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'pub-cng-feature-1000', 'name', '1000', 'title', 'CNG Features'),
+                    'resourceId', 'res-cng-1000',
+                    'serviceId', 'svc-cng-feature',
+                    'storageBindingId', 'storage-cng-1000',
+                    'publicationType', 'esri-feature-layer',
+                    'path', '1000',
+                    'layerIndex', 1000,
+                    'serviceLocalId', '1000',
+                    'supportedFormats', jsonb_build_array('json', 'geojson', 'pbf', 'fgb', 'parquet'),
+                    'capabilities', jsonb_build_array('Query', 'Extract'),
+                    'status', ready_status,
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb),
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'pub-cng-stac-1000', 'name', 'cng-features', 'title', 'CNG Features'),
+                    'resourceId', 'res-cng-1000',
+                    'serviceId', 'svc-cng-stac',
+                    'storageBindingId', 'storage-cng-1000',
+                    'publicationType', 'stac-collection',
+                    'path', 'cng-features',
+                    'layerIndex', 1000,
+                    'serviceLocalId', 'cng-features',
+                    'supportedFormats', '[]'::jsonb,
+                    'capabilities', jsonb_build_array('Query'),
+                    'status', ready_status,
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb)),
+            'projectionProfiles', '[]'::jsonb,
+            'policies', '[]'::jsonb,
+            'roles', '[]'::jsonb,
+            'extensionPoints', '[]'::jsonb);
+
+        snapshot_etag := '"' || md5(snapshot_document::text) || '"';
+        INSERT INTO honua.metadata_v2_snapshots (
+            environment, revision, schema_version, api_version, document, etag, generated_at)
+        VALUES (
+            target_environment, target_revision, '2.0.0-alpha.1',
+            'metadata.honua.io/v2alpha1', snapshot_document, snapshot_etag, NOW());
+
+        INSERT INTO honua.metadata_v2_current (environment, revision, etag, activated_at)
+        VALUES (target_environment, target_revision, snapshot_etag, NOW())
+        ON CONFLICT (environment) DO UPDATE SET
+            revision = EXCLUDED.revision,
+            etag = EXCLUDED.etag,
+            activated_at = EXCLUDED.activated_at;
+    END LOOP;
+END
+$cng_metadata$;
+
 COMMIT;

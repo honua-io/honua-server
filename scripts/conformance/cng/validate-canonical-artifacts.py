@@ -214,8 +214,8 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
         header = reader.header()
         metadata = reader.metadata()
         first = next(iter(all_tiles(source)), None)
-    if header.get("spec_version") != 3:
-        raise ValueError(f"PMTiles reader reported spec_version={header.get('spec_version')!r}, expected 3")
+    if header.get("version") != 3:
+        raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
     if not isinstance(metadata, dict):
         raise ValueError("PMTiles metadata is not an object")
     if first is None or not first[1]:
