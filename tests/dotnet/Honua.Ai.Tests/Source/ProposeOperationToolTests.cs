@@ -6,13 +6,17 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Security;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -24,10 +28,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class ProposeOperationToolTests
 {
-    private static DefaultHttpContext ContextWithGateway(IOperationGateway gateway, IOperationExecutorCatalog? catalog = null)
+    private static DefaultHttpContext ContextWithGateway(
+        IOperationGateway gateway,
+        IOperationExecutorCatalog? catalog = null,
+        AuthorizationResult? authorizationResult = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(gateway);
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object>(),
+                AuthenticationExtensions.AdminPolicy)
+            .Returns(authorizationResult ?? AuthorizationResult.Success());
+        services.AddSingleton(authorization);
         if (catalog != null)
         {
             services.AddSingleton(catalog);
@@ -36,9 +50,20 @@ public sealed class ProposeOperationToolTests
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "agent-x")], "Test"))
+            User = CreatePrincipal()
         };
     }
+
+    private static ClaimsPrincipal CreatePrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "Agent X"),
+                new Claim(ClaimTypes.NameIdentifier, "agent-x"),
+                new Claim("sub", "agent-x"),
+                new Claim("iss", "https://issuer.example"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
+            ],
+            "Oidc"));
 
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
@@ -65,6 +90,9 @@ public sealed class ProposeOperationToolTests
         content.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         content.GetProperty("proposalId").GetString().Should().Be("proposal-123");
         content.GetProperty("resourceUri").GetString().Should().Be("honua://proposals/proposal-123");
+        gateway.LastRequest.Should().NotBeNull();
+        gateway.LastRequest!.RequestedBy.Should().Be("oidc:subject:https%3A%2F%2Fissuer.example:agent-x");
+        gateway.LastRequest.RequestedByAgent.Should().Be("agent:Agent X");
     }
 
     [UnitTest]
@@ -144,6 +172,30 @@ public sealed class ProposeOperationToolTests
         supportedKinds.Should().NotContain("Seed", "Seed has no registered executor and must never be advertised as supported");
     }
 
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_propose_operation")]
+    public async Task ProposeOperation_WithoutAdminWrite_IsDeniedBeforeGateway()
+    {
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.Executed,
+            Decision = new GuardrailDecision(GuardrailTier.DirectExecute, OperationClass.Deploy, default, "test")
+        });
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument { Kind = "Deploy" },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var act = () => tool.InvokeAsync(
+            ContextWithGateway(gateway, authorizationResult: AuthorizationResult.Failed()),
+            arguments,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+        gateway.LastRequest.Should().BeNull();
+    }
+
     private sealed class FakeExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds) : IOperationExecutorCatalog
     {
         public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
@@ -151,11 +203,19 @@ public sealed class ProposeOperationToolTests
 
     private sealed class FakeGateway(OperationGatewayResult result) : IOperationGateway
     {
+        public OperationGatewayRequest? LastRequest { get; private set; }
+
         public Task<OperationGatewayResult> RouteAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(result);
+        {
+            LastRequest = request;
+            return Task.FromResult(result);
+        }
 
         public Task<OperationGatewayResult> CreateApprovalProposalAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(result);
+        {
+            LastRequest = request;
+            return Task.FromResult(result);
+        }
 
         public Task<OperationProposal?> ApplyApprovedProposalAsync(string proposalId, string approvedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);

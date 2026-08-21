@@ -15426,6 +15426,7 @@
         "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AdminApproveKey_CanReadAndApproveButCannotWriteElsewhere",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameApiKeyRequester_IsForbiddenForSeparationOfDuties",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_ReadOnlyKey_ReturnsProblemNamingMissingGrant",

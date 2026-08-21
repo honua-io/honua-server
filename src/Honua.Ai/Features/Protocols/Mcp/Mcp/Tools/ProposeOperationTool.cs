@@ -5,6 +5,10 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -57,6 +61,27 @@ internal sealed class ProposeOperationTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var authorization = httpContext.RequestServices.GetService<IAuthorizationService>();
+        var authorizationResult = authorization is null
+            ? null
+            : await authorization
+                .AuthorizeAsync(principal, httpContext, AuthenticationExtensions.AdminPolicy)
+                .ConfigureAwait(false);
+        if (authorizationResult?.Succeeded != true)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to mutate control-plane operations.");
+        }
+
+        var canonicalActor = CanonicalSecurityActor.Resolve(principal);
+        if (canonicalActor is null)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: PublishedOperationPolicyContextFactory.UnstableIdentityMessage);
+        }
+
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpProposeOperationArgument);
 
         // Executor-discovery surface (#2563): report which kinds are genuinely routable on every
@@ -97,12 +122,14 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
-        var actor = principal.Identity?.Name;
+        var agentActor = principal.Identity?.Name;
         var request = new OperationGatewayRequest
         {
             Kind = kind,
-            RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
-            RequestedBy = actor,
+            RequestedByAgent = string.IsNullOrWhiteSpace(agentActor)
+                ? $"{AgentActorPrefix}mcp"
+                : $"{AgentActorPrefix}{agentActor}",
+            RequestedBy = canonicalActor.ActorId,
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,

@@ -23,6 +23,7 @@ using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 
@@ -1240,6 +1241,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var policyRef = approval.PolicyRef ?? "unknown";
         GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, policyRef);
 
+        var proposalActor = CanonicalSecurityActor.Resolve(principal);
+        if (proposalActor is null)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Approval-gated geoprocessing requires a stable subject or API-key identity.");
+        }
+
         // Park the gated plan on the approval lane. The dispatcher owns the durable
         // proposal/gateway surface (ADR-0064, #2814): when it is available and the
         // submission is not custom code it persists an AwaitingApproval proposal so the
@@ -1251,6 +1260,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 plan,
                 idempotencyKey,
                 ResolvePrincipalId(principal),
+                proposalActor.ActorId,
                 protocolMetadata,
                 isCustomCode,
                 approvalGatedProcessId,

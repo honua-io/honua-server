@@ -3,12 +3,18 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Server.Features.Operations.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -36,7 +42,9 @@ public sealed class PublishResultToolTests
     private const string ArtifactId = "artifact_parcels_within_500m";
     private const string ConnectionId = "11111111-1111-1111-1111-111111111111";
 
-    private static DefaultHttpContext AuthenticatedContext(IOperationInvoker? invoker)
+    private static DefaultHttpContext AuthenticatedContext(
+        IOperationInvoker? invoker,
+        ClaimsPrincipal? principal = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -44,12 +52,38 @@ public sealed class PublishResultToolTests
             services.AddSingleton(invoker);
         }
 
-        return new DefaultHttpContext
+        var context = new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "agent-x")], "Test"))
+            User = principal ?? OidcPrincipal(),
+            TraceIdentifier = "publish-result-trace",
         };
+        context.Request.Headers["X-Correlation-ID"] = "publish-result-correlation";
+        return context;
     }
+
+    private static ClaimsPrincipal OidcPrincipal() => new(new ClaimsIdentity(
+    [
+        new Claim(ClaimTypes.Name, "Publishing Agent"),
+        new Claim(ClaimTypes.NameIdentifier, "agent-x"),
+        new Claim("iss", "https://issuer.example.com"),
+        new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
+        new Claim(ClaimTypes.Role, "publisher"),
+        new Claim("permission", "services:publish"),
+        new Claim("tenant_id", "tenant-a"),
+    ], "Oidc"));
+
+    private static ClaimsPrincipal ApiKeyPrincipal(Guid keyId) => new(new ClaimsIdentity(
+    [
+        new Claim(ClaimTypes.Name, "Publishing API key"),
+        new Claim(ClaimTypes.Role, "admin"),
+        new Claim("permission", "admin:*"),
+        new Claim("auth_type", "admin-api-key"),
+        new Claim("api_key_id", keyId.ToString("D")),
+        new Claim(
+            FrameworkAuthenticationIdentity.CredentialKindClaimType,
+            FrameworkAuthenticationIdentity.ApiKeyCredentialKind),
+    ], FrameworkAuthenticationIdentity.ApiKeyAuthenticationType));
 
     private static DefaultHttpContext AnonymousContext() => new()
     {
@@ -89,6 +123,12 @@ public sealed class PublishResultToolTests
     private static IGeoprocessingJobService JobServiceReturning(AnalysisResultPackage package)
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<Honua.Core.Features.Authorization.Domain.OperatorResourceType>(),
+                Arg.Any<Honua.Core.Features.Authorization.Domain.OperatorOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
         jobService.GetJobResultsAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(package));
         return jobService;
@@ -97,6 +137,12 @@ public sealed class PublishResultToolTests
     private static IGeoprocessingJobService JobServiceThrowing(Exception exception)
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<Honua.Core.Features.Authorization.Domain.OperatorResourceType>(),
+                Arg.Any<Honua.Core.Features.Authorization.Domain.OperatorOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
         jobService.GetJobResultsAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<AnalysisResultPackage>(exception));
         return jobService;
@@ -142,9 +188,11 @@ public sealed class PublishResultToolTests
     public async Task PublishResult_WhenCompleted_PromotesArtifactViaServicePublish_AndReturnsServiceIdAndLayerId()
     {
         OperationRequest? captured = null;
-        var invoker = new FakeInvoker((request, _) =>
+        OperationPolicyContext? capturedContext = null;
+        var invoker = new FakeInvoker((request, context) =>
         {
             captured = request;
+            capturedContext = context;
             return new OperationHandle
             {
                 OperationId = PublishResultTool.PublishOperationId,
@@ -197,6 +245,16 @@ public sealed class PublishResultToolTests
         captured.Parameters["layerName"].Should().Be("Parcels within 500m of flood zone");
         captured.Parameters["srid"].Should().Be("4326");
         captured.Parameters["primaryKey"].Should().Be("id");
+        capturedContext.Should().NotBeNull();
+        capturedContext!.PrincipalId.Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer.example.com:agent-x");
+        capturedContext.AuthenticationScheme.Should().Be("oidc");
+        capturedContext.SubjectId.Should().Be("agent-x");
+        capturedContext.SubjectIssuer.Should().Be("https://issuer.example.com");
+        capturedContext.Roles.Should().BeEquivalentTo("publisher");
+        capturedContext.Permissions.Should().BeEquivalentTo("services:publish");
+        capturedContext.TenantId.Should().Be("tenant-a");
+        capturedContext.CorrelationId.Should().Be("publish-result-correlation");
     }
 
     [UnitTest]
@@ -253,6 +311,44 @@ public sealed class PublishResultToolTests
         content.GetProperty("status").GetString().Should().Be("RequiresApproval");
         content.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         content.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_publish_result")]
+    public async Task PublishResult_ApiKeyCaller_RealDispatcherAndBridgePersistCanonicalProposal()
+    {
+        var keyId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        OperationGatewayRequest? captured = null;
+        var gateway = Substitute.For<IOperationGateway>();
+        gateway.CreateApprovalProposalAsync(
+                Arg.Do<OperationGatewayRequest>(request => captured = request),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = new GuardrailDecision(
+                    GuardrailTier.RequiresApproval,
+                    OperationClass.PublishedOperation,
+                    default,
+                    "test"),
+                ProposalId = "proposal-publish-result",
+            });
+        using var services = new ServiceCollection().AddSingleton(gateway).BuildServiceProvider();
+        var invoker = CreateApprovalDispatcher(new AdminOperationApprovalBridge(services));
+        var jobService = JobServiceReturning(CompletedPackage(FeatureLayerArtifact()));
+
+        var result = await CreateTool(jobService).InvokeAsync(
+            AuthenticatedContext(invoker, ApiKeyPrincipal(keyId)),
+            Arguments(new McpPublishResultArgument { SourceId = JobId }),
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        captured.Should().NotBeNull();
+        captured!.RequestedBy.Should().Be($"admin-api-key:api-key:{keyId:D}");
+        captured.RequestedByAgent.Should().Be(captured.RequestedBy);
+        captured.Plan?.ExecutionPayload.Should().Contain(keyId.ToString("D"));
+        captured.Plan?.ExecutionPayload.Should().Contain(FrameworkAuthenticationIdentity.ApiKeyCredentialKind);
     }
 
     [UnitTest]
@@ -382,6 +478,40 @@ public sealed class PublishResultToolTests
         content.GetProperty("message").GetString().Should().Contain("operations toolset is unavailable");
     }
 
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_publish_result")]
+    public async Task PublishResult_WhenPublishAuthorizationDenied_DoesNotReadOrDispatch()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Honua.Core.Features.Authorization.Domain.OperatorResourceType.PublishedService,
+                Honua.Core.Features.Authorization.Domain.OperatorOperation.Publish,
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "publish denied")));
+        var invoked = false;
+        var invoker = new FakeInvoker((_, _) =>
+        {
+            invoked = true;
+            throw new InvalidOperationException("denied publish must not dispatch");
+        });
+
+        var act = () => CreateTool(jobService).InvokeAsync(
+            AuthenticatedContext(invoker),
+            Arguments(new McpPublishResultArgument { SourceId = JobId }),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        invoked.Should().BeFalse();
+        await jobService.DidNotReceive().GetJobResultsAsync(
+            Arg.Any<string>(),
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<CancellationToken>());
+    }
+
     private sealed class FakeInvoker(Func<OperationRequest, OperationPolicyContext, OperationHandle> handler)
         : IOperationInvoker
     {
@@ -393,5 +523,52 @@ public sealed class PublishResultToolTests
             OperationPolicyContext context,
             CancellationToken cancellationToken = default)
             => Task.FromResult(handler(request, context));
+    }
+
+    private static OperationDispatcher CreateApprovalDispatcher(
+        IOperationApprovalProposalBridge approvalBridge)
+    {
+        var descriptor = new OperationDescriptor
+        {
+            OperationId = PublishResultTool.PublishOperationId,
+            ProviderId = "test",
+            Title = "Publish result",
+            Description = "Test descriptor.",
+            Category = "publishing",
+            ExecutionKind = OperationExecutionKind.Synchronous,
+            ApprovalModel = OperationApprovalModel.OperatorGate,
+            Policy = new OperationPolicyMetadata
+            {
+                BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,
+                SideEffectClass = OperationSideEffectClass.CreatesMetadata,
+                Determinism = OperationDeterminism.Deterministic,
+                SupportsDryRun = false,
+                IsIdempotent = false,
+            },
+        };
+        var catalog = Substitute.For<IOperationCatalog>();
+        catalog.GetDescriptorAsync(PublishResultTool.PublishOperationId, Arg.Any<CancellationToken>())
+            .Returns(descriptor);
+        var executor = Substitute.For<Honua.Core.Features.Operations.Abstractions.IOperationExecutor>();
+        executor.OperationId.Returns(PublishResultTool.PublishOperationId);
+        var policy = Substitute.For<IOperationPolicyDecisionPoint>();
+        policy.EvaluateAsync(
+                Arg.Any<IOperationDescriptor>(),
+                Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                ApprovalLane = "admin-operator",
+                Reason = "operator review",
+            });
+
+        return new OperationDispatcher(
+            catalog,
+            [executor],
+            policy,
+            TimeProvider.System,
+            approvalBridge);
     }
 }

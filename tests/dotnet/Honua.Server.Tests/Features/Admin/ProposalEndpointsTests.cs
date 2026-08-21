@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -15,13 +16,18 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security;
+using Honua.Server.Features.Operations;
 using Honua.Server.Features.Operations.Admin;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -259,6 +265,26 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_BySameApiKeyRequester_IsForbiddenForSeparationOfDuties()
+    {
+        var (keyId, key) = await CreateScopedApiKeyAsync(
+            "same-requester-approval",
+            ["admin:read", "admin:approve"]);
+        var proposal = await SeedProposalAsync(
+            requestedBy: $"admin-api-key:api-key:{keyId:D}");
+        using var requester = _fixture.CreateClient(
+            client => client.DefaultRequestHeaders.Add("X-API-Key", key));
+
+        using var response = await requester.PostAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve",
+            null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _executor.Executed.Should().BeFalse();
+    }
+
     [UnitTest]
     public async Task SeparationOfDuties_OidcDisplayNameMismatch_StillDeniesSelfApproval()
     {
@@ -286,6 +312,35 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             context);
 
         denied.Should().NotBeNull("display names cannot change the immutable OIDC actor id");
+    }
+
+    [UnitTest]
+    public async Task SeparationOfDuties_DifferentOidcActor_CanApproveCanonicalRequester()
+    {
+        var proposer = OidcPrincipal("subject-1", displayName: "Proposer");
+        var approver = OidcPrincipal("subject-2", displayName: "Approver");
+        var proposal = await SeedProposalAsync(
+            requestedBy: CanonicalSecurityActor.Resolve(proposer)!.ActorId);
+        var resolver = Substitute.For<IPermissionResolver>();
+        resolver.AuthorizeAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                AuthorizationOperation.Approve,
+                true,
+                Arg.Any<CancellationToken>())
+            .Returns(PermissionDecision.NoMatch());
+        var context = new DefaultHttpContext { User = approver };
+
+        var denied = await AdminProposalEndpoints.EnsureApproverAsync(
+            resolver,
+            _proposalStore,
+            proposal.ProposalId,
+            CanonicalSecurityActor.Resolve(approver)!.ActorId,
+            context);
+
+        denied.Should().BeNull();
     }
 
     [UnitTest]
@@ -493,6 +548,51 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ApprovedAdminReplay_OidcContext_ReconstructsCanonicalEndpointActor()
+    {
+        const string subject = "replay-oidc-subject";
+        const string issuer = "https://issuer.example.com";
+        var scimStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        await scimStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "replay-oidc-user",
+            ExternalId = subject,
+            ExternalIssuer = issuer,
+            DisplayName = "Replay OIDC User",
+            Roles = ["admin"],
+        });
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = $"oidc:subject:{Uri.EscapeDataString(issuer)}:{subject}",
+            AuthenticationScheme = IdentityProtocolProvenance.Oidc,
+            SubjectId = subject,
+            SubjectIssuer = issuer,
+            Roles = ["admin"],
+        };
+
+        var actor = await ExecuteApprovedReplayAndCaptureActorAsync(context);
+
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be(context.PrincipalId);
+        actor.SubjectIssuer.Should().Be(issuer);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ApprovedAdminReplay_ApiKeyContext_RetainsMarkedKeyActor()
+    {
+        var (keyId, _) = await CreateScopedApiKeyAsync("replay-api-key", ["admin:*"]);
+        var context = ApiKeyContext(keyId, ["admin:*"]);
+
+        var actor = await ExecuteApprovedReplayAndCaptureActorAsync(context);
+
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be(context.PrincipalId);
+        actor.CredentialKind.Should().Be(FrameworkAuthenticationIdentity.ApiKeyCredentialKind);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task PublishedOperation_RawCredential_IsDeniedBeforeProposalPersistence()
     {
         var (keyId, _) = await CreateScopedApiKeyAsync("raw-secret-originator", ["admin:read"]);
@@ -662,6 +762,49 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
         handle.Status.Should().Be(OperationHandleStatus.Denied);
         handle.Reason.Should().Contain("immutable subject or API-key identity");
+    }
+
+    private async Task<CanonicalSecurityActorIdentity?> ExecuteApprovedReplayAndCaptureActorAsync(
+        OperationPolicyContext context)
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<AdminOpenApiOperationCatalog>();
+        var definition = catalog.GetRequired("admin.server.status");
+        CanonicalSecurityActorIdentity? captured = null;
+        var endpointBuilder = new RouteEndpointBuilder(
+            httpContext =>
+            {
+                captured = CanonicalSecurityActor.Resolve(httpContext.User);
+                httpContext.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            },
+            RoutePatternFactory.Parse(definition.Path),
+            order: 0);
+        endpointBuilder.Metadata.Add(new HttpMethodMetadata([definition.Method]));
+        var invoker = new AdminEndpointOperationInvoker(
+            [new DefaultEndpointDataSource(endpointBuilder.Build())],
+            Substitute.For<IAuthorizationPolicyProvider>(),
+            Substitute.For<IPolicyEvaluator>(),
+            scope.ServiceProvider,
+            TimeProvider.System,
+            Options.Create(new LimitsOptions { MaxUploadSizeBytes = 1024 * 1024 }));
+        var runner = new ApprovedAdminOperationRunner(
+            Array.Empty<CatalogOperationExecutor>(),
+            catalog,
+            invoker,
+            scope.ServiceProvider,
+            TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new ApprovedAdminOperationPayload
+            {
+                Action = definition.Descriptor.OperationId,
+                Request = new OperationRequest { OperationId = definition.Descriptor.OperationId },
+                Context = context,
+            },
+            OperationsJsonContext.Default.ApprovedAdminOperationPayload);
+
+        await runner.ExecuteAsync(payload, CancellationToken.None);
+        return captured;
     }
 
     private async Task<string> CreatePublishedProposalAsync(OperationPolicyContext context)

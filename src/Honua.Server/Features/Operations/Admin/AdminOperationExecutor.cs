@@ -13,6 +13,8 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.MultiTenancy.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -307,7 +309,13 @@ internal sealed class AdminEndpointOperationInvoker(
             return true;
         }
 
-        var ticket = new AuthenticationTicket(context.User, "PublishedOperation");
+        var authenticationScheme = context.User.Identity?.AuthenticationType;
+        if (string.IsNullOrWhiteSpace(authenticationScheme))
+        {
+            return false;
+        }
+
+        var ticket = new AuthenticationTicket(context.User, authenticationScheme);
         var authenticateResult = AuthenticateResult.Success(ticket);
         var result = await policyEvaluator.AuthorizeAsync(policy, authenticateResult, context, endpoint)
             .ConfigureAwait(false);
@@ -386,10 +394,55 @@ internal sealed class AdminEndpointOperationInvoker(
 
     private static ClaimsPrincipal BuildPrincipal(OperationPolicyContext context)
     {
-        var claims = new List<Claim>();
-        if (!string.IsNullOrWhiteSpace(context.PrincipalId))
+        if (!CanonicalSecurityActor.IsCanonicalIdentity(
+                context.PrincipalId,
+                context.AuthenticationScheme,
+                context.SubjectId,
+                context.SubjectIssuer,
+                context.ApiKeyId,
+                context.CredentialKind))
         {
-            claims.Add(new Claim(ClaimTypes.Name, context.PrincipalId));
+            return new ClaimsPrincipal(new ClaimsIdentity());
+        }
+
+        var claims = new List<Claim>();
+        claims.Add(new Claim(ClaimTypes.Name, context.PrincipalId!));
+
+        string authenticationType;
+        if (Guid.TryParse(context.ApiKeyId, out var apiKeyId))
+        {
+            authenticationType = FrameworkAuthenticationIdentity.ApiKeyAuthenticationType;
+            claims.Add(new Claim("api_key_id", apiKeyId.ToString("D")));
+            claims.Add(new Claim(
+                FrameworkAuthenticationIdentity.CredentialKindClaimType,
+                FrameworkAuthenticationIdentity.ApiKeyCredentialKind));
+            claims.Add(new Claim("auth_type", context.AuthenticationScheme!));
+        }
+        else
+        {
+            authenticationType = context.AuthenticationScheme switch
+            {
+                "client-certificate" => FrameworkAuthenticationIdentity.ClientCertificateAuthenticationType,
+                "portal-token" => FrameworkAuthenticationIdentity.PortalTokenAuthenticationType,
+                "scoped-job-token" => FrameworkAuthenticationIdentity.ScopedJobTokenAuthenticationType,
+                _ => "PublishedOperation",
+            };
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, context.SubjectId!));
+            claims.Add(new Claim("sub", context.SubjectId!));
+            if (IdentityProtocolProvenance.IsSupported(context.AuthenticationScheme))
+            {
+                claims.Add(new Claim(
+                    IdentityProtocolProvenance.ClaimType,
+                    context.AuthenticationScheme!));
+            }
+
+            if (string.Equals(
+                    context.AuthenticationScheme,
+                    IdentityProtocolProvenance.Oidc,
+                    StringComparison.Ordinal))
+            {
+                claims.Add(new Claim("iss", context.SubjectIssuer!));
+            }
         }
 
         claims.AddRange(context.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
@@ -399,7 +452,7 @@ internal sealed class AdminEndpointOperationInvoker(
             claims.Add(new Claim("tenant_id", context.TenantId));
         }
 
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, "PublishedOperation"));
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType));
     }
 
     private static string BindPath(

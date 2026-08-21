@@ -3,12 +3,16 @@
 
 using System.Net;
 using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.MultiTenancy.Domain;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations.Admin;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authorization;
@@ -250,6 +254,181 @@ public sealed class AdminEndpointOperationInvokerTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_CanonicalOidcContext_ReconstructsExactActorForEndpoint()
+    {
+        const string issuer = "https://issuer.example.com";
+        const string subject = "oidc-subject";
+        var definition = _catalog.GetRequired("admin.server.status");
+        CanonicalSecurityActorIdentity? captured = null;
+        string? rawAuthenticationType = null;
+        var invoker = CreateInvoker(
+            new ServiceCollection().BuildServiceProvider(),
+            definition,
+            context =>
+            {
+                captured = CanonicalSecurityActor.Resolve(context.User);
+                rawAuthenticationType = context.User.FindFirst("auth_type")?.Value;
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            });
+
+        var result = await invoker.InvokeAsync(
+            definition,
+            Request(definition),
+            new OperationPolicyContext
+            {
+                PrincipalId = $"oidc:subject:{Uri.EscapeDataString(issuer)}:{subject}",
+                AuthenticationScheme = IdentityProtocolProvenance.Oidc,
+                SubjectId = subject,
+                SubjectIssuer = issuer,
+                Roles = ["admin"],
+                Permissions = ["admin:read"],
+            },
+            definition.Descriptor.OperationId,
+            CancellationToken.None);
+
+        result.Status.Should().Be(OperationHandleStatus.Completed);
+        captured.Should().NotBeNull();
+        captured!.ActorId.Should().Be($"oidc:subject:{Uri.EscapeDataString(issuer)}:{subject}");
+        captured.SubjectIssuer.Should().Be(issuer);
+        rawAuthenticationType.Should().BeNull(
+            "endpoint replay reconstructs only validated private provenance, never provider auth_type");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_CanonicalApiKeyContext_RetainsFrameworkAuthenticationTypeAndActor()
+    {
+        var keyId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var definition = _catalog.GetRequired("admin.server.status");
+        CanonicalSecurityActorIdentity? captured = null;
+        string? authenticationType = null;
+        IReadOnlyList<string>? permissions = null;
+        var invoker = CreateInvoker(
+            new ServiceCollection().BuildServiceProvider(),
+            definition,
+            context =>
+            {
+                captured = CanonicalSecurityActor.Resolve(context.User);
+                authenticationType = context.User.Identity?.AuthenticationType;
+                permissions = context.User.FindAll("permission").Select(claim => claim.Value).ToArray();
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            });
+
+        var result = await invoker.InvokeAsync(
+            definition,
+            Request(definition),
+            new OperationPolicyContext
+            {
+                PrincipalId = $"admin-api-key:api-key:{keyId:D}",
+                AuthenticationScheme = "admin-api-key",
+                ApiKeyId = keyId.ToString("D"),
+                CredentialKind = FrameworkAuthenticationIdentity.ApiKeyCredentialKind,
+                Roles = ["admin"],
+                Permissions = ["admin:write"],
+            },
+            definition.Descriptor.OperationId,
+            CancellationToken.None);
+
+        result.Status.Should().Be(OperationHandleStatus.Completed);
+        captured.Should().NotBeNull();
+        captured!.ActorId.Should().Be($"admin-api-key:api-key:{keyId:D}");
+        authenticationType.Should().Be(FrameworkAuthenticationIdentity.ApiKeyAuthenticationType);
+        permissions.Should().Equal("admin:write");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_MismatchedActorComponents_DoNotCreateAuthenticatedEndpointPrincipal()
+    {
+        var definition = _catalog.GetRequired("admin.server.status");
+        ClaimsPrincipal? captured = null;
+        var invoker = CreateInvoker(
+            new ServiceCollection().BuildServiceProvider(),
+            definition,
+            context =>
+            {
+                captured = context.User;
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            });
+
+        var result = await invoker.InvokeAsync(
+            definition,
+            Request(definition),
+            new OperationPolicyContext
+            {
+                PrincipalId = "saml:subject:-:same-subject",
+                AuthenticationScheme = IdentityProtocolProvenance.Oidc,
+                SubjectId = "same-subject",
+                SubjectIssuer = "https://issuer.example.com",
+                Roles = ["admin"],
+                Permissions = ["admin:*"],
+            },
+            definition.Descriptor.OperationId,
+            CancellationToken.None);
+
+        result.Status.Should().Be(OperationHandleStatus.Completed);
+        captured.Should().NotBeNull();
+        captured!.Identity?.IsAuthenticated.Should().BeFalse();
+        CanonicalSecurityActor.Resolve(captured).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_ReadOnlyApiKeyWithoutApproveGrant_IsDeniedByApprovalEndpointPolicy()
+    {
+        var keyId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        var endpointCalled = false;
+        var definition = _catalog.GetRequired("admin.server.status");
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddHttpContextAccessor();
+        serviceCollection.AddAuthorization(options =>
+        {
+            options.AddPolicy(AuthenticationExtensions.AdminPolicy, policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireRole("admin");
+                policy.AddRequirements(new AdminPermissionRequirement());
+                policy.AddRequirements(new AdminApprovalRequirement());
+            });
+        });
+        serviceCollection.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
+        serviceCollection.AddSingleton<IAuthorizationHandler, AdminApprovalAuthorizationHandler>();
+        using var services = serviceCollection.BuildServiceProvider();
+        var invoker = CreateInvoker(
+            services,
+            definition,
+            context =>
+            {
+                endpointCalled = true;
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            },
+            authorizationPolicyProvider: services.GetRequiredService<IAuthorizationPolicyProvider>(),
+            policyEvaluator: new PolicyEvaluator(services.GetRequiredService<IAuthorizationService>()),
+            requireAdminApproval: true);
+
+        var result = await invoker.InvokeAsync(
+            definition,
+            Request(definition),
+            new OperationPolicyContext
+            {
+                PrincipalId = $"admin-api-key:api-key:{keyId:D}",
+                AuthenticationScheme = "admin-api-key",
+                ApiKeyId = keyId.ToString("D"),
+                CredentialKind = FrameworkAuthenticationIdentity.ApiKeyCredentialKind,
+                Roles = ["admin"],
+                Permissions = ["admin:read"],
+            },
+            definition.Descriptor.OperationId,
+            CancellationToken.None);
+
+        result.Status.Should().Be(OperationHandleStatus.Failed);
+        result.Result!.Details["httpStatus"].Should().Be("403");
+        endpointCalled.Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Redact_NestedCredentialValues_RemovesSecretsAndPreservesReferences()
     {
         const string response =
@@ -290,15 +469,18 @@ public sealed class AdminEndpointOperationInvokerTests
         IServiceProvider services,
         AdminOpenApiOperationDefinition? definition,
         RequestDelegate? handler,
-        long maxUploadBytes = 1024 * 1024)
+        long maxUploadBytes = 1024 * 1024,
+        IAuthorizationPolicyProvider? authorizationPolicyProvider = null,
+        IPolicyEvaluator? policyEvaluator = null,
+        bool requireAdminApproval = false)
     {
         EndpointDataSource[] sources = definition is null || handler is null
             ? []
-            : [CreateDataSource(definition, handler)];
+            : [CreateDataSource(definition, handler, requireAdminApproval)];
         return new AdminEndpointOperationInvoker(
             sources,
-            Substitute.For<IAuthorizationPolicyProvider>(),
-            Substitute.For<IPolicyEvaluator>(),
+            authorizationPolicyProvider ?? Substitute.For<IAuthorizationPolicyProvider>(),
+            policyEvaluator ?? Substitute.For<IPolicyEvaluator>(),
             services,
             TimeProvider.System,
             Options.Create(new LimitsOptions { MaxUploadSizeBytes = maxUploadBytes }));
@@ -306,10 +488,17 @@ public sealed class AdminEndpointOperationInvokerTests
 
     private static DefaultEndpointDataSource CreateDataSource(
         AdminOpenApiOperationDefinition definition,
-        RequestDelegate handler)
+        RequestDelegate handler,
+        bool requireAdminApproval = false)
     {
         var builder = new RouteEndpointBuilder(handler, RoutePatternFactory.Parse(definition.Path), order: 0);
         builder.Metadata.Add(new HttpMethodMetadata([definition.Method]));
+        if (requireAdminApproval)
+        {
+            builder.Metadata.Add(new AuthorizeAttribute(AuthenticationExtensions.AdminPolicy));
+            builder.Metadata.Add(AdminApprovalEndpointMetadata.Instance);
+        }
+
         return new DefaultEndpointDataSource(builder.Build());
     }
 

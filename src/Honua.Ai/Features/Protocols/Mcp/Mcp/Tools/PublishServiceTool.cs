@@ -3,8 +3,10 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,10 +36,14 @@ internal sealed class PublishServiceTool : IMcpTool
     /// </summary>
     public const string PublishOperationId = "service.publish";
 
+    private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<PublishServiceTool> _logger;
 
-    public PublishServiceTool(ILogger<PublishServiceTool> logger)
+    public PublishServiceTool(
+        IGeoprocessingJobService jobService,
+        ILogger<PublishServiceTool> logger)
     {
+        _jobService = jobService;
         _logger = logger;
     }
 
@@ -70,7 +76,27 @@ internal sealed class PublishServiceTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(
+                principal,
+                OperatorResourceType.PublishedService,
+                OperatorOperation.Publish,
+                cancellationToken)
+            .ConfigureAwait(false);
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpPublishServiceArgument);
+
+        if (!PublishedOperationPolicyContextFactory.TryCreate(httpContext, principal, out var context))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpPublishServiceOutput
+                {
+                    Status = OperationHandleStatus.Denied.ToString(),
+                    RequiresApproval = false,
+                    OperationId = PublishOperationId,
+                    Message = PublishedOperationPolicyContextFactory.UnstableIdentityMessage,
+                },
+                McpJsonContext.Default.McpPublishServiceOutput);
+        }
 
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
@@ -87,11 +113,6 @@ internal sealed class PublishServiceTool : IMcpTool
         }
 
         var request = BuildRequest(argument);
-        var context = new OperationPolicyContext
-        {
-            PrincipalId = principal.Identity?.Name
-        };
-
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
 
         // honua-server#1954: a completed publish mutates the promotion-resource

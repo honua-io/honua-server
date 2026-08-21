@@ -39,6 +39,12 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     public DeployControlEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -217,7 +223,8 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         root.GetProperty("target").GetProperty("backend").GetString().Should().Be("honua-gitops-kubernetes");
         root.GetProperty("readyToSubmit").GetBoolean().Should().BeTrue();
         root.GetProperty("backendRegistered").GetBoolean().Should().BeTrue();
-        root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeTrue();
+        root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeFalse(
+            "the GitOps hand-off backend requires an explicit out-of-band revision revert");
     }
 
     [IntegrationTest]
@@ -235,14 +242,19 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             submitImmediately = false
         });
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createPayload = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            "the create response was: {0}",
+            createPayload);
 
-        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        using var createDocument = JsonDocument.Parse(createPayload);
         var createRoot = createDocument.RootElement;
         var operationId = createRoot.GetProperty("operationId").GetString();
         operationId.Should().NotBeNullOrWhiteSpace();
         createRoot.GetProperty("status").GetString().Should().Be("Planned");
         createRoot.GetProperty("target").GetProperty("desiredRevision").GetString().Should().Be("sha256:def456");
+        createRoot.GetProperty("requestedBy").GetString().Should().Be("admin:bootstrap");
 
         var submitResponse = await _client.PostAsJsonAsync($"/api/v1/admin/deploy/operations/{operationId}/submit", new
         {
@@ -464,6 +476,12 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         var promoteStore = new InMemoryWorkflowOperationStore();
         var backend = new PromotableDeployBackend();
         var promoteFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -553,6 +571,12 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     public async Task RollbackDeployOperation_WhenApprovalRequired_ReturnsForbidden()
     {
         var approvalFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -622,6 +646,12 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     {
         // Use a separate fixture with a stub approval evaluator that always requires approval.
         var approvalFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -667,6 +697,12 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     public async Task PlanDeployOperation_WhenApprovalRequired_ReturnsRequiresApproval()
     {
         var approvalFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();

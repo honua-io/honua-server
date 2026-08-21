@@ -291,7 +291,7 @@ public sealed class CapabilityRegistryConformanceTests
                 jobService, processCatalog, NullLogger<ExecuteEsriGpTaskTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
-            new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
+            new PublishServiceTool(jobService, NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
             new CreateMapPackageTool(
                 jobService,

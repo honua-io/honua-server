@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -110,6 +111,13 @@ internal sealed class PublishResultTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        await _jobService
+            .EnsureCallerAuthorizedAsync(
+                principal,
+                OperatorResourceType.PublishedService,
+                OperatorOperation.Publish,
+                cancellationToken)
+            .ConfigureAwait(false);
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpPublishResultArgument);
 
         var sourceId = argument.SourceId;
@@ -117,6 +125,20 @@ internal sealed class PublishResultTool : IMcpTool
         {
             throw new GeoprocessingValidationException(
                 "publish_result requires a 'sourceId' — the completed analysis job whose result artifact is promoted.");
+        }
+
+        if (!PublishedOperationPolicyContextFactory.TryCreate(httpContext, principal, out var context))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpPublishResultOutput
+                {
+                    Status = OperationHandleStatus.Denied.ToString(),
+                    RequiresApproval = false,
+                    OperationId = PublishOperationId,
+                    SourceJobId = sourceId,
+                    Message = PublishedOperationPolicyContextFactory.UnstableIdentityMessage,
+                },
+                McpJsonContext.Default.McpPublishResultOutput);
         }
 
         // The reference implementation materializes the published_service promotion
@@ -156,10 +178,6 @@ internal sealed class PublishResultTool : IMcpTool
         }
 
         var request = BuildRequest(argument, artifact, connectionId, schema, table);
-        var context = new OperationPolicyContext
-        {
-            PrincipalId = principal.Identity?.Name
-        };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
 

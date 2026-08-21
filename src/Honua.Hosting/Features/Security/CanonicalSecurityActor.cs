@@ -122,18 +122,42 @@ internal static class CanonicalSecurityActor
         string? apiKeyId,
         string? credentialKind)
     {
-        var normalizedScheme = NormalizeScheme(scheme);
-        if (normalizedScheme is null || string.IsNullOrWhiteSpace(actorId))
+        if (!IsCanonicalIdentity(
+                actorId,
+                scheme,
+                subjectId,
+                subjectIssuer,
+                apiKeyId,
+                credentialKind))
         {
             return false;
         }
 
+        var normalizedScheme = NormalizeScheme(scheme);
+        if (Guid.TryParse(apiKeyId, out _)) return true;
+
+        return IdentityProtocolProvenance.IsSupported(normalizedScheme);
+    }
+
+    /// <summary>
+    /// Validates that captured actor components form one exact canonical identity. Unlike
+    /// <see cref="IsBoundIdentity"/>, this also accepts framework-owned live subject handlers
+    /// (for example mTLS) that may execute directly but cannot originate deferred approval.
+    /// </summary>
+    internal static bool IsCanonicalIdentity(
+        string? actorId,
+        string? scheme,
+        string? subjectId,
+        string? subjectIssuer,
+        string? apiKeyId,
+        string? credentialKind)
+    {
+        var normalizedScheme = NormalizeScheme(scheme);
+        if (normalizedScheme is null || string.IsNullOrWhiteSpace(actorId)) return false;
+
         if (Guid.TryParse(apiKeyId, out var keyId))
         {
-            return string.Equals(
-                actorId,
-                $"{normalizedScheme}:api-key:{keyId:D}",
-                StringComparison.Ordinal)
+            return string.Equals(actorId, $"{normalizedScheme}:api-key:{keyId:D}", StringComparison.Ordinal)
                 && string.Equals(
                     credentialKind,
                     FrameworkAuthenticationIdentity.ApiKeyCredentialKind,
@@ -141,17 +165,23 @@ internal static class CanonicalSecurityActor
         }
 
         var subject = NormalizeValue(subjectId);
-        if (subject is null)
+        if (subject is null || !string.IsNullOrWhiteSpace(apiKeyId) || !string.IsNullOrWhiteSpace(credentialKind))
         {
             return false;
         }
 
         var issuer = NormalizeValue(subjectIssuer);
-        if (!IdentityProtocolProvenance.IsSupported(normalizedScheme)
-            || (string.Equals(normalizedScheme, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal)
+        if (IdentityProtocolProvenance.IsSupported(normalizedScheme))
+        {
+            if ((string.Equals(normalizedScheme, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal)
                 && issuer is null)
-            || (string.Equals(normalizedScheme, IdentityProtocolProvenance.Saml, StringComparison.Ordinal)
-                && issuer is not null))
+                || (string.Equals(normalizedScheme, IdentityProtocolProvenance.Saml, StringComparison.Ordinal)
+                    && issuer is not null))
+            {
+                return false;
+            }
+        }
+        else if (!FrameworkAuthenticationIdentity.IsDurableSubjectScheme(normalizedScheme) || issuer is not null)
         {
             return false;
         }

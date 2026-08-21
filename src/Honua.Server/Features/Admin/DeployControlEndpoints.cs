@@ -13,6 +13,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -934,21 +935,10 @@ internal static class DeployControlEndpoints
 
     private static string? ResolveRequestedBy(HttpContext context)
     {
-        if (!string.IsNullOrWhiteSpace(context.User.Identity?.Name))
-        {
-            return context.User.Identity!.Name;
-        }
-
-        // Shared admin API-key auth carries no Name claim; attribute the action to the
-        // authenticated key (mirrors AdminApiKeyEndpoints.ResolveCreator). Do not fall back
-        // to caller-supplied headers (e.g. X-Admin-Principal) — they are spoofable and would
-        // let any credential holder fabricate the audit identity for deploy/rollback actions.
-        var apiKeyId = context.User.FindFirst("api_key_id")?.Value;
-        if (!string.IsNullOrWhiteSpace(apiKeyId))
-        {
-            return $"api-key:{apiKeyId}";
-        }
-
-        return null;
+        // Four-eyes approval compares this value with the approver's canonical actor.
+        // Display names and raw key ids are not durable identity boundaries.
+        return CanonicalSecurityActor.Resolve(context.User)?.ActorId
+            ?? throw new InvalidOperationException(
+                "Deploy control requires a stable subject or API-key identity.");
     }
 }

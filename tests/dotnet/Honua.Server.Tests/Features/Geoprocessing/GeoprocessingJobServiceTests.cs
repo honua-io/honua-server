@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -1163,7 +1164,7 @@ public sealed class GeoprocessingJobServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.Required("test-policy", "destructive-action"));
 
-        var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+        var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateApprovalPrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
     }
@@ -1181,7 +1182,7 @@ public sealed class GeoprocessingJobServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
 
-        var act = async () => await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+        var act = async () => await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreateApprovalPrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
         await _jobStore.DidNotReceive().TryCreateAsync(
@@ -1219,7 +1220,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var sut = CreateServiceWithGateway(gateway);
 
-        var act = async () => await sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), "idem-1", CreatePrincipal());
+        var act = async () => await sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), "idem-1", CreateApprovalPrincipal());
 
         var thrown = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
         thrown.ProposalId.Should().Be("gp-proposal-1");
@@ -1232,6 +1233,8 @@ public sealed class GeoprocessingJobServiceTests
         // non-empty execution payload the resume path can replay.
         captured.Should().NotBeNull();
         captured!.Kind.Should().Be(OperationClass.Geoprocess);
+        captured.RequestedBy.Should().Be("oidc:subject:https%3A%2F%2Fissuer.example:approval-subject");
+        captured.RequestedByAgent.Should().Be("approval-subject");
         captured.IdempotencyKey.Should().Be("idem-1");
         captured.ExecutionPayload.Should().NotBeNullOrWhiteSpace();
     }
@@ -1248,7 +1251,7 @@ public sealed class GeoprocessingJobServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
 
-        var act = async () => await _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());
+        var act = async () => await _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreateApprovalPrincipal());
 
         var thrown = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
         thrown.ProposalId.Should().BeNull();
@@ -4576,6 +4579,17 @@ public sealed class GeoprocessingJobServiceTests
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+
+    private static ClaimsPrincipal CreateApprovalPrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "Approval User"),
+                new Claim(ClaimTypes.NameIdentifier, "approval-subject"),
+                new Claim("sub", "approval-subject"),
+                new Claim("iss", "https://issuer.example"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
+            ],
+            "Oidc"));
 
     private static ClaimsPrincipal CreateStablePrincipal()
         => new(new ClaimsIdentity(

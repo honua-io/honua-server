@@ -43,6 +43,12 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     public PlatformReleaseConvergeEndpointTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 ConfigurePlatformRelease(services);
@@ -156,6 +162,17 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
         divergent.TryGetProperty("operationId", out var opId).Should().BeFalse();
         _ = opId;
         _workflowStore.CreatedDeployTargets.Should().NotContain("srv-divergent");
+
+        var proposalId = divergent.GetProperty("proposalId").GetString()!;
+        var proposal = await _proposalStore.GetAsync(proposalId);
+        proposal.Should().NotBeNull();
+        proposal!.RequestedBy.Should().Be("admin:bootstrap");
+
+        using var selfApproval = await _client.PostAsync(
+            $"/api/v1/admin/proposals/{proposalId}/approve",
+            null);
+        selfApproval.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "the same canonical deploy requester cannot approve its own proposal");
     }
 
     [IntegrationTest]
@@ -163,6 +180,12 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     public async Task Converge_WhenNoReleaseDeclared_ReturnsBadRequest()
     {
         var noReleaseFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IWorkflowOperationStore>();

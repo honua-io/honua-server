@@ -12,6 +12,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
@@ -253,7 +254,7 @@ public sealed class McpPlatformOpsReaderTests
         output.SupportedKinds.Should().Equal("Deploy", "MetadataRelease");
         gateway.LastRequest.Should().NotBeNull();
         gateway.LastRequest!.Kind.Should().Be(OperationClass.Deploy);
-        gateway.LastRequest.RequestedBy.Should().Be("ops-agent");
+        gateway.LastRequest.RequestedBy.Should().Be("oidc:subject:https%3A%2F%2Fissuer.example:ops-agent");
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:ops-agent");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
@@ -315,6 +316,39 @@ public sealed class McpPlatformOpsReaderTests
         payload.CurrentRevision.Should().Be("rev-10");
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeRollback_WithoutAdminWrite_IsDeniedBeforeGateway()
+    {
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.Executed,
+            Decision = new GuardrailDecision(
+                GuardrailTier.DirectExecute,
+                OperationClass.Deploy,
+                HonuaEdition.Community,
+                "test"),
+        });
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(
+            authorization: CreateAuthorization(
+                AuthorizationResult.Success(),
+                AuthorizationResult.Failed()),
+            services: services);
+
+        var act = () => reader.ProposeRollbackAsync(
+            CreatePrincipal(),
+            new McpProposeRollbackArgument
+            {
+                TargetId = "serving-us-west",
+                ToRevision = "rev-9",
+            },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+        gateway.LastRequest.Should().BeNull();
+    }
+
     private static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
@@ -334,7 +368,9 @@ public sealed class McpPlatformOpsReaderTests
             Substitute.For<IOperatorApprovalEvaluator>(),
             NullLogger<DeployWorkflowService>.Instance);
 
-    private static IAuthorizationService CreateAuthorization(AuthorizationResult result)
+    private static IAuthorizationService CreateAuthorization(
+        AuthorizationResult result,
+        AuthorizationResult? writeResult = null)
     {
         var authorization = Substitute.For<IAuthorizationService>();
         authorization.AuthorizeAsync(
@@ -342,6 +378,11 @@ public sealed class McpPlatformOpsReaderTests
                 Arg.Any<object>(),
                 AuthenticationExtensions.OpsReadPolicy)
             .Returns(result);
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object>(),
+                AuthenticationExtensions.AdminPolicy)
+            .Returns(writeResult ?? result);
         return authorization;
     }
 
@@ -368,13 +409,21 @@ public sealed class McpPlatformOpsReaderTests
             [
                 new Claim(ClaimTypes.Name, "ops-agent"),
                 new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
+                new Claim("sub", "ops-agent"),
+                new Claim("iss", "https://issuer.example"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
             ],
-            "test"));
+            "Oidc"));
 
     private static bool IsOpsReadResource(object resource, ClaimsPrincipal principal)
         => resource is DefaultHttpContext context &&
             ReferenceEquals(context.User, principal) &&
             string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.Ordinal);
+
+    private static bool IsOpsWriteResource(object resource, ClaimsPrincipal principal)
+        => resource is DefaultHttpContext context &&
+            ReferenceEquals(context.User, principal) &&
+            string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal);
 
     private static ControlPlaneOptions CreateOptions()
         => new()

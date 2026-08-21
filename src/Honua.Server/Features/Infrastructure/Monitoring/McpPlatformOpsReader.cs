@@ -14,6 +14,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -129,6 +130,15 @@ internal sealed class McpPlatformOpsReader(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(argument);
+        await EnsureOpsWriteAsync(principal, cancellationToken).ConfigureAwait(false);
+
+        var canonicalActor = CanonicalSecurityActor.Resolve(principal);
+        if (canonicalActor is null)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller does not have a stable subject or API-key identity.");
+        }
 
         var gateway = _services.GetService<IOperationGateway>();
         var supportedKinds = ResolveSupportedKinds();
@@ -162,13 +172,15 @@ internal sealed class McpPlatformOpsReader(
             CurrentRevision = selection.CurrentRevision,
         }.Serialize();
 
-        var actor = principal.Identity?.Name;
+        var agentActor = principal.Identity?.Name;
         var result = await gateway.RouteAsync(
                 new OperationGatewayRequest
                 {
                     Kind = OperationClass.Deploy,
-                    RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
-                    RequestedBy = actor,
+                    RequestedByAgent = string.IsNullOrWhiteSpace(agentActor)
+                        ? $"{AgentActorPrefix}mcp"
+                        : $"{AgentActorPrefix}{agentActor}",
+                    RequestedBy = canonicalActor.ActorId,
                     Reason = string.IsNullOrWhiteSpace(argument.Reason)
                         ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'."
                         : argument.Reason,
@@ -270,6 +282,27 @@ internal sealed class McpPlatformOpsReader(
             throw new GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
                 message: "Caller is not authorized to read platform operations.");
+        }
+    }
+
+    private async Task EnsureOpsWriteAsync(ClaimsPrincipal principal, CancellationToken cancellationToken)
+    {
+        var resource = new DefaultHttpContext
+        {
+            User = principal,
+            RequestAborted = cancellationToken,
+        };
+        resource.Request.Method = HttpMethods.Post;
+
+        var result = await _authorization
+            .AuthorizeAsync(principal, resource, AuthenticationExtensions.AdminPolicy)
+            .ConfigureAwait(false);
+
+        if (!result.Succeeded)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to mutate platform operations.");
         }
     }
 

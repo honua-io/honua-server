@@ -2,13 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
-using System.Security.Claims;
 using System.Text.Json;
-using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
-using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -135,8 +132,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         McpLog.ToolInvoked(_logger, Name, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        var actor = CanonicalSecurityActor.Resolve(principal);
-        if (actor is null)
+        if (!PublishedOperationPolicyContextFactory.TryCreate(httpContext, principal, out var context))
         {
             return McpToolHelpers.SuccessResult(
                 new McpOperationToolOutput
@@ -144,7 +140,7 @@ internal sealed class PublishedOperationTool : IMcpTool
                     Status = OperationHandleStatus.Denied.ToString(),
                     OperationId = _descriptor.OperationId,
                     Deterministic = IsDeterministic,
-                    Message = "The authenticated principal does not have a stable subject or API-key identity.",
+                    Message = PublishedOperationPolicyContextFactory.UnstableIdentityMessage,
                 },
                 McpJsonContext.Default.McpOperationToolOutput);
         }
@@ -169,22 +165,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         // context (principal id + tier + roles) that was already policy-allowed for
         // these exact inputs. A different caller — or the same caller with changed
         // roles/tier — always misses and takes a fresh policy round-trip.
-        var context = new OperationPolicyContext
-        {
-            PrincipalId = actor.ActorId,
-            AuthenticationScheme = actor.AuthenticationScheme,
-            SubjectId = actor.SubjectId,
-            SubjectIssuer = actor.SubjectIssuer,
-            ApiKeyId = actor.ApiKeyId,
-            CredentialKind = actor.CredentialKind,
-            Tier = ResolveTier(httpContext),
-            Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
-            Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray(),
-            TenantId = principal.FindFirst("tenant_id")?.Value ?? principal.FindFirst("tid")?.Value,
-            CorrelationId = httpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault()
-                ?? httpContext.TraceIdentifier,
-        };
-
         var parameters = ReadParameters(arguments);
         var dryRun = ReadBool(arguments, "dryRun");
         var cacheKey = IsCacheable && !dryRun
@@ -256,15 +236,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         Message = handle.Reason,
         Details = handle.Result?.Details ?? new Dictionary<string, string>(StringComparer.Ordinal),
     };
-
-    private static string? ResolveTier(HttpContext httpContext)
-    {
-        // Tier is resolved from the running edition so the policy decision point can
-        // apply tier-aware rules. Resolved leniently: a host without licensing wired
-        // (a lightweight test host) leaves the tier null, i.e. Community pass-through.
-        var licensing = httpContext.RequestServices.GetService<ILicenseEntitlementService>();
-        return licensing?.GetSnapshot().Edition.ToString().ToLowerInvariant();
-    }
 
     private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
     {
