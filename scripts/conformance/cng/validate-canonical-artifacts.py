@@ -323,7 +323,7 @@ def main() -> int:
     passed = sum(observation["result"] == "pass" for observation in observations)
     skipped = sum(observation["result"] == "skip" for observation in observations)
     print(f"canonical client observations: {passed} pass, {skipped} explicit gap")
-    return 0
+    return 1 if any(observation["result"] == "fail" for observation in observations) else 0
 
 
 if __name__ == "__main__":
