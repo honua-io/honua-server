@@ -251,6 +251,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
                 .Value.Should().EndWith("/services/test/ImageServer");
+            description.Elements()
+                .Single(element => element.Name.LocalName == "Capabilities")
+                .Value.Should().Be("Catalog", "the endpoint implements IServiceCatalog only");
 
             var advertisedUrl = description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
