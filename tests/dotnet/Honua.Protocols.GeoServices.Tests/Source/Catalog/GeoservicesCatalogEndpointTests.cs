@@ -457,12 +457,6 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
-    [InterfaceOperation(TestProtocols.ImageServer, "GetVersion")]
-    [InterfaceOperation(TestProtocols.ImageServer, "IsFixedScaleImage")]
-    [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
-    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
-    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyProperties")]
-    [InterfaceOperation(TestProtocols.ImageServer, "GetMetadata")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_UnknownService_ReturnsNotFoundFault()
     {
@@ -721,6 +715,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetVersion")]
+    [InterfaceOperation(TestProtocols.ImageServer, "IsFixedScaleImage")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyProperties")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMetadata")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped()
     {
@@ -736,6 +736,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             metadata.Be200Ok();
             var metadataXml = XDocument.Parse(await metadata.Content.ReadAsStringAsync());
             var result = metadataXml.Descendants().Single(element => element.Name.LocalName == "Result");
+            XNamespace arcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
+            result.Name.Should().Be(arcGis + "Result");
+            result.Descendants().Should().OnlyContain(element => element.Name.Namespace == arcGis);
             result.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
                 .Value.Should().Be("tns:ImageServiceInfo");
             result.Elements().Single(element => element.Name.LocalName == "Name")
@@ -951,9 +954,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
               <soap:Body><GetFields xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
             </soap:Envelope>
             """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
         using var response = await _fixture.Client.PostAsync(
             $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-            new StringContent(request, Encoding.UTF8, "text/xml"));
+            content);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("exactly one Body");
@@ -969,9 +973,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
               <soap:Body><GetVersion xmlns="urn:not-arcgis" /></soap:Body>
             </soap:Envelope>
             """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
         using var response = await _fixture.Client.PostAsync(
             $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-            new StringContent(request, Encoding.UTF8, "text/xml"));
+            content);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("operation namespace");
@@ -998,9 +1003,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
               <soap:Body><GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8">&probe;</GetVersion></soap:Body>
             </soap:Envelope>
             """;
-        using var response = await _fixture.Client.PostAsync(
-            route,
-            new StringContent(request, Encoding.UTF8, "text/xml"));
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        using var response = await _fixture.Client.PostAsync(route, content);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("Malformed SOAP request");
@@ -1069,7 +1073,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             route,
             $"<{operation} xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\" />");
 
-    private static Task<HttpResponseMessage> PostSoapOperationAsync(
+    private static async Task<HttpResponseMessage> PostSoapOperationAsync(
         HttpClient client,
         string route,
         string operation)
@@ -1079,6 +1083,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
               <soap:Body>{operation}</soap:Body>
             </soap:Envelope>
             """;
-        return client.PostAsync(route, new StringContent(request, Encoding.UTF8, "text/xml"));
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        return await client.PostAsync(route, content).ConfigureAwait(false);
     }
 }
