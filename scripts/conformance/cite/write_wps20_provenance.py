@@ -48,6 +48,10 @@ def write_provenance(
         raise ValueError("Honua Server image inspection must contain exactly one image")
     if inspected[0].get("Id") != server_image_id:
         raise ValueError("Running Honua Server image ID does not match its image inspection")
+    labels = inspected[0].get("Config", {}).get("Labels", {})
+    image_revision = labels.get("org.opencontainers.image.revision") if isinstance(labels, dict) else None
+    if require_tested_git_sha and image_revision != tested_git_sha:
+        raise ValueError("Honua Server image revision label does not match the tested git SHA")
 
     payload = {
         "schemaVersion": 1,
@@ -57,6 +61,7 @@ def write_provenance(
         "requestedServerImage": requested_server_image or None,
         "serverContainerId": server_container_id,
         "serverImageId": server_image_id,
+        "serverImageRevision": image_revision,
         "serverImageRepoDigests": inspected[0].get("RepoDigests") or [],
         "serverImageReference": "honua-server:latest",
         "serverImageInspectFile": image_inspect_path.name,
