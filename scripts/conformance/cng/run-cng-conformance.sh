@@ -120,6 +120,27 @@ install_tools() {
     fi
 }
 
+preflight_python_fixture_dependencies() {
+    if python3 - <<'PY'
+import h5netcdf
+import numpy
+import rasterio
+import rio_cogeo
+import xarray
+import zarr
+PY
+    then
+        return 0
+    fi
+
+    cat >&2 <<'EOF'
+The canonical CNG fixture generator is missing pinned Python dependencies.
+Install them before running this standalone harness:
+  python3 -m pip install h5netcdf==1.8.1 numpy==2.5.2 rasterio==1.5.1 rio-cogeo==7.0.2 xarray==2026.7.0 zarr==3.3.0
+EOF
+    return 1
+}
+
 # --- Bring up the store-backed honua stack --------------------------------
 
 bring_up_stack() {
@@ -270,6 +291,7 @@ validate_3dtiles() {
 # --- Orchestration --------------------------------------------------------
 
 install_tools
+preflight_python_fixture_dependencies || exit 1
 
 echo -e "${YELLOW}Generating honua-produced PMTiles + 3D Tiles artifacts...${NC}"
 dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
