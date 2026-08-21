@@ -55,11 +55,7 @@ internal sealed class CapabilityManifestService(
     ILicenseEntitlementService entitlementService,
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
-    IEnumerable<IBatchComputeBackend> batchBackends,
-    IEnumerable<IDeployBackend> deployBackends,
-    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
-    IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
-    IWebHostEnvironment hostEnvironment,
+    CapabilityManifestRuntimeInventory runtimeInventory,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
@@ -239,7 +235,7 @@ internal sealed class CapabilityManifestService(
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            DeploymentEnvironment = hostEnvironment.EnvironmentName,
+            DeploymentEnvironment = runtimeInventory.EnvironmentName,
             DeploymentRevision = identity.Revision,
             DeploymentRevisionSource = identity.RevisionSource,
             ServerRevision = identity.Revision
@@ -404,7 +400,7 @@ internal sealed class CapabilityManifestService(
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context, entitlementKey: "streaming.feature-subscriptions"),
             Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
-            Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || batchBackends.Any(), requiresAuthentication: true),
+            Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || runtimeInventory.BatchBackends.Count > 0, requiresAuthentication: true),
             Capability("ai.spec-apply", "ai", context, entitlementKey: FeatureCatalog.AiSpecApplyKey),
             Capability("ai.grounding", "ai", context, entitlementKey: FeatureCatalog.AiGroundingKey),
             Capability("gitops.release-manifest", "gitops", context, configured: deployTargetCount > 0, policyCapability: "catalog.publish", requiresEnvironment: true),
@@ -505,7 +501,7 @@ internal sealed class CapabilityManifestService(
         OperationCapabilitySummary operationCapabilities)
     {
         var syncSupported = IsFieldCollectionSyncSupported();
-        var jobsSupported = options.ControlPlane.ExecutionWorkloads.Count > 0 || batchBackends.Any();
+        var jobsSupported = options.ControlPlane.ExecutionWorkloads.Count > 0 || runtimeInventory.BatchBackends.Count > 0;
         var alertsConfigured = options.Alerts.Enabled;
         var gitopsConfigured = options.ControlPlane.DeployTargets.Count > 0;
         var mtlsConfigured = options.ClientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
@@ -882,8 +878,8 @@ internal sealed class CapabilityManifestService(
 
     private async Task<BatchCapabilitySummary> ResolveBatchCapabilitiesAsync(CancellationToken cancellationToken)
     {
-        var backends = batchBackends.ToArray();
-        if (backends.Length == 0)
+        var backends = runtimeInventory.BatchBackends;
+        if (backends.Count == 0)
         {
             return new BatchCapabilitySummary(0, false, false);
         }
@@ -922,11 +918,11 @@ internal sealed class CapabilityManifestService(
         if (configuredTargets.Count == 0)
         {
             return new OperationCapabilitySummary(
-                HasDurableOperationStore: workflowOperationStores.Any(),
+                HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
                 AnyConfiguredTargetSupportsRollback: false);
         }
 
-        var backends = deployBackends.ToDictionary(
+        var backends = runtimeInventory.DeployBackends.ToDictionary(
             backend => (backend.BackendName, backend.TargetKind),
             backend => backend,
             EqualityComparer<(string Backend, DeployTargetKind TargetKind)>.Default);
@@ -944,7 +940,7 @@ internal sealed class CapabilityManifestService(
                 if (capabilities.SupportsRollback)
                 {
                     return new OperationCapabilitySummary(
-                        HasDurableOperationStore: workflowOperationStores.Any(),
+                        HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
                         AnyConfiguredTargetSupportsRollback: true);
                 }
             }
@@ -959,12 +955,12 @@ internal sealed class CapabilityManifestService(
         }
 
         return new OperationCapabilitySummary(
-            HasDurableOperationStore: workflowOperationStores.Any(),
+            HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
             AnyConfiguredTargetSupportsRollback: false);
     }
 
     private bool IsFieldCollectionSyncSupported()
-        => fieldCollectionSyncStores.Any();
+        => runtimeInventory.HasFieldCollectionSyncStore;
 
     private bool ResolveWorkspaceAvailability(
         ClaimsPrincipal principal,

@@ -53,6 +53,12 @@ internal static class AdminOperationResponseRedactor
                 {
                     obj[property.Key] = RedactedValue;
                 }
+                else if (property.Value is JsonValue value
+                         && value.TryGetValue<string>(out var text)
+                         && TryRemoveBearerUrlComponents(text, out var sanitized))
+                {
+                    obj[property.Key] = sanitized;
+                }
                 else if (property.Value is not null)
                 {
                     RedactNode(property.Value);
@@ -66,5 +72,24 @@ internal static class AdminOperationResponseRedactor
                 RedactNode(child!);
             }
         }
+    }
+
+    private static bool TryRemoveBearerUrlComponents(string? value, out string sanitized)
+    {
+        sanitized = value ?? string.Empty;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || (string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment)))
+        {
+            return false;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty,
+        };
+        sanitized = builder.Uri.AbsoluteUri;
+        return true;
     }
 }

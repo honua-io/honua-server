@@ -89,6 +89,30 @@ public sealed class AdminOperationCatalogTests
         delete.Policy.IsIdempotent.Should().BeTrue();
     }
 
+    [UnitTest]
+    public void NonJsonBodyBindings_AreExplicitAndExecutableFromMcpJson()
+    {
+        var xml = _catalog.Definitions.Single(definition => definition.OpenApiOperationId == "importLayerSldStyle");
+        xml.RequestContentType.Should().Be("application/xml");
+        xml.RequestBodyJsonSchema!.Value.GetProperty("type").GetString().Should().Be("string");
+
+        foreach (var operationId in new[] { "uploadLicense", "uploadLicenseFile", "importTileCachePackage" })
+        {
+            var binary = _catalog.Definitions.Single(definition => definition.OpenApiOperationId == operationId);
+            binary.RequestContentType.Should().Be("application/octet-stream");
+            binary.RequestBodyJsonSchema!.Value.GetProperty("format").GetString().Should().Be("binary");
+            binary.RequestBodyJsonSchema.Value.GetProperty("contentEncoding").GetString().Should().Be("base64");
+        }
+
+        var multipart = _catalog.Definitions.Single(
+            definition => definition.OpenApiOperationId == "importGeocoderReferenceData");
+        multipart.RequestContentType.Should().Be("multipart/form-data");
+        var properties = multipart.RequestBodyJsonSchema!.Value.GetProperty("properties");
+        properties.GetProperty("referenceData").GetProperty("format").GetString().Should().Be("binary");
+        properties.GetProperty("referenceData").GetProperty("contentEncoding").GetString().Should().Be("base64");
+        properties.GetProperty("referenceDataFileName").GetProperty("type").GetString().Should().Be("string");
+    }
+
     private static string FindAdminOpenApi()
     {
         var candidates = new[]

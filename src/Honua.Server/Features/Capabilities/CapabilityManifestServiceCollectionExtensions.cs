@@ -29,6 +29,7 @@ internal static class CapabilityManifestServiceCollectionExtensions
         services.AddSingleton<DeploymentCapabilityProfile>();
         services.AddSingleton<DeploymentIdentity>();
         services.AddSingleton<DeploymentCapabilityRouteCatalog>();
+        services.AddScoped<CapabilityManifestRuntimeInventory>();
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;
     }

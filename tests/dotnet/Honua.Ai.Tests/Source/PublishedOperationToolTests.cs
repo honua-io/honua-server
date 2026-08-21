@@ -389,8 +389,8 @@ public sealed class PublishedOperationToolTests
 
         var tools = await source.GetToolsAsync(CancellationToken.None);
 
-        tools.Should().HaveCount(387,
-            "all 396 Admin OpenAPI operations are classified and nine secret/session issuers are withheld");
+        tools.Should().HaveCount(385,
+            "all 396 Admin OpenAPI operations are classified and eleven secret/session issuers are withheld");
         tools.Should().HaveCount(adminCatalog.Definitions.Count - AdminPublishedOperationSafety.WithheldOperationCount);
         tools.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
         AdminPublishedOperationSafety.Exclusions.Should().OnlyContain(exclusion =>
@@ -411,7 +411,19 @@ public sealed class PublishedOperationToolTests
         tools.Select(tool => tool.Name).Should().NotContain(
             "honua_admin_api_key_create",
             "honua_admin_api_key_rotate",
-            "honua_admin_oauth_client_create");
+            "honua_admin_oauth_client_create",
+            "honua_admin_openapi_get_admin_auth_session",
+            "honua_admin_openapi_logout_admin_auth_session");
+        AdminPublishedOperationSafety.Exclusions.Should().ContainSingle(exclusion =>
+            exclusion.OperationId == "admin.openapi.logout-admin-auth-session"
+            && exclusion.OpenApiOperationId == "logoutAdminAuthSession"
+            && exclusion.Code == "session-bound-auth-flow"
+            && exclusion.Reason.Contains("ID-token hint", StringComparison.Ordinal));
+        AdminPublishedOperationSafety.Exclusions.Should().ContainSingle(exclusion =>
+            exclusion.OperationId == "admin.openapi.get-admin-auth-session"
+            && exclusion.OpenApiOperationId == "getAdminAuthSession"
+            && exclusion.Code == "session-bound-auth-flow"
+            && exclusion.Reason.Contains("cookie session", StringComparison.Ordinal));
         var createConnection = tools.Should().ContainSingle(tool => tool.Name == "honua_admin_connection_create").Subject;
         var body = createConnection.Describe().InputSchema.GetProperty("properties").GetProperty("body");
         body.GetProperty("type").GetString().Should().Be("object");
@@ -426,6 +438,50 @@ public sealed class PublishedOperationToolTests
             .GetProperty("properties");
         geoserverBody.TryGetProperty("honuaApiKey", out _).Should().BeFalse();
         geoserverBody.TryGetProperty("honuaApiKeySecretReference", out _).Should().BeTrue();
+        var rateLimitBody = tools.Should()
+            .ContainSingle(tool => tool.Name == "honua_admin_rate_limit_create").Subject
+            .Describe().InputSchema.GetProperty("properties").GetProperty("body")
+            .GetProperty("properties");
+        rateLimitBody.TryGetProperty("key", out _).Should().BeTrue(
+            "a rate-limit partition key is an identifier, not credential material");
+    }
+
+    [UnitTest]
+    public async Task Invoke_RateLimitCreate_PreservesNonSecretKeyWhileSecretFieldsRemainDenied()
+    {
+        OperationRequest? submitted = null;
+        var invoker = new CountingInvoker(request =>
+        {
+            submitted = request;
+            return CompletedHandle("admin.rate-limit.create");
+        });
+        var adminCatalog = new AdminOpenApiOperationCatalog(FindAdminOpenApi());
+        using var catalog = new OperationCatalog(
+            [new AdminOperationDescriptorProvider(adminCatalog)],
+            TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+        var tool = (await source.GetToolsAsync(CancellationToken.None))
+            .Single(candidate => candidate.Name == "honua_admin_rate_limit_create");
+
+        var result = await tool.InvokeAsync(
+            Context(invoker),
+            Args("""{"body":{"scope":"tenant","key":"tenant-a","permitLimit":10,"windowSeconds":60}}"""),
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
+        invoker.SubmitCount.Should().Be(1);
+        submitted.Should().NotBeNull();
+        submitted!.Parameters["body"].Should().Contain("\"key\":\"tenant-a\"");
+
+        var denied = await tool.InvokeAsync(
+            Context(invoker),
+            Args("""{"body":{"scope":"tenant","key":"tenant-a","password":"must-not-cross-mcp"}}"""),
+            CancellationToken.None);
+        denied.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Denied");
+        invoker.SubmitCount.Should().Be(1, "real credential fields remain fail-closed");
     }
 
     [UnitTest]
@@ -469,6 +525,55 @@ public sealed class PublishedOperationToolTests
             annotation != null && annotation.ReadOnlyHint == true && annotation.DestructiveHint == false);
         tools.Select(tool => tool.Describe().Annotations).Should().Contain(annotation =>
             annotation != null && annotation.ReadOnlyHint == false && annotation.DestructiveHint == true);
+    }
+
+    [UnitTest]
+    public void CacheKey_CanonicalEnvelope_IsOrderIndependentAndDelimiterCollisionSafe()
+    {
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = "oidc:subject:https%3A%2F%2Fissuer.example:subject-1",
+            Tier = "Enterprise",
+            TenantId = "Tenant-A",
+            Roles = ["Publisher", "Viewer"],
+            Permissions = ["admin:read", "jobs:read"],
+        };
+        var ordered = IPublishedOperationCache.BuildKey(
+            "admin.server.status",
+            "catalog-1",
+            new Dictionary<string, string?> { ["a"] = "1", ["b"] = "2" },
+            context);
+        var reversed = IPublishedOperationCache.BuildKey(
+            "admin.server.status",
+            "catalog-1",
+            new Dictionary<string, string?> { ["b"] = "2", ["a"] = "1" },
+            context with { Roles = ["viewer", "publisher"], Permissions = ["jobs:read", "admin:read"] });
+        ordered.Should().Be(reversed);
+        ordered.Should().MatchRegex("^mcpop:v1:[0-9a-f]{64}$");
+
+        var embeddedDelimiters = IPublishedOperationCache.BuildKey(
+            "admin.server.status",
+            "catalog-1",
+            new Dictionary<string, string?> { ["a"] = "b;c=d" },
+            context);
+        var splitParameters = IPublishedOperationCache.BuildKey(
+            "admin.server.status",
+            "catalog-1",
+            new Dictionary<string, string?> { ["a"] = "b", ["c"] = "d" },
+            context);
+        embeddedDelimiters.Should().NotBe(splitParameters);
+
+        var embeddedRoleDelimiter = IPublishedOperationCache.BuildKey(
+            "admin.server.status",
+            "catalog-1",
+            new Dictionary<string, string?>(),
+            context with { Roles = ["publisher,viewer"] });
+        var splitRoles = IPublishedOperationCache.BuildKey(
+            "admin.server.status",
+            "catalog-1",
+            new Dictionary<string, string?>(),
+            context with { Roles = ["publisher", "viewer"] });
+        embeddedRoleDelimiter.Should().NotBe(splitRoles);
     }
 
     [UnitTest]

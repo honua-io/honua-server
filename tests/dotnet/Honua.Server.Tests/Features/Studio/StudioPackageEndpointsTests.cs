@@ -854,7 +854,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = fixture.CreateAdminClient();
         using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
-        var ownerId = aliceKey.Record.Id.ToString("D");
+        var ownerId = StudioOwnerId(aliceKey.Record.Id);
         var (itemId, _, _) = await CreatePublishedTwoVersionItemAsync(adminClient, ownerId);
         var request = (await fixture.Services
             .GetRequiredService<IStudioPackageLifecycleService>()
@@ -890,8 +890,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = fixture.CreateAdminClient();
         using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var aliceOwnerId = StudioOwnerId(aliceKey.Record.Id);
+        var bobOwnerId = StudioOwnerId(bobKey.Record.Id);
         var (itemId, originalCurrentVersionId, mixedOwnerDraft) =
             await CreateItemWithMixedOwnerDraftAsync(adminClient, aliceOwnerId, bobOwnerId);
         var store = fixture.Services.GetRequiredService<IStudioPackageStore>();
@@ -923,7 +923,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             .ContainSingle("the Studio denial replaces the generic auth.denied event")
             .Subject;
         denialAudit.Action.Should().Be("studio.create_version");
-        denialAudit.Actor.Should().Be(bobOwnerId);
+        denialAudit.Actor.Should().Be(bobKey.Record.Id.ToString("D"));
         denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         denialAudit.ResourceType.Should().Be("studio-content-item");
         denialAudit.ResourceId.Should().Be(itemId.ToString("D"));
@@ -1027,7 +1027,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = endUserFixture.CreateAdminClient();
         using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
 
-        var ownerId = aliceKey.Record.Id.ToString("D");
+        var ownerId = StudioOwnerId(aliceKey.Record.Id);
         var (itemId, _, _) = await CreatePublishedTwoVersionItemAsync(adminClient, ownerId);
 
         var listResponse = await aliceClient.GetAsync("/api/v1/studio/content-items");
@@ -1127,7 +1127,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // (admin bypasses the elevated publish-request grant gate; Alice holds no StudioDraft
         // grant in this fixture) so the fixture only exercises the read-visibility boundary
         // under test here, not the elevated tier already covered above.
-        var ownerId = aliceKey.Record.Id.ToString("D");
+        var ownerId = StudioOwnerId(aliceKey.Record.Id);
         var (itemId, publishedVersionId, currentVersionId) = await CreatePublishedTwoVersionItemAsync(adminClient, ownerId);
 
         var bobListResponse = await bobClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
@@ -1162,7 +1162,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = endUserFixture.CreateAdminClient();
         using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
 
-        var ownerId = aliceKey.Record.Id.ToString("D");
+        var ownerId = StudioOwnerId(aliceKey.Record.Id);
         var (itemId, _, currentVersionId) = await CreatePublishedTwoVersionMapItemAsync(adminClient, ownerId);
 
         // The owner can export the current, unpublished-beyond version explicitly -- ownership
@@ -1199,7 +1199,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = endUserFixture.CreateAdminClient();
         using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        var ownerId = aliceKey.Record.Id.ToString("D");
+        var ownerId = StudioOwnerId(aliceKey.Record.Id);
         var (itemId, publishedVersionId, currentVersionId) = await CreatePublishedTwoVersionMapItemAsync(adminClient, ownerId);
 
         // No versionId supplied: pinned server-side to the published version rather than
@@ -1248,7 +1248,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = endUserFixture.CreateAdminClient();
         using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        var ownerId = aliceKey.Record.Id.ToString("D");
+        var ownerId = StudioOwnerId(aliceKey.Record.Id);
         var createResponse = await adminClient.PostAsync(
             "/api/v1/studio/package-drafts",
             JsonContent(
@@ -1300,18 +1300,15 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var aliceOwnerId = StudioOwnerId(aliceKey.Record.Id);
+        var bobOwnerId = StudioOwnerId(bobKey.Record.Id);
 
-        // OperatorAuthorizationEvaluator resolves its grant-lookup subject through the same
-        // chain as StudioAuthorizationService.ResolveCallerId (NameIdentifier -> sub ->
-        // api_key_id -> api_key_name; PR #3024 review), so each API-key principal's grants are
-        // provisioned under its own api_key_id -- the same id it owns content under. Both
-        // callers hold a real "own" grant, exactly as two OIDC principals each independently
-        // would: Bob's denial below rests entirely on the item-vs-version ownership boundary
-        // under test.
-        roleStore.Grant(aliceOwnerId, StudioDraftOwnPublishAndRollbackGrants);
-        roleStore.Grant(bobOwnerId, StudioDraftOwnPublishAndRollbackGrants);
+        // OperatorAuthorizationEvaluator resolves API-key grants through the immutable bare
+        // api_key_id, while Studio ownership uses the scheme-qualified durable id. Grant both
+        // keys the StudioDraft/own role under the evaluator's subject so Bob's denial below
+        // rests entirely on the item-vs-version ownership boundary under test.
+        roleStore.Grant(aliceKey.Record.Id.ToString("D"), StudioDraftOwnPublishAndRollbackGrants);
+        roleStore.Grant(bobKey.Record.Id.ToString("D"), StudioDraftOwnPublishAndRollbackGrants);
 
         // Admin creates the item owned by Alice, then a second draft under the SAME item
         // explicitly owned by Bob -- the item's owner_id stays Alice (immutable), but the
@@ -1356,13 +1353,13 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var aliceOwnerId = StudioOwnerId(aliceKey.Record.Id);
+        var bobOwnerId = StudioOwnerId(bobKey.Record.Id);
 
-        // Grants provisioned under each principal's real api_key_id-resolved subject id -- see
+        // Grants remain provisioned under the evaluator's bare api_key_id subject -- see
         // PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner.
-        roleStore.Grant(aliceOwnerId, StudioDraftOwnPublishAndRollbackGrants);
-        roleStore.Grant(bobOwnerId, StudioDraftOwnPublishAndRollbackGrants);
+        roleStore.Grant(aliceKey.Record.Id.ToString("D"), StudioDraftOwnPublishAndRollbackGrants);
+        roleStore.Grant(bobKey.Record.Id.ToString("D"), StudioDraftOwnPublishAndRollbackGrants);
 
         var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
 
@@ -1399,8 +1396,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var aliceOwnerId = StudioOwnerId(aliceKey.Record.Id);
+        var bobOwnerId = StudioOwnerId(bobKey.Record.Id);
         var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
 
         var aliceResponse = await aliceClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
@@ -1433,8 +1430,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var adminClient = fixture.CreateAdminClient();
         using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
 
-        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
-        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var aliceOwnerId = StudioOwnerId(aliceKey.Record.Id);
+        var bobOwnerId = StudioOwnerId(bobKey.Record.Id);
         var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
 
         // Alice's own first version (from the item's creation) is the left side; Bob's
@@ -2177,6 +2174,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
     private static StringContent EmptyJson()
         => new("{}", Encoding.UTF8, "application/json");
+
+    private static string StudioOwnerId(Guid apiKeyId)
+        => $"admin-api-key:api-key:{apiKeyId:D}";
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<ApiResponse<T>> typeInfo)
     {

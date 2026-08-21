@@ -21,7 +21,15 @@ internal sealed class AdminOpenApiOperationCatalog
     private const string ApiPrefix = "/api/v1/admin";
     private static readonly string[] HttpMethods = ["get", "post", "put", "patch", "delete"];
     private static readonly string[] PreferredRequestContentTypes =
-        ["application/json", "multipart/form-data", "application/x-www-form-urlencoded", "text/plain"];
+        [
+            "application/json",
+            "multipart/form-data",
+            "application/x-www-form-urlencoded",
+            "application/xml",
+            "text/xml",
+            "application/octet-stream",
+            "text/plain"
+        ];
     private static readonly ConditionalWeakTable<JsonObject, Dictionary<string, JsonNode>> ResolvedSchemaCaches = new();
     private static readonly ConcurrentDictionary<string, Lazy<AdminOpenApiCatalogContent>> CatalogCache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -143,9 +151,10 @@ internal sealed class AdminOpenApiOperationCatalog
         AddParameters(root, source.Operation["parameters"] as JsonArray, parameters, inputProperties, required);
 
         var (requestContentType, requestSchema) = ReadRequestSchema(root, source.Operation);
-        if (requestSchema is not null)
+        var projectedRequestSchema = BuildProjectedRequestSchema(requestContentType, requestSchema);
+        if (projectedRequestSchema is not null)
         {
-            inputProperties["body"] = requestSchema;
+            inputProperties["body"] = projectedRequestSchema;
             var bodyRequired = source.Operation["requestBody"] is JsonObject body
                 && body["required"]?.GetValue<bool>() == true;
             if (bodyRequired)
@@ -182,7 +191,7 @@ internal sealed class AdminOpenApiOperationCatalog
                 ?? source.Operation["summary"]?.GetValue<string>()
                 ?? entry.OperationId,
             Category = entry.OperationId.Split('.')[1],
-            InputSchema = BuildLegacyInput(parameters, requestSchema, source.Operation),
+            InputSchema = BuildLegacyInput(parameters, projectedRequestSchema, source.Operation),
             OutputSchema =
             [
                 new OperationParameterDescriptor
@@ -225,9 +234,63 @@ internal sealed class AdminOpenApiOperationCatalog
             source.Method,
             ApiPrefix + source.Path,
             requestContentType,
-            requestSchema is not null,
+            projectedRequestSchema is null ? null : ToElement(projectedRequestSchema),
+            projectedRequestSchema is not null,
             parameters);
     }
+
+    private static JsonNode? BuildProjectedRequestSchema(string? contentType, JsonNode? requestSchema)
+    {
+        if (requestSchema is null)
+        {
+            return null;
+        }
+
+        var projected = requestSchema.DeepClone();
+        if (projected is not JsonObject schema)
+        {
+            return projected;
+        }
+
+        if (string.Equals(contentType, "application/octet-stream", StringComparison.Ordinal)
+            && IsBinarySchema(schema))
+        {
+            schema["contentEncoding"] = "base64";
+            schema["description"] = AppendDescription(
+                schema["description"]?.GetValue<string>(),
+                "Supply the raw request bytes as a base64-encoded string.");
+        }
+        else if (string.Equals(contentType, "multipart/form-data", StringComparison.Ordinal)
+                 && schema["properties"] is JsonObject properties)
+        {
+            var binaryPropertyNames = properties
+                .Where(property => property.Value is JsonObject propertySchema && IsBinarySchema(propertySchema))
+                .Select(property => property.Key)
+                .ToArray();
+            foreach (var propertyName in binaryPropertyNames)
+            {
+                var propertySchema = (JsonObject)properties[propertyName]!;
+                propertySchema["contentEncoding"] = "base64";
+                propertySchema["description"] = AppendDescription(
+                    propertySchema["description"]?.GetValue<string>(),
+                    "Supply this file's bytes as a base64-encoded string.");
+                properties[propertyName + "FileName"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = $"File name sent with the '{propertyName}' multipart file.",
+                };
+            }
+        }
+
+        return projected;
+    }
+
+    private static bool IsBinarySchema(JsonObject schema)
+        => string.Equals(schema["type"]?.GetValue<string>(), "string", StringComparison.Ordinal)
+           && string.Equals(schema["format"]?.GetValue<string>(), "binary", StringComparison.Ordinal);
+
+    private static string AppendDescription(string? existing, string addition)
+        => string.IsNullOrWhiteSpace(existing) ? addition : $"{existing} {addition}";
 
     private static void AddParameters(
         JsonObject root,
@@ -613,6 +676,7 @@ internal sealed record AdminOpenApiOperationDefinition(
     string Method,
     string Path,
     string? RequestContentType,
+    JsonElement? RequestBodyJsonSchema,
     bool HasRequestBody,
     IReadOnlyList<AdminOperationParameterBinding> Parameters);
 

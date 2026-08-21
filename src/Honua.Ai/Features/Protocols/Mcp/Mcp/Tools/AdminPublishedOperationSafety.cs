@@ -25,7 +25,9 @@ internal static class AdminPublishedOperationSafety
         new("admin.openapi.issue-admin-operator-bearer", "issueAdminOperatorBearer", "one-time-secret-result", "The endpoint returns a forwardable operator bearer."),
         new("admin.openapi.create-admin-auth-authorize-url", "createAdminAuthAuthorizeUrl", "session-bound-auth-flow", "The response contains one-time OIDC state and requires an HttpOnly pending-session cookie."),
         new("admin.openapi.request-admin-auth-token", "requestAdminAuthToken", "session-bound-auth-flow", "The endpoint consumes a one-time authorization code and requires an HttpOnly pending-session cookie."),
+        new("admin.openapi.get-admin-auth-session", "getAdminAuthSession", "session-bound-auth-flow", "The endpoint reads the caller's authenticated browser cookie session, which the internal MCP invoker cannot supply."),
         new("admin.openapi.get-admin-auth-logout-url", "getAdminAuthLogoutUrl", "session-bound-auth-flow", "The response can contain a session-bound OIDC logout token hint."),
+        new("admin.openapi.logout-admin-auth-session", "logoutAdminAuthSession", "session-bound-auth-flow", "The endpoint requires the caller's authenticated cookie session and its logout URL can contain an OIDC ID-token hint."),
     ];
 
     private static readonly HashSet<string> OneTimeSecretOperationIds =

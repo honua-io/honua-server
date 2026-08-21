@@ -341,11 +341,67 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
-    public void ResolveCallerId_PrefersNameIdentifierClaim()
+    public void ResolveCallerId_UsesSchemeIssuerAndSubject()
     {
         var service = BuildService(enabled: true, out _);
-        Assert.Equal(Alice, service.ResolveCallerId(UserPrincipal(Alice)));
+        Assert.Equal(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:alice",
+            service.ResolveCallerId(OidcPrincipal(Alice, "https://issuer-a.example")));
         Assert.Null(service.ResolveCallerId(new ClaimsPrincipal(new ClaimsIdentity())));
+    }
+
+    [UnitTest]
+    public async Task ResolveCallerId_TwoIssuersWithSameSubject_RemainDistinctAndCrossOwnerFailsClosed()
+    {
+        var service = BuildService(enabled: true, out _);
+        var issuerA = OidcPrincipal("shared-subject", "https://issuer-a.example");
+        var issuerB = OidcPrincipal("shared-subject", "https://issuer-b.example");
+        var ownerA = service.ResolveCallerId(issuerA);
+        var ownerB = service.ResolveCallerId(issuerB);
+
+        ownerA.Should().NotBeNull().And.NotBe(ownerB);
+        (await service.AuthorizeAsync(
+            issuerA,
+            ownerA,
+            StudioAuthorizationOperation.UpdateDraft,
+            ownerA)).IsAllowed.Should().BeTrue("the same issuer and subject own their resource");
+        var crossIssuer = await service.AuthorizeAsync(
+            issuerB,
+            ownerB,
+            StudioAuthorizationOperation.UpdateDraft,
+            ownerA);
+        crossIssuer.IsAllowed.Should().BeFalse();
+        crossIssuer.Code.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+
+        var legacyBareOwner = await service.AuthorizeAsync(
+            issuerA,
+            ownerA,
+            StudioAuthorizationOperation.UpdateDraft,
+            "shared-subject");
+        legacyBareOwner.IsAllowed.Should().BeFalse("legacy bare subjects must not bind to a new issuer opportunistically");
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_ApiKeyUsesSchemeAndImmutableKeyId()
+    {
+        var service = BuildService(enabled: true, out _);
+        var keyId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim("auth_type", "admin-api-key"),
+                new Claim("api_key_id", keyId.ToString("D")),
+                new Claim("api_key_name", "mutable-display-name"),
+            ],
+            authenticationType: "ApiKey"));
+
+        service.ResolveCallerId(principal).Should().Be($"admin-api-key:api-key:{keyId:D}");
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_SubjectWithoutValidatedIssuerFailsClosed()
+    {
+        var service = BuildService(enabled: true, out _);
+        service.ResolveCallerId(UserPrincipal(Alice)).Should().BeNull();
     }
 
     private static StudioAuthorizationService BuildService(
@@ -374,6 +430,17 @@ public sealed class StudioAuthorizationServiceTests
                 new Claim(ClaimTypes.Role, "creator"),
             ],
             authenticationType: "Test"));
+
+    private static ClaimsPrincipal OidcPrincipal(string subject, string issuer)
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, subject),
+                new Claim("sub", subject),
+                new Claim("iss", issuer),
+                new Claim("auth_type", "oidc"),
+                new Claim(ClaimTypes.Role, "creator"),
+            ],
+            authenticationType: "oidc"));
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

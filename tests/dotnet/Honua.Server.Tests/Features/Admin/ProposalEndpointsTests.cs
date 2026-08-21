@@ -488,6 +488,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task PublishedOperation_RawCredential_IsDeniedBeforeProposalPersistence()
     {
         var (keyId, _) = await CreateScopedApiKeyAsync("raw-secret-originator", ["admin:read"]);
@@ -516,6 +517,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task PublishedOperation_RevokedProposerKey_CannotResumeAfterApproval()
     {
         var (keyId, _) = await CreateScopedApiKeyAsync("revoked-originator", ["admin:read"]);
@@ -532,6 +534,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task PublishedOperation_DowngradedOidcProposer_CannotResumeAfterApproval()
     {
         const string subject = "oidc-subject-1";

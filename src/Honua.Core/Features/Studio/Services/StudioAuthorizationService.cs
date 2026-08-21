@@ -89,45 +89,47 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     public string? ResolveCallerId(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        if (principal.Identity is not { IsAuthenticated: true })
+        if (principal.Identity is not { IsAuthenticated: true } identity)
         {
             return null;
         }
 
-        // Honua.Core has no ASP.NET dependency, so this uses ClaimsPrincipal.FindFirst rather
-        // than the Microsoft.AspNetCore.Authentication FindFirstValue extension.
-        var candidate = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrWhiteSpace(candidate))
+        var scheme = NormalizeIdentityComponent(principal.FindFirst("auth_type")?.Value)
+            ?? NormalizeIdentityComponent(identity.AuthenticationType);
+        if (scheme is null)
         {
-            return candidate;
+            return null;
         }
 
-        candidate = principal.FindFirst("sub")?.Value;
-        if (!string.IsNullOrWhiteSpace(candidate))
+        // API-key display names are mutable and non-unique. Only the immutable key id is a
+        // durable ownership key, qualified by the validated authentication scheme.
+        var apiKeyValue = NormalizeIdentityComponent(principal.FindFirst("api_key_id")?.Value);
+        if (apiKeyValue is not null)
         {
-            return candidate;
+            return Guid.TryParse(apiKeyValue, out var apiKeyId)
+                ? $"{scheme.ToLowerInvariant()}:api-key:{apiKeyId:D}"
+                : null;
         }
 
-        candidate = principal.FindFirst("api_key_id")?.Value;
-        if (!string.IsNullOrWhiteSpace(candidate))
+        // A bare subject is not globally unique: two trusted OIDC issuers can legally mint the
+        // same sub. Require the validated issuer claim and include it with the auth scheme in
+        // the ownership key. Legacy bare owner ids therefore compare unequal and fail closed;
+        // they are never opportunistically rebound to whichever issuer asks first.
+        var subject = NormalizeIdentityComponent(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value)
+            ?? NormalizeIdentityComponent(principal.FindFirst("sub")?.Value);
+        var issuer = NormalizeIdentityComponent(principal.FindFirst("iss")?.Value);
+        if (subject is null || issuer is null)
         {
-            return candidate;
+            return null;
         }
 
-        candidate = principal.FindFirst("api_key_name")?.Value;
-        if (!string.IsNullOrWhiteSpace(candidate))
-        {
-            return candidate;
-        }
+        return $"{scheme.ToLowerInvariant()}:subject:{Uri.EscapeDataString(issuer)}:{Uri.EscapeDataString(subject)}";
+    }
 
-        candidate = principal.Identity.Name;
-        if (!string.IsNullOrWhiteSpace(candidate))
-        {
-            return candidate;
-        }
-
-        candidate = principal.FindFirst(ClaimTypes.Name)?.Value;
-        return string.IsNullOrWhiteSpace(candidate) ? null : candidate;
+    private static string? NormalizeIdentityComponent(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
     /// <inheritdoc />

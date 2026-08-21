@@ -462,17 +462,12 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             var publishedId = Guid.NewGuid();
             var publishedDraft = await store.CreateDraftAsync(BuildDraft("1=1", "list-published", publishedId, owner: "alice"));
             var version = await store.CreateVersionAsync(publishedDraft, "first save", "alice");
-            await store.CreatePublicationRequestAsync(new StudioPublicationRequest
-            {
-                RequestId = Guid.NewGuid(),
-                ItemId = version.ItemId,
-                VersionId = version.VersionId,
-                Intent = version.Envelope.PublicationIntent,
-                Status = StudioPublicationRequestStatus.Accepted,
-                Validation = version.Validation,
-                RequestedBy = "alice",
-                CreatedAt = DateTimeOffset.UtcNow,
-            });
+            await store.RollbackAsync(
+                version.ItemId,
+                version.VersionId,
+                StudioRollbackPointer.Published,
+                "alice",
+                "publish list fixture");
 
             var byOwner = await store.ListContentItemsAsync(new StudioContentItemQuery { OwnerId = "bob" });
             byOwner.Items.Should().ContainSingle(i => i.ItemId == draftOnly.ItemId);

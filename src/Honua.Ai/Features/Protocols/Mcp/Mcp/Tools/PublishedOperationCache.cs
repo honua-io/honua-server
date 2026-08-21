@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -14,8 +16,8 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// an identical result without re-executing the operation.
 /// </summary>
 /// <remarks>
-/// The key is
-/// <c>{operationId}|{catalogVersion}|{principalId}|{tier}|{tenant}|{sortedRoles}|{sortedPermissions}|{normalizedParameters}</c>.
+/// The key is a SHA-256 digest of a canonical JSON envelope containing the operation,
+/// catalog, actor/tenant authorization context, and sorted parameters/roles/permissions.
 /// A catalog change (a republished descriptor) invalidates prior entries by producing
 /// a different key. The full policy-relevant principal context (principal id, resolved
 /// tier, tenant, sorted roles, and sorted permissions) is part of the key ON PURPOSE:
@@ -54,31 +56,56 @@ internal interface IPublishedOperationCache
     {
         ArgumentNullException.ThrowIfNull(principalContext);
 
-        // Order-independent, null-safe normalization so identical inputs supplied in
-        // any order produce the same key.
-        var normalized = string.Join(
-            ";",
-            parameters
-                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
-                .Select(kvp => $"{kvp.Key}={kvp.Value}"));
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("operationId", operationId);
+            writer.WriteString("catalogVersion", catalogVersion);
+            writer.WriteString("principalId", NormalizeIdentity(principalContext.PrincipalId));
+            writer.WriteString("tier", Normalize(principalContext.Tier));
+            writer.WriteString("tenantId", Normalize(principalContext.TenantId));
+            WriteNormalizedArray(writer, "roles", principalContext.Roles);
+            WriteNormalizedArray(writer, "permissions", principalContext.Permissions);
+            writer.WritePropertyName("parameters");
+            writer.WriteStartObject();
+            foreach (var parameter in parameters.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
+            {
+                if (parameter.Value is null)
+                {
+                    writer.WriteNull(parameter.Key);
+                }
+                else
+                {
+                    writer.WriteString(parameter.Key, parameter.Value);
+                }
+            }
 
-        var roles = string.Join(
-            ",",
-            principalContext.Roles
-                .Select(Normalize)
-                .Where(static role => role.Length > 0)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(static role => role, StringComparer.Ordinal));
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
 
-        var permissions = string.Join(
-            ",",
-            principalContext.Permissions
-                .Select(Normalize)
-                .Where(static permission => permission.Length > 0)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(static permission => permission, StringComparer.Ordinal));
+        var digest = SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
+        return $"mcpop:v1:{Convert.ToHexStringLower(digest)}";
+    }
 
-        return $"{operationId}|{catalogVersion}|{NormalizeIdentity(principalContext.PrincipalId)}|{Normalize(principalContext.Tier)}|{Normalize(principalContext.TenantId)}|{roles}|{permissions}|{normalized}";
+    private static void WriteNormalizedArray(
+        Utf8JsonWriter writer,
+        string propertyName,
+        IEnumerable<string> values)
+    {
+        writer.WritePropertyName(propertyName);
+        writer.WriteStartArray();
+        foreach (var value in values
+                     .Select(Normalize)
+                     .Where(static value => value.Length > 0)
+                     .Distinct(StringComparer.Ordinal)
+                     .OrderBy(static value => value, StringComparer.Ordinal))
+        {
+            writer.WriteStringValue(value);
+        }
+
+        writer.WriteEndArray();
     }
 
     private static string NormalizeIdentity(string? value) => value?.Trim() ?? string.Empty;

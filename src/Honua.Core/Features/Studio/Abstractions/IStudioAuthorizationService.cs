@@ -138,15 +138,12 @@ public interface IStudioAuthorizationService
     bool IsAdmin(ClaimsPrincipal principal);
 
     /// <summary>
-    /// Resolves the stable actor identifier used both as the ownership key and as the
-    /// operator-authorization subject: <c>NameIdentifier</c>/<c>sub</c>, falling back to the
-    /// admin API-key id/name claims, then <see cref="ClaimsIdentity.Name"/>. Mirrors
-    /// <c>ConsolePrincipal.ResolveActorId</c> (duplicated here rather than referenced, because
-    /// <c>Honua.Core</c> cannot depend on <c>Honua.Server</c>) so ownership recorded at create
-    /// time and the caller id compared at authorization time always agree. Endpoint callers that
-    /// already resolved the actor id (for example to stamp <c>ActorId</c> on a lifecycle command)
-    /// should reuse that value as the <c>callerId</c> argument to
-    /// <see cref="AuthorizeAsync"/> instead of resolving twice.
+    /// Resolves the durable, scheme-qualified actor identifier used as the ownership key.
+    /// API keys require their immutable <c>api_key_id</c>; subject identities require both a
+    /// validated <c>iss</c> and <c>NameIdentifier</c>/<c>sub</c>. Display names and bare subjects
+    /// are never ownership identifiers. Endpoint callers that already resolved the actor id
+    /// should reuse that value as the <c>callerId</c> argument to <see cref="AuthorizeAsync"/>
+    /// instead of resolving twice.
     /// </summary>
     string? ResolveCallerId(ClaimsPrincipal principal);
 

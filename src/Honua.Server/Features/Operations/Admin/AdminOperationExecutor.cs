@@ -56,16 +56,13 @@ internal sealed class AdminOperationExecutor(
             messages.Add("Required parameter 'body' is missing.");
         }
         else if (!string.IsNullOrWhiteSpace(body)
-                 && definition.RequestContentType is "application/json" or "multipart/form-data")
+                 && !AdminEndpointOperationInvoker.TryMeasurePayload(
+                     definition,
+                     body,
+                     out _,
+                     out var payloadError))
         {
-            try
-            {
-                using var _ = JsonDocument.Parse(body);
-            }
-            catch (JsonException)
-            {
-                messages.Add("Parameter 'body' must contain valid JSON.");
-            }
+            messages.Add(payloadError!);
         }
 
         if (request.DryRun && !definition.Descriptor.Policy.SupportsDryRun)
@@ -152,7 +149,15 @@ internal sealed class AdminEndpointOperationInvoker(
         string resultOperationId,
         CancellationToken cancellationToken)
     {
-        if (PayloadExceedsLimit(operationRequest, _maxRequestBodyBytes))
+        operationRequest.Parameters.TryGetValue("body", out var requestBody);
+        var payloadBytes = 0L;
+        if (!string.IsNullOrWhiteSpace(requestBody)
+            && !TryMeasurePayload(definition, requestBody, out payloadBytes, out var payloadError))
+        {
+            return Failure(resultOperationId, HttpStatusCode.BadRequest, payloadError!);
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestBody) && payloadBytes > _maxRequestBodyBytes)
         {
             return Failure(
                 resultOperationId,
@@ -211,9 +216,8 @@ internal sealed class AdminEndpointOperationInvoker(
 
             await endpoint.RequestDelegate!(httpContext).ConfigureAwait(false);
             responseBody.Position = 0;
-            var responseText = await new StreamReader(responseBody, Encoding.UTF8, leaveOpen: true)
-                .ReadToEndAsync(cancellationToken)
-                .ConfigureAwait(false);
+            using var responseReader = new StreamReader(responseBody, Encoding.UTF8, leaveOpen: true);
+            var responseText = await responseReader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             var success = httpContext.Response.StatusCode is >= 200 and < 300;
             await WriteAuditAsync(
                     definition,
@@ -457,7 +461,7 @@ internal sealed class AdminEndpointOperationInvoker(
 
         if (string.Equals(definition.RequestContentType, "multipart/form-data", StringComparison.Ordinal))
         {
-            using var content = BuildMultipart(body);
+            using var content = BuildMultipart(definition, body);
             var stream = new MemoryStream();
             await content.CopyToAsync(stream, cancellationToken).ConfigureAwait(false);
             stream.Position = 0;
@@ -467,13 +471,25 @@ internal sealed class AdminEndpointOperationInvoker(
             return;
         }
 
+        if (string.Equals(definition.RequestContentType, "application/octet-stream", StringComparison.Ordinal)
+            && IsBinarySchema(definition.RequestBodyJsonSchema))
+        {
+            var decodedBytes = Convert.FromBase64String(body);
+            request.Body = new MemoryStream(decodedBytes, writable: false);
+            request.ContentLength = decodedBytes.Length;
+            request.ContentType = definition.RequestContentType;
+            return;
+        }
+
         var bytes = Encoding.UTF8.GetBytes(body);
         request.Body = new MemoryStream(bytes, writable: false);
         request.ContentLength = bytes.Length;
         request.ContentType = definition.RequestContentType ?? "application/json";
     }
 
-    private static MultipartFormDataContent BuildMultipart(string body)
+    private static MultipartFormDataContent BuildMultipart(
+        AdminOpenApiOperationDefinition definition,
+        string body)
     {
         var content = new MultipartFormDataContent();
         using var document = JsonDocument.Parse(body);
@@ -489,7 +505,7 @@ internal sealed class AdminEndpointOperationInvoker(
                 continue;
             }
 
-            if (property.Name.Contains("file", StringComparison.OrdinalIgnoreCase)
+            if (IsMultipartBinaryProperty(definition.RequestBodyJsonSchema, property.Name)
                 && property.Value.ValueKind == JsonValueKind.String
                 && TryDecodeBase64(property.Value.GetString(), out var bytes))
             {
@@ -527,10 +543,108 @@ internal sealed class AdminEndpointOperationInvoker(
         }
     }
 
-    private static bool PayloadExceedsLimit(OperationRequest operationRequest, long maxRequestBodyBytes)
-        => operationRequest.Parameters.TryGetValue("body", out var body)
-           && body is not null
-           && Encoding.UTF8.GetByteCount(body) > maxRequestBodyBytes;
+    internal static bool TryMeasurePayload(
+        AdminOpenApiOperationDefinition definition,
+        string body,
+        out long payloadBytes,
+        out string? error)
+    {
+        payloadBytes = 0;
+        error = null;
+
+        if (string.Equals(definition.RequestContentType, "application/json", StringComparison.Ordinal))
+        {
+            try
+            {
+                using var _ = JsonDocument.Parse(body);
+                payloadBytes = Encoding.UTF8.GetByteCount(body);
+                return true;
+            }
+            catch (JsonException)
+            {
+                error = "Parameter 'body' must contain valid JSON.";
+                return false;
+            }
+        }
+
+        if (string.Equals(definition.RequestContentType, "application/octet-stream", StringComparison.Ordinal)
+            && IsBinarySchema(definition.RequestBodyJsonSchema))
+        {
+            if (!TryDecodeBase64(body, out var bytes))
+            {
+                error = "Parameter 'body' must contain valid base64-encoded binary data.";
+                return false;
+            }
+
+            payloadBytes = bytes.LongLength;
+            return true;
+        }
+
+        if (string.Equals(definition.RequestContentType, "multipart/form-data", StringComparison.Ordinal))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    error = "Parameter 'body' must contain a JSON object for multipart form data.";
+                    return false;
+                }
+
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (property.Name.EndsWith("FileName", StringComparison.Ordinal))
+                    {
+                        payloadBytes += Encoding.UTF8.GetByteCount(property.Value.GetString() ?? string.Empty);
+                        continue;
+                    }
+
+                    if (IsMultipartBinaryProperty(definition.RequestBodyJsonSchema, property.Name))
+                    {
+                        if (property.Value.ValueKind != JsonValueKind.String
+                            || !TryDecodeBase64(property.Value.GetString(), out var bytes))
+                        {
+                            error = $"Multipart binary property '{property.Name}' must contain valid base64 data.";
+                            return false;
+                        }
+
+                        payloadBytes += bytes.LongLength;
+                    }
+                    else
+                    {
+                        var value = property.Value.ValueKind == JsonValueKind.String
+                            ? property.Value.GetString() ?? string.Empty
+                            : property.Value.GetRawText();
+                        payloadBytes += Encoding.UTF8.GetByteCount(value);
+                    }
+                }
+
+                return true;
+            }
+            catch (JsonException)
+            {
+                error = "Parameter 'body' must contain valid JSON for multipart form data.";
+                return false;
+            }
+        }
+
+        payloadBytes = Encoding.UTF8.GetByteCount(body);
+        return true;
+    }
+
+    private static bool IsBinarySchema(JsonElement? schema)
+        => schema is { ValueKind: JsonValueKind.Object } value
+           && value.TryGetProperty("type", out var type)
+           && string.Equals(type.GetString(), "string", StringComparison.Ordinal)
+           && value.TryGetProperty("format", out var format)
+           && string.Equals(format.GetString(), "binary", StringComparison.Ordinal);
+
+    private static bool IsMultipartBinaryProperty(JsonElement? schema, string propertyName)
+        => schema is { ValueKind: JsonValueKind.Object } value
+           && value.TryGetProperty("properties", out var properties)
+           && properties.ValueKind == JsonValueKind.Object
+           && properties.TryGetProperty(propertyName, out var propertySchema)
+           && IsBinarySchema(propertySchema);
 
     private static bool RouteTemplatesMatch(string? registered, string expected)
         => string.Equals(NormalizeRouteTemplate(registered), NormalizeRouteTemplate(expected), StringComparison.OrdinalIgnoreCase);

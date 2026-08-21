@@ -513,13 +513,26 @@ internal static class StudioPackageEndpoints
             var actor = ConsolePrincipal.ResolveActorId(context.User);
 
             // honua-server#3001: once end-user mode is on, a non-admin caller may only ever
-            // own the drafts they create -- ignore any client-supplied ownerId (which would
-            // otherwise let a caller assign a draft to someone else) rather than trusting it.
-            // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null, so
-            // omitting it here resolves ownership to the authenticated caller.
-            var ownerId = !authorization.IsAdmin(context.User) && authorization.IsEndUserAuthorizationEnabled
-                ? null
+            // own the drafts they create. Persist the same canonical, scheme-qualified caller
+            // id that every later authorization check resolves; falling back to ActorId here
+            // would persist a bare OIDC subject/API-key id and make the new draft inaccessible
+            // (or collidable across issuers).
+            var isEndUserCreate = !authorization.IsAdmin(context.User)
+                && authorization.IsEndUserAuthorizationEnabled;
+            var ownerId = isEndUserCreate
+                ? authorization.ResolveCallerId(context.User)
                 : request.OwnerId;
+            if (isEndUserCreate && string.IsNullOrWhiteSpace(ownerId))
+            {
+                return await DenyAsync(
+                    authorization,
+                    context,
+                    StudioAuthorizationOperation.CreateDraft,
+                    resourceType: "studio-package-draft",
+                    resourceId: null,
+                    "The caller's durable identity could not be resolved for Studio ownership.",
+                    StudioAuthorizationService.AuthenticationRequiredCode).ConfigureAwait(false);
+            }
 
             var draft = await service.CreateDraftAsync(
                 new CreateStudioPackageDraftCommand
@@ -1096,8 +1109,8 @@ internal static class StudioPackageEndpoints
     /// <summary>
     /// Denies a scoped Studio enumeration request (honua-server#3001 follow-up) when end-user
     /// mode is on, the caller is non-admin, and <see cref="StudioEndpointAuthorization.ResolveCallerId"/>
-    /// cannot resolve a caller id (for example a principal with none of NameIdentifier, "sub",
-    /// the admin API-key id/name claims, or <see cref="System.Security.Claims.ClaimsIdentity.Name"/>).
+    /// cannot resolve a durable caller id (for example a subject principal without a validated
+    /// issuer or an API-key principal without an immutable key id).
     /// Without this check, <see cref="ResolveEffectiveOwnerFilter"/> would return null for such a
     /// caller, which downstream <see cref="NormalizeOptionalQueryValue"/> treats as "no owner
     /// filter" -- silently listing every draft/content item instead of scoping to "my content".

@@ -32,7 +32,6 @@ internal static class CredentialFieldClassifier
             or "keymaterial"
             or "connectionstring"
             or "credential"
-            or "key"
             or "secret";
     }
 
