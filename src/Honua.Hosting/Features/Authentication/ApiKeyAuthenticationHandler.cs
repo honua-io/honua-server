@@ -389,6 +389,9 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (apiKeyId.HasValue)
         {
             claims.Add(new Claim("api_key_id", apiKeyId.Value.ToString("D")));
+            claims.Add(new Claim(
+                Honua.Core.Features.Security.FrameworkAuthenticationIdentity.CredentialKindClaimType,
+                Honua.Core.Features.Security.FrameworkAuthenticationIdentity.ApiKeyCredentialKind));
         }
 
         if (!string.IsNullOrWhiteSpace(apiKeyName))

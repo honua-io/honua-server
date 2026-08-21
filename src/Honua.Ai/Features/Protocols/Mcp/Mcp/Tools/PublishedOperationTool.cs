@@ -176,6 +176,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             SubjectId = actor.SubjectId,
             SubjectIssuer = actor.SubjectIssuer,
             ApiKeyId = actor.ApiKeyId,
+            CredentialKind = actor.CredentialKind,
             Tier = ResolveTier(httpContext),
             Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
             Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray(),

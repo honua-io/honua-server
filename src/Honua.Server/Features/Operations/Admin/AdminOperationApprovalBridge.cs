@@ -36,7 +36,8 @@ internal sealed class AdminOperationApprovalBridge(IServiceProvider services)
                 context.AuthenticationScheme,
                 context.SubjectId,
                 context.SubjectIssuer,
-                context.ApiKeyId))
+                context.ApiKeyId,
+                context.CredentialKind))
         {
             return new OperationHandle
             {
@@ -210,7 +211,8 @@ internal sealed class ApprovedAdminOperationRunner(
                 captured.AuthenticationScheme,
                 captured.SubjectId,
                 captured.SubjectIssuer,
-                captured.ApiKeyId))
+                captured.ApiKeyId,
+                captured.CredentialKind))
         {
             throw new InvalidOperationException("The approved operation has no valid immutable proposer identity binding.");
         }

@@ -94,6 +94,12 @@ internal static class JobSecurityContextCapture
         // identity rather than a budgeted descriptive claim.
         "iss",
 
+        // Credential kind is the proof that api_key_id came from the API-key handler rather
+        // than an issuer-controlled lookalike. Losing it would make a restored key identity
+        // ambiguous, so it is authorization identity and not part of the descriptive budget.
+        Honua.Core.Features.Security.FrameworkAuthenticationIdentity.CredentialKindClaimType,
+        "api_key_id",
+
         // The managed-membership marker is budget-exempt for the same "dropping it WIDENS
         // authority" reason as the scope-governance claims: if a pathological token pushed the
         // marker past the non-role claim budget, the durable snapshot would lose it and a later

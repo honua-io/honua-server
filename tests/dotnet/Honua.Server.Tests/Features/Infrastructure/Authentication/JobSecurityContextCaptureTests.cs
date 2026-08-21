@@ -6,7 +6,9 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
@@ -528,6 +530,30 @@ public sealed class JobSecurityContextCaptureTests
         // actually matters — the claims are only the means.
         OperatorScopeCatalog.IsScopeGoverned(JobSecurityContextCapture.Restore(captured))
             .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Capture_ApiKeyCredentialKindSurvivesBudgetAndProvesRestoredIdentity()
+    {
+        var keyId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+        var claims = Enumerable.Range(0, 400)
+            .Select(index => ($"filler{index}", index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .Append(("api_key_id", keyId.ToString("D")))
+            .Append(("auth_type", "admin-api-key"))
+            .Append((
+                FrameworkAuthenticationIdentity.CredentialKindClaimType,
+                FrameworkAuthenticationIdentity.ApiKeyCredentialKind))
+            .ToArray();
+
+        var restored = JobSecurityContextCapture.Restore(
+            JobSecurityContextCapture.Capture(BuildPrincipal(claims), new RbacOptions()));
+
+        restored.FindFirst(FrameworkAuthenticationIdentity.CredentialKindClaimType)?.Value
+            .Should().Be(FrameworkAuthenticationIdentity.ApiKeyCredentialKind);
+        var actor = CanonicalSecurityActor.Resolve(restored);
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be($"admin-api-key:api-key:{keyId:D}");
+        actor.CredentialKind.Should().Be(FrameworkAuthenticationIdentity.ApiKeyCredentialKind);
     }
 
     [UnitTest]

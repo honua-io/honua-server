@@ -64,6 +64,8 @@ internal sealed class OidcClaimsTransformation(
         TenantFromClaimsMappingClaimType,
         IdentityProtocolProvenance.ClaimType,
         "auth_type",
+        "api_key_id",
+        FrameworkAuthenticationIdentity.CredentialKindClaimType,
     ];
 
     /// <summary>

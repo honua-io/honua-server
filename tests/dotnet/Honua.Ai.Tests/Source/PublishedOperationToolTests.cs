@@ -10,6 +10,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -324,6 +325,76 @@ public sealed class PublishedOperationToolTests
 
         invoker.SubmitCount.Should().Be(2,
             "issuer-qualified identities with the same subject must never share cached authorization results");
+    }
+
+    [UnitTest]
+    public async Task Invoke_ForgedApiKeyIdFromDifferentOidcIssuersCannotCollideInCache()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+        const string forgedKeyId = "01234567-89ab-cdef-0123-456789abcdef";
+
+        await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "shared-subject",
+                subjectIssuer: "https://issuer-a.example",
+                forgedApiKeyId: forgedKeyId),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "shared-subject",
+                subjectIssuer: "https://issuer-b.example",
+                forgedApiKeyId: forgedKeyId),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2,
+            "an issuer-controlled api_key_id must not replace the issuer-qualified OIDC actor");
+    }
+
+    [UnitTest]
+    public async Task Invoke_ClientCertificateSubjectExecutesAndCachesOnlyForSameMappedPrincipal()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "native-prod-admin",
+                subjectIssuer: null,
+                authenticationType: FrameworkAuthenticationIdentity.ClientCertificateAuthenticationType),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        var repeat = await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "native-prod-admin",
+                subjectIssuer: null,
+                authenticationType: FrameworkAuthenticationIdentity.ClientCertificateAuthenticationType),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(
+                invoker,
+                cache,
+                subjectId: "native-prod-reader",
+                subjectIssuer: null,
+                authenticationType: FrameworkAuthenticationIdentity.ClientCertificateAuthenticationType),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2);
+        repeat.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
     }
 
     [UnitTest]
@@ -761,7 +832,9 @@ public sealed class PublishedOperationToolTests
         string? subjectId = null,
         string? subjectIssuer = "https://issuer.example",
         string? tenantId = null,
-        string[]? permissions = null)
+        string[]? permissions = null,
+        string? forgedApiKeyId = null,
+        string authenticationType = "Oidc")
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -780,6 +853,7 @@ public sealed class PublishedOperationToolTests
             new(ClaimTypes.Name, principalName),
             new(ClaimTypes.NameIdentifier, subjectId ?? principalName),
             new("auth_type", "oidc"),
+            new(Honua.Core.Features.Security.IdentityProtocolProvenance.ClaimType, "oidc"),
         };
         if (subjectIssuer is not null)
         {
@@ -791,11 +865,15 @@ public sealed class PublishedOperationToolTests
         {
             claims.Add(new Claim("tenant_id", tenantId));
         }
+        if (forgedApiKeyId is not null)
+        {
+            claims.Add(new Claim("api_key_id", forgedApiKeyId));
+        }
 
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")),
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType)),
         };
     }
 
@@ -805,7 +883,7 @@ public sealed class PublishedOperationToolTests
         context.RequestServices = services;
         var identity = (ClaimsIdentity)context.User.Identity!;
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "mcp-test-subject"));
-        identity.AddClaim(new Claim("auth_type", "oidc"));
+        identity.AddClaim(new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc));
         identity.AddClaim(new Claim("iss", "https://issuer.example"));
         return context;
     }

@@ -144,7 +144,16 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
 
         // Normalize provider claims through the shared OIDC transformation so the
         // projected roles/name match a direct OIDC session exactly.
-        var principal = new ClaimsPrincipal(result.ClaimsIdentity);
+        // JsonWebTokenHandler does not stamp AuthenticationType by default. This verifier is a
+        // server-owned OIDC validation boundary, so project an explicitly authenticated OIDC
+        // identity before the shared transformation. Provider auth_type/private/api-key claims
+        // remain untrusted and are stripped by that transformation.
+        var validatedIdentity = new ClaimsIdentity(
+            result.ClaimsIdentity.Claims,
+            OidcAuthenticationExtensions.OidcScheme,
+            result.ClaimsIdentity.NameClaimType,
+            result.ClaimsIdentity.RoleClaimType);
+        var principal = new ClaimsPrincipal(validatedIdentity);
         principal = await _claimsTransformation.TransformAsync(principal).ConfigureAwait(false);
 
         var principalId = principal.FindFirstValue(ClaimTypes.NameIdentifier)

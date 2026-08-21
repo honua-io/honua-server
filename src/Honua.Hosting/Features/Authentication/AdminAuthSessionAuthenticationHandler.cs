@@ -33,7 +33,19 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
 
         try
         {
-            var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name);
+            if (!AdminAuthClaimsProjector.TryProjectPersistedSessionClaims(
+                    session.Claims,
+                    session.ProviderKey,
+                    out var normalizedClaims,
+                    out var validatedProtocol))
+            {
+                throw new ArgumentException("The persisted admin session has no trusted provider provenance.");
+            }
+
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(
+                normalizedClaims,
+                Scheme.Name,
+                validatedProtocol);
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException ex)

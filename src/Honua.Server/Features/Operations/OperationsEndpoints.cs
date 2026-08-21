@@ -147,6 +147,7 @@ internal static class OperationsEndpoints
                 SubjectId = actor.SubjectId,
                 SubjectIssuer = actor.SubjectIssuer,
                 ApiKeyId = actor.ApiKeyId,
+                CredentialKind = actor.CredentialKind,
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
                     .ToArray(),

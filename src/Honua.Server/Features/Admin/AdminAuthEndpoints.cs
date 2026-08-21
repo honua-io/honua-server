@@ -213,7 +213,19 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt);
+        if (!AdminAuthClaimsProjector.TryProjectPersistedSessionClaims(
+                session.Claims,
+                session.ProviderKey,
+                out var normalizedClaims,
+                out _))
+        {
+            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
+            return StandardErrorHelpers.CreateUnauthorized(
+                context,
+                "The authenticated admin session has no trusted provider provenance.");
+        }
+
+        var issuance = bearerTokenService.Issue(normalizedClaims, session.ExpiresAt);
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(

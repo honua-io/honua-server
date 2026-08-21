@@ -73,6 +73,14 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
+        if (!AdminAuthClaimsProjector.TryProjectValidatedOperatorBearerClaims(
+                sessionClaims,
+                out var normalizedClaims,
+                out _))
+        {
+            return null;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var ceiling = now.AddMinutes(_options.ResolveMaxLifetimeMinutes());
         var expiresAt = sessionExpiresAt < ceiling ? sessionExpiresAt : ceiling;
@@ -81,7 +89,7 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
-        var token = SignJwt(sessionClaims, now, expiresAt);
+        var token = SignJwt(normalizedClaims, now, expiresAt);
         return new OperatorBearerIssuance(token, expiresAt);
     }
 
@@ -127,7 +135,16 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             })
             .ToArray();
 
-        return claims.Length == 0 ? null : claims;
+        if (claims.Length == 0
+            || !AdminAuthClaimsProjector.TryProjectValidatedOperatorBearerClaims(
+                claims,
+                out var normalizedClaims,
+                out var validatedProtocol))
+        {
+            return null;
+        }
+
+        return normalizedClaims;
     }
 
     /// <summary>

@@ -432,6 +432,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             PrincipalId = $"admin-api-key:api-key:{keyId:D}",
             AuthenticationScheme = "admin-api-key",
             ApiKeyId = keyId.ToString("D"),
+            CredentialKind = FrameworkAuthenticationIdentity.ApiKeyCredentialKind,
             CorrelationId = "correlation-1",
             Roles = ["admin"],
             Permissions = ["admin:read"],
@@ -596,16 +597,22 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             Audience = "honua-admin-api",
             MaxLifetimeMinutes = 10,
         }));
-        var issuance = tokenService.Issue(
+        AdminAuthClaimsProjector.TryProjectPersistedSessionClaims(
         [
             new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = subject },
             new AdminAuthSessionClaim { Type = "sub", Value = subject },
             new AdminAuthSessionClaim { Type = "iss", Value = issuer },
-            new AdminAuthSessionClaim { Type = "auth_type", Value = "oidc" },
-            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Oidc },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Saml },
+            new AdminAuthSessionClaim { Type = "api_key_id", Value = "01234567-89ab-cdef-0123-456789abcdef" },
             new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "publisher" },
         ],
-        DateTimeOffset.UtcNow.AddMinutes(10));
+        providerKey: "okta",
+        out var normalizedSessionClaims,
+        out _).Should().BeTrue();
+        var issuance = tokenService.Issue(
+            normalizedSessionClaims,
+            DateTimeOffset.UtcNow.AddMinutes(10));
         var validatedClaims = await tokenService.TryValidateAsync(issuance!.Token);
         var principal = AdminAuthClaimsProjector.CreatePrincipal(
             validatedClaims!,
@@ -634,6 +641,29 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             "the original upstream OIDC membership must be revalidated after operator-bearer wrapping");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task PublishedOperation_ClientCertificateProposalFailsClosedWithoutLiveTrustRevalidation()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var bridge = scope.ServiceProvider
+            .GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationApprovalProposalBridge>();
+        var handle = await bridge.CreateProposalAsync(
+            TestPublishedDescriptor(),
+            new OperationRequest { OperationId = "admin.server.status" },
+            new OperationPolicyContext
+            {
+                PrincipalId = "client-certificate:subject:-:native-prod-admin",
+                AuthenticationScheme = "client-certificate",
+                SubjectId = "native-prod-admin",
+                Roles = ["admin"],
+            },
+            ApprovalDecision());
+
+        handle.Status.Should().Be(OperationHandleStatus.Denied);
+        handle.Reason.Should().Contain("immutable subject or API-key identity");
+    }
+
     private async Task<string> CreatePublishedProposalAsync(OperationPolicyContext context)
     {
         await using var scope = _fixture.Services.CreateAsyncScope();
@@ -653,6 +683,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         PrincipalId = $"admin-api-key:api-key:{keyId:D}",
         AuthenticationScheme = "admin-api-key",
         ApiKeyId = keyId.ToString("D"),
+        CredentialKind = FrameworkAuthenticationIdentity.ApiKeyCredentialKind,
         Roles = ["admin"],
         Permissions = permissions,
     };

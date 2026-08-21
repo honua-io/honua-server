@@ -16,7 +16,6 @@ internal static class CanonicalSecurityActor
     private const string AuthTypeClaim = "auth_type";
     private const string IssuerClaim = "iss";
     private const string IdentityIssuerClaim = "honua_identity_issuer";
-    private const string OperatorBearerAuthenticationType = "OperatorBearer";
     private const string SubjectClaim = "sub";
 
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
@@ -26,11 +25,21 @@ internal static class CanonicalSecurityActor
             return null;
         }
 
-        var apiKeyValue = principal.FindFirstValue(ApiKeyIdClaim);
+        var isApiKeyHandler = FrameworkAuthenticationIdentity.IsApiKey(identity.AuthenticationType);
+        var isRestoredJobContext = string.Equals(
+                    identity.AuthenticationType,
+                    FrameworkAuthenticationIdentity.JobSecurityContextAuthenticationType,
+                    StringComparison.Ordinal);
+        var isApiKeyIdentity = (isApiKeyHandler || isRestoredJobContext)
+            && FrameworkAuthenticationIdentity.HasApiKeyCredentialKind(principal);
+        var apiKeyValue = isApiKeyIdentity
+            ? principal.FindFirstValue(ApiKeyIdClaim)
+            : null;
         if (Guid.TryParse(apiKeyValue, out var apiKeyId))
         {
-            var apiKeyScheme = NormalizeScheme(
-                principal.FindFirstValue(AuthTypeClaim) ?? identity.AuthenticationType);
+            var apiKeyScheme = isRestoredJobContext
+                ? "admin-api-key"
+                : NormalizeScheme(principal.FindFirstValue(AuthTypeClaim));
             if (apiKeyScheme is null)
             {
                 return null;
@@ -42,14 +51,17 @@ internal static class CanonicalSecurityActor
                 SubjectId: null,
                 SubjectIssuer: null,
                 ApiKeyId: apiKeyId.ToString("D"),
-                IsDurablyRevalidatable: true);
+                IsDurablyRevalidatable: true,
+                CredentialKind: FrameworkAuthenticationIdentity.ApiKeyCredentialKind);
         }
 
         var subject = NormalizeValue(principal.FindFirstValue(ClaimTypes.NameIdentifier))
             ?? NormalizeValue(principal.FindFirstValue(SubjectClaim));
         if (subject is not null)
         {
-            var scheme = IdentityProtocolProvenance.Resolve(principal);
+            var frameworkScheme = FrameworkAuthenticationIdentity.ResolveDurableSubjectScheme(
+                identity.AuthenticationType);
+            var scheme = frameworkScheme ?? IdentityProtocolProvenance.Resolve(principal);
             if (scheme is null)
             {
                 return null;
@@ -57,8 +69,8 @@ internal static class CanonicalSecurityActor
 
             var isOperatorBearer = string.Equals(
                 identity.AuthenticationType,
-                OperatorBearerAuthenticationType,
-                StringComparison.OrdinalIgnoreCase);
+                FrameworkAuthenticationIdentity.OperatorBearerAuthenticationType,
+                StringComparison.Ordinal);
             var isOidc = string.Equals(scheme, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal);
             var issuer = isOidc
                 ? isOperatorBearer
@@ -76,13 +88,15 @@ internal static class CanonicalSecurityActor
                 subject,
                 issuer,
                 ApiKeyId: null,
-                IsDurablyRevalidatable: true);
+                IsDurablyRevalidatable: frameworkScheme is null,
+                CredentialKind: null);
         }
 
         // Bootstrap credentials can make a live approval decision, but cannot safely
         // originate deferred work because there is no durable identity to re-resolve.
-        var bootstrapScheme = NormalizeScheme(
-            principal.FindFirstValue(AuthTypeClaim) ?? identity.AuthenticationType);
+        var bootstrapScheme = isApiKeyHandler
+            ? NormalizeScheme(principal.FindFirstValue(AuthTypeClaim))
+            : null;
         if (string.Equals(bootstrapScheme, "admin", StringComparison.Ordinal))
         {
             return new CanonicalSecurityActorIdentity(
@@ -91,7 +105,8 @@ internal static class CanonicalSecurityActor
                 SubjectId: null,
                 SubjectIssuer: null,
                 ApiKeyId: null,
-                IsDurablyRevalidatable: false);
+                IsDurablyRevalidatable: false,
+                CredentialKind: null);
         }
 
         return null;
@@ -104,7 +119,8 @@ internal static class CanonicalSecurityActor
         string? scheme,
         string? subjectId,
         string? subjectIssuer,
-        string? apiKeyId)
+        string? apiKeyId,
+        string? credentialKind)
     {
         var normalizedScheme = NormalizeScheme(scheme);
         if (normalizedScheme is null || string.IsNullOrWhiteSpace(actorId))
@@ -117,7 +133,11 @@ internal static class CanonicalSecurityActor
             return string.Equals(
                 actorId,
                 $"{normalizedScheme}:api-key:{keyId:D}",
-                StringComparison.Ordinal);
+                StringComparison.Ordinal)
+                && string.Equals(
+                    credentialKind,
+                    FrameworkAuthenticationIdentity.ApiKeyCredentialKind,
+                    StringComparison.Ordinal);
         }
 
         var subject = NormalizeValue(subjectId);
@@ -161,4 +181,5 @@ internal sealed record CanonicalSecurityActorIdentity(
     string? SubjectId,
     string? SubjectIssuer,
     string? ApiKeyId,
-    bool IsDurablyRevalidatable);
+    bool IsDurablyRevalidatable,
+    string? CredentialKind);

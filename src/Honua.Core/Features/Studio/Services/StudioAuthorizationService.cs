@@ -24,7 +24,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     internal const string OwnResourceSentinel = "own";
 
     private const string AdminRole = "admin";
-    private const string OperatorBearerAuthenticationType = "OperatorBearer";
     private const string IdentityIssuerClaimType = "honua_identity_issuer";
 
     /// <summary>Denial code: the flag is off, so only admins may use the Studio lifecycle surface.</summary>
@@ -99,11 +98,23 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
 
         // API-key display names are mutable and non-unique. Only the immutable key id is a
         // durable ownership key, qualified by the validated authentication scheme.
-        var apiKeyValue = NormalizeIdentityComponent(principal.FindFirst("api_key_id")?.Value);
+        var isApiKeyIdentity = (FrameworkAuthenticationIdentity.IsApiKey(identity.AuthenticationType)
+                || string.Equals(
+                    identity.AuthenticationType,
+                    FrameworkAuthenticationIdentity.JobSecurityContextAuthenticationType,
+                    StringComparison.Ordinal))
+            && FrameworkAuthenticationIdentity.HasApiKeyCredentialKind(principal);
+        var apiKeyValue = isApiKeyIdentity
+            ? NormalizeIdentityComponent(principal.FindFirst("api_key_id")?.Value)
+            : null;
         if (apiKeyValue is not null)
         {
-            var apiKeyScheme = NormalizeIdentityComponent(principal.FindFirst("auth_type")?.Value)
-                ?? NormalizeIdentityComponent(identity.AuthenticationType);
+            var apiKeyScheme = string.Equals(
+                identity.AuthenticationType,
+                FrameworkAuthenticationIdentity.JobSecurityContextAuthenticationType,
+                StringComparison.Ordinal)
+                ? "admin-api-key"
+                : NormalizeIdentityComponent(principal.FindFirst("auth_type")?.Value);
             return Guid.TryParse(apiKeyValue, out var apiKeyId)
                 && apiKeyScheme is not null
                 ? $"{apiKeyScheme.ToLowerInvariant()}:api-key:{apiKeyId:D}"
@@ -126,11 +137,14 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // validated `iss` and deliberately ignore any untrusted lookalike provenance claim.
         var isOperatorBearer = string.Equals(
             identity.AuthenticationType,
-            OperatorBearerAuthenticationType,
-            StringComparison.OrdinalIgnoreCase);
-        var protocol = IdentityProtocolProvenance.Resolve(principal);
+            FrameworkAuthenticationIdentity.OperatorBearerAuthenticationType,
+            StringComparison.Ordinal);
+        var protocol = FrameworkAuthenticationIdentity.ResolveDurableSubjectScheme(
+                identity.AuthenticationType)
+            ?? IdentityProtocolProvenance.Resolve(principal);
         var isOidc = string.Equals(protocol, IdentityProtocolProvenance.Oidc, StringComparison.Ordinal);
         var isSaml = string.Equals(protocol, IdentityProtocolProvenance.Saml, StringComparison.Ordinal);
+        var isFrameworkSubject = FrameworkAuthenticationIdentity.IsDurableSubjectScheme(protocol);
         var issuer = isOperatorBearer
             ? isOidc
                 ? NormalizeIdentityComponent(principal.FindFirst(IdentityIssuerClaimType)?.Value)
@@ -138,7 +152,9 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             : isOidc
                 ? NormalizeIdentityComponent(principal.FindFirst("iss")?.Value)
                 : null;
-        if (subject is null || (!isOidc && !isSaml) || (isOidc && issuer is null))
+        if (subject is null
+            || (!isOidc && !isSaml && !isFrameworkSubject)
+            || (isOidc && issuer is null))
         {
             return null;
         }

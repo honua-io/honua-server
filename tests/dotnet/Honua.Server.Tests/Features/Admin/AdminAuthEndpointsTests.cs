@@ -1013,6 +1013,55 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/bearer")]
+    public async Task IssueOperatorBearer_LegacyOidcSessionUsesProviderKeyNotForgedClaims()
+    {
+        using var stubFactory = CreateStubFactory();
+        var oidcFixture = CreateOperatorBearerFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var forgedKeyId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+            var sessionId = await CreateAuthenticatedSessionAsync(
+                oidcFixture,
+                claims:
+                [
+                    new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "legacy-user-1" },
+                    new AdminAuthSessionClaim { Type = "sub", Value = "legacy-user-1" },
+                    new AdminAuthSessionClaim { Type = "iss", Value = "https://auth.example.com" },
+                    new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+                    new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Saml },
+                    new AdminAuthSessionClaim { Type = "api_key_id", Value = forgedKeyId.ToString("D") },
+                    new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" },
+                ],
+                providerKey: "oidc");
+            var sessionClient = oidcFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add(
+                    "Cookie",
+                    $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+            var response = await sessionClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var bearer = await response.Content.ReadFromJsonAsync(
+                AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+
+            var tokenService = oidcFixture.Services.GetRequiredService<OperatorBearerTokenService>();
+            var projectedClaims = await tokenService.TryValidateAsync(bearer!.AccessToken);
+            projectedClaims.Should().NotContain(claim => claim.Type == "api_key_id");
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(
+                projectedClaims!,
+                OidcAuthenticationExtensions.OperatorBearerScheme);
+            CanonicalSecurityActor.Resolve(principal)!.ActorId.Should().Be(
+                "oidc:subject:https%3A%2F%2Fauth.example.com:legacy-user-1");
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
     public async Task AdminApi_WithForgedOperatorBearer_IsRejected()
     {
         using var stubFactory = CreateStubFactory();
@@ -1062,14 +1111,17 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static async Task<string> CreateAuthenticatedSessionAsync(
         WebAppFixture fixture,
-        DateTimeOffset? expiresAt = null)
+        DateTimeOffset? expiresAt = null,
+        IReadOnlyList<AdminAuthSessionClaim>? claims = null,
+        string providerKey = "oidc")
     {
         await using var scope = fixture.Services.CreateAsyncScope();
         var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
         return await sessionStore.CreateAuthenticatedSessionAsync(
-            "oidc",
+            providerKey,
             "access-token",
             "id-token",
+            claims ??
             [
                 new AdminAuthSessionClaim { Type = "name", Value = "Operator Admin" },
                 new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "operator-1" },

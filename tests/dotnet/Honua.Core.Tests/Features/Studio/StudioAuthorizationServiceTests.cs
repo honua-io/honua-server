@@ -417,6 +417,9 @@ public sealed class StudioAuthorizationServiceTests
             [
                 new Claim("auth_type", "admin-api-key"),
                 new Claim("api_key_id", keyId.ToString("D")),
+                new Claim(
+                    FrameworkAuthenticationIdentity.CredentialKindClaimType,
+                    FrameworkAuthenticationIdentity.ApiKeyCredentialKind),
                 new Claim("api_key_name", "mutable-display-name"),
             ],
             authenticationType: "ApiKey"));
@@ -487,6 +490,49 @@ public sealed class StudioAuthorizationServiceTests
             StudioAuthorizationOperation.UpdateDraft,
             callerId);
         ownDecision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_ForgedApiKeyClaimFromOidcRemainsIssuerQualifiedSubject()
+    {
+        var service = BuildService(enabled: true, out _);
+        var forgedKeyId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+        var issuerA = OidcPrincipal("shared-subject", "https://issuer-a.example");
+        var issuerB = OidcPrincipal("shared-subject", "https://issuer-b.example");
+        ((ClaimsIdentity)issuerA.Identity!).AddClaim(new Claim("api_key_id", forgedKeyId.ToString("D")));
+        ((ClaimsIdentity)issuerA.Identity!).AddClaim(new Claim("auth_type", "admin-api-key"));
+        ((ClaimsIdentity)issuerB.Identity!).AddClaim(new Claim("api_key_id", forgedKeyId.ToString("D")));
+
+        service.ResolveCallerId(issuerA).Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:shared-subject");
+        service.ResolveCallerId(issuerB).Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-b.example:shared-subject");
+    }
+
+    [Theory]
+    [InlineData(FrameworkAuthenticationIdentity.ClientCertificateAuthenticationType, "client-certificate")]
+    [InlineData(FrameworkAuthenticationIdentity.PortalTokenAuthenticationType, "portal-token")]
+    [InlineData(FrameworkAuthenticationIdentity.ScopedJobTokenAuthenticationType, "scoped-job-token")]
+    public async Task ResolveCallerId_FrameworkOwnedSubjectHandlersPreserveSelfService(
+        string authenticationType,
+        string expectedScheme)
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "framework-user-1"),
+            new Claim("auth_type", "issuer-controlled-lookalike"),
+            new Claim(ClaimTypes.Role, "creator"),
+        ],
+        authenticationType));
+
+        var callerId = service.ResolveCallerId(principal);
+        callerId.Should().Be($"{expectedScheme}:subject:-:framework-user-1");
+        (await service.AuthorizeAsync(
+            principal,
+            callerId,
+            StudioAuthorizationOperation.UpdateDraft,
+            callerId)).IsAllowed.Should().BeTrue();
     }
 
     private static StudioAuthorizationService BuildService(

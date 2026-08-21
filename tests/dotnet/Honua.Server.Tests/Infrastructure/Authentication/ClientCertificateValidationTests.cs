@@ -6,6 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -42,6 +43,11 @@ public sealed class ClientCertificateValidationTests
         result.Principal.FindAll("honua:environment_scope").Select(static c => c.Value)
             .Should().Contain("prod");
         result.FingerprintSha256.Should().NotBeNullOrWhiteSpace();
+        var actor = CanonicalSecurityActor.Resolve(result.Principal);
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be("client-certificate:subject:-:native-prod-admin");
+        actor.IsDurablyRevalidatable.Should().BeFalse(
+            "certificate trust and mapping must be revalidated before deferred execution");
     }
 
     [Fact]

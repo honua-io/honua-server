@@ -56,3 +56,77 @@ public static class IdentityProtocolProvenance
     public static bool IsSupported(string? value)
         => value is Oidc or Saml;
 }
+
+/// <summary>
+/// Exact authentication-handler identities that may establish durable non-federated actors.
+/// </summary>
+/// <remarks>
+/// These values are framework-owned <see cref="ClaimsIdentity.AuthenticationType"/> values,
+/// not provider-controlled claims. Keeping the mapping in Core gives Studio and the hosting
+/// control plane one collision-proof trust boundary.
+/// </remarks>
+public static class FrameworkAuthenticationIdentity
+{
+    /// <summary>Private credential-kind claim stamped only by framework handlers.</summary>
+    public const string CredentialKindClaimType = "honua_credential_kind";
+
+    /// <summary>Credential-kind value for immutable stored API keys.</summary>
+    public const string ApiKeyCredentialKind = "api-key";
+
+    /// <summary>The platform API-key handler.</summary>
+    public const string ApiKeyAuthenticationType = "ApiKey";
+
+    /// <summary>The validated mutual-TLS client-certificate handler.</summary>
+    public const string ClientCertificateAuthenticationType = "HonuaClientCertificate";
+
+    /// <summary>The validated ArcGIS-compatible portal-token handler.</summary>
+    public const string PortalTokenAuthenticationType = "PortalToken";
+
+    /// <summary>The validated attenuated background-job token handler.</summary>
+    public const string ScopedJobTokenAuthenticationType = "ScopedJobToken";
+
+    /// <summary>The Honua-signed wrapper for validated admin sessions.</summary>
+    public const string OperatorBearerAuthenticationType = "OperatorBearer";
+
+    /// <summary>Authentication type used only for restored, server-captured job contexts.</summary>
+    public const string JobSecurityContextAuthenticationType = "HonuaJobSecurityContext";
+
+    /// <summary>Returns whether the identity was created by the API-key handler.</summary>
+    public static bool IsApiKey(string? authenticationType)
+        => string.Equals(
+            authenticationType,
+            ApiKeyAuthenticationType,
+            StringComparison.Ordinal);
+
+    /// <summary>
+    /// Returns whether a principal carries exactly one framework API-key credential marker.
+    /// </summary>
+    public static bool HasApiKeyCredentialKind(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        var kinds = principal.FindAll(CredentialKindClaimType)
+            .Select(static claim => claim.Value?.Trim().ToLowerInvariant())
+            .Where(static value => !string.IsNullOrEmpty(value))
+            .Distinct(StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+        return kinds.Length == 1
+            && string.Equals(kinds[0], ApiKeyCredentialKind, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Maps exact framework handlers to stable durable subject namespaces.
+    /// </summary>
+    public static string? ResolveDurableSubjectScheme(string? authenticationType)
+        => authenticationType switch
+        {
+            ClientCertificateAuthenticationType => "client-certificate",
+            PortalTokenAuthenticationType => "portal-token",
+            ScopedJobTokenAuthenticationType => "scoped-job-token",
+            _ => null,
+        };
+
+    /// <summary>Returns whether a scheme is a framework-owned durable subject namespace.</summary>
+    public static bool IsDurableSubjectScheme(string? scheme)
+        => scheme is "client-certificate" or "portal-token" or "scoped-job-token";
+}

@@ -80,6 +80,9 @@ public sealed record OperationPolicyContext
     /// <summary>Durable admin API-key identifier used to re-resolve the current key record.</summary>
     public string? ApiKeyId { get; init; }
 
+    /// <summary>Framework credential kind proving the origin of credential-specific ids.</summary>
+    public string? CredentialKind { get; init; }
+
     /// <summary>
     /// Tier the invoking tenant is on (for example <c>community</c>, <c>pro</c>, <c>enterprise</c>).
     /// Community is pass-through; Pro/Enterprise enforce the policy engine (Phase 4).

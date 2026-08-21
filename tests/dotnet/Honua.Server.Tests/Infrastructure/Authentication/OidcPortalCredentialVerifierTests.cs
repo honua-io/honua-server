@@ -58,6 +58,30 @@ public sealed class OidcPortalCredentialVerifierTests
     }
 
     [UnitTest]
+    public async Task VerifyAsync_ValidatedPortalPathStripsForgedIdentityProvenance()
+    {
+        var verifier = CreateVerifier(enabled: true);
+        var token = CreateToken(
+            subject: "portal-user-1",
+            name: "Portal User",
+            roles: ["editor"],
+            tenantId: "tenant-A",
+            additionalClaims:
+            [
+                new Claim("auth_type", "saml"),
+                new Claim(Honua.Core.Features.Security.IdentityProtocolProvenance.ClaimType, "saml"),
+                new Claim("api_key_id", "01234567-89ab-cdef-0123-456789abcdef"),
+            ]);
+
+        var result = await verifier.VerifyAsync("portal-user", token, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.PrincipalId.Should().Be("portal-user-1");
+        result.Roles.Should().Equal("editor");
+        result.TenantId.Should().Be("tenant-A");
+    }
+
+    [UnitTest]
     public async Task VerifyAsync_Disabled_ReturnsNull()
     {
         var verifier = CreateVerifier(enabled: false);

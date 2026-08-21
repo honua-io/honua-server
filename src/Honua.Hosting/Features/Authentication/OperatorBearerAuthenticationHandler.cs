@@ -55,7 +55,7 @@ internal sealed class OperatorBearerAuthenticationHandler(
 
         try
         {
-            var principal = AdminAuthClaimsProjector.CreatePrincipal(claims, Scheme.Name, "operator-bearer");
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(claims, Scheme.Name);
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException)

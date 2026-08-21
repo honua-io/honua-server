@@ -74,7 +74,8 @@ public sealed class OperatorBearerTokenServiceTests
             "oidc",
             "shared-subject",
             subjectIssuer: null,
-            apiKeyId: null).Should().BeFalse();
+            apiKeyId: null,
+            credentialKind: null).Should().BeFalse();
     }
 
     [Fact]
@@ -108,6 +109,87 @@ public sealed class OperatorBearerTokenServiceTests
         actor.Should().NotBeNull();
         actor!.ActorId.Should().Be(
             "oidc:subject:https%3A%2F%2Foidc.example%2Ftenant-a:shared-subject");
+    }
+
+    [Fact]
+    public async Task PersistedOidcProviderKey_OverridesForgedLegacySamlAndApiKeyProvenance()
+    {
+        var forgedKeyId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+        AdminAuthClaimsProjector.TryProjectPersistedSessionClaims(
+        [
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "shared-subject" },
+            new AdminAuthSessionClaim { Type = "iss", Value = "https://issuer-a.example" },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "saml" },
+            new AdminAuthSessionClaim { Type = IdentityProtocolProvenance.ClaimType, Value = IdentityProtocolProvenance.Saml },
+            new AdminAuthSessionClaim { Type = "api_key_id", Value = forgedKeyId.ToString("D") },
+            new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "publisher" },
+        ],
+        providerKey: "okta",
+        out var normalizedClaims,
+        out var validatedProtocol).Should().BeTrue();
+
+        validatedProtocol.Should().Be(IdentityProtocolProvenance.Oidc);
+        normalizedClaims.Should().ContainSingle(
+                claim => claim.Type == IdentityProtocolProvenance.ClaimType)
+            .Which.Value.Should().Be(IdentityProtocolProvenance.Oidc);
+        normalizedClaims.Should().NotContain(claim => claim.Type == "api_key_id");
+
+        var direct = AdminAuthClaimsProjector.CreatePrincipal(
+            normalizedClaims,
+            "AdminAuthSession",
+            validatedProtocol);
+        var directActor = CanonicalSecurityActor.Resolve(direct);
+        directActor.Should().NotBeNull();
+        directActor!.ActorId.Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:shared-subject");
+
+        var tokenService = CreateService();
+        var issuance = tokenService.Issue(normalizedClaims, DateTimeOffset.UtcNow.AddMinutes(10));
+        var bearerClaims = await tokenService.TryValidateAsync(issuance!.Token);
+        bearerClaims.Should().NotContain(claim => claim.Type == "api_key_id");
+        var bearer = AdminAuthClaimsProjector.CreatePrincipal(bearerClaims!, "OperatorBearer");
+        CanonicalSecurityActor.Resolve(bearer)!.ActorId.Should().Be(directActor.ActorId);
+    }
+
+    [Fact]
+    public void CanonicalSecurityActor_ForgedOidcApiKeyClaimsStayIssuerIsolated()
+    {
+        var forgedKeyId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+        var issuerA = CreateOidcPrincipal("shared-subject", "https://issuer-a.example", forgedKeyId);
+        var issuerB = CreateOidcPrincipal("shared-subject", "https://issuer-b.example", forgedKeyId);
+
+        CanonicalSecurityActor.Resolve(issuerA)!.ActorId.Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-a.example:shared-subject");
+        CanonicalSecurityActor.Resolve(issuerB)!.ActorId.Should().Be(
+            "oidc:subject:https%3A%2F%2Fissuer-b.example:shared-subject");
+    }
+
+    [Theory]
+    [InlineData(FrameworkAuthenticationIdentity.ClientCertificateAuthenticationType, "client-certificate")]
+    [InlineData(FrameworkAuthenticationIdentity.PortalTokenAuthenticationType, "portal-token")]
+    [InlineData(FrameworkAuthenticationIdentity.ScopedJobTokenAuthenticationType, "scoped-job-token")]
+    public void CanonicalSecurityActor_FrameworkOwnedSubjectHandlersUseStableNamespaces(
+        string authenticationType,
+        string expectedScheme)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "framework-user-1"),
+            new Claim("auth_type", "provider-lookalike"),
+        ],
+        authenticationType));
+
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        actor.Should().NotBeNull();
+        actor!.ActorId.Should().Be($"{expectedScheme}:subject:-:framework-user-1");
+        CanonicalSecurityActor.IsBoundIdentity(
+            actor.ActorId,
+            actor.AuthenticationScheme,
+            actor.SubjectId,
+            actor.SubjectIssuer,
+            actor.ApiKeyId,
+            actor.CredentialKind).Should().BeFalse(
+                "framework subject handlers require dedicated live revalidation before deferred approval");
     }
 
     [Fact]
@@ -168,7 +250,8 @@ public sealed class OperatorBearerTokenServiceTests
             actor.AuthenticationScheme,
             actor.SubjectId,
             actor.SubjectIssuer,
-            actor.ApiKeyId).Should().BeTrue();
+            actor.ApiKeyId,
+            actor.CredentialKind).Should().BeTrue();
     }
 
     [Fact]
@@ -295,4 +378,18 @@ public sealed class OperatorBearerTokenServiceTests
 
         return new OperatorBearerTokenService(Options.Create(options));
     }
+
+    private static ClaimsPrincipal CreateOidcPrincipal(
+        string subject,
+        string issuer,
+        Guid forgedKeyId)
+        => new(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, subject),
+            new Claim("iss", issuer),
+            new Claim("auth_type", "admin-api-key"),
+            new Claim("api_key_id", forgedKeyId.ToString("D")),
+            new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
+        ],
+        authenticationType: "Oidc"));
 }
