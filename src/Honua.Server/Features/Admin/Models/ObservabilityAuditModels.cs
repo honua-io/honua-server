@@ -38,6 +38,13 @@ internal sealed class ObservabilityAuditRecordResponse
     /// <summary>Correlation id captured at emit time.</summary>
     public required string CorrelationId { get; init; }
 
+    /// <summary>
+    /// Stable execution operation created by an approved proposal, when this is an
+    /// <c>operation.applied</c> event. Projected separately from opaque details so Console
+    /// receipts can independently bind proposal, approval audit, and execution.
+    /// </summary>
+    public string? ExecutionOperationId { get; init; }
+
     /// <summary>Remote IP address when capture is enabled.</summary>
     public string? RemoteIp { get; init; }
 

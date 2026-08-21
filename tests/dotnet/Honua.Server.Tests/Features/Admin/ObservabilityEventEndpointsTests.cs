@@ -153,6 +153,42 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/audit")]
+    public async Task ListAudit_ProjectsApprovedProposalExecutionOperationId()
+    {
+        const string ExecutionOperationId = "job-approved-42";
+        _auditReader.Page = new AuditEventPage
+        {
+            Items =
+            [
+                new AuditEventRecord
+                {
+                    AuditId = 2,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "approver",
+                    ActorType = AuditActorType.UserId,
+                    ResourceType = "operation_proposal",
+                    ResourceId = "proposal-42",
+                    Action = "operation.applied",
+                    Outcome = AuditOutcome.Success,
+                    CorrelationId = "corr-42",
+                    Details = "{\"kind\":\"Deploy\",\"executionOperationId\":\"" + ExecutionOperationId + "\"}"
+                }
+            ]
+        };
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/audit?pageSize=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var audit = document.RootElement.GetProperty("items")[0];
+        audit.GetProperty("resourceId").GetString().Should().Be("proposal-42");
+        audit.GetProperty("correlationId").GetString().Should().Be("corr-42");
+        audit.GetProperty("executionOperationId").GetString().Should().Be(ExecutionOperationId);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/logs")]
     public async Task ListLogs_ReturnsInstanceMetadataAndItems()
     {

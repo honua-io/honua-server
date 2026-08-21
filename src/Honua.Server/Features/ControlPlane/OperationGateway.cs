@@ -1065,6 +1065,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private static string BuildProposalAuditDetails(OperationProposal proposal)
         => "{\"kind\":\"" + JsonEscape(proposal.Kind.ToString())
             + "\",\"status\":\"" + JsonEscape(proposal.Status.ToString())
+            + "\",\"executionOperationId\":\"" + JsonEscape(proposal.ExecutionOperationId)
             + "\",\"rule\":\"" + JsonEscape(proposal.AutonomyMetadata?.Rule)
             + "\",\"findingId\":\"" + JsonEscape(proposal.AutonomyMetadata?.FindingId)
             + "\",\"actionDiscriminator\":\"" + JsonEscape(proposal.AutonomyMetadata?.ActionDiscriminator)

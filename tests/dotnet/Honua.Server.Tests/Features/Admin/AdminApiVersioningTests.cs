@@ -1,6 +1,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -15,6 +16,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class AdminApiVersioningTests : IAsyncLifetime
 {
     private const string AdminPassword = "admin-api-versioning-key";
+    private const string SourceRevision = "0123456789abcdef0123456789abcdef01234567";
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -28,6 +30,7 @@ public sealed class AdminApiVersioningTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Deployment:Revision", SourceRevision);
             });
     }
 
@@ -46,5 +49,18 @@ public sealed class AdminApiVersioningTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/v2/admin/license");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/version")]
+    public async Task GetVersion_ReturnsExactSourceRevisionSeparateFromReleaseVersion()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/version");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("sourceRevision").GetString().Should().Be(SourceRevision);
+        data.GetProperty("version").GetString().Should().NotBe(SourceRevision);
     }
 }

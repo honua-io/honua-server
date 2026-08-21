@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -124,13 +125,18 @@ public sealed class OperationGatewayStateMachineTests
         // Sanity: a kind WITH a registered executor still resolves to Submitted.
         var proposal = CreateProposal("p-deploy", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
         var store = new InMemoryProposalStore(proposal);
-        var sut = BuildGateway(store: store, executor: new DeployExecutor());
+        var auditLog = new RecordingAuditLog();
+        var sut = BuildGateway(store: store, executor: new DeployExecutor(), auditLog: auditLog);
 
         var result = await sut.ApplyApprovedProposalAsync("p-deploy", "admin");
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
+
+        var applied = auditLog.Events.Should().ContainSingle(evt => evt.Action == "operation.applied").Subject;
+        using var details = JsonDocument.Parse(applied.Details);
+        details.RootElement.GetProperty("executionOperationId").GetString().Should().Be(DeployExecutor.OperationId);
     }
 
     [Fact]
@@ -172,10 +178,11 @@ public sealed class OperationGatewayStateMachineTests
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IOperationExecutor? executor = null,
-        IGuardrailLadder? ladder = null)
+        IGuardrailLadder? ladder = null,
+        IAuditLog? auditLog = null)
     {
         var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
+        services.AddScoped<IAuditLog>(_ => auditLog ?? NullAuditLog.Instance);
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
 
         var resolvedLadder = ladder ?? Substitute.For<IGuardrailLadder>();
@@ -191,6 +198,17 @@ public sealed class OperationGatewayStateMachineTests
             scopeFactory,
             notifier,
             NullLogger<OperationGateway>.Instance);
+    }
+
+    private sealed class RecordingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>

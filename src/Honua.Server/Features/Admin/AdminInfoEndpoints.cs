@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Admin;
 
@@ -44,11 +45,12 @@ internal static class AdminInfoEndpoints
             .AllowAnonymous();
     }
 
-    private static IResult HandleGetVersion()
+    private static IResult HandleGetVersion(DeploymentIdentity deploymentIdentity)
     {
         var response = new AdminVersionResponse
         {
             Version = GetServerVersion(),
+            SourceRevision = deploymentIdentity.SourceRevision,
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
             ServerTime = DateTimeOffset.UtcNow
@@ -172,6 +174,13 @@ public sealed record AdminVersionResponse
 {
     [JsonPropertyName("version")]
     public string Version { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Exact source commit of the running server. Null when the deployment does not carry a
+    /// verifiable full commit SHA; callers must fail closed rather than compare <see cref="Version"/>.
+    /// </summary>
+    [JsonPropertyName("sourceRevision")]
+    public string? SourceRevision { get; init; }
 
     [JsonPropertyName("metadataApiVersion")]
     public string MetadataApiVersion { get; init; } = string.Empty;

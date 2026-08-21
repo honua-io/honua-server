@@ -64,6 +64,8 @@ public sealed class DeploymentIdentityTests
 
         identity.Revision.Should().Be(ValidDigest);
         identity.RevisionSource.Should().Be(HonuaDeploymentIdentity.ImageDigestSource);
+        identity.SourceRevision.Should().Be(ValidSha);
+        identity.SourceRevisionSource.Should().Be(HonuaDeploymentIdentity.CommitShaSource);
     }
 
     [UnitTest]
@@ -76,6 +78,8 @@ public sealed class DeploymentIdentityTests
 
         identity.Revision.Should().Be(ValidSha);
         identity.RevisionSource.Should().Be(HonuaDeploymentIdentity.CommitShaSource);
+        identity.SourceRevision.Should().Be(ValidSha);
+        identity.SourceRevisionSource.Should().Be(HonuaDeploymentIdentity.CommitShaSource);
     }
 
     [UnitTest]

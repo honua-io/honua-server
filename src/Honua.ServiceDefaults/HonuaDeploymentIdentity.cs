@@ -61,6 +61,7 @@ public static class HonuaDeploymentIdentity
     /// <summary><see cref="RevisionSource"/> value for a SourceLink-stamped assembly commit SHA.</summary>
     public const string AssemblyMetadataSource = "assembly-metadata";
 
+    private static readonly (string? Revision, string? Source) ResolvedSourceRevision = ResolveSourceRevision();
     private static readonly (string? Revision, string? Source) Resolved = Resolve();
 
     /// <summary>
@@ -76,6 +77,21 @@ public static class HonuaDeploymentIdentity
     /// <see langword="null"/> when no revision resolved.
     /// </summary>
     public static string? RevisionSource => Resolved.Source;
+
+    /// <summary>
+    /// The exact source commit used to build the running process: a 40-character lowercase
+    /// commit SHA, or <see langword="null"/> when the build carries no verifiable source
+    /// revision. Unlike <see cref="Revision"/>, this remains the source commit when an image
+    /// digest is also available.
+    /// </summary>
+    public static string? SourceRevision => ResolvedSourceRevision.Revision;
+
+    /// <summary>
+    /// How <see cref="SourceRevision"/> was resolved: <see cref="CommitShaSource"/> or
+    /// <see cref="AssemblyMetadataSource"/>. Returns <see langword="null"/> when no source
+    /// revision resolved.
+    /// </summary>
+    public static string? SourceRevisionSource => ResolvedSourceRevision.Source;
 
     /// <summary>
     /// Returns the mutable release version for <paramref name="assembly"/>: its
@@ -131,6 +147,16 @@ public static class HonuaDeploymentIdentity
             return (digest, ImageDigestSource);
         }
 
+        if (ResolvedSourceRevision.Revision is not null)
+        {
+            return ResolvedSourceRevision;
+        }
+
+        return (null, null);
+    }
+
+    private static (string? Revision, string? Source) ResolveSourceRevision()
+    {
         var revision = ReadVariable(DeploymentRevisionVariable) ?? ReadVariable(GitShaVariable);
         if (IsCommitSha(revision))
         {

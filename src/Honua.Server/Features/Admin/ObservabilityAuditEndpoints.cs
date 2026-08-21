@@ -229,9 +229,44 @@ internal static class ObservabilityAuditEndpoints
             Action = record.Action,
             Outcome = record.Outcome.ToString(),
             CorrelationId = record.CorrelationId,
+            ExecutionOperationId = ReadExecutionOperationId(record),
             RemoteIp = record.RemoteIp,
             UserAgent = record.UserAgent,
             Details = record.Details
         };
+    }
+
+    private static string? ReadExecutionOperationId(AuditEventRecord record)
+    {
+        if (!string.Equals(record.Action, "operation.applied", StringComparison.Ordinal)
+            || !string.Equals(record.ResourceType, "operation_proposal", StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(record.Details)
+            || record.Details.Length > 16 * 1024)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(record.Details, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 4
+            });
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("executionOperationId", out var operationId)
+                || operationId.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var value = operationId.GetString();
+            return !string.IsNullOrWhiteSpace(value) && value.Length <= 256 ? value : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

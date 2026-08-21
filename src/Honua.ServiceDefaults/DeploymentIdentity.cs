@@ -43,6 +43,18 @@ public sealed class DeploymentIdentity
         ReleaseVersion = HonuaDeploymentIdentity.GetReleaseVersion(typeof(DeploymentIdentity).Assembly);
 
         var section = configuration.GetSection(SectionName);
+        var sourceRevision = Normalize(section["Revision"]);
+        if (HonuaDeploymentIdentity.IsCommitSha(sourceRevision))
+        {
+            SourceRevision = sourceRevision;
+            SourceRevisionSource = HonuaDeploymentIdentity.CommitShaSource;
+        }
+        else
+        {
+            SourceRevision = HonuaDeploymentIdentity.SourceRevision;
+            SourceRevisionSource = HonuaDeploymentIdentity.SourceRevisionSource;
+        }
+
         var digest = Normalize(section["ImageDigest"]);
         if (HonuaDeploymentIdentity.IsImageDigest(digest))
         {
@@ -51,11 +63,10 @@ public sealed class DeploymentIdentity
             return;
         }
 
-        var revision = Normalize(section["Revision"]);
-        if (HonuaDeploymentIdentity.IsCommitSha(revision))
+        if (SourceRevision is not null)
         {
-            Revision = revision;
-            RevisionSource = HonuaDeploymentIdentity.CommitShaSource;
+            Revision = SourceRevision;
+            RevisionSource = SourceRevisionSource;
             return;
         }
 
@@ -77,6 +88,15 @@ public sealed class DeploymentIdentity
 
     /// <summary>How <see cref="Revision"/> was resolved, or null when no revision resolved.</summary>
     public string? RevisionSource { get; }
+
+    /// <summary>
+    /// Exact 40-character source commit SHA for this deployment, independently of whether
+    /// <see cref="Revision"/> prefers an image digest, or null when unavailable.
+    /// </summary>
+    public string? SourceRevision { get; }
+
+    /// <summary>How <see cref="SourceRevision"/> was resolved, or null when unavailable.</summary>
+    public string? SourceRevisionSource { get; }
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
