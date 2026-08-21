@@ -322,4 +322,91 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == expectedResult);
         }
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetMessageVersion")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_Soap12_UsesSoap12EnvelopeAndContentType()
+    {
+        const string request = """
+            <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+              <soap:Body>
+                <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+              </soap:Body>
+            </soap:Envelope>
+            """;
+
+        using var content = new StringContent(request, Encoding.UTF8, "application/soap+xml");
+        var response = await _fixture.Client.PostAsync("/services", content);
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/soap+xml");
+        var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.Root!.Name.NamespaceName.Should().Be("http://www.w3.org/2003/05/soap-envelope");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_MalformedAndAmbiguousBodies_ReturnSoapFaults()
+    {
+        var requests = new[]
+        {
+            "<not-xml",
+            """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetFolders xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+              </soap:Body>
+            </soap:Envelope>
+            """
+        };
+
+        foreach (var request in requests)
+        {
+            using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+            var response = await _fixture.Client.PostAsync("/services", content);
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
+    [Endpoint("POST /services/{serviceName}/ImageServer")]
+    public async Task PostSoapCatalog_ServiceRoute_DoesNotLeakOtherServices()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new[]
+            {
+                new RasterInfo { Id = 1, LayerId = 0, Name = "raster", Width = 1, Height = 1, BandCount = 1, PixelType = "8BUI", Srid = 4326 }
+            }));
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            const string request = """
+                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                  <soap:Body>
+                    <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                  </soap:Body>
+                </soap:Envelope>
+                """;
+            using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+            var response = await fixture.Client.PostAsync("/services/not-test/ImageServer", content);
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Should().NotContain(element => element.Name.LocalName == "ServiceDescription");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 }
