@@ -45,6 +45,11 @@ internal static class ImageServerSoapEndpoints
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status404NotFound, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status401Unauthorized, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status403Forbidden, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status500InternalServerError, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status501NotImplemented, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status503ServiceUnavailable, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .AllowAnonymous();
     }
 
@@ -333,11 +338,12 @@ internal static class ImageServerSoapEndpoints
         }
 
         var bandCount = ResolveGetImageBandCount(request.BandIds, referenceRaster.BandCount);
-        if (bandCount is < 1 or > 4)
+        if (bandCount is not (1 or 3))
         {
             return CreateSoapFault(
-                "SOAP GetImage currently supports one to four rendered bands.",
-                StatusCodes.Status400BadRequest,
+                "SOAP GetImage currently supports one-band grayscale or three-band RGB pixel blocks; " +
+                "multispectral bands require a raw-sample renderer that preserves a distinct NoData mask.",
+                StatusCodes.Status501NotImplemented,
                 soapNamespace);
         }
 
