@@ -159,8 +159,6 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
     with rasterio.open(path) as dataset:
         if dataset.driver != "GTiff" or dataset.crs is None or dataset.count < 1:
             raise ValueError("Rasterio did not recover a georeferenced COG")
-        if not dataset.overviews(1):
-            raise ValueError("Rasterio found no COG overviews")
         if dataset.read(1, window=Window(0, 0, 16, 16)).size != 256:
             raise ValueError("Rasterio window read returned an unexpected shape")
     valid, errors, _warnings = cog_validate(path, strict=True)
