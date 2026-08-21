@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text;
-using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -11,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.Soap;
 using Microsoft.AspNetCore.Mvc;
 using SkiaSharp;
 
@@ -24,10 +24,8 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 internal static class ImageServerSoapEndpoints
 {
     private const string SoapContentType = "text/xml; charset=utf-8";
-    private const string SoapEnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
     private const string XmlSchemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance";
-    private const int MaxRequestCharacters = 1_048_576;
     private const int MaxImageDimension = 4096;
 
     public static void MapImageServerSoapEndpoints(this IEndpointRouteBuilder endpoints)
@@ -53,14 +51,18 @@ internal static class ImageServerSoapEndpoints
         [FromServices] ImageServerExportHandler exportHandler,
         [FromServices] ILogger<ImageServerSoapLog> logger)
     {
-        var request = await TryReadSoapRequestAsync(context).ConfigureAwait(false);
-        if (request.ErrorResult is not null)
+        var request = await ArcGisSoap11RequestParser.ReadOperationAsync(
+            context.Request.Body,
+            "ImageServer",
+            context.RequestAborted).ConfigureAwait(false);
+        if (request.Error is not null)
         {
-            return request.ErrorResult;
+            return CreateSoapFault(request.Error, StatusCodes.Status400BadRequest);
         }
 
         var operation = request.Operation!;
-        var operationNamespace = operation.Name.Namespace;
+        var operationNamespace = ArcGisSoap11RequestParser.EsriNamespace;
+        var operationName = operation.Name;
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var resolution = await layerResolver.ResolveFirstAccessibleLayerAsync(
             serviceId,
@@ -75,53 +77,82 @@ internal static class ImageServerSoapEndpoints
 
         try
         {
-            return operation.Name.LocalName switch
+            if (operationName == operationNamespace + "GetVersion")
             {
-                "GetVersion" => CreateSoapResponse(
+                return CreateSoapResponse(
                     operationNamespace,
                     "GetVersionResponse",
-                    new XElement("Result", "10.8")),
-                "IsFixedScaleImage" => CreateSoapResponse(
+                    new XElement("Result", "10.8"));
+            }
+
+            if (operationName == operationNamespace + "IsFixedScaleImage")
+            {
+                return CreateSoapResponse(
                     operationNamespace,
                     "IsFixedScaleImageResponse",
-                    new XElement("Result", false)),
-                "GetServiceInfo" => await HandleGetServiceInfoAsync(
+                    new XElement("Result", false));
+            }
+
+            if (operationName == operationNamespace + "GetServiceInfo")
+            {
+                return await HandleGetServiceInfoAsync(
                     serviceId,
                     resolution.LayerId,
                     operationNamespace,
                     rasterStore,
-                    cancellationToken).ConfigureAwait(false),
-                "GetFields" => CreateSoapResponse(
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (operationName == operationNamespace + "GetFields")
+            {
+                return CreateSoapResponse(
                     operationNamespace,
                     "GetFieldsResponse",
-                    BuildFields()),
-                "GetKeyProperties" => CreateSoapResponse(
+                    BuildFields());
+            }
+
+            if (operationName == operationNamespace + "GetKeyProperties")
+            {
+                return CreateSoapResponse(
                     operationNamespace,
                     "GetKeyPropertiesResponse",
-                    BuildKeyProperties()),
-                "GetMetadata" => CreateSoapResponse(
+                    BuildKeyProperties());
+            }
+
+            if (operationName == operationNamespace + "GetMetadata")
+            {
+                return CreateSoapResponse(
                     operationNamespace,
                     "GetMetadataResponse",
-                    new XElement("Result", BuildMetadata(serviceId))),
-                "ExportImage" => await HandleExportImageAsync(
+                    new XElement("Result", BuildMetadata(serviceId)));
+            }
+
+            if (operationName == operationNamespace + "ExportImage")
+            {
+                return await HandleExportImageAsync(
                     operation,
                     operationNamespace,
                     resolution.LayerId,
                     context,
                     exportHandler,
-                    cancellationToken).ConfigureAwait(false),
-                "GetImage" => await HandleGetImageAsync(
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (operationName == operationNamespace + "GetImage")
+            {
+                return await HandleGetImageAsync(
                     operation,
                     operationNamespace,
                     resolution.LayerId,
                     context,
                     rasterStore,
                     exportHandler,
-                    cancellationToken).ConfigureAwait(false),
-                _ => CreateSoapFault(
-                    $"Unsupported ImageServer operation '{operation.Name.LocalName}'.",
-                    StatusCodes.Status400BadRequest)
-            };
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            return CreateSoapFault(
+                $"Unsupported ImageServer operation '{operationName.LocalName}'.",
+                StatusCodes.Status400BadRequest);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -132,7 +163,7 @@ internal static class ImageServerSoapEndpoints
             ImageServerSoapEndpointLogging.LogOperationFailed(
                 logger,
                 serviceId,
-                operation.Name.LocalName,
+                operationName.LocalName,
                 exception);
             return CreateSoapFault(
                 "The ImageServer operation could not be completed.",
@@ -224,7 +255,11 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
         }
 
-        var returnType = FindDescendantValue(operation, "ImageReturnType");
+        var esri = ArcGisSoap11RequestParser.EsriNamespace;
+        var returnType = operation
+            .Element(esri + "ImageType")?
+            .Element(esri + "ImageReturnType")?
+            .Value;
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
         request = CopyWithResponseFormat(request, returnMimeData ? "image" : "json");
         var exportResult = await exportHandler.ExportImageAsync(
@@ -426,27 +461,28 @@ internal static class ImageServerSoapEndpoints
         height = 0;
         error = null;
 
-        var description = operation.Elements().FirstOrDefault(static element => element.Name.LocalName == "ImageDescription");
+        var esri = ArcGisSoap11RequestParser.EsriNamespace;
+        var description = operation.Element(esri + "ImageDescription");
         if (description is null)
         {
             error = "ImageDescription is required.";
             return false;
         }
 
-        var extent = description.Descendants().FirstOrDefault(static element => element.Name.LocalName == "Extent");
+        var extent = description.Element(esri + "Extent");
         if (extent is null ||
-            !TryReadFiniteDouble(extent, "XMin", out var xMin) ||
-            !TryReadFiniteDouble(extent, "YMin", out var yMin) ||
-            !TryReadFiniteDouble(extent, "XMax", out var xMax) ||
-            !TryReadFiniteDouble(extent, "YMax", out var yMax) ||
+            !TryReadFiniteDouble(extent, esri + "XMin", out var xMin) ||
+            !TryReadFiniteDouble(extent, esri + "YMin", out var yMin) ||
+            !TryReadFiniteDouble(extent, esri + "XMax", out var xMax) ||
+            !TryReadFiniteDouble(extent, esri + "YMax", out var yMax) ||
             xMin >= xMax || yMin >= yMax)
         {
             error = "ImageDescription extent must be a finite, non-empty envelope.";
             return false;
         }
 
-        if (!TryReadInt(description, "Width", out width) ||
-            !TryReadInt(description, "Height", out height) ||
+        if (!TryReadInt(description, esri + "Width", out width) ||
+            !TryReadInt(description, esri + "Height", out height) ||
             width is < 1 or > MaxImageDimension ||
             height is < 1 or > MaxImageDimension)
         {
@@ -454,24 +490,44 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
-        var imageType = operation.Elements().FirstOrDefault(static element => element.Name.LocalName == "ImageType");
+        var imageType = operation.Element(esri + "ImageType");
         if (requireImageType && imageType is null)
         {
             error = "ImageType is required.";
             return false;
         }
 
-        var format = MapImageFormat(FindDescendantValue(imageType, "ImageFormat"));
+        var imageFormat = imageType?.Element(esri + "ImageFormat")?.Value;
+        if (requireImageType && string.IsNullOrWhiteSpace(imageFormat))
+        {
+            error = "ImageFormat is required.";
+            return false;
+        }
+
+        var format = MapImageFormat(imageFormat);
         if (format is null)
         {
             error = "ImageFormat must be PNG, JPG, or TIFF.";
             return false;
         }
 
-        var spatialReference = extent.Elements()
-            .FirstOrDefault(static element => element.Name.LocalName == "SpatialReference");
-        var wkid = FindDescendantValue(spatialReference, "LatestWKID")
-            ?? FindDescendantValue(spatialReference, "WKID");
+        var imageReturnType = imageType?.Element(esri + "ImageReturnType")?.Value;
+        if (requireImageType && string.IsNullOrWhiteSpace(imageReturnType))
+        {
+            error = "ImageReturnType is required.";
+            return false;
+        }
+
+        if (requireImageType
+            && imageReturnType is not ("esriImageReturnURL" or "esriImageReturnMimeData"))
+        {
+            error = "ImageReturnType must be URL or MIME data.";
+            return false;
+        }
+
+        var spatialReference = extent.Element(esri + "SpatialReference");
+        var wkid = spatialReference?.Element(esri + "LatestWKID")?.Value
+            ?? spatialReference?.Element(esri + "WKID")?.Value;
 
         request = new ExportImageRequest
         {
@@ -480,13 +536,13 @@ internal static class ImageServerSoapEndpoints
             BboxSr = wkid,
             ImageSr = wkid,
             Format = format,
-            PixelType = NormalizeOptionalValue(FindDescendantValue(description, "PixelType")),
-            NoData = NormalizeOptionalValue(FindDescendantValue(description, "NoData")),
-            Interpolation = NormalizeOptionalValue(FindDescendantValue(description, "Interpolation")),
-            Compression = NormalizeOptionalValue(FindDescendantValue(description, "Compression")),
-            CompressionQuality = TryReadInt(description, "CompressionQuality", out var quality) ? quality : 75,
+            PixelType = NormalizeOptionalValue(description.Element(esri + "PixelType")?.Value),
+            NoData = NormalizeOptionalValue(description.Element(esri + "NoData")?.Value),
+            Interpolation = NormalizeOptionalValue(description.Element(esri + "Interpolation")?.Value),
+            Compression = NormalizeOptionalValue(description.Element(esri + "Compression")?.Value),
+            CompressionQuality = TryReadInt(description, esri + "CompressionQuality", out var quality) ? quality : 75,
             BandIds = string.Join(",", description.Descendants()
-                .Where(static element => element.Name.LocalName == "Int")
+                .Where(element => element.Name == esri + "Int")
                 .Select(static element => element.Value)),
             F = "json"
         };
@@ -614,43 +670,9 @@ internal static class ImageServerSoapEndpoints
             new XElement("AnyType", new XAttribute(xsi + "type", "xsd:double"), FormatDouble(noData.Value)));
     }
 
-    private static async Task<(XElement? Operation, IResult? ErrorResult)> TryReadSoapRequestAsync(HttpContext context)
-    {
-        try
-        {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersInDocument = MaxRequestCharacters
-            };
-            using var reader = XmlReader.Create(context.Request.Body, settings);
-            var request = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
-            XNamespace soap = SoapEnvelopeNamespace;
-            var operations = request.Root?.Element(soap + "Body")?.Elements().Take(2).ToArray();
-            if (operations is not { Length: 1 })
-            {
-                return (null, CreateSoapFault(
-                    "SOAP body must contain exactly one ImageServer operation.",
-                    StatusCodes.Status400BadRequest));
-            }
-
-            return string.IsNullOrWhiteSpace(operations[0].Name.NamespaceName)
-                ? (null, CreateSoapFault(
-                    "ImageServer operation namespace is required.",
-                    StatusCodes.Status400BadRequest))
-                : (operations[0], null);
-        }
-        catch (Exception exception) when (exception is XmlException or InvalidOperationException)
-        {
-            return (null, CreateSoapFault("Malformed SOAP request.", StatusCodes.Status400BadRequest));
-        }
-    }
-
     private static IResult CreateSoapResponse(XNamespace operationNamespace, string responseName, XElement result)
     {
-        XNamespace soap = SoapEnvelopeNamespace;
+        var soap = ArcGisSoap11RequestParser.EnvelopeNamespace;
         XNamespace xsi = XmlSchemaInstanceNamespace;
         XNamespace xsd = XmlSchemaNamespace;
         var response = new XDocument(
@@ -680,7 +702,7 @@ internal static class ImageServerSoapEndpoints
 
     private static IResult CreateSoapFault(string message, int statusCode)
     {
-        XNamespace soap = SoapEnvelopeNamespace;
+        var soap = ArcGisSoap11RequestParser.EnvelopeNamespace;
         var response = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
@@ -700,21 +722,17 @@ internal static class ImageServerSoapEndpoints
             statusCode: statusCode);
     }
 
-    private static string? FindDescendantValue(XElement? element, string localName)
-        => element?.DescendantsAndSelf()
-            .FirstOrDefault(candidate => candidate.Name.LocalName == localName)?.Value;
-
-    private static bool TryReadFiniteDouble(XElement parent, string localName, out double value)
+    private static bool TryReadFiniteDouble(XElement parent, XName childName, out double value)
         => double.TryParse(
-               FindDescendantValue(parent, localName),
+               parent.Element(childName)?.Value,
                NumberStyles.Float,
                CultureInfo.InvariantCulture,
                out value)
            && double.IsFinite(value);
 
-    private static bool TryReadInt(XElement parent, string localName, out int value)
+    private static bool TryReadInt(XElement parent, XName childName, out int value)
         => int.TryParse(
-            FindDescendantValue(parent, localName),
+            parent.Element(childName)?.Value,
             NumberStyles.Integer,
             CultureInfo.InvariantCulture,
             out value);

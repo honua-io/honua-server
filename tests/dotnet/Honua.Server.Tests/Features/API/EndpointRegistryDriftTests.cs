@@ -367,6 +367,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.StartsWith("/edr/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/rest/", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/services", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/services/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/sharing/", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/stac", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
