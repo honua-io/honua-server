@@ -132,9 +132,10 @@ public static partial class GeoParquetFeatureWriter
     }
 
     // Single chokepoint for the native ParquetSharp Arrow encoder. The ParquetSharp NuGet
-    // package ships a glibc-only native binary (ParquetSharpNative) that cannot load on the
-    // Alpine/musl runtime image, so the first construction of ArrowWriterPropertiesBuilder /
-    // FileWriter raises DllNotFoundException (possibly wrapped in TypeInitializationException).
+    // package ships a glibc native binary (ParquetSharpNative) that also requires native
+    // dependencies such as libatomic.so.1. If those are unavailable, the first construction
+    // of ArrowWriterPropertiesBuilder / FileWriter raises DllNotFoundException (possibly
+    // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
     private static byte[] WriteArrowParquet(Schema schema, RecordBatch? recordBatch)

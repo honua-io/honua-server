@@ -1,9 +1,21 @@
 name: Setup Honua Server
 description: >
-  Builds Honua Server, seeds the base schema, and starts the server
-  against a running PostgreSQL service on localhost:5432.
+  Seeds the base schema and starts either a source-built Honua Server or an
+  immutable candidate image against PostgreSQL on localhost:5432.
 
 inputs:
+  server-image:
+    description: >
+      Optional immutable image reference. When set, the action skips restore/build
+      and runs this image with host networking. Release callers must pass image@sha256.
+    required: false
+    default: ''
+  build-source-fixtures:
+    description: >
+      Restore and build the source server even when server-image is set. Use this
+      when a compatibility fixture starts an auxiliary source-backed server.
+    required: false
+    default: 'false'
   dotnet-version:
     description: .NET SDK version
     required: true
@@ -31,15 +43,18 @@ runs:
   using: 'composite'
   steps:
     - name: Setup .NET
+      if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       uses: ./.github/actions/setup-dotnet-ci
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
 
     - name: Restore .NET packages
+      if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       shell: bash
       run: dotnet restore Honua.sln
 
     - name: Build Honua Server
+      if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       shell: bash
       run: dotnet build src/Honua.Server --configuration Release --no-restore
 
@@ -74,6 +89,9 @@ runs:
         fi
 
         dump_diagnostics() {
+          if [ "$SERVER_MODE" = image ]; then
+            docker logs "$SERVER_CONTAINER" > "$SERVER_LOG" 2>&1 || true
+          fi
           # Dump the server stdout/stderr AND the DB seed status so the actual
           # startup cause is visible regardless of whether the server crashed,
           # hung, or simply lost the bind race under heavy concurrent load.
@@ -85,8 +103,33 @@ runs:
             echo "(could not query feature counts — DB unreachable?)" >&2
         }
 
-        dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$SERVER_LOG" 2>&1 &
-        SERVER_PID=$!
+        SERVER_MODE=source
+        SERVER_PID=""
+        SERVER_CONTAINER=""
+        if [ -n "$SERVER_IMAGE" ]; then
+          SERVER_MODE=image
+          SERVER_CONTAINER="honua-sdk-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+          case "$SERVER_IMAGE" in
+            *@sha256:*) ;;
+            *) echo "warning: server-image is not immutable: $SERVER_IMAGE" >&2 ;;
+          esac
+          docker pull "$SERVER_IMAGE"
+          docker run --rm --network host --name "$SERVER_CONTAINER" \
+            --env ConnectionStrings__DefaultConnection \
+            --env ASPNETCORE_URLS \
+            --env "Kestrel__Endpoints__Http__Url=${ASPNETCORE_URLS}" \
+            --env ASPNETCORE_ENVIRONMENT \
+            --env Authentication__PortalToken__RequireHttps \
+            --env HONUA_ADMIN_PASSWORD \
+            --env Security__ConnectionEncryption__MasterKey \
+            --env Licensing__DevGrantEdition \
+            --env Security__ConnectionEncryption__Salt \
+            "$SERVER_IMAGE" >"$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
+        else
+          dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
+        fi
 
         # A cold `dotnet run --no-build` start runs the PostGIS preflight check,
         # the full database migration set, and high-frequency query preparation
@@ -107,7 +150,13 @@ runs:
             exit 0
           fi
 
-          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+          if [ "$SERVER_MODE" = image ]; then
+            if [ "$(docker inspect -f '{{.State.Running}}' "$SERVER_CONTAINER" 2>/dev/null || true)" != true ]; then
+              echo "Honua Server container exited before becoming ready." >&2
+              dump_diagnostics
+              exit 1
+            fi
+          elif ! kill -0 "$SERVER_PID" 2>/dev/null; then
             echo "Honua Server process (pid ${SERVER_PID}) exited before becoming ready." >&2
             dump_diagnostics
             exit 1
@@ -131,3 +180,4 @@ runs:
         Licensing__DevGrantEdition: "Pro"
         Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
         LOG_PATH: ${{ inputs.log-path }}
+        SERVER_IMAGE: ${{ inputs.server-image }}

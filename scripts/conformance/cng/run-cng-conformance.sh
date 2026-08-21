@@ -14,9 +14,9 @@
 # ('cng', seeded into PostgreSQL); PMTiles and 3D Tiles are produced by driving
 # honua's own writers through the bundled artifact generator.
 #
-# Carve-outs (honua consumes/transcodes these, it does not PRODUCE conformant
-# output, so they are intentionally NOT gated here): COG (exportImage emits
-# plain GeoTIFF), Zarr / GeoZarr, COPC. See docs/cng-status.md.
+# COG, HDF5/netCDF, and Zarr are supported consumer surfaces. Deterministic
+# inputs for their canonical-client checks are generated in this lane and
+# normalized by validate-canonical-artifacts.py. COPC remains roadmap-only.
 
 set -uo pipefail
 
@@ -40,6 +40,9 @@ BASE_URL="http://localhost:${HONUA_CNG_SERVER_PORT}"
 SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-300}"
 SKIP_BUILD="${HONUA_CNG_SKIP_BUILD:-false}"
 CLEANUP="${HONUA_CNG_CLEANUP:-true}"
+GPQ_VERSION="v0.24.0"
+GO_PMTILES_VERSION="v1.30.0"
+TILES_VALIDATOR_VERSION="0.6.1"
 
 # Per-format pass/fail accumulators (0 = pass, 1 = fail, 2 = skipped/not run).
 GEOPARQUET_STATUS=2
@@ -62,11 +65,25 @@ fi
 
 mkdir -p "$RESULTS_DIR" "$ARTIFACTS_DIR"
 
+GITHUB_PACKAGES_TOKEN="${HONUA_DOCKER_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+GITHUB_PACKAGES_ACTOR="${GITHUB_ACTOR:-${GH_USERNAME:-${USER:-honua}}}"
+if [[ -z "$GITHUB_PACKAGES_TOKEN" ]]; then
+    echo -e "${RED}GitHub Packages authentication is required to restore Geospatial.Grpc.${NC}" >&2
+    echo "Set HONUA_DOCKER_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN before running this harness." >&2
+    exit 1
+fi
+BUILD_SECRET_DIR="$(mktemp -d)"
+printf '%s' "$GITHUB_PACKAGES_ACTOR" > "$BUILD_SECRET_DIR/github-actor"
+printf '%s' "$GITHUB_PACKAGES_TOKEN" > "$BUILD_SECRET_DIR/github-token"
+export HONUA_GITHUB_ACTOR_SECRET_FILE="$BUILD_SECRET_DIR/github-actor"
+export HONUA_GITHUB_TOKEN_SECRET_FILE="$BUILD_SECRET_DIR/github-token"
+
 cleanup() {
     if [[ "$CLEANUP" == "true" ]]; then
         echo -e "\n${YELLOW}Cleaning up CNG containers...${NC}"
         $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null || true
     fi
+    rm -rf "$BUILD_SECRET_DIR"
 }
 trap cleanup EXIT
 
@@ -92,18 +109,13 @@ wait_for_health() {
 
 install_tools() {
     echo -e "${YELLOW}Installing CNG validators...${NC}"
-
-    if ! command -v gpq &> /dev/null; then
-        echo "Installing gpq (GeoParquet validator)..."
-        go install github.com/planetlabs/gpq@latest
-        export PATH="$PATH:$(go env GOPATH)/bin"
-    fi
-
-    if ! command -v pmtiles &> /dev/null; then
-        echo "Installing go-pmtiles..."
-        go install github.com/protomaps/go-pmtiles@latest
-        export PATH="$PATH:$(go env GOPATH)/bin"
-    fi
+    local pinned_bin="$RESULTS_DIR/pinned-tools"
+    mkdir -p "$pinned_bin"
+    echo "Installing isolated gpq ${GPQ_VERSION} and go-pmtiles ${GO_PMTILES_VERSION}..."
+    GOBIN="$pinned_bin" go install "github.com/planetlabs/gpq/cmd/gpq@${GPQ_VERSION}"
+    GOBIN="$pinned_bin" go install "github.com/protomaps/go-pmtiles@${GO_PMTILES_VERSION}"
+    mv "$pinned_bin/go-pmtiles" "$pinned_bin/pmtiles"
+    export PATH="$pinned_bin:$PATH"
 
     if ! command -v ogrinfo &> /dev/null; then
         echo "Installing GDAL (ogrinfo)..."
@@ -112,8 +124,31 @@ install_tools() {
 
     if ! command -v 3d-tiles-validator &> /dev/null; then
         echo "Installing 3d-tiles-validator (chains gltf-validator)..."
-        npm install -g 3d-tiles-validator >/dev/null 2>&1 || npm install 3d-tiles-validator >/dev/null 2>&1
+        npm install -g "3d-tiles-validator@${TILES_VALIDATOR_VERSION}" >/dev/null 2>&1 || \
+            npm install "3d-tiles-validator@${TILES_VALIDATOR_VERSION}" >/dev/null 2>&1
     fi
+}
+
+preflight_python_fixture_dependencies() {
+    if python3 - <<'PY'
+import h5netcdf
+import dask
+import numpy
+import rasterio
+import rio_cogeo
+import xarray
+import zarr
+PY
+    then
+        return 0
+    fi
+
+    cat >&2 <<'EOF'
+The canonical CNG fixture generator is missing pinned Python dependencies.
+Install them before running this standalone harness:
+  python3 -m pip install dask==2026.7.1 h5netcdf==1.8.1 numpy==2.5.2 rasterio==1.5.1 rio-cogeo==7.0.2 xarray==2026.7.0 zarr==3.3.0
+EOF
+    return 1
 }
 
 # --- Bring up the store-backed honua stack --------------------------------
@@ -185,15 +220,9 @@ validate_flatgeobuf() {
     local code
     code=$(curl -sS -o "$out" -w "%{http_code}" "$url")
     if [[ "$code" != "200" ]]; then
-        # Known open bug honua-server#1938: the source-backed (provider-routed)
-        # PostGIS reader (PostgresStorageMappedFeatureReader) does not yet emit
-        # FlatGeobuf, so a compat-seeded FeatureServer returns 400 for f=fgb. Treat
-        # this as PENDING (status 2) rather than a lane failure until #1938 lands;
-        # flip this to a hard FAIL once the storage-mapped reader implements
-        # IFlatGeobufFeatureStore so a regression cannot slip back in.
-        FLATGEOBUF_STATUS=2
-        FLATGEOBUF_DETAIL="PENDING honua-server#1938: f=fgb returned HTTP ${code} (storage-mapped reader does not emit FlatGeobuf yet)"
-        echo -e "${YELLOW}${FLATGEOBUF_DETAIL}${NC}"
+        FLATGEOBUF_STATUS=1
+        FLATGEOBUF_DETAIL="FeatureServer returned HTTP ${code} for f=fgb (expected 200)"
+        echo -e "${RED}${FLATGEOBUF_DETAIL}${NC}"
         head -c 500 "$out"; echo
         return
     fi
@@ -245,7 +274,7 @@ validate_3dtiles() {
     # entry with ERROR severity (or a non-zero numErrors) as a failure — the CLI
     # exit code alone is not a documented pass/fail contract.
     local report="$RESULTS_DIR/3d-tiles-validator.json"
-    npx --yes 3d-tiles-validator --tilesetFile "$tileset" --reportFile "$report" \
+    npx --yes "3d-tiles-validator@${TILES_VALIDATOR_VERSION}" --tilesetFile "$tileset" --reportFile "$report" \
         2>&1 | tee "$RESULTS_DIR/3d-tiles-validator.log"
 
     if [[ ! -f "$report" ]]; then
@@ -272,10 +301,18 @@ validate_3dtiles() {
 # --- Orchestration --------------------------------------------------------
 
 install_tools
+preflight_python_fixture_dependencies || exit 1
 
 echo -e "${YELLOW}Generating honua-produced PMTiles + 3D Tiles artifacts...${NC}"
 dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
     -c Release -- "$ARTIFACTS_DIR" 2>&1 | tee "$RESULTS_DIR/artifact-gen.log"
+
+echo -e "${YELLOW}Generating canonical COG, HDF5/netCDF, and Zarr inputs...${NC}"
+if ! python3 scripts/conformance/cng/generate-canonical-fixtures.py --output "$ARTIFACTS_DIR" \
+    2>&1 | tee "$RESULTS_DIR/canonical-fixture-gen.log"; then
+    echo -e "${RED}Canonical input fixture generation failed${NC}"
+    exit 1
+fi
 
 if ! bring_up_stack; then
     echo -e "${RED}Failed to bring up the CNG stack; live-format validation cannot run${NC}"
@@ -302,6 +339,9 @@ cat > "$SUMMARY_FILE" << EOF
 
 **Execution Date**: $(date)
 **Honua Server Version**: $(git describe --tags --always 2>/dev/null || echo "unknown")
+**gpq Validator Pin**: ${GPQ_VERSION} (\`github.com/planetlabs/gpq/cmd/gpq\`)
+**go-pmtiles Validator Pin**: ${GO_PMTILES_VERSION}
+**3D Tiles Validator Pin**: ${TILES_VALIDATOR_VERSION}
 
 ## Per-format results
 
@@ -312,10 +352,11 @@ cat > "$SUMMARY_FILE" << EOF
 | PMTiles v3 | \`PMTilesWriter\` | \`pmtiles verify\` | $(status_label $PMTILES_STATUS) | $PMTILES_DETAIL |
 | 3D Tiles 1.1 | \`TilesetDocumentWriter\` + \`GeometryTileBuilder\` | \`3d-tiles-validator\` + \`gltf_validator\` | $(status_label $TILES_STATUS) | $TILES_DETAIL |
 
-## Carve-outs (not gated)
+## Consumer-format validation
 
-honua consumes/transcodes these formats but does not PRODUCE conformant output,
-so they are intentionally excluded from this lane:
+The normalized canonical-client phase validates deterministic COG, HDF5/netCDF,
+and Zarr inputs. These are not producer rows because Honua consumes or
+transcodes them instead of returning them from the tested endpoints.
 
 - **COG** — exportImage emits plain GeoTIFF; \`format=cog\` is rejected.
 - **Zarr / GeoZarr** — read/transcode only.
@@ -325,21 +366,14 @@ EOF
 echo -e "\n${BLUE}Summary written to ${SUMMARY_FILE}${NC}"
 cat "$SUMMARY_FILE"
 
-# Fail the lane if any hard-gated format did not pass. GeoParquet, PMTiles and
-# 3D Tiles must be PASS (status 0); a "not run" (stack failed to start) is a
-# failure. FlatGeobuf is allowed to be PENDING (status 2) until honua-server#1938
-# lands — but a PENDING caused by anything other than the documented 400 still
-# surfaces in the summary for review.
+# Fail the lane if any hard-gated format did not pass. A "not run" outcome is
+# also a failure: supported formats cannot be certified by skipped validators.
 OVERALL=0
-for s in $GEOPARQUET_STATUS $PMTILES_STATUS $TILES_STATUS; do
+for s in $GEOPARQUET_STATUS $FLATGEOBUF_STATUS $PMTILES_STATUS $TILES_STATUS; do
     if [[ "$s" != "0" ]]; then
         OVERALL=1
     fi
 done
-# FlatGeobuf: fail only on an actual validator FAIL (status 1); PENDING (2) is OK.
-if [[ "$FLATGEOBUF_STATUS" == "1" ]]; then
-    OVERALL=1
-fi
 
 if [[ $OVERALL -eq 0 ]]; then
     echo -e "\n${GREEN}All CNG conformance validators passed.${NC}"

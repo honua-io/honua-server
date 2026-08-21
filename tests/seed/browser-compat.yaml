@@ -4,11 +4,11 @@ sql:
   # Layer IDs 2000-2002 avoid collision with base-schema (0) and js_test_server (1000).
   - |
       INSERT INTO honua.services (
-          service_name, description, srid, max_record_count,
+          service_name, description, srid,
           supported_formats, capabilities, service_extent, metadata
       )
       VALUES (
-          'browser_compat', 'Browser Compatibility Test Service', 4326, 1000,
+          'browser_compat', 'Browser Compatibility Test Service', 4326,
           ARRAY['JSON', 'GeoJSON'],
           ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),

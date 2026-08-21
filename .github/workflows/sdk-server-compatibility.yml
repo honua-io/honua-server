@@ -10,8 +10,18 @@ name: SDK Server Compatibility
         required: false
         default: HEAD
         type: string
+      server_current_image:
+        description: 'Optional exact server image. Release certification requires image@sha256 and records it in evidence.'
+        required: false
+        default: ''
+        type: string
       current_only:
         description: 'Run only the current server x current SDK cell for focused change verification.'
+        required: false
+        default: false
+        type: boolean
+      release_certification:
+        description: 'Require exact current-only source SHA plus immutable candidate image and retain release evidence.'
         required: false
         default: false
         type: boolean
@@ -50,7 +60,19 @@ jobs:
 
       - name: Validate matrix and capability classification
         shell: bash
-        run: bash scripts/ci/test-sdk-server-compatibility.sh
+        env:
+          SERVER_CURRENT_REF: ${{ inputs.server_current_ref || 'HEAD' }}
+          SERVER_CURRENT_IMAGE: ${{ inputs.server_current_image || '' }}
+          CURRENT_ONLY: ${{ inputs.current_only || false }}
+          RELEASE_CERTIFICATION: ${{ inputs.release_certification || false }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/test-sdk-server-compatibility.sh
+          if [ "$RELEASE_CERTIFICATION" = true ]; then
+            [ "$CURRENT_ONLY" = true ] || { echo '::error::release_certification requires current_only=true'; exit 1; }
+            [[ "$SERVER_CURRENT_REF" =~ ^[0-9a-fA-F]{40}$ ]] || { echo '::error::release_certification requires a full server commit SHA'; exit 1; }
+            [[ "$SERVER_CURRENT_IMAGE" =~ @sha256:[0-9a-fA-F]{64}$ ]] || { echo '::error::release_certification requires an immutable image@sha256 reference'; exit 1; }
+          fi
 
       - name: Build matrix from manifest
         id: matrix
@@ -138,6 +160,27 @@ jobs:
           set -euo pipefail
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Bind candidate image revision to server commit
+        if: inputs.release_certification && matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current'
+        shell: bash
+        env:
+          SERVER_IMAGE: ${{ inputs.server_current_image }}
+          EXPECTED_SERVER_COMMIT: ${{ steps.server-revision.outputs.commit }}
+        run: |
+          set -euo pipefail
+          docker pull "$SERVER_IMAGE"
+          image_revision="$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            "$SERVER_IMAGE")"
+          [ -n "$image_revision" ] || {
+            echo '::error::candidate image has no org.opencontainers.image.revision label'
+            exit 1
+          }
+          [ "${image_revision,,}" = "${EXPECTED_SERVER_COMMIT,,}" ] || {
+            echo "::error::candidate image revision $image_revision does not match server commit $EXPECTED_SERVER_COMMIT"
+            exit 1
+          }
+
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
@@ -150,6 +193,8 @@ jobs:
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
+          server-image: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
+          build-source-fixtures: ${{ matrix.migration_automation_required }}
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
           # PortalCompat is additive and exists only in the current SDK/server
@@ -240,6 +285,7 @@ jobs:
         env:
           HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
           HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED: ${{ matrix.migration_automation_required }}
+          HONUA_SDK_MIGRATION_SERVER_IMAGE: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
           HONUA_SDK_COMPAT_SERVER_LABEL: ${{ matrix.server_label }}
           HONUA_SDK_COMPAT_SDK_LABEL: ${{ matrix.sdk_label }}
           HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-catalog-apply-slice.json
@@ -267,6 +313,7 @@ jobs:
           SERVER_CHECKOUT_REF: ${{ matrix.server_checkout_ref }}
           SERVER_COMMIT: ${{ steps.server-revision.outputs.commit }}
           SERVER_CHANNEL: ${{ matrix.server_channel }}
+          SERVER_IMAGE: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
           SDK_LABEL: ${{ matrix.sdk_label }}
           SDK_CHANNEL: ${{ matrix.sdk_channel }}
           SDK_JS_REF: ${{ matrix.sdk_js_ref }}
@@ -430,6 +477,7 @@ jobs:
             --arg serverCheckoutRef "$SERVER_CHECKOUT_REF" \
             --arg serverCommit "$server_commit" \
             --arg serverChannel "$SERVER_CHANNEL" \
+            --arg serverImage "$SERVER_IMAGE" \
             --arg sdkLabel "$SDK_LABEL" \
             --arg sdkChannel "$SDK_CHANNEL" \
             --arg sdkJsRef "$SDK_JS_REF" \
@@ -458,12 +506,12 @@ jobs:
               server_ref: $serverRef,
               server_checkout_ref: $serverCheckoutRef,
               server_commit: $serverCommit,
-              server_image: null,
+              server_image: (if $serverImage == "" then null else $serverImage end),
               server_channel: $serverChannel,
               server: {
                 ref: $serverRef,
                 commit: $serverCommit,
-                image: null,
+                image: (if $serverImage == "" then null else $serverImage end),
                 channel: $serverChannel
               },
               sdk_label: $sdkLabel,
@@ -591,7 +639,7 @@ jobs:
             ${{ runner.temp }}/sdk-compat/honua-sdk-js/test-results/
             ${{ runner.temp }}/sdk-compat/honua-sdk-python/.pytest_cache/
             ${{ runner.temp }}/sdk-compat/honua-sdk-dotnet/**/TestResults/
-          retention-days: 7
+          retention-days: ${{ inputs.release_certification && 90 || 7 }}
           if-no-files-found: ignore
 
       - name: Fail supported compatibility regression

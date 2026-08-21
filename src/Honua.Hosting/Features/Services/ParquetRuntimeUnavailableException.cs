@@ -8,7 +8,8 @@ namespace Honua.Infrastructure.Services;
 /// ParquetSharp Arrow runtime (<c>ParquetSharpNative</c>) cannot be loaded on the current
 /// runtime image. The ParquetSharp NuGet package ships a glibc-only (<c>linux-x64</c>)
 /// native binary that depends on <c>ld-linux-x86-64.so.2</c> / <c>libatomic.so.1</c>;
-/// neither exists on the Alpine/musl runtime image (<c>linux-musl-x64</c>), so the
+/// those dependencies are unavailable on Alpine/musl and may be absent from an
+/// incomplete glibc image, so the
 /// <see cref="GeoParquetFeatureWriter"/> encoder throws <see cref="DllNotFoundException"/>
 /// (or a wrapping <see cref="TypeInitializationException"/>) the first time it constructs a
 /// native Arrow writer (honua-server#1942).
@@ -28,8 +29,8 @@ public sealed class ParquetRuntimeUnavailableException : Exception
     public const string CapabilityMessage =
         "GeoParquet (f=parquet) output is unavailable on this runtime image: the native "
         + "ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The "
-        + "ParquetSharp native library is glibc-only and is not supported on the Alpine/musl "
-        + "image. Deploy a glibc-based runtime image to enable GeoParquet output.";
+        + "ParquetSharp native library requires glibc and its native dependencies, including "
+        + "libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output.";
 
     public ParquetRuntimeUnavailableException()
         : base(CapabilityMessage)

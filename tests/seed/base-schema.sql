@@ -505,8 +505,8 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO honua.sta_observation (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
 SELECT gs, 1,
-    (now() - ((48 - gs) || ' hours')::interval),
-    (now() - ((48 - gs) || ' hours')::interval),
+    (TIMESTAMPTZ '2026-01-01T00:00:00Z' + (gs * INTERVAL '1 hour')),
+    (TIMESTAMPTZ '2026-01-01T00:00:00Z' + (gs * INTERVAL '1 hour')),
     15.0 + 10.0 * sin(gs::double precision),
     NULL::bigint
 FROM generate_series(1, 48) AS gs

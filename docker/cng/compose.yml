@@ -4,12 +4,15 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      secrets:
+        - github_actor
+        - github_token
     ports:
       - "${HONUA_CNG_SERVER_PORT:-8094}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
-      - PUBLIC_BASE_URL=http://honua-server:8080
+      - PUBLIC_BASE_URL=${HONUA_CNG_PUBLIC_BASE_URL:-http://localhost:${HONUA_CNG_SERVER_PORT:-8094}}
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
       - Cache__Enabled=false
@@ -68,3 +71,9 @@ services:
 networks:
   cng-network:
     driver: bridge
+
+secrets:
+  github_actor:
+    file: ${HONUA_GITHUB_ACTOR_SECRET_FILE:-.empty-build-secret}
+  github_token:
+    file: ${HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret}

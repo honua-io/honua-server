@@ -24,10 +24,12 @@ MIGRATION_GEOSERVER_URL="${HONUA_SDK_MIGRATION_GEOSERVER_URL:-http://127.0.0.1:5
 MIGRATION_GEOSERVER_FIXTURE="${HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE:-tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json}"
 MIGRATION_ARCGIS_SERVICE_URL="${HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL:-https://sampleserver6.arcgisonline.com/arcgis/rest/services/ServiceRequest/FeatureServer}"
 MIGRATION_AUTOMATION_REQUIRED="${HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED:-true}"
+MIGRATION_SERVER_IMAGE="${HONUA_SDK_MIGRATION_SERVER_IMAGE:-}"
 COMPAT_SERVER_LABEL="${HONUA_SDK_COMPAT_SERVER_LABEL:-unknown-server}"
 COMPAT_SDK_LABEL="${HONUA_SDK_COMPAT_SDK_LABEL:-unknown-sdk}"
 
 cleanup_pids=()
+cleanup_containers=()
 
 section() {
     printf '\n== %s ==\n' "$1"
@@ -60,6 +62,11 @@ PY
 
 cleanup() {
     local pid
+    local container
+
+    for container in "${cleanup_containers[@]}"; do
+        docker rm -f "$container" >/dev/null 2>&1 || true
+    done
 
     for pid in "${cleanup_pids[@]}"; do
         if kill -0 "$pid" >/dev/null 2>&1; then
@@ -151,22 +158,45 @@ PY
 
 start_migration_honua_server() {
     local log_path="$RESULTS_DIR/honua-server-sdk-migration.log"
+    local migration_container=""
 
     if curl -fsS "$MIGRATION_SERVER_BASE_URL/healthz/ready" >/dev/null 2>&1; then
         return
     fi
 
-    ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
-    ASPNETCORE_URLS="$MIGRATION_SERVER_BASE_URL" \
-    ASPNETCORE_ENVIRONMENT="Test" \
-    HONUA_REGISTER_TEST_INFRASTRUCTURE="true" \
-    HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS="true" \
-    HONUA_ADMIN_PASSWORD="$ADMIN_API_KEY" \
-    Licensing__DevGrantEdition="Enterprise" \
-    Security__ConnectionEncryption__MasterKey="test-master-key-that-is-at-least-32-characters-long-for-security" \
-    Security__ConnectionEncryption__Salt="dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
-    dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile \
-        > "$log_path" 2>&1 &
+    if [[ -n "$MIGRATION_SERVER_IMAGE" ]]; then
+        case "$MIGRATION_SERVER_IMAGE" in
+            *@sha256:*) ;;
+            *) echo "Migration server image must be immutable: $MIGRATION_SERVER_IMAGE" >&2; exit 2 ;;
+        esac
+        migration_container="honua-sdk-migration-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+        cleanup_containers+=("$migration_container")
+        docker run --rm --network host --name "$migration_container" \
+            --env "ConnectionStrings__DefaultConnection=Host=localhost;Database=honua_test;Username=honua;Password=honua" \
+            --env "ASPNETCORE_URLS=$MIGRATION_SERVER_BASE_URL" \
+            --env "Kestrel__Endpoints__Http__Url=$MIGRATION_SERVER_BASE_URL" \
+            --env "Kestrel__Endpoints__Grpc__Url=http://localhost:5002" \
+            --env "ASPNETCORE_ENVIRONMENT=Test" \
+            --env "HONUA_REGISTER_TEST_INFRASTRUCTURE=true" \
+            --env "HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS=true" \
+            --env "HONUA_ADMIN_PASSWORD=$ADMIN_API_KEY" \
+            --env "Licensing__DevGrantEdition=Enterprise" \
+            --env "Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security" \
+            --env "Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
+            "$MIGRATION_SERVER_IMAGE" > "$log_path" 2>&1 &
+    else
+        ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
+        ASPNETCORE_URLS="$MIGRATION_SERVER_BASE_URL" \
+        ASPNETCORE_ENVIRONMENT="Test" \
+        HONUA_REGISTER_TEST_INFRASTRUCTURE="true" \
+        HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS="true" \
+        HONUA_ADMIN_PASSWORD="$ADMIN_API_KEY" \
+        Licensing__DevGrantEdition="Enterprise" \
+        Security__ConnectionEncryption__MasterKey="test-master-key-that-is-at-least-32-characters-long-for-security" \
+        Security__ConnectionEncryption__Salt="dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
+        dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile \
+            > "$log_path" 2>&1 &
+    fi
     cleanup_pids+=("$!")
 
     for _ in $(seq 1 40); do
