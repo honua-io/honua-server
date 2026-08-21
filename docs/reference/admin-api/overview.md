@@ -6,6 +6,11 @@ The admin API is Honua's control-plane REST surface at `/api/v1/admin/*`. It pow
 
 All admin endpoints require authentication. Send `X-API-Key` with the admin password or a scoped API key, or `Authorization: Bearer <jwt>` when OIDC is enabled. A valid mapped client certificate can also authenticate when mTLS is configured. See [Authentication](../../guides/secure/authentication.md).
 
+The generated [`honua admin` CLI](cli.md) and deterministic `honua_admin_*` MCP
+family project this same operation inventory. The Admin API and operation catalog
+are the control-plane source of truth; Console is a focused inspect, approve, and
+recovery client rather than an API-parity boundary.
+
 ## Endpoint groups
 
 | Group | Base path | Reference |

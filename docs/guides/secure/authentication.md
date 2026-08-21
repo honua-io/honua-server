@@ -30,6 +30,20 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
 
+Admin key permission vocabulary is deliberately narrow:
+
+| Permission | Authority |
+| --- | --- |
+| `admin:read` | GET/HEAD/OPTIONS on admin routes. POST-shaped discovery/test workflows remain denied. |
+| `admin:approve` | The same read authority plus only proposal approve/reject decisions. |
+| `admin:write`, `admin:manage`, `admin:*` | General admin mutation authority; use only for automation that actually needs it. |
+
+For the focused Console service binding, mint
+`["admin:read","admin:approve"]`. Effective permissions preserve
+`admin:approve` as a distinct grant; it is not collapsed into admin write. See
+[Focused Console operation](../operate/focused-console.md) for the exact boundary
+and operator-bearer alternative.
+
 ### 3. Enable OIDC for browser and admin sign-in
 
 ```bash

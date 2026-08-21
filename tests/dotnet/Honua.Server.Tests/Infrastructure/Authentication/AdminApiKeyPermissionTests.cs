@@ -48,6 +48,29 @@ public sealed class AdminApiKeyPermissionTests
     }
 
     [Fact]
+    public void ResolveAccessLevel_ApproveGrant_RemainsRead()
+    {
+        var level = AdminApiKeyPermission.ResolveAccessLevel(AdminPrincipal("admin:approve"));
+
+        level.Should().Be(AdminApiKeyPermission.AdminAccessLevel.Read);
+    }
+
+    [Fact]
+    public void IsApprovalAuthorized_ApproveGrant_AllowsOnlyApprovalSeam()
+    {
+        var principal = AdminPrincipal("admin:read", "admin:approve");
+
+        AdminApiKeyPermission.IsApprovalAuthorized(principal).Should().BeTrue();
+        AdminApiKeyPermission.IsAuthorized(principal, "PUT").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsApprovalAuthorized_ReadGrant_IsDenied()
+    {
+        AdminApiKeyPermission.IsApprovalAuthorized(AdminPrincipal("admin:read")).Should().BeFalse();
+    }
+
+    [Fact]
     public void ResolveAccessLevel_NoPermissionClaimsButAdminRole_IsWrite()
     {
         // Bootstrap password / client certificate / dev-bypass: admin role, no

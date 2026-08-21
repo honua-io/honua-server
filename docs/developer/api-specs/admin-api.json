@@ -9756,7 +9756,7 @@
           "Proposals"
         ],
         "summary": "Approve Operation Proposal",
-        "description": "Approves the proposal and applies the underlying operation through the gateway. Requires the RBAC `approve` grant (an explicit deny is rejected; when no per-operation grant is configured the coarse admin policy applies). Separation of duties is enforced: the requester of a proposal cannot approve it. A proposal that cannot be applied in its current state returns 409. Takes no request body.",
+        "description": "Approves the proposal and applies the underlying operation through the gateway. Scoped API keys require `admin:approve`; operator identities are also evaluated against the RBAC `approve` grant (an explicit deny is rejected; when no per-operation grant is configured the coarse admin policy applies). Separation of duties is enforced: the requester of a proposal cannot approve it. A proposal that cannot be applied in its current state returns 409. Takes no request body.",
         "operationId": "approveOperationProposal",
         "parameters": [
           {
@@ -9795,7 +9795,7 @@
           "Proposals"
         ],
         "summary": "Reject Operation Proposal",
-        "description": "Rejects the proposal with a required reason. Requires the RBAC `approve` grant. A missing or blank reason returns 400; a proposal that cannot be rejected in its current state returns 409.",
+        "description": "Rejects the proposal with a required reason. Scoped API keys require `admin:approve`; operator identities are also evaluated against the RBAC `approve` grant. A missing or blank reason returns 400; a proposal that cannot be rejected in its current state returns 409.",
         "operationId": "rejectOperationProposal",
         "parameters": [
           {
@@ -24079,7 +24079,7 @@
           },
           "permissions": {
             "type": "array",
-            "description": "Permission labels assigned to the key. Layer-scoped write grants use write:{service} or write:{service}/{layer}.",
+            "description": "Permission labels assigned to the key. admin:read permits safe admin reads; admin:approve additionally permits only proposal approve/reject actions; admin:write, admin:manage, or admin:* permit general admin mutations. Layer-scoped write grants use write:{service} or write:{service}/{layer}.",
             "items": {
               "type": "string",
               "minLength": 1,
@@ -24120,6 +24120,7 @@
           },
           "permissions": {
             "type": "array",
+            "description": "Distinct effective grants, including admin:approve when assigned; approval authority is not collapsed into admin write.",
             "items": {
               "type": "string"
             }
@@ -24209,6 +24210,7 @@
           },
           "permissions": {
             "type": "array",
+            "description": "Distinct effective grants, including admin:approve when assigned; approval authority is not collapsed into admin write.",
             "items": {
               "type": "string"
             }

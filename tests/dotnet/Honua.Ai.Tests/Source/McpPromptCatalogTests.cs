@@ -24,6 +24,7 @@ public sealed class McpPromptCatalogTests
         "hazard_assessment",
         "permit_review",
         "dashboard_scaffolding",
+        "set_up_and_publish",
     };
 
     [UnitTest]
@@ -129,6 +130,25 @@ public sealed class McpPromptCatalogTests
 
         act.Should().Throw<GeoprocessingValidationException>()
             .WithMessage("*does_not_exist*");
+    }
+
+    [UnitTest]
+    public void Get_SetUpAndPublish_PinsNineBeatGovernedJourney()
+    {
+        var result = McpPromptCatalog.Get("set_up_and_publish", new Dictionary<string, string>
+        {
+            ["deployment"] = "local Docker",
+            ["dataSource"] = "a PostGIS database",
+            ["appGoal"] = "an incident dashboard",
+        });
+
+        var text = result.Messages[0].Content.Text
+            ?? throw new InvalidOperationException("Prompt text was not returned.");
+        Enumerable.Range(1, 9).Should().OnlyContain(step => text.Contains($"{step}.", StringComparison.Ordinal));
+        text.Should().Contain("honua_admin_*");
+        text.Should().Contain("honua_studio_*");
+        text.Should().Contain("RequiresApproval");
+        text.Should().Contain("secret_ref");
     }
 
     [UnitTest]

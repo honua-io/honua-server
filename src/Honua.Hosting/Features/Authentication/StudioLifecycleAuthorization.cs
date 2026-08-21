@@ -137,6 +137,8 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
 {
     private const string StudioProblemType = "https://honua.io/problems/studio";
     private const string EndUserModeDisabledDetail = "Studio package lifecycle operations require the admin role.";
+    private const string ApprovalGrantRequiredDetail =
+        "This proposal decision requires the 'admin:approve' permission grant.";
     private readonly AuthorizationMiddlewareResultHandler _fallback = new();
 
     /// <inheritdoc />
@@ -165,6 +167,21 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
                 "Forbidden",
                 EndUserModeDisabledDetail,
                 StudioAuthorizationService.EndUserModeDisabledCode).ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        if (authorizeResult.Forbidden
+            && policy.Requirements.Any(static requirement => requirement is AdminApprovalRequirement)
+            && context.GetEndpoint()?.Metadata.GetMetadata<AdminApprovalEndpointMetadata>() is not null
+            && !AdminApiKeyPermission.IsApprovalAuthorized(context.User))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status403Forbidden,
+                    "Forbidden",
+                    ApprovalGrantRequiredDetail)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
             return;
         }
 

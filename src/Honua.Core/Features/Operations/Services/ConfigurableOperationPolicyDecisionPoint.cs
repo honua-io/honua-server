@@ -42,15 +42,36 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         ArgumentNullException.ThrowIfNull(context);
 
         // Disabled policy is a pass-through allow — identical to the Community default.
+        if (_options.Enabled)
+        {
+            var matchedRule = _options.Rules.FirstOrDefault(rule => rule is not null && Matches(rule, request, context));
+            if (matchedRule is not null)
+            {
+                return Task.FromResult(ResolveDecision(
+                    matchedRule.Decision,
+                    matchedRule.Reason,
+                    matchedRule.ApprovalLane,
+                    request));
+            }
+        }
+
+        if (ShouldProtectDestructiveAdminOperation(descriptor))
+        {
+            var decision = descriptor.Policy.SupportsDryRun
+                ? PolicyDecisionKind.DryRunFirst
+                : PolicyDecisionKind.RequireApproval;
+            return Task.FromResult(ResolveDecision(
+                decision,
+                descriptor.Policy.SupportsDryRun
+                    ? "Destructive admin operations require a successful dry run first."
+                    : "Destructive admin operations require explicit approval.",
+                descriptor.Policy.SupportsDryRun ? null : "admin",
+                request));
+        }
+
         if (!_options.Enabled)
         {
             return Task.FromResult(PolicyDecision.Allowed);
-        }
-
-        var matchedRule = _options.Rules.FirstOrDefault(rule => rule is not null && Matches(rule, request, context));
-        if (matchedRule is not null)
-        {
-            return Task.FromResult(ResolveDecision(matchedRule.Decision, matchedRule.Reason, matchedRule.ApprovalLane, request));
         }
 
         return Task.FromResult(ResolveDecision(
@@ -60,12 +81,16 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
             request));
     }
 
+    private bool ShouldProtectDestructiveAdminOperation(IOperationDescriptor descriptor)
+        => _options.ProtectDestructiveAdminOperations
+           && descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal)
+           && (descriptor.Policy.SideEffectClass == OperationSideEffectClass.DestroysState
+               || descriptor.Policy.BlastRadiusClass == OperationBlastRadiusClass.DeploymentScope);
+
     private static bool Matches(OperationPolicyRule rule, OperationRequest request, OperationPolicyContext context)
     {
         // Operation id: "*" or empty is a wildcard; otherwise an exact (ordinal) match.
-        if (!string.IsNullOrEmpty(rule.OperationId)
-            && rule.OperationId != "*"
-            && !string.Equals(rule.OperationId, request.OperationId, StringComparison.Ordinal))
+        if (!MatchesOperationId(rule.OperationId, request.OperationId))
         {
             return false;
         }
@@ -85,6 +110,21 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         }
 
         return true;
+    }
+
+    private static bool MatchesOperationId(string? ruleOperationId, string requestOperationId)
+    {
+        if (string.IsNullOrEmpty(ruleOperationId) || ruleOperationId == "*")
+        {
+            return true;
+        }
+
+        if (ruleOperationId.EndsWith('*'))
+        {
+            return requestOperationId.StartsWith(ruleOperationId[..^1], StringComparison.Ordinal);
+        }
+
+        return string.Equals(ruleOperationId, requestOperationId, StringComparison.Ordinal);
     }
 
     private static bool ContainsRole(IReadOnlyList<string> roles, string role)

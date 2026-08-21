@@ -25,6 +25,7 @@ namespace Honua.Infrastructure.Authentication;
 ///   <item><c>admin</c>, <c>*</c>, <c>admin:*</c> — full admin (read and write).</item>
 ///   <item><c>admin:write</c>, <c>admin:manage</c> — admin write (implies read).</item>
 ///   <item><c>admin:read</c> — admin read only (safe HTTP methods).</item>
+///   <item><c>admin:approve</c> — admin read plus narrowly marked approval decisions.</item>
 /// </list>
 /// A principal that carries the <c>admin</c> role but no <c>permission</c> claims
 /// at all (the bootstrap <c>HONUA_ADMIN_PASSWORD</c> key, a client certificate, or
@@ -40,6 +41,12 @@ internal static class AdminApiKeyPermission
     /// Claim type used to project a key's permission grants onto the principal.
     /// </summary>
     public const string PermissionClaimType = "permission";
+
+    /// <summary>
+    /// Narrow grant used by the focused Console client to approve or reject an
+    /// existing operation proposal without receiving general admin write access.
+    /// </summary>
+    public const string ApprovalGrant = "admin:approve";
 
     private const string AdminGrantPrefix = "admin:";
     private const string OpsGrantPrefix = "ops:";
@@ -136,6 +143,22 @@ internal static class AdminApiKeyPermission
 
         // Read-only admin: permit only safe, non-mutating HTTP methods.
         return IsSafeMethod(httpMethod);
+    }
+
+    /// <summary>
+    /// Determines whether a principal can resolve an approval action. Full admin
+    /// retains its existing authority; a scoped key must carry the exact
+    /// <c>admin:approve</c> grant.
+    /// </summary>
+    /// <param name="principal">The authenticated principal.</param>
+    /// <returns><see langword="true"/> when approval authority is present.</returns>
+    public static bool IsApprovalAuthorized(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        return ResolveAccessLevel(principal) == AdminAccessLevel.Write
+            || principal.FindAll(PermissionClaimType).Any(claim =>
+                string.Equals(claim.Value?.Trim(), ApprovalGrant, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

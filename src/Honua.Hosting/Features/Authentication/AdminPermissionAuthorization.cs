@@ -22,6 +22,28 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class AdminPermissionRequirement : IAuthorizationRequirement;
 
 /// <summary>
+/// Authorization requirement for a proposal approval or rejection. API-key
+/// principals must carry full admin authority or the exact
+/// <c>admin:approve</c> grant; other admin identities continue to the endpoint's
+/// operator-RBAC decision.
+/// </summary>
+internal sealed class AdminApprovalRequirement : IAuthorizationRequirement;
+
+/// <summary>
+/// Endpoint marker for the two proposal-resolution actions that accept the
+/// narrowly scoped <c>admin:approve</c> grant.
+/// </summary>
+internal sealed class AdminApprovalEndpointMetadata
+{
+    private AdminApprovalEndpointMetadata()
+    {
+    }
+
+    /// <summary>The singleton endpoint marker.</summary>
+    public static AdminApprovalEndpointMetadata Instance { get; } = new();
+}
+
+/// <summary>
 /// Evaluates <see cref="AdminPermissionRequirement"/> against the principal's
 /// admin permission grants and the current request's HTTP method.
 /// </summary>
@@ -45,7 +67,11 @@ internal sealed class AdminPermissionAuthorizationHandler(
         var httpContext = context.Resource as HttpContext ?? _httpContextAccessor.HttpContext;
         var method = httpContext?.Request.Method;
 
-        if (AdminApiKeyPermission.IsAuthorized(context.User, method))
+        var isApprovalEndpoint = httpContext?.GetEndpoint()?.Metadata
+            .GetMetadata<AdminApprovalEndpointMetadata>() is not null;
+
+        if (AdminApiKeyPermission.IsAuthorized(context.User, method)
+            || (isApprovalEndpoint && AdminApiKeyPermission.IsApprovalAuthorized(context.User)))
         {
             context.Succeed(requirement);
         }
@@ -54,6 +80,34 @@ internal sealed class AdminPermissionAuthorizationHandler(
             AuthenticationLog.ScopedAdminKeyDenied(_logger, method ?? "(unknown)");
             // Do not call context.Fail(): leaving the requirement unmet yields a 403
             // and lets other handlers/requirements report their own outcome.
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Enforces the API-key side of the focused approval contract independently of
+/// the general admin policy. This remains on the endpoint when OIDC rewrites the
+/// coarse admin policy to accept configured role aliases.
+/// </summary>
+internal sealed class AdminApprovalAuthorizationHandler
+    : AuthorizationHandler<AdminApprovalRequirement>
+{
+    /// <inheritdoc />
+    protected override Task HandleRequirementAsync(
+        AuthorizationHandlerContext context,
+        AdminApprovalRequirement requirement)
+    {
+        var isApiKeyPrincipal = context.User.Identities.Any(identity =>
+            string.Equals(
+                identity.AuthenticationType,
+                AuthenticationExtensions.ApiKeyScheme,
+                StringComparison.Ordinal));
+
+        if (!isApiKeyPrincipal || AdminApiKeyPermission.IsApprovalAuthorized(context.User))
+        {
+            context.Succeed(requirement);
         }
 
         return Task.CompletedTask;

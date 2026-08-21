@@ -1,142 +1,232 @@
-# Go from zero to a map in your browser
+# Quickstart: AI setup to a saved map
 
-You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
+This journey starts Honua in Docker, configures and publishes data through the
+Admin API/admin MCP control plane, runs geoprocessing, saves a Studio composition,
+and finishes at the focused Console approval checkpoint.
 
-**Prerequisites:** Docker with Compose v2, `git`, Python 3, and Node.js with npm.
+**Prerequisites:** Docker with Compose v2, Git, Node.js 20.19 or newer, `curl`,
+and an MCP-capable agent. The first Docker build takes a few minutes.
 
-## Steps
-
-1. Clone the repository.
-
-```bash
-git clone https://github.com/honua-io/honua-server.git && cd honua-server
-```
-
-2. Start the stack (PostGIS, Redis, and Honua Server, built from source - the first run takes a few minutes). The repo-root compose file includes development-only defaults for the admin password, connection-encryption key, Redis control-plane connection, Gate migration policy, and browser origin used below.
+## 1. Start the control plane
 
 ```bash
+git clone https://github.com/honua-io/honua-server.git
+cd honua-server
 docker compose up -d
 ```
 
-3. Wait until the server reports ready.
-
-Run `docker compose ps`, then open <http://localhost:8080/healthz/ready> in a browser. Continue when the page says `Ready`.
-
-4. Optional Console dashboard: once a compatible `honua-console` image is published, start the profiled Console service and open <http://localhost:5174/operate>. The same service also serves <http://localhost:5174/operate/health> and <http://localhost:5174/operate/copilot>. Console binds to the local server with the quickstart admin key, so admin-only Operate reads work without another deploy step.
+The repository Compose profile starts PostGIS, Redis, and Honua Server with
+development-only credentials. Wait until both commands succeed:
 
 ```bash
-HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:replace-with-compatible-tag docker compose --profile console up -d
+docker compose ps
+curl --fail http://localhost:8080/healthz/ready
 ```
 
-For headless local runs after enabling the profile, leave Redis enabled and disable only the dashboard:
+The important endpoints are now:
+
+- Admin API and explorer: `http://localhost:8080/api/v1/admin` and
+  `http://localhost:8080/docs`
+- MCP: `http://localhost:8080/mcp`
+- OGC API Processes: `http://localhost:8080/ogc/processes`
+
+Install the generated command-line client and the stdio-to-HTTP MCP bridge:
 
 ```bash
-HONUA_CONSOLE_REPLICAS=0 docker compose up -d
+npm install --global @honua/sdk-js @honua/mcp-server
+export HONUA_BASE_URL=http://localhost:8080
+export HONUA_ADMIN_KEY=quickstart-admin-password
+export HONUA_MCP_REMOTE_URL=http://localhost:8080/mcp
 ```
 
-5. Create a small GeoJSON file to import.
+`honua admin` and the `honua_admin_*` tools are projections of the same Admin
+OpenAPI operation inventory. They share validation, authorization, approval,
+problem-detail, and audit behavior; CI rejects inventory drift. Console consumes
+that control plane but does not define its completeness.
+
+## 2. Connect an AI agent
+
+For an HTTP-capable MCP client, register `http://localhost:8080/mcp` and send
+`X-API-Key: ${HONUA_ADMIN_KEY}`. For a stdio-only client, add:
+
+```json
+{
+  "mcpServers": {
+    "honua": {
+      "command": "honua-mcp-proxy",
+      "env": {
+        "HONUA_MCP_REMOTE_URL": "http://localhost:8080/mcp",
+        "HONUA_ADMIN_KEY": "quickstart-admin-password"
+      }
+    }
+  }
+}
+```
+
+Restart the agent, ask it to list tools, and select the `set_up_and_publish`
+prompt. Deterministic `honua_admin_*` tools are published by default. AI-assisted
+operation descriptors remain off. Ask the agent to dry-run first and to stop for
+approval on credentials, public-access changes, cost-bearing infrastructure, or
+destructive actions.
+
+See [Set up Honua with an AI agent](../guides/connect/ai-control-plane-setup.md)
+for secret references, Docker/cloud profiles, and approval behavior.
+
+## 3. Configure and publish data
+
+Create the Compose database connection through the generated Admin API client:
 
 ```bash
-cat > points.geojson <<'EOF'
+cat > connection.json <<'JSON'
+{
+  "name": "local",
+  "host": "postgres",
+  "port": 5432,
+  "databaseName": "honua_dev",
+  "username": "honua_user",
+  "password": "honua_password",
+  "sslRequired": false,
+  "sslMode": "Prefer"
+}
+JSON
+
+honua admin connect createConnection --body @connection.json --yes --json
+honua admin connect testConnection --path id=local --yes --json
+```
+
+The literal password is acceptable only for this disposable local profile. In a
+shared environment use the operation schema's `secret_ref` input or the Admin
+API's `secretReference` plus `secretType`; never place secret values in an agent
+prompt, tool transcript, shell history, or committed JSON.
+
+Create and upload a three-feature GeoJSON file. Multipart upload remains a direct
+Admin API call; the response identifies the imported `honua_data.quickstart_points`
+table.
+
+```bash
+cat > points.geojson <<'GEOJSON'
 {"type":"FeatureCollection","features":[
  {"type":"Feature","properties":{"name":"Ferry Building"},"geometry":{"type":"Point","coordinates":[-122.3937,37.7955]}},
  {"type":"Feature","properties":{"name":"Coit Tower"},"geometry":{"type":"Point","coordinates":[-122.4058,37.8024]}},
  {"type":"Feature","properties":{"name":"Painted Ladies"},"geometry":{"type":"Point","coordinates":[-122.4330,37.7762]}}]}
-EOF
+GEOJSON
+
+curl --fail-with-body \
+  -H "X-API-Key: $HONUA_ADMIN_KEY" \
+  -F "file=@points.geojson" \
+  -F "TableName=quickstart_points" \
+  http://localhost:8080/api/v1/admin/import/upload
 ```
 
-6. Import it. The file-upload operation does not yet have a high-level SDK or CLI wrapper. Open the local [API explorer](http://localhost:8080/docs), choose the admin `POST /api/v1/admin/import/upload` operation, authorize with `quickstart-admin-password`, attach `points.geojson`, set `TableName` to `quickstart_points`, and execute it. If the explorer is disabled, use Honua Console's **Import data** workflow at `/operate/data/new?source=file`.
-
-7. Register the compose database as a connection (publishing reads tables through named connections).
+Publish the table and make only the resulting service readable without a key:
 
 ```bash
-python3 -m pip install \
-  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
-  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
-python3 - <<'PY'
-from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
+cat > layer.json <<'JSON'
+{
+  "schema": "honua_data",
+  "table": "quickstart_points",
+  "layerName": "quickstart-points",
+  "srid": 4326,
+  "serviceName": "default"
+}
+JSON
 
-with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
-    connection = admin.create_connection(CreateSecureConnectionRequest(
-        name="local",
-        host="postgres",
-        port=5432,
-        database_name="honua_dev",
-        username="honua_user",
-        password="honua_password",
-        ssl_mode="Prefer",
-        ssl_required=False,
-    ))
-    print(connection)
-PY
+honua admin publish publishLayer --path id=local --body @layer.json --yes --json
+honua admin configure updateServiceAccessPolicy \
+  --path serviceName=default \
+  --body '{"allowAnonymous":true}' \
+  --yes --json
 ```
 
-8. Publish the imported table as a layer (imports land in the `honua_data` schema) and note the `layerId` in the response.
+The agent can perform the same sequence with the matching `honua_admin_*` tools.
+Use `secret_ref` for credentials and retain the returned operation, resource, and
+audit identifiers.
+
+## 4. Run geoprocessing
+
+Discover `geometry.buffer`, then submit the sample San Francisco point as an
+asynchronous OGC job:
 
 ```bash
-python3 - <<'PY'
-from honua_admin import HonuaAdminClient, PublishLayerRequest
+curl --fail http://localhost:8080/ogc/processes/processes/geometry.buffer
 
-with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
-    layer = admin.publish_layer("local", PublishLayerRequest(
-        schema="honua_data",
-        table="quickstart_points",
-        layer_name="quickstart-points",
-        srid=4326,
-    ))
-    print(layer)
-PY
+curl --fail-with-body \
+  -H "X-API-Key: $HONUA_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: respond-async" \
+  -d '{"inputs":{"wkb":"AQEAAABQ/Bhz15pewNDVVuwv40JA","srid":4326,"distance":500}}' \
+  http://localhost:8080/ogc/processes/processes/geometry.buffer/execution
 ```
 
-9. Allow anonymous reads on the `default` service so the browser can fetch tiles without a key.
+Keep the `jobID` or `Location` from the response. Poll
+`GET /ogc/processes/jobs/{jobId}` until it is `successful`, then read
+`GET /ogc/processes/jobs/{jobId}/results`. An agent can discover, submit, poll,
+and attach the same result through MCP. The full contract is in
+[Run geoprocessing](../guides/query-analyze/run-geoprocessing.md).
 
-This control-plane operation does not yet have a high-level client method. In the [API explorer](http://localhost:8080/docs), run `PUT /api/v1/admin/services/default/access-policy` with `{"allowAnonymous": true}`. The generated admin OpenAPI document is the contract when the explorer is not available.
+## 5. Compose and save in Studio
 
-10. Save this as `map.html` (if your `layerId` from step 8 was not `1`, change the first line of the script), then serve it and open <http://localhost:3000/map.html>.
+Ask the connected agent:
+
+> Create a Studio map draft named “San Francisco quickstart”. Add the published
+> `default/quickstart-points` layer and the `geometry.buffer` result, set a view
+> over San Francisco, validate and preview it, save it, then propose publication.
+> Return the draft id, generation, immutable version or content id, and proposal id.
+
+The agent uses the `honua_studio_*` family. Treat the returned `generation` as an
+optimistic-concurrency token: re-read the draft before retrying a stale update.
+The server-backed draft is the saved composition; verify it by reading it again
+after restarting the server process or from another replica. Publication remains
+a proposal until a human decision.
+
+## 6. Inspect and approve in Console
+
+Console is a required focused client for the 2026.1 journey. Start the image pin
+from the matching platform release manifest, then open
+`http://localhost:5174/operate`:
 
 ```bash
-cat > map.html <<'EOF'
-<!doctype html><html><head><meta charset="utf-8">
-<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
-<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet">
-<style>html,body,#map{margin:0;height:100%}</style></head>
-<body><div id="map"></div><script>
-const layerId = 1; // from the publish response in step 8
-new maplibregl.Map({container:'map',center:[-122.41,37.79],zoom:12,style:{version:8,
- sources:{
-  osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap'},
-  honua:{type:'vector',tiles:['http://localhost:8080/tiles/'+layerId+'/{z}/{x}/{y}.mvt']}},
- layers:[
-  {id:'osm',type:'raster',source:'osm'},
-  {id:'points',type:'circle',source:'honua','source-layer':'layer',
-   paint:{'circle-radius':8,'circle-color':'#2D69A5','circle-stroke-color':'#fff','circle-stroke-width':2}}]}});
-</script></body></html>
-EOF
-python3 -m http.server 3000
+: "${HONUA_CONSOLE_IMAGE:?set the Console image pinned by the candidate manifest}"
+docker compose --profile console up -d
 ```
+
+Sign in and inspect the same connection, service/layer, GP job/result, saved
+Studio artifact, and proposal identifiers returned above. Review the plan,
+diff/dry-run, risk, and audit identifiers before approving or rejecting the
+proposal. Also check Operate health and release/recovery guidance.
+
+For a service-bound Console credential, mint exactly
+`["admin:read","admin:approve"]`; do not give it general admin write authority.
+Interactive operator sign-in uses operator RBAC. See
+[Focused Console operation](../guides/operate/focused-console.md).
 
 ## Verify
 
-```bash
-npm install --global @honua/sdk-js
-export HONUA_BASE_URL=http://localhost:8080
-honua services
-honua layers default
-honua query default/1 --count
-```
+The journey is complete when you have all of these receipts:
 
-Use the actual layer ID printed by step 8. The count should be `3`, and the browser map should show three blue circles over San Francisco.
+- healthy deployment and working `/mcp` handshake;
+- connection test plus published service/layer identifiers;
+- successful `geometry.buffer` job and result artifact;
+- durable Studio draft/content identity and publication proposal;
+- Console approval or rejection plus its audit identifier.
 
 ## Troubleshoot
 
-- **Tiles return 401 in the browser** — step 9 (anonymous read) was skipped, or the publish used a different service name than `default`.
-- **Blank map and CORS errors in the browser console** — the page must be served from `http://localhost:3000`, not opened as a `file://` URL. Use `HONUA_DEV_CORS_ORIGIN` before `docker compose up -d` if you serve the page from another origin.
-- **Console is not needed after enabling the profile** - use `HONUA_CONSOLE_REPLICAS=0 docker compose up -d`; Redis still starts because durable jobs, proposals, and workflow state use it.
-- **Contract migration is gated on an existing database** - the quickstart sets `HONUA_CONTRACT_APPLY_POLICY=Gate`. Fresh installs still provision fully; for an upgrade with pending contract scripts, approve one run with `HONUA_APPROVE_CONTRACT_MIGRATIONS=true` and unset it afterward.
-- More help: [Troubleshooting](../guides/deploy/troubleshooting.md)
+- **`honua_admin_*` tools are absent** — confirm the operations toolset is composed,
+  `Mcp__PublishOperations__AdminFamilyEnabled=true`, and deterministic publication
+  has not been disabled. Re-run `tools/list` after restarting the server.
+- **A write returns `RequiresApproval`** — this is a successful governed outcome,
+  not a transport failure. Open the proposal in Console and have a different
+  authorized operator decide it.
+- **Jobs remain `accepted` or return 503** — Redis backs durable jobs, imports,
+  proposals, and workflows. Restore it before retrying.
+- **Browser reads return 401** — the `default` access-policy update did not succeed,
+  or the draft references another service.
+- More help: [Troubleshooting](../guides/deploy/troubleshooting.md).
 
 ## Next steps
 
-- [Publish your first dataset](first-dataset.md) — the import → publish → query flow in detail
-- [Make your first map](first-map.md) — TileJSON, auto-generated styles, and MapLibre
-- [All guides](../guides/README.md)
+- [Set up Honua with an AI agent](../guides/connect/ai-control-plane-setup.md)
+- [Connect AI agents over MCP](../guides/connect/ai-agents-mcp.md)
+- [Admin CLI reference](../reference/admin-api/cli.md)
+- [Your first dataset](first-dataset.md)
