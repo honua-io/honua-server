@@ -21,7 +21,7 @@ public sealed class RedisPackageDraftStoreTests(RedisFixture redis)
     private static readonly DateTimeOffset FixedNow = new(2026, 8, 20, 12, 0, 0, TimeSpan.Zero);
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/package-drafts")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Drafts_AreResolvableFromFreshStoreAndConnection()
     {
         var suffix = Guid.NewGuid().ToString("N");
@@ -44,7 +44,7 @@ public sealed class RedisPackageDraftStoreTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/package-drafts")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Save_AppliesRedisTtlAndOldestFirstCapacityPerKind()
     {
         using var connection = ConnectionMultiplexer.Connect(redis.ConnectionString);
@@ -72,7 +72,7 @@ public sealed class RedisPackageDraftStoreTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/package-drafts")]
+    [Operation(Operations.TestInfrastructure)]
     public void Registration_ReplacesFallbackWhenRedisIsAvailable()
     {
         using var connection = ConnectionMultiplexer.Connect(redis.ConnectionString);
