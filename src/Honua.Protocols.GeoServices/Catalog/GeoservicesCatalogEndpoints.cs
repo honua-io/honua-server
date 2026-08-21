@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -14,6 +15,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
@@ -90,13 +92,22 @@ internal static class GeoservicesCatalogEndpoints
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IRasterStore rasterStore,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
         XDocument request;
         try
         {
+            var settings = new XmlReaderSettings
+            {
+                Async = true,
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaxSoapRequestCharacters
+            };
+            using var reader = XmlReader.Create(context.Request.Body, settings);
             request = await XDocument.LoadAsync(
-                context.Request.Body,
+                reader,
                 LoadOptions.None,
                 context.RequestAborted).ConfigureAwait(false);
         }
@@ -196,10 +207,16 @@ internal static class GeoservicesCatalogEndpoints
                 payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
                 break;
             case "GetTokenServiceURL":
-                payload = new XElement(operationNamespace + "GetTokenServiceURLResult", string.Empty);
+                payload = new XElement(
+                    operationNamespace + "GetTokenServiceURLResult",
+                    tokenOptions.Value.Enabled
+                        ? $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/sharing/rest/generateToken"
+                        : string.Empty);
                 break;
             case "RequiresTokens":
-                payload = new XElement(operationNamespace + "RequiresTokensResult", false);
+                payload = new XElement(
+                    operationNamespace + "RequiresTokensResult",
+                    tokenOptions.Value.Enabled);
                 break;
             default:
                 return CreateSoapFault(
