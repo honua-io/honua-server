@@ -518,6 +518,38 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_MetadataProviderFailure_ReturnsSoapFault()
+    {
+        var provider = Substitute.For<IMetadataV2GraphProvider>();
+#pragma warning disable CA2012 // NSubstitute consumes this ValueTask configuration once per invocation.
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException<MetadataV2GraphSnapshot>(
+                new InvalidOperationException("catalog failed")));
+#pragma warning restore CA2012
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.AddSingleton(provider);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(fixture.Client, "/services", "GetServiceDescriptions");
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
     public async Task PostSoapCatalog_MultipleOperations_ReturnsClientFault()
     {
         const string soapRequest = """
@@ -923,6 +955,44 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetImage_RejectsMultispectralPngProjection()
+    {
+        var rasterStore = CreateSoapRasterStore(bandCount: 4);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            const string operation = """
+                <GetImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+                          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <ImageDescription xsi:type="GeoImageDescription">
+                    <Extent xsi:type="EnvelopeN"><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
+                    <Width>16</Width><Height>8</Height>
+                  </ImageDescription>
+                </GetImage>
+                """;
+            using var response = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation);
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotImplemented);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("raw-sample renderer");
+            await rasterStore.DidNotReceive().ExportImageAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MultipleOperations_ReturnsClientFault()
@@ -1040,9 +1110,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         (await response.Content.ReadAsStringAsync()).Should().Contain("Malformed SOAP request");
     }
 
-    private static IRasterStore CreateSoapRasterStore(int layerId = 0)
+    private static IRasterStore CreateSoapRasterStore(int layerId = 0, int bandCount = 3)
     {
-        var raster = CreateSoapRaster(layerId);
+        var raster = CreateSoapRaster(layerId, bandCount: bandCount);
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(raster);
@@ -1083,6 +1153,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         long id = 101,
         int width = 360,
         int height = 180,
+        int bandCount = 3,
         RasterExtent? extent = null)
         => new()
         {
@@ -1091,7 +1162,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             Name = "soap-raster",
             Width = width,
             Height = height,
-            BandCount = 3,
+            BandCount = bandCount,
             PixelType = "8BUI",
             Srid = 4326,
             Extent = extent ?? new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },

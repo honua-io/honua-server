@@ -73,6 +73,7 @@ internal static class GeoservicesCatalogEndpoints
             .Accepts<string>("text/xml", "application/soap+xml")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status503ServiceUnavailable, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .AllowAnonymous();
 
         return endpoints;
@@ -149,9 +150,11 @@ internal static class GeoservicesCatalogEndpoints
                 soap);
         }
 
-        XElement payload;
-        switch (operation.Name.LocalName)
+        try
         {
+            XElement payload;
+            switch (operation.Name.LocalName)
+            {
             case "GetServiceDescriptions":
                 payload = new XElement(
                     operationNamespace + "GetServiceDescriptionsResult",
@@ -208,28 +211,44 @@ internal static class GeoservicesCatalogEndpoints
                     operationNamespace + "RequiresTokensResult",
                     tokenOptions.Value.Enabled);
                 break;
-            default:
-                return CreateSoapFault(
-                    $"Unsupported catalog operation '{operation.Name.LocalName}'.",
-                    StatusCodes.Status400BadRequest,
-                    soap);
-        }
+                default:
+                    return CreateSoapFault(
+                        $"Unsupported catalog operation '{operation.Name.LocalName}'.",
+                        StatusCodes.Status400BadRequest,
+                        soap);
+            }
 
-        var response = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
+            var response = new XDocument(
+                new XDeclaration("1.0", "utf-8", null),
                 new XElement(
-                    soap + "Body",
+                    soap + "Envelope",
+                    new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
                     new XElement(
-                        operationNamespace + $"{operation.Name.LocalName}Response",
-                        payload))));
+                        soap + "Body",
+                        new XElement(
+                            operationNamespace + $"{operation.Name.LocalName}Response",
+                            payload))));
 
-        return Results.Content(
-            response.ToString(SaveOptions.DisableFormatting),
-            contentType: SoapContentTypeFor(soap),
-            contentEncoding: Encoding.UTF8);
+            return Results.Content(
+                response.ToString(SaveOptions.DisableFormatting),
+                contentType: SoapContentTypeFor(soap),
+                contentEncoding: Encoding.UTF8);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            GeoservicesCatalogEndpointLogging.LogSoapCatalogOperationFailed(
+                logger,
+                operation.Name.LocalName,
+                exception);
+            return CreateSoapFault(
+                "The SOAP services catalog is temporarily unavailable.",
+                StatusCodes.Status503ServiceUnavailable,
+                soap);
+        }
     }
 
     private static async Task<IReadOnlyList<XElement>> BuildSoapImageServerDescriptionsAsync(
@@ -737,6 +756,10 @@ internal static partial class GeoservicesCatalogEndpointLogging
     [LoggerMessage(EventId = 9402, Level = LogLevel.Warning,
         Message = "Failed to probe raster availability for service {ServiceName}.")]
     public static partial void LogRasterProbeFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 9403, Level = LogLevel.Error,
+        Message = "ArcGIS SOAP services catalog operation {Operation} failed.")]
+    public static partial void LogSoapCatalogOperationFailed(ILogger logger, string operation, Exception exception);
 }
 
 /// <summary>

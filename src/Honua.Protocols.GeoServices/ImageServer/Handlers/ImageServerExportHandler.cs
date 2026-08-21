@@ -209,7 +209,7 @@ internal sealed class ImageServerExportHandler
             var extent = result.Extent ?? aggregateExtent;
             if (extent == null && selectedRasters.Length == 1)
             {
-                extent = await _exportBackend.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
+                extent = await _exportBackend.GetExtentAsync(storageLayerId, selectedRasters[0].Id, cancellationToken);
             }
 
             // Esri exportImage is expected to echo the export extent. When the raster store
