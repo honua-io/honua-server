@@ -188,6 +188,7 @@ public sealed class StudioMcpToolDelegationTests
     [Endpoint("POST /mcp tools/call honua_studio_save_version")]
     [Endpoint("POST /mcp tools/call honua_studio_get_version")]
     [Endpoint("POST /mcp tools/call honua_studio_reopen_version")]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     public async Task DurableVersionLifecycle_RoundTripsMapAppAndDashboard(string family)
     {
         using var provider = BuildServiceProvider();
@@ -251,6 +252,34 @@ public sealed class StudioMcpToolDelegationTests
         reopened.GetProperty("baseVersionId").GetGuid().Should().Be(versionId);
         reopened.GetProperty("family").GetString().Should().Be(family);
         reopened.GetProperty("generation").GetInt64().Should().Be(1);
+
+        var reopenedDraftId = reopened.GetProperty("draftId").GetGuid();
+        var proposeTool = new ProposeStudioPublicationTool(
+            jobService,
+            NullLogger<ProposeStudioPublicationTool>.Instance);
+        var proposeResult = await proposeTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{reopenedDraftId}}}","generation":1,"route":"/studio/{{{family}}}-release-arc","visibility":"public","note":"ready for human approval"}"""),
+            CancellationToken.None);
+        proposeResult.IsError.Should().BeFalse();
+        var proposal = proposeResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured propose-publication content.");
+        proposal.GetProperty("recorded").GetBoolean().Should().BeTrue();
+        proposal.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        var proposedDraft = proposal.GetProperty("draft");
+        proposedDraft.GetProperty("draftId").GetGuid().Should().Be(reopenedDraftId);
+        proposedDraft.GetProperty("itemId").GetGuid().Should().Be(itemId);
+        proposedDraft.GetProperty("family").GetString().Should().Be(family);
+        proposedDraft.GetProperty("generation").GetInt64().Should().Be(2);
+        proposedDraft.GetProperty("envelope").GetProperty("publicationIntent")
+            .GetProperty("route").GetString().Should().Be($"/studio/{family}-release-arc");
+
+        var pointers = await lifecycleService.GetPointersAsync(itemId);
+        pointers!.CurrentVersionId.Should().Be(versionId,
+            "recording intent on a reopened draft must not create a new version");
+        pointers.PublishedVersionId.Should().BeNull(
+            "an agent proposal must not expose any public route before human approval");
     }
 
     [UnitTest]
