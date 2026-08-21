@@ -5338,6 +5338,39 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-studio-content-items-itemid-publish-requests",
+      "route": "/api/v1/studio/content-items/{itemId}/publish-requests",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublicationRequest_ParallelRequests_CorrelateOnlyExactConsumedRequestAndHideSuspendedRoute",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
+      ],
+      "proof_ledger_surface": "studio-package-lifecycle",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-studio-content-items-itemid-publish-requests-requestid",
+      "route": "/api/v1/studio/content-items/{itemId}/publish-requests/{requestId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetPublicationRequest_FlagOn_OwnerCanPollAndCrossUserGets403",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetPublicationRequest_UnknownRequestId_Returns404",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublicationRequest_ParallelRequests_CorrelateOnlyExactConsumedRequestAndHideSuspendedRoute",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublicationRequest_RejectedRequest_RemainsRejectedWhenRegistryContainsMatchingItemVersion",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
+      ],
+      "proof_ledger_surface": "studio-package-lifecycle",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-studio-content-items-itemid-versions",
       "route": "/api/v1/studio/content-items/{itemId}/versions",
       "method": "GET",
@@ -15396,7 +15429,10 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_BlockedTier_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_DirectExecuteTier_ExecutesImmediately",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation"
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_DowngradedOidcProposer_CannotResumeAfterApproval",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RawCredential_IsDeniedBeforeProposalPersistence",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RequiresApproval_PersistsAndResumesExactCatalogOperation",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishedOperation_RevokedProposerKey_CannotResumeAfterApproval"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -16654,6 +16690,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.RedisPackageDraftStoreTests.Drafts_AreResolvableFromFreshStoreAndConnection",
+        "Honua.Server.Tests.Features.Studio.RedisPackageDraftStoreTests.Registration_ReplacesFallbackWhenRedisIsAvailable",
+        "Honua.Server.Tests.Features.Studio.RedisPackageDraftStoreTests.Save_AppliesRedisTtlAndOldestFirstCapacityPerKind",
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_LifecycleCreatedPackageIsVisibleThroughNativeApi",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_WithNullCollections_Returns201WithEmptyCollections",
@@ -16967,8 +17006,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsCall_UnknownToolName_ReturnsInvalidParamsJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsCall_WithMalformedParams_ReturnsInvalidArgumentJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsCall_WithToolExecutionFailure_SurfacesIsErrorInsideResult",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_DefaultCatalog_AdvertisesNextCursor",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_DefaultComposition_AdvertisesGeocodeAndRouteTools",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_WhenSinglePage_OmitsNextCursor",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_DefaultComposition_CoversGeneratedAdminRosterAcrossEveryPage",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_WithInvalidCursor_ReturnsInvalidParamsJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownMethod_ReturnsMethodNotFoundJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_AcceptedSilentlyWithoutBody",
@@ -20121,18 +20161,18 @@
       "id": "post-services",
       "route": "/services",
       "method": "POST",
-      "family": "uncategorized",
+      "family": "ArcGIS SOAP",
       "protocol": "http-route",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/ImageServer/ImageServerSoapEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_MultipleOperations_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_RasterProbeUsesStorageBindingLayerId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault"
       ],
-      "proof_ledger_surface": "",
+      "proof_ledger_surface": "arcgis-soap-services",
       "maturity": "implemented",
-      "capability": "serve.geoservices-root"
+      "capability": "serve.geoservices-imageserver"
     },
     {
       "id": "post-services-serviceid-imageserver",

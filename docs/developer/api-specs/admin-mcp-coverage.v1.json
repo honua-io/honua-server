@@ -3,8 +3,8 @@
   "source": "docs/developer/api-specs/admin-api.json",
   "summary": {
     "openApiOperationCount": 396,
-    "projectedOperationCount": 387,
-    "excludedOperationCount": 9
+    "projectedOperationCount": 385,
+    "excludedOperationCount": 11
   },
   "projected": [
     {
@@ -825,13 +825,6 @@
       "toolName": "honua_admin_openapi_get_admin_auth_config",
       "method": "GET",
       "path": "/api/v1/admin/auth/config"
-    },
-    {
-      "operationId": "admin.openapi.get-admin-auth-session",
-      "openApiOperationId": "getAdminAuthSession",
-      "toolName": "honua_admin_openapi_get_admin_auth_session",
-      "method": "GET",
-      "path": "/api/v1/admin/auth/session"
     },
     {
       "operationId": "admin.openapi.get-admin-layer-relationships",
@@ -1807,13 +1800,6 @@
       "path": "/api/v1/admin/zarr-stores"
     },
     {
-      "operationId": "admin.openapi.logout-admin-auth-session",
-      "openApiOperationId": "logoutAdminAuthSession",
-      "toolName": "honua_admin_openapi_logout_admin_auth_session",
-      "method": "POST",
-      "path": "/api/v1/admin/auth/logout"
-    },
-    {
       "operationId": "admin.openapi.pause-alert-channel",
       "openApiOperationId": "pauseAlertChannel",
       "toolName": "honua_admin_openapi_pause_alert_channel",
@@ -2755,10 +2741,22 @@
       "reason": "The response can contain a session-bound OIDC logout token hint."
     },
     {
+      "operationId": "admin.openapi.get-admin-auth-session",
+      "openApiOperationId": "getAdminAuthSession",
+      "code": "session-bound-auth-flow",
+      "reason": "The endpoint reads the caller\u0027s authenticated browser cookie session, which the internal MCP invoker cannot supply."
+    },
+    {
       "operationId": "admin.openapi.issue-admin-operator-bearer",
       "openApiOperationId": "issueAdminOperatorBearer",
       "code": "one-time-secret-result",
       "reason": "The endpoint returns a forwardable operator bearer."
+    },
+    {
+      "operationId": "admin.openapi.logout-admin-auth-session",
+      "openApiOperationId": "logoutAdminAuthSession",
+      "code": "session-bound-auth-flow",
+      "reason": "The endpoint requires the caller\u0027s authenticated cookie session and its logout URL can contain an OIDC ID-token hint."
     },
     {
       "operationId": "admin.openapi.request-admin-auth-token",

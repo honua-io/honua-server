@@ -2369,6 +2369,36 @@
       ]
     },
     {
+      "surfaceId": "arcgis-soap-services",
+      "displayName": "ArcGIS SOAP services adapter",
+      "surfaceKind": "http-route",
+      "protocol": "ArcGIS SOAP",
+      "canonicalIdentifier": "/services",
+      "parentSurfaceId": "image-server",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/services"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "SOAP catalog and ImageServer contract tests cover bounded XML parsing, service discovery, metadata wrappers, and raw interleaved image pixels with a validity mask.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Protocols.GeoServices/ImageServer/ImageServerSoapEndpoints.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/PublicInterfaceProofLedgerTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#3375",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "image-server",
       "displayName": "GeoServices REST ImageServer",
       "surfaceKind": "http-route-family",
