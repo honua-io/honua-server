@@ -328,7 +328,8 @@ public sealed class PublishedOperationToolTests
 
         var tools = await source.GetToolsAsync(CancellationToken.None);
 
-        tools.Should().HaveCount(119);
+        tools.Should().HaveCount(adminCatalog.Definitions.Count,
+            "the MCP admin roster must stay bound to the integrated OpenAPI-backed catalog");
         tools.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
         tools.Select(tool => tool.Name).Should().OnlyContain(name => name.StartsWith("honua_admin_", StringComparison.Ordinal));
         var createConnection = tools.Should().ContainSingle(tool => tool.Name == "honua_admin_connection_create").Subject;
