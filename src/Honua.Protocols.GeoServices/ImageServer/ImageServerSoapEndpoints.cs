@@ -897,6 +897,9 @@ internal static class ImageServerSoapEndpoints
     private static string MapPixelType(string postgisPixelType)
         => postgisPixelType.ToUpperInvariant() switch
         {
+            "1BB" => "U1",
+            "2BUI" => "U2",
+            "4BUI" => "U4",
             "8BUI" => "U8",
             "8BSI" => "S8",
             "16BUI" => "U16",
