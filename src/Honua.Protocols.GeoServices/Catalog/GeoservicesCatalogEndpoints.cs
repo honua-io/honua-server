@@ -247,7 +247,7 @@ internal static class GeoservicesCatalogEndpoints
                     soap + "Body",
                     new XElement(
                         soap + "Fault",
-                        new XElement("faultcode", "soap:Client"),
+                        new XElement("faultcode", statusCode >= 500 ? "soap:Server" : "soap:Client"),
                         new XElement("faultstring", message)))));
 
         return Results.Content(

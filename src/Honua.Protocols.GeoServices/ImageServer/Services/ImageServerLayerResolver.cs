@@ -36,8 +36,6 @@ internal sealed class MetadataV2ImageServerLayerResolver(
     IMetadataV2GraphProvider metadataGraphProvider,
     IRasterStore rasterStore) : IImageServerLayerResolver
 {
-    private const int MaxRasterPublicationProbes = 64;
-
     public async Task<ImageServerLayerResolution> ResolveFirstAccessibleLayerAsync(
         string serviceId,
         HttpContext context,
@@ -78,9 +76,11 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         }
 
         ImageServerPublicationLayer layer = default;
+        // Probe the complete accessible roster sequentially. Concurrency stays bounded at one,
+        // while every raster-bearing service that catalog discovery can advertise remains
+        // resolvable even when its first usable publication appears late in the roster.
         foreach (var publication in publishedResources
-            .Where(publication => AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource!, service))
-            .Take(MaxRasterPublicationProbes))
+            .Where(publication => AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource!, service)))
         {
             var rasters = await rasterStore.ListRastersAsync(
                 publication.StorageLayerId!.Value,

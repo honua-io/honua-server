@@ -319,6 +319,16 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest);
         }
 
+        var requestedBsq = NormalizeOptionalValue(operation.Element("ImageDescription")?.Element("BSQ")?.Value);
+        if (requestedBsq is not null
+            && !string.Equals(requestedBsq, "false", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(requestedBsq, "0", StringComparison.Ordinal))
+        {
+            return CreateSoapFault(
+                "SOAP GetImage supports band-interleaved-by-pixel output only; BSQ must be false.",
+                StatusCodes.Status400BadRequest);
+        }
+
         var rasters = await rasterStore.ListRastersAsync(resolution.LayerId, cancellationToken).ConfigureAwait(false);
         var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
         if (referenceRaster.Id == 0 && rasters.Length > 0)
@@ -338,6 +348,15 @@ internal static class ImageServerSoapEndpoints
                 StatusCodes.Status400BadRequest);
         }
 
+        if (request.PixelType is not null
+            && !string.Equals(request.PixelType, "U8", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(request.PixelType, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateSoapFault(
+                "SOAP GetImage supports only U8 or UNKNOWN as the requested pixel type.",
+                StatusCodes.Status400BadRequest);
+        }
+
         if (request.Compression is not null
             && !string.Equals(request.Compression, "None", StringComparison.OrdinalIgnoreCase))
         {
@@ -354,7 +373,10 @@ internal static class ImageServerSoapEndpoints
                 StatusCodes.Status400BadRequest);
         }
 
-        request = CopyWithResponseFormat(request, "image");
+        // The canonical export handler has its own REST pixel-type negotiation. SOAP has
+        // already validated U8 above, so clear the wire hint before delegating to the shared
+        // renderer and preserve the fixed unsigned-byte pixel-block contract here.
+        request = CopyWithResponseFormat(request, "image", clearPixelType: true);
         var exportResult = await exportHandler.ExportImageAsync(
             context,
             resolution,
@@ -540,7 +562,10 @@ internal static class ImageServerSoapEndpoints
         return true;
     }
 
-    private static ExportImageRequest CopyWithResponseFormat(ExportImageRequest request, string responseFormat)
+    private static ExportImageRequest CopyWithResponseFormat(
+        ExportImageRequest request,
+        string responseFormat,
+        bool clearPixelType = false)
         => new()
         {
             Bbox = request.Bbox,
@@ -548,7 +573,7 @@ internal static class ImageServerSoapEndpoints
             ImageSr = request.ImageSr,
             BboxSr = request.BboxSr,
             Format = request.Format,
-            PixelType = request.PixelType,
+            PixelType = clearPixelType ? null : request.PixelType,
             NoData = request.NoData,
             Interpolation = request.Interpolation,
             Compression = request.Compression,

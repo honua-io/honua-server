@@ -532,6 +532,59 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapCatalogAndImageServer_AgreeWhenRasterBearingPublicationFollowsSixtyFourEmptyLayers()
+    {
+        const int rasterStorageLayerId = 9065;
+        var layers = Enumerable.Range(0, 66)
+            .Select(index => (
+                ResourceId: $"res-deep-{index}",
+                PublicationId: $"pub-deep-{index}",
+                PublicationLayerIndex: index,
+                StorageLayerId: 9000 + index))
+            .ToArray();
+        var graph = BuildSoapImageGraph("deep-image", layers);
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        rasterStore.ListRastersAsync(rasterStorageLayerId, Arg.Any<CancellationToken>())
+            .Returns([CreateSoapRaster(rasterStorageLayerId)]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var catalogResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services",
+                "GetServiceDescriptions");
+            catalogResponse.Be200Ok();
+            (await catalogResponse.Content.ReadAsStringAsync()).Should().Contain("deep-image");
+
+            using var imageResponse = await PostSoapAsync(
+                fixture.Client,
+                "/services/deep-image/ImageServer",
+                "GetVersion");
+            imageResponse.Be200Ok();
+            await rasterStore.Received().ListRastersAsync(
+                rasterStorageLayerId,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped()
     {
@@ -675,6 +728,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                   <ImageDescription xsi:type="GeoImageDescription">
                     <Extent xsi:type="EnvelopeN"><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
                     <Width>16</Width><Height>8</Height>
+                    <PixelType>U8</PixelType>
                   </ImageDescription>
                 </esri:GetImage>
                 """;
@@ -691,6 +745,83 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Should().HaveCount(pixelByteCount + ((16 * 8 + 7) / 8));
             result.AsSpan(0, 6).ToArray().Should().Equal(17, 34, 51, 17, 34, 51);
             result.AsSpan(pixelByteCount).ToArray().Should().OnlyContain(value => value == 0xff);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetImage_ExplicitU8OneBandReturnsGrayscaleBipPixels()
+    {
+        var rasterStore = CreateSoapRasterStore(bandCount: 1);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            const string operation = """
+                <esri:GetImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0">
+                  <ImageDescription>
+                    <Extent><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
+                    <Width>16</Width><Height>8</Height><PixelType>U8</PixelType><BSQ>false</BSQ>
+                  </ImageDescription>
+                </esri:GetImage>
+                """;
+            using var response = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation);
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var result = Convert.FromBase64String(
+                payload.Descendants().Single(element => element.Name.LocalName == "Result").Value);
+            var pixelByteCount = 16 * 8;
+            result.Should().HaveCount(pixelByteCount + ((16 * 8 + 7) / 8));
+            result.AsSpan(0, 2).ToArray().Should().Equal(17, 17);
+            result.AsSpan(pixelByteCount).ToArray().Should().OnlyContain(value => value == 0xff);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetImage_RejectsUnsupportedPixelTypeAndBsqOutput()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            foreach (var imageDescriptionOption in new[] { "<PixelType>U16</PixelType>", "<BSQ>true</BSQ>" })
+            {
+                var operation = $$"""
+                    <esri:GetImage xmlns:esri="http://www.esri.com/schemas/ArcGIS/2.9.0">
+                      <ImageDescription>
+                        <Extent><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
+                        <Width>16</Width><Height>8</Height>{{imageDescriptionOption}}
+                      </ImageDescription>
+                    </esri:GetImage>
+                    """;
+                using var response = await PostSoapOperationAsync(
+                    fixture.Client,
+                    $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                    operation);
+                response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+            }
+
+            await rasterStore.DidNotReceive().ExportImageAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -840,8 +971,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
             response.StatusCode.Should().Be(System.Net.HttpStatusCode.InternalServerError);
             response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
-            XDocument.Parse(await response.Content.ReadAsStringAsync())
-                .Descendants(ArcGisSoapEnvelopeNamespace + "Fault").Should().ContainSingle();
+            var fault = XDocument.Parse(await response.Content.ReadAsStringAsync())
+                .Descendants(ArcGisSoapEnvelopeNamespace + "Fault").Should().ContainSingle().Subject;
+            fault.Element("faultcode")?.Value.Should().Be("soap:Server");
         }
         finally
         {
