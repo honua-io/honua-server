@@ -907,6 +907,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().Be("3");
             result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
                 .Value.Should().Be("None");
+            result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
+                .Value.Should().Be("NorthWest,LockRaster,None");
             result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
                 .Value.Should().Be("false");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")
@@ -1073,6 +1075,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                     </Extent>
                     <Width>128</Width><Height>64</Height>
                   </ImageDescription>
+                  <MosaicRule xsi:type="MosaicRule">
+                    <MosaicMethod>esriMosaicLockRaster</MosaicMethod>
+                    <LockRasterIDs><Int>101</Int></LockRasterIDs>
+                  </MosaicRule>
                   <ImageType xsi:type="ImageType">
                     <ImageFormat>esriImagePNG</ImageFormat>
                     <ImageReturnType>esriImageReturnURL</ImageReturnType>

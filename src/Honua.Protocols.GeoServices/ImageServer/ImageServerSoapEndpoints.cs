@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
@@ -261,7 +262,7 @@ internal static class ImageServerSoapEndpoints
             new XElement("ServiceSourceType", "esriImageServiceSourceTypeMosaicDataset"),
             new XElement("AllowedFields", "OBJECTID,Shape,Name"),
             new XElement("AllowedCompressions", "None"),
-            new XElement("AllowedMosaicMethods", "NorthWest,Center,LockRaster,None"),
+            new XElement("AllowedMosaicMethods", "NorthWest,LockRaster,None"),
             new XElement("MaxRecordCount", 1000),
             new XElement("MaxMosaicImageCount", 20),
             new XElement("DefaultCompression", "None"),
@@ -301,6 +302,7 @@ internal static class ImageServerSoapEndpoints
             publicationLayerIndex,
             request,
             publicationId,
+            AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
 
         if (returnMimeData && exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
@@ -401,6 +403,7 @@ internal static class ImageServerSoapEndpoints
             publicationLayerIndex,
             request,
             publicationId,
+            AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
             { FileContents: var imageData })
@@ -552,6 +555,10 @@ internal static class ImageServerSoapEndpoints
             .FirstOrDefault(static element => element.Name.LocalName == "SpatialReference");
         var wkid = FindDescendantValue(spatialReference, "LatestWKID")
             ?? FindDescendantValue(spatialReference, "WKID");
+        if (!TrySerializeSoapMosaicRule(operation, out var mosaicRule, out error))
+        {
+            return false;
+        }
 
         request = new ExportImageRequest
         {
@@ -568,6 +575,7 @@ internal static class ImageServerSoapEndpoints
             BandIds = string.Join(",", description.Descendants()
                 .Where(static element => element.Name.LocalName == "Int")
                 .Select(static element => element.Value)),
+            MosaicRule = mosaicRule,
             F = "json"
         };
         return true;
@@ -587,8 +595,71 @@ internal static class ImageServerSoapEndpoints
             Compression = request.Compression,
             CompressionQuality = request.CompressionQuality,
             BandIds = string.IsNullOrWhiteSpace(request.BandIds) ? null : request.BandIds,
+            MosaicRule = request.MosaicRule,
             F = responseFormat
         };
+
+    private static bool TrySerializeSoapMosaicRule(
+        XElement operation,
+        out string? serialized,
+        out string? error)
+    {
+        serialized = null;
+        error = null;
+        var element = operation.Descendants()
+            .FirstOrDefault(static candidate => candidate.Name.LocalName == "MosaicRule");
+        if (element is null || string.Equals(
+                element.Attribute(XName.Get("nil", XmlSchemaInstanceNamespace))?.Value,
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var requested = FindDescendantValue(element, "MosaicMethod");
+        var canonical = requested?.Trim() switch
+        {
+            string value when value.Equals("None", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicNone", StringComparison.OrdinalIgnoreCase) => "esriMosaicNone",
+            string value when value.Equals("NorthWest", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicNorthwest", StringComparison.OrdinalIgnoreCase) => "esriMosaicNorthwest",
+            string value when value.Equals("LockRaster", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicLockRaster", StringComparison.OrdinalIgnoreCase) => "esriMosaicLockRaster",
+            _ => null
+        };
+        if (canonical is null)
+        {
+            error = $"SOAP MosaicMethod {requested ?? "<missing>"} is not supported.";
+            return false;
+        }
+
+        if (canonical != "esriMosaicLockRaster")
+        {
+            serialized = JsonSerializer.Serialize(new { mosaicMethod = canonical });
+            return true;
+        }
+
+        var lockIds = element.Descendants()
+            .Where(static candidate => candidate.Name.LocalName is "Int" or "LockRasterID")
+            .Select(static candidate => long.TryParse(
+                candidate.Value,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var id) ? (long?)id : null)
+            .ToArray();
+        if (lockIds.Length == 0 || lockIds.Any(static id => id is null))
+        {
+            error = "SOAP LockRaster mosaic requires numeric raster ids.";
+            return false;
+        }
+
+        serialized = JsonSerializer.Serialize(new
+        {
+            mosaicMethod = canonical,
+            lockRasterIds = lockIds.Select(static id => id!.Value).ToArray()
+        });
+        return true;
+    }
 
     private static XElement BuildFields()
     {

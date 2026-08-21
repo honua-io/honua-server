@@ -63,7 +63,8 @@ internal sealed class ImageServerExportHandler
         int layerId,
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
-        => ExportImageCoreAsync(context, layerId, request, publicationId: null, cancellationToken);
+        => ExportImageCoreAsync(
+            context, layerId, request, publicationId: null, AuthorizationOperation.Query, cancellationToken);
 
     /// <summary>
     /// Exports the exact publication already resolved by a service-scoped caller.
@@ -73,10 +74,12 @@ internal sealed class ImageServerExportHandler
         int layerId,
         ExportImageRequest request,
         string publicationId,
+        AuthorizationOperation authorizationOperation,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
-        return ExportImageCoreAsync(context, layerId, request, publicationId, cancellationToken);
+        return ExportImageCoreAsync(
+            context, layerId, request, publicationId, authorizationOperation, cancellationToken);
     }
 
     private async Task<IResult> ExportImageCoreAsync(
@@ -84,6 +87,7 @@ internal sealed class ImageServerExportHandler
         int layerId,
         ExportImageRequest request,
         string? publicationId,
+        AuthorizationOperation authorizationOperation,
         CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -115,7 +119,7 @@ internal sealed class ImageServerExportHandler
             var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
                 context,
                 currentResource,
-                AuthorizationOperation.Query,
+                authorizationOperation,
                 currentService,
                 cancellationToken).ConfigureAwait(false);
             if (accessError is not null)
