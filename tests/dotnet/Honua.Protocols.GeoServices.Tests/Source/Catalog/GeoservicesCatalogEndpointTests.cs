@@ -191,7 +191,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
     [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
     {
         var rasterStore = Substitute.For<IRasterStore>();
@@ -234,8 +236,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
 
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants()
+                .Should().ContainSingle(element => element.Name.LocalName == "GetServiceDescriptionsResult");
             var description = payload.Descendants()
-                .Single(element => element.Name.LocalName == "ServiceDescription");
+                .Where(element => element.Name.LocalName == "ServiceDescription")
+                .First(element => element.Elements().Any(child =>
+                    child.Name.LocalName == "Name" && child.Value == "test"));
             description.Elements()
                 .Single(element => element.Name.LocalName == "Name")
                 .Value.Should().Be("test");
@@ -245,10 +251,72 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
                 .Value.Should().EndWith("/services/test/ImageServer");
+
+            var advertisedUrl = description.Elements()
+                .Single(element => element.Name.LocalName == "Url")
+                .Value;
+            const string serviceRequest = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                  <soap:Body>
+                    <GetMessageVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                  </soap:Body>
+                </soap:Envelope>
+                """;
+            using var serviceContent = new StringContent(serviceRequest, Encoding.UTF8, "text/xml");
+            var serviceResponse = await fixture.Client.PostAsync(new Uri(advertisedUrl).PathAndQuery, serviceContent);
+            serviceResponse.Be200Ok();
+            var servicePayload = XDocument.Parse(await serviceResponse.Content.ReadAsStringAsync());
+            servicePayload.Descendants()
+                .Single(element => element.Name.LocalName == "GetMessageVersionResult")
+                .Value.Should().Be("esriArcGISVersion108");
         }
         finally
         {
             await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetFolders")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetMessageVersion")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetMessageFormats")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetTokenServiceURL")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "RequiresTokens")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_SupportedOperations_ReturnExpectedResultWrapper()
+    {
+        var operations = new (string Operation, string ExpectedResult)[]
+        {
+            ("GetServiceDescriptions", "GetServiceDescriptionsResult"),
+            ("GetServiceDescriptionsEx", "GetServiceDescriptionsExResult"),
+            ("GetFolders", "GetFoldersResult"),
+            ("GetMessageVersion", "GetMessageVersionResult"),
+            ("GetMessageFormats", "GetMessageFormatsResult"),
+            ("GetTokenServiceURL", "GetTokenServiceURLResult"),
+            ("RequiresTokens", "RequiresTokensResult")
+        };
+
+        foreach (var (operation, expectedResult) in operations)
+        {
+            var soapRequest = $"""
+                <?xml version="1.0" encoding="utf-8"?>
+                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                  <soap:Body>
+                    <{operation} xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+                  </soap:Body>
+                </soap:Envelope>
+                """;
+            using var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
+
+            var response = await _fixture.Client.PostAsync("/services", content);
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == expectedResult);
         }
     }
 }
