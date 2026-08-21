@@ -24,7 +24,7 @@ CLIENTS = {
     "fsspec": "2026.7.0",
     "Dask": "2026.7.1",
     "PySTAC-Client": "0.9.0",
-    "GDAL": "unknown",
+    "GDAL": "3.8.4",
     "h5stat": "1.10.10",
     "h5dump": "1.10.10",
     "h5repack": "1.10.10",
@@ -104,7 +104,8 @@ def _collect(observations: list[dict], validator, path, args: argparse.Namespace
 
 
 def _collect_client(observations: list[dict], surface: str, operation: str, client: str,
-                    lane: str, args: argparse.Namespace, check, *, unbound: bool = False) -> None:
+                    lane: str, args: argparse.Namespace, check, *, unbound: bool = False,
+                    expected_version: str | None = None) -> None:
     """Collect one client independently so its verdict cannot hide or misattribute siblings."""
     started = _now()
     try:
@@ -117,7 +118,10 @@ def _collect_client(observations: list[dict], surface: str, operation: str, clie
             observation["result"] = "skip"
             observation["skip_reason"] = UNBOUND_CONSUMER_GAP
     except Exception as exc:  # evidence must retain the exact client that failed
-        observation = _observation(surface, operation, client, lane, started, args, CLIENTS.get(client, "unknown"))
+        observation = _observation(
+            surface, operation, client, lane, started, args,
+            expected_version or CLIENTS.get(client, "unknown"),
+        )
         observation["result"] = "fail"
         detail = f"{type(exc).__name__}: {exc}"
         if isinstance(exc, subprocess.CalledProcessError):
@@ -130,14 +134,14 @@ def _collect_client(observations: list[dict], surface: str, operation: str, clie
     observations.append(observation)
 
 
-def _command_version(client: str, *command: str) -> str:
+def _command_version(client: str, *command: str, expected_version: str | None = None) -> str:
     completed = _run(*command)
     output = f"{completed.stdout}\n{completed.stderr}"
     match = re.search(r"(?<!\d)(\d+\.\d+\.\d+)(?!\d)", output)
     if match is None:
         raise ValueError(f"Could not determine {client} version from {' '.join(command)}")
     version = match.group(1)
-    expected = CLIENTS[client]
+    expected = expected_version or CLIENTS[client]
     if version != expected:
         raise ValueError(f"{client} version {version} does not match evidence pin {expected}")
     return version
@@ -182,11 +186,17 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
             "--volume", mount, image,
         )
         _run(*container_prefix, "ogrinfo", "-al", "-so", f"/data/{artifact.name}")
-        return _command_version("GDAL", *container_prefix, "gdalinfo", "--version")
+        return _command_version(
+            "GDAL", *container_prefix, "gdalinfo", "--version",
+            expected_version="3.14.0",
+        )
 
     _collect_client(observations, "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", args, pyarrow_check)
     _collect_client(observations, "geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", args, geopandas_check)
-    _collect_client(observations, "geoparquet", "feature-read", "GDAL", "gdal-geoparquet", args, gdal_check)
+    _collect_client(
+        observations, "geoparquet", "feature-read", "GDAL", "gdal-geoparquet", args, gdal_check,
+        expected_version="3.14.0" if os.getenv("HONUA_CNG_GDAL_IMAGE") else None,
+    )
     return observations
 
 
