@@ -31,6 +31,8 @@ namespace Honua.Server.Features.Operations;
 [JsonSerializable(typeof(OperationPolicyContext))]
 [JsonSerializable(typeof(OperationRequest))]
 [JsonSerializable(typeof(ApprovedAdminOperationPayload))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(bool))]
 internal sealed partial class OperationsJsonContext : JsonSerializerContext
 {
 }

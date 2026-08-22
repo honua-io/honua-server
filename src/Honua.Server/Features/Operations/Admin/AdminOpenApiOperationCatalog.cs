@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Server.Features.Operations;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Features.Operations.Admin;
@@ -159,18 +160,19 @@ internal sealed class AdminOpenApiOperationCatalog
                 && body["required"]?.GetValue<bool>() == true;
             if (bodyRequired)
             {
-                required.Add("body");
+                required.Add(StringNode("body"));
             }
         }
 
         var inputSchema = new JsonObject
         {
-            ["type"] = "object",
+            ["type"] = StringNode("object"),
             ["properties"] = inputProperties,
             ["required"] = required,
-            ["additionalProperties"] = false,
+            ["additionalProperties"] = BooleanNode(false),
         };
-        var outputSchema = ReadResponseSchema(root, source.Operation) ?? new JsonObject { ["type"] = "object" };
+        var outputSchema = ReadResponseSchema(root, source.Operation)
+            ?? new JsonObject { ["type"] = StringNode("object") };
 
         var isReadOnly = string.Equals(source.Method, "GET", StringComparison.Ordinal)
             || string.Equals(source.Method, "HEAD", StringComparison.Ordinal);
@@ -255,10 +257,10 @@ internal sealed class AdminOpenApiOperationCatalog
         if (string.Equals(contentType, "application/octet-stream", StringComparison.Ordinal)
             && IsBinarySchema(schema))
         {
-            schema["contentEncoding"] = "base64";
-            schema["description"] = AppendDescription(
+            schema["contentEncoding"] = StringNode("base64");
+            schema["description"] = StringNode(AppendDescription(
                 schema["description"]?.GetValue<string>(),
-                "Supply the raw request bytes as a base64-encoded string.");
+                "Supply the raw request bytes as a base64-encoded string."));
         }
         else if (string.Equals(contentType, "multipart/form-data", StringComparison.Ordinal)
                  && schema["properties"] is JsonObject properties)
@@ -270,14 +272,14 @@ internal sealed class AdminOpenApiOperationCatalog
             foreach (var propertyName in binaryPropertyNames)
             {
                 var propertySchema = (JsonObject)properties[propertyName]!;
-                propertySchema["contentEncoding"] = "base64";
-                propertySchema["description"] = AppendDescription(
+                propertySchema["contentEncoding"] = StringNode("base64");
+                propertySchema["description"] = StringNode(AppendDescription(
                     propertySchema["description"]?.GetValue<string>(),
-                    "Supply this file's bytes as a base64-encoded string.");
+                    "Supply this file's bytes as a base64-encoded string."));
                 properties[propertyName + "FileName"] = new JsonObject
                 {
-                    ["type"] = "string",
-                    ["description"] = $"File name sent with the '{propertyName}' multipart file.",
+                    ["type"] = StringNode("string"),
+                    ["description"] = StringNode($"File name sent with the '{propertyName}' multipart file."),
                 };
             }
         }
@@ -316,12 +318,12 @@ internal sealed class AdminOpenApiOperationCatalog
 
             var name = NormalizeParameterName(wireName);
             var schema = ResolveSchema(root, parameter["schema"])
-                ?? new JsonObject { ["type"] = "string" };
+                ?? new JsonObject { ["type"] = StringNode("string") };
             properties[name] = schema;
             var isRequired = parameter["required"]?.GetValue<bool>() == true;
             if (isRequired)
             {
-                required.Add(name);
+                required.Add(StringNode(name));
             }
 
             bindings.Add(new AdminOperationParameterBinding(name, wireName, location, isRequired));
@@ -461,8 +463,8 @@ internal sealed class AdminOpenApiOperationCatalog
             {
                 return new JsonObject
                 {
-                    ["type"] = "object",
-                    ["description"] = $"Recursive OpenAPI reference {reference}",
+                    ["type"] = StringNode("object"),
+                    ["description"] = StringNode($"Recursive OpenAPI reference {reference}"),
                 };
             }
 
@@ -501,13 +503,13 @@ internal sealed class AdminOpenApiOperationCatalog
 
                     if (propertyName.Contains("secretReference", StringComparison.OrdinalIgnoreCase))
                     {
-                        propertyObject["format"] = "secret_ref";
+                        propertyObject["format"] = StringNode("secret_ref");
                     }
                     else if (propertyName.Contains("password", StringComparison.OrdinalIgnoreCase)
                              || propertyName.Contains("clientSecret", StringComparison.OrdinalIgnoreCase))
                     {
-                        propertyObject["format"] ??= "password";
-                        propertyObject["writeOnly"] = true;
+                        propertyObject["format"] ??= StringNode("password");
+                        propertyObject["writeOnly"] = BooleanNode(true);
                     }
                 }
             }
@@ -634,6 +636,14 @@ internal sealed class AdminOpenApiOperationCatalog
 
     private static bool HasAcceptedResponse(JsonObject operation)
         => operation["responses"] is JsonObject responses && responses.ContainsKey("202");
+
+    private static JsonNode StringNode(string value)
+        => JsonSerializer.SerializeToNode(value, OperationsJsonContext.Default.String)
+            ?? throw new InvalidOperationException("A JSON string node could not be created.");
+
+    private static JsonNode BooleanNode(bool value)
+        => JsonSerializer.SerializeToNode(value, OperationsJsonContext.Default.Boolean)
+            ?? throw new InvalidOperationException("A JSON Boolean node could not be created.");
 
     private static JsonElement ToElement(JsonNode node)
     {

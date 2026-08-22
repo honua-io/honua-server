@@ -13,6 +13,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
@@ -868,7 +869,9 @@ public sealed class GrpcProcessServiceTests
 
         var request = CreateSubmitJobRequest(CreateValidPlan(), "idem-key-1");
 
-        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(
+            request,
+            CreateDurableCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
@@ -1111,15 +1114,35 @@ public sealed class GrpcProcessServiceTests
         public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
+    private static ClaimsPrincipal CreateDurablePrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "Test User"),
+                new Claim(ClaimTypes.NameIdentifier, TestPrincipalId),
+                new Claim("iss", "https://issuer.example.test"),
+                new Claim(IdentityProtocolProvenance.ClaimType, IdentityProtocolProvenance.Oidc),
+            ],
+            authenticationType: "Oidc"));
+
     private static TestServerCallContext CreateCallContext(CancellationToken cancellationToken = default)
-    {
-        var httpContext = new DefaultHttpContext
-        {
-            User = new ClaimsPrincipal(new ClaimsIdentity(
+        => CreateCallContext(
+            new ClaimsPrincipal(new ClaimsIdentity(
                 [
                     new Claim(ClaimTypes.Name, "Test User"),
                     new Claim(ClaimTypes.NameIdentifier, TestPrincipalId)
-                ], "Test"))
+                ], "Test")),
+            cancellationToken);
+
+    private static TestServerCallContext CreateDurableCallContext(CancellationToken cancellationToken = default)
+        => CreateCallContext(CreateDurablePrincipal(), cancellationToken);
+
+    private static TestServerCallContext CreateCallContext(
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = principal
         };
 
         var ctx = new TestServerCallContext(cancellationToken);
