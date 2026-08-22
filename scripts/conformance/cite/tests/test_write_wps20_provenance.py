@@ -14,7 +14,10 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             root = Path(directory)
             image_id = "sha256:" + ("b" * 64)
             inspect_path = root / "honua-server-image-inspect.json"
-            inspect_path.write_text(json.dumps([{"Id": image_id}]), encoding="utf-8")
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
             output_path = root / "honua-server-provenance.json"
 
             write_provenance(
@@ -32,6 +35,7 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             payload = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["testedHonuaGitSha"], "a" * 40)
             self.assertEqual(payload["serverImageId"], image_id)
+            self.assertEqual(payload["serverImageRevision"], "a" * 40)
             self.assertEqual(payload["serverImageInspectFile"], inspect_path.name)
             self.assertEqual(payload["serverBuildMode"], "source-build")
 
@@ -40,7 +44,10 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             root = Path(directory)
             image_id = "sha256:" + ("b" * 64)
             inspect_path = root / "inspect.json"
-            inspect_path.write_text(json.dumps([{"Id": image_id}]), encoding="utf-8")
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "full tested Honua git SHA"):
                 write_provenance(
@@ -52,7 +59,10 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             root = Path(directory)
             image_id = "sha256:" + ("b" * 64)
             inspect_path = root / "inspect.json"
-            inspect_path.write_text(json.dumps([{"Id": image_id}]), encoding="utf-8")
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "does not match"):
                 write_provenance(
@@ -64,7 +74,10 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             root = Path(directory)
             image_id = "sha256:" + ("b" * 64)
             inspect_path = root / "inspect.json"
-            inspect_path.write_text(json.dumps([{"Id": "sha256:" + ("c" * 64)}]), encoding="utf-8")
+            inspect_path.write_text(json.dumps([{
+                "Id": "sha256:" + ("c" * 64),
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "does not match"):
                 write_provenance(
@@ -85,7 +98,11 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             image_id = "sha256:" + ("b" * 64)
             digest = "ghcr.io/honua-io/honua-server@sha256:" + ("c" * 64)
             inspect_path = root / "inspect.json"
-            inspect_path.write_text(json.dumps([{"Id": image_id, "RepoDigests": [digest]}]), encoding="utf-8")
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "RepoDigests": [digest],
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
             output_path = root / "out.json"
 
             write_provenance(
@@ -118,6 +135,29 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
                     "d" * 64,
                     image_id,
                     "local-existing",
+                    "",
+                    inspect_path,
+                    root / "out.json",
+                    True,
+                )
+
+    def test_required_provenance_rejects_mismatched_image_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_id = "sha256:" + ("b" * 64)
+            inspect_path = root / "inspect.json"
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "Config": {"Labels": {"org.opencontainers.image.revision": "e" * 40}},
+            }]), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "revision label does not match"):
+                write_provenance(
+                    "a" * 40,
+                    "a" * 40,
+                    "d" * 64,
+                    image_id,
+                    "source-build",
                     "",
                     inspect_path,
                     root / "out.json",

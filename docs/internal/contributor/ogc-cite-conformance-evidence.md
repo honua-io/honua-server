@@ -124,15 +124,18 @@ Build the static evidence bundle from local suite output:
 scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
 ```
 
-## Pending WPS 2.0.2 evidence
+## WPS 2.0.2 onboarding evidence
 
 The WPS 2.0.2 lane uses official `ets-wps20` 1.1 source pinned to commit
 `e2acc691440fad98d32e873a6b7237c9d759b8df`. Its parser evaluates either Basic
 plus Asynchronous, Basic plus Synchronous, or all three conformance classes and
 preserves the complete upstream TestNG totals alongside the selected-profile
-summary. The lane has not yet produced an all-pass evidence run, is excluded
-from `build-cite-evidence.sh`, and does not change the public suite or test
-totals in this document.
+summary. [Workflow run 32229195554](https://github.com/honua-io/honua-server/actions/runs/32229195554)
+passed 21/21 selected Basic plus Asynchronous assertions and 22/22 raw assertions
+when the Synchronous class is included. WPS is now included by
+`build-cite-evidence.sh` and the weekly/manual aggregate workflow. The latest
+single-run aggregate above remains the authoritative 1,117/1,117, 13-suite total
+until the first combined aggregate run publishes a replacement bundle.
 
 ## External Standards Validator Evidence
 

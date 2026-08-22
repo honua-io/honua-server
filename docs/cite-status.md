@@ -134,14 +134,9 @@ accurate `/conformance` declaration:
   working but emit advisory `Deprecation`/`Sunset` headers pending removal.
   See [`docs/gis/style-engine-protocol-consumption.md`](guides/style/style-maps.md).
 
-## Pending WPS 2.0.2 lane
+### WPS 2.0.2 onboarding evidence
 
-Issue #2933 adds an official `ets-wps20` 1.1 harness for the Basic plus
-Asynchronous or Synchronous certification paths. WPS is not included in the
-table or the public pass total above until a complete selected-profile run has
-nonzero tests with zero failures, skips, and indeterminate results. Harness
-availability must not be presented as OGC certification or passing evidence.
-
+WPS 2.0 Basic and Async conformance has substantive pre-integration evidence in [workflow run 32229195554](https://github.com/honua-io/honua-server/actions/runs/32229195554): 21/21 selected assertions passed, with 22/22 raw assertions passing when the Sync class is included. The ETS source is pinned to `e2acc691440fad98d32e873a6b7237c9d759b8df`. WPS is now part of the weekly/manual aggregate workflow and will be included in the authoritative aggregate totals after the first combined run. Until then, the latest single-run aggregate above remains 1,117/1,117 across 13 suites.
 ## How To Refresh This Page
 
 The
