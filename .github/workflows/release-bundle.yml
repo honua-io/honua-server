@@ -45,8 +45,6 @@ permissions:
   contents: read
   packages: write
   actions: read
-  id-token: write
-  attestations: write
 
 concurrency:
   group: release-bundle-${{ github.event.inputs.release_id }}

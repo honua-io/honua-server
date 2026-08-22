@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -324,9 +325,7 @@ internal static class ImageServerSoapEndpoints
         if (!returnMimeData && exportResult is IValueHttpResult { Value: ExportImageResponse response })
         {
             XNamespace xsi = XmlSchemaInstanceNamespace;
-            var imageUrl = Uri.TryCreate(response.Href, UriKind.Absolute, out _)
-                ? response.Href
-                : $"{BaseUrlResolver.GetBaseUrl(context)}{(response.Href.StartsWith('/') ? string.Empty : "/")}{response.Href}";
+            var imageUrl = ResolveImageUrl(context, response.Href);
             var urlResult = new XElement(
                 "Result",
                 new XAttribute(xsi + "type", "tns:ImageResult"),
@@ -339,6 +338,17 @@ internal static class ImageServerSoapEndpoints
         }
 
         return CreateSoapFaultFromResult(exportResult, "Image export failed.", soapNamespace);
+    }
+
+    internal static string ResolveImageUrl(HttpContext context, string href)
+    {
+        if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteHref)
+            && (absoluteHref.Scheme == Uri.UriSchemeHttp || absoluteHref.Scheme == Uri.UriSchemeHttps))
+        {
+            return href;
+        }
+
+        return $"{BaseUrlResolver.GetBaseUrl(context)}{(href.StartsWith('/') ? string.Empty : "/")}{href}";
     }
 
     private static async Task<IResult> HandleGetImageAsync(
@@ -767,7 +777,9 @@ internal static class ImageServerSoapEndpoints
                 "SpatialReference",
                 new XAttribute(
                     xsi + "type",
-                    extent.Srid == 4326 ? "tns:GeographicCoordinateSystem" : "tns:ProjectedCoordinateSystem"),
+                    extent.Srid is int srid && GeographicSridClassifier.IsGeographicSrid(srid)
+                        ? "tns:GeographicCoordinateSystem"
+                        : "tns:ProjectedCoordinateSystem"),
                 new XElement("WKID", extent.Srid ?? 0),
                 new XElement("LatestWKID", extent.Srid ?? 0)));
     }

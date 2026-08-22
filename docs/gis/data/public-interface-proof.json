@@ -2401,7 +2401,16 @@
       "endpointContains": [
         "/ImageServer"
       ],
-      "operationKeys": [],
+      "operationKeys": [
+        "ImageServer::GetVersion",
+        "ImageServer::IsFixedScaleImage",
+        "ImageServer::GetServiceInfo",
+        "ImageServer::GetFields",
+        "ImageServer::GetKeyProperties",
+        "ImageServer::GetMetadata",
+        "ImageServer::ExportImage",
+        "ImageServer::GetImage"
+      ],
       "proofs": [
         {
           "proofClass": "real-client-certification",

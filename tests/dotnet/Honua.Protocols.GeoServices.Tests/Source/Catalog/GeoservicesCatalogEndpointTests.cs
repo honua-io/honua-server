@@ -997,6 +997,36 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetServiceInfo_ClassifiesNad83AsGeographic()
+    {
+        var rasterStore = CreateSoapRasterStore(srid: 4269);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "GetServiceInfo");
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var spatialReference = payload.Descendants()
+                .Single(element => element.Name.LocalName == "SpatialReference");
+            spatialReference.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+                .Value.Should().Be("tns:GeographicCoordinateSystem");
+            spatialReference.Elements().Single(element => element.Name.LocalName == "WKID")
+                .Value.Should().Be("4269");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Operation(Operations.Export)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_UsesOperationAwareAuthorizationAndMapsTimeouts()
@@ -1323,9 +1353,13 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         (await response.Content.ReadAsStringAsync()).Should().Contain("Malformed SOAP request");
     }
 
-    private static IRasterStore CreateSoapRasterStore(int layerId = 0, int bandCount = 3, string pixelType = "8BUI")
+    private static IRasterStore CreateSoapRasterStore(
+        int layerId = 0,
+        int bandCount = 3,
+        string pixelType = "8BUI",
+        int srid = 4326)
     {
-        var raster = CreateSoapRaster(layerId, bandCount: bandCount, pixelType: pixelType);
+        var raster = CreateSoapRaster(layerId, bandCount: bandCount, pixelType: pixelType, srid: srid);
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(raster);
@@ -1368,7 +1402,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         int height = 180,
         int bandCount = 3,
         RasterExtent? extent = null,
-        string pixelType = "8BUI")
+        string pixelType = "8BUI",
+        int srid = 4326)
         => new()
         {
             Id = id,
@@ -1378,8 +1413,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             Height = height,
             BandCount = bandCount,
             PixelType = pixelType,
-            Srid = 4326,
-            Extent = extent ?? new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            Srid = srid,
+            Extent = extent ?? new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = srid },
             CreatedAt = DateTimeOffset.UtcNow
         };
 
