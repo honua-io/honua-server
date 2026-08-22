@@ -2,10 +2,13 @@
 
 ## Status
 
-Accepted (2026-08-16). Records decision **D5**, extracted from the Studio/MCP
-convergence epic ([#3220](https://github.com/honua-io/honua-server/issues/3220))
-and tracked as [#3255](https://github.com/honua-io/honua-server/issues/3255).
-Pairs with D4 (model routing default, #3254), which is related but independent.
+Accepted (2026-08-16). Records decision **D8** (recorded as "D5"; renumbered
+2026-08-17), extracted from the Studio/MCP convergence epic
+([#3220](https://github.com/honua-io/honua-server/issues/3220)) and tracked as
+[#3255](https://github.com/honua-io/honua-server/issues/3255). Pairs with D7
+(model routing default, #3254;
+[ADR-0077](0077-studio-model-routing-default.md)), which is related but
+independent. See honua-release#80 for the canonical decision registry.
 
 Amends the operator-contract posture set by [ADR-0026](0026-ai-first-operator-contract.md)
 and the clarification workflow in [ADR-0027](0027-deterministic-intent-clarification-workflow.md):
