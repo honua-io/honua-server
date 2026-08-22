@@ -86,6 +86,9 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
         raise ValueError("TRX Counters are incomplete") from error
     if total <= 0 or executed != total or not_executed != 0 or passed + failed != executed:
         raise ValueError("TRX records incomplete test execution")
+    result_nodes = [node for node in root.iter() if node.tag.endswith("UnitTestResult")]
+    if len(result_nodes) != total:
+        raise ValueError("TRX Counters do not match result count")
 
     definitions: dict[str, str] = {}
     for node in root.iter():
@@ -104,9 +107,7 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
         definitions[trx_id] = f"{class_name}.{method_name}"
 
     matched: dict[str, str] = {}
-    for node in root.iter():
-        if not node.tag.endswith("UnitTestResult"):
-            continue
+    for node in result_nodes:
         trx_id = node.attrib.get("testId", "")
         if not trx_id or trx_id not in definitions:
             raise ValueError(f"TRX result has no matching test definition: {trx_id or '<missing>'}")
@@ -119,6 +120,8 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
         if outcome not in RESULTS:
             raise ValueError(f"governed test {test_id} has unsupported outcome {outcome!r}")
         matched[test_id] = RESULTS[outcome]
+    if sum(value == "pass" for value in matched.values()) != passed or sum(value == "fail" for value in matched.values()) != failed:
+        raise ValueError("TRX Counters do not match result outcomes")
     missing = sorted(expected_ids - set(matched))
     if missing:
         raise ValueError(f"missing governed test results: {', '.join(missing)}")

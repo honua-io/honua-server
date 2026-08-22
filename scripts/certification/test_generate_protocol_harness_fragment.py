@@ -81,6 +81,8 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             (trx([("ExampleTests.Get_ReturnsDocument", "Passed"), ("ExampleTests.Get_ReturnsDocument", "Passed")]), "duplicate governed"),
             (trx([("ExampleTests.Get_ReturnsDocument", "NotExecuted")], counters={"total": 1, "executed": 0, "passed": 0, "failed": 0, "notExecuted": 1}), "incomplete test execution"),
             (trx([("ExampleTests.Get_ReturnsDocument", "Passed")], summary="Aborted"), "not complete"),
+            (trx([("ExampleTests.Get_ReturnsDocument", "Passed")], counters={"total": 1, "executed": 1, "passed": 0, "failed": 1, "notExecuted": 0}), "do not match result outcomes"),
+            (trx([], counters={"total": 1, "executed": 1, "passed": 1, "failed": 0, "notExecuted": 0}), "do not match result count"),
         ]
         for contents, message in cases:
             with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
