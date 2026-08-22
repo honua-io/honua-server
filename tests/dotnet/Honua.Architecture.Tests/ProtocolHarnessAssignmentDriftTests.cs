@@ -5,7 +5,6 @@ namespace Honua.Architecture.Tests;
 
 public sealed class ProtocolHarnessAssignmentDriftTests
 {
-    private const string ContractPath = "docs/gis/data/protocol-harness-assignments.v1.json";
     private static readonly HashSet<string> ExpectedOperations = new(StringComparer.Ordinal)
     {
         "ai.grounding|spec-grounding|POST /v1/grounding/spec/mutate",
@@ -52,7 +51,8 @@ public sealed class ProtocolHarnessAssignmentDriftTests
     public void GovernedProtocolHarnessOperations_MapToExistingExecutableTests()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var contractPath = Path.Combine(repositoryRoot, ContractPath.Replace('/', Path.DirectorySeparatorChar));
+        var contractPath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot, "docs", "gis", "data", "protocol-harness-assignments.v1.json");
         using var document = JsonDocument.Parse(File.ReadAllText(contractPath));
         var root = document.RootElement;
 
@@ -64,7 +64,7 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         Assert.Equal(20, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
 
         using var featureCatalog = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(repositoryRoot, "docs", "gis", "data", "feature-catalog.json")));
+            ArchitectureTestHelpers.CombinePath(repositoryRoot, "docs", "gis", "data", "feature-catalog.json")));
         var featureEntries = featureCatalog.RootElement.GetProperty("entries").EnumerateArray().ToArray();
 
         var operationKeys = assignments
