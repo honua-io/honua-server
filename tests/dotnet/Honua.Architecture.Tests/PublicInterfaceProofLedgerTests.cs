@@ -142,6 +142,22 @@ public sealed partial class PublicInterfaceProofLedgerTests
     private static readonly string[] LegacyEsriCompatSurfaceIds =
         ["wfs-1.0.0", "wfs-1.1.0", "wms-1.1.1"];
 
+    private static readonly string[] ArcGisEsriCompatSurfaceIds =
+    [
+        "feature-server",
+        "map-server",
+        "image-server",
+        "geometry-service",
+        "version-management-server",
+        "ogc-api-features",
+        "wfs-2.0",
+        "wms-1.3",
+        "wmts-1.0",
+        "wfs-1.0.0",
+        "wfs-1.1.0",
+        "wms-1.1.1"
+    ];
+
     private static readonly Regex MarkdownLinkRegex =
         new(@"\[[^\]]+\]\((?<path>[^)]+)\)", RegexOptions.Compiled);
 
@@ -673,8 +689,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
         }
 
         var isApprovedEsriCompatSurface =
-            PlannedClientSurfaceIdsByProtocol.Values.SelectMany(ids => ids).Contains(surfaceId, StringComparer.OrdinalIgnoreCase) ||
-            LegacyEsriCompatSurfaceIds.Contains(surfaceId, StringComparer.OrdinalIgnoreCase);
+            ArcGisEsriCompatSurfaceIds.Contains(surfaceId, StringComparer.OrdinalIgnoreCase);
         if (isApprovedEsriCompatSurface &&
             string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase))

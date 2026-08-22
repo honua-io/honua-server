@@ -92,6 +92,7 @@ jobs:
           fi
           expected_server_commit="$(git rev-parse HEAD)"
           expected_fixture_revision="sha256:$(sha256sum "${CLIENT_COMPAT_SEED_SOURCE}" | awk '{print $1}')"
+          expected_server_config_revision="sha256:$(sha256sum .github/actions/setup-honua-server/action.yml | awk '{print $1}')"
           actual_count=0
           for f in "$cert_dir"/*.cert.json; do
             [[ -f "$f" ]] || continue
@@ -103,9 +104,12 @@ jobs:
             if ! jq -e \
               --arg server_commit "$expected_server_commit" \
               --arg fixture_revision "$expected_fixture_revision" \
-              '.server_commit == $server_commit and .fixture_revision == $fixture_revision' \
+              --arg server_config_revision "$expected_server_config_revision" \
+              '.server_commit == $server_commit and
+               .fixture_revision == $fixture_revision and
+               .server_config_revision == $server_config_revision' \
               "$f" >/dev/null; then
-              echo "::error::$(basename "$f") does not match the checked-out server commit and canonical fixture revision"
+              echo "::error::$(basename "$f") does not match the checked-out server commit, canonical fixture revision, and server configuration revision"
               echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
               exit 1
             fi

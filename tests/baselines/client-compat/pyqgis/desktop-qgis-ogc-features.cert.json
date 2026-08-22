@@ -5,6 +5,7 @@
   "server_version": "source@c82be85559bcaf32d62663de84e725617fca991c",
   "server_commit": "c82be85559bcaf32d62663de84e725617fca991c",
   "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:700c117b17fbd2e9f962abdc300b7b994351fc05180229d27b991c204806e5bf",
   "client_lane": "desktop-qgis",
   "client_version": "3.44.13-Solothurn",
   "protocol": "ogc-features",

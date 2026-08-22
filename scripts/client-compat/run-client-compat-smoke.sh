@@ -1109,13 +1109,15 @@ generate_cert_envelope() {
   local client_lane="$1" protocol="$2"
   local cert_results_file="$CERT_DIR/cert-results-${protocol}.tsv"
   local cert_json="$CERT_DIR/${TIMESTAMP}-${client_lane}-${protocol}.cert.json"
-  local client_version seed_path fixture_revision
+  local client_version seed_path config_path fixture_revision server_config_revision
   client_version="curl/$(curl --version 2>/dev/null | head -1 | awk '{print $2}')"
   seed_path="$SEED_SOURCE"
   if [[ "$seed_path" != /* ]]; then
     seed_path="$ROOT_DIR/$seed_path"
   fi
   fixture_revision="sha256:$(sha256sum "$seed_path" | awk '{print $1}')"
+  config_path="$ROOT_DIR/.github/actions/setup-honua-server/action.yml"
+  server_config_revision="sha256:$(sha256sum "$config_path" | awk '{print $1}')"
 
   if [[ ! -f "$cert_results_file" ]]; then
     echo "Warning: no cert results for ${protocol}, skipping envelope" >&2
@@ -1129,6 +1131,7 @@ generate_cert_envelope() {
     --arg server_version "$SERVER_VERSION" \
     --arg server_commit "$SERVER_COMMIT" \
     --arg fixture_revision "$fixture_revision" \
+    --arg server_config_revision "$server_config_revision" \
     --arg client_lane "$client_lane" \
     --arg client_version "$client_version" \
     --arg protocol "$protocol" \
@@ -1142,6 +1145,7 @@ generate_cert_envelope() {
           server_version: $server_version,
           server_commit: $server_commit,
           fixture_revision: $fixture_revision,
+          server_config_revision: $server_config_revision,
           client_lane: $client_lane,
           client_version: $client_version,
           protocol: $protocol,

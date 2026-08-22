@@ -126,6 +126,11 @@ jobs:
           if not isinstance(fixture, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', fixture) is None:
               print('FAIL: envelope fixture_revision is not a sha256 digest', file=sys.stderr)
               sys.exit(1)
+          expected_config = 'sha256:' + __import__('hashlib').sha256(
+              open('.github/actions/setup-honua-server/action.yml', 'rb').read()).hexdigest()
+          if data.get('server_config_revision') != expected_config:
+              print('FAIL: envelope server_config_revision does not match setup-honua-server', file=sys.stderr)
+              sys.exit(1)
           if data.get('protocol') == 'wfs' and data.get('protocol_version') != '2.0.0':
               print('FAIL: WFS envelope is not bound to WFS 2.0.0', file=sys.stderr)
               sys.exit(1)
