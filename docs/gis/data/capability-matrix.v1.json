@@ -18,7 +18,7 @@
     "tests/baselines/client-compat/"
   ],
   "evidenceFreshness": {
-    "anchor": "2026-08-22T01:10:15.809671Z",
+    "anchor": "2026-08-22T02:57:06.793352Z",
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
@@ -1847,7 +1847,7 @@
           "freshness": {
             "state": "stale",
             "ageDays": 0,
-            "runDate": "2026-08-22T01:10:15.809245Z"
+            "runDate": "2026-08-22T02:57:06.792964Z"
           }
         },
         {
@@ -2103,7 +2103,7 @@
           "freshness": {
             "state": "stale",
             "ageDays": 0,
-            "runDate": "2026-08-22T01:10:15.809671Z"
+            "runDate": "2026-08-22T02:57:06.793352Z"
           }
         },
         {
