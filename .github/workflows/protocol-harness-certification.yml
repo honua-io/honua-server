@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: protocol-harness-certification-${{ github.event.inputs.candidate_source_sha || github.sha }}
@@ -73,11 +74,31 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Authenticate the pinned private package feed
+        env:
+          GH_PACKAGES_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          config=""
+          for candidate in producer/NuGet.Config producer/NuGet.config; do
+            if [[ -f "${candidate}" ]] && grep -q 'github-honua' "${candidate}"; then
+              config="${candidate}"
+              break
+            fi
+          done
+          [[ -n "${config}" ]] || { echo "github-honua NuGet source is not configured" >&2; exit 1; }
+          dotnet nuget update source github-honua \
+            --configfile "${config}" \
+            --username "${GITHUB_ACTOR}" \
+            --password "${GH_PACKAGES_TOKEN}" \
+            --store-password-in-clear-text
+
       - name: Verify or build candidate image identity
         id: image
         env:
           CANDIDATE_IMAGE: ${{ github.event.inputs.candidate_image }}
           CANDIDATE_SHA: ${{ steps.identity.outputs.candidate_sha }}
+          GH_PACKAGES_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [[ -n "${CANDIDATE_IMAGE}" ]]; then
@@ -87,7 +108,11 @@ jobs:
             image_ref="${CANDIDATE_IMAGE}"
           else
             image_ref="honua-protocol-harness:${CANDIDATE_SHA}"
-            docker build --build-arg "HONUA_GIT_SHA=${CANDIDATE_SHA}" -t "${image_ref}" producer
+            DOCKER_BUILDKIT=1 docker build \
+              --build-arg "HONUA_GIT_SHA=${CANDIDATE_SHA}" \
+              --secret id=github_actor,env=GITHUB_ACTOR \
+              --secret id=github_token,env=GH_PACKAGES_TOKEN \
+              -t "${image_ref}" producer
             image_digest="$(docker image inspect --format '{{.Id}}' "${image_ref}")"
           fi
           revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_ref}")"
@@ -160,3 +185,17 @@ jobs:
             evidence/*.trx
           if-no-files-found: error
           retention-days: 30
+
+      - name: Fail on governed protocol regressions
+        if: always()
+        run: |
+          set -euo pipefail
+          codes=(
+            "${{ steps.tests.outputs.exit_geoservices }}"
+            "${{ steps.tests.outputs.exit_ogcapi }}"
+            "${{ steps.tests.outputs.exit_sensorthings }}"
+            "${{ steps.tests.outputs.exit_server }}"
+          )
+          for code in "${codes[@]}"; do
+            [[ "${code}" == "0" ]] || exit 1
+          done

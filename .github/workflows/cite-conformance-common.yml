@@ -120,6 +120,8 @@ jobs:
           push: false
           load: true
           tags: honua-server:latest
+          build-args: |
+            HONUA_GIT_SHA=${{ inputs.tested-honua-git-sha || github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ secrets.GITHUB_TOKEN }}
