@@ -49,9 +49,24 @@ jobs:
             echo "source-host certification requires candidate and producer SHAs to be identical" >&2
             exit 1
           }
+          normalized_cut=""
+          if [[ -n "${REQUESTED_CUT}" ]]; then
+            [[ "${REQUESTED_CUT}" != *$'\n'* && "${REQUESTED_CUT}" != *$'\r'* ]] || {
+              echo "candidate cut must be a single-line timestamp" >&2
+              exit 1
+            }
+            normalized_cut="$(python3 -c '
+          from datetime import datetime
+          import sys
+          value = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          if value.tzinfo is None:
+              raise SystemExit("candidate cut must include a timezone")
+          print(value.isoformat().replace("+00:00", "Z"))
+          ' "${REQUESTED_CUT}")"
+          fi
           echo "producer_sha=${producer_sha}" >> "$GITHUB_OUTPUT"
           echo "candidate_sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
-          echo "requested_cut=${REQUESTED_CUT}" >> "$GITHUB_OUTPUT"
+          echo "requested_cut=${normalized_cut}" >> "$GITHUB_OUTPUT"
 
       - name: Set up .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
