@@ -124,6 +124,9 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
     cut = timestamp(args.candidate_cut_at)
     if not cut <= started <= completed <= generated:
         raise ValueError("candidate/test/generation timestamps are not monotonic")
+    execution_image_digest = (
+        None if contract["deployment_target"] == "source-test-host" else args.image_digest
+    )
     revision = contract["revision"]
     producer_sha = args.producer_source_sha
     client_version = f"source@{producer_sha}"
@@ -143,7 +146,7 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
             "deployment_target": contract["deployment_target"],
             "source_sha": args.source_sha,
             "producer_source_sha": producer_sha,
-            "image_digest": args.image_digest,
+            "image_digest": execution_image_digest,
             "fixture_revision": fixture_revision,
             "contract_revision": contract_revision,
             "auth_policy_revision": contract["auth_policy_revision"],
@@ -174,7 +177,7 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
             "skip_reason": None,
             "source_sha": args.source_sha,
             "producer_source_sha": producer_sha,
-            "image_digest": args.image_digest,
+            "image_digest": execution_image_digest,
             "fixture_revision": fixture_revision,
             "contract_revision": contract_revision,
             "auth_policy_revision": contract["auth_policy_revision"],

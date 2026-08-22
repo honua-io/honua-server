@@ -64,6 +64,9 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
         self.assertEqual(["ExampleTests.Get_ReturnsDocument"], observation["test_ids"])
         self.assertEqual(observation["test_ids"], observation["evidence_receipt"]["identity"]["test_ids"])
         self.assertEqual("pass", observation["result"])
+        self.assertIsNone(observation["image_digest"])
+        self.assertIsNone(observation["evidence_receipt"]["identity"]["image_digest"])
+        self.assertEqual("sha256:" + "c" * 64, fragment["candidate"]["image_digest"])
 
     def test_missing_duplicate_not_executed_and_bad_summary_fail_closed(self):
         cases = [
