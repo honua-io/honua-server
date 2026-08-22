@@ -10,7 +10,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `load-soak-nightly.yml`: nightly load/soak testing.
 - `nightly-slow-tier.yml`: nightly `Tier=Slow&Category=Emulator` execution (`[EmulatorTest]` only) across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, and `Honua.Core.Tests`. Daily 4am UTC. Scale/Cloud/External slow subfamilies need dedicated fixtures and are tracked as separate workflows.
 - `flaky-detection.yml`: nightly flake reporting — re-runs a bounded rotating window of `.github/ci-shards.json` shards (default 6/night × 2 iterations) and uploads a per-shard flake-candidate report. Daily 5am UTC. See [ADR-0037](adr/0037-unified-ci-test-tier-strategy.md) for the quarantine workflow.
-- `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility certification (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
+- `client-compat-smoke-nightly.yml`: nightly/manual generic HTTP client compatibility smoke (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
 - `client-interop-nightly.yml`: nightly real-client interop matrix that exercises Honua against actual GIS clients (QGIS, GDAL/OGR, OpenLayers, Cesium, ArcGIS Pro stub) via the Docker harnesses under `docker/client-compat/`. The workflow diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `tests/baselines/client-compat/expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails on any baseline `pass` regressing to a non-`pass` status, missing current envelope, missing expected pair, missing committed baseline, or new `fail` in an unbaselined case. Non-PR-blocking until 30 consecutive nightly passes (#806).
 - `codeql.yml`: static analysis (nightly; not PR-blocking).
 - `container-security.yml`: container security scanning (nightly).
@@ -74,7 +74,7 @@ The CITE regression gates for implemented map/tile standards run on:
 | `cite-kml22-conformance.yml` | KML 2.2 (`ets-kml22`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
 | `cite-gml32-conformance.yml` | GML 3.2 (`ets-gml32`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
 | `cite-gpkg12-conformance.yml` | GeoPackage 1.2 (`ets-gpkg12`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
-| `windows-client-compat-nightly.yml` | Full CERT-\* matrix (automated) | Zero `fail` results in `.cert.json` envelopes; `skip`/`not-applicable` allowed with documented reason |
+| `client-compat-smoke-nightly.yml` | Full CERT-\* matrix (automated) | Zero `fail` results in `.cert.json` envelopes; `skip`/`not-applicable` allowed with documented reason |
 | `client-interop-nightly.yml` | Real-client interop matrix (Docker: gdal, pyqgis, openlayers, cesium, arcgis-stub) | Zero baseline `pass`→non-`pass` regressions vs `tests/baselines/client-compat/`; missing current envelopes, missing `expected-pairs.json` evidence, expected pairs without committed baselines, and new `fail` in unbaselined cases also fail the gate. Baseline-diff failure surfaces in `docs/gis/gap-report.md` |
 
 Strict CITE evidence requires every reported assertion to pass. Failed,

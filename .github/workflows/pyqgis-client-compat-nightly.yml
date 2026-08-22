@@ -27,7 +27,7 @@ jobs:
 
     services:
       postgres:
-        image: postgis/postgis:18-3.6
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -43,7 +43,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -84,6 +84,8 @@ jobs:
           HONUA_PYQGIS_SERVICE_ID: ${{ env.CLIENT_COMPAT_SERVICE_ID }}
           HONUA_PYQGIS_COLLECTION_ID: ${{ env.CLIENT_COMPAT_COLLECTION_ID }}
           HONUA_PYQGIS_REQUIRE_WFS: "1"
+          HONUA_PYQGIS_SERVER_COMMIT: ${{ github.sha }}
+          HONUA_PYQGIS_SERVER_VERSION: source@${{ github.sha }}
           QT_QPA_PLATFORM: offscreen
         run: |
           xvfb-run -a pytest tests/python/pyqgis \
@@ -115,8 +117,43 @@ jobs:
             echo "  - $(basename "$f")"
             # Fail the workflow if any CERT-* case has status "fail"
             if python3 -c "
-          import json, sys
+          import json, re, sys
           data = json.load(open('$f'))
+          if data.get('server_commit') != '${{ github.sha }}':
+              print('FAIL: envelope server_commit does not match workflow SHA', file=sys.stderr)
+              sys.exit(1)
+          fixture = data.get('fixture_revision', '')
+          if not isinstance(fixture, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', fixture) is None:
+              print('FAIL: envelope fixture_revision is not a sha256 digest', file=sys.stderr)
+              sys.exit(1)
+          hashlib = __import__('hashlib')
+          config_path = 'tests/config/client-compat-server-v1.json'
+          config = json.load(open(config_path))
+          setup_revision = 'sha256:' + hashlib.sha256(
+              open('.github/actions/setup-honua-server/action.yml', 'rb').read()).hexdigest()
+          expected_profile = {
+              'schemaVersion': '1.0',
+              'profile': 'client-compat-server-v1',
+              'serverMode': 'source',
+              'dotnetVersion': '10.0.x',
+              'databaseImage': 'postgis/postgis:16-3.4',
+              'aspnetcoreEnvironment': 'Development',
+              'baseUrl': 'http://localhost:5000',
+              'serviceId': 'test_service',
+              'layerId': '0',
+              'setupAction': '.github/actions/setup-honua-server/action.yml',
+              'setupActionRevision': setup_revision,
+          }
+          if config != expected_profile:
+              print('FAIL: canonical server configuration manifest is invalid or stale', file=sys.stderr)
+              sys.exit(1)
+          expected_config = 'sha256:' + hashlib.sha256(open(config_path, 'rb').read()).hexdigest()
+          if data.get('server_config_revision') != expected_config:
+              print('FAIL: envelope server_config_revision does not match canonical server configuration', file=sys.stderr)
+              sys.exit(1)
+          if data.get('protocol') == 'wfs' and data.get('protocol_version') != '2.0.0':
+              print('FAIL: WFS envelope is not bound to WFS 2.0.0', file=sys.stderr)
+              sys.exit(1)
           failed = [r for r in data.get('results', []) if r['status'] == 'fail']
           if failed:
               for f in failed:

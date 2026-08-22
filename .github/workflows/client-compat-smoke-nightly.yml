@@ -1,4 +1,4 @@
-name: Windows Client Compatibility Certification
+name: Generic Client Compatibility Smoke
 
 on:
   # Tier: nightly. This is certification-style coverage with reusable evidence.
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   client-compat:
-    name: Client Compatibility Smoke
+    name: Generic HTTP Client Compatibility Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -43,7 +43,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
 
       - name: Derive artifact context
         id: context
@@ -90,11 +90,44 @@ jobs:
             echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+          expected_server_commit="$(git rev-parse HEAD)"
+          expected_fixture_revision="sha256:$(sha256sum "${CLIENT_COMPAT_SEED_SOURCE}" | awk '{print $1}')"
+          config_manifest="tests/config/client-compat-server-v1.json"
+          expected_setup_revision="sha256:$(sha256sum .github/actions/setup-honua-server/action.yml | awk '{print $1}')"
+          if ! jq -e --arg setup "$expected_setup_revision" '
+            .schemaVersion == "1.0" and
+            .profile == "client-compat-server-v1" and
+            .serverMode == "source" and
+            .dotnetVersion == "10.0.x" and
+            .databaseImage == "postgis/postgis:16-3.4" and
+            .aspnetcoreEnvironment == "Development" and
+            .baseUrl == "http://localhost:5000" and
+            .serviceId == "test_service" and
+            .layerId == "0" and
+            .setupAction == ".github/actions/setup-honua-server/action.yml" and
+            .setupActionRevision == $setup
+          ' "$config_manifest" >/dev/null; then
+            echo "::error::Canonical client certification server configuration is invalid or stale"
+            exit 1
+          fi
+          expected_server_config_revision="sha256:$(sha256sum "$config_manifest" | awk '{print $1}')"
           actual_count=0
           for f in "$cert_dir"/*.cert.json; do
             [[ -f "$f" ]] || continue
             if ! jq empty "$f" 2>/dev/null; then
               echo "::error::$(basename "$f") is not valid JSON"
+              echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            if ! jq -e \
+              --arg server_commit "$expected_server_commit" \
+              --arg fixture_revision "$expected_fixture_revision" \
+              --arg server_config_revision "$expected_server_config_revision" \
+              '.server_commit == $server_commit and
+               .fixture_revision == $fixture_revision and
+               .server_config_revision == $server_config_revision' \
+              "$f" >/dev/null; then
+              echo "::error::$(basename "$f") does not match the checked-out server commit, canonical fixture revision, and server configuration revision"
               echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
               exit 1
             fi

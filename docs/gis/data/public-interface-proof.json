@@ -1835,19 +1835,21 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
-          "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
+          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for FeatureServer",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
           "evidenceLocations": [
-            ".github/workflows/windows-client-compat-nightly.yml",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
             "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-arcgis-featureserver.cert.json"
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
           ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final FeatureServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level FeatureServer evidence."
         },
         {
           "proofClass": "tool-interoperability",
@@ -1940,6 +1942,22 @@
         "VersionManagementServer::jobStatus"
       ],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for GeoServices REST VersionManagementServer licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -2063,19 +2081,21 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
-          "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
+          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level certification for MapServer",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
           "evidenceLocations": [
-            ".github/workflows/windows-client-compat-nightly.yml",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
             "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-arcgis-mapserver.cert.json"
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
           ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final MapServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level MapServer evidence."
         },
         {
           "proofClass": "tool-interoperability",
@@ -2114,6 +2134,38 @@
         "WMS-1.3.0::GetLegendGraphic"
       ],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WMS 1.3 licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WMS 1.3 canonical clients",
+          "executionLane": "nightly:canonical-ogc-clients",
+          "clientLanes": [
+            "py-owslib"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3392"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3392",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -2179,6 +2231,22 @@
       ],
       "proofs": [
         {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WMS 1.1.1 licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
           "proofClass": "operation-coverage",
           "proofMechanism": "WMS 1.1.1 endpoint integration tests cover capabilities, map rendering, feature info, exception shape, and EPSG:4326 lon/lat axis order",
           "executionLane": "ci:test-all+architecture",
@@ -2225,6 +2293,38 @@
         "WMTS-1.0.0::GetFeatureInfo"
       ],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WMTS 1.0 licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WMTS 1.0 canonical clients",
+          "executionLane": "nightly:canonical-ogc-clients",
+          "clientLanes": [
+            "py-owslib"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3392"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3392",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -2282,6 +2382,22 @@
       ],
       "operationKeys": [],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for GeoServices REST ImageServer licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -2482,19 +2598,23 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Power BI Desktop and Excel manual certification evidence",
-          "executionLane": "release:manual-follow-through",
+          "proofMechanism": "Planned licensed Excel, Power BI Desktop, and Tableau operation-level OData certification",
+          "executionLane": "release:licensed-bi-clients",
+          "clientLanes": [
+            "bi-excel",
+            "bi-powerbi",
+            "bi-tableau"
+          ],
           "evidenceLocations": [
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
             "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-bi-powerbi-odata.cert.json",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-bi-excel-odata.cert.json"
+            "https://github.com/honua-io/honua-server/issues/3390"
           ],
           "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact Power BI Desktop and Excel versions, run date, and immutable OData .cert.json links in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+          "status": "planned",
+          "linkedTicket": "#3390",
+          "versionCaptureRule": "Capture each exact desktop client version, candidate identity, fixture/config revisions, entitlement receipt, and operation-level OData evidence."
         }
       ]
     },
@@ -2517,6 +2637,22 @@
       ],
       "operationKeys": [],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for OGC API Features licensed Tableau client",
+          "executionLane": "release:licensed-bi-clients",
+          "clientLanes": [
+            "bi-tableau"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3390"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3390",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -2576,18 +2712,56 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "QGIS manual certification evidence",
-          "executionLane": "release:manual-follow-through",
+          "proofMechanism": "Active PyQGIS provider certification exercises OGC API Features against the live seeded server and emits a versioned client envelope.",
+          "executionLane": "nightly:pyqgis-client-compat-nightly",
+          "clientLanes": [
+            "desktop-qgis"
+          ],
           "evidenceLocations": [
-            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-qgis-ogc-features.cert.json"
+            ".github/workflows/pyqgis-client-compat-nightly.yml",
+            "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
-          "linkedTicket": null,
-          "versionCaptureRule": "Record the exact QGIS version, run date, and immutable OGC API Features .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+          "linkedTicket": "#478",
+          "versionCaptureRule": "Record the exact QGIS and PyQGIS versions, candidate identity, fixture revision, and immutable desktop-qgis OGC API Features .cert.json envelope."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned maintained GeoPandas, OWSLib, DuckDB, and R sf operation-level OGC API Features certification",
+          "executionLane": "nightly:canonical-ogc-clients",
+          "clientLanes": [
+            "py-geopandas",
+            "py-owslib",
+            "duckdb",
+            "r-sf"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3392"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3392",
+          "versionCaptureRule": "Capture each exact client version, candidate identity, fixture/config revisions, and operation-level OGC API Features evidence."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned licensed ArcGIS Pro and ArcPy operation-level OGC API Features certification",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact ArcGIS Pro and ArcPy versions, candidate identity, fixture/config revisions, entitlement receipt, and operation-level OGC API Features evidence."
         },
         {
           "proofClass": "tool-interoperability",
@@ -2794,6 +2968,22 @@
       "endpointContains": [],
       "operationKeys": [],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for GeometryServer licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
@@ -3292,6 +3482,57 @@
       ],
       "proofs": [
         {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Active PyQGIS provider certification exercises WFS 2.0 against the live seeded server and emits a versioned client envelope.",
+          "executionLane": "nightly:pyqgis-client-compat-nightly",
+          "clientLanes": [
+            "desktop-qgis"
+          ],
+          "evidenceLocations": [
+            ".github/workflows/pyqgis-client-compat-nightly.yml",
+            "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#478",
+          "versionCaptureRule": "Record the exact QGIS and PyQGIS versions, candidate identity, fixture revision, and immutable desktop-qgis WFS 2.0 .cert.json envelope."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WFS 2.0 licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WFS 2.0 canonical clients",
+          "executionLane": "nightly:canonical-ogc-clients",
+          "clientLanes": [
+            "py-geopandas",
+            "py-owslib",
+            "r-sf"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3392"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3392",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage for the WFS dispatcher route",
           "executionLane": "ci:test-all+architecture",
@@ -3369,6 +3610,22 @@
       ],
       "proofs": [
         {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WFS 1.1.0 licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
           "proofClass": "operation-coverage",
           "proofMechanism": "WFS 1.1.0 endpoint integration tests cover capabilities, schema, GET/POST GetFeature, and OWS 1.0 exception shape",
           "executionLane": "ci:test-all+architecture",
@@ -3414,6 +3671,22 @@
         "WFS-1.0.0::GetFeature"
       ],
       "proofs": [
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for WFS 1.0 licensed ArcGIS Pro and ArcPy client",
+          "executionLane": "release:desktop-arcgis",
+          "clientLanes": [
+            "desktop-arcgis"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-esri-compat/issues/75"
+          ],
+          "ownerRepo": "honua-esri-compat",
+          "status": "planned",
+          "linkedTicket": "#75",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
         {
           "proofClass": "operation-coverage",
           "proofMechanism": "WFS 1.0.0 endpoint integration tests cover capabilities, GML 2 schema, GetFeature, and ServiceExceptionReport shape",
@@ -3798,7 +4071,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer\u2192INT32 with clamping warnings, BigInteger\u2192INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
+          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer→INT32 with clamping warnings, BigInteger→INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/EcefCoordinateTransformTests.cs",
@@ -3974,6 +4247,22 @@
       "operationKeys": [],
       "proofs": [
         {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Planned operation-level certification for STAC canonical client",
+          "executionLane": "nightly:canonical-ogc-clients",
+          "clientLanes": [
+            "py-pystac"
+          ],
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "https://github.com/honua-io/honua-server/issues/3392"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3392",
+          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
+        },
+        {
           "proofClass": "route-coverage",
           "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
           "executionLane": "ci:test-all+architecture",
@@ -3994,7 +4283,7 @@
       "displayName": "MCP operator surface (server-owned)",
       "surfaceKind": "http-route-family",
       "protocol": "MCP",
-      "canonicalIdentifier": "POST /mcp \u2014 JSON-RPC 2.0 operator surface",
+      "canonicalIdentifier": "POST /mcp — JSON-RPC 2.0 operator surface",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [

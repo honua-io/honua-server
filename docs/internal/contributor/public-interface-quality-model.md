@@ -10,7 +10,7 @@ The machine-readable source of truth is [`docs/gis/data/public-interface-proof.j
 |---|---|
 | [`docs/gis/data/public-interface-proof.json`](../../gis/data/public-interface-proof.json) | Canonical machine-readable surface and proof inventory |
 | [`docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md`](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) | Release ledger for named desktop, BI, and browser client versions |
-| [`docs/gis/certification-evidence/20260402T000000Z/`](../../gis/certification-evidence/20260402T000000Z/README.md) | Curated immutable example evidence snapshot used to eliminate placeholder-only rows until the next release candidate replaces the links with release artifacts |
+| [`docs/gis/certification-evidence/20260402T000000Z/`](../../gis/certification-evidence/20260402T000000Z/README.md) | Non-certifying schema examples only; these files document envelope shape and are never admissible proof |
 | [`docs/contributor/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) | Release-time operator checklist for refreshing ledger evidence |
 | [`docs/contributor/mcp-certification.md`](mcp-certification.md) | Cross-repo MCP ownership and evidence contract |
 
@@ -57,8 +57,9 @@ All named desktop, BI, and browser client versions are recorded in [`docs/gis/CL
 Rules:
 
 - Never leave a required row at `TBD`.
-- During active development branches, keep a curated immutable example link rather than an empty placeholder.
-- On every release candidate, replace the curated example links with the exact workflow artifact URL or release asset URL for that release.
+- A `*.cert.example.json` file documents envelope shape only. It is non-certifying, must not be linked as proof, and is deliberately excluded from `*.cert.json` evidence collectors.
+- During active development, an unfinished lane remains `planned` with its owning ticket and prospective evidence rule; an active lane links its actual automated workflow and certifying `*.cert.json` envelope.
+- On every release candidate, bind active lane evidence to the exact candidate workflow artifact or release asset rather than substituting an example snapshot.
 
 ### Tool Lanes
 

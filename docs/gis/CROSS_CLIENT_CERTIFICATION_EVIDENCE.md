@@ -14,6 +14,8 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "run_id": "<timestamp or CI run ID>",
   "run_date": "<ISO 8601>",
   "server_version": "<honua-server version/commit>",
+  "server_commit": "<full tested honua-server commit SHA>",
+  "fixture_revision": "sha256:<digest of the executed seed fixture>",
   "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|arcgis-stub>",
   "client_version": "<client tool version>",
   "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|admin-api>",
@@ -49,6 +51,8 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `run_id` | string | Yes | Unique run identifier — timestamp (`20260316T1430Z`) or CI run ID |
 | `run_date` | string | Yes | ISO 8601 date/time of the run |
 | `server_version` | string | Yes | Honua Server version or commit SHA |
+| `server_commit` | string | Required for certifying client lanes | Full 40-character commit SHA of the tested Honua Server source |
+| `fixture_revision` | string | Required for certifying client lanes | SHA-256 digest of the exact seed fixture executed by the client lane |
 | `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `arcgis-stub`. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `arcgis-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
 | `client_version` | string | Yes | Version of the client tool under test |
 | `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
@@ -137,7 +141,7 @@ When extension-protocol testing is active, additional per-protocol files are pro
 
 ## Windows Client Compatibility Workflow Output
 
-The `windows-client-compat-nightly.yml` workflow introduced in ticket `#320` uploads a deterministic smoke-evidence artifact under:
+The `client-compat-smoke-nightly.yml` workflow introduced in ticket `#320` uploads a deterministic smoke-evidence artifact under:
 
 ```text
 artifacts/client-compat/<service>-<timestamp>/
@@ -353,7 +357,7 @@ This manual workflow predates the automated suite above and remains as a fallbac
 | 1.0.4 | 2026-03-16 | Add `admin-api` protocol; add `measured_count`/`measured_delta` to extensions; fix pytest lane mapping; align examples with current JS scope |
 | 1.0.5 | 2026-03-17 | Add `cli-ogc-features.cert.json` to example directory; add CLI lane coverage note |
 | 1.0.6 | 2026-03-18 | Fix MVT workflow status semantics: use `skip` for "All"-protocol tests not exercised in visual workflow, `not-applicable` only for tests that don't list MVT |
-| 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
+| 1.0.7 | 2026-03-31 | Document the `client-compat-smoke-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
 | 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
@@ -370,6 +374,6 @@ This manual workflow predates the automated suite above and remains as a fallbac
 | 1.0.21 | 2026-04-26 | Align GDAL converter with the matrix CLI/SDK lane contract (matrix line 99 — "All CERT-\* except CERT-RNDR"): `export_geojson`/`export_gpkg`/`export_csv`/`export` categories are no longer mapped to CERT-RNDR-01 (the raw `gdal-ogr-results.json` still records their pass/fail); CERT-RNDR-01 / CERT-RNDR-02 / visual-style slice IDs now appear as `not-applicable` for the GDAL lane. `schema_introspection` now maps to CERT-SCHM-01 (the schema-coverage ID) instead of CERT-DISC-01. `diff-baselines.py write_gap_report` no longer prints the "No deviations from baseline ✅" success section when expected-pair gap sections were also written, so a strict-mode failure for an absent or never-baselined expected pair is no longer contradicted by a green checkmark in the same gap report (#806) |
 | 1.0.22 | 2026-04-26 | Stabilise the docker/client-compat `gdal` and `pyqgis` lanes against the read-only `tests/` bind mount. The GDAL lane now honours `HONUA_BASE_URL` to skip the local `honua_server`/`postgis` fixture chain (which cannot start inside the read-only image), targets the seeded `test_service`/layer 0 pair via `HONUA_GDAL_SERVICE_ID` / `HONUA_GDAL_COLLECTION_ID`, and writes its raw `gdal-ogr-results.json` to `HONUA_GDAL_RESULTS_PATH` (set to `/output/gdal-ogr-results.json` by `docker/client-compat/gdal/run.sh`). The PyQGIS lane writes its `.cert.json` envelopes to `HONUA_PYQGIS_OUTPUT_DIR` (set to `/output` by `docker/client-compat/pyqgis/run.sh`). The seed-data note now records that both lanes share `test_service`/layer 0; behaviour change is testing-only and the envelope schema is unchanged (#806) |
 | 1.0.23 | 2026-04-26 | Narrow the `arcgis-stub` lane's render-coverage wording in the Real-Client Interop Matrix Workflow Output bullet, the Integration Mapping row, and `docs/gis/gap-report.md` to match the actual envelope: the FeatureServer-applicable render IDs (`CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01`) are recorded as `skip` with `pending: licensed-arcgis-runner`, while `CERT-RNDR-SPR-01` is MVT-only per the matrix and is emitted as `not-applicable`. No code change — `docker/client-compat/arcgis-stub/stub_runner.py` already emits this contract; only the docs were over-broad (#806) |
-| 1.0.24 | 2026-05-07 | Record the restored #938 release-evidence contract for `client-interop-nightly.yml`: the full scheduled matrix requires 16 current envelopes with committed baselines, the compose runtime includes Redis and split HTTP/gRPC ports, lane failures upload `lane-exit-code.txt` and `compose.log`, and manual dispatch subsets are scoped by `--client-lanes`. |
+| 1.0.24 | 2026-05-07 | Record the restored #938 release-evidence contract for `client-interop-nightly.yml`: the full scheduled matrix requires one current envelope with a committed baseline for every pair in `expected-pairs.json`, the compose runtime includes Redis and split HTTP/gRPC ports, lane failures upload `lane-exit-code.txt` and `compose.log`, and manual dispatch subsets are scoped by `--client-lanes`. |
 | 1.0.25 | 2026-05-18 | Add the licensed ArcGIS Pro desktop evidence scaffold for `client_lane: "desktop-arcgis"`: manual/scheduled self-hosted Windows workflow, ArcPy runner, artifact/redaction guardrails, and fixture-only contract tests. This is distinct from `arcgis-stub` and does not require ArcGIS Pro in ordinary PR gates (#1019). |
 | 1.0.26 | 2026-05-18 | Tighten the `desktop-arcgis` licensed runner contract with headless layout/map-frame PNG export, strict live-artifact validation, and an artifact manifest covering envelopes, screenshots, logs, and project artifacts (#1019). |

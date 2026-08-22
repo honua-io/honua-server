@@ -1,5 +1,5 @@
 -- Client compatibility certification seed snapshot v1.
--- Canonical source for the Windows client compatibility certification workflow.
+-- Canonical source for the generic HTTP client compatibility smoke workflow.
 -- This file is intentionally versioned and self-contained so future CI seed
 -- changes do not silently alter certification evidence for the same seed name.
 

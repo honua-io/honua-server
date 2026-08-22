@@ -30,6 +30,7 @@ tests/baselines/client-compat/
   arcgis-stub/
     arcgis-stub-featureserver.cert.json
     arcgis-stub-mapserver.cert.json
+    arcgis-stub-portal.cert.json
 ```
 
 Filenames omit the `run_id` prefix so the baseline is content-stable across
@@ -56,8 +57,8 @@ from the gate or pass it by emitting unreviewed evidence. Bump the
 manifest in lockstep with `docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`
 when a lane × protocol is added or retired.
 
-The current full-matrix contract is 16 pairs: 4 `js-cesium`, 6 `js`, 2
-`desktop-qgis`, 2 `cli`, and 2 `arcgis-stub` envelopes. A
+The full-matrix contract is the complete set enumerated by `expected-pairs.json`: 4 `js-cesium`, 6 `js`, 2
+`desktop-qgis`, 2 `cli`, and 3 `arcgis-stub` envelopes. A
 `workflow_dispatch` subset run passes `--client-lanes` so strict mode evaluates
 only the requested `client_lane` values; the scheduled nightly run evaluates the
 entire manifest.

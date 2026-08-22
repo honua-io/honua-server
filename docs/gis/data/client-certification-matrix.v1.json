@@ -2,6 +2,41 @@
   "schemaVersion": "1.0.0",
   "matrixSource": "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
   "evidenceRoot": "tests/baselines/client-compat",
+  "fixturePolicy": {
+    "status": "migration-required",
+    "trackingIssue": "https://github.com/honua-io/honua-server/issues/3393",
+    "currentInputs": [
+      "tests/seed/client-compat-v1.sql",
+      "tests/seed/browser-compat.yaml",
+      "honua-esri-compat licensed fixtures",
+      "SDK-owned fixtures",
+      "cloud-native format fixtures"
+    ],
+    "requiredReceiptFields": ["fixture_revision", "server_config_revision"],
+    "exceptions": [
+      {
+        "laneFamily": "ogc-cite",
+        "reason": "OGC CITE suites retain their specification-mandated custom seed and setup procedures",
+        "sharedBindings": ["candidate_revision", "candidate_image_digest", "auth_policy_revision", "capability_mapping"]
+      }
+    ]
+  },
+  "executionTiers": {
+    "pr": {
+      "scope": "schema, generator, parser, marker, and fixture-contract tests only",
+      "blocks": true
+    },
+    "nightly": {
+      "scope": "all unlicensed real-client lanes plus available licensed Windows lanes",
+      "blocks": false,
+      "missingEvidence": "fail"
+    },
+    "release": {
+      "scope": "exact candidate image across every required lane with fresh licensed evidence",
+      "blocks": true,
+      "missingEvidence": "fail"
+    }
+  },
   "testCases": [
     { "id": "CERT-CONN-01", "category": "CONN" },
     { "id": "CERT-CONN-02", "category": "CONN" },
@@ -64,30 +99,53 @@
     { "id": "CERT-PRTL-TOKN-02", "category": "PORTAL" },
     { "id": "CERT-PRTL-OAUTH-02", "category": "PORTAL" }
   ],
+  "plannedLanes": [
+    { "id": "py-geopandas", "client": "GeoPandas via pyogrio/Fiona", "protocols": ["ogc-features", "wfs"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
+    { "id": "py-owslib", "client": "OWSLib", "protocols": ["ogc-features", "wfs", "wms", "wmts"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
+    { "id": "duckdb", "client": "DuckDB Spatial", "protocols": ["ogc-features"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
+    { "id": "r-sf", "client": "R sf and ows4R", "protocols": ["ogc-features", "wfs"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
+    { "id": "py-pystac", "client": "pystac-client", "protocols": ["stac"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
+    { "id": "desktop-arcgis", "client": "ArcGIS Pro and arcpy", "protocols": ["featureserver", "mapserver", "imageserver", "geometryserver", "version-management-server", "ogc-features", "wfs", "wms", "wmts"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-esri-compat/issues/75" },
+    { "id": "bi-excel", "client": "Microsoft Excel Power Query", "protocols": ["odata"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-server/issues/3390" },
+    { "id": "bi-powerbi", "client": "Power BI Desktop", "protocols": ["odata"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-server/issues/3390" },
+    { "id": "bi-tableau", "client": "Tableau Desktop", "protocols": ["odata", "ogc-features"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-server/issues/3390" }
+  ],
+  "exclusions": [
+    { "id": "mapbox-gl-js-v2-plus", "reason": "Proprietary license and mandatory telemetry; MapLibre covers the applicable protocol surface" },
+    { "id": "arcgis-earth", "reason": "No distinct server surface beyond governed MapServer and KML lanes" },
+    { "id": "golden-surfer", "reason": "File-import workflow rather than a server protocol client" },
+    { "id": "avenza-maps", "reason": "File-import workflow rather than a server protocol client" },
+    { "id": "looker-studio", "reason": "No direct geospatial connector; warehouse access is certified separately" }
+  ],
   "lanes": [
     {
       "id": "js",
+      "requiredTier": "nightly",
       "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-RNDR-*", "JS-EXT-01", "JS-EXT-02", "JS-EXT-OL-*", "JS-EXT-OGC-MAPS-01"],
       "manual": ["JS-EXT-TILES-*"]
     },
     {
       "id": "js-cesium",
+      "requiredTier": "nightly",
       "automated": ["JS-CES-IMG-01", "JS-CES-TILE-01"],
       "manual": ["CERT-*"]
     },
     {
       "id": "desktop-qgis",
+      "requiredTier": "nightly",
       "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-RNDR-01", "CERT-RNDR-02", "CERT-RNDR-SYM-01", "CERT-RNDR-LIN-01", "CERT-RNDR-FIL-01"],
       "manual": ["CERT-RNDR-LBL-01", "CERT-RNDR-SPR-01", "CERT-RNDR-URL-01", "DSK-EXT-01", "DSK-EXT-02"]
     },
     {
       "id": "cli",
+      "requiredTier": "nightly",
       "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-ERRH-*"],
       "manual": ["CLI-EXT-01", "CLI-EXT-02"],
       "notApplicable": ["CERT-GEOM-*", "CERT-RNDR-*"]
     },
     {
       "id": "arcgis-stub",
+      "requiredTier": "nightly",
       "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-PRTL-*"],
       "manual": ["CERT-RNDR-*"]
     }

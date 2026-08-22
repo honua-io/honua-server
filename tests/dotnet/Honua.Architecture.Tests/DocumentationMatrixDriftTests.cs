@@ -115,6 +115,58 @@ public sealed class DocumentationMatrixDriftTests
         }
     }
 
+    [ArchitectureTest]
+    public void ClientCertificationRoster_HasCoherentTiersStatusesAndFixturePolicy()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        using var source = ReadJson(root, "docs", "gis", "data", "client-certification-matrix.v1.json");
+        var document = source.RootElement;
+
+        var active = document.GetProperty("lanes").EnumerateArray().ToArray();
+        var activeIds = active
+            .Select(item => item.GetProperty("id").GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+        var planned = document.GetProperty("plannedLanes").EnumerateArray().ToArray();
+        var plannedIds = planned.Select(item => item.GetProperty("id").GetString()!).ToHashSet(StringComparer.Ordinal);
+        var exclusions = document.GetProperty("exclusions").EnumerateArray().ToArray();
+        var exclusionIds = exclusions
+            .Select(item => item.GetProperty("id").GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        activeIds.Should().NotIntersectWith(plannedIds, "a client cannot be active and planned simultaneously");
+        activeIds.Should().NotIntersectWith(exclusionIds, "an active client cannot also be excluded");
+        plannedIds.Should().NotIntersectWith(exclusionIds, "a planned client cannot also be excluded");
+        activeIds.Count.Should().Be(active.Length, "active lane ids are stable unique identities");
+        plannedIds.Count.Should().Be(planned.Length, "planned lane ids are stable unique identities");
+        exclusionIds.Count.Should().Be(exclusions.Length, "exclusion ids are stable unique identities");
+
+        foreach (var lane in document.GetProperty("lanes").EnumerateArray())
+        {
+            lane.GetProperty("requiredTier").GetString().Should().BeOneOf("nightly", "release");
+        }
+
+        foreach (var lane in planned)
+        {
+            lane.GetProperty("protocols").GetArrayLength().Should().BeGreaterThan(0);
+            lane.GetProperty("requiredTier").GetString().Should().BeOneOf("nightly", "release");
+            lane.GetProperty("licensed").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+            lane.GetProperty("issue").GetString().Should().StartWith("https://github.com/honua-io/");
+        }
+
+        var tiers = document.GetProperty("executionTiers");
+        tiers.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("pr", "nightly", "release");
+        tiers.GetProperty("pr").GetProperty("blocks").GetBoolean().Should().BeTrue();
+        tiers.GetProperty("nightly").GetProperty("missingEvidence").GetString().Should().Be("fail");
+        tiers.GetProperty("release").GetProperty("missingEvidence").GetString().Should().Be("fail");
+
+        var fixturePolicy = document.GetProperty("fixturePolicy");
+        fixturePolicy.GetProperty("status").GetString().Should().Be("migration-required");
+        fixturePolicy.GetProperty("requiredReceiptFields").EnumerateArray()
+            .Select(value => value.GetString()).Should().BeEquivalentTo("fixture_revision", "server_config_revision");
+        fixturePolicy.GetProperty("exceptions").EnumerateArray()
+            .Select(item => item.GetProperty("laneFamily").GetString()).Should().Contain("ogc-cite");
+    }
+
     private static HashSet<string> ReadFeatureCatalogRoutes(string root)
     {
         using var catalog = ReadJson(root, "docs", "gis", "data", "feature-catalog.json");
