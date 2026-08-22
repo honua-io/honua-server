@@ -2247,22 +2247,6 @@
           "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
         },
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WMS 1.1.1 canonical clients",
-          "executionLane": "nightly:canonical-ogc-clients",
-          "clientLanes": [
-            "py-owslib"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-server/issues/3392"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "planned",
-          "linkedTicket": "#3392",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
           "proofClass": "operation-coverage",
           "proofMechanism": "WMS 1.1.1 endpoint integration tests cover capabilities, map rendering, feature info, exception shape, and EPSG:4326 lon/lat axis order",
           "executionLane": "ci:test-all+architecture",
@@ -3642,24 +3626,6 @@
           "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
         },
         {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WFS 1.1.0 canonical clients",
-          "executionLane": "nightly:canonical-ogc-clients",
-          "clientLanes": [
-            "py-geopandas",
-            "py-owslib",
-            "r-sf"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-server/issues/3392"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "planned",
-          "linkedTicket": "#3392",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
           "proofClass": "operation-coverage",
           "proofMechanism": "WFS 1.1.0 endpoint integration tests cover capabilities, schema, GET/POST GetFeature, and OWS 1.0 exception shape",
           "executionLane": "ci:test-all+architecture",
@@ -3719,24 +3685,6 @@
           "ownerRepo": "honua-esri-compat",
           "status": "planned",
           "linkedTicket": "#75",
-          "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
-        },
-        {
-          "proofClass": "real-client-certification",
-          "proofMechanism": "Planned operation-level certification for WFS 1.0 canonical clients",
-          "executionLane": "nightly:canonical-ogc-clients",
-          "clientLanes": [
-            "py-geopandas",
-            "py-owslib",
-            "r-sf"
-          ],
-          "evidenceLocations": [
-            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "https://github.com/honua-io/honua-server/issues/3392"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "planned",
-          "linkedTicket": "#3392",
           "versionCaptureRule": "Capture the exact client version, candidate identity, fixture/config revisions, governed facets, and operation-level evidence."
         },
         {

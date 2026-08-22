@@ -93,6 +93,7 @@ class PyQgisCompatibilityRuntime:
     server_version: str
     server_commit: str
     fixture_revision: str
+    server_config_revision: str
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +200,7 @@ class CertificationEvidenceCollector:
             "server_version": self.runtime.server_version,
             "server_commit": self.runtime.server_commit,
             "fixture_revision": self.runtime.fixture_revision,
+            "server_config_revision": self.runtime.server_config_revision,
             "client_lane": "desktop-qgis",
             "client_version": self.client_version,
             "protocol": self.protocol,
@@ -277,6 +279,12 @@ def _read_server_commit(project_root: Path) -> str:
 
 def _fixture_revision(seed_path: Path) -> str:
     return f"sha256:{hashlib.sha256(seed_path.read_bytes()).hexdigest()}"
+
+
+def _server_config_revision() -> str:
+    configured = os.getenv("HONUA_PYQGIS_SERVER_CONFIG_PATH")
+    config_path = Path(configured) if configured else PROJECT_ROOT / ".github/actions/setup-honua-server/action.yml"
+    return f"sha256:{hashlib.sha256(config_path.read_bytes()).hexdigest()}"
 
 
 def _get_qgis_version() -> str:
@@ -386,6 +394,7 @@ def pyqgis_runtime() -> Generator[PyQgisCompatibilityRuntime, None, None]:
             server_version=_read_server_version(normalized),
             server_commit=commit,
             fixture_revision=_fixture_revision(seed_path),
+            server_config_revision=_server_config_revision(),
         )
 
     if base_url_override:
