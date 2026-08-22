@@ -52,7 +52,7 @@ jobs:
           }
           normalized_cut=""
           if [[ -n "${REQUESTED_CUT}" ]]; then
-            [[ "${REQUESTED_CUT}" != *$'\n'* && "${REQUESTED_CUT}" != *$'\r'* ]] || {
+            [[ ! "${REQUESTED_CUT}" =~ [[:cntrl:]] ]] || {
               echo "candidate cut must be a single-line timestamp" >&2
               exit 1
             }
