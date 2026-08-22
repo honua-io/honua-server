@@ -10,7 +10,7 @@ The machine-readable source of truth is [`docs/gis/data/public-interface-proof.j
 |---|---|
 | [`docs/gis/data/public-interface-proof.json`](../../gis/data/public-interface-proof.json) | Canonical machine-readable surface and proof inventory |
 | [`docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md`](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) | Release ledger for named desktop, BI, and browser client versions |
-| [`docs/gis/certification-evidence/20260402T000000Z/`](../../gis/certification-evidence/20260402T000000Z/README.md) | Curated immutable example evidence snapshot used to eliminate placeholder-only rows until the next release candidate replaces the links with release artifacts |
+| [`docs/gis/certification-evidence/20260402T000000Z/`](../../gis/certification-evidence/20260402T000000Z/README.md) | Non-certifying schema examples only; these files document envelope shape and are never admissible proof |
 | [`docs/contributor/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) | Release-time operator checklist for refreshing ledger evidence |
 | [`docs/contributor/mcp-certification.md`](mcp-certification.md) | Cross-repo MCP ownership and evidence contract |
 

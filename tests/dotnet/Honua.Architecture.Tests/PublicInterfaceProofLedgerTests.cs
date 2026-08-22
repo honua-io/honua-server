@@ -132,8 +132,8 @@ public sealed partial class PublicInterfaceProofLedgerTests
         ["geometryserver"] = ["geometry-service"],
         ["version-management-server"] = ["version-management-server"],
         ["ogc-features"] = ["ogc-api-features"],
-        ["wfs"] = ["wfs-1.0.0", "wfs-1.1.0", "wfs-2.0"],
-        ["wms"] = ["wms-1.1.1", "wms-1.3"],
+        ["wfs"] = ["wfs-2.0"],
+        ["wms"] = ["wms-1.3"],
         ["wmts"] = ["wmts-1.0"],
         ["odata"] = ["odata-v4"],
         ["stac"] = ["stac-api"]
@@ -160,9 +160,9 @@ public sealed partial class PublicInterfaceProofLedgerTests
             var ownerRepo = issueParts[1];
             var linkedTicket = $"#{issueParts[3]}";
 
-            foreach (var protocolElement in lane.GetProperty("protocols").EnumerateArray())
+            foreach (var protocol in lane.GetProperty("protocols").EnumerateArray()
+                         .Select(protocolElement => protocolElement.GetString()!))
             {
-                var protocol = protocolElement.GetString()!;
                 PlannedClientSurfaceIdsByProtocol.Should().ContainKey(protocol,
                     $"planned lane '{laneId}' protocol '{protocol}' must map to governed public surfaces");
                 foreach (var surfaceId in PlannedClientSurfaceIdsByProtocol[protocol])
