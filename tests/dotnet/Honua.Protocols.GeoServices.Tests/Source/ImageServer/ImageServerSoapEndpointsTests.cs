@@ -7,7 +7,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -36,10 +36,10 @@ public sealed class ImageServerSoapEndpointsTests
 
     private static DefaultHttpContext CreateHttpContext()
     {
-        var context = new DefaultHttpContext();
-        context.RequestServices = new ServiceCollection()
-            .AddSingleton<IConfiguration>(new ConfigurationManager())
-            .BuildServiceProvider();
+        var configuration = Substitute.For<IConfiguration>();
+        var services = Substitute.For<IServiceProvider>();
+        services.GetService(typeof(IConfiguration)).Returns(configuration);
+        var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Scheme = "http";
         context.Request.Host = new HostString("localhost");
         return context;
