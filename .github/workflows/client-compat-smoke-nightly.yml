@@ -90,11 +90,22 @@ jobs:
             echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+          expected_server_commit="$(git rev-parse HEAD)"
+          expected_fixture_revision="sha256:$(sha256sum "${CLIENT_COMPAT_SEED_SOURCE}" | awk '{print $1}')"
           actual_count=0
           for f in "$cert_dir"/*.cert.json; do
             [[ -f "$f" ]] || continue
             if ! jq empty "$f" 2>/dev/null; then
               echo "::error::$(basename "$f") is not valid JSON"
+              echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            if ! jq -e \
+              --arg server_commit "$expected_server_commit" \
+              --arg fixture_revision "$expected_fixture_revision" \
+              '.server_commit == $server_commit and .fixture_revision == $fixture_revision' \
+              "$f" >/dev/null; then
+              echo "::error::$(basename "$f") does not match the checked-out server commit and canonical fixture revision"
               echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
               exit 1
             fi

@@ -635,7 +635,10 @@ public sealed partial class PublicInterfaceProofLedgerTests
                    proof.EvidenceLocations.Any(IsGeospatialGrpcRepositoryUrl);
         }
 
-        if (PlannedClientSurfaceIdsByProtocol.Values.SelectMany(ids => ids).Contains(surfaceId, StringComparer.OrdinalIgnoreCase) &&
+        var isApprovedEsriCompatSurface =
+            PlannedClientSurfaceIdsByProtocol.Values.SelectMany(ids => ids).Contains(surfaceId, StringComparer.OrdinalIgnoreCase) ||
+            surfaceId is "wfs-1.0.0" or "wfs-1.1.0" or "wms-1.1.1";
+        if (isApprovedEsriCompatSurface &&
             string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase))
         {
