@@ -3159,7 +3159,7 @@
         "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, synchronous execute, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (96 seeded processes across geometry.*, analytics.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, pcloud.*)",
         "Generic synchronous execute route (#1660): the deterministic single-geometry geometry.* / conversion.geometry-format family runs inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages); async-only tasks return a 400 capability message pointing at submitJob",
         "Esri-conventional task-name alias overlay (#2788): 39 mapped process IDs are also published and addressable by familiar names such as Buffer, while canonical process IDs remain supported; aliases change task discovery/addressing only and deliberately retain the published canonical Honua parameter contract",
-        "Durable per-parameter result retrieval: terminal GP jobs advertise named result parameters and jobs/{jobId}/results/{paramName} reads their values from the result-package store"
+        "Durable per-parameter result retrieval: successful terminal GP jobs advertise named result parameters and jobs/{jobId}/results/{paramName} reads their values from the result-package store"
       ],
       "knownGaps": [
         "GP environment controls (env:*) are rejected with 400 until engine support is available; context is preserved as protocol metadata but not interpreted yet",
