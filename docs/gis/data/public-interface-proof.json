@@ -2728,6 +2728,23 @@
         },
         {
           "proofClass": "real-client-certification",
+          "proofMechanism": "Active PyQGIS provider certification exercises OGC API Features against the live seeded server and emits a versioned client envelope.",
+          "executionLane": "nightly:pyqgis-client-compat-nightly",
+          "clientLanes": [
+            "desktop-qgis"
+          ],
+          "evidenceLocations": [
+            ".github/workflows/pyqgis-client-compat-nightly.yml",
+            "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#478",
+          "versionCaptureRule": "Record the exact QGIS and PyQGIS versions, candidate identity, fixture revision, and immutable desktop-qgis OGC API Features .cert.json envelope."
+        },
+        {
+          "proofClass": "real-client-certification",
           "proofMechanism": "Planned maintained GeoPandas, OWSLib, DuckDB, and R sf operation-level OGC API Features certification",
           "executionLane": "nightly:canonical-ogc-clients",
           "clientLanes": [

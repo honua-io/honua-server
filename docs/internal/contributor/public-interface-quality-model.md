@@ -57,8 +57,9 @@ All named desktop, BI, and browser client versions are recorded in [`docs/gis/CL
 Rules:
 
 - Never leave a required row at `TBD`.
-- During active development branches, keep a curated immutable example link rather than an empty placeholder.
-- On every release candidate, replace the curated example links with the exact workflow artifact URL or release asset URL for that release.
+- A `*.cert.example.json` file documents envelope shape only. It is non-certifying, must not be linked as proof, and is deliberately excluded from `*.cert.json` evidence collectors.
+- During active development, an unfinished lane remains `planned` with its owning ticket and prospective evidence rule; an active lane links its actual automated workflow and certifying `*.cert.json` envelope.
+- On every release candidate, bind active lane evidence to the exact candidate workflow artifact or release asset rather than substituting an example snapshot.
 
 ### Tool Lanes
 
