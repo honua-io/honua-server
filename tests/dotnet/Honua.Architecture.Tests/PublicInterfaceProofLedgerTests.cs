@@ -139,6 +139,9 @@ public sealed partial class PublicInterfaceProofLedgerTests
         ["stac"] = ["stac-api"]
     };
 
+    private static readonly string[] LegacyEsriCompatSurfaceIds =
+        ["wfs-1.0.0", "wfs-1.1.0", "wms-1.1.1"];
+
     private static readonly Regex MarkdownLinkRegex =
         new(@"\[[^\]]+\]\((?<path>[^)]+)\)", RegexOptions.Compiled);
 
@@ -361,6 +364,13 @@ public sealed partial class PublicInterfaceProofLedgerTests
         externalProofs.Should().NotBeEmpty("bounded child ownership should remain visible in the proof ledger");
         externalProofs.Should().OnlyContain(entry => IsApprovedExternalProof(entry.SurfaceId, entry.Proof),
             "only approved bounded-child surfaces may point at external owner repos");
+        externalProofs
+            .Where(entry => string.Equals(entry.Proof.OwnerRepo, "honua-esri-compat", StringComparison.OrdinalIgnoreCase) &&
+                            LegacyEsriCompatSurfaceIds.Contains(entry.SurfaceId, StringComparer.OrdinalIgnoreCase))
+            .Select(entry => entry.SurfaceId)
+            .Should()
+            .BeEquivalentTo(LegacyEsriCompatSurfaceIds,
+                "retained legacy-version ArcGIS obligations must not disappear from the proof ledger");
     }
 
     [ArchitectureTest]
@@ -618,8 +628,27 @@ public sealed partial class PublicInterfaceProofLedgerTests
     {
         if (string.Equals(surfaceId, "mcp", StringComparison.OrdinalIgnoreCase))
         {
-            return string.Equals(proof.OwnerRepo, "honua-sdk-js", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(proof.LinkedTicket, "#484", StringComparison.Ordinal);
+            if (!string.Equals(proof.OwnerRepo, "honua-sdk-js", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(proof.LinkedTicket, "#484", StringComparison.Ordinal) ||
+                !string.Equals(proof.Status, "bounded-child-ticket", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return proof.ProofClass switch
+            {
+                "tool-interoperability" =>
+                    string.Equals(proof.ExecutionLane, "ci:mcp-certification", StringComparison.OrdinalIgnoreCase) &&
+                    proof.EvidenceLocations.SequenceEqual(
+                        [".github/workflows/ci.yml", "docs/internal/contributor/mcp-certification.md", "docs/guides/connect/ai-agents-mcp.md"],
+                        StringComparer.OrdinalIgnoreCase),
+                "real-client-certification" =>
+                    string.Equals(proof.ExecutionLane, "ci:mcp-llm-smoke", StringComparison.OrdinalIgnoreCase) &&
+                    proof.EvidenceLocations.SequenceEqual(
+                        [".github/workflows/ci.yml", "docs/internal/contributor/mcp-certification.md"],
+                        StringComparer.OrdinalIgnoreCase),
+                _ => false
+            };
         }
 
         if (string.Equals(surfaceId, "grpc-feature-service", StringComparison.OrdinalIgnoreCase) ||
@@ -637,7 +666,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
         var isApprovedEsriCompatSurface =
             PlannedClientSurfaceIdsByProtocol.Values.SelectMany(ids => ids).Contains(surfaceId, StringComparer.OrdinalIgnoreCase) ||
-            surfaceId is "wfs-1.0.0" or "wfs-1.1.0" or "wms-1.1.1";
+            LegacyEsriCompatSurfaceIds.Contains(surfaceId, StringComparer.OrdinalIgnoreCase);
         if (isApprovedEsriCompatSurface &&
             string.Equals(proof.ProofClass, "real-client-certification", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(proof.Status, "planned", StringComparison.OrdinalIgnoreCase))
