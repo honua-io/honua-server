@@ -371,6 +371,14 @@ public sealed partial class PublicInterfaceProofLedgerTests
             .Should()
             .BeEquivalentTo(LegacyEsriCompatSurfaceIds,
                 "retained legacy-version ArcGIS obligations must not disappear from the proof ledger");
+        externalProofs
+            .Where(entry => string.Equals(entry.SurfaceId, "mcp", StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(entry.Proof.OwnerRepo, "honua-sdk-js", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => $"{entry.Proof.ProofClass}:{entry.Proof.ExecutionLane}")
+            .Should()
+            .BeEquivalentTo(
+                ["tool-interoperability:ci:mcp-certification", "real-client-certification:ci:mcp-llm-smoke"],
+                "both governed MCP external certification obligations must remain present");
     }
 
     [ArchitectureTest]
