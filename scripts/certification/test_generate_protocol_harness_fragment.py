@@ -16,8 +16,15 @@ SPEC.loader.exec_module(module)
 def trx(results, summary="Completed", counters=None):
     counters = counters or {"total": len(results), "executed": len(results), "passed": len(results), "failed": 0, "notExecuted": 0}
     attrs = " ".join(f'{key}="{value}"' for key, value in counters.items())
-    rows = "".join(f'<UnitTestResult testName="Honua.Tests.{name}" outcome="{outcome}" />' for name, outcome in results)
-    return f'<TestRun><Results>{rows}</Results><ResultSummary outcome="{summary}"><Counters {attrs} /></ResultSummary></TestRun>'
+    rows = "".join(
+        f'<UnitTestResult testId="test-{index}" testName="{name.replace("_", " ")}" outcome="{outcome}" />'
+        for index, (name, outcome) in enumerate(results)
+    )
+    definitions = "".join(
+        f'<UnitTest id="test-{index}" name="{name}"><TestMethod className="Honua.Tests.{name.split(".", 1)[0]}" name="{name.split(".", 1)[1]}" /></UnitTest>'
+        for index, (name, _outcome) in enumerate(results)
+    )
+    return f'<TestRun><Results>{rows}</Results><TestDefinitions>{definitions}</TestDefinitions><ResultSummary outcome="{summary}"><Counters {attrs} /></ResultSummary></TestRun>'
 
 
 def contract():

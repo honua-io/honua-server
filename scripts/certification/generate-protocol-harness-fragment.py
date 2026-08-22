@@ -87,17 +87,32 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
     if total <= 0 or executed != total or not_executed != 0 or passed + failed != executed:
         raise ValueError("TRX records incomplete test execution")
 
+    definitions: dict[str, str] = {}
+    for node in root.iter():
+        if not node.tag.endswith("UnitTest"):
+            continue
+        trx_id = node.attrib.get("id", "")
+        methods = [child for child in node.iter() if child.tag.endswith("TestMethod")]
+        if not trx_id or len(methods) != 1:
+            raise ValueError("TRX contains a malformed test definition")
+        class_name = methods[0].attrib.get("className", "").rsplit(".", 1)[-1]
+        method_name = methods[0].attrib.get("name", "")
+        if not class_name or not method_name:
+            raise ValueError(f"TRX test definition {trx_id} has no canonical method identity")
+        if trx_id in definitions:
+            raise ValueError(f"TRX contains duplicate test definition id {trx_id}")
+        definitions[trx_id] = f"{class_name}.{method_name}"
+
     matched: dict[str, str] = {}
     for node in root.iter():
         if not node.tag.endswith("UnitTestResult"):
             continue
-        name = node.attrib.get("testName", "")
-        candidates = [test_id for test_id in expected_ids if name == test_id or name.endswith(f".{test_id}")]
-        if len(candidates) > 1:
-            raise ValueError(f"ambiguous governed test result {name}")
-        if not candidates:
-            raise ValueError(f"TRX contains ungoverned selected test result {name}")
-        test_id = candidates[0]
+        trx_id = node.attrib.get("testId", "")
+        if not trx_id or trx_id not in definitions:
+            raise ValueError(f"TRX result has no matching test definition: {trx_id or '<missing>'}")
+        test_id = definitions[trx_id]
+        if test_id not in expected_ids:
+            raise ValueError(f"TRX contains ungoverned selected test result {test_id}")
         if test_id in matched:
             raise ValueError(f"duplicate governed test result {test_id}")
         outcome = node.attrib.get("outcome")
