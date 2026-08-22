@@ -14,6 +14,16 @@ from pathlib import Path
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RESULTS = {"Passed": "pass", "Failed": "fail"}
+PROJECT_BY_CLASS = {
+    "VectorTileServerEndpointTests": "Honua.Protocols.GeoServices.Tests",
+    "FeatureServerTemporalExtentEndpointTests": "Honua.Protocols.GeoServices.Tests",
+    "FeatureServerTemporalTests": "Honua.Protocols.GeoServices.Tests",
+    "FeatureServerQueryDateBinsTests": "Honua.Protocols.GeoServices.Tests",
+    "EdrEndpointsTests": "Honua.Protocols.OgcApi.Tests",
+    "SensorThingsReadEndpointsTests": "Honua.Protocols.SensorThings.Tests",
+    "SensorThingsIngestEndpointsTests": "Honua.Protocols.SensorThings.Tests",
+}
+DEFAULT_PROJECT = "Honua.Server.Tests"
 
 
 def timestamp(value: str) -> datetime:
@@ -41,8 +51,19 @@ def load_contract(path: Path) -> dict:
     return value
 
 
-def test_filter(contract: dict) -> str:
-    test_ids = sorted({test_id for row in contract["assignments"] for test_id in row["test_ids"]})
+def test_project(test_id: str) -> str:
+    return PROJECT_BY_CLASS.get(test_id.split(".", 1)[0], DEFAULT_PROJECT)
+
+
+def test_filter(contract: dict, project: str | None = None) -> str:
+    test_ids = sorted({
+        test_id
+        for row in contract["assignments"]
+        for test_id in row["test_ids"]
+        if project is None or test_project(test_id) == project
+    })
+    if not test_ids:
+        raise ValueError(f"no governed tests belong to project {project}")
     return "|".join(f"FullyQualifiedName~{test_id}" for test_id in test_ids)
 
 
@@ -75,7 +96,7 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
         if len(candidates) > 1:
             raise ValueError(f"ambiguous governed test result {name}")
         if not candidates:
-            continue
+            raise ValueError(f"TRX contains ungoverned selected test result {name}")
         test_id = candidates[0]
         if test_id in matched:
             raise ValueError(f"duplicate governed test result {test_id}")
@@ -190,8 +211,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--print-filter", action="store_true")
-    parser.add_argument("--trx", type=Path)
-    parser.add_argument("--trx-exit-code", type=int)
+    parser.add_argument("--project")
+    parser.add_argument("--trx", action="append", type=Path)
+    parser.add_argument("--trx-exit-code", action="append", type=int)
     parser.add_argument("--source-sha")
     parser.add_argument("--producer-source-sha")
     parser.add_argument("--image-digest")
@@ -203,7 +225,7 @@ def main() -> int:
     args = parser.parse_args()
     contract = load_contract(args.contract)
     if args.print_filter:
-        print(test_filter(contract))
+        print(test_filter(contract, args.project))
         return 0
     required = ("trx", "trx_exit_code", "source_sha", "producer_source_sha", "image_digest",
                 "candidate_cut_at", "started_at", "completed_at", "generated_at", "output")
@@ -211,13 +233,20 @@ def main() -> int:
     if missing:
         parser.error("evidence mode requires " + ", ".join(missing))
     expected = {test_id for row in contract["assignments"] for test_id in row["test_ids"]}
-    outcomes = parse_trx(args.trx, expected)
-    if args.trx_exit_code not in {0, 1}:
-        raise ValueError("dotnet test infrastructure exit code is not evidentiary")
-    if args.trx_exit_code == 0 and any(result == "fail" for result in outcomes.values()):
-        raise ValueError("TRX failure conflicts with successful dotnet test exit")
-    if args.trx_exit_code == 1 and all(result == "pass" for result in outcomes.values()):
-        raise ValueError("dotnet test failure is not explained by a governed assertion")
+    projects = sorted({test_project(test_id) for test_id in expected})
+    if len(args.trx) != len(projects) or len(args.trx_exit_code) != len(projects):
+        raise ValueError("evidence mode requires exactly one TRX and exit code per governed project")
+    outcomes = {}
+    for project, trx_path, exit_code in zip(projects, args.trx, args.trx_exit_code, strict=True):
+        project_ids = {test_id for test_id in expected if test_project(test_id) == project}
+        project_outcomes = parse_trx(trx_path, project_ids)
+        if exit_code not in {0, 1}:
+            raise ValueError(f"{project}: dotnet test infrastructure exit code is not evidentiary")
+        if exit_code == 0 and any(result == "fail" for result in project_outcomes.values()):
+            raise ValueError(f"{project}: TRX failure conflicts with successful dotnet test exit")
+        if exit_code == 1 and all(result == "pass" for result in project_outcomes.values()):
+            raise ValueError(f"{project}: dotnet test failure is not explained by a governed assertion")
+        outcomes.update(project_outcomes)
     fragment = build_fragment(contract, outcomes, args)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(fragment, indent=2, sort_keys=True) + "\n", encoding="utf-8")

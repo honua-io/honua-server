@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Check out producer contract
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           path: producer
 
@@ -45,18 +45,16 @@ jobs:
           producer_sha="$(git -C producer rev-parse HEAD)"
           candidate_sha="${REQUESTED_SHA:-${producer_sha}}"
           [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid candidate SHA" >&2; exit 1; }
+          [[ "${candidate_sha}" == "${producer_sha}" ]] || {
+            echo "source-host certification requires candidate and producer SHAs to be identical" >&2
+            exit 1
+          }
           echo "producer_sha=${producer_sha}" >> "$GITHUB_OUTPUT"
           echo "candidate_sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
           echo "requested_cut=${REQUESTED_CUT}" >> "$GITHUB_OUTPUT"
 
-      - name: Check out exact candidate source
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ steps.identity.outputs.candidate_sha }}
-          path: candidate
-
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 10.0.x
 
@@ -74,7 +72,7 @@ jobs:
             image_ref="${CANDIDATE_IMAGE}"
           else
             image_ref="honua-protocol-harness:${CANDIDATE_SHA}"
-            docker build --build-arg "HONUA_GIT_SHA=${CANDIDATE_SHA}" -t "${image_ref}" candidate
+            docker build --build-arg "HONUA_GIT_SHA=${CANDIDATE_SHA}" -t "${image_ref}" producer
             image_digest="$(docker image inspect --format '{{.Id}}' "${image_ref}")"
           fi
           revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_ref}")"
@@ -88,20 +86,32 @@ jobs:
           REQUESTED_CUT: ${{ steps.identity.outputs.requested_cut }}
         run: |
           set -uo pipefail
-          filter="$(python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
-            --contract producer/docs/gis/data/protocol-harness-assignments.v1.json --print-filter)"
           started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p evidence
-          dotnet test candidate/tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --configuration Release \
-            --filter "${filter}" \
-            --logger "trx;LogFileName=protocol-harness.trx" \
-            --results-directory "${GITHUB_WORKSPACE}/evidence"
-          code=$?
+          run_project() {
+            local project="$1" slug="$2" output_name="$3"
+            local filter
+            filter="$(python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
+              --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
+              --print-filter --project "${project}")"
+            dotnet test "producer/tests/dotnet/${project}/${project}.csproj" \
+              --configuration Release \
+              --filter "${filter}" \
+              --logger "trx;LogFileName=${slug}.trx" \
+              --results-directory "${GITHUB_WORKSPACE}/evidence"
+            printf -v "${output_name}" '%s' "$?"
+          }
+          run_project Honua.Protocols.GeoServices.Tests geoservices code_geoservices
+          run_project Honua.Protocols.OgcApi.Tests ogcapi code_ogcapi
+          run_project Honua.Protocols.SensorThings.Tests sensorthings code_sensorthings
+          run_project Honua.Server.Tests server code_server
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          candidate_cut="${REQUESTED_CUT:-$(git -C candidate show -s --format=%cI HEAD)}"
+          candidate_cut="${REQUESTED_CUT:-$(git -C producer show -s --format=%cI HEAD)}"
           {
-            echo "exit_code=${code}"
+            echo "exit_geoservices=${code_geoservices}"
+            echo "exit_ogcapi=${code_ogcapi}"
+            echo "exit_sensorthings=${code_sensorthings}"
+            echo "exit_server=${code_server}"
             echo "started_at=${started_at}"
             echo "completed_at=${completed_at}"
             echo "candidate_cut=${candidate_cut}"
@@ -113,8 +123,10 @@ jobs:
           generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
             --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
-            --trx evidence/protocol-harness.trx \
-            --trx-exit-code "${{ steps.tests.outputs.exit_code }}" \
+            --trx evidence/geoservices.trx --trx-exit-code "${{ steps.tests.outputs.exit_geoservices }}" \
+            --trx evidence/ogcapi.trx --trx-exit-code "${{ steps.tests.outputs.exit_ogcapi }}" \
+            --trx evidence/sensorthings.trx --trx-exit-code "${{ steps.tests.outputs.exit_sensorthings }}" \
+            --trx evidence/server.trx --trx-exit-code "${{ steps.tests.outputs.exit_server }}" \
             --source-sha "${{ steps.identity.outputs.candidate_sha }}" \
             --producer-source-sha "${{ steps.identity.outputs.producer_sha }}" \
             --image-digest "${{ steps.image.outputs.digest }}" \
@@ -125,11 +137,11 @@ jobs:
             --output evidence/protocol-certification-fragment.json
 
       - name: Upload immutable producer fragment
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: server-protocol-harness-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             evidence/protocol-certification-fragment.json
-            evidence/protocol-harness.trx
+            evidence/*.trx
           if-no-files-found: error
           retention-days: 30

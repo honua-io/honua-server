@@ -43,6 +43,10 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
         value = contract()
         value["assignments"].append({**value["assignments"][0], "operation": "GET /other"})
         self.assertEqual("FullyQualifiedName~ExampleTests.Get_ReturnsDocument", module.test_filter(value))
+        self.assertEqual(
+            "FullyQualifiedName~ExampleTests.Get_ReturnsDocument",
+            module.test_filter(value, "Honua.Server.Tests"),
+        )
 
     def test_exact_pass_is_bound_to_test_ids(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -74,6 +78,13 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
                 path.write_text(contents, encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
                     module.parse_trx(path, {"ExampleTests.Get_ReturnsDocument"})
+
+    def test_ungoverned_selected_result_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "results.trx"
+            path.write_text(trx([("OtherTests.Unowned", "Failed")]), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "ungoverned selected test"):
+                module.parse_trx(path, {"ExampleTests.Get_ReturnsDocument"})
 
     def test_duplicate_or_missing_summary_structure_fails_closed(self):
         for contents in (
