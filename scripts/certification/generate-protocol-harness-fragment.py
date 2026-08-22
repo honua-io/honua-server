@@ -73,7 +73,8 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
     counters = [node for node in root.iter() if node.tag.endswith("Counters")]
     if len(summaries) != 1 or len(counters) != 1:
         raise ValueError("TRX must contain exactly one ResultSummary and Counters element")
-    if summaries[0].attrib.get("outcome") not in {"Completed", "Failed"}:
+    summary_outcome = summaries[0].attrib.get("outcome")
+    if summary_outcome not in {"Completed", "Failed"}:
         raise ValueError("TRX ResultSummary outcome is not complete")
     counts = counters[0].attrib
     try:
@@ -86,24 +87,44 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
         raise ValueError("TRX Counters are incomplete") from error
     if total <= 0 or executed != total or not_executed != 0 or passed + failed != executed:
         raise ValueError("TRX records incomplete test execution")
+    if (summary_outcome == "Failed") != (failed > 0):
+        raise ValueError("TRX ResultSummary does not match result outcomes")
+    result_nodes = [node for node in root.iter() if node.tag.endswith("UnitTestResult")]
+    if len(result_nodes) != total:
+        raise ValueError("TRX Counters do not match result count")
+
+    definitions: dict[str, str] = {}
+    for node in root.iter():
+        if not node.tag.endswith("UnitTest"):
+            continue
+        trx_id = node.attrib.get("id", "")
+        methods = [child for child in node.iter() if child.tag.endswith("TestMethod")]
+        if not trx_id or len(methods) != 1:
+            raise ValueError("TRX contains a malformed test definition")
+        class_name = methods[0].attrib.get("className", "").rsplit(".", 1)[-1]
+        method_name = methods[0].attrib.get("name", "")
+        if not class_name or not method_name:
+            raise ValueError(f"TRX test definition {trx_id} has no canonical method identity")
+        if trx_id in definitions:
+            raise ValueError(f"TRX contains duplicate test definition id {trx_id}")
+        definitions[trx_id] = f"{class_name}.{method_name}"
 
     matched: dict[str, str] = {}
-    for node in root.iter():
-        if not node.tag.endswith("UnitTestResult"):
-            continue
-        name = node.attrib.get("testName", "")
-        candidates = [test_id for test_id in expected_ids if name == test_id or name.endswith(f".{test_id}")]
-        if len(candidates) > 1:
-            raise ValueError(f"ambiguous governed test result {name}")
-        if not candidates:
-            raise ValueError(f"TRX contains ungoverned selected test result {name}")
-        test_id = candidates[0]
+    for node in result_nodes:
+        trx_id = node.attrib.get("testId", "")
+        if not trx_id or trx_id not in definitions:
+            raise ValueError(f"TRX result has no matching test definition: {trx_id or '<missing>'}")
+        test_id = definitions[trx_id]
+        if test_id not in expected_ids:
+            raise ValueError(f"TRX contains ungoverned selected test result {test_id}")
         if test_id in matched:
             raise ValueError(f"duplicate governed test result {test_id}")
         outcome = node.attrib.get("outcome")
         if outcome not in RESULTS:
             raise ValueError(f"governed test {test_id} has unsupported outcome {outcome!r}")
         matched[test_id] = RESULTS[outcome]
+    if sum(value == "pass" for value in matched.values()) != passed or sum(value == "fail" for value in matched.values()) != failed:
+        raise ValueError("TRX Counters do not match result outcomes")
     missing = sorted(expected_ids - set(matched))
     if missing:
         raise ValueError(f"missing governed test results: {', '.join(missing)}")
