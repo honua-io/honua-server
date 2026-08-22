@@ -87,11 +87,15 @@ jobs:
             fi
           done
           [[ -n "${config}" ]] || { echo "github-honua NuGet source is not configured" >&2; exit 1; }
+          private_config="${RUNNER_TEMP}/honua-protocol-harness.NuGet.config"
+          cp "${config}" "${private_config}"
+          chmod 600 "${private_config}"
           dotnet nuget update source github-honua \
-            --configfile "${config}" \
+            --configfile "${private_config}" \
             --username "${GITHUB_ACTOR}" \
             --password "${GH_PACKAGES_TOKEN}" \
             --store-password-in-clear-text
+          echo "NUGET_CONFIG=${private_config}" >> "$GITHUB_ENV"
 
       - name: Verify or build candidate image identity
         id: image
@@ -102,7 +106,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${CANDIDATE_IMAGE}" ]]; then
+            [[ "${CANDIDATE_IMAGE}" =~ ^ghcr\.io/honua-io/ ]] || { echo "candidate image must use the governed Honua GHCR namespace" >&2; exit 1; }
             [[ "${CANDIDATE_IMAGE}" =~ @sha256:([0-9a-f]{64})$ ]] || { echo "candidate image must be immutable" >&2; exit 1; }
+            printf '%s' "${GH_PACKAGES_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
             docker pull "${CANDIDATE_IMAGE}"
             image_digest="sha256:${BASH_REMATCH[1]}"
             image_ref="${CANDIDATE_IMAGE}"
@@ -134,8 +140,11 @@ jobs:
             filter="$(python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
               --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
               --print-filter --project "${project}")"
+            dotnet restore "producer/tests/dotnet/${project}/${project}.csproj" \
+              --configfile "${NUGET_CONFIG}"
             dotnet test "producer/tests/dotnet/${project}/${project}.csproj" \
               --configuration Release \
+              --no-restore \
               --filter "${filter}" \
               --logger "trx;LogFileName=${slug}.trx" \
               --results-directory "${GITHUB_WORKSPACE}/evidence"
