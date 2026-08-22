@@ -73,7 +73,8 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
     counters = [node for node in root.iter() if node.tag.endswith("Counters")]
     if len(summaries) != 1 or len(counters) != 1:
         raise ValueError("TRX must contain exactly one ResultSummary and Counters element")
-    if summaries[0].attrib.get("outcome") not in {"Completed", "Failed"}:
+    summary_outcome = summaries[0].attrib.get("outcome")
+    if summary_outcome not in {"Completed", "Failed"}:
         raise ValueError("TRX ResultSummary outcome is not complete")
     counts = counters[0].attrib
     try:
@@ -86,6 +87,8 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
         raise ValueError("TRX Counters are incomplete") from error
     if total <= 0 or executed != total or not_executed != 0 or passed + failed != executed:
         raise ValueError("TRX records incomplete test execution")
+    if (summary_outcome == "Failed") != (failed > 0):
+        raise ValueError("TRX ResultSummary does not match result outcomes")
     result_nodes = [node for node in root.iter() if node.tag.endswith("UnitTestResult")]
     if len(result_nodes) != total:
         raise ValueError("TRX Counters do not match result count")

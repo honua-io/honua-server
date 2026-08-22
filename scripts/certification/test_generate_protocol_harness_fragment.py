@@ -81,8 +81,9 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             (trx([("ExampleTests.Get_ReturnsDocument", "Passed"), ("ExampleTests.Get_ReturnsDocument", "Passed")]), "duplicate governed"),
             (trx([("ExampleTests.Get_ReturnsDocument", "NotExecuted")], counters={"total": 1, "executed": 0, "passed": 0, "failed": 0, "notExecuted": 1}), "incomplete test execution"),
             (trx([("ExampleTests.Get_ReturnsDocument", "Passed")], summary="Aborted"), "not complete"),
-            (trx([("ExampleTests.Get_ReturnsDocument", "Passed")], counters={"total": 1, "executed": 1, "passed": 0, "failed": 1, "notExecuted": 0}), "do not match result outcomes"),
+            (trx([("ExampleTests.Get_ReturnsDocument", "Passed")], summary="Failed", counters={"total": 1, "executed": 1, "passed": 0, "failed": 1, "notExecuted": 0}), "do not match result outcomes"),
             (trx([], counters={"total": 1, "executed": 1, "passed": 1, "failed": 0, "notExecuted": 0}), "do not match result count"),
+            (trx([("ExampleTests.Get_ReturnsDocument", "Passed")], summary="Failed"), "ResultSummary does not match"),
         ]
         for contents, message in cases:
             with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
@@ -90,6 +91,20 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
                 path.write_text(contents, encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
                     module.parse_trx(path, {"ExampleTests.Get_ReturnsDocument"})
+
+    def test_completed_governed_failure_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "results.trx"
+            path.write_text(
+                trx(
+                    [("ExampleTests.Get_ReturnsDocument", "Failed")],
+                    summary="Failed",
+                    counters={"total": 1, "executed": 1, "passed": 0, "failed": 1, "notExecuted": 0},
+                ),
+                encoding="utf-8",
+            )
+            outcomes = module.parse_trx(path, {"ExampleTests.Get_ReturnsDocument"})
+        self.assertEqual({"ExampleTests.Get_ReturnsDocument": "fail"}, outcomes)
 
     def test_ungoverned_selected_result_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
