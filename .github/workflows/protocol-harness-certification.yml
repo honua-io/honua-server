@@ -140,8 +140,11 @@ jobs:
             filter="$(python3 producer/scripts/certification/generate-protocol-harness-fragment.py \
               --contract producer/docs/gis/data/protocol-harness-assignments.v1.json \
               --print-filter --project "${project}")"
-            dotnet restore "producer/tests/dotnet/${project}/${project}.csproj" \
-              --configfile "${NUGET_CONFIG}"
+            if ! dotnet restore "producer/tests/dotnet/${project}/${project}.csproj" \
+              --configfile "${NUGET_CONFIG}"; then
+              echo "package restore failed for ${project}; no evidence will be emitted" >&2
+              exit 1
+            fi
             dotnet test "producer/tests/dotnet/${project}/${project}.csproj" \
               --configuration Release \
               --no-restore \
