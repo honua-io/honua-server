@@ -283,7 +283,7 @@ def _fixture_revision(seed_path: Path) -> str:
 
 def _server_config_revision() -> str:
     configured = os.getenv("HONUA_PYQGIS_SERVER_CONFIG_PATH")
-    config_path = Path(configured) if configured else PROJECT_ROOT / ".github/actions/setup-honua-server/action.yml"
+    config_path = Path(configured) if configured else PROJECT_ROOT / "tests/config/client-compat-server-v1.json"
     return f"sha256:{hashlib.sha256(config_path.read_bytes()).hexdigest()}"
 
 

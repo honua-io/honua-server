@@ -1116,7 +1116,7 @@ generate_cert_envelope() {
     seed_path="$ROOT_DIR/$seed_path"
   fi
   fixture_revision="sha256:$(sha256sum "$seed_path" | awk '{print $1}')"
-  config_path="$ROOT_DIR/.github/actions/setup-honua-server/action.yml"
+  config_path="$ROOT_DIR/tests/config/client-compat-server-v1.json"
   server_config_revision="sha256:$(sha256sum "$config_path" | awk '{print $1}')"
 
   if [[ ! -f "$cert_results_file" ]]; then

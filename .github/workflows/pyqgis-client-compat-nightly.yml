@@ -27,7 +27,7 @@ jobs:
 
     services:
       postgres:
-        image: postgis/postgis:18-3.6
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -126,10 +126,30 @@ jobs:
           if not isinstance(fixture, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', fixture) is None:
               print('FAIL: envelope fixture_revision is not a sha256 digest', file=sys.stderr)
               sys.exit(1)
-          expected_config = 'sha256:' + __import__('hashlib').sha256(
+          hashlib = __import__('hashlib')
+          config_path = 'tests/config/client-compat-server-v1.json'
+          config = json.load(open(config_path))
+          setup_revision = 'sha256:' + hashlib.sha256(
               open('.github/actions/setup-honua-server/action.yml', 'rb').read()).hexdigest()
+          expected_profile = {
+              'schemaVersion': '1.0',
+              'profile': 'client-compat-server-v1',
+              'serverMode': 'source',
+              'dotnetVersion': '10.0.x',
+              'databaseImage': 'postgis/postgis:16-3.4',
+              'aspnetcoreEnvironment': 'Development',
+              'baseUrl': 'http://localhost:5000',
+              'serviceId': 'test_service',
+              'layerId': '0',
+              'setupAction': '.github/actions/setup-honua-server/action.yml',
+              'setupActionRevision': setup_revision,
+          }
+          if config != expected_profile:
+              print('FAIL: canonical server configuration manifest is invalid or stale', file=sys.stderr)
+              sys.exit(1)
+          expected_config = 'sha256:' + hashlib.sha256(open(config_path, 'rb').read()).hexdigest()
           if data.get('server_config_revision') != expected_config:
-              print('FAIL: envelope server_config_revision does not match setup-honua-server', file=sys.stderr)
+              print('FAIL: envelope server_config_revision does not match canonical server configuration', file=sys.stderr)
               sys.exit(1)
           if data.get('protocol') == 'wfs' and data.get('protocol_version') != '2.0.0':
               print('FAIL: WFS envelope is not bound to WFS 2.0.0', file=sys.stderr)

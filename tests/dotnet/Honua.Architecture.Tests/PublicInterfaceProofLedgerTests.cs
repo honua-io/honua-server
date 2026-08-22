@@ -398,6 +398,40 @@ public sealed partial class PublicInterfaceProofLedgerTests
     }
 
     [ArchitectureTest]
+    public void ActiveClientCertificationWorkflows_ShouldShareCanonicalServerConfiguration()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var manifestPath = ArchitectureTestHelpers.CombinePath(
+            root, "tests", "config", "client-compat-server-v1.json");
+        using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        var config = manifest.RootElement;
+        var databaseImage = config.GetProperty("databaseImage").GetString()!;
+        var setupAction = config.GetProperty("setupAction").GetString()!;
+        var setupPath = Path.Combine(
+            root, setupAction.Replace('/', Path.DirectorySeparatorChar));
+        var setupDigest = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(setupPath))).ToLowerInvariant();
+
+        config.GetProperty("setupActionRevision").GetString()
+            .Should().Be($"sha256:{setupDigest}",
+                "the shared server configuration must bind the exact setup action bytes");
+
+        foreach (var workflowName in new[]
+                 {
+                     "client-compat-smoke-nightly.yml",
+                     "pyqgis-client-compat-nightly.yml"
+                 })
+        {
+            var workflow = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+                root, ".github", "workflows", workflowName));
+            workflow.Should().Contain($"image: {databaseImage}",
+                $"{workflowName} must run the database image governed by the shared server configuration");
+            workflow.Should().Contain("tests/config/client-compat-server-v1.json",
+                $"{workflowName} must verify the shared server configuration manifest");
+        }
+    }
+
+    [ArchitectureTest]
     public void SdkCompatibilityProofs_ShouldNotOverstateImplementedServerMatrixSurfaces()
     {
         var ledger = LoadLedger();

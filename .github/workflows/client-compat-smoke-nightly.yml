@@ -92,7 +92,25 @@ jobs:
           fi
           expected_server_commit="$(git rev-parse HEAD)"
           expected_fixture_revision="sha256:$(sha256sum "${CLIENT_COMPAT_SEED_SOURCE}" | awk '{print $1}')"
-          expected_server_config_revision="sha256:$(sha256sum .github/actions/setup-honua-server/action.yml | awk '{print $1}')"
+          config_manifest="tests/config/client-compat-server-v1.json"
+          expected_setup_revision="sha256:$(sha256sum .github/actions/setup-honua-server/action.yml | awk '{print $1}')"
+          if ! jq -e --arg setup "$expected_setup_revision" '
+            .schemaVersion == "1.0" and
+            .profile == "client-compat-server-v1" and
+            .serverMode == "source" and
+            .dotnetVersion == "10.0.x" and
+            .databaseImage == "postgis/postgis:16-3.4" and
+            .aspnetcoreEnvironment == "Development" and
+            .baseUrl == "http://localhost:5000" and
+            .serviceId == "test_service" and
+            .layerId == "0" and
+            .setupAction == ".github/actions/setup-honua-server/action.yml" and
+            .setupActionRevision == $setup
+          ' "$config_manifest" >/dev/null; then
+            echo "::error::Canonical client certification server configuration is invalid or stale"
+            exit 1
+          fi
+          expected_server_config_revision="sha256:$(sha256sum "$config_manifest" | awk '{print $1}')"
           actual_count=0
           for f in "$cert_dir"/*.cert.json; do
             [[ -f "$f" ]] || continue
