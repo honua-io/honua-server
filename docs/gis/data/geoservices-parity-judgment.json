@@ -2081,7 +2081,7 @@
         "Durable per-parameter result retrieval: successful terminal GP jobs advertise named result parameters and jobs/{jobId}/results/{paramName} reads their values from the result-package store"
       ],
       "knownGaps": [
-        "GP environment controls (env:*) are rejected with 400 until engine support is available; context is preserved as protocol metadata but not interpreted yet",
+        "GP environment control coverage is bounded: env:outSR, env:processSR, env:workspace, and env:overwriteOutput are honored on submitJob and execute; other env:* controls (for example env:transferDomains) return 400 until engine support is available",
         "Esri-conventional task aliases do not adapt canonical Honua parameters to the same-named Esri tool's wire contract; for example Buffer accepts base64 WKB, SRID, and numeric distance rather than Esri JSON feature-record-set, linear-unit, and dissolve-option inputs (#2788)"
       ],
       "evidence": {
@@ -2210,7 +2210,7 @@
           "esriPaths": [
             "/GPServer/{taskName}/execute"
           ],
-          "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results + messages). Async-only tasks return a 400 capability message pointing at submitJob. Honors env:outSR for reprojectable geometry outputs (unlike submitJob, which rejects env:* controls). Implemented in #1660."
+          "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results + messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:processSR, env:workspace, and env:overwriteOutput; unsupported env:* controls return 400. Implemented in #1660."
         },
         {
           "name": "Jobs List",
