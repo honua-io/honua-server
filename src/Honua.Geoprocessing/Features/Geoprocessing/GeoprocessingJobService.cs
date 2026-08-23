@@ -174,7 +174,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        if (ContainsMutatingProcess(plan))
+        if (ContainsMutatingProcess(plan, _processCatalog))
         {
             await _authorizer.EnsureAuthorizedAsync(
                 principal,
@@ -287,7 +287,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         ValidatePlanStructure(plan);
         _artifacts.ValidateRasterSources(plan, CancellationToken.None);
-        EnsurePlanCatalogValid(plan);
+        EnsurePlanCatalogValid(plan, _processCatalog);
         GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Prefer the plan's declared outputs; when absent, derive the artifact kinds from
@@ -327,7 +327,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         CancellationToken cancellationToken = default)
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
-            submitterSecurityContext: null, inheritsSubmitterSecurityContext: false, cancellationToken);
+            submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
+            processCatalog: _processCatalog, cancellationToken);
+
+    public Task<ExecutionJobRecord> SubmitProtocolJobAsync(
+        AnalysisPlan plan,
+        string? idempotencyKey,
+        ClaimsPrincipal principal,
+        IProcessCatalog protocolCatalog,
+        IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(protocolCatalog);
+        return SubmitJobCoreAsync(
+            plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
+            submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
+            processCatalog: protocolCatalog, cancellationToken);
+    }
 
     public Task<ExecutionJobRecord> SubmitJobWithSecurityContextAsync(
         AnalysisPlan plan,
@@ -338,7 +354,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         CancellationToken cancellationToken = default)
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
-            submitterSecurityContext, inheritsSubmitterSecurityContext: true, cancellationToken);
+            submitterSecurityContext, inheritsSubmitterSecurityContext: true,
+            processCatalog: _processCatalog, cancellationToken);
 
     /// <summary>
     /// Allows a staged raster source only when its full object identity can be traced to a
@@ -509,6 +526,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         bool resumingApproved,
         JobSecurityContext? submitterSecurityContext,
         bool inheritsSubmitterSecurityContext,
+        IProcessCatalog processCatalog,
         CancellationToken cancellationToken = default)
     {
         // Resolve the submitter's row/field security identity once, before any gate can
@@ -605,7 +623,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
         else
         {
-            EnsurePlanCatalogValid(plan);
+            EnsurePlanCatalogValid(plan, processCatalog);
         }
 
         // A rasterId is a catalog reference even though its catalog parameter is a 64-bit text
@@ -626,7 +644,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (honua-server#3046 review).
         try
         {
-            if (ContainsMutatingProcess(plan))
+            if (ContainsMutatingProcess(plan, processCatalog))
             {
                 await _authorizer.EnsureAuthorizedAsync(
                     authorizationPrincipal,
@@ -640,7 +658,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // against the restored submitter snapshot, so a revoked grant or rebound numeric id
             // cannot inherit the proposal-time decision.
             await _authorizer
-                .EnsurePlanLayerAccessAsync(authorizationPrincipal, plan, _processCatalog, cancellationToken)
+                .EnsurePlanLayerAccessAsync(authorizationPrincipal, plan, processCatalog, cancellationToken)
                 .ConfigureAwait(false);
 
             // The enrichment-specific guard additionally resolves its indirect dataset layer and
@@ -672,7 +690,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             await EnsureApprovedAsync(
                 principal, plan, idempotencyKey, protocolMetadata, isCustomCode,
-                resolvedSecurityContext, cancellationToken)
+                resolvedSecurityContext, processCatalog, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -749,12 +767,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
         var requiredRuntimeProfile = isCustomCode
             ? CustomCodeJobContract.RuntimeProfile
-            : ResolveRequiredRuntimeProfile(plan);
+            : ResolveRequiredRuntimeProfile(plan, processCatalog);
         // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
         // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
         // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
         // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
-        var resourceProfile = ResolveResourceProfile(plan, specParams, isCustomCode);
+        var resourceProfile = ResolveResourceProfile(
+            plan,
+            specParams,
+            isCustomCode,
+            processCatalog);
         var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
 
         var jobRecord = new ExecutionJobRecord
@@ -1264,9 +1286,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IReadOnlyDictionary<string, string>? protocolMetadata,
         bool isCustomCode,
         JobSecurityContext submitterSecurityContext,
+        IProcessCatalog processCatalog,
         CancellationToken cancellationToken)
     {
-        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _processCatalog);
+        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(
+            plan,
+            processCatalog);
         if (approvalGatedProcessId != null)
         {
             GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
@@ -1339,6 +1364,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 // rather than silently recaptured from that name-only principal.
                 submitterSecurityContext: payload.SubmitterSecurityContext,
                 inheritsSubmitterSecurityContext: true,
+                processCatalog: _processCatalog,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -1398,7 +1424,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// lean dispatcher. Returns <c>null</c> (managed/default) when no process
     /// requires a specialized profile, leaving the spec profile-agnostic.
     /// </summary>
-    private string? ResolveRequiredRuntimeProfile(AnalysisPlan plan)
+    private static string? ResolveRequiredRuntimeProfile(
+        AnalysisPlan plan,
+        IProcessCatalog processCatalog)
     {
         foreach (var step in plan.Steps)
         {
@@ -1407,7 +1435,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 continue;
             }
 
-            var definition = _processCatalog.GetProcess(step.ProcessId);
+            var definition = processCatalog.GetProcess(step.ProcessId);
             if (definition == null)
             {
                 continue;
@@ -1473,10 +1501,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// <c>gp.resource.*</c> request values. Custom-code jobs are param-driven (no catalog process),
     /// so they take only the explicit request values.
     /// </summary>
-    private GpResourceProfile ResolveResourceProfile(
+    private static GpResourceProfile ResolveResourceProfile(
         AnalysisPlan plan,
         IReadOnlyDictionary<string, string> specParams,
-        bool isCustomCode)
+        bool isCustomCode,
+        IProcessCatalog processCatalog)
     {
         var derived = GpResourceProfile.Empty;
         if (!isCustomCode)
@@ -1488,7 +1517,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     continue;
                 }
 
-                var definition = _processCatalog.GetProcess(step.ProcessId);
+                var definition = processCatalog.GetProcess(step.ProcessId);
                 if (definition == null)
                 {
                     continue;
@@ -1620,9 +1649,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             && protocolMetadata?.TryGetValue("orchestration.runId", out var workflowRunId) == true
             && !string.IsNullOrWhiteSpace(workflowRunId);
 
-    private void EnsurePlanCatalogValid(AnalysisPlan plan)
+    private void EnsurePlanCatalogValid(AnalysisPlan plan, IProcessCatalog processCatalog)
     {
-        var (violations, _) = ProcessPlanValidator.Validate(plan, _processCatalog, _analyticsLimits);
+        var (violations, _) = ProcessPlanValidator.Validate(
+            plan,
+            processCatalog,
+            _analyticsLimits);
         if (violations.Count == 0)
         {
             return;
@@ -1701,7 +1733,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return sideEffects;
     }
 
-    private bool ContainsMutatingProcess(AnalysisPlan plan)
+    private static bool ContainsMutatingProcess(
+        AnalysisPlan plan,
+        IProcessCatalog processCatalog)
     {
         foreach (var step in plan.Steps)
         {
@@ -1710,7 +1744,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 continue;
             }
 
-            if (_processCatalog.GetProcess(step.ProcessId) is { ExecutionTier: ProcessExecutionTier.Mutating })
+            if (processCatalog.GetProcess(step.ProcessId) is { ExecutionTier: ProcessExecutionTier.Mutating })
             {
                 return true;
             }

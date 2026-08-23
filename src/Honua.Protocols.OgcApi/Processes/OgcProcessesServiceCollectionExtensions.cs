@@ -5,7 +5,6 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
-using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
@@ -27,7 +26,16 @@ internal static class OgcProcessesServiceCollectionExtensions
         services.Configure<OgcProcessesOptions>(
             configuration.GetSection(OgcProcessesOptions.SectionName));
 
-        if (OgcProcessesCiteEchoFixture.IsEnabled(configuration, hostEnvironmentName))
+        var citeEchoEnabled = OgcProcessesCiteEchoFixture.IsEnabled(
+            configuration,
+            hostEnvironmentName);
+        services.Replace(
+            ServiceDescriptor.Singleton<IOgcProcessesCatalog>(serviceProvider =>
+                new OgcProcessesCiteEchoCatalog(
+                    serviceProvider.GetRequiredService<IProcessCatalog>(),
+                    citeEchoEnabled)));
+
+        if (citeEchoEnabled)
         {
             RegisterCiteEchoFixture(services);
         }
@@ -37,25 +45,6 @@ internal static class OgcProcessesServiceCollectionExtensions
 
     private static void RegisterCiteEchoFixture(IServiceCollection services)
     {
-        var catalogRegistration = services.LastOrDefault(
-            descriptor => descriptor.ServiceType == typeof(IProcessCatalog));
-        if (catalogRegistration?.ImplementationType == typeof(OgcProcessesCiteEchoCatalog))
-        {
-            return;
-        }
-
-        if (catalogRegistration?.ImplementationType == typeof(BuiltInProcessCatalog))
-        {
-            services.Remove(catalogRegistration);
-        }
-        else if (catalogRegistration is not null)
-        {
-            throw new InvalidOperationException(
-                "The OGC API Processes certification profile cannot decorate a custom process catalog.");
-        }
-
-        services.TryAddSingleton<BuiltInProcessCatalog>();
-        services.TryAddSingleton<IProcessCatalog, OgcProcessesCiteEchoCatalog>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IProcessExecutor, OgcProcessesCiteEchoExecutor>());
     }

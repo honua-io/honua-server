@@ -145,6 +145,12 @@ public sealed record OgcProcessIoSchema
     public double? Maximum { get; init; }
 
     /// <summary>
+    /// Enumerated string values accepted by the schema.
+    /// </summary>
+    [JsonPropertyName("enum")]
+    public ImmutableArray<string>? Enum { get; init; }
+
+    /// <summary>
     /// Item schema for array values.
     /// </summary>
     [JsonPropertyName("items")]

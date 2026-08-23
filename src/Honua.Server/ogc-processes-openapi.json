@@ -719,6 +719,11 @@
             "type": "number",
             "description": "Inclusive upper bound for numeric values."
           },
+          "enum": {
+            "type": "array",
+            "description": "Enumerated string values accepted by the schema.",
+            "items": { "type": "string" }
+          },
           "items": {
             "$ref": "#/components/schemas/ProcessIoSchema"
           },

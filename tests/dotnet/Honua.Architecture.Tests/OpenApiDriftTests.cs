@@ -199,6 +199,7 @@ public sealed class OpenApiDriftTests
             "contentEncoding",
             "minimum",
             "maximum",
+            "enum",
             "items",
             "properties",
             "required",
