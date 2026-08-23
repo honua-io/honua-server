@@ -1,5 +1,7 @@
 # 3D Tiles and scenes
 
+The canonical representation, discovery, authentication, I3S projection, and terrain boundaries are defined by [ADR-0078](../../internal/contributor/adr/0078-3d-scene-architecture.md).
+
 Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + assets) for CesiumJS and `<honua-scene>` clients, with an SDK-facing discovery API, an Esri I3S SceneServer adapter, and an admin registry for dataset lifecycle.
 
 ## Scene discovery (public, SDK-compatible)
