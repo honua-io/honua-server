@@ -359,6 +359,41 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_RequiresTokens_EmitsOperationTelemetry()
+    {
+        Activity? observedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (string.Equals(
+                        activity.GetTagItem(HonuaTelemetry.Tags.Operation) as string,
+                        "RequiresTokens",
+                        StringComparison.Ordinal))
+                {
+                    observedActivity = activity;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var response = await PostSoapAsync(_fixture.Client, "/services", "RequiresTokens");
+
+        response.Be200Ok();
+        observedActivity.Should().NotBeNull();
+        observedActivity!.Status.Should().Be(ActivityStatusCode.Ok);
+        observedActivity.GetTagItem(HonuaTelemetry.Tags.Protocol)
+            .Should().Be(HonuaTelemetry.Protocols.ImageServer);
+        observedActivity.GetTagItem("http.response.status_code").Should().Be(StatusCodes.Status200OK);
+        observedActivity.GetTagItem("honua.result").Should().Be("success");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
     [Endpoint("POST /services")]
     public async Task PostSoapCatalog_GetServiceDescriptionsEx_AppliesFolderAndRejectsUnknownArguments()
@@ -1249,6 +1284,90 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 Arg.Any<CancellationToken>());
             await rasterStore.DidNotReceive().ListRastersAsync(
                 Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_NoDataOverride_ReturnsUnsupportedFaultAndErrorTelemetry()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        Activity? exportActivity = null;
+        Activity? getActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                switch (activity.GetTagItem(HonuaTelemetry.Tags.Operation) as string)
+                {
+                    case "ExportImage":
+                        exportActivity = activity;
+                        break;
+                    case "GetImage":
+                        getActivity = activity;
+                        break;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        try
+        {
+            const string description = """
+                <ImageDescription xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GeoImageDescription">
+                  <Extent xsi:type="EnvelopeN"><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
+                  <Width>16</Width><Height>8</Height><PixelType>U8</PixelType><NoData>0</NoData>
+                </ImageDescription>
+                """;
+            var exportOperation = $"""
+                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  {description}
+                  <ImageType><ImageFormat>esriImagePNG</ImageFormat><ImageReturnType>esriImageReturnURL</ImageReturnType></ImageType>
+                </ExportImage>
+                """;
+            var getOperation = $"""
+                <GetImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8">{description}</GetImage>
+                """;
+
+            using var exportResponse = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                exportOperation);
+            using var getResponse = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                getOperation);
+
+            exportResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotImplemented);
+            getResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotImplemented);
+            (await exportResponse.Content.ReadAsStringAsync()).Should().Contain("NoData overrides");
+            (await getResponse.Content.ReadAsStringAsync()).Should().Contain("NoData overrides");
+            foreach (var activity in new[] { exportActivity, getActivity })
+            {
+                activity.Should().NotBeNull();
+                activity!.Status.Should().Be(ActivityStatusCode.Error);
+                activity.GetTagItem(HonuaTelemetry.Tags.Error).Should().Be(true);
+                activity.GetTagItem("http.response.status_code").Should().Be(StatusCodes.Status501NotImplemented);
+                activity.GetTagItem("honua.result").Should().Be("error");
+            }
+
+            await rasterStore.DidNotReceive().ExportImageAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<RasterQuery>(),
                 Arg.Any<CancellationToken>());
         }
         finally

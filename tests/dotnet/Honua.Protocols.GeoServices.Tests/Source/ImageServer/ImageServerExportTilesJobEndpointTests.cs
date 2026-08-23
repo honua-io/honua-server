@@ -4,16 +4,23 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
@@ -149,6 +156,128 @@ public sealed class ImageServerExportTilesJobEndpointTests
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    public async Task ExportTiles_JobLifecycleByService_PreservesResolvedPublication()
+    {
+        const string serviceId = "z-aliased-image";
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var restricted = new AccessPolicy { AllowedRoles = ["imagery-admin"] };
+        var graph = new TestMetadataV2GraphBuilder()
+                .AddResource(
+                    "competing-resource",
+                    "Competing image",
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: restricted)
+                .AddStorageBinding(
+                    "competing-binding",
+                    "competing-resource",
+                    "competing.rasters",
+                    storageLayerId: TestLayerId)
+                .AddService(
+                    "competing-service",
+                    "a-competing-image",
+                    protocols: [ServiceProtocols.ImageServer],
+                    accessPolicy: restricted)
+                .AddPublication(
+                    "competing-publication",
+                    "competing-service",
+                    "competing-resource",
+                    layerIndex: 7,
+                    storageBindingId: "competing-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer,
+                    isPrimary: true)
+                .AddResource(
+                    "target-resource",
+                    "Target image",
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: anonymous)
+                .AddStorageBinding(
+                    "target-binding",
+                    "target-resource",
+                    "target.rasters",
+                    storageLayerId: TestLayerId)
+                .AddService(
+                    "target-service",
+                    serviceId,
+                    protocols: [ServiceProtocols.ImageServer],
+                    accessPolicy: anonymous)
+                .AddPublication(
+                    "target-publication",
+                    "target-service",
+                    "target-resource",
+                    layerIndex: 41,
+                    storageBindingId: "target-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .Build();
+        var graphProvider = new TestMetadataV2GraphProvider(graph);
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ResolveFirstAccessibleLayerAsync(
+                serviceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(
+                TestLayerId,
+                "target-publication",
+                41,
+                ErrorResult: null));
+        resolver.ValidateLayerAsync(
+                TestLayerId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(
+                TestLayerId,
+                "competing-publication",
+                7,
+                Results.StatusCode(StatusCodes.Status403Forbidden)));
+        var fixture = await CreateDurableFixtureAsync(graphProvider, resolver);
+        try
+        {
+            var jobId = await SubmitCompactJobAsync(fixture, $"/rest/services/{serviceId}/ImageServer/exportTiles");
+
+            // The numeric route deliberately resolves the primary publication sharing storage layer 0,
+            // which is the restricted competitor. A service-scoped lifecycle route must not repeat
+            // that ambiguous lookup after it already resolved target-publication.
+            using var numericStatus = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/jobs/{jobId}");
+            numericStatus.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            using var status = await fixture.Client.GetAsync($"/rest/services/{serviceId}/ImageServer/jobs/{jobId}");
+            status.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await status.Content.ReadAsStringAsync()).Should().Contain(jobId);
+
+            using var cancel = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel",
+                content: null);
+            cancel.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await cancel.Content.ReadAsStringAsync()).Should().Contain("esriJobCancelled");
+
+            using var result = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url");
+            result.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+
+            await resolver.Received(4).ResolveFirstAccessibleLayerAsync(
+                serviceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+            await resolver.Received(1).ValidateLayerAsync(
+                TestLayerId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}")]
     public async Task JobStatus_UnknownJob_ReturnsSanitizedNotFound()
     {
@@ -179,7 +308,9 @@ public sealed class ImageServerExportTilesJobEndpointTests
         return submitted.JobId;
     }
 
-    private static async Task<WebAppFixture> CreateDurableFixtureAsync()
+    private static async Task<WebAppFixture> CreateDurableFixtureAsync(
+        TestMetadataV2GraphProvider? graphProvider = null,
+        IImageServerLayerResolver? resolver = null)
     {
         // Submission and status only probe primary metadata + create/read the durable job record;
         // tile rendering happens later on the worker.
@@ -209,6 +340,20 @@ public sealed class ImageServerExportTilesJobEndpointTests
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
             services.AddSingleton(rasterStore);
+            if (graphProvider is not null)
+            {
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.RemoveAll<IMetadataV2GraphStore>();
+                services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
+                services.AddSingleton<IMetadataV2GraphStore>(graphProvider);
+            }
+
+            if (resolver is not null)
+            {
+                services.RemoveAll<IImageServerLayerResolver>();
+                services.AddSingleton(resolver);
+            }
+
             // The durable lifecycle service resolves its store/queue leniently; wire in-memory
             // doubles so a submission is durably created without a Redis dependency.
             services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());

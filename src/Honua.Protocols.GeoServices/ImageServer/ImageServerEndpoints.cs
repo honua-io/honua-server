@@ -3173,7 +3173,12 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await ExportTilesJobStatus(resolution.LayerId, jobId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await handler.GetJobStatusAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobCancel(
@@ -3203,7 +3208,12 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await ExportTilesJobCancel(resolution.LayerId, jobId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await handler.CancelJobAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobResult(
@@ -3233,7 +3243,12 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await ExportTilesJobResult(resolution.LayerId, jobId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await handler.GetJobResultAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     /// <summary>

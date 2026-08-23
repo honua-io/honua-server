@@ -14,6 +14,7 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
@@ -182,6 +183,14 @@ internal static class GeoservicesCatalogEndpoints
                 soap);
         }
 
+        var operationName = operation.Name.LocalName;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            $"soap-catalog-{operationName}",
+            HonuaTelemetry.Protocols.ImageServer,
+            "*",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.Operation, operationName);
+
         try
         {
             XElement payload;
@@ -205,10 +214,10 @@ internal static class GeoservicesCatalogEndpoints
                             argument.Name.Namespace != operationNamespace ||
                             !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
                     {
-                        return CreateSoapFault(
+                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
                             "GetServiceDescriptionsEx accepts only one folderName argument.",
                             StatusCodes.Status400BadRequest,
-                            soap);
+                            soap));
                     }
 
                     var folderName = arguments.SingleOrDefault()?.Value.Trim();
@@ -244,10 +253,10 @@ internal static class GeoservicesCatalogEndpoints
                         tokenOptions.Value.Enabled);
                     break;
                 default:
-                    return CreateSoapFault(
+                    return CompleteSoapCatalogOperation(scope, CreateSoapFault(
                         $"Unsupported catalog operation '{operation.Name.LocalName}'.",
                         StatusCodes.Status400BadRequest,
-                        soap);
+                        soap));
             }
 
             var response = new XDocument(
@@ -261,10 +270,10 @@ internal static class GeoservicesCatalogEndpoints
                             operationNamespace + $"{operation.Name.LocalName}Response",
                             payload))));
 
-            return Results.Content(
+            return CompleteSoapCatalogOperation(scope, Results.Content(
                 response.ToString(SaveOptions.DisableFormatting),
                 contentType: SoapContentTypeFor(soap),
-                contentEncoding: Encoding.UTF8);
+                contentEncoding: Encoding.UTF8));
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -276,11 +285,31 @@ internal static class GeoservicesCatalogEndpoints
                 logger,
                 operation.Name.LocalName,
                 exception);
-            return CreateSoapFault(
+            var result = CompleteSoapCatalogOperation(scope, CreateSoapFault(
                 "The SOAP services catalog is temporarily unavailable.",
                 StatusCodes.Status503ServiceUnavailable,
-                soap);
+                soap));
+            scope.RecordException(exception);
+            return result;
         }
+    }
+
+    private static IResult CompleteSoapCatalogOperation(HonuaTelemetryScope scope, IResult result)
+    {
+        var statusCode = (result as IStatusCodeHttpResult)?.StatusCode ?? StatusCodes.Status200OK;
+        var succeeded = statusCode < StatusCodes.Status400BadRequest;
+        scope.WithTag("http.response.status_code", statusCode)
+            .WithTag("honua.result", succeeded ? "success" : "error");
+        if (succeeded)
+        {
+            scope.SetSuccess(1);
+        }
+        else
+        {
+            scope.SetError();
+        }
+
+        return result;
     }
 
     private static async Task<IReadOnlyList<XElement>> BuildSoapImageServerDescriptionsAsync(

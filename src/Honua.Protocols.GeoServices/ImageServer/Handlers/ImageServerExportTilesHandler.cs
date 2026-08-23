@@ -1082,7 +1082,30 @@ internal sealed class ImageServerExportTilesHandler
     }
 
     /// <summary>Projects a durable tile-export job's status onto the ArcGIS Image Service status envelope.</summary>
-    public async Task<IResult> GetJobStatusAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+    public Task<IResult> GetJobStatusAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+        => GetJobStatusCoreAsync(context, layerId, jobId, cancellationToken);
+
+    /// <summary>Projects job status after reauthorizing the exact service-scoped publication.</summary>
+    public async Task<IResult> GetJobStatusAsync(
+        HttpContext context,
+        int layerId,
+        string jobId,
+        string publicationId,
+        CancellationToken cancellationToken)
+    {
+        var publicationError = await AuthorizeJobPublicationAsync(
+            context,
+            layerId,
+            publicationId,
+            cancellationToken).ConfigureAwait(false);
+        return publicationError ?? await GetJobStatusCoreAsync(context, layerId, jobId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IResult> GetJobStatusCoreAsync(
+        HttpContext context,
+        int layerId,
+        string jobId,
+        CancellationToken cancellationToken)
     {
         if (_tileExportJobService is null)
         {
@@ -1110,7 +1133,30 @@ internal sealed class ImageServerExportTilesHandler
     }
 
     /// <summary>Cancels a durable tile-export job scoped to the submitting principal and this image service.</summary>
-    public async Task<IResult> CancelJobAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+    public Task<IResult> CancelJobAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+        => CancelJobCoreAsync(context, layerId, jobId, cancellationToken);
+
+    /// <summary>Cancels a job after reauthorizing the exact service-scoped publication.</summary>
+    public async Task<IResult> CancelJobAsync(
+        HttpContext context,
+        int layerId,
+        string jobId,
+        string publicationId,
+        CancellationToken cancellationToken)
+    {
+        var publicationError = await AuthorizeJobPublicationAsync(
+            context,
+            layerId,
+            publicationId,
+            cancellationToken).ConfigureAwait(false);
+        return publicationError ?? await CancelJobCoreAsync(context, layerId, jobId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IResult> CancelJobCoreAsync(
+        HttpContext context,
+        int layerId,
+        string jobId,
+        CancellationToken cancellationToken)
     {
         if (_tileExportJobService is null)
         {
@@ -1138,7 +1184,30 @@ internal sealed class ImageServerExportTilesHandler
     }
 
     /// <summary>Returns the ArcGIS <c>results/out_service_url</c> for a completed durable tile-export job.</summary>
-    public async Task<IResult> GetJobResultAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+    public Task<IResult> GetJobResultAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+        => GetJobResultCoreAsync(context, layerId, jobId, cancellationToken);
+
+    /// <summary>Returns a job result after reauthorizing the exact service-scoped publication.</summary>
+    public async Task<IResult> GetJobResultAsync(
+        HttpContext context,
+        int layerId,
+        string jobId,
+        string publicationId,
+        CancellationToken cancellationToken)
+    {
+        var publicationError = await AuthorizeJobPublicationAsync(
+            context,
+            layerId,
+            publicationId,
+            cancellationToken).ConfigureAwait(false);
+        return publicationError ?? await GetJobResultCoreAsync(context, layerId, jobId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IResult> GetJobResultCoreAsync(
+        HttpContext context,
+        int layerId,
+        string jobId,
+        CancellationToken cancellationToken)
     {
         if (_tileExportJobService is null)
         {
@@ -1168,6 +1237,36 @@ internal sealed class ImageServerExportTilesHandler
         {
             return mapped;
         }
+    }
+
+    private async Task<IResult?> AuthorizeJobPublicationAsync(
+        HttpContext context,
+        int layerId,
+        string publicationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resolved = ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+        if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+        }
+
+        if (resolvedLayer.Resource is not { } currentResource
+            || !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var currentService)
+            || !ServiceProtocols.IsProtocolEnabled(currentService, ServiceProtocols.ImageServer)
+            || snapshot.ResolveStorageLayerId(resolvedLayer.Publication) != layerId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+        }
+
+        return await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            currentResource,
+            AuthorizationOperation.Export,
+            currentService,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static TileExportJobScope ScopeFor(int layerId)

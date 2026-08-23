@@ -200,29 +200,31 @@ internal static class ImageServerSoapEndpoints
         }
         catch (OperationCanceledException exception)
         {
-            scope.RecordException(exception);
             ImageServerSoapEndpointLogging.LogOperationFailed(
                 logger,
                 serviceId,
                 operation.Name.LocalName,
                 exception);
-            return CompleteSoapOperation(scope, CreateSoapFault(
+            var result = CompleteSoapOperation(scope, CreateSoapFault(
                 "The ImageServer operation timed out.",
                 StatusCodes.Status503ServiceUnavailable,
                 soapNamespace));
+            scope.RecordException(exception);
+            return result;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            scope.RecordException(exception);
             ImageServerSoapEndpointLogging.LogOperationFailed(
                 logger,
                 serviceId,
                 operation.Name.LocalName,
                 exception);
-            return CompleteSoapOperation(scope, CreateSoapFault(
+            var result = CompleteSoapOperation(scope, CreateSoapFault(
                 "The ImageServer operation could not be completed.",
                 StatusCodes.Status500InternalServerError,
                 soapNamespace));
+            scope.RecordException(exception);
+            return result;
         }
     }
 
@@ -238,7 +240,7 @@ internal static class ImageServerSoapEndpoints
         }
         else
         {
-            scope.WithTag(HonuaTelemetry.Tags.Error, true);
+            scope.SetError();
         }
 
         return result;
@@ -330,6 +332,11 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest, soapNamespace);
         }
 
+        if (CreateUnsupportedNoDataFault(request, soapNamespace) is { } noDataFault)
+        {
+            return noDataFault;
+        }
+
         var returnType = FindDescendantValue(operation, "ImageReturnType");
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
         var referenceRaster = await rasterStore
@@ -409,6 +416,11 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest, soapNamespace);
         }
 
+        if (CreateUnsupportedNoDataFault(request, soapNamespace) is { } noDataFault)
+        {
+            return noDataFault;
+        }
+
         var referenceRaster = await rasterStore
             .GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken)
             .ConfigureAwait(false);
@@ -473,6 +485,14 @@ internal static class ImageServerSoapEndpoints
 
         return CreateSoapFaultFromResult(exportResult, "Image export failed.", soapNamespace);
     }
+
+    private static IResult? CreateUnsupportedNoDataFault(ExportImageRequest request, XNamespace soapNamespace)
+        => string.IsNullOrWhiteSpace(request.NoData)
+            ? null
+            : CreateSoapFault(
+                "SOAP NoData overrides are not supported by the canonical raster renderer.",
+                StatusCodes.Status501NotImplemented,
+                soapNamespace);
 
     /// <summary>
     /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
