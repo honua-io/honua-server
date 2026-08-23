@@ -212,7 +212,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             result.IsError.Should().BeFalse();
             authorization.Calls.Should().ContainSingle(call =>
                 call.Operation == StudioAuthorizationOperation.ReadDraft &&
-                call.ResourceOwnerId == Alice);
+                call.ResourceOwnerId == legacyAliceOwnerId);
         }
         else
         {

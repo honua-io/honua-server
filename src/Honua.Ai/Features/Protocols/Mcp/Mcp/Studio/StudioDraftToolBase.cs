@@ -156,12 +156,11 @@ internal abstract class StudioDraftToolBase
         CancellationToken cancellationToken)
     {
         var callerId = authorization.ResolveCallerId(principal);
-        var authorizationOwnerId = ResolveAuthorizationOwnerId(principal, callerId, resourceOwnerId);
         var decision = await authorization.AuthorizeAsync(
             principal,
             callerId,
             studioOperation,
-            authorizationOwnerId,
+            resourceOwnerId,
             resourceId: resourceId,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -177,29 +176,6 @@ internal abstract class StudioDraftToolBase
                 operation: operatorOperation,
                 policyCode: decision.Code);
         }
-    }
-
-    /// <summary>
-    /// Maps the scheme-qualified owner key written by Studio MCP before #3412
-    /// to the canonical caller id, but only when it exactly identifies the
-    /// current principal. Other owners remain unchanged and are denied by the
-    /// canonical policy. Persisted data is not mutated from a read path.
-    /// </summary>
-    private static string? ResolveAuthorizationOwnerId(
-        ClaimsPrincipal principal,
-        string? callerId,
-        string? resourceOwnerId)
-    {
-        if (string.IsNullOrWhiteSpace(callerId) || string.IsNullOrWhiteSpace(resourceOwnerId))
-        {
-            return resourceOwnerId;
-        }
-
-        var legacyMcpOwnerId = McpAuthorizationHelper.ResolveDistinctPrincipalKey(principal);
-        return legacyMcpOwnerId is not null
-            && string.Equals(resourceOwnerId, legacyMcpOwnerId, StringComparison.Ordinal)
-            ? callerId
-            : resourceOwnerId;
     }
 
     /// <summary>

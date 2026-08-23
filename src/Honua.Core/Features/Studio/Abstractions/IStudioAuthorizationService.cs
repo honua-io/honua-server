@@ -167,7 +167,11 @@ public interface IStudioAuthorizationService
     /// treated as fail-closed -- not owned by the caller -- so only an admin can act on it until
     /// an owner is assigned. Endpoints that create a brand-new resource never call this method
     /// with a null owner: they resolve ownership to the creating caller before persisting and
-    /// only authorize against an existing resource's recorded owner thereafter.
+    /// only authorize against an existing resource's recorded owner thereafter. For durable
+    /// drafts created by Studio MCP before #3412, the shared policy also recognizes the exact
+    /// scheme-qualified <c>NameIdentifier</c> owner form. Name-based and
+    /// <c>&lt;scheme&gt;:authenticated</c> legacy values fail closed because they do not uniquely
+    /// identify a principal.
     /// </param>
     /// <param name="isPubliclyReadable">
     /// True when the target resource has a published version, admitting a read-only operation

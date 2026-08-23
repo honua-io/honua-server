@@ -14,8 +14,6 @@ namespace Honua.Ai.Protocols.Mcp;
 internal static class McpAuthorizationHelper
 {
     private const string AnonymousPrincipalScheme = "anonymous";
-    private const string ApiKeyAuthenticationScheme = "ApiKey";
-    private const string ApiKeyIdClaim = "api_key_id";
 
     /// <summary>
     /// Resolves the caller's <see cref="ClaimsPrincipal"/> from the HTTP context.
@@ -54,55 +52,15 @@ internal static class McpAuthorizationHelper
         }
 
         var scheme = ResolveScheme(identity);
-        var subjectKey = ResolveSubjectKey(principal!, scheme);
-        if (subjectKey is not null)
+        var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(subject))
         {
-            return subjectKey;
+            return $"{scheme}:sub:{subject}";
         }
 
         return string.IsNullOrEmpty(identity.Name)
             ? $"{scheme}:authenticated"
             : $"{scheme}:name:{identity.Name}";
-    }
-
-    /// <summary>
-    /// Resolves the legacy scheme-qualified MCP key only when it contains a
-    /// principal-specific name identifier or a safe legacy identity name. API-key
-    /// names are not ownership aliases because multiple independently scoped keys
-    /// may share the same name. Returns
-    /// <see langword="null"/> for the shared <c>&lt;scheme&gt;:authenticated</c>
-    /// fallback, which must never be used as an ownership alias.
-    /// </summary>
-    public static string? ResolveDistinctPrincipalKey(ClaimsPrincipal? principal)
-    {
-        var identity = ResolveAuthenticatedIdentity(principal);
-        if (identity is null || !identity.IsAuthenticated)
-        {
-            return null;
-        }
-
-        var scheme = ResolveScheme(identity);
-        var subjectKey = ResolveSubjectKey(principal!, scheme);
-        if (subjectKey is not null)
-        {
-            return subjectKey;
-        }
-
-        if (string.Equals(scheme, ApiKeyAuthenticationScheme, StringComparison.Ordinal)
-            || principal!.FindFirst(ApiKeyIdClaim) is not null)
-        {
-            return null;
-        }
-
-        return string.IsNullOrEmpty(identity.Name)
-            ? null
-            : $"{scheme}:name:{identity.Name}";
-    }
-
-    private static string? ResolveSubjectKey(ClaimsPrincipal principal, string scheme)
-    {
-        var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return string.IsNullOrEmpty(subject) ? null : $"{scheme}:sub:{subject}";
     }
 
     private static ClaimsIdentity? ResolveAuthenticatedIdentity(ClaimsPrincipal? principal) =>
