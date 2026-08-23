@@ -1033,6 +1033,38 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetServiceInfo_DefaultsMissingSridToWgs84()
+    {
+        var rasterStore = CreateSoapRasterStore(srid: null);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "GetServiceInfo");
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var spatialReference = payload.Descendants()
+                .Single(element => element.Name.LocalName == "SpatialReference");
+            spatialReference.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+                .Value.Should().Be("tns:GeographicCoordinateSystem");
+            spatialReference.Elements().Single(element => element.Name.LocalName == "WKID")
+                .Value.Should().Be("4326");
+            spatialReference.Elements().Single(element => element.Name.LocalName == "LatestWKID")
+                .Value.Should().Be("4326");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Operation(Operations.Export)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_UsesOperationAwareAuthorizationAndMapsTimeouts()
@@ -1110,6 +1142,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                       <SpatialReference xsi:type="GeographicCoordinateSystem"><WKID>4326</WKID></SpatialReference>
                     </Extent>
                     <Width>128</Width><Height>64</Height>
+                    <PixelType>U8</PixelType>
                   </ImageDescription>
                   <MosaicRule xsi:type="MosaicRule">
                     <MosaicMethod>esriMosaicLockRaster</MosaicMethod>
@@ -1137,6 +1170,17 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().Be("64");
             result.Elements().Single(element => element.Name.LocalName == "ImageType")
                 .Value.Should().Be("esriImagePNG");
+
+            var conversionOperation = operation.Replace(
+                "<PixelType>U8</PixelType>",
+                "<PixelType>U16</PixelType>",
+                StringComparison.Ordinal);
+            using var conversionResponse = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                conversionOperation);
+            conversionResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotImplemented);
+
             await rasterStore.Received().ExportImageAsync(
                 Arg.Any<int>(),
                 Arg.Any<long>(),
@@ -1166,6 +1210,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                   <ImageDescription xsi:type="GeoImageDescription">
                     <Extent xsi:type="EnvelopeN"><XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax></Extent>
                     <Width>16</Width><Height>8</Height>
+                    <PixelType>U8</PixelType>
                   </ImageDescription>
                 </GetImage>
                 """;
@@ -1371,7 +1416,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         int layerId = 0,
         int bandCount = 3,
         string pixelType = "8BUI",
-        int srid = 4326)
+        int? srid = 4326)
     {
         var raster = CreateSoapRaster(layerId, bandCount: bandCount, pixelType: pixelType, srid: srid);
         var rasterStore = Substitute.For<IRasterStore>();
@@ -1417,7 +1462,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         int bandCount = 3,
         RasterExtent? extent = null,
         string pixelType = "8BUI",
-        int srid = 4326)
+        int? srid = 4326)
         => new()
         {
             Id = id,

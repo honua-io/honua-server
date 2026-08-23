@@ -157,7 +157,9 @@ internal static class ImageServerSoapEndpoints
                     operationNamespace,
                     resolution.PublicationLayerIndex ?? resolution.LayerId,
                     resolution.PublicationId!,
+                    resolution.LayerId,
                     context,
+                    rasterStore,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false),
                 "GetImage" => await HandleGetImageAsync(
@@ -227,11 +229,7 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault("Image service extent is unavailable.", StatusCodes.Status500InternalServerError, soapNamespace);
         }
 
-        var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
-        if (referenceRaster.Width <= 0 || referenceRaster.Height <= 0)
-        {
-            referenceRaster = rasters[0];
-        }
+        var referenceRaster = SelectReferenceRaster(rasters);
 
         var referenceExtent = referenceRaster.Extent;
         var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue
@@ -286,7 +284,9 @@ internal static class ImageServerSoapEndpoints
         XNamespace operationNamespace,
         int publicationLayerIndex,
         string publicationId,
+        int storageLayerId,
         HttpContext context,
+        IRasterStore rasterStore,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
     {
@@ -297,7 +297,12 @@ internal static class ImageServerSoapEndpoints
 
         var returnType = FindDescendantValue(operation, "ImageReturnType");
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
-        request = CopyWithResponseFormat(request, returnMimeData ? "image" : "json");
+        var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        var referenceRaster = SelectReferenceRaster(rasters);
+        request = CopyWithResponseFormat(
+            request,
+            returnMimeData ? "image" : "json",
+            referenceRaster.Id == 0 ? null : MapPixelType(referenceRaster.PixelType));
         var exportResult = await exportHandler.ExportImageAsync(
             context,
             publicationLayerIndex,
@@ -369,11 +374,7 @@ internal static class ImageServerSoapEndpoints
         }
 
         var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-        var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
-        if (referenceRaster.Id == 0 && rasters.Length > 0)
-        {
-            referenceRaster = rasters[0];
-        }
+        var referenceRaster = SelectReferenceRaster(rasters);
 
         if (referenceRaster.Id == 0)
         {
@@ -407,7 +408,7 @@ internal static class ImageServerSoapEndpoints
                 soapNamespace);
         }
 
-        request = CopyWithResponseFormat(request, "image");
+        request = CopyWithResponseFormat(request, "image", MapPixelType(referenceRaster.PixelType));
         var exportResult = await exportHandler.ExportImageAsync(
             context,
             publicationLayerIndex,
@@ -591,7 +592,10 @@ internal static class ImageServerSoapEndpoints
         return true;
     }
 
-    private static ExportImageRequest CopyWithResponseFormat(ExportImageRequest request, string responseFormat)
+    private static ExportImageRequest CopyWithResponseFormat(
+        ExportImageRequest request,
+        string responseFormat,
+        string? sourcePixelType = null)
         => new()
         {
             Bbox = request.Bbox,
@@ -599,7 +603,9 @@ internal static class ImageServerSoapEndpoints
             ImageSr = request.ImageSr,
             BboxSr = request.BboxSr,
             Format = request.Format,
-            PixelType = request.PixelType,
+            PixelType = string.Equals(request.PixelType, sourcePixelType, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : request.PixelType,
             NoData = request.NoData,
             Interpolation = request.Interpolation,
             Compression = request.Compression,
@@ -766,6 +772,7 @@ internal static class ImageServerSoapEndpoints
     private static XElement BuildEnvelope(RasterExtent extent)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
+        var srid = extent.Srid ?? SpatialConstants.DefaultSrid;
         return new XElement(
             "Extent",
             new XAttribute(xsi + "type", "tns:EnvelopeN"),
@@ -777,11 +784,24 @@ internal static class ImageServerSoapEndpoints
                 "SpatialReference",
                 new XAttribute(
                     xsi + "type",
-                    extent.Srid is int srid && GeographicSridClassifier.IsGeographicSrid(srid)
+                    GeographicSridClassifier.IsGeographicSrid(srid)
                         ? "tns:GeographicCoordinateSystem"
                         : "tns:ProjectedCoordinateSystem"),
-                new XElement("WKID", extent.Srid ?? 0),
-                new XElement("LatestWKID", extent.Srid ?? 0)));
+                new XElement("WKID", srid),
+                new XElement("LatestWKID", srid)));
+    }
+
+    private static RasterInfo SelectReferenceRaster(RasterInfo[] rasters)
+    {
+        if (rasters.Length == 0)
+        {
+            return default;
+        }
+
+        var referenceRaster = rasters.FirstOrDefault(static raster => raster.Extent.HasValue);
+        return referenceRaster.Width > 0 && referenceRaster.Height > 0
+            ? referenceRaster
+            : rasters[0];
     }
 
     private static XElement BuildNoData(double? noData)

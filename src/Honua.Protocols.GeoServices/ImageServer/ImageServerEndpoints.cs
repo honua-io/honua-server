@@ -9,6 +9,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -3024,7 +3025,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         if (layerError is not null)
         {
             return layerError;
@@ -3045,7 +3050,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await ExportTilesGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
@@ -3058,7 +3067,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         if (layerError is not null)
         {
             return layerError;
@@ -3085,7 +3098,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await ExportTilesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
@@ -3096,7 +3113,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return layerError ?? await handler.GetJobStatusAsync(context, id, jobId, cancellationToken);
     }
 
@@ -3107,7 +3128,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await ExportTilesJobStatus(resolution.LayerId, jobId, context, handler, cancellationToken);
     }
 
@@ -3118,7 +3143,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return layerError ?? await handler.CancelJobAsync(context, id, jobId, cancellationToken);
     }
 
@@ -3129,7 +3158,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await ExportTilesJobCancel(resolution.LayerId, jobId, context, handler, cancellationToken);
     }
 
@@ -3140,7 +3173,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        var layerError = await ValidateImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return layerError ?? await handler.GetJobResultAsync(context, id, jobId, cancellationToken);
     }
 
@@ -3151,7 +3188,11 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
         return resolution.ErrorResult ?? await ExportTilesJobResult(resolution.LayerId, jobId, context, handler, cancellationToken);
     }
 

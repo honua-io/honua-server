@@ -447,6 +447,71 @@ public class ImageServerEndpointsTests
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportTiles")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportTiles")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportTiles")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    public async Task ExportTilesSubmissionAndJobs_RequireExportAuthorization()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ValidateLayerAsync(
+                Arg.Any<int>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        resolver.ResolveFirstAccessibleLayerAsync(
+                Arg.Any<string>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(CreateRasterStoreSubstitute());
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var numericBase = $"/rest/services/{TestLayerId}/ImageServer";
+            var serviceBase = $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer";
+            foreach (var routeBase in new[] { numericBase, serviceBase })
+            {
+                await fixture.Client.GetAsync($"{routeBase}/exportTiles");
+                using var exportContent = new FormUrlEncodedContent([]);
+                await fixture.Client.PostAsync($"{routeBase}/exportTiles", exportContent);
+                await fixture.Client.GetAsync($"{routeBase}/jobs/test-job");
+                using var cancelContent = new FormUrlEncodedContent([]);
+                await fixture.Client.PostAsync($"{routeBase}/jobs/test-job/cancel", cancelContent);
+                await fixture.Client.GetAsync($"{routeBase}/jobs/test-job/results/out_service_url");
+            }
+
+            await resolver.Received(5).ValidateLayerAsync(
+                TestLayerId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+            await resolver.Received(5).ResolveFirstAccessibleLayerAsync(
+                WebAppFixture.TestServiceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_WithStretchRenderingRule_AppliesStretchAndReturnsPng()
     {
