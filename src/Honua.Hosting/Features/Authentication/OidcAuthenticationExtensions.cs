@@ -632,6 +632,7 @@ public static class OidcAuthenticationExtensions
                         bearerIdentity.AddClaim(new Claim(
                             OperatorScopeCatalog.ScopeGovernedClaimType,
                             OperatorScopeCatalog.ScopeGovernedClaimValue));
+                    }
 
                     // Scope governance proves only that the token is a validated OAuth access
                     // token; it does not prove that it represents a human session. Mark bearer
@@ -654,7 +655,6 @@ public static class OidcAuthenticationExtensions
                         {
                             identity.AddClaim(new Claim("honua_interactive_provenance", "true"));
                         }
-                    }
                     }
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&
