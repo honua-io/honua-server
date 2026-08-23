@@ -144,18 +144,6 @@ jobs:
           provenance: false
           sbom: false
 
-      # Archive an SPDX SBOM for the CITE-tested image so conformance evidence
-      # bundles record the exact bill of materials behind each pass/fail.
-      - name: Generate SBOM (SPDX JSON) for honua-server:latest
-        uses: anchore/sbom-action@v0
-        with:
-          image: honua-server:latest
-          format: spdx-json
-          output-file: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
-          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
-          upload-artifact: true
-          upload-release-assets: false
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -189,6 +177,19 @@ jobs:
           if [[ $cite_exit_code -ne 0 ]]; then
             echo "CITE tests finished with exit code: $cite_exit_code"
           fi
+
+      # Generate workflow-owned checkout artifacts only after the suite has
+      # verified source cleanliness and captured the tested image provenance.
+      # Otherwise source-build runners can mistake this SBOM for source input.
+      - name: Generate SBOM (SPDX JSON) for honua-server:latest
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:latest
+          format: spdx-json
+          output-file: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
 
       - name: Run suite validation command
         if: always() && inputs.validation-command != ''

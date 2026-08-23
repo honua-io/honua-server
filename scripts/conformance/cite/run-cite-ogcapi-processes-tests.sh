@@ -10,6 +10,7 @@ HEALTHCHECK_TIMEOUT="${HONUA_CITE_OGCAPI_PROCESSES_HEALTHCHECK_TIMEOUT:-300}"
 HONUA_CITE_OGCAPI_PROCESSES_SERVER_PORT="${HONUA_CITE_OGCAPI_PROCESSES_SERVER_PORT:-8101}"
 PROFILE="diagnostic"
 CLEANUP=true
+INTERACTIVE=false
 VERBOSE=false
 SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 SKIP_ETS_BUILD="${HONUA_CITE_SKIP_ETS_BUILD:-false}"
@@ -22,10 +23,11 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --profile) PROFILE="$2"; shift 2 ;;
         --no-cleanup) CLEANUP=false; shift ;;
+        --interactive) INTERACTIVE=true; CLEANUP=false; shift ;;
         --verbose) VERBOSE=true; shift ;;
         --skip-build) SKIP_BUILD=true; shift ;;
         --help|-h)
-            echo "Usage: $0 [--profile diagnostic] [--no-cleanup] [--verbose] [--skip-build]"
+            echo "Usage: $0 [--profile diagnostic] [--no-cleanup] [--interactive] [--verbose] [--skip-build]"
             exit 0
             ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -198,6 +200,14 @@ fi
 docker run --rm --entrypoint cat "$ETS_IMAGE" /opt/ets/PROVENANCE \
     > "$CITE_RESULTS_DIR/ets-provenance.txt"
 docker image inspect "$ETS_IMAGE" > "$CITE_RESULTS_DIR/ets-image-inspect.json"
+
+if [[ "$INTERACTIVE" == "true" ]]; then
+    echo "Interactive mode enabled"
+    echo "Honua OGC API Processes: ${HONUA_BASE_URL}/ogc/processes"
+    echo "Run the pinned ETS with: ${COMPOSE_CMD[*]} -f $CITE_COMPOSE_FILE --profile test run --rm cite-runner"
+    echo "Press Ctrl+C to stop; services will remain running for manual inspection"
+    tail -f /dev/null
+fi
 
 STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 set +e
