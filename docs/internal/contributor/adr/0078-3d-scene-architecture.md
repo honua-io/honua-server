@@ -322,13 +322,26 @@ staging before `202`. A retry never re-queries an unversioned live layer whose
 features may have changed since admission.
 
 Admission also captures the submitting principal's
-`OperationAuditInfo.SubmitterSecurityContext` beside that source snapshot. The
-background executor enters the shared job-security scope and reads/materializes
-through the canonical query pipeline with the same tenant, row predicate, and
-field mask. Managed membership is revalidated before deferred execution; an
-inactive identity, removed role, absent/stale context, or failed revalidation
-fails closed rather than falling back to a service-wide catalog read. A later
-grant may never widen the already-pinned view for the existing job.
+`OperationAuditInfo.SubmitterSecurityContext` and a versioned, integrity-bound
+`JobAuthorizationConstraint` beside that source snapshot. The authorization
+constraint records the admission-time policy semantics as a canonical typed row
+expression, exact visible-field allowlist, source/schema identity, and policy
+revisions. Its digest is part of the request fingerprint. It does not serialize
+raw SQL, and policy identifiers alone are insufficient because their definitions
+are mutable.
+
+Before deferred execution, the background executor revalidates managed
+membership and resolves the current policy. The canonical query pipeline then
+intersects the pinned row constraint with the current row predicate and
+intersects the pinned and current field allowlists while reading the immutable
+source snapshot. Tightening either policy removes access; a later role grant or
+relaxed row/mask definition can never add rows or fields to the admission-time
+view. An inactive identity, removed role, absent/stale context, deleted or
+untranslatable policy, incompatible schema change, or unsupported intersection
+fails closed rather than falling back to a service-wide catalog read. If a
+provider cannot evaluate that typed intersection safely, admission materializes
+the bounded authorized view into job-owned durable staging before returning
+`202` and the worker reads only that materialization.
 
 Admission also derives and pins an explicit output audience/access policy and
 includes it in the request fingerprint. That policy must be provably no broader
@@ -437,6 +450,17 @@ Credential handling follows Decision 5 on every transport. A gRPC message or
 MCP result may advertise that authentication is required; it must not turn an
 ephemeral asset credential into serializable scene data.
 
+Canonical resolution also chooses the delivery transport. An HTTP asset
+endpoint carries its URL and, when protected, the credential-free
+`access-session` POST affordance from Decision 5. A gRPC-capable endpoint instead
+carries a typed TileService affordance: the resolved scene binding plus the fully
+qualified `geospatial.v1.TileService/GetTile` unary and
+`geospatial.v1.TileService/StreamTiles` server-streaming operations. The caller
+authenticates those operations through its configured gRPC channel/call metadata;
+no HTTP access-session result or call credential enters protobuf. A client must
+not discover TileService out of band and treat it as a way around the canonical
+endpoint availability, entitlement, authorization, or evidence decision.
+
 The currently published geospatial-grpc `SceneService` exposes only
 `ListScenes` and `GetScene`, and their `SceneMetadata` omits both
 `servingFormat` and `contentKind`, so even those operations cannot yet preserve
@@ -445,11 +469,14 @@ the canonical catalog axes. Protocol parity is blocked on
 which owns additive `servingFormat` and `contentKind` fields/vocabularies on the
 existing list/get metadata (including the exact `unclassified` representation)
 plus an additive `ResolveScene` contract carrying endpoint format, media type,
-auth requirement, and the credential-free `access-session` POST affordance.
-After a new protocol package is published, Honua.Server must update its
-`Geospatial.Grpc` dependency/generated surface before implementing and claiming
-gRPC catalog or resolution parity. Neither gRPC scene parity nor cross-SDK
-parity may be claimed before both changes land.
+auth requirement, and a typed delivery choice for the credential-free HTTP
+`access-session` POST affordance or the existing TileService operations. After a
+new protocol package is published,
+[#3437](https://github.com/honua-io/honua-server/issues/3437) updates
+Honua.Server's `Geospatial.Grpc` dependency and projects the same shared resolver
+and resource-policy decision into gRPC before TileService or gRPC scene parity is
+claimed. Neither gRPC scene parity nor cross-SDK parity may be claimed before
+those changes land.
 
 ## 2026.1 truth posture
 
@@ -522,9 +549,23 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
 - [#3433](https://github.com/honua-io/honua-server/issues/3433): versioned
   access-session response and credential-transport request templates.
 - [geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90):
-  additive list/get catalog axes plus `ResolveScene` protocol contract and
-  published package; the server dependency update and projection follow that
-  release.
+  additive list/get catalog axes plus `ResolveScene` protocol contract, typed
+  HTTP/TileService delivery choices, and published package.
+- [#3437](https://github.com/honua-io/honua-server/issues/3437): consume that
+  package and project canonical resolution, authorization, and TileService
+  transport selection in Honua.Server.
+- [honua-sdk-js#1393](https://github.com/honua-io/honua-sdk-js/issues/1393),
+  [#1394](https://github.com/honua-io/honua-sdk-js/issues/1394), and
+  [#1396](https://github.com/honua-io/honua-sdk-js/issues/1396): consume the
+  REST contract, bind protected renderer resources, and produce installed JS
+  evidence in that order.
+- [honua-sdk-dotnet#312](https://github.com/honua-io/honua-sdk-dotnet/issues/312):
+  consume the versioned discovery/access-session fixtures and produce installed
+  .NET package evidence; its scene certification feeds
+  [#308](https://github.com/honua-io/honua-sdk-dotnet/issues/308).
+- [honua-sdk-python#212](https://github.com/honua-io/honua-sdk-python/issues/212):
+  consume the same fixtures, enforce scoped host-session attachment, and produce
+  installed Python package evidence.
 - [#3280](https://github.com/honua-io/honua-server/issues/3280): production I3S
   geometry, if/when the deferred lane resumes.
 - [#3284](https://github.com/honua-io/honua-server/issues/3284): durable jobs and
@@ -533,3 +574,12 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
   terrain provider.
 - [#3286](https://github.com/honua-io/honua-server/issues/3286): MCP projections
   after the canonical contract pack.
+
+Release ordering is fail-closed: catalog migration lands first; REST and
+access-session fixtures plus the optional gRPC protocol/server projection land
+next; each repository then publishes its consumer package; installed-candidate
+evidence runs last against the exact server image and fixture revision.
+`scene.catalog` remains deferred until the JS, .NET, and Python consumers pass
+the same versioned list/get/resolve pack. Protected-host parity additionally
+requires their scope/redirect and credential-leak evidence; examples or
+server-local SDK-shaped mocks do not satisfy it.
