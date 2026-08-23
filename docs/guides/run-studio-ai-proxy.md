@@ -106,8 +106,19 @@ Notes:
 
 ## Endpoints
 
-Both endpoints require admin authorization (the same posture as the Studio package lifecycle
-surface, `WorkflowPackageEndpoints`) pending a dedicated per-session Studio-user authorization scope.
+Both endpoints use the same Studio lifecycle admission policy as package drafts:
+
+- admins are always admitted;
+- an authenticated non-admin is admitted when
+  `Studio:EndUserAuthorization:Enabled=true` (environment variable
+  `Studio__EndUserAuthorization__Enabled=true`);
+- with the flag off, a non-admin receives `403` with
+  `code: "studio_authorization/end_user_mode_disabled"`;
+- an anonymous request receives `401`.
+
+Provider credentials remain server-side regardless of caller tier. The caller's authenticated
+identity is attached to the chat audit record, and the same bearer/session credential can be used
+for MCP tool discovery and the proxy without elevating it to an admin credential.
 
 ### `GET /api/v1/studio/ai/capabilities`
 
@@ -224,7 +235,7 @@ surfaces (`FeatureStreamEndpoints`, `CloudDemoEndpoints`).
 ## Rate limiting and audit
 
 - `POST /chat` carries an explicit per-endpoint rate limit (30 requests/minute per authenticated
-  admin identity), consistent with the `RateLimitAttribute` precedent used for other
+  caller identity), consistent with the `RateLimitAttribute` precedent used for other
   sensitive/expensive admin endpoints (`AdminAuthEndpoints`). This applies **in addition to** the
   platform's opt-in subject-wide rate limiter (`RateLimiting:Enabled`, off by default, ADR-0004);
   edge enforcement remains the default rate-limiting posture.
