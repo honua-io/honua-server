@@ -143,6 +143,16 @@ authority for runtime endpoint selection.
   of the versioned contract and golden fixture, not an implicit link default;
   the resolution result never embeds the resulting credential.
 
+The existing `GET /api/v1/admin/scenes/{id}/resolve` route is a compatibility
+projection, not another selection authority. It must delegate to the same shared
+canonical resolver and preserve the same endpoint formats, availability
+suppression, authorization, and credential-free access-session affordance.
+Operator-only embed hints may be added around that result, but every endpoint URL
+must derive from the canonical result rather than a second URL convention. If
+that convergence cannot be preserved, the admin route is deprecated and removed.
+[#3410](https://github.com/honua-io/honua-server/issues/3410) owns the convergence
+and regression fixtures.
+
 URLs retained in list or metadata shapes for compatibility are hints, not an
 invitation for a client to choose a renderer or synthesize nested-asset URLs.
 They must agree with resolution, but new endpoint selection behavior is added to
@@ -428,15 +438,18 @@ MCP result may advertise that authentication is required; it must not turn an
 ephemeral asset credential into serializable scene data.
 
 The currently published geospatial-grpc `SceneService` exposes only
-`ListScenes` and `GetScene`, so it is not yet a resolve projection. Protocol
-parity is blocked on
+`ListScenes` and `GetScene`, and their `SceneMetadata` omits both
+`servingFormat` and `contentKind`, so even those operations cannot yet preserve
+the canonical catalog axes. Protocol parity is blocked on
 [geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90),
-which owns an additive `ResolveScene` contract carrying endpoint format, media
-type, auth requirement, and the credential-free `access-session` POST
-affordance. After a new protocol package is published, Honua.Server must update
-its `Geospatial.Grpc` dependency/generated surface before implementing and
-claiming gRPC resolution. Neither gRPC scene resolution nor cross-SDK parity may
-be claimed before both changes land.
+which owns additive `servingFormat` and `contentKind` fields/vocabularies on the
+existing list/get metadata (including the exact `unclassified` representation)
+plus an additive `ResolveScene` contract carrying endpoint format, media type,
+auth requirement, and the credential-free `access-session` POST affordance.
+After a new protocol package is published, Honua.Server must update its
+`Geospatial.Grpc` dependency/generated surface before implementing and claiming
+gRPC catalog or resolution parity. Neither gRPC scene parity nor cross-SDK
+parity may be claimed before both changes land.
 
 ## 2026.1 truth posture
 
@@ -505,12 +518,13 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
 - [#3409](https://github.com/honua-io/honua-server/issues/3409): catalog axes and
   compatibility migration.
 - [#3410](https://github.com/honua-io/honua-server/issues/3410): versioned
-  list/metadata/resolve contract pack.
+  list/metadata/resolve contract pack and admin-resolve convergence.
 - [#3433](https://github.com/honua-io/honua-server/issues/3433): versioned
   access-session response and credential-transport request templates.
 - [geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90):
-  additive `ResolveScene` protocol contract and published package; the server
-  dependency update and projection follow that release.
+  additive list/get catalog axes plus `ResolveScene` protocol contract and
+  published package; the server dependency update and projection follow that
+  release.
 - [#3280](https://github.com/honua-io/honua-server/issues/3280): production I3S
   geometry, if/when the deferred lane resumes.
 - [#3284](https://github.com/honua-io/honua-server/issues/3284): durable jobs and
