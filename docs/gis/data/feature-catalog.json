@@ -7026,6 +7026,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Geoprocessing.GeoprocessingJobRowAndFieldSecurityTests.LayerSourcedJob_ForRlsAndFieldMaskRestrictedSubmitter_ArtifactIsRowFilteredAndMasked",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.JobStatus_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesCiteEchoFixtureTests.CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDurableRuntimeTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsDurableResultEvidence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobStatus_NonexistentJob_ReturnsNotFoundOrServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.JobStatus_GeoprocessingJob_ReturnsOk",
@@ -7062,6 +7063,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.UnionProcess_CompletesAndReturnsAggregatePolygon",
         "Honua.Server.Tests.Features.Geoprocessing.GeoprocessingJobRowAndFieldSecurityTests.LayerSourcedJob_ForRlsAndFieldMaskRestrictedSubmitter_ArtifactIsRowFilteredAndMasked",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.JobResults_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesCiteEchoFixtureTests.CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDurableRuntimeTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsDurableResultEvidence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobResults_NonexistentJob_ReturnsNotFoundOrServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesFailedJobResultsTests.JobResults_FailedJob_Returns500WithRegisteredOgcExceptionType",
@@ -7101,6 +7103,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.CiteEchoFixture_DefaultProfile_IsNotDiscoverable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesImageryInferenceProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesRasterSurfaceProcesses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess",
@@ -7119,6 +7122,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+"Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesCiteEchoFixtureTests.CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.CiteEchoFixture_DefaultProfile_IsNotDiscoverable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_CatalogJobExamples_AreProjectedDirectly",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_FirstSliceVectorProcess_ReturnsConcreteInputsAndOutputs",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_ImageryClassify_AdvertisesDelegatedInferenceDescriptors",
@@ -17393,6 +17398,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.GeoprocessingJobRowAndFieldSecurityTests.LayerSourcedJob_PinsSubmitterSecurityContextOnDurableRecord",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.Execute_WithMalformedJsonWithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.Execute_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesCiteEchoFixtureTests.CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDurableRuntimeTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsDurableResultEvidence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_AsyncJobCreated_EmitsPreferenceAppliedHeader",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_CyclicDependsOn_Returns400",
