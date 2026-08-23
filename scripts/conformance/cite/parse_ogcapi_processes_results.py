@@ -16,6 +16,7 @@ from pathlib import Path
 
 ETS_COMMIT = "75abd1f37fc3aad95163fdce2e33e393b1ba5a88"
 ETS_VERSION = "1.4-SNAPSHOT"
+FIXTURE_REVISION = "ogcapi-processes-cite-profile-v2"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -224,7 +225,7 @@ def parse_results(
                     "sourceSha": source_sha,
                     "producerSourceSha": producer_source_sha,
                     "imageDigest": image_digest,
-                    "fixtureRevision": "ogcapi-processes-cite-profile-v1",
+                    "fixtureRevision": FIXTURE_REVISION,
                     "configRevision": config_digest,
                     "authPolicyRevision": "test-bypass-v1",
                     "etsSourceSha": ETS_COMMIT,
@@ -289,7 +290,7 @@ def parse_results(
             "imageDigest": image_digest,
         },
         "fixture": {
-            "revision": "ogcapi-processes-cite-profile-v1",
+            "revision": FIXTURE_REVISION,
             "configDigest": config_digest,
             "configFile": config_path.name,
         },

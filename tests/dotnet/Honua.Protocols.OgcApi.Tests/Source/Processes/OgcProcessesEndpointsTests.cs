@@ -403,6 +403,25 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task CiteEchoFixture_DefaultProfile_IsNotDiscoverable()
+    {
+        using var listResponse = await _fixture.Client.GetAsync("/ogc/processes/processes");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var list = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        list.RootElement.GetProperty("processes").EnumerateArray()
+            .Select(process => process.GetProperty("id").GetString())
+            .Should().NotContain("honua-cite-echo");
+
+        using var descriptionResponse = await _fixture.Client.GetAsync(
+            "/ogc/processes/processes/honua-cite-echo");
+        descriptionResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess()
