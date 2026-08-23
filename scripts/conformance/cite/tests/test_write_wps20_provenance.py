@@ -151,14 +151,14 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             self.assertEqual(payload["checkedOutHonuaGitSha"], "e" * 40)
             self.assertEqual(payload["serverImageRevision"], "a" * 40)
 
-    def test_required_provenance_rejects_local_existing_image(self) -> None:
+    def test_required_provenance_rejects_unlabelled_local_existing_image(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             image_id = "sha256:" + ("b" * 64)
             inspect_path = root / "inspect.json"
             inspect_path.write_text(json.dumps([{"Id": image_id}]), encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "untracked local-existing image"):
+            with self.assertRaisesRegex(ValueError, "revision label does not match"):
                 write_provenance(
                     "a" * 40,
                     "a" * 40,
@@ -170,6 +170,34 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
                     root / "out.json",
                     True,
                 )
+
+    def test_required_provenance_accepts_revision_bound_local_existing_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_id = "sha256:" + ("b" * 64)
+            inspect_path = root / "inspect.json"
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
+            output_path = root / "out.json"
+
+            write_provenance(
+                "a" * 40,
+                "a" * 40,
+                "d" * 64,
+                image_id,
+                "local-existing",
+                "",
+                inspect_path,
+                output_path,
+                True,
+            )
+
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["testedHonuaGitSha"], "a" * 40)
+            self.assertEqual(payload["serverImageRevision"], "a" * 40)
+            self.assertEqual(payload["serverBuildMode"], "local-existing")
 
     def test_required_provenance_rejects_mismatched_image_revision(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

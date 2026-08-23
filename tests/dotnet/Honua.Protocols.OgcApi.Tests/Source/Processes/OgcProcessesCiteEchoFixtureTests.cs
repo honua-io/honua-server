@@ -105,10 +105,15 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
                 {
                   "response": "document",
                   "inputs": {
-                    "literal": "teststring",
-                    "binary": "dGVzdA=="
+                    "literal": "true",
+                    "binary": "dGVzdA==",
+                    "mixed": "null"
                   },
-                  "outputs": { "binary": { "transmissionMode": "value" } }
+                  "outputs": {
+                    "literal": { "transmissionMode": "value" },
+                    "binary": { "transmissionMode": "value" },
+                    "mixed": { "transmissionMode": "value" }
+                  }
                 }
                 """);
             inlineBinarySubmit.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -121,8 +126,12 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             inlineBinaryResultsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             using var inlineBinaryResults = JsonDocument.Parse(
                 await inlineBinaryResultsResponse.Content.ReadAsStringAsync());
+            inlineBinaryResults.RootElement.GetProperty("literal").GetString()
+                .Should().Be("true");
             inlineBinaryResults.RootElement.GetProperty("binary").GetString()
                 .Should().Be("dGVzdA==");
+            inlineBinaryResults.RootElement.GetProperty("mixed").GetString()
+                .Should().Be("null");
 
             using var submit = await PostExecutionAsync(client, """
                 {
@@ -208,6 +217,28 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             await fixture.DisposeAsync();
             await DeleteControlPlaneKeysAsync(redis.ConnectionString);
         }
+    }
+
+    [Theory]
+    [InlineData("{\"literal\":1}", "literal")]
+    [InlineData("{\"literal\":\"ok\",\"object\":\"text\"}", "object")]
+    [InlineData("{\"literal\":\"ok\",\"mixed\":42}", "mixed")]
+    [InlineData("{\"literal\":\"ok\",\"array\":\"not-an-array\"}", "array")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,\"bad\"]}}", "bbox")]
+    [InlineData("{\"literal\":\"ok\",\"pause\":11}", "pause")]
+    [InlineData("{\"literal\":\"ok\",\"unknown\":true}", "unknown")]
+    [InlineData("{}", "literal")]
+    public void InputValidation_RejectsValuesOutsidePublishedSchemas(
+        string json,
+        string expectedInput)
+    {
+        using var document = JsonDocument.Parse(json);
+        var inputs = document.RootElement.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.Clone());
+
+        OgcProcessesCiteEchoFixture.TryValidateInputs(inputs, out var error)
+            .Should().BeFalse();
+        error.Should().Contain(expectedInput);
     }
 
     private static WebAppFixture CreateFixture(string redisConnectionString)

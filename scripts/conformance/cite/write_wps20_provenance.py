@@ -42,8 +42,6 @@ def write_provenance(
         raise ValueError("Honua Server container ID must be a full Docker identifier")
     if not IMAGE_ID.fullmatch(server_image_id):
         raise ValueError("Honua Server image ID must be an immutable sha256 identifier")
-    if require_tested_git_sha and server_build_mode == "local-existing":
-        raise ValueError("CI provenance cannot use an untracked local-existing image")
     if server_build_mode == "prebuilt" and not requested_server_image:
         raise ValueError("A requested image reference is required for a prebuilt image")
 

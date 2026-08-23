@@ -344,7 +344,7 @@ internal static class ProcessEndpoints
 
             if (definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
-                && !OgcProcessesCiteEchoFixture.TryValidateBinaryInput(request.Inputs, out var inputError))
+                && !OgcProcessesCiteEchoFixture.TryValidateInputs(request.Inputs, out var inputError))
             {
                 OgcProcessesLog.PlanStructureInvalid(
                     logger,
@@ -648,6 +648,12 @@ internal static class ProcessEndpoints
             {
                 error = $"Input '{input.Key}' must not be null.";
                 return false;
+            }
+
+            if (OgcProcessesCiteEchoFixture.IsDefinition(processDefinition))
+            {
+                inputs[input.Key] = input.Value.GetRawText();
+                continue;
             }
 
             var parameter = processDefinition.Parameters.FirstOrDefault(candidate =>

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -213,6 +215,32 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)
+
+    def test_local_existing_runner_requires_explicit_candidate_sha(self) -> None:
+        repo = Path(__file__).resolve().parents[4]
+        runner = repo / "scripts/conformance/cite/run-cite-ogcapi-processes-tests.sh"
+        environment = os.environ.copy()
+        environment.update({
+            "GITHUB_ACTIONS": "false",
+            "HONUA_CITE_SKIP_BUILD": "true",
+            "HONUA_CITE_SERVER_BUILD_MODE": "local-existing",
+            "HONUA_CITE_TESTED_GIT_SHA": "",
+        })
+
+        completed = subprocess.run(
+            ["/bin/bash", str(runner), "--skip-build"],
+            cwd=repo,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(2, completed.returncode)
+        self.assertIn(
+            "Local-existing CITE images require HONUA_CITE_TESTED_GIT_SHA as a full SHA",
+            completed.stderr,
+        )
 
 
 if __name__ == "__main__":
