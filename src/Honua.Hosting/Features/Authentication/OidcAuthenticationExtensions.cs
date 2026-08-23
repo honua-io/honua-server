@@ -642,7 +642,12 @@ public static class OidcAuthenticationExtensions
                     {
                         foreach (var candidate in validatedPrincipal.Identities.OfType<ClaimsIdentity>())
                         {
-                            foreach (var claim in candidate.FindAll("honua_interactive_provenance").ToArray())
+                            foreach (var claim in candidate.Claims
+                                         .Where(static claim => string.Equals(
+                                             claim.Type,
+                                             "honua_interactive_provenance",
+                                             StringComparison.OrdinalIgnoreCase))
+                                         .ToArray())
                             {
                                 candidate.RemoveClaim(claim);
                             }
