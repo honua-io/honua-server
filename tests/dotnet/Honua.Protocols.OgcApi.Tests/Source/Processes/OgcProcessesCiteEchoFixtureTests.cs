@@ -65,12 +65,16 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             binaryAlternatives.GetArrayLength().Should().Be(3);
             binaryAlternatives[0].GetProperty("format").GetString().Should().Be("byte");
             binaryAlternatives[1].GetProperty("required")[0].GetString().Should().Be("value");
+            binaryAlternatives[1].GetProperty("not").GetProperty("required")[0]
+                .GetString().Should().Be("href");
             binaryAlternatives[1].GetProperty("properties").GetProperty("value")
                 .GetProperty("type").GetString().Should().Be("string");
             binaryAlternatives[1].GetProperty("properties").GetProperty("value")
                 .TryGetProperty("contentEncoding", out _).Should().BeFalse(
                     "the pinned ETS generates an ordinary string for inline descriptor values");
             binaryAlternatives[2].GetProperty("required")[0].GetString().Should().Be("href");
+            binaryAlternatives[2].GetProperty("not").GetProperty("required")[0]
+                .GetString().Should().Be("value");
             binaryAlternatives[2].GetProperty("properties").GetProperty("href")
                 .GetProperty("pattern").GetString()
                 .Should().Be(OgcProcessesCiteEchoFixture.HttpUrlPattern);
@@ -273,6 +277,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,\"bad\"]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"pause\":11}", "pause")]
     [InlineData("{\"literal\":\"ok\",\"binary\":{\"href\":\"ftp://example.test/file.tif\"}}", "binary")]
+    [InlineData("{\"literal\":\"ok\",\"binary\":{\"value\":\"test\",\"href\":\"https://example.test/file.tif\"}}", "binary")]
     [InlineData("{\"literal\":\"ok\",\"unknown\":true}", "unknown")]
     [InlineData("{}", "literal")]
     public void InputValidation_RejectsValuesOutsidePublishedSchemas(

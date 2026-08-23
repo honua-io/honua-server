@@ -7029,6 +7029,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesImageryInferenceProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesRasterSurfaceProcesses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithInvalidOffset_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithLimit_CanWalkEveryPublishedProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithLimit_ReturnsAtMostRequestedCount",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithNonPositiveLimit_Returns400"
       ],
@@ -17287,6 +17289,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_CyclicDependsOn_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DestructivePlanWhenApprovalRequired_Returns403",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DuplicateStepIds_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceProcessWithReferenceOutputSelection_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceProcessWithValueOutputSelection_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_InvalidProcess_Returns404",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_MissingPlanInput_Returns400",

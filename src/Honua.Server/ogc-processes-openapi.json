@@ -706,6 +706,9 @@
           "allOf": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
+          },
+          "not": {
+            "$ref": "#/components/schemas/ProcessIoSchema"
           }
         }
       },

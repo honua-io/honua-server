@@ -532,7 +532,7 @@ internal static class OgcProcessesCiteEchoFixture
         {
             OneOf = ImmutableArray.Create(
                 EncodedBinarySchema(),
-                BinaryDescriptorSchema("value", StringSchema()),
+                BinaryDescriptorSchema("value", StringSchema(), "href"),
                 BinaryDescriptorSchema(
                     "href",
                     new OgcProcessIoSchema
@@ -540,7 +540,8 @@ internal static class OgcProcessesCiteEchoFixture
                         Type = "string",
                         Format = "uri",
                         Pattern = HttpUrlPattern
-                    }))
+                    },
+                    "value"))
         };
 
     private static OgcProcessIoSchema EncodedBinarySchema()
@@ -554,7 +555,8 @@ internal static class OgcProcessesCiteEchoFixture
 
     private static OgcProcessIoSchema BinaryDescriptorSchema(
         string valueProperty,
-        OgcProcessIoSchema valueSchema)
+        OgcProcessIoSchema valueSchema,
+        string excludedProperty)
         => new()
         {
             Type = "object",
@@ -571,7 +573,11 @@ internal static class OgcProcessesCiteEchoFixture
                     }
                 }
             },
-            Required = ImmutableArray.Create(valueProperty)
+            Required = ImmutableArray.Create(valueProperty),
+            Not = new OgcProcessIoSchema
+            {
+                Required = ImmutableArray.Create(excludedProperty)
+            }
         };
 
     private static OgcProcessIoSchema MixedSchema()
