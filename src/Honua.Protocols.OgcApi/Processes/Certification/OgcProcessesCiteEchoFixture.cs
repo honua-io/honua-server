@@ -496,6 +496,9 @@ internal static class OgcProcessesCiteEchoFixture
 
     private static OgcProcessIoSchema StringSchema() => new() { Type = "string" };
 
+    private static OgcProcessIoSchema StringEnumSchema(string value)
+        => new() { Type = "string", Enum = ImmutableArray.Create(value) };
+
     private static OgcProcessIoSchema ObjectSchema()
         => new()
         {
@@ -540,8 +543,8 @@ internal static class OgcProcessesCiteEchoFixture
                     Type = "object",
                     Properties = new Dictionary<string, OgcProcessIoSchema>(StringComparer.Ordinal)
                     {
-                        ["mediaType"] = StringSchema(),
-                        ["encoding"] = StringSchema()
+                        ["mediaType"] = StringEnumSchema("image/tiff"),
+                        ["encoding"] = StringEnumSchema("base64")
                     }
                 }
             },

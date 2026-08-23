@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -48,23 +49,52 @@ def _complete_testng(
     failed: int,
     skipped: int,
     class_name: str = LANDING_PAGE_CLASS,
+    omitted_methods: frozenset[tuple[str, str]] = frozenset(),
 ) -> str:
+    supplied_primary_methods = set(re.findall(r'name="([^"]+)"', methods))
+    generated_primary_methods = [
+        method_name
+        for mapped_class, method_name in parser.METHOD_SCENARIO_FACETS
+        if mapped_class == class_name
+        and method_name not in supplied_primary_methods
+        and (mapped_class, method_name) not in omitted_methods
+    ]
+    methods += "\n" + "\n".join(
+        f'<test-method status="PASS" name="{method_name}" />'
+        for method_name in sorted(generated_primary_methods)
+    )
+
     other_classes = sorted(parser.MANDATORY_VERDICT_CLASSES - {class_name})
+    generated_other_methods = {
+        mapped_class: sorted(
+            method_name
+            for candidate_class, method_name in parser.METHOD_SCENARIO_FACETS
+            if candidate_class == mapped_class
+            and (candidate_class, method_name) not in omitted_methods
+        )
+        for mapped_class in other_classes
+    }
     extra_classes = "\n".join(
-        f'<class name="{class_name}">'
-        f'<test-method status="PASS" name="{parser.REPRESENTATIVE_METHODS[class_name]}" />'
-        "</class>"
-        for class_name in other_classes
+        f'<class name="{mapped_class}">'
+        + "".join(
+            f'<test-method status="PASS" name="{method_name}" />'
+            for method_name in generated_other_methods[mapped_class]
+        )
+        + "</class>"
+        for mapped_class in other_classes
     )
     extra_classes += (
         f'<class name="{parser.SUITE_PRECONDITIONS_CLASS}">'
         '<test-method status="PASS" name="verifyTestSubject" is-config="true" />'
         "</class>"
     )
+    generated_count = len(generated_primary_methods) + sum(
+        len(class_methods) for class_methods in generated_other_methods.values()
+    )
     return _testng(
         methods,
-        total=total + len(other_classes),
-        passed=passed + len(other_classes),
+        total=total + generated_count,
+        passed=passed + generated_count,
         failed=failed,
         skipped=skipped,
         extra_classes=extra_classes,
@@ -121,11 +151,10 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
 
         self.assertEqual(0, exit_code)
         self.assertEqual("diagnostic-red", payload["status"])
-        mandatory_extras = len(parser.MANDATORY_VERDICT_CLASSES) - 1
         self.assertEqual(
             {
-                "total": 2 + mandatory_extras,
-                "passed": 1 + mandatory_extras,
+                "total": len(parser.METHOD_SCENARIO_FACETS),
+                "passed": len(parser.METHOD_SCENARIO_FACETS) - 1,
                 "failed": 1,
                 "skipped": 0,
                 "canttell": 0,
@@ -160,6 +189,28 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
             "omitted mandatory classes",
             " ".join(payload["infrastructureErrors"]),
         )
+
+    def test_missing_pinned_method_fails_closed(self) -> None:
+        omitted_method = (LANDING_PAGE_CLASS, "testLandingPageValidation")
+        methods = '<test-method status="PASS" name="testLandingPageRetrieval" />'
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._files(
+                Path(directory),
+                _complete_testng(
+                    methods,
+                    total=1,
+                    passed=1,
+                    failed=0,
+                    skipped=0,
+                    omitted_methods=frozenset({omitted_method}),
+                ),
+            )
+            payload, exit_code = self._parse(paths)
+
+        self.assertEqual(2, exit_code)
+        errors = " ".join(payload["infrastructureErrors"])
+        self.assertIn("omitted pinned verdict methods", errors)
+        self.assertIn("LandingPage#testLandingPageValidation", errors)
 
     def test_all_skip_run_is_incomplete(self) -> None:
         methods = '<test-method status="SKIP" name="testLandingPageRetrieval" />'
@@ -306,7 +357,7 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn('ExecutionAdmission__MaxSubmissionsPerWindow: "100"', compose)
         self.assertIn('ExecutionAdmission__MaxCostWeightPerPartition: "100"', compose)
         self.assertEqual(
-            "ogcapi-processes-cite-profile-v7",
+            "ogcapi-processes-cite-profile-v8",
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)

@@ -113,7 +113,7 @@ internal static class ProcessEndpoints
     private static IResult GetProcessList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IProcessCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog)
     {
         EnrichActivity("GetProcessList");
         OgcProcessesLog.ProcessListRequested(logger);
@@ -190,7 +190,7 @@ internal static class ProcessEndpoints
         string processId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IProcessCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog)
     {
         EnrichActivity("GetProcess");
         OgcProcessesLog.ProcessDescriptionRequested(logger, processId);
@@ -235,7 +235,7 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IGeoprocessingJobService jobService,
-        IProcessCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -380,10 +380,11 @@ internal static class ProcessEndpoints
             }
 
             var jobRecord = await jobService
-                .SubmitJobAsync(
+                .SubmitProtocolJobAsync(
                     analysisPlan!,
                     idempotencyKey: null,
                     context.User,
+                    processCatalog,
                     metadata,
                     context.RequestAborted)
                 .ConfigureAwait(false);
