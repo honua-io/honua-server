@@ -253,4 +253,27 @@ public sealed class StudioAiChatRequestMapperTests
         request.Should().BeNull();
         error.Should().NotBeNullOrWhiteSpace();
     }
+
+    [UnitTest]
+    public void ToDomain_TooManyTools_IsRejectedBeforeMappingDefinitions()
+    {
+        var tools = new List<StudioAiChatHttpTool>();
+        for (var i = 0; i < 129; i++)
+        {
+            tools.Add(new StudioAiChatHttpTool
+            {
+                Name = $"tool-{i}",
+                InputSchema = JsonDocument.Parse("{}").RootElement
+            });
+        }
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(new StudioAiChatHttpRequest
+        {
+            Messages = [new StudioAiChatHttpMessage { Role = "user", Content = "hi" }],
+            Tools = tools
+        });
+
+        request.Should().BeNull();
+        error.Should().Be("A maximum of 128 tools is allowed per request.");
+    }
 }
