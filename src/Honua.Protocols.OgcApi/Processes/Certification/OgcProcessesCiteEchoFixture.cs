@@ -138,6 +138,22 @@ internal static class OgcProcessesCiteEchoFixture
                     return false;
                 }
 
+                var unsupportedProperties = requestedOutput.Value
+                    .EnumerateObject()
+                    .Where(property => !string.Equals(
+                        property.Name,
+                        "transmissionMode",
+                        StringComparison.Ordinal))
+                    .Select(property => property.Name)
+                    .OrderBy(property => property, StringComparer.Ordinal)
+                    .ToArray();
+                if (unsupportedProperties.Length > 0)
+                {
+                    error = $"CITE echo output '{requestedOutput.Key}' contains unsupported " +
+                            $"field(s): {string.Join(", ", unsupportedProperties)}.";
+                    return false;
+                }
+
                 if (requestedOutput.Value.TryGetProperty("transmissionMode", out var transmissionMode)
                     && (transmissionMode.ValueKind != JsonValueKind.String
                         || !string.Equals(
@@ -362,11 +378,12 @@ internal static class OgcProcessesCiteEchoFixture
             return false;
         }
 
-        if (input.TryGetProperty("bbox", out var bbox)
-            && (bbox.ValueKind != JsonValueKind.Array
-                || bbox.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.Number)))
+        if (!input.TryGetProperty("bbox", out var bbox)
+            || bbox.ValueKind != JsonValueKind.Array
+            || bbox.GetArrayLength() is not (4 or 6)
+            || bbox.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.Number))
         {
-            error = "CITE echo input 'bbox.bbox' must be an array of numbers.";
+            error = "CITE echo input 'bbox.bbox' must be an array of 4 or 6 numbers.";
             return false;
         }
 

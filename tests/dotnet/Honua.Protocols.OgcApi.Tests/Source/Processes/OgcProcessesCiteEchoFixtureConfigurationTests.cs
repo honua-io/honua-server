@@ -114,6 +114,29 @@ public sealed class OgcProcessesCiteEchoFixtureConfigurationTests
     }
 
     [UnitTest]
+    public void TryAddOutputBindings_RejectsUndeclaredSelectionFields()
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        var inputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["literal"] = JsonSerializer.SerializeToElement("teststring")
+        };
+        var requestedOutputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["literal"] = JsonSerializer.SerializeToElement(new { unexpected = true })
+        };
+
+        OgcProcessesCiteEchoFixture.TryAddOutputBindings(
+                metadata,
+                inputs,
+                requestedOutputs,
+                out var error)
+            .Should().BeFalse();
+        error.Should().Contain("unexpected");
+        metadata.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public void TryAddOutputBindings_SelectsOnlyOutputsBackedBySubmittedInputs()
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);

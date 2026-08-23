@@ -260,6 +260,9 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [InlineData("{\"literal\":\"ok\",\"object\":\"text\"}", "object")]
     [InlineData("{\"literal\":\"ok\",\"mixed\":42}", "mixed")]
     [InlineData("{\"literal\":\"ok\",\"array\":[\"ok\",1]}", "array")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{}}", "bbox")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[]}}", "bbox")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,2,3,4,5]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,\"bad\"]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"pause\":11}", "pause")]
     [InlineData("{\"literal\":\"ok\",\"binary\":{\"href\":\"ftp://example.test/file.tif\"}}", "binary")]
@@ -276,6 +279,19 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
         OgcProcessesCiteEchoFixture.TryValidateInputs(inputs, out var error)
             .Should().BeFalse();
         error.Should().Contain(expectedInput);
+    }
+
+    [Theory]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,2,3,4]}}")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,2,3,4,5,6]}}")]
+    public void InputValidation_AcceptsFourAndSixCoordinateBoundingBoxes(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var inputs = document.RootElement.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.Clone());
+
+        OgcProcessesCiteEchoFixture.TryValidateInputs(inputs, out var error)
+            .Should().BeTrue(error);
     }
 
     private static WebAppFixture CreateFixture(string redisConnectionString)
