@@ -112,10 +112,18 @@ the returned endpoint, not catalog storage. For example, a scene whose canonical
 `servingFormat` is `3d-tiles` may also resolve to an `i3s` compatibility
 projection; that projection does not register I3S as another canonical store.
 
-The existing enum/database/JSON values require a lossless compatibility mapping
-and migration. [#3409](https://github.com/honua-io/honua-server/issues/3409)
-owns that implementation. Unknown future values must fail or remain opaque; they
-must not silently fall back to `3DObject` in a public contract.
+The existing enum/database/JSON values require a compatibility migration without
+record loss, but their semantic axis cannot always be backfilled losslessly.
+`HostedTiles` identifies the serving representation for existing mesh, CityGML,
+and point-cloud publications, and configuration-defined scenes may carry no
+semantic provenance at all. [#3409](https://github.com/honua-io/honua-server/issues/3409)
+therefore maps `servingFormat` independently and assigns `contentKind` only when
+durable publish provenance or validated asset metadata proves it. Otherwise the
+record remains explicitly unclassified/opaque until an operator reclassifies it;
+it stays discoverable through its canonical 3D-Tiles representation but is not
+eligible for a semantic projection such as I3S. Migration must never guess
+`HostedTiles` to mean `3d-object`. Unknown future values likewise fail or remain
+opaque rather than silently falling back to `3DObject` in a public contract.
 
 ### 4. Canonical discovery and runtime resolution contracts
 
@@ -175,10 +183,16 @@ structured request-credential transports. Each transport states its kind
 (`header` or `query`), parameter name, and token value template. The canonical
 header option is `X-Honua-Token`; the `token` query option remains available for
 browser/WebView renderers that cannot attach headers to nested 3D-Tiles fetches.
-Hosts prefer the header when supported. Template substitution happens only
-inside the non-serializable host session: a query-token URL is never placed in a
-plan, fixture, receipt, log, or collaboration record, and retains the protected
-asset route's private/no-store cache treatment.
+The response also binds each transport to server-authoritative asset scopes,
+expressed as an exact scheme, host, effective port, and canonical path-prefix
+boundary. Hosts prefer the header when supported and attach either credential
+only after canonicalizing the target URL and matching one of those scopes. They
+strip the credential before following a redirect and re-evaluate the redirect
+target; user-info URLs, foreign origins, sibling path prefixes, and other
+out-of-scope nested resources receive no Honua credential. Template substitution
+happens only inside the non-serializable host session: a query-token URL is never
+placed in a plan, fixture, receipt, log, or collaboration record, and retains the
+protected asset route's private/no-store cache treatment.
 
 [#3433](https://github.com/honua-io/honua-server/issues/3433) owns the versioned
 response fixture and transport drift tests.
@@ -190,8 +204,9 @@ For a protected scene, the host:
    its configured identity to acquire a short-lived asset session or access
    envelope rather than synthesizing a server route or assuming GET semantics;
 3. selects a returned credential transport that its renderer supports and
-   applies its request template to the root and nested asset requests without
-   mutating the serializable plan; and
+   applies its request template only to root and nested asset requests inside the
+   returned origin/path scopes, without mutating the serializable plan or leaking
+   the credential to an absolute/cross-origin URI or redirect; and
 4. refreshes or disposes the session independently of plan lifetime.
 
 Language SDKs may expose this as an opaque handle, callback, interceptor, or
@@ -303,6 +318,18 @@ inactive identity, removed role, absent/stale context, or failed revalidation
 fails closed rather than falling back to a service-wide catalog read. A later
 grant may never widen the already-pinned view for the existing job.
 
+Admission also derives and pins an explicit output audience/access policy and
+includes it in the request fingerprint. That policy must be provably no broader
+than the principals whose canonical row predicate and field mask are equivalent
+to the materialized view. It must never mechanically copy a source layer's
+coarse `AccessPolicy`: an administrator's unmasked snapshot of an otherwise
+public layer cannot become a public scene. If the scene policy model cannot
+represent a safe audience, submission fails closed (or uses a representable
+submitter-only private audience); it never widens the output. The catalog
+candidate and protected asset session bind the pinned policy, normal scene reads
+revalidate it, and later grants do not expand the audience of an existing static
+scene.
+
 The current synchronous `201` generation endpoint is transitional. An optional
 bounded wait mode may preserve compatibility for small inputs, but it is not the
 canonical contract and must converge on the same job/result record. Scene jobs
@@ -344,6 +371,17 @@ reference before consumption and holds/renews its retention through every parent
 retry; it cannot expire before parent terminalization plus the configured retry
 or diagnostic window. Parent terminal cleanup releases both input and translated
 artifact leases idempotently.
+
+Parent cancellation/abandonment is a durable child-operation signal, not only a
+one-time parent cleanup pass. It propagates cooperative cancellation to the
+recorded child and identifies the expected parent operation generation/fencing
+token. Child result publication conditionally verifies that the parent is still
+active at that generation before binding or retaining an LAS artifact. A late or
+racing result after parent terminalization is rejected/quarantined and reclaimed
+by an independently retrying child-output reconciler or bounded provider expiry;
+it cannot create or renew an unbound retained object. Parent cleanup remains
+idempotent until the child acknowledges cancellation or any fenced late output
+has been reclaimed.
 
 The promoted asset tree and active catalog registration are required members of
 one job-wide, attempt-fenced output-set manifest governed by ADR-0031 and
