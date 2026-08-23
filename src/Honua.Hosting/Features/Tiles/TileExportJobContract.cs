@@ -93,7 +93,7 @@ internal static class TileExportArtifactIdentity
         {
             writer.Write(TileExportExecutionSpecBuilder.ContractVersion);
             writer.Write((int)plan.SourceKind);
-            WriteString(writer, plan.ResourceId);
+            WriteString(writer, TileExportSourceResourceId.Resolve(plan));
             TileExportSourceDescriptorCodec.Write(writer, plan.Source);
             writer.Write(plan.ZoomLevels.Length);
             foreach (var level in plan.ZoomLevels)
@@ -126,6 +126,51 @@ internal static class TileExportArtifactIdentity
         var bytes = Encoding.UTF8.GetBytes(value);
         writer.Write(bytes.Length);
         writer.Write(bytes);
+    }
+}
+
+/// <summary>
+/// Resolves the backend resource that owns admission and byte identity. Raster lifecycle scopes
+/// may be more specific than the backing layer (for example, publication plus layer), while the
+/// descriptor's layer remains the source that consumes capacity and determines package bytes.
+/// </summary>
+internal static class TileExportSourceResourceId
+{
+    internal static string Resolve(TileExportJobPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.SourceKind == TileExportSourceKind.Raster
+            && plan.Source is TileExportRasterSourceDescriptor raster
+                ? raster.LayerId
+                : plan.ResourceId;
+    }
+}
+
+/// <summary>
+/// Fingerprints an idempotent submission. Artifact identity intentionally permits safe package
+/// reuse across aliases of the same raster source, but a keyed request must also retain its more
+/// specific lifecycle binding so another publication cannot replay and adopt the job.
+/// </summary>
+internal static class TileExportRequestIdentity
+{
+    internal static string Compute(TileExportJobPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        var artifactIdentity = TileExportArtifactIdentity.Compute(plan);
+        if (string.Equals(plan.ResourceId, TileExportSourceResourceId.Resolve(plan), StringComparison.Ordinal))
+        {
+            return artifactIdentity;
+        }
+
+        using var canonical = new MemoryStream(capacity: 160);
+        using (var writer = new BinaryWriter(canonical, Encoding.UTF8, leaveOpen: true))
+        {
+            TileExportArtifactIdentity.WriteString(writer, artifactIdentity);
+            TileExportArtifactIdentity.WriteString(writer, plan.ResourceId);
+        }
+
+        return Convert.ToHexStringLower(
+            SHA256.HashData(canonical.GetBuffer().AsSpan(0, checked((int)canonical.Length))));
     }
 }
 

@@ -1285,9 +1285,20 @@ internal sealed class ImageServerExportTilesHandler
         => new(TileExportSourceKind.Raster, BuildJobResourceId(layerId, publicationId));
 
     private static string BuildJobResourceId(int layerId, string? publicationId)
-        => publicationId is null
-            ? layerId.ToString(CultureInfo.InvariantCulture)
-            : string.Concat("publication:", publicationId);
+    {
+        if (publicationId is null)
+        {
+            return layerId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var publicationHash = Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(publicationId)));
+        return string.Concat(
+            "publication:",
+            publicationHash,
+            ":layer:",
+            layerId.ToString(CultureInfo.InvariantCulture));
+    }
 
     private static IReadOnlyList<ImageServerExportTilesJobMessage> BuildJobMessages(
         Honua.Core.Features.ControlPlane.Domain.ExecutionJobRecord job)
