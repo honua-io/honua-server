@@ -8,6 +8,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -1384,9 +1386,11 @@ public class ImageServerExportHandlerTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
 
         var context = new DefaultHttpContext();
         context.RequestServices = services.BuildServiceProvider();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([], "test"));
         context.Request.Path = "/rest/services/1/ImageServer/exportImage";
         context.Response.Body = new MemoryStream();
         return context;
