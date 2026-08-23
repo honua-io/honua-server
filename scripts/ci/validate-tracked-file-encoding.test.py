@@ -121,6 +121,70 @@ def test_text_file_containing_only_a_bad_byte_is_still_checked(stack) -> None:
     assert_that(len(found) == 1, f"a one-byte text file must still be checked: {found}")
 
 
+def test_utf16_text_is_caught_even_though_git_calls_it_binary(stack) -> None:
+    root = new_repo(stack)
+    # Saving a document as UTF-16 is exactly the accident this gate exists to
+    # catch, but UTF-16 is NUL-dense, so git's content detection classifies it
+    # binary and it used to slip through entirely (review finding on PR #3441).
+    track(root, "docs/utf16le.md", "an em dash \u2014 here\n".encode("utf-16"))
+    track(root, "docs/utf16be.md", b"\xfe\xff" + "hello\n".encode("utf-16-be"))
+    track(root, "docs/utf32le.md", b"\xff\xfe\x00\x00" + "hello\n".encode("utf-32-le")[4:])
+    found = failures(root)
+    assert_that(len(found) == 3, f"every BOM-announced encoding must be caught, got {found}")
+    named = " ".join(found)
+    for expected in ("UTF-16LE", "UTF-16BE", "UTF-32LE"):
+        assert_that(expected in named, f"finding must name {expected}: {named}")
+    assert_that("byte-order mark" in found[0], found[0])
+
+
+def test_a_declared_binary_is_still_not_second_guessed(stack) -> None:
+    root = new_repo(stack)
+    # The BOM screen must not reach blobs a human declared binary: that
+    # declaration is the escape hatch keeping new fixture types from having to
+    # teach this check, and some real formats legitimately start with 0xFFFE.
+    track(root, ".gitattributes", b"* text=auto eol=lf\n*.fixture binary\n")
+    track(root, "fixtures/sample.fixture", b"\xff\xfe\x00\x01\x02 payload")
+    assert_that(failures(root) == [], "a declared-binary blob must not be screened for a BOM")
+
+
+def test_a_real_binary_without_a_bom_is_still_skipped(stack) -> None:
+    root = new_repo(stack)
+    # Auto-detected binary with no BOM stays exempt, so the screen does not
+    # turn every NUL-bearing fixture into a finding.
+    track(root, "fixtures/blob.bin", b"\x00\x01\x02\x97\xff not unicode")
+    assert_that(failures(root) == [], "auto-detected binary without a BOM must stay exempt")
+
+
+def test_a_submodule_gitlink_does_not_break_the_gate(stack) -> None:
+    root = new_repo(stack)
+    track(root, "docs/fine.md", "fine \u2014 fine\n".encode())
+    git(root, "commit", "-qm", "base")
+
+    # A gitlink (mode 160000) names a commit, not a blob. Feeding it to
+    # `cat-file --batch` returns a `commit` header, which used to abort the whole
+    # run with exit 2 -- failing the required gate for every submodule addition
+    # (review finding on PR #3441).
+    inner = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+    git(inner, "init", "-q", "-b", "trunk")
+    git(inner, "config", "user.email", "test@example.invalid")
+    git(inner, "config", "user.name", "Test")
+    (inner / "readme.md").write_text("sub\n", encoding="utf-8")
+    git(inner, "add", "readme.md")
+    git(inner, "commit", "-qm", "sub")
+    sha = subprocess.run(("git", "rev-parse", "HEAD"), cwd=inner, capture_output=True, check=True).stdout.decode().strip()
+    subprocess.run(
+        ("git", "update-index", "--add", "--cacheinfo", f"160000,{sha},vendor/sub"),
+        cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+    modes = subprocess.run(("git", "ls-files", "-s"), cwd=root, capture_output=True, check=True).stdout.decode()
+    assert_that("160000" in modes, f"expected a gitlink in the index, got {modes!r}")
+    assert_that(failures(root) == [], "a gitlink must be skipped, not crash the run")
+
+    result = subprocess.run(("python3", str(SCRIPT)), cwd=root, capture_output=True, text=True, check=False)
+    assert_that(result.returncode == 0, f"a repo with a submodule must exit 0: {result.stderr}")
+
+
 def test_reads_the_index_not_the_working_tree(stack) -> None:
     root = new_repo(stack)
     track(root, "docs/bad.md", b"bad " + CP1252_EM_DASH)

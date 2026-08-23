@@ -61,46 +61,90 @@ def git(root: Path, *args: str) -> bytes:
     return result.stdout
 
 
-def is_binary(meta: str) -> bool:
-    """Classify one `git ls-files --eol` metadata field as binary."""
+def classify(meta: str) -> str:
+    """Classify one `git ls-files --eol` metadata field.
+
+    Returns "text", "declared-binary" (an explicit .gitattributes rule), or
+    "detected-binary" (git inferred it from content). The last two are not
+    interchangeable: a declaration is a human saying "this file has no text
+    payload", while detection is a heuristic that a NUL in the first 8000 bytes
+    triggers -- and UTF-16 text is full of NULs.
+    """
     fields = meta.split()
     if not fields:
         raise GitError(f"unparseable ls-files --eol metadata: {meta!r}")
-    if fields[0] == f"i/{BINARY_MARKER}":
-        return True
     _, marker, declared = meta.partition("attr/")
-    return bool(marker) and BINARY_MARKER in declared.split()
+    if marker and BINARY_MARKER in declared.split():
+        return "declared-binary"
+    if fields[0] == f"i/{BINARY_MARKER}":
+        return "detected-binary"
+    return "text"
 
 
-def text_paths(root: Path, pathspec: list[str]) -> list[str]:
-    """Tracked paths git classifies as text, in index order."""
+# UTF-16 and UTF-32 text is NUL-dense, so git's content detection calls it
+# binary and it would otherwise slip past the whole check -- a file saved as
+# UTF-16 is exactly the accident this gate exists to catch. A byte-order mark is
+# the unambiguous, cheap signal, and it cannot collide with a real binary fixture
+# that anyone has declared: only auto-detected blobs are inspected, so declaring
+# a format in .gitattributes remains the escape hatch.
+BOMS = {
+    b"\x00\x00\xfe\xff": "UTF-32BE",
+    b"\xff\xfe\x00\x00": "UTF-32LE",
+    b"\xfe\xff": "UTF-16BE",
+    b"\xff\xfe": "UTF-16LE",
+}
+
+
+def encoded_text_bom(payload: bytes) -> str | None:
+    """Name the non-UTF-8 Unicode encoding a blob announces, if it announces one."""
+    for bom, label in BOMS.items():
+        if payload.startswith(bom):
+            return label
+    return None
+
+
+def classified_paths(root: Path, pathspec: list[str]) -> dict[str, str]:
+    """Tracked path -> classification, in index order."""
     out = git(root, "ls-files", "--eol", "-z", "--", *pathspec)
-    paths: list[str] = []
+    classified: dict[str, str] = {}
     for record in out.split(b"\0"):
         if not record:
             continue
         meta, separator, raw_path = record.partition(b"\t")
         if not separator:
             raise GitError(f"unparseable ls-files --eol record: {record!r}")
-        if is_binary(meta.decode()):
-            continue
-        paths.append(raw_path.decode("utf-8", errors="surrogateescape"))
-    return paths
+        classified[raw_path.decode("utf-8", errors="surrogateescape")] = classify(meta.decode())
+    return classified
+
+
+def text_paths(root: Path, pathspec: list[str]) -> list[str]:
+    """Tracked paths git classifies as text, in index order."""
+    return [path for path, kind in classified_paths(root, pathspec).items() if kind == "text"]
+
+
+# Index modes that name a blob with a byte payload: regular file, executable,
+# and symlink (whose payload is its target path). Mode 160000 is a gitlink -- a
+# submodule's recorded commit -- which has no payload here. Feeding one to
+# `cat-file --batch` returns a `commit` header, and rejecting that as "not a
+# blob" would fail the required gate for every submodule a PR adds.
+BLOB_MODES = frozenset({"100644", "100755", "120000"})
 
 
 def staged_blobs(root: Path, pathspec: list[str]) -> dict[str, str]:
-    """Map tracked path -> index blob SHA."""
+    """Map tracked path -> index blob SHA, excluding entries that name no blob."""
     out = git(root, "ls-files", "-s", "-z", "--", *pathspec)
     blobs: dict[str, str] = {}
     for record in out.split(b"\0"):
         if not record:
             continue
-        meta, _, raw_path = record.partition(b"\t")
-        if not _:
+        meta, separator, raw_path = record.partition(b"\t")
+        if not separator:
             raise GitError(f"unparseable ls-files -s record: {record!r}")
         fields = meta.split()
         if len(fields) < 3:
             raise GitError(f"unparseable ls-files -s metadata: {meta!r}")
+        if fields[0].decode() not in BLOB_MODES:
+            continue
         blobs[raw_path.decode("utf-8", errors="surrogateescape")] = fields[1].decode()
     return blobs
 
@@ -165,15 +209,38 @@ def decode_failure(path: str, payload: bytes) -> str | None:
 
 
 def find_failures(root: Path, pathspec: list[str]) -> list[str]:
-    paths = text_paths(root, pathspec)
-    if not paths:
-        return []
+    classified = classified_paths(root, pathspec)
     blobs = staged_blobs(root, pathspec)
-    missing = [path for path in paths if path not in blobs]
-    if missing:
-        raise GitError(f"tracked path has no index entry: {missing[0]}")
-    payloads = read_blobs(root, [blobs[path] for path in paths])
-    failures = [failure for path, payload in zip(paths, payloads) if (failure := decode_failure(path, payload))]
+
+    # Text blobs must decode. Auto-detected binaries are additionally screened
+    # for a UTF-16/UTF-32 byte-order mark, because git's content detection calls
+    # that binary and it would otherwise leave a whole family of mis-encoded
+    # text outside the guarantee. Blobs a human declared binary in
+    # .gitattributes are not second-guessed -- that declaration is the escape
+    # hatch that keeps new binary fixture types from having to teach this check.
+    subjects = [
+        (path, kind)
+        for path, kind in classified.items()
+        if kind in ("text", "detected-binary") and path in blobs
+    ]
+    if not subjects:
+        return []
+    payloads = read_blobs(root, [blobs[path] for path, _ in subjects])
+
+    failures: list[str] = []
+    for (path, kind), payload in zip(subjects, payloads):
+        bom = encoded_text_bom(payload)
+        if bom is not None:
+            failures.append(
+                f"{path}: starts with a {bom} byte-order mark, so it is Unicode text in the wrong "
+                f"encoding. Re-save it as UTF-8; if it is genuinely binary, declare it in "
+                f".gitattributes."
+            )
+            continue
+        if kind != "text":
+            continue
+        if failure := decode_failure(path, payload):
+            failures.append(failure)
     return failures
 
 
