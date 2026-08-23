@@ -87,6 +87,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         json.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.");
         json.RootElement.GetProperty("info").GetProperty("title").GetString().Should()
             .Contain("Processes");
+        json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/processes/processes")
+            .GetProperty("get")
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Select(parameter => parameter.GetProperty("name").GetString())
+            .Should().Contain(["limit", "offset"]);
     }
 
     [IntegrationTest]
@@ -185,6 +192,54 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             .Single(link => link.GetProperty("rel").GetString() == "self");
         selfLink.GetProperty("href").GetString().Should()
             .EndWith("/ogc/processes/processes?limit=1");
+
+        var nextLink = json.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "next");
+        nextLink.GetProperty("href").GetString().Should()
+            .EndWith("/ogc/processes/processes?limit=1&offset=1");
+
+        using var nextResponse = await _fixture.Client.GetAsync(
+            nextLink.GetProperty("href").GetString());
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var nextJson = JsonDocument.Parse(await nextResponse.Content.ReadAsStringAsync());
+        nextJson.RootElement.GetProperty("processes").EnumerateArray().ToArray()
+            .Should().ContainSingle()
+            .Which.GetProperty("id").GetString().Should().NotBe("honua-geoprocessing");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithLimit_CanWalkEveryPublishedProcess()
+    {
+        using var unpagedResponse = await _fixture.Client.GetAsync("/ogc/processes/processes");
+        unpagedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var unpagedJson = JsonDocument.Parse(
+            await unpagedResponse.Content.ReadAsStringAsync());
+        var expectedIds = unpagedJson.RootElement.GetProperty("processes")
+            .EnumerateArray()
+            .Select(process => process.GetProperty("id").GetString())
+            .ToArray();
+
+        var actualIds = new List<string?>();
+        string? pageUrl = "/ogc/processes/processes?limit=1";
+        while (pageUrl != null)
+        {
+            using var pageResponse = await _fixture.Client.GetAsync(pageUrl);
+            pageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var pageJson = JsonDocument.Parse(await pageResponse.Content.ReadAsStringAsync());
+            actualIds.AddRange(pageJson.RootElement.GetProperty("processes")
+                .EnumerateArray()
+                .Select(process => process.GetProperty("id").GetString()));
+            actualIds.Count.Should().BeLessThanOrEqualTo(expectedIds.Length);
+            pageUrl = pageJson.RootElement.GetProperty("links")
+                .EnumerateArray()
+                .Where(link => link.GetProperty("rel").GetString() == "next")
+                .Select(link => link.GetProperty("href").GetString())
+                .SingleOrDefault();
+        }
+
+        actualIds.Should().Equal(expectedIds);
     }
 
     [IntegrationTest]
@@ -205,6 +260,24 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         error.RootElement.GetProperty("status").GetInt32().Should().Be(400);
         error.RootElement.GetProperty("detail").GetString().Should()
             .Be("The 'limit' parameter must be a positive integer.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithInvalidOffset_Returns400()
+    {
+        using var negative = await _fixture.Client.GetAsync(
+            "/ogc/processes/processes?limit=1&offset=-1");
+        using var malformed = await _fixture.Client.GetAsync(
+            "/ogc/processes/processes?limit=1&offset=abc");
+
+        negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var error = JsonDocument.Parse(await malformed.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString().Should().Be("Invalid offset");
+        error.RootElement.GetProperty("detail").GetString().Should()
+            .Be("The 'offset' parameter must be a non-negative integer.");
     }
 
     // -----------------------------------------------------------------------

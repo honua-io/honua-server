@@ -126,6 +126,14 @@ internal static class ProcessEndpoints
                 "The 'limit' parameter must be a positive integer.");
         }
 
+        if (!TryParseProcessListOffset(context.Request, out var offset))
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Invalid offset",
+                "The 'offset' parameter must be a non-negative integer.");
+        }
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var summary = CanonicalProcessSummary with
         {
@@ -137,31 +145,48 @@ internal static class ProcessEndpoints
                     "Process description"))
         };
 
-        var processBuilder = ImmutableArray.CreateBuilder<OgcProcessSummary>();
-        processBuilder.Add(summary);
-
-        var remaining = limit.HasValue ? limit.Value - 1 : int.MaxValue;
+        var allProcesses = ImmutableArray.CreateBuilder<OgcProcessSummary>();
+        allProcesses.Add(summary);
         foreach (var definition in processCatalog.ListProcesses()
                      .Where(IsPublishedOgcProcess)
-                     .OrderBy(process => process.ProcessId, StringComparer.Ordinal)
-                     .Take(Math.Max(remaining, 0)))
+                     .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
         {
-            processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
+            allProcesses.Add(ToOgcProcessSummary(definition, baseUrl));
         }
 
+        var pageStart = Math.Min(offset, allProcesses.Count);
+        var available = allProcesses.Count - pageStart;
+        var pageSize = limit.HasValue ? Math.Min(limit.Value, available) : available;
+        var page = allProcesses
+            .Skip(pageStart)
+            .Take(pageSize)
+            .ToImmutableArray();
+
         var processListUrl = $"{baseUrl}{BasePath}/processes";
-        var selfUrl = limit.HasValue
-            ? $"{processListUrl}?limit={limit.Value.ToString(CultureInfo.InvariantCulture)}"
-            : processListUrl;
+        var selfUrl = BuildProcessListUrl(processListUrl, limit, offset);
+        var links = ImmutableArray.CreateBuilder<Link>();
+        links.Add(
+            Link.Create(
+                selfUrl,
+                RelationTypes.Self,
+                MediaTypes.Json,
+                "This document"));
+
+        var nextOffset = pageStart + pageSize;
+        if (limit.HasValue && nextOffset < allProcesses.Count)
+        {
+            links.Add(
+                Link.Create(
+                    BuildProcessListUrl(processListUrl, limit, nextOffset),
+                    RelationTypes.Next,
+                    MediaTypes.Json,
+                    "Next page"));
+        }
+
         var processList = new OgcProcessList
         {
-            Processes = processBuilder.ToImmutable(),
-            Links = ImmutableArray.Create(
-                Link.Create(
-                    selfUrl,
-                    RelationTypes.Self,
-                    MediaTypes.Json,
-                    "This document"))
+            Processes = page,
+            Links = links.ToImmutable()
         };
 
         return Results.Json(processList, OgcProcessesJsonContext.Default.OgcProcessList, MediaTypes.Json);
@@ -184,6 +209,33 @@ internal static class ProcessEndpoints
 
         limit = parsed;
         return true;
+    }
+
+    private static bool TryParseProcessListOffset(HttpRequest request, out int offset)
+    {
+        offset = 0;
+        if (!request.Query.TryGetValue("offset", out var values))
+        {
+            return true;
+        }
+
+        return values.Count == 1
+            && int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out offset);
+    }
+
+    private static string BuildProcessListUrl(string processListUrl, int? limit, int offset)
+    {
+        if (!limit.HasValue)
+        {
+            return offset == 0
+                ? processListUrl
+                : $"{processListUrl}?offset={offset.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        var url = $"{processListUrl}?limit={limit.Value.ToString(CultureInfo.InvariantCulture)}";
+        return offset == 0
+            ? url
+            : $"{url}&offset={offset.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static IResult GetProcessDescription(
