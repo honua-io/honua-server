@@ -226,6 +226,34 @@ public sealed class StudioMcpOwnershipAuthorizationTests
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_AmbiguousLegacyAuthenticatedOwner_FailsClosed()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>())
+            .Returns(BuildDraft("Test:authenticated"));
+        var authorization = BuildAuthorization();
+        var context = BuildContext(CallerKind.Owner, lifecycle, validator: null, authorization);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", Alice),
+            new Claim(ClaimTypes.Role, "creator"),
+        ], "Test"));
+        var tool = new GetStudioDraftTool(
+            Substitute.For<IGeoprocessingJobService>(),
+            NullLogger<GetStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}""");
+
+        var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+        authorization.Calls.Should().ContainSingle(call =>
+            call.ResourceOwnerId == "Test:authenticated");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
     public async Task CreateDraft_NonAdminDerivesOwnerFromAuthenticatedPrincipal()
     {

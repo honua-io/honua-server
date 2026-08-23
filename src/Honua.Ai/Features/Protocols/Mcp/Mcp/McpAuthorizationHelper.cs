@@ -45,17 +45,30 @@ internal static class McpAuthorizationHelper
     /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
-        var identity = principal?.Identity?.IsAuthenticated == true
-            ? principal.Identity
-            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+        var identity = ResolveAuthenticatedIdentity(principal);
         if (identity is null || !identity.IsAuthenticated)
         {
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
-        var scheme = string.IsNullOrWhiteSpace(identity.AuthenticationType)
-            ? AnonymousPrincipalScheme
-            : identity.AuthenticationType;
+        return ResolveDistinctPrincipalKey(principal) ?? $"{ResolveScheme(identity)}:authenticated";
+    }
+
+    /// <summary>
+    /// Resolves the legacy scheme-qualified MCP key only when it contains a
+    /// principal-specific name identifier or identity name. Returns
+    /// <see langword="null"/> for the shared <c>&lt;scheme&gt;:authenticated</c>
+    /// fallback, which must never be used as an ownership alias.
+    /// </summary>
+    public static string? ResolveDistinctPrincipalKey(ClaimsPrincipal? principal)
+    {
+        var identity = ResolveAuthenticatedIdentity(principal);
+        if (identity is null || !identity.IsAuthenticated)
+        {
+            return null;
+        }
+
+        var scheme = ResolveScheme(identity);
         var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrEmpty(subject))
         {
@@ -63,7 +76,17 @@ internal static class McpAuthorizationHelper
         }
 
         return string.IsNullOrEmpty(identity.Name)
-            ? $"{scheme}:authenticated"
+            ? null
             : $"{scheme}:name:{identity.Name}";
     }
+
+    private static ClaimsIdentity? ResolveAuthenticatedIdentity(ClaimsPrincipal? principal) =>
+        principal?.Identity?.IsAuthenticated == true
+            ? principal.Identity as ClaimsIdentity
+            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+
+    private static string ResolveScheme(ClaimsIdentity identity) =>
+        string.IsNullOrWhiteSpace(identity.AuthenticationType)
+            ? AnonymousPrincipalScheme
+            : identity.AuthenticationType;
 }

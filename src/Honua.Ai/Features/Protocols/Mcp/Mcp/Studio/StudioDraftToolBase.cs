@@ -195,8 +195,9 @@ internal abstract class StudioDraftToolBase
             return resourceOwnerId;
         }
 
-        var legacyMcpOwnerId = McpAuthorizationHelper.ResolvePrincipalKey(principal);
-        return string.Equals(resourceOwnerId, legacyMcpOwnerId, StringComparison.Ordinal)
+        var legacyMcpOwnerId = McpAuthorizationHelper.ResolveDistinctPrincipalKey(principal);
+        return legacyMcpOwnerId is not null
+            && string.Equals(resourceOwnerId, legacyMcpOwnerId, StringComparison.Ordinal)
             ? callerId
             : resourceOwnerId;
     }

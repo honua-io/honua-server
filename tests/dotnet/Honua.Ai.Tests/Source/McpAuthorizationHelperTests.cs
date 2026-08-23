@@ -60,4 +60,16 @@ public sealed class McpAuthorizationHelperTests
         McpAuthorizationHelper.ResolvePrincipalKey(bearer).Should().Be("JwtBearer:sub:identity-1");
         McpAuthorizationHelper.ResolvePrincipalKey(apiKey).Should().Be("ApiKey:sub:identity-1");
     }
+
+    [Fact]
+    public void ResolveDistinctPrincipalKey_WithOnlyRawSubject_FailsClosed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "identity-1"),
+        ], "JwtBearer"));
+
+        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("JwtBearer:authenticated");
+        McpAuthorizationHelper.ResolveDistinctPrincipalKey(principal).Should().BeNull();
+    }
 }
