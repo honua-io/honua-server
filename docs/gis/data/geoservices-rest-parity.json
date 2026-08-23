@@ -3376,7 +3376,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Per-output result access with route binding validation. Terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter\u0027s Esri data type and stored value."
+            "notes": "Per-output result access with route binding validation. Successful terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter\u0027s Esri data type and stored value."
           },
           {
             "name": "Submit Job (generic)",

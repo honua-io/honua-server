@@ -2186,7 +2186,7 @@
           "esriPaths": [
             "/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"
           ],
-          "notes": "Per-output result access with route binding validation. Terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter's Esri data type and stored value."
+          "notes": "Per-output result access with route binding validation. Successful terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter's Esri data type and stored value."
         },
         {
           "name": "Cancel Job (generic)",
