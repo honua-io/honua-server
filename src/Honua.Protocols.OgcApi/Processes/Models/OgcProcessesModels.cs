@@ -121,6 +121,12 @@ public sealed record OgcProcessIoSchema
     public string? Format { get; init; }
 
     /// <summary>
+    /// JSON Schema regular-expression constraint for string values.
+    /// </summary>
+    [JsonPropertyName("pattern")]
+    public string? Pattern { get; init; }
+
+    /// <summary>
     /// Content media type hint for complex inputs.
     /// </summary>
     [JsonPropertyName("contentMediaType")]

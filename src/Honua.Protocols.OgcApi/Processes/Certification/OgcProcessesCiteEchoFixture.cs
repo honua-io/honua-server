@@ -24,6 +24,7 @@ internal static class OgcProcessesCiteEchoFixture
     internal const string TestInfrastructureConfigurationKey = "HONUA_REGISTER_TEST_INFRASTRUCTURE";
     internal const string DataUriPrefix = "data:application/json;base64,";
     internal const int MaximumPauseSeconds = 10;
+    internal const string HttpUrlPattern = "^[Hh][Tt][Tt][Pp][Ss]?://";
 
     internal static readonly ImmutableArray<string> OutputIds =
         ["literal", "object", "binary", "mixed", "array", "bbox"];
@@ -517,7 +518,12 @@ internal static class OgcProcessesCiteEchoFixture
                 BinaryDescriptorSchema("value", EncodedBinarySchema()),
                 BinaryDescriptorSchema(
                     "href",
-                    new OgcProcessIoSchema { Type = "string", Format = "uri" }))
+                    new OgcProcessIoSchema
+                    {
+                        Type = "string",
+                        Format = "uri",
+                        Pattern = HttpUrlPattern
+                    }))
         };
 
     private static OgcProcessIoSchema EncodedBinarySchema()

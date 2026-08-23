@@ -703,6 +703,10 @@
             "type": "string",
             "description": "JSON Schema format keyword."
           },
+          "pattern": {
+            "type": "string",
+            "description": "JSON Schema regular-expression constraint for string values."
+          },
           "contentMediaType": {
             "type": "string",
             "description": "Content media type hint for complex inputs."
@@ -751,11 +755,25 @@
         "properties": {
           "inputs": {
             "type": "object",
-            "required": ["plan"],
+            "description": "Inputs for the selected process. The canonical analysis process uses plan; direct processes use their advertised input identifiers.",
             "properties": {
               "plan": { "$ref": "#/components/schemas/AnalysisPlan" }
             },
             "additionalProperties": true
+          },
+          "outputs": {
+            "type": "object",
+            "description": "Optional output selection keyed by advertised output identifier.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "transmissionMode": {
+                  "type": "string",
+                  "enum": ["value"]
+                }
+              },
+              "additionalProperties": false
+            }
           },
           "response": {
             "type": "string",
