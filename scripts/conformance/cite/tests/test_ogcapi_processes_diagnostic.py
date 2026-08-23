@@ -205,9 +205,10 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn("Licensing__DevGrantEdition: Pro", compose)
         self.assertIn("OgcProcesses__CertificationProfile: ogcapi-processes10", compose)
         self.assertEqual(
-            "ogcapi-processes-cite-profile-v2",
+            "ogcapi-processes-cite-profile-v3",
             parser.FIXTURE_REVISION,
         )
+        self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)
 
 
 if __name__ == "__main__":
