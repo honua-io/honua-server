@@ -169,14 +169,29 @@ cookie material, prebuilt `Authorization` headers, and credential-bearing URLs.
 None may appear in a saved map/app specification, authoring operation, SDK plan,
 MCP result intended for persistence, collaboration record, receipt, or log.
 
+The POST response has its own versioned runtime access-session contract. Along
+with the opaque token, expiry/refresh timestamps, and allowed methods, it returns
+structured request-credential transports. Each transport states its kind
+(`header` or `query`), parameter name, and token value template. The canonical
+header option is `X-Honua-Token`; the `token` query option remains available for
+browser/WebView renderers that cannot attach headers to nested 3D-Tiles fetches.
+Hosts prefer the header when supported. Template substitution happens only
+inside the non-serializable host session: a query-token URL is never placed in a
+plan, fixture, receipt, log, or collaboration record, and retains the protected
+asset route's private/no-store cache treatment.
+
+[#3433](https://github.com/honua-io/honua-server/issues/3433) owns the versioned
+response fixture and transport drift tests.
+
 For a protected scene, the host:
 
 1. calls the canonical resolve contract and observes the auth requirement;
 2. invokes the returned credential-free `access-session` POST affordance, using
    its configured identity to acquire a short-lived asset session or access
    envelope rather than synthesizing a server route or assuming GET semantics;
-3. attaches that material to the root and nested asset requests without mutating
-   the serializable plan; and
+3. selects a returned credential transport that its renderer supports and
+   applies its request template to the root and nested asset requests without
+   mutating the serializable plan; and
 4. refreshes or disposes the session independently of plan lifetime.
 
 Language SDKs may expose this as an opaque handle, callback, interceptor, or
@@ -272,6 +287,13 @@ returns the existing job/reference, even after a lost `202`; a different
 fingerprint returns a conflict, and neither path dispatches a duplicate job.
 Any losing duplicate stage is aborted or left to its bounded orphan lease.
 
+Feature-layer generation applies the same immutability rule without multipart:
+submission pins a provider snapshot/version and includes it in the request
+fingerprint. If the provider cannot retain a stable readable snapshot for the
+job lifetime, submission materializes the bounded source into job-owned durable
+staging before `202`. A retry never re-queries an unversioned live layer whose
+features may have changed since admission.
+
 The current synchronous `201` generation endpoint is transitional. An optional
 bounded wait mode may preserve compatibility for small inputs, but it is not the
 canonical contract and must converge on the same job/result record. Scene jobs
@@ -286,6 +308,23 @@ scene generation and staged scene ingest must not masquerade as `TileCache` or
 reuse its executor. The scene executor may orchestrate the separately profiled
 `pcloud.translate` native step from Decision 2, but the durable parent job keeps
 its scene-generation identity and lifecycle.
+
+Submission also pins the managed scene-generation execution contract in the
+durable `ExecutionJobSpec`: `ContractVersion` names the serving/worker contract,
+and `Artifact` is an immutable build or image digest rather than a moving tag.
+Every automatic retry reuses both pins. A worker that cannot run them fails
+closed, and changing either pin requires an explicitly submitted new job. When a
+native translation is required, its child specification independently pins the
+`pcloud.translate` contract version and immutable worker artifact digest.
+
+The native child is idempotent with its parent. Before submitting translation,
+the scene job derives a deterministic child operation/idempotency key and request
+fingerprint from the parent operation id, step identity, staged input digest,
+normalized translation arguments, and the pinned native contract/artifact. The
+parent durably records that child reference and submits with the deterministic
+key, never a random plan id plus a null idempotency key. After a crash, a retry
+verifies the fingerprint and reattaches to the existing child/result instead of
+dispatching another translation; a mismatch fails and requires a new parent job.
 
 The promoted asset tree and active catalog registration are required members of
 one job-wide, attempt-fenced output-set manifest governed by ADR-0031 and
@@ -408,6 +447,8 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
   compatibility migration.
 - [#3410](https://github.com/honua-io/honua-server/issues/3410): versioned
   list/metadata/resolve contract pack.
+- [#3433](https://github.com/honua-io/honua-server/issues/3433): versioned
+  access-session response and credential-transport request templates.
 - [geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90):
   additive `ResolveScene` protocol contract and published package; the server
   dependency update and projection follow that release.
