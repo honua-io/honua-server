@@ -197,6 +197,12 @@ public sealed record OgcProcessIoSchema
     /// </summary>
     [JsonPropertyName("allOf")]
     public ImmutableArray<OgcProcessIoSchema>? AllOf { get; init; }
+
+    /// <summary>
+    /// Schema that the value must not satisfy.
+    /// </summary>
+    [JsonPropertyName("not")]
+    public OgcProcessIoSchema? Not { get; init; }
 }
 
 /// <summary>
