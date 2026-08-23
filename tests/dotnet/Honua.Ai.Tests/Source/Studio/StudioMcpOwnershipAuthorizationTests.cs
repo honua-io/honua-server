@@ -184,6 +184,46 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         }
     }
 
+    [Theory]
+    [InlineData(CallerKind.Owner, true)]
+    [InlineData(CallerKind.NonOwner, false)]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_LegacyMcpOwnerKey_OnlyOriginalPrincipalRetainsAccess(
+        CallerKind callerKind,
+        bool expectedAllowed)
+    {
+        const string legacyAliceOwnerId = "Test:sub:alice";
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>())
+            .Returns(BuildDraft(legacyAliceOwnerId));
+        var authorization = BuildAuthorization();
+        var context = BuildContext(callerKind, lifecycle, validator: null, authorization);
+        var tool = new GetStudioDraftTool(
+            Substitute.For<IGeoprocessingJobService>(),
+            NullLogger<GetStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}""");
+
+        var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        if (expectedAllowed)
+        {
+            var result = await act();
+            result.IsError.Should().BeFalse();
+            authorization.Calls.Should().ContainSingle(call =>
+                call.Operation == StudioAuthorizationOperation.ReadDraft &&
+                call.ResourceOwnerId == Alice);
+        }
+        else
+        {
+            var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+            failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+            authorization.Calls.Should().ContainSingle(call =>
+                call.Operation == StudioAuthorizationOperation.ReadDraft &&
+                call.ResourceOwnerId == legacyAliceOwnerId);
+        }
+    }
+
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]

@@ -46,6 +46,7 @@ internal static class McpToolOutputSchemas
             "status": { "type": "string", "const": "error" },
             "code": { "type": "string" },
             "message": { "type": "string" },
+            "studioAuthorizationCode": { "type": ["string", "null"] },
             "error": { "type": "object" }
         """;
 
