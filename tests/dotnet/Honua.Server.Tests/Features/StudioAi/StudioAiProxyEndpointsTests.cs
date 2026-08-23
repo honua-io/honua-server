@@ -384,12 +384,22 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         {
             new("sub", subject),
             new("name", "Studio Test User"),
-            new("amr", "pwd"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
         if (isClientCredentials)
         {
-            claims.Add(new Claim("grant_type", "client_credentials"));
+            // Some external IdPs omit nonstandard grant markers from client-credentials
+            // access tokens and may still emit a weak amr=pwd claim. That evidence must not
+            // be promoted to an interactive Studio session.
+            claims.Add(new Claim("amr", "pwd"));
+        }
+        else
+        {
+            claims.Add(new Claim("sid", $"session-{subject}"));
+            claims.Add(new Claim(
+                "auth_time",
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(
+                    System.Globalization.CultureInfo.InvariantCulture)));
         }
 
         var token = new JwtSecurityToken(

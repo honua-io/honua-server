@@ -50,15 +50,39 @@ public sealed class StudioLifecycleAuthorizationHandlerTests
         var handler = new StudioAiProxyAuthorizationHandler(
             new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
         var principal = Principal("Bearer",
-            new Claim(ClaimTypes.NameIdentifier, "interactive-user"),
-            new Claim("amr", "pwd"),
-            new Claim("honua_interactive_provenance", "true"));
+            new Claim("sub", "interactive-user"),
+            new Claim("sid", "browser-session-1"),
+            new Claim("auth_time", "1787508000"));
+        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(principal);
         var context = new AuthorizationHandlerContext(
             [new StudioAiProxyRequirement()], principal, resource: null);
 
         await handler.HandleAsync(context);
 
         context.HasSucceeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AiProxy_JwtBearerWithOnlyPasswordAmr_IsDenied()
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
+        var principal = Principal("Bearer",
+            new Claim("sub", "machine-client"),
+            new Claim("amr", "pwd"));
+        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(principal);
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeFalse(
+            "a subject and weak password method do not prove a human browser session");
+        context.FailureReasons.Should().ContainSingle()
+            .Which.Message.Should().Be(StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode);
+        principal.HasClaim(
+            StudioAiInteractivePrincipal.InteractiveProvenanceClaimType,
+            "true").Should().BeFalse();
     }
 
     private static Task<AuthorizationHandlerContext> EvaluateAsync(

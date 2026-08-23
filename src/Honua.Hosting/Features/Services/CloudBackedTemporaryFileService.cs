@@ -462,6 +462,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         }
 
         return principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue("sub")
             ?? principal.Identity.Name;
     }
 

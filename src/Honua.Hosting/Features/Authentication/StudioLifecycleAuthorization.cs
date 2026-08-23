@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization;
@@ -178,6 +179,13 @@ internal sealed class StudioAiProxyAuthorizationHandler(
 /// </summary>
 internal static class StudioAiInteractivePrincipal
 {
+    internal const string InteractiveProvenanceClaimType = "honua_interactive_provenance";
+    private const string InteractiveProvenanceClaimValue = "true";
+
+    private static readonly HashSet<string> HumanAuthenticationMethods = new(
+        ["face", "fido", "fido2", "fingerprint", "iris", "mfa", "otp", "smartcard", "webauthn", "wia"],
+        StringComparer.OrdinalIgnoreCase);
+
     private static readonly string[] InteractiveAuthenticationSchemes =
     [
         JwtBearerDefaults.AuthenticationScheme,
@@ -192,14 +200,7 @@ internal static class StudioAiInteractivePrincipal
 
     internal static bool IsInteractive(ClaimsPrincipal principal)
     {
-        var hasMachineGrant = principal.Identities.Any(identity => identity.HasClaim(c =>
-            (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
-            (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
-            (string.Equals(c.Type, "honua_auth_flow", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase))));
-        return !hasMachineGrant && principal.Identities.Any(identity =>
+        return !HasMachineGrant(principal) && principal.Identities.Any(identity =>
             identity.IsAuthenticated &&
             (IsHumanSession(identity) &&
              (InteractiveAuthenticationSchemes.Any(scheme =>
@@ -214,13 +215,7 @@ internal static class StudioAiInteractivePrincipal
         // session-provenance signal for bearer auth and reject explicit machine-grant markers.
         if (string.Equals(identity.AuthenticationType, JwtBearerDefaults.AuthenticationScheme, StringComparison.OrdinalIgnoreCase))
         {
-            if (identity.HasClaim(c =>
-                    (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
-                     string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
-                    (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
-                     string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
-                    (string.Equals(c.Type, "honua_auth_flow", StringComparison.OrdinalIgnoreCase) &&
-                     string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase))))
+            if (HasMachineGrant(identity))
             {
                 return false;
             }
@@ -233,11 +228,80 @@ internal static class StudioAiInteractivePrincipal
 
     private static bool HasSessionProvenance(ClaimsIdentity identity)
         => identity.HasClaim(c =>
-                string.Equals(c.Type, "honua_interactive_provenance", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
-           identity.HasClaim(c =>
-                string.Equals(c.Type, "amr", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(c.Type, "auth_time", StringComparison.OrdinalIgnoreCase));
+            string.Equals(c.Type, InteractiveProvenanceClaimType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(c.Value, InteractiveProvenanceClaimValue, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Removes every inbound copy of the reserved Studio bearer marker, then stamps one local
+    /// copy only when the validated token carries positive human-session evidence.
+    /// </summary>
+    internal static void ReplaceWithServerDerivedProvenance(ClaimsPrincipal principal)
+    {
+        foreach (var identity in principal.Identities.OfType<ClaimsIdentity>())
+        {
+            foreach (var claim in identity.Claims
+                         .Where(static claim => string.Equals(
+                             claim.Type,
+                             InteractiveProvenanceClaimType,
+                             StringComparison.OrdinalIgnoreCase))
+                         .ToArray())
+            {
+                identity.RemoveClaim(claim);
+            }
+        }
+
+        if (HasMachineGrant(principal) ||
+            principal.Identity is not ClaimsIdentity bearerIdentity ||
+            !HasHumanSessionEvidence(bearerIdentity))
+        {
+            return;
+        }
+
+        bearerIdentity.AddClaim(new Claim(
+            InteractiveProvenanceClaimType,
+            InteractiveProvenanceClaimValue));
+    }
+
+    private static bool HasHumanSessionEvidence(ClaimsIdentity identity)
+    {
+        var hasSubject = identity.Claims.Any(claim =>
+            (string.Equals(claim.Type, "sub", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(claim.Type, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase)) &&
+            !string.IsNullOrWhiteSpace(claim.Value));
+        if (!hasSubject)
+        {
+            return false;
+        }
+
+        var hasHumanAuthenticationMethod = identity.Claims.Any(claim =>
+            string.Equals(claim.Type, "amr", StringComparison.OrdinalIgnoreCase) &&
+            HumanAuthenticationMethods.Contains(claim.Value));
+        if (hasHumanAuthenticationMethod)
+        {
+            return true;
+        }
+
+        var hasSessionId = identity.Claims.Any(claim =>
+            string.Equals(claim.Type, "sid", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(claim.Value));
+        var authenticationTime = identity.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, "auth_time", StringComparison.OrdinalIgnoreCase))?.Value;
+        return hasSessionId &&
+            long.TryParse(authenticationTime, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed > 0;
+    }
+
+    private static bool HasMachineGrant(ClaimsPrincipal principal)
+        => principal.Identities.OfType<ClaimsIdentity>().Any(HasMachineGrant);
+
+    private static bool HasMachineGrant(ClaimsIdentity identity)
+        => identity.HasClaim(c =>
+            (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(c.Type, "honua_auth_flow", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)));
 }
 
 

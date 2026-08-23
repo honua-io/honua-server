@@ -640,31 +640,14 @@ public static class OidcAuthenticationExtensions
                     }
 
                     // Scope governance proves only that the token is a validated OAuth access
-                    // token; it does not prove that it represents a human session. Mark bearer
-                    // identities interactive only when the issuer supplied user-session
-                    // provenance (authentication method or authentication time).
+                    // token; it does not prove that it represents a human session. Strip any
+                    // issuer-supplied reserved marker, then derive it locally only from
+                    // human-specific session evidence. A bare amr/auth_time claim is not enough:
+                    // client-credentials tokens can carry either one.
                     if (context.Principal is { } validatedPrincipal)
                     {
-                        foreach (var candidate in validatedPrincipal.Identities.OfType<ClaimsIdentity>())
-                        {
-                            foreach (var claim in candidate.Claims
-                                         .Where(static claim => string.Equals(
-                                             claim.Type,
-                                             "honua_interactive_provenance",
-                                             StringComparison.OrdinalIgnoreCase))
-                                         .ToArray())
-                            {
-                                candidate.RemoveClaim(claim);
-                            }
-                        }
-
-                        if (validatedPrincipal.Identity is ClaimsIdentity identity &&
-                            identity.HasClaim(static claim =>
-                                string.Equals(claim.Type, "amr", StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(claim.Type, "auth_time", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            identity.AddClaim(new Claim("honua_interactive_provenance", "true"));
-                        }
+                        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(
+                            validatedPrincipal);
                     }
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&

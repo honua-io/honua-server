@@ -184,7 +184,9 @@ internal static class JobSecurityContextCapture
             : tenantContext.TenantId;
 
         return new JobSecurityContext(
-            principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.Identity?.Name,
+            principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? principal.FindFirstValue("sub")
+                ?? principal.Identity?.Name,
             tenantId,
             captured,
             options.EffectiveRoleClaimType);
