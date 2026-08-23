@@ -394,11 +394,13 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     public async Task PostStyle_MissingVersion_LenientCreates_StrictRejects()
     {
         // Standalone catalog styles are deliberately validated weaker than layer-bound
-        // styles: an empty JSON object is accepted unless strict handling is requested.
+        // styles: a recognizable MapLibre document can omit version unless strict handling
+        // is requested. Plain application/json remains supported for this lenient path.
         var client = _fixture.CreateAdminClient();
+        const string lenientMapLibre = "{\"layers\":[{\"id\":\"background\",\"type\":\"background\"}]}";
 
         var lenientId = $"lenient-{Guid.NewGuid():N}";
-        using (var content = new StringContent("{}", Encoding.UTF8, MapboxStyleMediaType))
+        using (var content = new StringContent(lenientMapLibre, Encoding.UTF8, "application/json"))
         using (var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content })
         {
             request.Headers.TryAddWithoutValidation("X-Style-Id", lenientId);
@@ -406,7 +408,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.Created);
         }
 
-        using (var content = new StringContent("{}", Encoding.UTF8, MapboxStyleMediaType))
+        using (var content = new StringContent(lenientMapLibre, Encoding.UTF8, MapboxStyleMediaType))
         using (var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content })
         {
             request.Headers.TryAddWithoutValidation("X-Style-Id", $"strict-{Guid.NewGuid():N}");
@@ -414,6 +416,56 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
             var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/styles")]
+    public async Task PostStyle_DrawingInfoAsApplicationJson_Returns400WithoutCreatingStyle()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = $"drawing-info-{Guid.NewGuid():N}";
+        using var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content };
+        request.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using (var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain(EsriDrawingInfoMediaType);
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain("submit a standalone MapLibre style");
+        }
+
+        (await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_DrawingInfoAsApplicationJson_Returns400WithoutReplacingCanonicalMapLibre()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client);
+        var path = $"/ogc/styles/{Uri.EscapeDataString(styleId)}";
+        using var content = new StringContent(SimpleRendererDrawingInfoJson, Encoding.UTF8, "application/json");
+
+        var response = await client.PutAsync(path, content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using (var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain(EsriDrawingInfoMediaType);
+        }
+
+        var storedResponse = await client.GetAsync(path);
+        storedResponse.Be200Ok();
+        using var stored = JsonDocument.Parse(await storedResponse.Content.ReadAsStringAsync());
+        stored.RootElement.TryGetProperty("renderer", out _).Should().BeFalse();
+        stored.RootElement.GetProperty("version").GetInt32().Should().Be(8);
+        stored.RootElement.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]

@@ -17306,6 +17306,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PostStyle_Authenticated_BodyOverUploadLimit_Returns413",
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PostStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_DrawingInfoAsApplicationJson_Returns400WithoutCreatingStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_EmptyBody_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_EsriDrawingInfoContentType_Returns415",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PostStyle_MalformedJson_Returns400",
@@ -21459,6 +21460,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PutStyle_WithInvalidApiKey_Returns401",
         "Honua.Server.Tests.Features.Styling.OgcStylesAuthorizationTests.PutStyle_WithoutApiKey_Returns401",
+        "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_DrawingInfoAsApplicationJson_Returns400WithoutReplacingCanonicalMapLibre",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EmptyBody_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_NonStrict_Returns204WithWarningHeader",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_EsriDrawingInfo_LossyConversion_Strict_Returns400WithDiagnostics",
