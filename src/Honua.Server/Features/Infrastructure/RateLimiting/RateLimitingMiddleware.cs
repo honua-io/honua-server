@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -206,13 +207,22 @@ internal sealed partial class RateLimitingMiddleware
                     : principal.Identity.AuthenticationType;
                 var issuer = principal.FindFirst("iss")?.Value;
                 var issuerScope = string.IsNullOrWhiteSpace(issuer) ? "no-issuer" : issuer;
-                return $"{tenantPrefix}{UserKeyFamily}:{authenticationScheme}:{issuerScope}:{authenticatedSubject}";
+                // Encode every tuple component independently before adding separators. Raw
+                // issuer and subject strings may themselves contain ':', so concatenating them
+                // directly would let distinct validated identities collide on one counter.
+                return $"{tenantPrefix}{UserKeyFamily}:" +
+                    $"{EncodeKeyComponent(authenticationScheme)}:" +
+                    $"{EncodeKeyComponent(issuerScope)}:" +
+                    EncodeKeyComponent(authenticatedSubject);
             }
         }
 
         // Fall back to IP-based rate limiting for unauthenticated requests
         return $"{tenantPrefix}{IpKeyFamily}:{clientIp}";
     }
+
+    private static string EncodeKeyComponent(string value)
+        => Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
 
     /// <summary>
     /// Checks if the request is within rate limits.

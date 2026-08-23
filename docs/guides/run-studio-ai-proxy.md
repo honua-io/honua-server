@@ -154,7 +154,7 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
 ```jsonc
 {
   "provider": "claude",              // optional; falls back to StudioAiProxy:DefaultProvider
-  "model": "claude-opus-4-1",        // optional per-call override
+  "model": "claude-opus-4-1",        // optional admin-only per-call override
   "system": "You are a GIS analyst.",
   "messages": [
     { "role": "user", "content": "Summarize the incidents layer." }
@@ -167,10 +167,14 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
     }
   ],
   "toolChoice": { "mode": "auto" },  // "auto" | "none" | "required" | "specific" (+ "toolName")
-  "maxTokens": 2048,
+  "maxTokens": 2048,                  // optional admin-only per-call override
   "temperature": 0.2
 }
 ```
+
+The `model` and `maxTokens` fields are admin-only controls. For admitted non-admin Studio users,
+the proxy ignores both fields and uses the operator-configured provider model and output-token
+limit. Other request fields shown above are available to both caller tiers.
 
 After a `tool_call_stop`, replay the assistant tool call before its result so the provider can
 match the result to the pending call:

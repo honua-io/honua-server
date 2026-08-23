@@ -647,7 +647,8 @@ public static class OidcAuthenticationExtensions
                     if (context.Principal is { } validatedPrincipal)
                     {
                         StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(
-                            validatedPrincipal);
+                            validatedPrincipal,
+                            oidcOptions.ClaimsMapping.UserIdClaimType);
                     }
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&

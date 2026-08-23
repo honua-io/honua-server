@@ -190,6 +190,29 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_PartitionsDelimiterCollidingIssuerSubjectPairs()
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        var firstTuple = CreateContext(
+            "198.51.100.73",
+            subject: "b:c",
+            issuer: "https://idp.example/a");
+        await middleware.InvokeAsync(firstTuple);
+
+        // The old `scheme:issuer:subject` composition encoded both tuples as the same key.
+        var secondTuple = CreateContext(
+            "198.51.100.73",
+            subject: "c",
+            issuer: "https://idp.example/a:b");
+        await middleware.InvokeAsync(secondTuple);
+
+        firstTuple.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        secondTuple.Response.StatusCode.Should().Be(StatusCodes.Status200OK,
+            "distinct validated issuer/subject tuples must never share a rate-limit counter");
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_PartitionsByTenant_IndependentlyForSameUserName()
     {
         var middleware = CreateMiddleware(limit: 1);

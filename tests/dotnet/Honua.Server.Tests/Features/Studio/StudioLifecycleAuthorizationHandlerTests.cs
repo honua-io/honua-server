@@ -85,6 +85,30 @@ public sealed class StudioLifecycleAuthorizationHandlerTests
             "true").Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("employee_id", "employee_id")]
+    [InlineData("oid", null)]
+    public async Task AiProxy_JwtBearerWithNormalizedSubjectClaim_IsAllowed(
+        string subjectClaimType,
+        string? configuredUserIdClaimType)
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
+        var principal = Principal("Bearer",
+            new Claim(subjectClaimType, "interactive-user"),
+            new Claim("amr", "mfa"));
+        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(
+            principal,
+            configuredUserIdClaimType);
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeTrue(
+            "Studio bearer admission must use the same configured and oid subject fallbacks as claims normalization");
+    }
+
     private static Task<AuthorizationHandlerContext> EvaluateAsync(
         ClaimsPrincipal principal,
         string httpMethod,

@@ -233,9 +233,13 @@ internal static class StudioAiInteractivePrincipal
 
     /// <summary>
     /// Removes every inbound copy of the reserved Studio bearer marker, then stamps one local
-    /// copy only when the validated token carries positive human-session evidence.
+    /// copy only when the validated token carries positive human-session evidence. Subject
+    /// resolution mirrors OIDC claims normalization, including the configured claim and the
+    /// built-in <c>NameIdentifier</c>/<c>sub</c>/<c>oid</c> fallbacks.
     /// </summary>
-    internal static void ReplaceWithServerDerivedProvenance(ClaimsPrincipal principal)
+    internal static void ReplaceWithServerDerivedProvenance(
+        ClaimsPrincipal principal,
+        string? configuredUserIdClaimType = null)
     {
         foreach (var identity in principal.Identities.OfType<ClaimsIdentity>())
         {
@@ -252,7 +256,7 @@ internal static class StudioAiInteractivePrincipal
 
         if (HasMachineGrant(principal) ||
             principal.Identity is not ClaimsIdentity bearerIdentity ||
-            !HasHumanSessionEvidence(bearerIdentity))
+            !HasHumanSessionEvidence(bearerIdentity, configuredUserIdClaimType))
         {
             return;
         }
@@ -262,11 +266,12 @@ internal static class StudioAiInteractivePrincipal
             InteractiveProvenanceClaimValue));
     }
 
-    private static bool HasHumanSessionEvidence(ClaimsIdentity identity)
+    private static bool HasHumanSessionEvidence(
+        ClaimsIdentity identity,
+        string? configuredUserIdClaimType)
     {
         var hasSubject = identity.Claims.Any(claim =>
-            (string.Equals(claim.Type, "sub", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(claim.Type, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase)) &&
+            IsSubjectClaim(claim.Type, configuredUserIdClaimType) &&
             !string.IsNullOrWhiteSpace(claim.Value));
         if (!hasSubject)
         {
@@ -290,6 +295,13 @@ internal static class StudioAiInteractivePrincipal
             long.TryParse(authenticationTime, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) &&
             parsed > 0;
     }
+
+    private static bool IsSubjectClaim(string claimType, string? configuredUserIdClaimType)
+        => (!string.IsNullOrWhiteSpace(configuredUserIdClaimType) &&
+            string.Equals(claimType, configuredUserIdClaimType, StringComparison.OrdinalIgnoreCase)) ||
+           string.Equals(claimType, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(claimType, "sub", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(claimType, "oid", StringComparison.OrdinalIgnoreCase);
 
     private static bool HasMachineGrant(ClaimsPrincipal principal)
         => principal.Identities.OfType<ClaimsIdentity>().Any(HasMachineGrant);
