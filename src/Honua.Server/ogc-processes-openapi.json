@@ -681,6 +681,16 @@
           "items": {
             "$ref": "#/components/schemas/ProcessIoSchema"
           },
+          "minItems": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Minimum number of items accepted by an array schema."
+          },
+          "maxItems": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum number of items accepted by an array schema."
+          },
           "properties": {
             "type": "object",
             "additionalProperties": { "$ref": "#/components/schemas/ProcessIoSchema" }
