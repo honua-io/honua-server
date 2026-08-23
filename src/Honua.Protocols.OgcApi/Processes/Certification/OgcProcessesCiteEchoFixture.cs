@@ -171,9 +171,54 @@ internal static class OgcProcessesCiteEchoFixture
             return true;
         }
 
+        return TryValidateBinaryValue(binaryInput, out error);
+    }
+
+    internal static bool TryValidateCanonicalBinaryInput(string? rawBinary, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(rawBinary))
+        {
+            return true;
+        }
+
+        // String inputs are stored canonically without their JSON quotes.
+        if (IsBase64(rawBinary))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawBinary);
+            return TryValidateBinaryValue(document.RootElement, out error);
+        }
+        catch (JsonException)
+        {
+            error = "CITE echo input 'binary' must be a base64-encoded string "
+                    + "or an inline or referenced input object.";
+            return false;
+        }
+    }
+
+    private static bool TryValidateBinaryValue(JsonElement binaryInput, out string? error)
+    {
+        error = null;
+        if (binaryInput.ValueKind == JsonValueKind.String)
+        {
+            if (IsBase64(binaryInput.GetString()))
+            {
+                return true;
+            }
+
+            error = "CITE echo input 'binary' must be a base64-encoded string.";
+            return false;
+        }
+
         if (binaryInput.ValueKind != JsonValueKind.Object)
         {
-            error = "CITE echo input 'binary' must be an inline or referenced input object.";
+            error = "CITE echo input 'binary' must be a base64-encoded string "
+                    + "or an inline or referenced input object.";
             return false;
         }
 
