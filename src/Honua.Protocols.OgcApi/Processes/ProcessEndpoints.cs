@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -13,7 +14,6 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
@@ -113,13 +113,12 @@ internal static class ProcessEndpoints
     private static IResult GetProcessList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IProcessCatalog processCatalog,
-        [FromQuery] int? limit = null)
+        IProcessCatalog processCatalog)
     {
         EnrichActivity("GetProcessList");
         OgcProcessesLog.ProcessListRequested(logger);
 
-        if (limit is <= 0)
+        if (!TryParseProcessListLimit(context.Request, out var limit))
         {
             return OgcProcessesResults.Error(
                 StatusCodes.Status400BadRequest,
@@ -150,14 +149,41 @@ internal static class ProcessEndpoints
             processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
         }
 
+        var processListUrl = $"{baseUrl}{BasePath}/processes";
+        var selfUrl = limit.HasValue
+            ? $"{processListUrl}?limit={limit.Value.ToString(CultureInfo.InvariantCulture)}"
+            : processListUrl;
         var processList = new OgcProcessList
         {
             Processes = processBuilder.ToImmutable(),
             Links = ImmutableArray.Create(
-                Link.Create($"{baseUrl}{BasePath}/processes", RelationTypes.Self, MediaTypes.Json, "This document"))
+                Link.Create(
+                    selfUrl,
+                    RelationTypes.Self,
+                    MediaTypes.Json,
+                    "This document"))
         };
 
         return Results.Json(processList, OgcProcessesJsonContext.Default.OgcProcessList, MediaTypes.Json);
+    }
+
+    private static bool TryParseProcessListLimit(HttpRequest request, out int? limit)
+    {
+        limit = null;
+        if (!request.Query.TryGetValue("limit", out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1 ||
+            !int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+            parsed <= 0)
+        {
+            return false;
+        }
+
+        limit = parsed;
+        return true;
     }
 
     private static IResult GetProcessDescription(
