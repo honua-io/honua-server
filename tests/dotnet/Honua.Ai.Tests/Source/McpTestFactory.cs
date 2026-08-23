@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
@@ -85,6 +86,14 @@ internal static class McpTestFactory
         return document.RootElement.Clone();
     }
 
+    /// <summary>
+    /// Adds a permissive Studio owner-policy test double for legacy tool tests
+    /// whose subject is lifecycle delegation rather than authorization. New
+    /// authorization tests register an explicit policy decision instead.
+    /// </summary>
+    public static void AddAllowingStudioAuthorization(IServiceCollection services) =>
+        services.AddSingleton<IStudioAuthorizationService, AllowingStudioAuthorizationService>();
+
     private static ServiceProvider CreateRequestServices(HonuaEdition edition, Action<IServiceCollection>? configureServices = null)
     {
         var license = new TestLicenseEntitlementService(edition);
@@ -93,5 +102,25 @@ internal static class McpTestFactory
             .AddSingleton<ILicenseStatusProvider>(license);
         configureServices?.Invoke(services);
         return services.BuildServiceProvider();
+    }
+
+    private sealed class AllowingStudioAuthorizationService : IStudioAuthorizationService
+    {
+        public bool IsEndUserAuthorizationEnabled => true;
+
+        public bool IsAdmin(ClaimsPrincipal principal) => principal.IsInRole("admin");
+
+        public string? ResolveCallerId(ClaimsPrincipal principal) =>
+            principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.Identity?.Name;
+
+        public Task<StudioAuthorizationDecision> AuthorizeAsync(
+            ClaimsPrincipal principal,
+            string? callerId,
+            StudioAuthorizationOperation operation,
+            string? resourceOwnerId,
+            bool isPubliclyReadable = false,
+            string? resourceId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(StudioAuthorizationDecision.Allow());
     }
 }

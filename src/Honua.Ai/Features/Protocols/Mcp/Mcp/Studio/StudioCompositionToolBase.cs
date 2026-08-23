@@ -43,6 +43,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
     /// (<see cref="TranslateCompositionError"/>).
     /// </summary>
     protected async Task<StudioPackageDraft> MutateCompositionAsync(
+        HttpContext httpContext,
         ClaimsPrincipal principal,
         string toolName,
         IStudioPackageLifecycleService lifecycleService,
@@ -53,14 +54,21 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
     {
         try
         {
-            var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+            var draft = await RequireAuthorizedDraftAsync(
+                httpContext,
+                principal,
+                lifecycleService,
+                draftId,
+                StudioAuthorizationOperation.UpdateDraft,
+                OperatorOperation.Create,
+                cancellationToken).ConfigureAwait(false);
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
 
             var body = StudioCompositionBodyEditor.ReadBody(draft.Envelope);
             var mutatedBody = mutate(body);
             var envelope = StudioCompositionBodyEditor.WriteBody(draft.Envelope, mutatedBody);
 
-            var actorId = ActorIdFor(principal);
+            var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);
             var updated = await ApplyUpdateAsync(
                 lifecycleService,
                 draftId,

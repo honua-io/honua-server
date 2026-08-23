@@ -85,14 +85,34 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             Body = argument.Body,
         };
 
-        var actorId = ActorIdFor(principal);
+        var authorization = RequireAuthorizationService(httpContext);
+        var actorId = ActorIdFor(authorization, principal);
+
+        // Match the REST lifecycle boundary: an explicit item id targets an
+        // existing content item's recorded owner; otherwise creation is
+        // authorized as a new resource owned by the authenticated caller.
+        var existingPointers = argument.ItemId is { } itemId
+            ? await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
+            : null;
+        await EnsureStudioAuthorizedAsync(
+            authorization,
+            principal,
+            StudioAuthorizationOperation.CreateDraft,
+            existingPointers is null ? actorId : existingPointers.OwnerId,
+            existingPointers is null ? null : argument.ItemId?.ToString("D"),
+            OperatorOperation.Create,
+            cancellationToken).ConfigureAwait(false);
+
+        // A non-admin caller can create only a draft they own. Admins retain
+        // the REST surface's ability to assign an explicit owner.
+        var ownerId = authorization.IsAdmin(principal) ? argument.OwnerId : actorId;
         var draft = await lifecycleService.CreateDraftAsync(
             new CreateStudioPackageDraftCommand
             {
                 ItemId = argument.ItemId,
                 PackageKey = argument.PackageKey,
                 WorkspaceId = argument.WorkspaceId,
-                OwnerId = argument.OwnerId,
+                OwnerId = ownerId,
                 Envelope = envelope,
                 ActorId = actorId,
                 BaseVersionId = argument.BaseVersionId,
@@ -151,7 +171,14 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.ReadDraft,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         Audit(principal, ToolName, draft.DraftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);
@@ -233,7 +260,14 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             throw new GeoprocessingValidationException("'schemaVersion' is required.");
         }
 
-        var existing = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var existing = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.UpdateDraft,
+            OperatorOperation.Create,
+            cancellationToken).ConfigureAwait(false);
         var envelope = existing.Envelope with
         {
             SchemaVersion = argument.SchemaVersion,
@@ -241,7 +275,8 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             Body = argument.Body ?? existing.Envelope.Body,
         };
 
-        var actorId = ActorIdFor(principal);
+        var authorization = RequireAuthorizationService(httpContext);
+        var actorId = ActorIdFor(authorization, principal);
         var updated = await ApplyUpdateAsync(
             lifecycleService,
             draftId,
@@ -249,7 +284,9 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             {
                 PackageKey = argument.PackageKey,
                 WorkspaceId = argument.WorkspaceId ?? existing.WorkspaceId,
-                OwnerId = argument.OwnerId ?? existing.OwnerId,
+                OwnerId = authorization.IsAdmin(principal)
+                    ? argument.OwnerId ?? existing.OwnerId
+                    : existing.OwnerId,
                 Envelope = envelope,
                 Generation = generation,
                 ActorId = actorId,
@@ -318,7 +355,14 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.ValidateDraft,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         // Pure computation only — no UpdateDraftAsync/ValidateDraftAsync call,
         // so the draft's persisted generation is untouched.
@@ -386,7 +430,14 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.ValidateDraft,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         // Pure computation only — mirrors StudioPackageLifecycleService.PreviewPlanAsync's
         // projection without calling it (that method persists via ValidateDraftAsync first).

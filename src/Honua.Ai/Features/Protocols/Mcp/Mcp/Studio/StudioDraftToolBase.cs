@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,8 +19,9 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// canonical Studio package lifecycle service — so no lifecycle logic
 /// (generation checking, validation, persistence) is duplicated here; this
 /// base only owns the MCP-specific plumbing: authorization against the
-/// <c>StudioDraft</c> operator-grant family, typed error translation, and the
-/// generation-before/after audit record (NFR-001).
+/// <c>StudioDraft</c> operator-grant family and the canonical Studio ownership
+/// policy, typed error translation, and the generation-before/after audit
+/// record (NFR-001).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -85,6 +87,16 @@ internal abstract class StudioDraftToolBase
         ?? throw new GeoprocessingStoreUnavailableException("The Studio package lifecycle service is not available on this server.");
 
     /// <summary>
+    /// Resolves the canonical Studio ownership-policy service from the current
+    /// request scope. Studio MCP tools must use the same owner rules as the REST
+    /// lifecycle surface; failing closed when that policy was not composed is
+    /// safer than falling back to the generic operator-grant check alone.
+    /// </summary>
+    protected static IStudioAuthorizationService RequireAuthorizationService(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioAuthorizationService>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio lifecycle authorization service is not available on this server.");
+
+    /// <summary>
     /// Resolves the pure <see cref="IStudioPackageValidator"/> from the
     /// current request's DI scope, for tools that validate WITHOUT persisting
     /// (<c>honua_studio_validate_draft</c>, <c>honua_studio_preview_draft</c>
@@ -96,14 +108,74 @@ internal abstract class StudioDraftToolBase
         ?? throw new GeoprocessingStoreUnavailableException("The Studio package validator is not available on this server.");
 
     /// <summary>
-    /// Loads a draft by id, translating a missing draft into the typed
-    /// <c>not_found</c> MCP error channel instead of returning null.
+    /// Loads a draft by id and authorizes the loaded owner through the same
+    /// <see cref="IStudioAuthorizationService"/> policy used by the REST
+    /// lifecycle surface. Keeping the raw load private makes the secure
+    /// load-then-authorize sequence the only draft-loading helper available to
+    /// derived tools.
     /// </summary>
-    protected static async Task<StudioPackageDraft> RequireDraftAsync(
-        IStudioPackageLifecycleService lifecycleService, Guid draftId, CancellationToken cancellationToken)
+    protected static async Task<StudioPackageDraft> RequireAuthorizedDraftAsync(
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
+        IStudioPackageLifecycleService lifecycleService,
+        Guid draftId,
+        StudioAuthorizationOperation studioOperation,
+        OperatorOperation operatorOperation,
+        CancellationToken cancellationToken)
     {
         var draft = await lifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
-        return draft ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        if (draft is null)
+        {
+            throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        }
+
+        await EnsureStudioAuthorizedAsync(
+            RequireAuthorizationService(httpContext),
+            principal,
+            studioOperation,
+            draft.OwnerId,
+            draftId.ToString("D"),
+            operatorOperation,
+            cancellationToken).ConfigureAwait(false);
+
+        return draft;
+    }
+
+    /// <summary>
+    /// Applies the canonical Studio ownership decision and translates a denial
+    /// into the MCP authorization exception channel while retaining the stable
+    /// Studio decision code for protocol parity with REST.
+    /// </summary>
+    protected static async Task EnsureStudioAuthorizedAsync(
+        IStudioAuthorizationService authorization,
+        ClaimsPrincipal principal,
+        StudioAuthorizationOperation studioOperation,
+        string? resourceOwnerId,
+        string? resourceId,
+        OperatorOperation operatorOperation,
+        CancellationToken cancellationToken)
+    {
+        var callerId = authorization.ResolveCallerId(principal);
+        var decision = await authorization.AuthorizeAsync(
+            principal,
+            callerId,
+            studioOperation,
+            resourceOwnerId,
+            resourceId: resourceId,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (!decision.IsAllowed)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: string.Equals(
+                    decision.Code,
+                    StudioAuthorizationService.AuthenticationRequiredCode,
+                    StringComparison.Ordinal),
+                message: decision.Reason ?? "The caller is not authorized to access this Studio resource.",
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: operatorOperation,
+                policyCode: decision.Code);
+        }
     }
 
     /// <summary>
@@ -165,8 +237,12 @@ internal abstract class StudioDraftToolBase
             ActorId = actorId,
         };
 
-    /// <summary>Resolves the audit-record actor id from the resolved principal key.</summary>
-    protected static string ActorIdFor(ClaimsPrincipal principal) => McpAuthorizationHelper.ResolvePrincipalKey(principal);
+    /// <summary>
+    /// Resolves the lifecycle actor/owner identifier through the canonical
+    /// Studio policy so MCP-created ownership keys match REST-created keys.
+    /// </summary>
+    protected static string? ActorIdFor(IStudioAuthorizationService authorization, ClaimsPrincipal principal) =>
+        authorization.ResolveCallerId(principal);
 
     /// <summary>Records the per-call audit entry (NFR-001).</summary>
     protected void Audit(ClaimsPrincipal principal, string toolName, Guid? draftId, long? generationBefore, long? generationAfter)

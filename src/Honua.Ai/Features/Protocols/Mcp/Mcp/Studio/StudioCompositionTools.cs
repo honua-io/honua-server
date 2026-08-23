@@ -82,6 +82,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -155,6 +156,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -226,6 +228,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -312,6 +315,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
             ?? throw new GeoprocessingValidationException("'visible' is required and must be a JSON boolean.");
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -388,6 +392,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -471,6 +476,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -539,6 +545,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -617,6 +624,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         var interaction = BuildInteraction(argument.Interaction);
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -767,6 +775,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -845,6 +854,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         var control = BuildControl(argument.Control);
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -983,6 +993,7 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
 
         var cascade = argument.CascadeInteractions ?? false;
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
