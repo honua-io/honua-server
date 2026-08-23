@@ -3,11 +3,13 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
@@ -130,11 +132,13 @@ internal abstract class StudioDraftToolBase
         }
 
         await EnsureStudioAuthorizedAsync(
+            httpContext,
             RequireAuthorizationService(httpContext),
             principal,
             studioOperation,
             draft.OwnerId,
             draftId.ToString("D"),
+            "studio-package-draft",
             operatorOperation,
             cancellationToken).ConfigureAwait(false);
 
@@ -147,11 +151,13 @@ internal abstract class StudioDraftToolBase
     /// Studio decision code for protocol parity with REST.
     /// </summary>
     protected static async Task EnsureStudioAuthorizedAsync(
+        HttpContext httpContext,
         IStudioAuthorizationService authorization,
         ClaimsPrincipal principal,
         StudioAuthorizationOperation studioOperation,
         string? resourceOwnerId,
         string? resourceId,
+        string resourceType,
         OperatorOperation operatorOperation,
         CancellationToken cancellationToken)
     {
@@ -163,6 +169,20 @@ internal abstract class StudioDraftToolBase
             resourceOwnerId,
             resourceId: resourceId,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var auditLog = httpContext.RequestServices.GetService<IAuditLog>();
+        if (auditLog is not null)
+        {
+            var timeProvider = httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+            await StudioAuthorizationAudit.RecordDecisionAsync(
+                httpContext,
+                auditLog,
+                timeProvider,
+                studioOperation,
+                resourceType,
+                resourceId,
+                decision).ConfigureAwait(false);
+        }
 
         if (!decision.IsAllowed)
         {
