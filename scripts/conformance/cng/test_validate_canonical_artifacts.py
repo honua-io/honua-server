@@ -21,10 +21,46 @@ def args() -> Namespace:
         image_digest="sha256:" + "b" * 64,
         fixture_revision="fixture-v1",
         evidence_uri="https://example.test/evidence",
+        evidence_digest="sha256:" + "c" * 64,
     )
 
 
 class CanonicalArtifactEvidenceTests(unittest.TestCase):
+    def test_every_governed_format_assignment_has_a_budget_profile(self):
+        self.assertEqual(23, len(MODULE.GOVERNED_ASSIGNMENTS))
+        for identity, assignment in MODULE.GOVERNED_ASSIGNMENTS.items():
+            self.assertIn(assignment.budget_profile, MODULE.FORMAT_BUDGET_PROFILES)
+            self.assertEqual(f"format.{identity[0]}", assignment.capability_key)
+
+    def test_budget_incomplete_observation_remains_an_explicit_skip(self):
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "cog", "window-read", "Rasterio", "diagnostic", started, args()
+        )
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertEqual(MODULE.BUDGET_EVIDENCE_GAP, normalized[0]["skip_reason"])
+        self.assertIsNone(normalized[0]["evidence_receipt"])
+
+    def test_fixture_generators_match_governed_shape_and_archive_contract(self):
+        fixture_source = (SCRIPT.parent / "generate-canonical-fixtures.py").read_text(
+            encoding="utf-8"
+        )
+        artifact_source = (SCRIPT.parent / "artifact-gen" / "Program.cs").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("reshape(4, 8, 16)", fixture_source)
+        self.assertIn('("time", "y", "x")', fixture_source)
+        self.assertIn('"chunksizes": (1, 4, 4)', fixture_source)
+        self.assertIn("overview_level=3", fixture_source)
+        self.assertIn("nodata=-9999.0", fixture_source)
+        self.assertIn("for (var z = 0; z <= 2; z++)", artifact_source)
+        self.assertIn('tileContentUris: ["content/0.glb"]', artifact_source)
+        self.assertIn("maxHeightMeters: 100.0", artifact_source)
+
     def test_client_failure_is_attributed_without_hiding_sibling_pass(self):
         observations = []
         MODULE._collect_client(observations, "surface", "read", "PyArrow", "pyarrow", args(), lambda: None)

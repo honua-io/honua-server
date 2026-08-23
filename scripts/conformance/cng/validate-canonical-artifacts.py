@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, NamedTuple
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -44,31 +45,241 @@ BUDGET_EVIDENCE_GAP = (
     "observations are not yet emitted; tracked by honua-server#3377."
 )
 
+class GovernedAssignment(NamedTuple):
+    """One exact release-denominator identity owned by this producer."""
+
+    version: str
+    lane: str
+    facets: tuple[str, ...]
+    contract_revision: str
+    capability_key: str
+    budget_profile: str
+
+
+def _budget_profile(
+    *,
+    max_requests: int,
+    max_transferred_bytes: int,
+    max_full_object_downloads: int,
+    min_range_requests: int,
+    required_metadata: list[str],
+    expected_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "max_requests": max_requests,
+        "max_transferred_bytes": max_transferred_bytes,
+        "max_full_object_downloads": max_full_object_downloads,
+        "min_range_requests": min_range_requests,
+        "min_cache_hits": 0,
+        "max_coordinate_error": 0.000001,
+        "max_geometry_error": 0.000001,
+        "required_metadata": required_metadata,
+        "expected_metadata": expected_metadata,
+    }
+
+
+FORMAT_BUDGET_PROFILES = {
+    "3d-tiles": _budget_profile(
+        max_requests=64,
+        max_transferred_bytes=33_554_432,
+        max_full_object_downloads=16,
+        min_range_requests=0,
+        required_metadata=["asset.version", "root.boundingVolume", "content.uri", "content_count"],
+        expected_metadata={
+            "asset.version": "1.1",
+            "root.boundingVolume": {
+                "region": [-3.141592653589793, -1.5707963267948966,
+                           3.141592653589793, 1.5707963267948966, 0.0, 100.0]
+            },
+            "content.uri": "content/0.glb",
+            "content_count": 1,
+        },
+    ),
+    "cog": _budget_profile(
+        max_requests=32,
+        max_transferred_bytes=16_777_216,
+        max_full_object_downloads=0,
+        min_range_requests=1,
+        required_metadata=["crs", "dimensions", "band_count", "nodata", "overview_count"],
+        expected_metadata={
+            "crs": "EPSG:4326", "dimensions": [256, 256], "band_count": 1,
+            "nodata": -9999.0, "overview_count": 3,
+        },
+    ),
+    "flatgeobuf": _budget_profile(
+        max_requests=8,
+        max_transferred_bytes=8_388_608,
+        max_full_object_downloads=1,
+        min_range_requests=0,
+        required_metadata=["geometry_type", "feature_count", "crs", "bounds"],
+        expected_metadata={
+            "geometry_type": "Point", "feature_count": 6, "crs": "EPSG:4326",
+            "bounds": [-122.4194, 0.0, 179.5, 86.0],
+        },
+    ),
+    "geoparquet": _budget_profile(
+        max_requests=8,
+        max_transferred_bytes=8_388_608,
+        max_full_object_downloads=1,
+        min_range_requests=0,
+        required_metadata=[
+            "geo.version", "primary_column", "geometry_encoding", "crs",
+            "feature_count", "bounds",
+        ],
+        expected_metadata={
+            "geo.version": "1.1.0", "primary_column": "geometry",
+            "geometry_encoding": "WKB", "crs": "EPSG:4326", "feature_count": 6,
+            "bounds": [-122.4194, 0.0, 179.5, 86.0],
+        },
+    ),
+    "hdf5-full": _budget_profile(
+        max_requests=32,
+        max_transferred_bytes=16_777_216,
+        max_full_object_downloads=1,
+        min_range_requests=0,
+        required_metadata=["dataset_shape", "data_type", "dimensions", "chunk_shape", "chunk_count"],
+        expected_metadata={
+            "dataset_shape": [4, 8, 16], "data_type": "float32",
+            "dimensions": ["time", "y", "x"], "chunk_shape": [1, 4, 4],
+            "chunk_count": 32,
+        },
+    ),
+    "hdf5-range": _budget_profile(
+        max_requests=32,
+        max_transferred_bytes=16_777_216,
+        max_full_object_downloads=0,
+        min_range_requests=1,
+        required_metadata=["dataset_shape", "data_type", "dimensions", "chunk_shape", "chunk_count"],
+        expected_metadata={
+            "dataset_shape": [4, 8, 16], "data_type": "float32",
+            "dimensions": ["time", "y", "x"], "chunk_shape": [1, 4, 4],
+            "chunk_count": 32,
+        },
+    ),
+    "pmtiles-range": _budget_profile(
+        max_requests=32,
+        max_transferred_bytes=8_388_608,
+        max_full_object_downloads=0,
+        min_range_requests=1,
+        required_metadata=["spec_version", "tile_type", "bounds", "zoom_range", "tile_count"],
+        expected_metadata={
+            "spec_version": "3", "tile_type": "mvt",
+            "bounds": [-180.0, -90.0, 180.0, 90.0], "zoom_range": [0, 2],
+            "tile_count": 21,
+        },
+    ),
+    "pmtiles-full": _budget_profile(
+        max_requests=32,
+        max_transferred_bytes=8_388_608,
+        max_full_object_downloads=1,
+        min_range_requests=0,
+        required_metadata=["spec_version", "tile_type", "bounds", "zoom_range", "tile_count"],
+        expected_metadata={
+            "spec_version": "3", "tile_type": "mvt",
+            "bounds": [-180.0, -90.0, 180.0, 90.0], "zoom_range": [0, 2],
+            "tile_count": 21,
+        },
+    ),
+    "zarr": _budget_profile(
+        max_requests=64,
+        max_transferred_bytes=33_554_432,
+        max_full_object_downloads=16,
+        min_range_requests=0,
+        required_metadata=["zarr_format", "shape", "chunks", "dtype", "chunk_count"],
+        expected_metadata={
+            "zarr_format": 2, "shape": [4, 8, 16], "chunks": [1, 4, 4],
+            "dtype": "<f4", "chunk_count": 32,
+        },
+    ),
+}
+
+
+def _assignment(
+    version: str,
+    lane: str,
+    facets: tuple[str, ...],
+    contract_revision: str,
+    capability_key: str,
+    budget_profile: str,
+) -> GovernedAssignment:
+    return GovernedAssignment(
+        version, lane, facets, contract_revision, capability_key, budget_profile
+    )
+
+
 # This is the normalized certification subset of the broader diagnostic lane.
 # Rows not listed here remain available in the uploaded native artifacts but
 # cannot accidentally enter the governed certification ledger.
 GOVERNED_ASSIGNMENTS = {
-    ("cog", "dataset-read", "GDAL"): ("3.8.4", "gdal-cog", ("positive", "metadata", "crs-axis"), "cog-1.0"),
-    ("cog", "structure-validate", "rio-cogeo"): ("7.0.2", "rio-cogeo", ("positive", "metadata", "range-efficiency"), "cog-1.0"),
-    ("cog", "window-read", "Rasterio"): ("1.5.1", "rasterio-cog", ("positive", "metadata", "crs-axis", "range-efficiency"), "cog-1.0"),
-    ("flatgeobuf", "feature-read", "GDAL"): ("3.8.4", "gdal-flatgeobuf", ("positive", "metadata", "crs-axis"), "flatgeobuf-current"),
-    ("flatgeobuf", "feature-read", "GeoPandas"): ("1.1.4", "geopandas-flatgeobuf", ("positive", "metadata", "crs-axis"), "flatgeobuf-current"),
-    ("flatgeobuf", "feature-read", "Pyogrio"): ("0.13.0", "pyogrio-flatgeobuf", ("positive", "metadata", "crs-axis"), "flatgeobuf-current"),
-    ("flatgeobuf", "feature-read", "flatgeobuf-js"): ("4.4.0", "node-flatgeobuf", ("positive", "metadata", "media-schema"), "flatgeobuf-current"),
-    ("geoparquet", "feature-read", "GDAL"): ("3.14.0", "gdal-geoparquet", ("positive", "metadata", "media-schema"), "geoparquet-1.1"),
-    ("geoparquet", "feature-read", "PyArrow"): ("25.0.1", "pyarrow-geoparquet", ("positive", "metadata", "media-schema"), "geoparquet-1.1"),
-    ("geoparquet", "geometry-read", "GeoPandas"): ("1.1.4", "geopandas-geoparquet", ("positive", "metadata", "crs-axis"), "geoparquet-1.1"),
-    ("hdf5-netcdf", "dataset-read", "h5py"): ("3.16.0", "h5py", ("positive", "metadata"), "hdf5-cloud-optimized-v1"),
-    ("hdf5-netcdf", "header-read", "h5dump"): ("1.10.10", "h5dump", ("positive", "metadata"), "hdf5-cloud-optimized-v1"),
-    ("hdf5-netcdf", "metadata-statistics", "h5stat"): ("1.10.10", "h5stat", ("positive", "metadata", "range-efficiency"), "hdf5-cloud-optimized-v1"),
-    ("hdf5-netcdf", "multidimensional-read", "xarray"): ("2026.7.0", "xarray-netcdf", ("positive", "metadata", "crs-axis"), "hdf5-cloud-optimized-v1"),
-    ("hdf5-netcdf", "repack", "h5repack"): ("1.10.10", "h5repack", ("positive", "metadata"), "hdf5-cloud-optimized-v1"),
-    ("pmtiles", "archive-read", "pmtiles"): ("3.7.0", "python-pmtiles", ("positive", "metadata", "range-efficiency"), "pmtiles-3"),
-    ("pmtiles", "browser-archive-read", "PMTiles-browser-viewer"): ("4.5.0", "node-pmtiles", ("positive", "metadata", "range-efficiency"), "pmtiles-3"),
-    ("zarr", "array-read", "zarr"): ("3.3.0", "zarr-python", ("positive", "metadata"), "zarr-v2"),
-    ("zarr", "distributed-array-compute", "Dask"): ("2026.7.1", "dask-zarr", ("positive", "metadata", "range-efficiency"), "zarr-v2"),
-    ("zarr", "multidimensional-subset", "xarray"): ("2026.7.0", "xarray-zarr", ("positive", "metadata", "crs-axis", "range-efficiency"), "zarr-v2"),
-    ("zarr", "store-read", "fsspec"): ("2026.7.0", "fsspec-zarr", ("positive", "metadata", "range-efficiency"), "zarr-v2"),
+    ("3d-tiles", "browser-render", "CesiumJS"): _assignment(
+        "1.144.0", "js-cesium", ("positive", "media-schema", "recovery"),
+        "3d-tiles-1.1", "format.3d-tiles", "3d-tiles"),
+    ("cog", "dataset-read", "GDAL"): _assignment(
+        "3.8.4", "gdal-cog", ("positive", "metadata", "crs-axis"),
+        "cog-1.0", "format.cog", "cog"),
+    ("cog", "structure-validate", "rio-cogeo"): _assignment(
+        "7.0.2", "rio-cogeo", ("positive", "metadata", "range-efficiency"),
+        "cog-1.0", "format.cog", "cog"),
+    ("cog", "window-read", "Rasterio"): _assignment(
+        "1.5.1", "rasterio-cog", ("positive", "metadata", "crs-axis", "range-efficiency"),
+        "cog-1.0", "format.cog", "cog"),
+    ("flatgeobuf", "feature-read", "GDAL"): _assignment(
+        "3.8.4", "gdal-flatgeobuf", ("positive", "metadata", "crs-axis"),
+        "flatgeobuf-current", "format.flatgeobuf", "flatgeobuf"),
+    ("flatgeobuf", "feature-read", "GeoPandas"): _assignment(
+        "1.1.4", "geopandas-flatgeobuf", ("positive", "metadata", "crs-axis"),
+        "flatgeobuf-current", "format.flatgeobuf", "flatgeobuf"),
+    ("flatgeobuf", "feature-read", "Pyogrio"): _assignment(
+        "0.13.0", "pyogrio-flatgeobuf", ("positive", "metadata", "crs-axis"),
+        "flatgeobuf-current", "format.flatgeobuf", "flatgeobuf"),
+    ("flatgeobuf", "feature-read", "flatgeobuf-js"): _assignment(
+        "4.4.0", "node-flatgeobuf", ("positive", "metadata", "media-schema"),
+        "flatgeobuf-current", "format.flatgeobuf", "flatgeobuf"),
+    ("geoparquet", "feature-read", "GDAL"): _assignment(
+        "3.14.0", "gdal-geoparquet", ("positive", "metadata", "media-schema"),
+        "geoparquet-1.1", "format.geoparquet", "geoparquet"),
+    ("geoparquet", "feature-read", "PyArrow"): _assignment(
+        "25.0.1", "pyarrow-geoparquet", ("positive", "metadata", "media-schema"),
+        "geoparquet-1.1", "format.geoparquet", "geoparquet"),
+    ("geoparquet", "geometry-read", "GeoPandas"): _assignment(
+        "1.1.4", "geopandas-geoparquet", ("positive", "metadata", "crs-axis"),
+        "geoparquet-1.1", "format.geoparquet", "geoparquet"),
+    ("hdf5-netcdf", "dataset-read", "h5py"): _assignment(
+        "3.16.0", "h5py", ("positive", "metadata"),
+        "hdf5-cloud-optimized-v1", "format.hdf5-netcdf", "hdf5-full"),
+    ("hdf5-netcdf", "header-read", "h5dump"): _assignment(
+        "1.10.10", "h5dump", ("positive", "metadata"),
+        "hdf5-cloud-optimized-v1", "format.hdf5-netcdf", "hdf5-full"),
+    ("hdf5-netcdf", "metadata-statistics", "h5stat"): _assignment(
+        "1.10.10", "h5stat", ("positive", "metadata", "range-efficiency"),
+        "hdf5-cloud-optimized-v1", "format.hdf5-netcdf", "hdf5-range"),
+    ("hdf5-netcdf", "multidimensional-read", "xarray"): _assignment(
+        "2026.7.0", "xarray-netcdf", ("positive", "metadata", "crs-axis"),
+        "hdf5-cloud-optimized-v1", "format.hdf5-netcdf", "hdf5-full"),
+    ("hdf5-netcdf", "repack", "h5repack"): _assignment(
+        "1.10.10", "h5repack", ("positive", "metadata"),
+        "hdf5-cloud-optimized-v1", "format.hdf5-netcdf", "hdf5-full"),
+    ("pmtiles", "archive-read", "pmtiles"): _assignment(
+        "3.7.0", "python-pmtiles", ("positive", "metadata", "range-efficiency"),
+        "pmtiles-3", "format.pmtiles", "pmtiles-range"),
+    ("pmtiles", "browser-archive-read", "PMTiles-browser-viewer"): _assignment(
+        "4.5.0", "node-pmtiles", ("positive", "metadata", "range-efficiency"),
+        "pmtiles-3", "format.pmtiles", "pmtiles-range"),
+    ("pmtiles", "producer-validate", "Tippecanoe"): _assignment(
+        "2.79.0", "tippecanoe-pmtiles", ("positive", "metadata", "media-schema"),
+        "pmtiles-3", "format.pmtiles", "pmtiles-full"),
+    ("zarr", "array-read", "zarr"): _assignment(
+        "3.3.0", "zarr-python", ("positive", "metadata"),
+        "zarr-v2", "format.zarr", "zarr"),
+    ("zarr", "distributed-array-compute", "Dask"): _assignment(
+        "2026.7.1", "dask-zarr", ("positive", "metadata", "range-efficiency"),
+        "zarr-v2", "format.zarr", "zarr"),
+    ("zarr", "multidimensional-subset", "xarray"): _assignment(
+        "2026.7.0", "xarray-zarr", ("positive", "metadata", "crs-axis", "range-efficiency"),
+        "zarr-v2", "format.zarr", "zarr"),
+    ("zarr", "store-read", "fsspec"): _assignment(
+        "2026.7.0", "fsspec-zarr", ("positive", "metadata", "range-efficiency"),
+        "zarr-v2", "format.zarr", "zarr"),
 }
 
 
@@ -208,16 +419,15 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
         assignment = GOVERNED_ASSIGNMENTS.get(identity)
         if assignment is None:
             continue
-        version, lane, facets, contract = assignment
-        if observation["client_version"] != version:
+        if observation["client_version"] != assignment.version:
             observation["result"] = "fail"
             observation["failure_reason"] = (
                 f"Observed client version {observation['client_version']} does not match "
-                f"governed version {version}"
+                f"governed version {assignment.version}"
             )
-        observation["client_lane"] = lane
-        observation["scenario_facets"] = list(facets)
-        observation["contract_revision"] = contract
+        observation["client_lane"] = assignment.lane
+        observation["scenario_facets"] = list(assignment.facets)
+        observation["contract_revision"] = assignment.contract_revision
         observation["auth_policy_revision"] = "anonymous-v1"
         observation["evidence_digest"] = args.evidence_digest
         observation["evidence_receipt"] = None
@@ -227,7 +437,7 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
         facet_result = "pass" if observation["result"] == "pass" else observation["result"]
         observation["facet_results"] = {
             facet: {"result": facet_result, "evidence_digest": args.evidence_digest}
-            for facet in facets
+            for facet in assignment.facets
         }
         if observation["result"] == "pass":
             observation["result"] = "skip"
@@ -431,7 +641,7 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
                 raise ValueError("xarray did not recover the Zarr temperature array")
 
     def dask_check() -> None:
-        with xarray.open_zarr(path, chunks={"time": 1, "lat": 2, "lon": 2}, consolidated=True) as dataset:
+        with xarray.open_zarr(path, chunks={"time": 1, "y": 4, "x": 4}, consolidated=True) as dataset:
             values = dataset["temperature"].data
             if not isinstance(values, dask.array.Array) or float(values.mean().compute()) <= 0:
                 raise ValueError("Dask did not compute a valid Zarr aggregate")
