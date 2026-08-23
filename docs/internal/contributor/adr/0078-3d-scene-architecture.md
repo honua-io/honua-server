@@ -294,6 +294,15 @@ job lifetime, submission materializes the bounded source into job-owned durable
 staging before `202`. A retry never re-queries an unversioned live layer whose
 features may have changed since admission.
 
+Admission also captures the submitting principal's
+`OperationAuditInfo.SubmitterSecurityContext` beside that source snapshot. The
+background executor enters the shared job-security scope and reads/materializes
+through the canonical query pipeline with the same tenant, row predicate, and
+field mask. Managed membership is revalidated before deferred execution; an
+inactive identity, removed role, absent/stale context, or failed revalidation
+fails closed rather than falling back to a service-wide catalog read. A later
+grant may never widen the already-pinned view for the existing job.
+
 The current synchronous `201` generation endpoint is transitional. An optional
 bounded wait mode may preserve compatibility for small inputs, but it is not the
 canonical contract and must converge on the same job/result record. Scene jobs
@@ -325,6 +334,16 @@ parent durably records that child reference and submits with the deterministic
 key, never a random plan id plus a null idempotency key. After a crash, a retry
 verifies the fingerprint and reattaches to the existing child/result instead of
 dispatching another translation; a mismatch fails and requires a new parent job.
+
+Native translation crosses the job boundary only by durable typed artifact
+reference. The child reads the parent's immutable staged LAZ/COPC reference
+directly and never receives base64 input in its plan. It publishes an immutable,
+integrity-bound LAS reference with locator/version, size, media type, and digest,
+never a `data:` URI or whole-file `byte[]` result. The parent durably binds that
+reference before consumption and holds/renews its retention through every parent
+retry; it cannot expire before parent terminalization plus the configured retry
+or diagnostic window. Parent terminal cleanup releases both input and translated
+artifact leases idempotently.
 
 The promoted asset tree and active catalog registration are required members of
 one job-wide, attempt-fenced output-set manifest governed by ADR-0031 and
@@ -417,7 +436,7 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
 
 - The catalog needs a compatibility migration from the mixed dataset enum to two
   axes.
-- Three separate public contract schemas and downstream fixture consumers must
+- Four separate public contract schemas and downstream fixture consumers must
   be maintained.
 - SDK/rendering hosts need an explicit ephemeral resource/session abstraction.
 - I3S remains a preview until production geometry and real-client evidence land.
