@@ -67,6 +67,7 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertEqual("diagnostic-red", payload["status"])
         self.assertEqual({"total": 2, "passed": 1, "failed": 1, "skipped": 0, "canttell": 0}, payload["totals"])
+        self.assertEqual("process.ogc-api-processes", payload["observations"][0]["capabilityKey"])
         self.assertEqual("landing-page", payload["observations"][0]["operation"])
         self.assertEqual(
             "org.opengis.cite.ogcapiprocesses10.landingpage.LandingPage#badLink",

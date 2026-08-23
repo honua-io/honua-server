@@ -30,14 +30,18 @@ def write_provenance(
         raise ValueError("Tested Honua git SHA must be full-length or 'unknown'")
     if checkout_git_sha != "unknown" and not GIT_SHA.fullmatch(checkout_git_sha):
         raise ValueError("Checked-out Honua git SHA must be full-length or 'unknown'")
-    if tested_git_sha != "unknown" and tested_git_sha != checkout_git_sha:
+    if server_build_mode not in {"source-build", "prebuilt", "local-existing"}:
+        raise ValueError("Honua Server build mode is invalid")
+    if (
+        tested_git_sha != "unknown"
+        and tested_git_sha != checkout_git_sha
+        and server_build_mode != "prebuilt"
+    ):
         raise ValueError("Tested Honua git SHA does not match the checked-out commit")
     if not re.fullmatch(r"^[0-9a-fA-F]{64}$", server_container_id):
         raise ValueError("Honua Server container ID must be a full Docker identifier")
     if not IMAGE_ID.fullmatch(server_image_id):
         raise ValueError("Honua Server image ID must be an immutable sha256 identifier")
-    if server_build_mode not in {"source-build", "prebuilt", "local-existing"}:
-        raise ValueError("Honua Server build mode is invalid")
     if require_tested_git_sha and server_build_mode == "local-existing":
         raise ValueError("CI provenance cannot use an untracked local-existing image")
     if server_build_mode == "prebuilt" and not requested_server_image:
