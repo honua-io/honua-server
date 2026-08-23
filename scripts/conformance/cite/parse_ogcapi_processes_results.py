@@ -16,7 +16,7 @@ from pathlib import Path
 
 ETS_COMMIT = "75abd1f37fc3aad95163fdce2e33e393b1ba5a88"
 ETS_VERSION = "1.4-SNAPSHOT"
-FIXTURE_REVISION = "ogcapi-processes-cite-profile-v7"
+FIXTURE_REVISION = "ogcapi-processes-cite-profile-v8"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -173,17 +173,6 @@ METHOD_SCENARIO_FACETS = {
     (JOB_LIST_CLASS, "testJobListSuccess"): ("positive", "pagination"),
 }
 
-REPRESENTATIVE_METHODS = {
-    GENERAL_HTTP_CLASS: "testHttp",
-    LANDING_PAGE_CLASS: "testLandingPageRetrieval",
-    CONFORMANCE_CLASS: "testValidateConformanceOperationAndResponse",
-    PROCESS_LIST_CLASS: "testProcessList",
-    PROCESS_CLASS: "testProcess",
-    PROCESS_DESCRIPTION_CLASS: "testOGCProcessDescriptionJSON",
-    JOBS_CLASS: "testJobSuccess",
-    JOB_LIST_CLASS: "testJobList",
-}
-
 MANDATORY_ETS_CLASSES = frozenset(CLASS_MAPPINGS)
 MANDATORY_VERDICT_CLASSES = MANDATORY_ETS_CLASSES - {SUITE_PRECONDITIONS_CLASS}
 
@@ -315,6 +304,7 @@ def parse_results(
     totals = Counts()
     class_totals: dict[str, Counts] = defaultdict(Counts)
     seen_ets_classes: set[str] = set()
+    seen_ets_methods: set[tuple[str, str]] = set()
     invocation_counts: Counter[tuple[str, str, str]] = Counter()
 
     for test in root.findall(".//test"):
@@ -333,6 +323,7 @@ def parse_results(
                     continue
 
                 method_name = method.get("name", "")
+                seen_ets_methods.add((class_name, method_name))
                 if class_operation is None:
                     infrastructure_errors.append(
                         f"unmapped ETS class {class_name or '<missing>'}"
@@ -420,6 +411,15 @@ def parse_results(
     if missing_ets_classes:
         infrastructure_errors.append(
             "ETS omitted mandatory classes: " + ", ".join(missing_ets_classes)
+        )
+    missing_ets_methods = sorted(set(METHOD_SCENARIO_FACETS) - seen_ets_methods)
+    if missing_ets_methods:
+        infrastructure_errors.append(
+            "ETS omitted pinned verdict methods: "
+            + ", ".join(
+                f"{class_name}#{method_name}"
+                for class_name, method_name in missing_ets_methods
+            )
         )
     missing_verdict_classes = sorted(MANDATORY_VERDICT_CLASSES - class_totals.keys())
     if missing_verdict_classes:

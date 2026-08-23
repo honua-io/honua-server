@@ -66,6 +66,12 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             binaryAlternatives[0].GetProperty("format").GetString().Should().Be("byte");
             binaryAlternatives[1].GetProperty("required")[0].GetString().Should().Be("value");
             binaryAlternatives[2].GetProperty("required")[0].GetString().Should().Be("href");
+            var inlineBinaryFormat = binaryAlternatives[1].GetProperty("properties")
+                .GetProperty("format").GetProperty("properties");
+            inlineBinaryFormat.GetProperty("mediaType").GetProperty("enum")[0]
+                .GetString().Should().Be("image/tiff");
+            inlineBinaryFormat.GetProperty("encoding").GetProperty("enum")[0]
+                .GetString().Should().Be("base64");
             inputs.GetProperty("mixed").GetProperty("schema").GetProperty("oneOf")
                 .GetArrayLength().Should().Be(2);
             inputs.GetProperty("array").GetProperty("schema").GetProperty("oneOf")[1]

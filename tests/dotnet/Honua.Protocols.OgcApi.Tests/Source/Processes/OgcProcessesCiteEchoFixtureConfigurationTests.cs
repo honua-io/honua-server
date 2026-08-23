@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
@@ -50,6 +53,30 @@ public sealed class OgcProcessesCiteEchoFixtureConfigurationTests
             .Should().BeFalse();
         OgcProcessesCiteEchoFixture.IsEnabled(wrongProfile, "Test")
             .Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void AddOgcProcesses_KeepsTheCertificationCatalogProtocolLocal()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_REGISTER_TEST_INFRASTRUCTURE"] = "true",
+                ["OgcProcesses:CertificationProfile"] = "ogcapi-processes10"
+            })
+            .Build();
+        var sharedCatalog = new BuiltInProcessCatalog();
+        var services = new ServiceCollection();
+        services.AddSingleton<IProcessCatalog>(sharedCatalog);
+
+        services.AddOgcProcesses(configuration, "Test");
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IProcessCatalog>().Should().BeSameAs(sharedCatalog);
+        sharedCatalog.GetProcess(OgcProcessesCiteEchoFixture.ProcessId).Should().BeNull();
+        provider.GetRequiredService<IOgcProcessesCatalog>()
+            .GetProcess(OgcProcessesCiteEchoFixture.ProcessId)
+            .Should().BeSameAs(OgcProcessesCiteEchoFixture.Definition);
     }
 
     [UnitTest]
