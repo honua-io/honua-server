@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "generator": "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
   "trackingIssue": "#2863",
-  "lastReviewed": "2026-07-15",
+  "lastReviewed": "2026-08-22",
   "judgmentSource": "docs/gis/data/geoservices-parity-judgment.json",
   "routeRoster": {
     "derivedFrom": "Honua.Server.EndpointRegistry.All, via the generated feature catalog (tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs).",
@@ -3156,13 +3156,14 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, synchronous execute, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (96 seeded processes across geometry.*, analytics.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, pcloud.*)",
-        "Generic synchronous execute route (#1660): the deterministic single-geometry geometry.* / conversion.geometry-format family runs inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages); async-only tasks return a 400 capability message pointing at submitJob"
+        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, synchronous execute, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (98 seeded processes across geometry.*, analytics.*, enrichment.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, imagery.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, pcloud.*)",
+        "Generic synchronous execute route (#1660): the deterministic single-geometry geometry.* / conversion.geometry-format family runs inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages); async-only tasks return a 400 capability message pointing at submitJob",
+        "Esri-conventional task-name alias overlay (#2788): 39 mapped process IDs are also published and addressable by familiar names such as Buffer, while canonical process IDs remain supported; aliases change task discovery/addressing only and deliberately retain the published canonical Honua parameter contract",
+        "Durable per-parameter result retrieval: successful terminal GP jobs advertise named result parameters and jobs/{jobId}/results/{paramName} reads their values from the result-package store"
       ],
       "knownGaps": [
-        "published generic task names currently mirror internal built-in process IDs (for example geometry.buffer)",
-        "GP environment controls (env:*) are rejected with 400 until engine support is available; context is preserved as protocol metadata but not interpreted yet",
-        "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
+        "GP environment control coverage is bounded: env:outSR, env:workspace, and env:overwriteOutput are honored on submitJob and execute; env:processSR is validated and preserved on both routes but does not yet change the processing CRS; other env:* controls (for example env:transferDomains) return 400 until engine support is available",
+        "Esri-conventional task aliases do not adapt canonical Honua parameters to the same-named Esri tool\u0027s wire contract; for example Buffer accepts base64 WKB, SRID, and numeric distance rather than Esri JSON feature-record-set, linear-unit, and dissolve-option inputs (#2788)"
       ],
       "evidence": {
         "canonicalModel": [
@@ -3172,12 +3173,16 @@
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerExecutionPolicy.cs",
+          "src/Honua.Geoprocessing/Features/Geoprocessing/RedisGeoprocessingResultPackageStore.cs",
           "src/Honua.Server/EndpointRegistry.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerParameterTranslationTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerStatusMappingTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
@@ -3314,7 +3319,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Honors env:outSR for reprojectable geometry outputs (unlike submitJob, which rejects env:* controls). Implemented in #1660."
+            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; env:processSR is accepted and preserved but does not yet change the processing CRS; unsupported env:* controls return 400. Implemented in #1660."
           },
           {
             "name": "Jobs List",
@@ -3371,7 +3376,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Per-output result access with route binding validation. Result storage pending execution engine. Implemented in #723."
+            "notes": "Per-output result access with route binding validation. Successful terminal jobs advertise named result URLs backed by the durable result-package store, and retrieval returns each parameter\u0027s Esri data type and stored value."
           },
           {
             "name": "Submit Job (generic)",
@@ -3393,9 +3398,23 @@
         "stub": [],
         "notImplemented": []
       },
+      "parameterCoverage": {
+        "genericTaskRouting": [
+          {
+            "name": "taskName: Esri-conventional aliases (name-level addressing)",
+            "status": "implemented",
+            "notes": "39 unambiguous aliases, including Buffer, are published alongside canonical process IDs and resolve through task-info, submitJob, and execute. The alias does not change the task\u0027s published canonical parameters."
+          },
+          {
+            "name": "paramName: durable per-parameter result retrieval",
+            "status": "implemented",
+            "notes": "Successful jobs advertise named result parameters; jobs/{jobId}/results/{paramName} returns the stored result package value and Esri data type."
+          }
+        ]
+      },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 96 processes across geometry.*, analytics.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, and pcloud.* families for plan validation; heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 98 processes across geometry.*, analytics.*, enrichment.*, overlay.*, proximity.*, statistics.*, surface.*, raster.*, imagery.*, conversion.*, generalization.*, data-management.*, import.*, transform.*, source.*, sink.*, gdal.*, and pcloud.* families for plan validation; heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Canonical process IDs remain published, and 39 unambiguous Esri-conventional aliases are published alongside them. The aliases are name-level only: task-info advertises and execution accepts the real canonical Honua parameters, not the same-named Esri tool\u0027s wire contract.",
         "Generic synchronous execute route (#1660) is published for the deterministic single-geometry geometry.* / conversion.geometry-format family; those tasks run inline through the canonical job runtime (a protocol projection, not a separate engine). Heavyweight or layer-scoped tasks remain async-only and return a 400 capability message on execute that points at submitJob.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]

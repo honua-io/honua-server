@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 368,
-      "provingTestCount": 1036,
+      "provingTestCount": 1031,
       "maturity": {
         "implemented": 368
       },
@@ -115,7 +115,7 @@
       "category": "AI",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 88,
+      "provingTestCount": 87,
       "maturity": {
         "implemented": 4
       },
