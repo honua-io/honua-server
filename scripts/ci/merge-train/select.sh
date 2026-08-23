@@ -15,7 +15,8 @@ HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 #
 # Anything NOT listed here (and not an aggregator or a TRAIN_NONBLOCKING_JOBS
 # entry) is treated as a shard: its failure is downgraded to FLAKE when the log
-# matches TRAIN_FLAKE_REGEX. That check is run-wide, because train_select_job_log
+# matches a configured flake signature or the correlated Ryuk failure predicate.
+# That check is run-wide, because train_select_job_log
 # falls back to `gh run view --log-failed` for the WHOLE run — so one unrelated
 # 40P01 shard deadlock in the same batch would launder an unlisted job's real
 # failure into a flake. Every foundation-class (non-shard, non-flaky) job must

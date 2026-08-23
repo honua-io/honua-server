@@ -363,9 +363,11 @@ unset TRAIN_DIFF_FOR_PR
 echo "== Case 6: flake (single rerun, no bisection; reproduce-twice => real) =="
 export TRAIN_RUN_LOG_TEXT="... ERROR 40P01: deadlock detected ..."
 train_run_logs_match_flake 999 && ok "flake: 40P01 recognized" || bad "flake: 40P01 missed"
-export TRAIN_RUN_LOG_TEXT="Testcontainers timed out waiting for ryuk"
+export TRAIN_RUN_LOG_TEXT="Testcontainers timed out waiting for Ryuk"
 train_run_logs_match_flake 999 && ok "flake: testcontainers/ryuk recognized" || bad "flake: missed"
-export TRAIN_RUN_LOG_TEXT="TESTCONTAINERS_RYUK_DISABLED: false"
+export TRAIN_RUN_LOG_TEXT=$'Testcontainers startup failed\nconnection refused while contacting the resource reaper\nRyuk container did not become ready'
+train_run_logs_match_flake 999 && ok "flake: multiline testcontainers/ryuk recognized" || bad "flake: multiline ryuk missed"
+export TRAIN_RUN_LOG_TEXT=$'testcontainers.ryuk.disabled=false\nAssert.Equal() Failure: expected 3 actual 4'
 train_run_logs_match_flake 999 && bad "flake: Ryuk status line misclassified" || ok "flake: Ryuk status line not a flake"
 export TRAIN_RUN_LOG_TEXT="Assert.Equal() Failure: expected 3 actual 4"
 train_run_logs_match_flake 999 && bad "flake: real assertion misclassified" || ok "flake: real assertion not a flake"
