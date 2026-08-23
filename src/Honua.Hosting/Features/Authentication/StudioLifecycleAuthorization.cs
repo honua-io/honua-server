@@ -210,7 +210,7 @@ internal static class StudioAiInteractivePrincipal
     {
         // A validated bearer token is not necessarily interactive: client-credentials tokens
         // can carry the same scope-governed marker as user tokens. Require a positive user
-        // identity signal for bearer auth and reject explicit machine-grant markers.
+        // session-provenance signal for bearer auth and reject explicit machine-grant markers.
         if (string.Equals(identity.AuthenticationType, JwtBearerDefaults.AuthenticationScheme, StringComparison.OrdinalIgnoreCase))
         {
             if (identity.HasClaim(c =>
