@@ -14,6 +14,7 @@ namespace Honua.Ai.StudioAiProxy.Domain;
 public static class StudioAiChatRequestMapper
 {
     private const int MaxMessageCount = 256;
+    private const int MaxToolCount = 128;
     private const int MaxToolCallCount = 256;
     /// <summary>
     /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
@@ -105,6 +106,11 @@ public static class StudioAiChatRequestMapper
         List<StudioAiToolDefinition>? tools = null;
         if (http.Tools is { Count: > 0 } httpTools)
         {
+            if (httpTools.Count > MaxToolCount)
+            {
+                return (null, $"A maximum of {MaxToolCount} tools is allowed per request.");
+            }
+
             tools = new List<StudioAiToolDefinition>(httpTools.Count);
             foreach (var tool in httpTools)
             {

@@ -637,12 +637,19 @@ public static class OidcAuthenticationExtensions
                     // token; it does not prove that it represents a human session. Mark bearer
                     // identities interactive only when the issuer supplied user-session
                     // provenance (authentication method or authentication time).
-                    if (context.Principal?.Identity is ClaimsIdentity identity &&
-                        identity.HasClaim(static claim =>
-                            string.Equals(claim.Type, "amr", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(claim.Type, "auth_time", StringComparison.OrdinalIgnoreCase)))
+                    if (context.Principal?.Identity is ClaimsIdentity identity)
                     {
-                        identity.AddClaim(new Claim("honua_interactive_provenance", "true"));
+                        foreach (var claim in identity.FindAll("honua_interactive_provenance").ToArray())
+                        {
+                            identity.RemoveClaim(claim);
+                        }
+
+                        if (identity.HasClaim(static claim =>
+                                string.Equals(claim.Type, "amr", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(claim.Type, "auth_time", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            identity.AddClaim(new Claim("honua_interactive_provenance", "true"));
+                        }
                     }
                     }
 
