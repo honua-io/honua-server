@@ -16,7 +16,7 @@ from pathlib import Path
 
 ETS_COMMIT = "75abd1f37fc3aad95163fdce2e33e393b1ba5a88"
 ETS_VERSION = "1.4-SNAPSHOT"
-FIXTURE_REVISION = "ogcapi-processes-cite-profile-v5"
+FIXTURE_REVISION = "ogcapi-processes-cite-profile-v6"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 

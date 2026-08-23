@@ -71,6 +71,21 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             inputs.GetProperty("pause").GetProperty("schema").GetProperty("type")
                 .GetString().Should().Be("integer");
 
+            using var invalidBinary = await PostExecutionAsync(client, """
+                {
+                  "inputs": {
+                    "literal": "teststring",
+                    "binary": { "type": "wrong/type_not-a-tiff" }
+                  },
+                  "outputs": { "literal": { "transmissionMode": "value" } }
+                }
+                """);
+            invalidBinary.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var invalidBinaryError = JsonDocument.Parse(
+                await invalidBinary.Content.ReadAsStringAsync());
+            invalidBinaryError.RootElement.GetProperty("detail").GetString()
+                .Should().Contain("binary");
+
             using var submit = await PostExecutionAsync(client, """
                 {
                   "response": "document",

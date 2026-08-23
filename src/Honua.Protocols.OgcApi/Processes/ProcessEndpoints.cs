@@ -342,6 +342,20 @@ internal static class ProcessEndpoints
                     "Raw responses require a supported synchronous value request.");
             }
 
+            if (definition != null
+                && OgcProcessesCiteEchoFixture.IsDefinition(definition)
+                && !OgcProcessesCiteEchoFixture.TryValidateBinaryInput(request.Inputs, out var inputError))
+            {
+                OgcProcessesLog.PlanStructureInvalid(
+                    logger,
+                    processId,
+                    inputError ?? "Unknown CITE echo input validation error.");
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid process input",
+                    inputError ?? "The CITE echo process input is invalid.");
+            }
+
             var geometryService = context.RequestServices.GetRequiredService<IGeometryService>();
             if (!TryBuildAnalysisPlan(
                     processId,
