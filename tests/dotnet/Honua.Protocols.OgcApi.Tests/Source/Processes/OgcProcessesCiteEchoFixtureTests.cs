@@ -86,6 +86,44 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             invalidBinaryError.RootElement.GetProperty("detail").GetString()
                 .Should().Contain("binary");
 
+            using var invalidBinaryString = await PostExecutionAsync(client, """
+                {
+                  "inputs": {
+                    "literal": "teststring",
+                    "binary": "not-base64"
+                  },
+                  "outputs": { "binary": { "transmissionMode": "value" } }
+                }
+                """);
+            invalidBinaryString.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var invalidBinaryStringError = JsonDocument.Parse(
+                await invalidBinaryString.Content.ReadAsStringAsync());
+            invalidBinaryStringError.RootElement.GetProperty("detail").GetString()
+                .Should().Contain("base64");
+
+            using var inlineBinarySubmit = await PostExecutionAsync(client, """
+                {
+                  "response": "document",
+                  "inputs": {
+                    "literal": "teststring",
+                    "binary": "dGVzdA=="
+                  },
+                  "outputs": { "binary": { "transmissionMode": "value" } }
+                }
+                """);
+            inlineBinarySubmit.StatusCode.Should().Be(HttpStatusCode.Created);
+            var inlineBinaryJobId = await ReadJobIdAsync(inlineBinarySubmit);
+            using var inlineBinaryTerminal = await PollUntilSucceededAsync(client, inlineBinaryJobId);
+            inlineBinaryTerminal.RootElement.GetProperty("status").GetString()
+                .Should().Be("successful");
+            using var inlineBinaryResultsResponse = await client.GetAsync(
+                $"/ogc/processes/jobs/{inlineBinaryJobId}/results");
+            inlineBinaryResultsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var inlineBinaryResults = JsonDocument.Parse(
+                await inlineBinaryResultsResponse.Content.ReadAsStringAsync());
+            inlineBinaryResults.RootElement.GetProperty("binary").GetString()
+                .Should().Be("dGVzdA==");
+
             using var submit = await PostExecutionAsync(client, """
                 {
                   "response": "document",

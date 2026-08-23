@@ -44,7 +44,9 @@ internal sealed class OgcProcessesCiteEchoExecutor : IProcessExecutor
         }
 
         var inputPrefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-        if (!TryValidateBinaryInput(job.Spec.Parameters.GetValueOrDefault(inputPrefix + "binary"), out var binaryError))
+        if (!OgcProcessesCiteEchoFixture.TryValidateCanonicalBinaryInput(
+                job.Spec.Parameters.GetValueOrDefault(inputPrefix + "binary"),
+                out var binaryError))
         {
             return JobExecutionResult.Failed(binaryError!);
         }
@@ -180,31 +182,4 @@ internal sealed class OgcProcessesCiteEchoExecutor : IProcessExecutor
         return true;
     }
 
-    private static bool TryValidateBinaryInput(string? rawBinary, out string? error)
-    {
-        error = null;
-        if (string.IsNullOrWhiteSpace(rawBinary))
-        {
-            return true;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(rawBinary);
-            if (document.RootElement.ValueKind != JsonValueKind.Object
-                || (!document.RootElement.TryGetProperty("value", out _)
-                    && !document.RootElement.TryGetProperty("href", out _)))
-            {
-                error = "CITE echo input 'binary' must contain either 'value' or 'href'.";
-                return false;
-            }
-
-            return true;
-        }
-        catch (JsonException)
-        {
-            error = "CITE echo input 'binary' must be a JSON object.";
-            return false;
-        }
-    }
 }
