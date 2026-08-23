@@ -14,6 +14,7 @@ namespace Honua.Ai.StudioAiProxy.Domain;
 public static class StudioAiChatRequestMapper
 {
     private const int MaxMessageCount = 256;
+    private const int MaxToolCallCount = 256;
     /// <summary>
     /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
     /// When <paramref name="allowCallerOverrides"/> is false, caller-supplied model and output
@@ -40,6 +41,7 @@ public static class StudioAiChatRequestMapper
         }
 
         var messages = new List<StudioAiMessage>(httpMessages.Count);
+        var totalToolCalls = 0;
         foreach (var message in httpMessages)
         {
             if (message is null)
@@ -60,6 +62,12 @@ public static class StudioAiChatRequestMapper
             IReadOnlyList<StudioAiToolCall>? toolCalls = null;
             if (message.ToolCalls is { Count: > 0 } sourceToolCalls)
             {
+                totalToolCalls += sourceToolCalls.Count;
+                if (totalToolCalls > MaxToolCallCount)
+                {
+                    return (null, $"A maximum of {MaxToolCallCount} assistant tool calls is allowed per request.");
+                }
+
                 if (role != StudioAiRole.Assistant)
                 {
                     return (null, "message.toolCalls is only valid for assistant messages.");

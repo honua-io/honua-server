@@ -196,7 +196,9 @@ internal static class StudioAiInteractivePrincipal
             (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
              string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
             (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase))));
+             string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(c.Type, "honua_auth_flow", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase))));
         return !hasMachineGrant && principal.Identities.Any(identity =>
             identity.IsAuthenticated &&
             ((InteractiveAuthenticationSchemes.Any(scheme =>
@@ -217,7 +219,9 @@ internal static class StudioAiInteractivePrincipal
                     (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
                      string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
                     (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
-                     string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase))))
+                     string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
+                    (string.Equals(c.Type, "honua_auth_flow", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase))))
             {
                 return false;
             }

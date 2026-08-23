@@ -21,6 +21,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
 {
     private const int MaxToolCount = 128;
     private const int MaxMessageCount = 256;
+    private const int MaxToolCallCount = 256;
     private const int MaxToolComponentCharacters = 64_000;
 
     private readonly StudioAiProxyConfiguration _configuration;
@@ -91,6 +92,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         }
 
         long totalChars = request.Messages.Sum(m => (long)m.Content.Length) + (request.System?.Length ?? 0);
+        var totalToolCalls = 0;
         if (request.ToolChoice is not null)
         {
             totalChars += request.ToolChoice.ToolName?.Length ?? 0;
@@ -119,6 +121,12 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             totalChars += message.ToolName?.Length ?? 0;
             if (message.ToolCalls is { Count: > 0 } toolCalls)
             {
+                totalToolCalls += toolCalls.Count;
+                if (totalToolCalls > MaxToolCallCount)
+                {
+                    return $"A maximum of {MaxToolCallCount} assistant tool calls is allowed per request.";
+                }
+
                 foreach (var toolCall in toolCalls)
                 {
                     var argumentCharacters = JsonCharacterCount(toolCall.Arguments);

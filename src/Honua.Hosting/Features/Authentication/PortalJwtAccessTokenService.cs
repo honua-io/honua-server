@@ -79,6 +79,11 @@ internal sealed class PortalJwtAccessTokenService(
             new("auth_type", PortalTokenIssuer.AuthTypeClaimValue),
         };
 
+        if (request.IsClientCredentials)
+        {
+            claims.Add(new Claim("honua_auth_flow", "client_credentials"));
+        }
+
         if (!string.IsNullOrWhiteSpace(request.DisplayName))
         {
             claims.Add(new Claim("display_name", request.DisplayName));
