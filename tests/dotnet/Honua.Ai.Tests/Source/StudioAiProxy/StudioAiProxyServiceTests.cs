@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using System.Text.Json;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
@@ -156,6 +157,52 @@ public sealed class StudioAiProxyServiceTests
         });
 
         error.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void ValidateRequest_ToolPayloadCountsTowardMaxPromptCharacters()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.MaxPromptCharacters = 20;
+        var service = CreateService(config, new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = "lookup",
+                    Description = "tool description that exceeds the request budget",
+                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                }
+            ]
+        });
+
+        error.Should().Contain("configured limit");
+    }
+
+    [UnitTest]
+    public void ValidateRequest_TooManyTools_IsRejected()
+    {
+        var service = CreateService(
+            ConfigWithOneAnthropicProvider("claude", isDefault: true),
+            new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Tools = Enumerable.Range(0, 129)
+                .Select(index => new StudioAiToolDefinition
+                {
+                    Name = $"tool-{index}",
+                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                })
+                .ToArray()
+        });
+
+        error.Should().Contain("maximum of 128 tools");
     }
 
     [UnitTest]

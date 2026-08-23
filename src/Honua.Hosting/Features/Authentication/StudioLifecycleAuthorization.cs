@@ -1,15 +1,18 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -28,6 +31,13 @@ namespace Honua.Infrastructure.Authentication;
 /// ASP.NET route-group policy-evaluation point.
 /// </summary>
 internal sealed class StudioLifecycleRequirement : IAuthorizationRequirement;
+
+/// <summary>
+/// Additional boundary for the Studio AI proxy. The general Studio lifecycle policy may admit
+/// scoped API keys so they can own drafts, but model-provider access is reserved for interactive
+/// OIDC/session users and administrators until a dedicated Studio AI permission exists.
+/// </summary>
+internal sealed class StudioAiProxyRequirement : IAuthorizationRequirement;
 
 /// <summary>
 /// Evaluates <see cref="StudioLifecycleRequirement"/> against the caller's admin role and the
@@ -55,7 +65,7 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         AuthorizationHandlerContext context,
         StudioLifecycleRequirement requirement)
     {
-        if (IsRecognizedAdmin(context.User))
+        if (IsRecognizedAdmin(context.User, _adminRoleOptions.CurrentValue))
         {
             // Preserve the scoped admin-permission boundary this policy replaced (#1985) --
             // but only for API-key principals. The prior RequireAdminAuthorization() gate ran
@@ -107,14 +117,14 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     /// the same set <c>StudioAuthorizationService.IsAdmin</c> resolves), so an OIDC admin via
     /// an alias role keeps admin-tier Studio access rather than degrading to end-user scoping.
     /// </summary>
-    private bool IsRecognizedAdmin(ClaimsPrincipal principal)
+    internal static bool IsRecognizedAdmin(ClaimsPrincipal principal, AdminRoleOptions options)
     {
         if (principal.IsInRole("admin"))
         {
             return true;
         }
 
-        var aliases = _adminRoleOptions.CurrentValue.AdminRoles;
+        var aliases = options.AdminRoles;
         if (aliases is null)
         {
             return false;
@@ -123,10 +133,189 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         return aliases.Any(alias => !string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias));
     }
 
-    private static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
+    internal static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
         => principal.Identities.Any(identity =>
             string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
+
+    internal static bool IsInteractivePrincipal(ClaimsPrincipal principal)
+        => StudioAiInteractivePrincipal.IsInteractive(principal);
 }
+
+/// <summary>
+/// Keeps non-admin API keys out of the Studio AI proxy while preserving both interactive
+/// end-user access and the existing admin family.
+/// </summary>
+internal sealed class StudioAiProxyAuthorizationHandler(
+    IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
+    : AuthorizationHandler<StudioAiProxyRequirement>
+{
+    internal const string InteractivePrincipalRequiredCode =
+        "studio_authorization/interactive_principal_required";
+
+    private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions = adminRoleOptions;
+
+    /// <inheritdoc />
+    protected override Task HandleRequirementAsync(
+        AuthorizationHandlerContext context,
+        StudioAiProxyRequirement requirement)
+    {
+        if (StudioLifecycleAuthorizationHandler.IsRecognizedAdmin(
+                context.User,
+                _adminRoleOptions.CurrentValue) ||
+            StudioLifecycleAuthorizationHandler.IsInteractivePrincipal(context.User))
+        {
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
+        context.Fail(new AuthorizationFailureReason(this, InteractivePrincipalRequiredCode));
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Keeps the AI proxy's interactive admission list explicit. Non-admin mTLS and other machine
+/// identities must not be treated as browser/session users merely because they are not API keys.
+/// </summary>
+internal static class StudioAiInteractivePrincipal
+{
+    internal const string InteractiveProvenanceClaimType = "honua_interactive_provenance";
+    private const string InteractiveProvenanceClaimValue = "true";
+
+    private static readonly HashSet<string> HumanAuthenticationMethods = new(
+        ["face", "fido", "fido2", "fingerprint", "iris", "mfa", "otp", "smartcard", "webauthn", "wia"],
+        StringComparer.OrdinalIgnoreCase);
+
+    private static readonly string[] InteractiveAuthenticationSchemes =
+    [
+        JwtBearerDefaults.AuthenticationScheme,
+        OidcAuthenticationExtensions.CompositeScheme,
+        OidcAuthenticationExtensions.AdminSessionScheme,
+        OidcAuthenticationExtensions.OidcScheme,
+        OidcAuthenticationExtensions.GoogleScheme,
+        OidcAuthenticationExtensions.OktaScheme,
+        OidcAuthenticationExtensions.Auth0Scheme,
+        OidcAuthenticationExtensions.AzureAdScheme,
+    ];
+
+    internal static bool IsInteractive(ClaimsPrincipal principal)
+    {
+        return !HasMachineGrant(principal) && principal.Identities.Any(identity =>
+            identity.IsAuthenticated &&
+            (IsHumanSession(identity) &&
+             (InteractiveAuthenticationSchemes.Any(scheme =>
+                  string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) ||
+              HasSessionProvenance(identity))));
+    }
+
+    private static bool IsHumanSession(ClaimsIdentity identity)
+    {
+        // A validated bearer token is not necessarily interactive: client-credentials tokens
+        // can carry the same scope-governed marker as user tokens. Require a positive user
+        // session-provenance signal for bearer auth and reject explicit machine-grant markers.
+        if (string.Equals(identity.AuthenticationType, JwtBearerDefaults.AuthenticationScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            if (HasMachineGrant(identity))
+            {
+                return false;
+            }
+
+            return HasSessionProvenance(identity);
+        }
+
+        return true;
+    }
+
+    private static bool HasSessionProvenance(ClaimsIdentity identity)
+        => identity.HasClaim(c =>
+            string.Equals(c.Type, InteractiveProvenanceClaimType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(c.Value, InteractiveProvenanceClaimValue, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Removes every inbound copy of the reserved Studio bearer marker, then stamps one local
+    /// copy only when the validated token carries positive human-session evidence. Subject
+    /// resolution mirrors OIDC claims normalization, including the configured claim and the
+    /// built-in <c>NameIdentifier</c>/<c>sub</c>/<c>oid</c> fallbacks.
+    /// </summary>
+    internal static void ReplaceWithServerDerivedProvenance(
+        ClaimsPrincipal principal,
+        string? configuredUserIdClaimType = null)
+    {
+        foreach (var identity in principal.Identities.OfType<ClaimsIdentity>())
+        {
+            foreach (var claim in identity.Claims
+                         .Where(static claim => string.Equals(
+                             claim.Type,
+                             InteractiveProvenanceClaimType,
+                             StringComparison.OrdinalIgnoreCase))
+                         .ToArray())
+            {
+                identity.RemoveClaim(claim);
+            }
+        }
+
+        if (HasMachineGrant(principal) ||
+            principal.Identity is not ClaimsIdentity bearerIdentity ||
+            !HasHumanSessionEvidence(bearerIdentity, configuredUserIdClaimType))
+        {
+            return;
+        }
+
+        bearerIdentity.AddClaim(new Claim(
+            InteractiveProvenanceClaimType,
+            InteractiveProvenanceClaimValue));
+    }
+
+    private static bool HasHumanSessionEvidence(
+        ClaimsIdentity identity,
+        string? configuredUserIdClaimType)
+    {
+        var hasSubject = identity.Claims.Any(claim =>
+            IsSubjectClaim(claim.Type, configuredUserIdClaimType) &&
+            !string.IsNullOrWhiteSpace(claim.Value));
+        if (!hasSubject)
+        {
+            return false;
+        }
+
+        var hasHumanAuthenticationMethod = identity.Claims.Any(claim =>
+            string.Equals(claim.Type, "amr", StringComparison.OrdinalIgnoreCase) &&
+            HumanAuthenticationMethods.Contains(claim.Value));
+        if (hasHumanAuthenticationMethod)
+        {
+            return true;
+        }
+
+        var hasSessionId = identity.Claims.Any(claim =>
+            string.Equals(claim.Type, "sid", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(claim.Value));
+        var authenticationTime = identity.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, "auth_time", StringComparison.OrdinalIgnoreCase))?.Value;
+        return hasSessionId &&
+            long.TryParse(authenticationTime, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed > 0;
+    }
+
+    private static bool IsSubjectClaim(string claimType, string? configuredUserIdClaimType)
+        => (!string.IsNullOrWhiteSpace(configuredUserIdClaimType) &&
+            string.Equals(claimType, configuredUserIdClaimType, StringComparison.OrdinalIgnoreCase)) ||
+           string.Equals(claimType, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(claimType, "sub", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(claimType, "oid", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasMachineGrant(ClaimsPrincipal principal)
+        => principal.Identities.OfType<ClaimsIdentity>().Any(HasMachineGrant);
+
+    private static bool HasMachineGrant(ClaimsIdentity identity)
+        => identity.HasClaim(c =>
+            (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(c.Type, "honua_auth_flow", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)));
+}
+
 
 /// <summary>
 /// Audits Studio lifecycle route-group policy denials that short-circuit before the endpoint
@@ -137,6 +326,8 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
 {
     private const string StudioProblemType = "https://honua.io/problems/studio";
     private const string EndUserModeDisabledDetail = "Studio package lifecycle operations require the admin role.";
+    private const string InteractivePrincipalRequiredDetail =
+        "Studio AI proxy operations require an interactive user session or the admin role.";
     private readonly AuthorizationMiddlewareResultHandler _fallback = new();
 
     /// <inheritdoc />
@@ -152,19 +343,21 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
             await RecordPolicyDenialAuditAsync(context, denialCode).ConfigureAwait(false);
         }
 
-        if (authorizeResult.Forbidden &&
-            string.Equals(
-                denialCode,
-                StudioAuthorizationService.EndUserModeDisabledCode,
-                StringComparison.Ordinal))
+        var denialDetail = denialCode switch
+        {
+            StudioAuthorizationService.EndUserModeDisabledCode => EndUserModeDisabledDetail,
+            StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode => InteractivePrincipalRequiredDetail,
+            _ => null,
+        };
+        if (authorizeResult.Forbidden && denialDetail is not null)
         {
             await ProblemDetailsHelpers.CreateProblem(
                 context,
                 StudioProblemType,
                 StatusCodes.Status403Forbidden,
                 "Forbidden",
-                EndUserModeDisabledDetail,
-                StudioAuthorizationService.EndUserModeDisabledCode).ExecuteAsync(context).ConfigureAwait(false);
+                denialDetail,
+                denialCode!).ExecuteAsync(context).ConfigureAwait(false);
             return;
         }
 
@@ -201,6 +394,11 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
         if (HasFailureReason(authorizeResult, StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode))
         {
             return StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode;
+        }
+
+        if (HasFailureReason(authorizeResult, StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode))
+        {
+            return StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode;
         }
 
         // Future requirements added to the Studio policy must not silently create a new

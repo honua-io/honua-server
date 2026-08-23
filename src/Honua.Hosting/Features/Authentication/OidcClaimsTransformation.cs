@@ -342,6 +342,11 @@ internal sealed class OidcClaimsTransformation(
         // the ungated default and stays available to every edition.
         roles.AddRange(identity.FindAll(ClaimsMappingOptions.DefaultRoleClaimType).Select(c => c.Value));
 
+        // JsonWebTokenHandler mapped the singular JWT `role` claim into ClaimTypes.Role before
+        // inbound mapping was disabled. Preserve that compatibility explicitly alongside the
+        // existing plural `roles` normalization.
+        roles.AddRange(identity.FindAll("role").Select(c => c.Value));
+
         // A configured PRIMARY role claim type is only honoured when entitled, for the same
         // reason as the additional types below (honua-server#2997 review).
         if (claimsMappingEntitled)

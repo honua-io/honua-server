@@ -143,6 +143,76 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_PartitionsSubjectOnlyOidcPrincipals_IndependentlyOfOtherUsers()
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        // Subject-only tokens are valid OIDC identities. They must use the stable sub claim,
+        // not collapse into the shared source-IP bucket merely because no display name exists.
+        var aliceFirst = CreateContext("198.51.100.71", subject: "alice-subject");
+        await middleware.InvokeAsync(aliceFirst);
+        var aliceSecond = CreateContext("198.51.100.71", subject: "alice-subject");
+        await middleware.InvokeAsync(aliceSecond);
+
+        var bobFirst = CreateContext("198.51.100.71", subject: "bob-subject");
+        await middleware.InvokeAsync(bobFirst);
+
+        aliceFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        aliceSecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        bobFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_PartitionsSameSubjectAcrossOidcIssuers()
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        var issuerAFirst = CreateContext(
+            "198.51.100.72",
+            subject: "shared-subject",
+            issuer: "https://issuer-a.example.com");
+        await middleware.InvokeAsync(issuerAFirst);
+        var issuerASecond = CreateContext(
+            "198.51.100.72",
+            subject: "shared-subject",
+            issuer: "https://issuer-a.example.com");
+        await middleware.InvokeAsync(issuerASecond);
+
+        var issuerBFirst = CreateContext(
+            "198.51.100.72",
+            subject: "shared-subject",
+            issuer: "https://issuer-b.example.com");
+        await middleware.InvokeAsync(issuerBFirst);
+
+        issuerAFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        issuerASecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        issuerBFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_PartitionsDelimiterCollidingIssuerSubjectPairs()
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        var firstTuple = CreateContext(
+            "198.51.100.73",
+            subject: "b:c",
+            issuer: "https://idp.example/a");
+        await middleware.InvokeAsync(firstTuple);
+
+        // The old `scheme:issuer:subject` composition encoded both tuples as the same key.
+        var secondTuple = CreateContext(
+            "198.51.100.73",
+            subject: "c",
+            issuer: "https://idp.example/a:b");
+        await middleware.InvokeAsync(secondTuple);
+
+        firstTuple.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        secondTuple.Response.StatusCode.Should().Be(StatusCodes.Status200OK,
+            "distinct validated issuer/subject tuples must never share a rate-limit counter");
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_PartitionsByTenant_IndependentlyForSameUserName()
     {
         var middleware = CreateMiddleware(limit: 1);
@@ -326,6 +396,8 @@ public sealed class RateLimitingMiddlewareTests
         string remoteIp,
         string? localIp = null,
         string? user = null,
+        string? subject = null,
+        string? issuer = null,
         string? tenantId = null,
         string? endpointName = null,
         int endpointLimit = 0,
@@ -350,10 +422,26 @@ public sealed class RateLimitingMiddlewareTests
             context.SetEndpoint(endpoint);
         }
 
-        if (!string.IsNullOrWhiteSpace(user))
+        if (!string.IsNullOrWhiteSpace(user) || !string.IsNullOrWhiteSpace(subject))
         {
+            var claims = new List<Claim>();
+            if (!string.IsNullOrWhiteSpace(user))
+            {
+                claims.Add(new Claim(ClaimTypes.Name, user));
+            }
+
+            if (!string.IsNullOrWhiteSpace(subject))
+            {
+                claims.Add(new Claim("sub", subject));
+            }
+
+            if (!string.IsNullOrWhiteSpace(issuer))
+            {
+                claims.Add(new Claim("iss", issuer));
+            }
+
             var identity = new ClaimsIdentity(
-                [new Claim(ClaimTypes.Name, user)],
+                claims,
                 authenticationType: "Test");
             context.User = new ClaimsPrincipal(identity);
         }

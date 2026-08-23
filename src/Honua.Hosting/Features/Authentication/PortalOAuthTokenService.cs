@@ -242,7 +242,8 @@ internal sealed class PortalOAuthTokenService(
                 Roles: roles,
                 ClientType: PortalTokenClientType.Ip,
                 BindingValue: clientIp,
-                ExpiresAt: expiresAt),
+                ExpiresAt: expiresAt,
+                IsClientCredentials: true),
             cancellationToken).ConfigureAwait(false);
 
         var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
