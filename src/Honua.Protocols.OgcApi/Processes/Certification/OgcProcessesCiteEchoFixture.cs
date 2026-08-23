@@ -23,6 +23,7 @@ internal static class OgcProcessesCiteEchoFixture
     internal const string ProfileConfigurationKey = "OgcProcesses:CertificationProfile";
     internal const string TestInfrastructureConfigurationKey = "HONUA_REGISTER_TEST_INFRASTRUCTURE";
     internal const string DataUriPrefix = "data:application/json;base64,";
+    internal const int MaximumPauseSeconds = 10;
 
     internal static readonly ImmutableArray<string> OutputIds =
         ["literal", "object", "binary", "mixed", "array", "bbox"];
@@ -161,17 +162,45 @@ internal static class OgcProcessesCiteEchoFixture
         return true;
     }
 
-    internal static bool TryValidateBinaryInput(
+    internal static bool TryValidateInputs(
         IReadOnlyDictionary<string, JsonElement>? inputs,
         out string? error)
     {
         error = null;
-        if (inputs == null || !inputs.TryGetValue("binary", out var binaryInput))
+        if (inputs == null || !inputs.TryGetValue("literal", out var literalInput))
         {
-            return true;
+            error = "CITE echo input 'literal' is required.";
+            return false;
         }
 
-        return TryValidateBinaryValue(binaryInput, out error);
+        if (literalInput.ValueKind != JsonValueKind.String)
+        {
+            error = "CITE echo input 'literal' must be a string.";
+            return false;
+        }
+
+        foreach (var input in inputs)
+        {
+            var valid = input.Key switch
+            {
+                "literal" => true,
+                "object" => TryValidateValueObject(input.Value, "object", out error),
+                "binary" => TryValidateBinaryValue(input.Value, out error),
+                "mixed" => input.Value.ValueKind == JsonValueKind.String
+                           || TryValidateValueObject(input.Value, "mixed", out error),
+                "array" => TryValidateStringArray(input.Value, out error),
+                "bbox" => TryValidateBoundingBox(input.Value, out error),
+                "pause" => TryValidatePause(input.Value, out error),
+                _ => false
+            };
+            if (!valid)
+            {
+                error ??= $"Unknown CITE echo input '{input.Key}'.";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     internal static bool TryValidateCanonicalBinaryInput(string? rawBinary, out string? error)
@@ -270,6 +299,82 @@ internal static class OgcProcessesCiteEchoFixture
                 || !string.Equals(encoding.GetString(), "base64", StringComparison.OrdinalIgnoreCase)))
         {
             error = "CITE echo input 'binary.format.encoding' must be 'base64'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateValueObject(
+        JsonElement input,
+        string inputName,
+        out string? error)
+    {
+        error = null;
+        if (input.ValueKind != JsonValueKind.Object)
+        {
+            error = $"CITE echo input '{inputName}' must be an object.";
+            return false;
+        }
+
+        if (input.TryGetProperty("value", out var value)
+            && value.ValueKind != JsonValueKind.String)
+        {
+            error = $"CITE echo input '{inputName}.value' must be a string.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateStringArray(JsonElement input, out string? error)
+    {
+        error = null;
+        if (input.ValueKind != JsonValueKind.Array
+            || input.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))
+        {
+            error = "CITE echo input 'array' must be an array of strings.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateBoundingBox(JsonElement input, out string? error)
+    {
+        error = null;
+        if (input.ValueKind != JsonValueKind.Object)
+        {
+            error = "CITE echo input 'bbox' must be an object.";
+            return false;
+        }
+
+        if (input.TryGetProperty("bbox", out var bbox)
+            && (bbox.ValueKind != JsonValueKind.Array
+                || bbox.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.Number)))
+        {
+            error = "CITE echo input 'bbox.bbox' must be an array of numbers.";
+            return false;
+        }
+
+        if (input.TryGetProperty("crs", out var crs) && crs.ValueKind != JsonValueKind.String)
+        {
+            error = "CITE echo input 'bbox.crs' must be a string.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidatePause(JsonElement input, out string? error)
+    {
+        error = null;
+        if (input.ValueKind != JsonValueKind.Number
+            || !input.TryGetInt32(out var seconds)
+            || seconds < 0
+            || seconds > MaximumPauseSeconds)
+        {
+            error = $"CITE echo input 'pause' must be an integer from 0 through {MaximumPauseSeconds}.";
             return false;
         }
 

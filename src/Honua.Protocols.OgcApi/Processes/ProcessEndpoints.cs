@@ -329,7 +329,7 @@ internal static class ProcessEndpoints
 
             if (definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
-                && !OgcProcessesCiteEchoFixture.TryValidateBinaryInput(request.Inputs, out var inputError))
+                && !OgcProcessesCiteEchoFixture.TryValidateInputs(request.Inputs, out var inputError))
             {
                 OgcProcessesLog.PlanStructureInvalid(
                     logger,
@@ -583,7 +583,9 @@ internal static class ProcessEndpoints
                 return false;
             }
 
-            inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
+            inputs[input.Key] = OgcProcessesCiteEchoFixture.IsDefinition(processDefinition)
+                ? input.Value.GetRawText()
+                : JsonElementToCanonicalInput(input.Value);
         }
 
         var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);

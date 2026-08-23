@@ -19,7 +19,6 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 /// </summary>
 internal sealed class OgcProcessesCiteEchoExecutor : IProcessExecutor
 {
-    private const int MaximumPauseSeconds = 10;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
 
     public OgcProcessesCiteEchoExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -172,9 +171,10 @@ internal sealed class OgcProcessesCiteEchoExecutor : IProcessExecutor
 
         if (!int.TryParse(rawPause, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
             || seconds < 0
-            || seconds > MaximumPauseSeconds)
+            || seconds > OgcProcessesCiteEchoFixture.MaximumPauseSeconds)
         {
-            error = $"CITE echo input 'pause' must be an integer from 0 through {MaximumPauseSeconds}.";
+            error = $"CITE echo input 'pause' must be an integer from 0 through "
+                    + $"{OgcProcessesCiteEchoFixture.MaximumPauseSeconds}.";
             return false;
         }
 
