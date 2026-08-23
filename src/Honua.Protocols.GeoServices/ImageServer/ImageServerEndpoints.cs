@@ -3153,12 +3153,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(
+        var resolution = await ResolveImageLayerAsync(
             id,
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return layerError ?? await handler.GetJobStatusAsync(context, id, jobId, cancellationToken);
+        return resolution.ErrorResult ?? await handler.GetJobStatusAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobStatusByService(
@@ -3188,12 +3193,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(
+        var resolution = await ResolveImageLayerAsync(
             id,
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return layerError ?? await handler.CancelJobAsync(context, id, jobId, cancellationToken);
+        return resolution.ErrorResult ?? await handler.CancelJobAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobCancelByService(
@@ -3223,12 +3233,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(
+        var resolution = await ResolveImageLayerAsync(
             id,
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return layerError ?? await handler.GetJobResultAsync(context, id, jobId, cancellationToken);
+        return resolution.ErrorResult ?? await handler.GetJobResultAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobResultByService(

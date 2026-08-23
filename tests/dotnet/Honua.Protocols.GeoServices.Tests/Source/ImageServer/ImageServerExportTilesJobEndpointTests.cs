@@ -162,6 +162,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
     public async Task ExportTiles_JobLifecycleByService_PreservesResolvedPublication()
     {
         const string serviceId = "z-aliased-image";
+        const string otherServiceId = "y-other-image";
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         var restricted = new AccessPolicy { AllowedRoles = ["imagery-admin"] };
         var graph = new TestMetadataV2GraphBuilder()
@@ -210,19 +211,47 @@ public sealed class ImageServerExportTilesJobEndpointTests
                     layerIndex: 41,
                     storageBindingId: "target-binding",
                     publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .AddResource(
+                    "other-resource",
+                    "Other image",
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: anonymous)
+                .AddStorageBinding(
+                    "other-binding",
+                    "other-resource",
+                    "other.rasters",
+                    storageLayerId: TestLayerId)
+                .AddService(
+                    "other-service",
+                    otherServiceId,
+                    protocols: [ServiceProtocols.ImageServer],
+                    accessPolicy: anonymous)
+                .AddPublication(
+                    "other-publication",
+                    "other-service",
+                    "other-resource",
+                    layerIndex: 42,
+                    storageBindingId: "other-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
                 .Build();
         var graphProvider = new TestMetadataV2GraphProvider(graph);
         var resolver = Substitute.For<IImageServerLayerResolver>();
         resolver.ResolveFirstAccessibleLayerAsync(
-                serviceId,
+                Arg.Any<string>(),
                 Arg.Any<HttpContext>(),
                 AuthorizationOperation.Export,
                 Arg.Any<CancellationToken>())
-            .Returns(new ImageServerLayerResolution(
-                TestLayerId,
-                "target-publication",
-                41,
-                ErrorResult: null));
+            .Returns(callInfo => string.Equals(callInfo.ArgAt<string>(0), otherServiceId, StringComparison.Ordinal)
+                ? new ImageServerLayerResolution(
+                    TestLayerId,
+                    "other-publication",
+                    42,
+                    ErrorResult: null)
+                : new ImageServerLayerResolution(
+                    TestLayerId,
+                    "target-publication",
+                    41,
+                    ErrorResult: null));
         resolver.ValidateLayerAsync(
                 TestLayerId,
                 Arg.Any<HttpContext>(),
@@ -245,9 +274,26 @@ public sealed class ImageServerExportTilesJobEndpointTests
                 $"/rest/services/{TestLayerId}/ImageServer/jobs/{jobId}");
             numericStatus.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
+            // Authorization to another publication on the same storage layer must not adopt the
+            // submitted publication's job for any lifecycle operation.
+            using var otherStatus = await fixture.Client.GetAsync(
+                $"/rest/services/{otherServiceId}/ImageServer/jobs/{jobId}");
+            (await otherStatus.Content.ReadAsStringAsync()).ToLowerInvariant().Should().Contain("not found");
+
+            using var otherCancel = await fixture.Client.PostAsync(
+                $"/rest/services/{otherServiceId}/ImageServer/jobs/{jobId}/cancel",
+                content: null);
+            (await otherCancel.Content.ReadAsStringAsync()).ToLowerInvariant().Should().Contain("not found");
+
+            using var otherResult = await fixture.Client.GetAsync(
+                $"/rest/services/{otherServiceId}/ImageServer/jobs/{jobId}/results/out_service_url");
+            (await otherResult.Content.ReadAsStringAsync()).ToLowerInvariant().Should().Contain("not found");
+
             using var status = await fixture.Client.GetAsync($"/rest/services/{serviceId}/ImageServer/jobs/{jobId}");
             status.StatusCode.Should().Be(HttpStatusCode.OK);
-            (await status.Content.ReadAsStringAsync()).Should().Contain(jobId);
+            var statusBody = await status.Content.ReadAsStringAsync();
+            statusBody.Should().Contain(jobId);
+            statusBody.Should().Contain("esriJobSubmitted");
 
             using var cancel = await fixture.Client.PostAsync(
                 $"/rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel",
@@ -261,6 +307,11 @@ public sealed class ImageServerExportTilesJobEndpointTests
 
             await resolver.Received(4).ResolveFirstAccessibleLayerAsync(
                 serviceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+            await resolver.Received(3).ResolveFirstAccessibleLayerAsync(
+                otherServiceId,
                 Arg.Any<HttpContext>(),
                 AuthorizationOperation.Export,
                 Arg.Any<CancellationToken>());

@@ -135,7 +135,7 @@ internal sealed class ImageServerExportTilesHandler
             cancellationToken).ConfigureAwait(false);
 
     /// <summary>
-    /// Exports tiles for the exact publication already resolved by a service-scoped caller.
+    /// Exports tiles for the exact publication already resolved by a publication-aware caller.
     /// </summary>
     public async Task<IResult> ExportTilesAsync(
         HttpContext context,
@@ -1083,9 +1083,9 @@ internal sealed class ImageServerExportTilesHandler
 
     /// <summary>Projects a durable tile-export job's status onto the ArcGIS Image Service status envelope.</summary>
     public Task<IResult> GetJobStatusAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
-        => GetJobStatusCoreAsync(context, layerId, jobId, cancellationToken);
+        => GetJobStatusCoreAsync(context, jobId, ScopeFor(layerId), cancellationToken);
 
-    /// <summary>Projects job status after reauthorizing the exact service-scoped publication.</summary>
+    /// <summary>Projects job status after reauthorizing the exact resolved publication.</summary>
     public async Task<IResult> GetJobStatusAsync(
         HttpContext context,
         int layerId,
@@ -1098,13 +1098,17 @@ internal sealed class ImageServerExportTilesHandler
             layerId,
             publicationId,
             cancellationToken).ConfigureAwait(false);
-        return publicationError ?? await GetJobStatusCoreAsync(context, layerId, jobId, cancellationToken).ConfigureAwait(false);
+        return publicationError ?? await GetJobStatusCoreAsync(
+            context,
+            jobId,
+            ScopeFor(layerId, publicationId),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IResult> GetJobStatusCoreAsync(
         HttpContext context,
-        int layerId,
         string jobId,
+        TileExportJobScope scope,
         CancellationToken cancellationToken)
     {
         if (_tileExportJobService is null)
@@ -1115,7 +1119,7 @@ internal sealed class ImageServerExportTilesHandler
         try
         {
             var job = await _tileExportJobService
-                .GetStatusAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+                .GetStatusAsync(jobId, scope, context.User, cancellationToken).ConfigureAwait(false);
             return TypedResults.Json(
                 new ImageServerExportTilesJobStatusResponse
                 {
@@ -1134,9 +1138,9 @@ internal sealed class ImageServerExportTilesHandler
 
     /// <summary>Cancels a durable tile-export job scoped to the submitting principal and this image service.</summary>
     public Task<IResult> CancelJobAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
-        => CancelJobCoreAsync(context, layerId, jobId, cancellationToken);
+        => CancelJobCoreAsync(context, jobId, ScopeFor(layerId), cancellationToken);
 
-    /// <summary>Cancels a job after reauthorizing the exact service-scoped publication.</summary>
+    /// <summary>Cancels a job after reauthorizing the exact resolved publication.</summary>
     public async Task<IResult> CancelJobAsync(
         HttpContext context,
         int layerId,
@@ -1149,13 +1153,17 @@ internal sealed class ImageServerExportTilesHandler
             layerId,
             publicationId,
             cancellationToken).ConfigureAwait(false);
-        return publicationError ?? await CancelJobCoreAsync(context, layerId, jobId, cancellationToken).ConfigureAwait(false);
+        return publicationError ?? await CancelJobCoreAsync(
+            context,
+            jobId,
+            ScopeFor(layerId, publicationId),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IResult> CancelJobCoreAsync(
         HttpContext context,
-        int layerId,
         string jobId,
+        TileExportJobScope scope,
         CancellationToken cancellationToken)
     {
         if (_tileExportJobService is null)
@@ -1165,8 +1173,8 @@ internal sealed class ImageServerExportTilesHandler
 
         try
         {
-            await _tileExportJobService.CancelAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
-            var job = await _tileExportJobService.GetStatusAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+            await _tileExportJobService.CancelAsync(jobId, scope, context.User, cancellationToken).ConfigureAwait(false);
+            var job = await _tileExportJobService.GetStatusAsync(jobId, scope, context.User, cancellationToken).ConfigureAwait(false);
             return TypedResults.Json(
                 new ImageServerExportTilesJobStatusResponse
                 {
@@ -1185,9 +1193,9 @@ internal sealed class ImageServerExportTilesHandler
 
     /// <summary>Returns the ArcGIS <c>results/out_service_url</c> for a completed durable tile-export job.</summary>
     public Task<IResult> GetJobResultAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
-        => GetJobResultCoreAsync(context, layerId, jobId, cancellationToken);
+        => GetJobResultCoreAsync(context, jobId, ScopeFor(layerId), cancellationToken);
 
-    /// <summary>Returns a job result after reauthorizing the exact service-scoped publication.</summary>
+    /// <summary>Returns a job result after reauthorizing the exact resolved publication.</summary>
     public async Task<IResult> GetJobResultAsync(
         HttpContext context,
         int layerId,
@@ -1200,13 +1208,17 @@ internal sealed class ImageServerExportTilesHandler
             layerId,
             publicationId,
             cancellationToken).ConfigureAwait(false);
-        return publicationError ?? await GetJobResultCoreAsync(context, layerId, jobId, cancellationToken).ConfigureAwait(false);
+        return publicationError ?? await GetJobResultCoreAsync(
+            context,
+            jobId,
+            ScopeFor(layerId, publicationId),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IResult> GetJobResultCoreAsync(
         HttpContext context,
-        int layerId,
         string jobId,
+        TileExportJobScope scope,
         CancellationToken cancellationToken)
     {
         if (_tileExportJobService is null)
@@ -1217,7 +1229,7 @@ internal sealed class ImageServerExportTilesHandler
         try
         {
             var result = await _tileExportJobService
-                .GetResultAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+                .GetResultAsync(jobId, scope, context.User, cancellationToken).ConfigureAwait(false);
             return TypedResults.Json(
                 new ImageServerExportTilesJobResultResponse
                 {
@@ -1269,8 +1281,13 @@ internal sealed class ImageServerExportTilesHandler
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static TileExportJobScope ScopeFor(int layerId)
-        => new(TileExportSourceKind.Raster, layerId.ToString(CultureInfo.InvariantCulture));
+    private static TileExportJobScope ScopeFor(int layerId, string? publicationId = null)
+        => new(TileExportSourceKind.Raster, BuildJobResourceId(layerId, publicationId));
+
+    private static string BuildJobResourceId(int layerId, string? publicationId)
+        => publicationId is null
+            ? layerId.ToString(CultureInfo.InvariantCulture)
+            : string.Concat("publication:", publicationId);
 
     private static IReadOnlyList<ImageServerExportTilesJobMessage> BuildJobMessages(
         Honua.Core.Features.ControlPlane.Domain.ExecutionJobRecord job)
@@ -1395,7 +1412,9 @@ internal sealed class ImageServerExportTilesHandler
         var plan = new TileExportJobPlan
         {
             SourceKind = TileExportSourceKind.Raster,
-            ResourceId = storageLayerId.ToString(CultureInfo.InvariantCulture),
+            // HTTP routes bind to their exact resolved publication; publication-free handler
+            // callers bind to the storage layer. A same-layer publication cannot adopt the job.
+            ResourceId = BuildJobResourceId(storageLayerId, publicationId),
             Source = descriptor,
             ZoomLevels = [.. requestedZooms],
             West = bounds[0],
