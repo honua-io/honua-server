@@ -143,6 +143,15 @@ internal static class GeoservicesCatalogEndpoints
                 RequestedSoapNamespace(context.Request));
         }
 
+        var contentTypeSoap = RequestedSoapNamespace(context.Request);
+        if (envelopeNamespace != contentTypeSoap)
+        {
+            return CreateSoapFault(
+                "Content-Type does not match the SOAP envelope version.",
+                StatusCodes.Status415UnsupportedMediaType,
+                contentTypeSoap);
+        }
+
         XNamespace soap = envelopeNamespace;
         var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
         if (bodies.Length != 1)
@@ -437,7 +446,10 @@ internal static class GeoservicesCatalogEndpoints
     }
 
     private static XNamespace RequestedSoapNamespace(HttpRequest request)
-        => request.ContentType?.StartsWith("application/soap+xml", StringComparison.OrdinalIgnoreCase) == true
+        => string.Equals(
+            request.ContentType?.Split(';', 2)[0].Trim(),
+            "application/soap+xml",
+            StringComparison.OrdinalIgnoreCase)
             ? Soap12EnvelopeNamespace
             : Soap11EnvelopeNamespace;
 

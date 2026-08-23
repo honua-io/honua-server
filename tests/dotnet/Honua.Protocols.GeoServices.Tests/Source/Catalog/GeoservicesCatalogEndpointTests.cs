@@ -423,6 +423,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
+    public Task PostSoapCatalog_EnvelopeAndContentTypeVersionsMustMatch()
+        => AssertSoapContentTypeMismatchesRejectedAsync(_fixture.Client, "/services");
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
     public async Task PostSoapCatalog_MalformedAndAmbiguousBodies_ReturnSoapFaults()
     {
         var requests = new[]
@@ -1289,6 +1295,14 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public Task PostSoapImageServer_EnvelopeAndContentTypeVersionsMustMatch()
+        => AssertSoapContentTypeMismatchesRejectedAsync(
+            _fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer");
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_DuplicateBodies_ReturnsClientFault()
     {
         const string request = """
@@ -1417,6 +1431,41 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             Extent = extent ?? new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = srid },
             CreatedAt = DateTimeOffset.UtcNow
         };
+
+    private static async Task AssertSoapContentTypeMismatchesRejectedAsync(HttpClient client, string route)
+    {
+        var mismatches = new[]
+        {
+            (
+                Request: """
+                    <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                      <soap:Body><GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+                    </soap:Envelope>
+                    """,
+                MediaType: "text/xml",
+                ResponseNamespace: "http://schemas.xmlsoap.org/soap/envelope/"),
+            (
+                Request: """
+                    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                      <soap:Body><GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+                    </soap:Envelope>
+                    """,
+                MediaType: "application/soap+xml",
+                ResponseNamespace: "http://www.w3.org/2003/05/soap-envelope")
+        };
+
+        foreach (var mismatch in mismatches)
+        {
+            using var content = new StringContent(mismatch.Request, Encoding.UTF8, mismatch.MediaType);
+            using var response = await client.PostAsync(route, content).ConfigureAwait(false);
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+            response.Content.Headers.ContentType?.MediaType.Should().Be(mismatch.MediaType);
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            payload.Root?.Name.NamespaceName.Should().Be(mismatch.ResponseNamespace);
+            payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == "Fault");
+        }
+    }
 
     private static Task<HttpResponseMessage> PostSoapAsync(HttpClient client, string route, string operation)
         => PostSoapOperationAsync(

@@ -832,6 +832,15 @@ internal static class ImageServerSoapEndpoints
                     requestedSoap));
             }
 
+            var requestedSoapNamespace = RequestedSoapNamespace(context.Request);
+            if (envelopeNamespace != requestedSoapNamespace)
+            {
+                return (null, requestedSoapNamespace, CreateSoapFault(
+                    "Content-Type does not match the SOAP envelope version.",
+                    StatusCodes.Status415UnsupportedMediaType,
+                    requestedSoapNamespace));
+            }
+
             XNamespace soap = envelopeNamespace;
             var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
             if (bodies.Length != 1)
@@ -945,7 +954,10 @@ internal static class ImageServerSoapEndpoints
     }
 
     private static XNamespace RequestedSoapNamespace(HttpRequest request)
-        => request.ContentType?.StartsWith("application/soap+xml", StringComparison.OrdinalIgnoreCase) == true
+        => string.Equals(
+            request.ContentType?.Split(';', 2)[0].Trim(),
+            "application/soap+xml",
+            StringComparison.OrdinalIgnoreCase)
             ? Soap12EnvelopeNamespace
             : Soap11EnvelopeNamespace;
 
