@@ -393,6 +393,15 @@ internal static class ProcessEndpoints
                     inputError ?? "The CITE echo process input is invalid.");
             }
 
+            if ((definition == null || !OgcProcessesCiteEchoFixture.IsDefinition(definition))
+                && request.Outputs is { Count: > 0 })
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid output selection",
+                    $"Process '{processId}' does not support explicit output selection.");
+            }
+
             if (!TryBuildAnalysisPlan(processId, request, definition, out var analysisPlan, out var parseError))
             {
                 OgcProcessesLog.PlanStructureInvalid(logger, processId, parseError ?? "Unknown plan parsing error.");

@@ -163,6 +163,18 @@ public sealed record OgcProcessIoSchema
     public OgcProcessIoSchema? Items { get; init; }
 
     /// <summary>
+    /// Minimum number of items accepted by an array schema.
+    /// </summary>
+    [JsonPropertyName("minItems")]
+    public int? MinItems { get; init; }
+
+    /// <summary>
+    /// Maximum number of items accepted by an array schema.
+    /// </summary>
+    [JsonPropertyName("maxItems")]
+    public int? MaxItems { get; init; }
+
+    /// <summary>
     /// Property schemas for object values.
     /// </summary>
     [JsonPropertyName("properties")]
