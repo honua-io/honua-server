@@ -34,20 +34,6 @@ public sealed class McpAuthorizationHelperTests
         ], "ApiKey"));
 
         McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("ApiKey:name:admin");
-        McpAuthorizationHelper.ResolveDistinctPrincipalKey(principal).Should().BeNull(
-            "an API-key name is not guaranteed to identify one key");
-    }
-
-    [UnitTest]
-    public void ResolveDistinctPrincipalKey_ApiKeyIdDoesNotMakeSharedNameASafeLegacyAlias()
-    {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(
-        [
-            new Claim(ClaimTypes.Name, "shared-studio-key"),
-            new Claim("api_key_id", "11111111-2222-3333-4444-555555555555"),
-        ], "ApiKey"));
-
-        McpAuthorizationHelper.ResolveDistinctPrincipalKey(principal).Should().BeNull();
     }
 
     [UnitTest]
@@ -84,6 +70,5 @@ public sealed class McpAuthorizationHelperTests
         ], "JwtBearer"));
 
         McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("JwtBearer:authenticated");
-        McpAuthorizationHelper.ResolveDistinctPrincipalKey(principal).Should().BeNull();
     }
 }

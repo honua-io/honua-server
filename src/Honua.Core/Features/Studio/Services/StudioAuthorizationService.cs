@@ -23,6 +23,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     internal const string OwnResourceSentinel = "own";
 
     private const string AdminRole = "admin";
+    private const string AnonymousPrincipalScheme = "anonymous";
 
     /// <summary>Denial code: the flag is off, so only admins may use the Studio lifecycle surface.</summary>
     public const string EndUserModeDisabledCode = "studio_authorization/end_user_mode_disabled";
@@ -177,7 +178,9 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // brand-new resource never reach this method with a null resourceOwnerId; they pass
         // the actual (possibly just-created) owner id of an existing resource in every call
         // site (see StudioPackageEndpoints.EnsureAuthorizedAsync call sites).
-        var isOwn = resourceOwnerId is not null && string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
+        var isOwn = resourceOwnerId is not null
+            && (string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal)
+                || string.Equals(resourceOwnerId, ResolveLegacyMcpOwnerId(principal), StringComparison.Ordinal));
 
         if (!isElevated)
         {
@@ -251,5 +254,29 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             },
             cancellationToken).ConfigureAwait(false);
         return decision.IsAllowed;
+    }
+
+    /// <summary>
+    /// Resolves the scheme-qualified owner key written by Studio MCP before #3412, but only
+    /// when that key identifies this principal uniquely. Keeping compatibility at the shared
+    /// Studio policy boundary makes REST and MCP authorize the same durable draft owner.
+    /// Ambiguous <c>&lt;scheme&gt;:authenticated</c> and <c>&lt;scheme&gt;:name:*</c> values fail
+    /// closed because identity names are not guaranteed to identify one principal.
+    /// </summary>
+    private static string? ResolveLegacyMcpOwnerId(ClaimsPrincipal principal)
+    {
+        var identity = principal.Identity?.IsAuthenticated == true
+            ? principal.Identity as ClaimsIdentity
+            : principal.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+        if (identity is null || !identity.IsAuthenticated)
+        {
+            return null;
+        }
+
+        var scheme = string.IsNullOrWhiteSpace(identity.AuthenticationType)
+            ? AnonymousPrincipalScheme
+            : identity.AuthenticationType;
+        var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return string.IsNullOrEmpty(subject) ? null : $"{scheme}:sub:{subject}";
     }
 }
