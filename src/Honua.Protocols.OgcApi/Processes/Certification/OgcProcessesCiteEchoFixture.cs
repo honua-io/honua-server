@@ -476,8 +476,8 @@ internal static class OgcProcessesCiteEchoFixture
                 new OgcProcessIoSchema
                 {
                     AllOf = ImmutableArray.Create(
-                        BoundingBoxSchema(),
-                        new OgcProcessIoSchema { Format = "ogc-bbox" })
+                        new OgcProcessIoSchema { Format = "ogc-bbox" },
+                        BoundingBoxSchema())
                 })
         };
 

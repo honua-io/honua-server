@@ -293,6 +293,10 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertEqual(2, dockerfile.count(parser.ETS_COMMIT))
         self.assertIn("HONUA_CITE_SKIP_ETS_BUILD", runner)
         self.assertIn(f"commit={parser.ETS_COMMIT}", runner)
+        self.assertIn(
+            '--build-arg "HONUA_GIT_SHA=$TESTED_HONUA_GIT_SHA"',
+            runner,
+        )
         self.assertIn("Licensing__DevGrantEdition: Pro", compose)
         self.assertIn("OgcProcesses__CertificationProfile: ogcapi-processes10", compose)
         self.assertIn(

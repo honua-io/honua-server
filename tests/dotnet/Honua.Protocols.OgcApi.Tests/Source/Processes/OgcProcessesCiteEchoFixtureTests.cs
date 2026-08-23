@@ -83,6 +83,11 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             inputs.GetProperty("object").GetProperty("minOccurs").GetInt32().Should().Be(0);
             description.RootElement.GetProperty("outputs").GetProperty("binary")
                 .GetProperty("schema").GetProperty("oneOf").GetArrayLength().Should().Be(3);
+            var bboxOutputSchema = description.RootElement.GetProperty("outputs")
+                .GetProperty("bbox").GetProperty("schema").GetProperty("allOf");
+            bboxOutputSchema[0].GetProperty("format").GetString().Should().Be("ogc-bbox");
+            bboxOutputSchema[1].GetProperty("properties")
+                .TryGetProperty("bbox", out _).Should().BeTrue();
 
             using var invalidBinary = await PostExecutionAsync(client, """
                 {

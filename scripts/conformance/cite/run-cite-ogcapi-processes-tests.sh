@@ -88,7 +88,9 @@ if [[ "$SKIP_BUILD" == "true" ]]; then
         exit 2
     }
 else
-    scripts/docker/build-with-github-packages.sh -t honua-server:latest .
+    scripts/docker/build-with-github-packages.sh \
+        --build-arg "HONUA_GIT_SHA=$TESTED_HONUA_GIT_SHA" \
+        -t honua-server:latest .
 fi
 
 mkdir -p "$CITE_RESULTS_DIR"
