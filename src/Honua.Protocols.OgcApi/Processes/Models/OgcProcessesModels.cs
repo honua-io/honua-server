@@ -106,13 +106,49 @@ public sealed record OgcProcessIoSchema
     /// JSON Schema type (string, number, object, array, etc.).
     /// </summary>
     [JsonPropertyName("type")]
-    public required string Type { get; init; }
+    public string? Type { get; init; }
+
+    /// <summary>
+    /// JSON Schema format keyword.
+    /// </summary>
+    [JsonPropertyName("format")]
+    public string? Format { get; init; }
 
     /// <summary>
     /// Content media type hint for complex inputs.
     /// </summary>
     [JsonPropertyName("contentMediaType")]
     public string? ContentMediaType { get; init; }
+
+    /// <summary>
+    /// JSON Schema content encoding hint.
+    /// </summary>
+    [JsonPropertyName("contentEncoding")]
+    public string? ContentEncoding { get; init; }
+
+    /// <summary>
+    /// Item schema for array values.
+    /// </summary>
+    [JsonPropertyName("items")]
+    public OgcProcessIoSchema? Items { get; init; }
+
+    /// <summary>
+    /// Property schemas for object values.
+    /// </summary>
+    [JsonPropertyName("properties")]
+    public IReadOnlyDictionary<string, OgcProcessIoSchema>? Properties { get; init; }
+
+    /// <summary>
+    /// Alternative schemas for mixed values.
+    /// </summary>
+    [JsonPropertyName("oneOf")]
+    public ImmutableArray<OgcProcessIoSchema>? OneOf { get; init; }
+
+    /// <summary>
+    /// Conjunctive schemas, including the OGC bounding-box format marker.
+    /// </summary>
+    [JsonPropertyName("allOf")]
+    public ImmutableArray<OgcProcessIoSchema>? AllOf { get; init; }
 }
 
 /// <summary>
@@ -160,13 +196,13 @@ public sealed record OgcProcessDescription
     /// Input descriptions keyed by input identifier.
     /// </summary>
     [JsonPropertyName("inputs")]
-    public ImmutableDictionary<string, OgcProcessIoDescription>? Inputs { get; init; }
+    public IReadOnlyDictionary<string, OgcProcessIoDescription>? Inputs { get; init; }
 
     /// <summary>
     /// Output descriptions keyed by output identifier.
     /// </summary>
     [JsonPropertyName("outputs")]
-    public ImmutableDictionary<string, OgcProcessIoDescription>? Outputs { get; init; }
+    public IReadOnlyDictionary<string, OgcProcessIoDescription>? Outputs { get; init; }
 
     /// <summary>
     /// Links to related resources.
@@ -185,6 +221,12 @@ public sealed record OgcExecuteRequest
     /// </summary>
     [JsonPropertyName("inputs")]
     public ImmutableDictionary<string, JsonElement>? Inputs { get; init; }
+
+    /// <summary>
+    /// Requested outputs keyed by output identifier. Omitted or empty means all outputs.
+    /// </summary>
+    [JsonPropertyName("outputs")]
+    public ImmutableDictionary<string, JsonElement>? Outputs { get; init; }
 
     /// <summary>
     /// Desired response mode (document or raw). V1 supports document only.

@@ -203,6 +203,11 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn("HONUA_CITE_SKIP_ETS_BUILD", runner)
         self.assertIn(f'commit={parser.ETS_COMMIT}', runner)
         self.assertIn("Licensing__DevGrantEdition: Pro", compose)
+        self.assertIn("OgcProcesses__CertificationProfile: ogcapi-processes10", compose)
+        self.assertEqual(
+            "ogcapi-processes-cite-profile-v2",
+            parser.FIXTURE_REVISION,
+        )
 
 
 if __name__ == "__main__":
