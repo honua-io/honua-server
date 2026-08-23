@@ -137,19 +137,23 @@ authority for runtime endpoint selection.
 - `GET /api/scenes/{sceneId}` returns descriptive metadata and stable links.
 - `GET /api/scenes/{sceneId}/resolve` returns the endpoints usable for the
   current scene. Each endpoint includes `endpointFormat`, media type, and
-  authentication requirement. A protected endpoint also includes the
-  credential-free `access-session` HTTP affordance (`href` plus
-  `method: POST`) that a host invokes to establish access. The method is part
-  of the versioned contract and golden fixture, not an implicit link default;
-  the resolution result never embeds the resulting credential.
+  authentication requirement plus a discriminated delivery affordance. An HTTP
+  delivery contains its credential-free asset URL and, when protected, an
+  `access-session` HTTP affordance (`href` plus `method: POST`) that a host
+  invokes to establish access. A gRPC delivery instead contains the
+  credential-free target, authority, transport profile, scene binding, and
+  typed operation identifiers defined in Decision 10; it does not contain an
+  HTTP access-session affordance. Methods and transport profiles are part of the
+  versioned contract and golden fixtures, not implicit client defaults. Neither
+  delivery embeds its resulting credential.
 
 The existing `GET /api/v1/admin/scenes/{id}/resolve` route is a compatibility
 projection, not another selection authority. It must delegate to the same shared
 canonical resolver and preserve the same endpoint formats, availability
-suppression, authorization, and credential-free access-session affordance.
-Operator-only embed hints may be added around that result, but every endpoint URL
-must derive from the canonical result rather than a second URL convention. If
-that convergence cannot be preserved, the admin route is deprecated and removed.
+suppression, authorization, and typed delivery affordances. Operator-only embed
+hints may be added around that result, but every HTTP URL or gRPC target must
+derive from the canonical result rather than a second convention. If that
+convergence cannot be preserved, the admin route is deprecated and removed.
 [#3410](https://github.com/honua-io/honua-server/issues/3410) owns the convergence
 and regression fixtures.
 
@@ -209,7 +213,7 @@ protected asset route's private/no-store cache treatment.
 [#3433](https://github.com/honua-io/honua-server/issues/3433) owns the versioned
 response fixture and transport drift tests.
 
-For a protected scene, the host:
+For a protected HTTP scene delivery, the host:
 
 1. calls the canonical resolve contract and observes the auth requirement;
 2. invokes the returned credential-free `access-session` POST affordance, using
@@ -220,6 +224,11 @@ For a protected scene, the host:
    returned origin/path scopes, without mutating the serializable plan or leaking
    the credential to an absolute/cross-origin URI or redirect; and
 4. refreshes or disposes the session independently of plan lifetime.
+
+A protected gRPC delivery does not execute this HTTP acquisition flow. Its host
+creates a channel from the returned credential-free target/authority/profile and
+attaches configured call credentials at invocation time, outside the serializable
+resolution and scene plan.
 
 Language SDKs may expose this as an opaque handle, callback, interceptor, or
 renderer resource. Whatever the spelling, serialization must omit it and a
@@ -330,18 +339,27 @@ revisions. Its digest is part of the request fingerprint. It does not serialize
 raw SQL, and policy identifiers alone are insufficient because their definitions
 are mutable.
 
-Before deferred execution, the background executor revalidates managed
-membership and resolves the current policy. The canonical query pipeline then
-intersects the pinned row constraint with the current row predicate and
-intersects the pinned and current field allowlists while reading the immutable
-source snapshot. Tightening either policy removes access; a later role grant or
-relaxed row/mask definition can never add rows or fields to the admission-time
-view. An inactive identity, removed role, absent/stale context, deleted or
-untranslatable policy, incompatible schema change, or unsupported intersection
-fails closed rather than falling back to a service-wide catalog read. If a
-provider cannot evaluate that typed intersection safely, admission materializes
+Admission identifies every claim type referenced by the pinned row policy. A
+deferred read is permitted only when an authoritative, replica-independent
+identity source can re-resolve the stable principal and every one of those
+non-role attributes as well as role membership. Otherwise admission materializes
 the bounded authorized view into job-owned durable staging before returning
-`202` and the worker reads only that materialization.
+`202`; a captured claim value is never treated as current merely because role
+membership was refreshed.
+
+Before a deferred read, the background executor re-resolves every claim used by
+both the pinned and then-current row policies and resolves the current field-mask
+policy. The canonical query pipeline intersects the pinned row constraint with a
+current predicate built from those live attributes, and intersects the pinned
+and current field allowlists while reading the immutable source snapshot.
+Tightening either policy removes access; a later role or attribute grant or a
+relaxed row/mask definition can never add rows or fields to the admission-time
+view. An inactive identity, removed role, changed/unresolvable referenced claim,
+absent/stale context, deleted or untranslatable policy, incompatible schema
+change, or unsupported intersection fails closed rather than falling back to a
+service-wide catalog read. A worker reads an admission materialization only when
+admission selected that path before `202`; it never switches to a stale captured
+attribute after dispatch.
 
 Admission also derives and pins an explicit output audience/access policy and
 includes it in the request fingerprint. That policy must be provably no broader
@@ -453,12 +471,19 @@ ephemeral asset credential into serializable scene data.
 Canonical resolution also chooses the delivery transport. An HTTP asset
 endpoint carries its URL and, when protected, the credential-free
 `access-session` POST affordance from Decision 5. A gRPC-capable endpoint instead
-carries a typed TileService affordance: the resolved scene binding plus the fully
-qualified `geospatial.v1.TileService/GetTile` unary and
-`geospatial.v1.TileService/StreamTiles` server-streaming operations. The caller
-authenticates those operations through its configured gRPC channel/call metadata;
-no HTTP access-session result or call credential enters protobuf. A client must
-not discover TileService out of band and treat it as a way around the canonical
+carries a typed TileService affordance: an absolute credential-free target URI,
+explicit authority, closed transport profile (`grpc` or `grpc-web`), TLS
+requirement, resolved scene binding, and the fully qualified
+`geospatial.v1.TileService/GetTile` unary and
+`geospatial.v1.TileService/StreamTiles` server-streaming operations. The target
+selects the deployed public host and port; the client does not recover them from
+out-of-band server configuration. The server derives it from trusted public
+endpoint configuration, never an untrusted request `Host` or internal bind
+address, and fails closed for a user-info-bearing, non-public, or profile/port
+inconsistent target. The host creates the indicated channel and attaches its
+configured call credentials only at invocation time. No call credential, HTTP
+access-session result, or signed target enters protobuf. A client must not
+discover TileService out of band and treat it as a way around the canonical
 endpoint availability, entitlement, authorization, or evidence decision.
 
 The currently published geospatial-grpc `SceneService` exposes only
@@ -470,8 +495,9 @@ which owns additive `servingFormat` and `contentKind` fields/vocabularies on the
 existing list/get metadata (including the exact `unclassified` representation)
 plus an additive `ResolveScene` contract carrying endpoint format, media type,
 auth requirement, and a typed delivery choice for the credential-free HTTP
-`access-session` POST affordance or the existing TileService operations. After a
-new protocol package is published,
+`access-session` POST affordance or a credential-free target/authority/profile
+for the existing TileService operations. After a new protocol package is
+published,
 [#3437](https://github.com/honua-io/honua-server/issues/3437) updates
 Honua.Server's `Geospatial.Grpc` dependency and projects the same shared resolver
 and resource-policy decision into gRPC before TileService or gRPC scene parity is
@@ -566,6 +592,10 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
 - [honua-sdk-python#212](https://github.com/honua-io/honua-sdk-python/issues/212):
   consume the same fixtures, enforce scoped host-session attachment, and produce
   installed Python package evidence.
+- [#3381](https://github.com/honua-io/honua-server/issues/3381): run the final
+  coordinating lane against exact installed JS/.NET/Python packages, the exact
+  server image/source, the gRPC package/server projection, and fixture revision;
+  this is the promotion evidence owner rather than any repository-local smoke.
 - [#3280](https://github.com/honua-io/honua-server/issues/3280): production I3S
   geometry, if/when the deferred lane resumes.
 - [#3284](https://github.com/honua-io/honua-server/issues/3284): durable jobs and
@@ -576,10 +606,12 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
   after the canonical contract pack.
 
 Release ordering is fail-closed: catalog migration lands first; REST and
-access-session fixtures plus the optional gRPC protocol/server projection land
-next; each repository then publishes its consumer package; installed-candidate
-evidence runs last against the exact server image and fixture revision.
-`scene.catalog` remains deferred until the JS, .NET, and Python consumers pass
-the same versioned list/get/resolve pack. Protected-host parity additionally
-requires their scope/redirect and credential-leak evidence; examples or
-server-local SDK-shaped mocks do not satisfy it.
+access-session fixtures and the gRPC protocol/server projection all land next;
+each repository then publishes its consumer package; #3381 runs the final
+installed-candidate evidence against the exact server image/source, gRPC package,
+and fixture revision. The SDK-local lanes feed #3381 but cannot promote maturity
+by themselves. `scene.catalog` remains deferred until that coordinating lane
+proves the JS, .NET, and Python consumers against the same versioned
+list/get/resolve pack and proves canonical HTTP/TileService selection. Protected
+host parity additionally requires their scope/redirect and credential-leak
+evidence; examples or server-local SDK-shaped mocks do not satisfy it.
