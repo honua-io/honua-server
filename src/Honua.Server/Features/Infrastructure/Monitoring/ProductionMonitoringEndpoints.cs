@@ -459,7 +459,15 @@ internal static class ProductionMonitoringEndpoints
         return utilization <= 0.8 ? "Healthy" : "Degraded";
     }
 
-    private static Dictionary<string, JsonElement>? SanitizeHealthCheckData(
+    /// <summary>
+    /// Projects a health check's <c>Data</c> bag onto source-generated JSON values.
+    /// </summary>
+    /// <remarks>
+    /// Internal rather than private so the reflection-safety regression test can exercise the
+    /// projection directly; the test host runs with reflection enabled, so only a direct assertion
+    /// on this projection (plus the call-site scan beside it) can hold the AOT contract.
+    /// </remarks>
+    internal static Dictionary<string, JsonElement>? SanitizeHealthCheckData(
         IReadOnlyDictionary<string, object>? data)
     {
         if (data == null || data.Count == 0)
@@ -471,7 +479,7 @@ internal static class ProductionMonitoringEndpoints
         foreach (var (key, value) in data)
         {
             sanitized[key] = IsSensitiveHealthKey(key)
-                ? JsonSerializer.SerializeToElement("[redacted]")
+                ? JsonSerializer.SerializeToElement("[redacted]", MetricsJsonContext.Default.String)
                 : SanitizeHealthValue(value);
         }
 
@@ -495,24 +503,35 @@ internal static class ProductionMonitoringEndpoints
                normalized.EndsWith("connectionstring", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Projects one health-check <c>Data</c> value onto a <see cref="JsonElement"/>.
+    /// </summary>
+    /// <remarks>
+    /// Every arm MUST pass its <see cref="MetricsJsonContext"/> type info. The parameterless
+    /// <c>SerializeToElement</c> overloads are reflection-based, and reflection serialization is
+    /// disabled under native AOT — which is what the shipped image is built with. Using them here
+    /// threw <see cref="InvalidOperationException"/> inside the projection, before the endpoint's
+    /// own source-generated write, so <c>/monitoring/health/comprehensive</c> returned 500 on every
+    /// AOT deployment while passing under JIT-hosted tests.
+    /// </remarks>
     private static JsonElement SanitizeHealthValue(object? value)
         => value switch
         {
-            null => JsonSerializer.SerializeToElement((string?)null),
-            string stringValue => JsonSerializer.SerializeToElement(stringValue),
-            bool boolValue => JsonSerializer.SerializeToElement(boolValue),
-            byte byteValue => JsonSerializer.SerializeToElement(byteValue),
-            sbyte sbyteValue => JsonSerializer.SerializeToElement(sbyteValue),
-            short shortValue => JsonSerializer.SerializeToElement(shortValue),
-            ushort ushortValue => JsonSerializer.SerializeToElement(ushortValue),
-            int intValue => JsonSerializer.SerializeToElement(intValue),
-            uint uintValue => JsonSerializer.SerializeToElement(uintValue),
-            long longValue => JsonSerializer.SerializeToElement(longValue),
-            ulong ulongValue => JsonSerializer.SerializeToElement(ulongValue),
-            float floatValue => JsonSerializer.SerializeToElement(floatValue),
-            double doubleValue => JsonSerializer.SerializeToElement(doubleValue),
-            decimal decimalValue => JsonSerializer.SerializeToElement(decimalValue),
-            _ => JsonSerializer.SerializeToElement(value.ToString())
+            null => JsonSerializer.SerializeToElement((string?)null, MetricsJsonContext.Default.String),
+            string stringValue => JsonSerializer.SerializeToElement(stringValue, MetricsJsonContext.Default.String),
+            bool boolValue => JsonSerializer.SerializeToElement(boolValue, MetricsJsonContext.Default.Boolean),
+            byte byteValue => JsonSerializer.SerializeToElement(byteValue, MetricsJsonContext.Default.Byte),
+            sbyte sbyteValue => JsonSerializer.SerializeToElement(sbyteValue, MetricsJsonContext.Default.SByte),
+            short shortValue => JsonSerializer.SerializeToElement(shortValue, MetricsJsonContext.Default.Int16),
+            ushort ushortValue => JsonSerializer.SerializeToElement(ushortValue, MetricsJsonContext.Default.UInt16),
+            int intValue => JsonSerializer.SerializeToElement(intValue, MetricsJsonContext.Default.Int32),
+            uint uintValue => JsonSerializer.SerializeToElement(uintValue, MetricsJsonContext.Default.UInt32),
+            long longValue => JsonSerializer.SerializeToElement(longValue, MetricsJsonContext.Default.Int64),
+            ulong ulongValue => JsonSerializer.SerializeToElement(ulongValue, MetricsJsonContext.Default.UInt64),
+            float floatValue => JsonSerializer.SerializeToElement(floatValue, MetricsJsonContext.Default.Single),
+            double doubleValue => JsonSerializer.SerializeToElement(doubleValue, MetricsJsonContext.Default.Double),
+            decimal decimalValue => JsonSerializer.SerializeToElement(decimalValue, MetricsJsonContext.Default.Decimal),
+            _ => JsonSerializer.SerializeToElement(value.ToString(), MetricsJsonContext.Default.String)
         };
 }
 
