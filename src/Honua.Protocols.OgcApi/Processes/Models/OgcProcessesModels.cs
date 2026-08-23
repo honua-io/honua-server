@@ -91,6 +91,12 @@ public sealed record OgcProcessIoDescription
     public string? Description { get; init; }
 
     /// <summary>
+    /// Minimum number of occurrences required in an execution request.
+    /// </summary>
+    [JsonPropertyName("minOccurs")]
+    public int? MinOccurs { get; init; }
+
+    /// <summary>
     /// JSON Schema describing the value.
     /// </summary>
     [JsonPropertyName("schema")]
@@ -127,6 +133,18 @@ public sealed record OgcProcessIoSchema
     public string? ContentEncoding { get; init; }
 
     /// <summary>
+    /// Inclusive lower bound for numeric values.
+    /// </summary>
+    [JsonPropertyName("minimum")]
+    public double? Minimum { get; init; }
+
+    /// <summary>
+    /// Inclusive upper bound for numeric values.
+    /// </summary>
+    [JsonPropertyName("maximum")]
+    public double? Maximum { get; init; }
+
+    /// <summary>
     /// Item schema for array values.
     /// </summary>
     [JsonPropertyName("items")]
@@ -137,6 +155,12 @@ public sealed record OgcProcessIoSchema
     /// </summary>
     [JsonPropertyName("properties")]
     public IReadOnlyDictionary<string, OgcProcessIoSchema>? Properties { get; init; }
+
+    /// <summary>
+    /// Property names required when the value is an object.
+    /// </summary>
+    [JsonPropertyName("required")]
+    public ImmutableArray<string>? Required { get; init; }
 
     /// <summary>
     /// Alternative JSON Schema representations accepted for this value.

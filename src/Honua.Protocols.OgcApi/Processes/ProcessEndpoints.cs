@@ -385,6 +385,7 @@ internal static class ProcessEndpoints
                 {
                     if (!OgcProcessesCiteEchoFixture.TryAddOutputBindings(
                             metadata,
+                            request.Inputs,
                             request.Outputs,
                             out var outputError))
                     {

@@ -679,6 +679,7 @@
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
+          "minOccurs": { "type": "integer", "minimum": 0 },
           "schema": { "$ref": "#/components/schemas/ProcessIoSchema" }
         }
       },
@@ -700,15 +701,41 @@
           },
           "format": {
             "type": "string",
-            "description": "Optional JSON Schema format hint such as binary."
+            "description": "JSON Schema format keyword."
           },
           "contentMediaType": {
             "type": "string",
             "description": "Content media type hint for complex inputs."
           },
+          "contentEncoding": {
+            "type": "string",
+            "description": "JSON Schema content encoding hint."
+          },
+          "minimum": {
+            "type": "number",
+            "description": "Inclusive lower bound for numeric values."
+          },
+          "maximum": {
+            "type": "number",
+            "description": "Inclusive upper bound for numeric values."
+          },
+          "items": {
+            "$ref": "#/components/schemas/ProcessIoSchema"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/components/schemas/ProcessIoSchema" }
+          },
+          "required": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
           "oneOf": {
             "type": "array",
-            "description": "Alternative schemas accepted for this value.",
+            "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
+          },
+          "allOf": {
+            "type": "array",
             "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
           }
         }
