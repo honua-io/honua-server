@@ -88,7 +88,8 @@ internal static class McpErrorMapper
             Message = authEx.Message,
             Data = new McpErrorData
             {
-                Code = Codes.InsufficientScope
+                Code = Codes.InsufficientScope,
+                StudioAuthorizationCode = authEx.PolicyCode
             }
         },
 

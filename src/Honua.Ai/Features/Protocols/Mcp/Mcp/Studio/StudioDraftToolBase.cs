@@ -93,7 +93,22 @@ internal abstract class StudioDraftToolBase
                 studioOperation,
                 resourceId: null,
                 StudioAuthorizationDecision.Deny(code, exception.Message)).ConfigureAwait(false);
-            throw;
+
+            if (exception.PolicyCode is not null)
+            {
+                throw;
+            }
+
+            // The generic operator gate does not know Studio's stable denial vocabulary.
+            // Carry the code derived above into the exception that the MCP transport maps so
+            // the audited preliminary decision and the caller-visible tool error stay bound.
+            throw new GeoprocessingAuthorizationException(
+                exception.RequiresAuthentication,
+                exception.Message,
+                exception.ResourceType,
+                exception.Operation,
+                exception.DenialReason,
+                code);
         }
     }
 
