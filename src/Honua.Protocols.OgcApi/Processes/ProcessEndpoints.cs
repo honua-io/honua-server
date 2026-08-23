@@ -408,6 +408,15 @@ internal static class ProcessEndpoints
                     inputError ?? "The CITE echo process input is invalid.");
             }
 
+            if ((definition == null || !OgcProcessesCiteEchoFixture.IsDefinition(definition))
+                && request.Outputs is { Count: > 0 })
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid output selection",
+                    $"Process '{processId}' does not support explicit output selection.");
+            }
+
             var geometryService = context.RequestServices.GetRequiredService<IGeometryService>();
             if (!TryBuildAnalysisPlan(
                     processId,
