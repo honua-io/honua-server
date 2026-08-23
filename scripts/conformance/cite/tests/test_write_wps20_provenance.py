@@ -121,6 +121,36 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             self.assertEqual(payload["requestedServerImage"], digest)
             self.assertEqual(payload["serverImageRepoDigests"], [digest])
 
+    def test_prebuilt_image_may_differ_from_harness_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_id = "sha256:" + ("b" * 64)
+            digest = "ghcr.io/honua-io/honua-server@sha256:" + ("c" * 64)
+            inspect_path = root / "inspect.json"
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "RepoDigests": [digest],
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
+            output_path = root / "out.json"
+
+            write_provenance(
+                "a" * 40,
+                "e" * 40,
+                "d" * 64,
+                image_id,
+                "prebuilt",
+                digest,
+                inspect_path,
+                output_path,
+                True,
+            )
+
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["testedHonuaGitSha"], "a" * 40)
+            self.assertEqual(payload["checkedOutHonuaGitSha"], "e" * 40)
+            self.assertEqual(payload["serverImageRevision"], "a" * 40)
+
     def test_required_provenance_rejects_local_existing_image(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

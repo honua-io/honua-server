@@ -199,7 +199,7 @@ def parse_results(
                 test_id = base_test_id if invocation == 1 else f"{base_test_id}[{invocation}]"
                 reason = _reason(method)
                 observation = {
-                    "capabilityKey": "serve.ogc-api-processes",
+                    "capabilityKey": "process.ogc-api-processes",
                     "surface": "ogc-api-processes",
                     "operation": operation,
                     "canonicalClient": "OGC TEAM Engine / ets-ogcapi-processes10",
