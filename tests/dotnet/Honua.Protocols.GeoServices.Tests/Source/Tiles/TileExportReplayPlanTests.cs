@@ -55,6 +55,20 @@ public sealed class TileExportReplayPlanTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public void Identity_PublicationAliases_ReuseArtifactButNotIdempotentRequest()
+    {
+        var baseline = CreateRasterPlan("same-membership");
+        var publicationA = baseline with { ResourceId = "publication:a:layer:7" };
+        var publicationB = baseline with { ResourceId = "publication:b:layer:7" };
+
+        TileExportArtifactIdentity.Compute(publicationA).Should().Be(
+            TileExportArtifactIdentity.Compute(publicationB));
+        TileExportRequestIdentity.Compute(publicationA).Should().NotBe(
+            TileExportRequestIdentity.Compute(publicationB));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public void Build_MapAndRasterDescriptors_RoundTripAsBoundedParameters()
     {
         foreach (var plan in new[] { CreateMapPlan(), CreateRasterPlan("sha256:0123456789abcdef") })

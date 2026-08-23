@@ -4,14 +4,18 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Helpers;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,11 +58,37 @@ internal sealed class ImageServerExportHandler
     /// <summary>
     /// Exports a rendered image from raster data.
     /// </summary>
-    public async Task<IResult> ExportImageAsync(
+    public Task<IResult> ExportImageAsync(
         HttpContext context,
         int layerId,
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
+        => ExportImageCoreAsync(
+            context, layerId, request, publicationId: null, AuthorizationOperation.Export, cancellationToken);
+
+    /// <summary>
+    /// Exports the exact publication already resolved by a service-scoped caller.
+    /// </summary>
+    public Task<IResult> ExportImageAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        string publicationId,
+        AuthorizationOperation authorizationOperation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        return ExportImageCoreAsync(
+            context, layerId, request, publicationId, authorizationOperation, cancellationToken);
+    }
+
+    private async Task<IResult> ExportImageCoreAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        string? publicationId,
+        AuthorizationOperation authorizationOperation,
+        CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
             "export-image",
@@ -69,11 +99,35 @@ internal sealed class ImageServerExportHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            var resolved = publicationId is null
+                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
+
+            if (resolvedLayer.Resource is not { } currentResource
+                || !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var currentService)
+                || !ServiceProtocols.IsProtocolEnabled(currentService, ServiceProtocols.ImageServer))
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context,
+                currentResource,
+                authorizationOperation,
+                currentService,
+                cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;
 
             if (!TryParseExportParameters(request, out var exportQuery, out var parseError))
             {
@@ -101,7 +155,7 @@ internal sealed class ImageServerExportHandler
             {
                 return await ExportMultidimensionalSliceAsync(
                         context,
-                        layerId,
+                        storageLayerId,
                         request,
                         exportQuery,
                         dimensionConstraints,
@@ -133,7 +187,7 @@ internal sealed class ImageServerExportHandler
             // The request override (mosaicRule mergeStrategy/operation token) wins; otherwise
             // fall back to the resource-default merge strategy.
             var mergeStrategy = mosaicRule.Operation
-                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, mosaicRule: null);
             var ordering = mosaicRule.ToOrdering();
 
             // esriMosaicLockRaster composites a caller-pinned set of rasters and is independent
@@ -146,7 +200,7 @@ internal sealed class ImageServerExportHandler
                 Timestamp = mosaicRule.Method == MosaicMethod.LockRaster ? null : timestamp,
             };
 
-            var selectedRasters = await _exportBackend.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            var selectedRasters = await _exportBackend.QueryRastersAsync(storageLayerId, selectionQuery, cancellationToken);
 
             if (mosaicRule.Method == MosaicMethod.LockRaster)
             {
@@ -182,7 +236,7 @@ internal sealed class ImageServerExportHandler
                 outputFormat);
 
             var result = await _exportBackend.ExportAsync(
-                layerId,
+                storageLayerId,
                 selectedRasters,
                 mergeStrategy,
                 exportQuery,
@@ -207,7 +261,7 @@ internal sealed class ImageServerExportHandler
             var extent = result.Extent ?? aggregateExtent;
             if (extent == null && selectedRasters.Length == 1)
             {
-                extent = await _exportBackend.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
+                extent = await _exportBackend.GetExtentAsync(storageLayerId, selectedRasters[0].Id, cancellationToken);
             }
 
             // Esri exportImage is expected to echo the export extent. When the raster store

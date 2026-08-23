@@ -86,10 +86,10 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim();
         var jobId = CreateJobId(resolvedKey);
 
-        // The plan's content identity is a complete, canonical fingerprint of every byte-affecting
-        // input, so it doubles as the idempotent-request fingerprint. A same-key replay whose plan
-        // hashes differently is a payload mismatch and is rejected.
-        var requestFingerprint = TileExportArtifactIdentity.Compute(plan);
+        // Artifact identity covers byte-affecting inputs and permits safe package reuse across
+        // same-layer aliases. Request identity additionally retains a publication-specific
+        // lifecycle binding, so a keyed replay through another alias is rejected.
+        var requestFingerprint = TileExportRequestIdentity.Compute(plan);
         var partitionKey = BuildPartitionKey(plan);
 
         // Idempotent fast-path: a keyed replay returns the existing job WITHOUT charging admission, so
@@ -431,7 +431,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 : TileExportPackageFormat.Zip;
 
     private static string BuildPartitionKey(TileExportJobPlan plan)
-        => $"tile-export:{plan.SourceKind.ToString().ToLowerInvariant()}:{plan.ResourceId}";
+        => $"tile-export:{plan.SourceKind.ToString().ToLowerInvariant()}:{TileExportSourceResourceId.Resolve(plan)}";
 
     private async Task TryRollbackAsync(string jobId)
     {
