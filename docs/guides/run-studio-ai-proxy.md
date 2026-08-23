@@ -17,6 +17,10 @@ forwards a client's inference request through this explicitly configured proxy a
   routing rules, no prompt templating. v0 is deliberately minimal — see Non-Goals in
   honua-server#3000.
 
+Studio AI routes require an interactive authenticated user session (or an administrator). API
+keys, client certificates/mTLS, and client-credentials bearer tokens are machine credentials and
+are not admitted by the AI policy, even when the general authentication feature flag is enabled.
+
 ## Adapters
 
 | Adapter kind | Upstream API | Typical use |

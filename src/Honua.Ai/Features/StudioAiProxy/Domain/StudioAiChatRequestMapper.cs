@@ -13,6 +13,7 @@ namespace Honua.Ai.StudioAiProxy.Domain;
 /// </summary>
 public static class StudioAiChatRequestMapper
 {
+    private const int MaxMessageCount = 256;
     /// <summary>
     /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
     /// When <paramref name="allowCallerOverrides"/> is false, caller-supplied model and output
@@ -31,6 +32,11 @@ public static class StudioAiChatRequestMapper
         if (http.Messages is not { Count: > 0 } httpMessages)
         {
             return (null, "At least one message is required.");
+        }
+
+        if (httpMessages.Count > MaxMessageCount)
+        {
+            return (null, $"A maximum of {MaxMessageCount} messages is allowed per request.");
         }
 
         var messages = new List<StudioAiMessage>(httpMessages.Count);
@@ -60,11 +66,12 @@ public static class StudioAiChatRequestMapper
                 }
 
                 if (sourceToolCalls.Any(static call =>
+                        call is null ||
                         string.IsNullOrWhiteSpace(call.Id) ||
                         string.IsNullOrWhiteSpace(call.Name) ||
                         call.Arguments.ValueKind != System.Text.Json.JsonValueKind.Object))
                 {
-                    return (null, "Each assistant tool call requires a non-empty id, name, and JSON object arguments value.");
+                    return (null, "Each assistant tool call must be a non-null value with a non-empty id, name, and JSON object arguments value.");
                 }
 
                 toolCalls = sourceToolCalls

@@ -191,13 +191,49 @@ internal static class StudioAiInteractivePrincipal
     ];
 
     internal static bool IsInteractive(ClaimsPrincipal principal)
-        => principal.Identities.Any(identity =>
+    {
+        var hasMachineGrant = principal.Identities.Any(identity => identity.HasClaim(c =>
+            (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
+            (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
+             string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase))));
+        return !hasMachineGrant && principal.Identities.Any(identity =>
             identity.IsAuthenticated &&
-            (InteractiveAuthenticationSchemes.Any(scheme =>
-                 string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) ||
-             identity.HasClaim(
-                 OperatorScopeCatalog.ScopeGovernedClaimType,
+            ((InteractiveAuthenticationSchemes.Any(scheme =>
+                  string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) &&
+              IsHumanSession(identity)) ||
+             identity.HasClaim(OperatorScopeCatalog.ScopeGovernedClaimType,
                  OperatorScopeCatalog.ScopeGovernedClaimValue)));
+    }
+
+    private static bool IsHumanSession(ClaimsIdentity identity)
+    {
+        // A validated bearer token is not necessarily interactive: client-credentials tokens
+        // can carry the same scope-governed marker as user tokens. Require a positive user
+        // identity signal for bearer auth and reject explicit machine-grant markers.
+        if (string.Equals(identity.AuthenticationType, JwtBearerDefaults.AuthenticationScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            if (identity.HasClaim(c =>
+                    (string.Equals(c.Type, "grant_type", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase)) ||
+                    (string.Equals(c.Type, "client_credentials", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase))))
+            {
+                return false;
+            }
+
+            return identity.HasClaim(c =>
+                string.Equals(c.Type, ClaimTypes.Name, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Type, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Type, "name", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Type, "preferred_username", StringComparison.OrdinalIgnoreCase)) ||
+                identity.HasClaim(
+                    OperatorScopeCatalog.ScopeGovernedClaimType,
+                    OperatorScopeCatalog.ScopeGovernedClaimValue);
+        }
+
+        return true;
+    }
 }
 
 

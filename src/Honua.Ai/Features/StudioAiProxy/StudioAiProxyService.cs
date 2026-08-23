@@ -20,6 +20,7 @@ namespace Honua.Ai.StudioAiProxy;
 internal sealed class StudioAiProxyService : IStudioAiProxyService
 {
     private const int MaxToolCount = 128;
+    private const int MaxMessageCount = 256;
     private const int MaxToolComponentCharacters = 64_000;
 
     private readonly StudioAiProxyConfiguration _configuration;
@@ -72,6 +73,11 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         if (request.Messages is not { Count: > 0 })
         {
             return "At least one message is required.";
+        }
+
+        if (request.Messages.Count > MaxMessageCount)
+        {
+            return $"A maximum of {MaxMessageCount} messages is allowed per request.";
         }
 
         if (request.Messages.Any(static message => message is null || message.Content is null))
