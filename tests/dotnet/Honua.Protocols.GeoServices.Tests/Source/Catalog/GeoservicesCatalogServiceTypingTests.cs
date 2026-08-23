@@ -210,6 +210,12 @@ public sealed class GeoservicesCatalogServiceTypingTests
         builder
             .AddResource("res-typing-raster", "Raster Layer", MetadataV2ResourceType.RasterDataset,
                 accessPolicy: anonymous)
+            .AddStorageBinding(
+                "binding-typing-raster",
+                "res-typing-raster",
+                "typing_raster_data",
+                storageType: MetadataV2StorageType.RelationalTable,
+                storageLayerId: 701)
             .AddService("svc-typing-raster", RasterServiceName,
                 protocols: [ServiceProtocols.ImageServer], accessPolicy: anonymous)
             .AddPublication("pub-typing-raster", "svc-typing-raster", "res-typing-raster",

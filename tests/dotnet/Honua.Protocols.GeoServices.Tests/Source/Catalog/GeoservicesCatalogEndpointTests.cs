@@ -584,7 +584,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             using var response = await PostSoapAsync(
                 fixture.Client,
                 $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                "GetVersion");
+                "GetServiceInfo");
 
             response.StatusCode.Should().Be(System.Net.HttpStatusCode.InternalServerError);
             response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
