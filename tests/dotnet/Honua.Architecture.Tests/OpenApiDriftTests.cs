@@ -191,10 +191,29 @@ public sealed class OpenApiDriftTests
         // ProcessIoSchema must expose the fields emitted by process description endpoints.
         var ioSchema = schemas.GetProperty("ProcessIoSchema");
         var ioSchemaProps = ioSchema.GetProperty("properties");
-        ioSchemaProps.TryGetProperty("type", out _).Should()
-            .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
-        ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
-            .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+        string[] emittedSchemaFields =
+        [
+            "type",
+            "format",
+            "contentMediaType",
+            "contentEncoding",
+            "minimum",
+            "maximum",
+            "items",
+            "properties",
+            "required",
+            "oneOf",
+            "allOf"
+        ];
+        foreach (var field in emittedSchemaFields)
+        {
+            ioSchemaProps.TryGetProperty(field, out _).Should()
+                .BeTrue($"ProcessIoSchema must document the '{field}' field emitted by process descriptions");
+        }
+
+        schemas.GetProperty("InputDescription").GetProperty("properties")
+            .TryGetProperty("minOccurs", out _).Should()
+            .BeTrue("InputDescription must document required input cardinality emitted by process descriptions");
 
         // InputDescription and OutputDescription must reference ProcessIoSchema.
         foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })

@@ -60,16 +60,29 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
                 .GetString().Should().Be("string");
             inputs.GetProperty("object").GetProperty("schema").GetProperty("properties")
                 .TryGetProperty("value", out _).Should().BeTrue();
-            inputs.GetProperty("binary").GetProperty("schema").GetProperty("format")
-                .GetString().Should().Be("byte");
+            var binaryAlternatives = inputs.GetProperty("binary").GetProperty("schema")
+                .GetProperty("oneOf");
+            binaryAlternatives.GetArrayLength().Should().Be(3);
+            binaryAlternatives[0].GetProperty("format").GetString().Should().Be("byte");
+            binaryAlternatives[1].GetProperty("required")[0].GetString().Should().Be("value");
+            binaryAlternatives[2].GetProperty("required")[0].GetString().Should().Be("href");
             inputs.GetProperty("mixed").GetProperty("schema").GetProperty("oneOf")
                 .GetArrayLength().Should().Be(2);
-            inputs.GetProperty("array").GetProperty("schema").GetProperty("items")
+            inputs.GetProperty("array").GetProperty("schema").GetProperty("oneOf")[1]
+                .GetProperty("items")
                 .GetProperty("type").GetString().Should().Be("string");
             inputs.GetProperty("bbox").GetProperty("schema").GetProperty("properties")
                 .TryGetProperty("bbox", out _).Should().BeTrue();
             inputs.GetProperty("pause").GetProperty("schema").GetProperty("type")
                 .GetString().Should().Be("integer");
+            inputs.GetProperty("pause").GetProperty("schema").GetProperty("minimum")
+                .GetDouble().Should().Be(0);
+            inputs.GetProperty("pause").GetProperty("schema").GetProperty("maximum")
+                .GetDouble().Should().Be(OgcProcessesCiteEchoFixture.MaximumPauseSeconds);
+            inputs.GetProperty("literal").GetProperty("minOccurs").GetInt32().Should().Be(1);
+            inputs.GetProperty("object").GetProperty("minOccurs").GetInt32().Should().Be(0);
+            description.RootElement.GetProperty("outputs").GetProperty("binary")
+                .GetProperty("schema").GetProperty("oneOf").GetArrayLength().Should().Be(3);
 
             using var invalidBinary = await PostExecutionAsync(client, """
                 {
@@ -196,8 +209,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             using var pausedSubmit = await PostExecutionAsync(client, """
                 {
                   "response": "document",
-                  "inputs": { "literal": "teststring", "pause": 2 },
-                  "outputs": { "literal": { "transmissionMode": "value" } }
+                  "inputs": { "literal": "teststring", "pause": 2 }
                 }
                 """);
             pausedSubmit.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -211,6 +223,14 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
 
             using var pausedTerminal = await PollUntilSucceededAsync(client, pausedJobId);
             pausedTerminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+            using var pausedResultsResponse = await client.GetAsync(
+                $"/ogc/processes/jobs/{pausedJobId}/results");
+            pausedResultsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var pausedResults = JsonDocument.Parse(
+                await pausedResultsResponse.Content.ReadAsStringAsync());
+            pausedResults.RootElement.EnumerateObject().Select(property => property.Name)
+                .Should().Equal("literal");
+            pausedResults.RootElement.GetProperty("literal").GetString().Should().Be("teststring");
         }
         finally
         {
@@ -223,7 +243,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [InlineData("{\"literal\":1}", "literal")]
     [InlineData("{\"literal\":\"ok\",\"object\":\"text\"}", "object")]
     [InlineData("{\"literal\":\"ok\",\"mixed\":42}", "mixed")]
-    [InlineData("{\"literal\":\"ok\",\"array\":\"not-an-array\"}", "array")]
+    [InlineData("{\"literal\":\"ok\",\"array\":[\"ok\",1]}", "array")]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,\"bad\"]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"pause\":11}", "pause")]
     [InlineData("{\"literal\":\"ok\",\"unknown\":true}", "unknown")]
