@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -180,9 +181,30 @@ public sealed class ImageServerExportTilesJobEndpointTests
 
     private static async Task<WebAppFixture> CreateDurableFixtureAsync()
     {
-        // Submission and status only read metadata + create/read the durable job record; tile
-        // rendering happens later on the worker, so a bare raster-store double is sufficient here.
+        // Submission and status only probe primary metadata + create/read the durable job record;
+        // tile rendering happens later on the worker.
         var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterInfo
+            {
+                Id = 1,
+                LayerId = TestLayerId,
+                Name = "durable-export-source",
+                Width = 256,
+                Height = 256,
+                BandCount = 3,
+                PixelType = "8BUI",
+                Srid = 4326,
+                Extent = new RasterExtent
+                {
+                    XMin = -180,
+                    YMin = -90,
+                    XMax = 180,
+                    YMax = 90,
+                    Srid = 4326,
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
 
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {

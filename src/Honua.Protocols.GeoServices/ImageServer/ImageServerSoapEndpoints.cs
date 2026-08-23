@@ -297,12 +297,13 @@ internal static class ImageServerSoapEndpoints
 
         var returnType = FindDescendantValue(operation, "ImageReturnType");
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
-        var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-        var referenceRaster = SelectReferenceRaster(rasters);
+        var referenceRaster = await rasterStore
+            .GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken)
+            .ConfigureAwait(false);
         request = CopyWithResponseFormat(
             request,
             returnMimeData ? "image" : "json",
-            referenceRaster.Id == 0 ? null : MapPixelType(referenceRaster.PixelType));
+            referenceRaster.HasValue ? MapPixelType(referenceRaster.Value.PixelType) : null);
         var exportResult = await exportHandler.ExportImageAsync(
             context,
             publicationLayerIndex,

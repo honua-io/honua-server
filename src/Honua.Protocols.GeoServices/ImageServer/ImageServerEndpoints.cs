@@ -3025,23 +3025,38 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(
+        var resolution = await ResolveImageLayerAsync(
             id,
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        if (layerError is not null)
-        {
-            return layerError;
-        }
+        return resolution.ErrorResult ?? await ExecuteExportTilesGetAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
+    }
 
+    private static async Task<IResult> ExecuteExportTilesGetAsync(
+        int storageLayerId,
+        string publicationId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken)
+    {
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.ExportTilesAsync(context, id, values, cancellationToken);
+        return await handler.ExportTilesAsync(
+            context,
+            storageLayerId,
+            values,
+            publicationId,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesGetByService(
@@ -3055,7 +3070,12 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await ExportTilesGet(resolution.LayerId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await ExecuteExportTilesGetAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
     }
 
     /// <summary>
@@ -3067,16 +3087,26 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(
+        var resolution = await ResolveImageLayerAsync(
             id,
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        if (layerError is not null)
-        {
-            return layerError;
-        }
+        return resolution.ErrorResult ?? await ExecuteExportTilesPostAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
+    }
 
+    private static async Task<IResult> ExecuteExportTilesPostAsync(
+        int storageLayerId,
+        string publicationId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken)
+    {
         var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
         if (bodyValues.Error != null)
         {
@@ -3089,7 +3119,12 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.ExportTilesAsync(context, id, merged, cancellationToken);
+        return await handler.ExportTilesAsync(
+            context,
+            storageLayerId,
+            merged,
+            publicationId,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesPostByService(
@@ -3103,7 +3138,12 @@ internal static class ImageServerEndpoints
             context,
             cancellationToken,
             AuthorizationOperation.Export);
-        return resolution.ErrorResult ?? await ExportTilesPost(resolution.LayerId, context, handler, cancellationToken);
+        return resolution.ErrorResult ?? await ExecuteExportTilesPostAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobStatus(

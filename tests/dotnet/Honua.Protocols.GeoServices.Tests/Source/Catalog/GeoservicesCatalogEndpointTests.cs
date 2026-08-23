@@ -1186,6 +1186,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 Arg.Any<long>(),
                 Arg.Is<RasterQuery>(query => query.OutputWidth == 128 && query.OutputHeight == 64),
                 Arg.Any<CancellationToken>());
+            await rasterStore.Received().GetPrimaryRasterInfoAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().ListRastersAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {

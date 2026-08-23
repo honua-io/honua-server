@@ -10,6 +10,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -86,7 +87,12 @@ internal sealed class ImageServerExportTilesHandler
         IReadOnlyDictionary<string, StringValues> values,
         CancellationToken cancellationToken)
     {
-        var (plan, error) = await TryBuildExportTilesPlanAsync(context, layerId, values, cancellationToken)
+        var (plan, error) = await TryBuildExportTilesPlanAsync(
+                context,
+                layerId,
+                values,
+                publicationId: null,
+                cancellationToken)
             .ConfigureAwait(false);
         if (error is not null)
         {
@@ -119,6 +125,38 @@ internal sealed class ImageServerExportTilesHandler
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
         CancellationToken cancellationToken)
+        => await ExportTilesCoreAsync(
+            context,
+            layerId,
+            values,
+            publicationId: null,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Exports tiles for the exact publication already resolved by a service-scoped caller.
+    /// </summary>
+    public async Task<IResult> ExportTilesAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        string publicationId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        return await ExportTilesCoreAsync(
+            context,
+            layerId,
+            values,
+            publicationId,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IResult> ExportTilesCoreAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        string? publicationId,
+        CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
             "export-tiles",
@@ -131,15 +169,27 @@ internal sealed class ImageServerExportTilesHandler
         // synchronous flat-ZIP / exploded-TPK behavior byte-for-byte.
         if (IsCompactV2Requested(values) && _tileExportJobService is not null)
         {
-            return await SubmitDurableExportAsync(context, layerId, values, cancellationToken).ConfigureAwait(false);
+            return await SubmitDurableExportAsync(
+                context,
+                layerId,
+                values,
+                publicationId,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        var (plan, error) = await TryBuildExportTilesPlanAsync(context, layerId, values, cancellationToken)
+        var (plan, error) = await TryBuildExportTilesPlanAsync(
+                context,
+                layerId,
+                values,
+                publicationId,
+                cancellationToken)
             .ConfigureAwait(false);
         if (error is not null)
         {
             return error;
         }
+
+        layerId = plan!.LayerId;
 
         if (_storage is null)
         {
@@ -362,10 +412,21 @@ internal sealed class ImageServerExportTilesHandler
         HttpContext context,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
+        string? publicationId,
         CancellationToken cancellationToken)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+        var resolved = publicationId is null
+            ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+        if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
+        {
+            ImageServerLog.LayerNotFound(_logger, layerId);
+            return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;
+        if (publicationId is not null && storageLayerId != layerId)
         {
             ImageServerLog.LayerNotFound(_logger, layerId);
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
@@ -455,9 +516,9 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, packageError!));
         }
 
-        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
+        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, GetString(values, "mosaicRule"));
         return (new ExportTilesPlan(
-            layerId,
+            storageLayerId,
             mergeStrategy,
             selectedTiles,
             bounds,
@@ -966,9 +1027,15 @@ internal sealed class ImageServerExportTilesHandler
         HttpContext context,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
+        string? publicationId,
         CancellationToken cancellationToken)
     {
-        var (plan, error) = await TryBuildDurableExportPlanAsync(context, layerId, values, cancellationToken).ConfigureAwait(false);
+        var (plan, error) = await TryBuildDurableExportPlanAsync(
+            context,
+            layerId,
+            values,
+            publicationId,
+            cancellationToken).ConfigureAwait(false);
         if (error is not null)
         {
             return error;
@@ -1096,10 +1163,20 @@ internal sealed class ImageServerExportTilesHandler
         HttpContext context,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
+        string? publicationId,
         CancellationToken cancellationToken)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+        var resolved = publicationId is null
+            ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+        if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
+        {
+            return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;
+        if (publicationId is not null && storageLayerId != layerId)
         {
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
         }
@@ -1167,12 +1244,12 @@ internal sealed class ImageServerExportTilesHandler
 
         var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
         var mosaicRuleRaw = GetString(values, "mosaicRule");
-        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRuleRaw);
+        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolvedLayer.Resource, mosaicRuleRaw);
         var timeRaw = GetString(values, "time");
 
         var descriptor = new TileExportRasterSourceDescriptor(
             snapshot.Revision,
-            layerId.ToString(CultureInfo.InvariantCulture),
+            storageLayerId.ToString(CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(mosaicRuleRaw) ? mergeStrategy.ToString() : mosaicRuleRaw.Trim(),
             string.IsNullOrWhiteSpace(timeRaw) ? null : timeRaw.Trim(),
             BuildRasterFingerprint(mergeStrategy, mosaicRuleRaw, timeRaw, tileImageFormat));
@@ -1180,7 +1257,7 @@ internal sealed class ImageServerExportTilesHandler
         var plan = new TileExportJobPlan
         {
             SourceKind = TileExportSourceKind.Raster,
-            ResourceId = layerId.ToString(CultureInfo.InvariantCulture),
+            ResourceId = storageLayerId.ToString(CultureInfo.InvariantCulture),
             Source = descriptor,
             ZoomLevels = [.. requestedZooms],
             West = bounds[0],

@@ -7,18 +7,24 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Services;
+using Honua.Core.Features.Security.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -506,6 +512,83 @@ public class ImageServerEndpointsTests
         }
         finally
         {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportTiles")]
+    public async Task ExportTilesByService_UsesResolvedPublicationAndStorageBinding()
+    {
+        const int publicationLayerIndex = 41;
+        const string serviceId = "aliased-image";
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var provider = new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder()
+                .AddResource(
+                    "aliased-image-resource",
+                    "Aliased image",
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: anonymous)
+                .AddStorageBinding(
+                    "aliased-image-binding",
+                    "aliased-image-resource",
+                    "raster_data",
+                    storageType: MetadataV2StorageType.RelationalTable,
+                    storageLayerId: TestLayerId)
+                .AddService(
+                    "aliased-image-service",
+                    serviceId,
+                    protocols: [MetadataV2ServiceProtocols.ImageServer],
+                    accessPolicy: anonymous)
+                .AddPublication(
+                    "aliased-image-publication",
+                    "aliased-image-service",
+                    "aliased-image-resource",
+                    layerIndex: publicationLayerIndex,
+                    storageBindingId: "aliased-image-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .Build());
+        var rasterStore = CreateTileExportRasterStoreSubstitute();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        string? fileId = null;
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/exportTiles" +
+                "?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var export = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesResponse);
+            AssertExportTilesResponse(export);
+            fileId = export!.ArchiveFileId;
+            await rasterStore.Received().QueryRastersAsync(
+                TestLayerId,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().QueryRastersAsync(
+                publicationLayerIndex,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(fileId))
+            {
+                await fixture.GetService<ICloudFileStorage>().DeleteAsync(fileId);
+            }
+
             await fixture.DisposeAsync();
         }
     }
