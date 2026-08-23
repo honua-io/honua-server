@@ -232,6 +232,11 @@ public static class RelationTypes
     public const string Prev = "prev";
 
     /// <summary>
+    /// Indicates the link target can be polled to monitor an asynchronous job.
+    /// </summary>
+    public const string Monitor = "monitor";
+
+    /// <summary>
     /// Indicates the link target provides queryables schema.
     /// </summary>
     public const string Queryables = "http://www.opengis.net/def/rel/ogc/1.0/queryables";
