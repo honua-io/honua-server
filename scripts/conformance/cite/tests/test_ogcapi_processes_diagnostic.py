@@ -9,21 +9,57 @@ from scripts.conformance.cite import parse_ogcapi_processes_results as parser
 
 
 SHA = "a" * 40
+PRODUCER_SHA = "c" * 40
 IMAGE = "sha256:" + "b" * 64
+LANDING_PAGE_CLASS = "org.opengis.cite.ogcapiprocesses10.landingpage.LandingPage"
 
 
-def _testng(methods: str, *, total: int, passed: int, failed: int, skipped: int) -> str:
+def _testng(
+    methods: str,
+    *,
+    total: int,
+    passed: int,
+    failed: int,
+    skipped: int,
+    extra_classes: str = "",
+) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <testng-results ignored="0" total="{total}" passed="{passed}" failed="{failed}" skipped="{skipped}">
   <suite name="ogcapi-processes-1.0-1.4-SNAPSHOT">
     <test name="Core">
-      <class name="org.opengis.cite.ogcapiprocesses10.landingpage.LandingPage">
+      <class name="{LANDING_PAGE_CLASS}">
         {methods}
       </class>
+      {extra_classes}
     </test>
   </suite>
 </testng-results>
 """
+
+
+def _complete_testng(
+    methods: str, *, total: int, passed: int, failed: int, skipped: int
+) -> str:
+    other_classes = sorted(parser.MANDATORY_VERDICT_CLASSES - {LANDING_PAGE_CLASS})
+    extra_classes = "\n".join(
+        f'<class name="{class_name}">'
+        '<test-method status="PASS" name="mandatoryClassPresence" />'
+        "</class>"
+        for class_name in other_classes
+    )
+    extra_classes += (
+        f'<class name="{parser.SUITE_PRECONDITIONS_CLASS}">'
+        '<test-method status="PASS" name="verifyTestSubject" is-config="true" />'
+        "</class>"
+    )
+    return _testng(
+        methods,
+        total=total + len(other_classes),
+        passed=passed + len(other_classes),
+        failed=failed,
+        skipped=skipped,
+        extra_classes=extra_classes,
+    )
 
 
 class OgcApiProcessesDiagnosticTests(unittest.TestCase):
@@ -35,6 +71,7 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         provenance.write_text(
             json.dumps({
                 "testedHonuaGitSha": SHA,
+                "checkedOutHonuaGitSha": PRODUCER_SHA,
                 "serverImageId": IMAGE,
                 "requestedServerImage": None,
             }),
@@ -61,13 +98,28 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
           </test-method>
         """
         with tempfile.TemporaryDirectory() as directory:
-            paths = self._files(Path(directory), _testng(methods, total=2, passed=1, failed=1, skipped=0))
+            paths = self._files(
+                Path(directory),
+                _complete_testng(methods, total=2, passed=1, failed=1, skipped=0),
+            )
             payload, exit_code = self._parse(paths)
 
         self.assertEqual(0, exit_code)
         self.assertEqual("diagnostic-red", payload["status"])
-        self.assertEqual({"total": 2, "passed": 1, "failed": 1, "skipped": 0, "canttell": 0}, payload["totals"])
+        mandatory_extras = len(parser.MANDATORY_VERDICT_CLASSES) - 1
+        self.assertEqual(
+            {
+                "total": 2 + mandatory_extras,
+                "passed": 1 + mandatory_extras,
+                "failed": 1,
+                "skipped": 0,
+                "canttell": 0,
+            },
+            payload["totals"],
+        )
         self.assertEqual("process.ogc-api-processes", payload["observations"][0]["capabilityKey"])
+        self.assertEqual(SHA, payload["observations"][0]["sourceSha"])
+        self.assertEqual(PRODUCER_SHA, payload["observations"][0]["producerSourceSha"])
         self.assertEqual("landing-page", payload["observations"][0]["operation"])
         self.assertEqual(
             "org.opengis.cite.ogcapiprocesses10.landingpage.LandingPage#badLink",
@@ -75,6 +127,22 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         )
         self.assertEqual("wrong relation", payload["observations"][1]["reason"])
         self.assertRegex(payload["execution"]["resultDigest"], r"^sha256:[0-9a-f]{64}$")
+
+    def test_all_green_partial_run_is_incomplete(self) -> None:
+        methods = '<test-method status="PASS" name="landingPage" />'
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._files(
+                Path(directory),
+                _testng(methods, total=1, passed=1, failed=0, skipped=0),
+            )
+            payload, exit_code = self._parse(paths)
+
+        self.assertEqual(2, exit_code)
+        self.assertEqual("incomplete", payload["status"])
+        self.assertIn(
+            "omitted mandatory classes",
+            " ".join(payload["infrastructureErrors"]),
+        )
 
     def test_all_skip_run_is_incomplete(self) -> None:
         methods = '<test-method status="SKIP" name="landingPage" />'

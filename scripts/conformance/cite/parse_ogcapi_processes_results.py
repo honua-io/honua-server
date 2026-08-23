@@ -48,6 +48,9 @@ CLASS_MAPPINGS = {
         "job-list", ("positive", "pagination", "limit", "media-schema")
     ),
 }
+SUITE_PRECONDITIONS_CLASS = "org.opengis.cite.ogcapiprocesses10.SuitePreconditions"
+MANDATORY_ETS_CLASSES = frozenset(CLASS_MAPPINGS)
+MANDATORY_VERDICT_CLASSES = MANDATORY_ETS_CLASSES - {SUITE_PRECONDITIONS_CLASS}
 
 
 @dataclass
@@ -118,6 +121,9 @@ def _load_provenance(path: Path) -> tuple[dict, list[str]]:
     source_sha = value.get("testedHonuaGitSha")
     if not isinstance(source_sha, str) or not SHA.fullmatch(source_sha):
         errors.append("server provenance lacks a full tested Honua git SHA")
+    producer_source_sha = value.get("checkedOutHonuaGitSha")
+    if not isinstance(producer_source_sha, str) or not SHA.fullmatch(producer_source_sha):
+        errors.append("server provenance lacks a full checked-out Honua producer git SHA")
     image_id = value.get("serverImageId")
     if not isinstance(image_id, str) or not DIGEST.fullmatch(image_id):
         errors.append("server provenance lacks an immutable server image ID")
@@ -162,16 +168,19 @@ def parse_results(
     evidence_digest = _sha256(result_file)
     config_digest = _sha256(config_path) if config_path.is_file() else None
     source_sha = provenance.get("testedHonuaGitSha")
+    producer_source_sha = provenance.get("checkedOutHonuaGitSha")
     image_digest = _candidate_image_digest(provenance)
     observations: list[dict] = []
     totals = Counts()
     class_totals: dict[str, Counts] = defaultdict(Counts)
+    seen_ets_classes: set[str] = set()
     invocation_counts: Counter[tuple[str, str, str]] = Counter()
 
     for test in root.findall(".//test"):
         test_name = test.get("name", "")
         for class_node in test.findall("./class"):
             class_name = class_node.get("name", "")
+            seen_ets_classes.add(class_name)
             mapping = CLASS_MAPPINGS.get(class_name)
             for method in class_node.findall("./test-method"):
                 result = _normalize_status(method.get("status", "UNKNOWN"))
@@ -213,7 +222,7 @@ def parse_results(
                     "methodSignature": signature or None,
                     "scenarioFacets": list(facets),
                     "sourceSha": source_sha,
-                    "producerSourceSha": source_sha,
+                    "producerSourceSha": producer_source_sha,
                     "imageDigest": image_digest,
                     "fixtureRevision": "ogcapi-processes-cite-profile-v1",
                     "configRevision": config_digest,
@@ -252,6 +261,16 @@ def parse_results(
         infrastructure_errors.append("ETS emitted zero test verdicts")
     if totals.passed + totals.failed == 0:
         infrastructure_errors.append("ETS emitted an all-skip/CantTell run")
+    missing_ets_classes = sorted(MANDATORY_ETS_CLASSES - seen_ets_classes)
+    if missing_ets_classes:
+        infrastructure_errors.append(
+            "ETS omitted mandatory classes: " + ", ".join(missing_ets_classes)
+        )
+    missing_verdict_classes = sorted(MANDATORY_VERDICT_CLASSES - class_totals.keys())
+    if missing_verdict_classes:
+        infrastructure_errors.append(
+            "ETS omitted mandatory verdict classes: " + ", ".join(missing_verdict_classes)
+        )
 
     complete = not infrastructure_errors
     green = complete and totals.failed == totals.skipped == totals.canttell == 0
