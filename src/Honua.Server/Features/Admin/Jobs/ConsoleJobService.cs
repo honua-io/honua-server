@@ -1128,6 +1128,7 @@ internal sealed partial class ConsoleJobService(
                     NumberStyles.Integer,
                     CultureInfo.InvariantCulture,
                     out var wkid)
+                && wkid > 0
                 && string.Equals(
                     value,
                     wkid.ToString(CultureInfo.InvariantCulture),

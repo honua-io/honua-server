@@ -170,6 +170,16 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         invalid.RootElement.GetProperty("selectedMetadata")
             .TryGetProperty(GeoprocessingProtocolMetadataKeys.GPServerProcessSr, out _)
             .Should().BeFalse("non-normalized job metadata must not reach the admin response");
+
+        foreach (var jobId in new[] { "job-zero-process-sr", "job-negative-process-sr" })
+        {
+            var nonPositiveResponse = await _client.GetAsync($"/api/v1/admin/jobs/{jobId}");
+            nonPositiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var nonPositive = await ReadJsonAsync(nonPositiveResponse);
+            nonPositive.RootElement.GetProperty("selectedMetadata")
+                .TryGetProperty(GeoprocessingProtocolMetadataKeys.GPServerProcessSr, out _)
+                .Should().BeFalse("WKIDs must be positive");
+        }
     }
 
     [IntegrationTest]
@@ -488,6 +498,24 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 Spec = CreateSpec("invalid-process-sr-workload", new Dictionary<string, string>
                 {
                     [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "{\"wkid\":3857}"
+                })
+            },
+            CreateJob("job-zero-process-sr", ExecutionJobStatus.Succeeded, now.AddMinutes(-8), "corr-zero-process-sr") with
+            {
+                CompletedAt = now.AddMinutes(-5),
+                CurrentPhase = "Completed",
+                Spec = CreateSpec("zero-process-sr-workload", new Dictionary<string, string>
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "0"
+                })
+            },
+            CreateJob("job-negative-process-sr", ExecutionJobStatus.Succeeded, now.AddMinutes(-8), "corr-negative-process-sr") with
+            {
+                CompletedAt = now.AddMinutes(-5),
+                CurrentPhase = "Completed",
+                Spec = CreateSpec("negative-process-sr-workload", new Dictionary<string, string>
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "-4326"
                 })
             },
             CreateJob("job-running-standard", ExecutionJobStatus.Running, now.AddMinutes(-1), "corr-running-standard") with
