@@ -357,7 +357,7 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn('ExecutionAdmission__MaxSubmissionsPerWindow: "100"', compose)
         self.assertIn('ExecutionAdmission__MaxCostWeightPerPartition: "100"', compose)
         self.assertEqual(
-            "ogcapi-processes-cite-profile-v9",
+            "ogcapi-processes-cite-profile-v10",
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)
