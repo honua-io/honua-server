@@ -16,7 +16,8 @@ from rio_cogeo.profiles import cog_profiles
 
 def generate_cog(output: Path) -> None:
     source = output.with_suffix(".source.tif")
-    pixels = np.arange(256 * 256, dtype=np.uint16).reshape(256, 256)
+    pixels = np.arange(256 * 256, dtype=np.float32).reshape(256, 256)
+    pixels[0, 0] = -9999.0
     with rasterio.open(
         source,
         "w",
@@ -27,12 +28,19 @@ def generate_cog(output: Path) -> None:
         dtype=pixels.dtype,
         crs="EPSG:4326",
         transform=from_origin(-180.0, 90.0, 360.0 / 256, 180.0 / 256),
+        nodata=-9999.0,
         tiled=True,
         blockxsize=128,
         blockysize=128,
     ) as dataset:
         dataset.write(pixels, 1)
-    cog_translate(source, output, cog_profiles.get("deflate"), quiet=True)
+    cog_translate(
+        source,
+        output,
+        cog_profiles.get("deflate"),
+        overview_level=3,
+        quiet=True,
+    )
     source.unlink()
 
 
@@ -40,15 +48,26 @@ def canonical_dataset() -> xr.Dataset:
     return xr.Dataset(
         data_vars={
             "temperature": (
-                ("time", "lat", "lon"),
-                np.arange(2 * 4 * 4, dtype=np.float32).reshape(2, 4, 4),
+                ("time", "y", "x"),
+                np.arange(4 * 8 * 16, dtype=np.float32).reshape(4, 8, 16),
                 {"units": "degC", "standard_name": "sea_surface_temperature"},
             )
         },
         coords={
-            "time": np.array(["2026-01-01", "2026-01-02"], dtype="datetime64[ns]"),
-            "lat": np.linspace(18.0, 22.0, 4),
-            "lon": np.linspace(-160.0, -156.0, 4),
+            "time": np.array(
+                ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"],
+                dtype="datetime64[ns]",
+            ),
+            "y": (
+                "y",
+                np.linspace(22.0, 18.0, 8),
+                {"standard_name": "latitude", "units": "degrees_north", "axis": "Y"},
+            ),
+            "x": (
+                "x",
+                np.linspace(-160.0, -156.0, 16),
+                {"standard_name": "longitude", "units": "degrees_east", "axis": "X"},
+            ),
         },
         attrs={"Conventions": "CF-1.10", "title": "Honua canonical multidimensional fixture"},
     )
@@ -62,12 +81,16 @@ def main() -> int:
 
     generate_cog(args.output / "canonical.cog.tif")
     dataset = canonical_dataset()
-    dataset.to_netcdf(args.output / "canonical.nc", engine="h5netcdf")
+    dataset.to_netcdf(
+        args.output / "canonical.nc",
+        engine="h5netcdf",
+        encoding={"temperature": {"chunksizes": (1, 4, 4), "dtype": "float32"}},
+    )
 
     zarr_path = args.output / "canonical.zarr"
     if zarr_path.exists():
         shutil.rmtree(zarr_path)
-    dataset.chunk({"time": 1, "lat": 2, "lon": 2}).to_zarr(
+    dataset.chunk({"time": 1, "y": 4, "x": 4}).to_zarr(
         zarr_path,
         mode="w",
         consolidated=True,
