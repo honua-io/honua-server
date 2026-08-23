@@ -274,9 +274,9 @@ internal static class OgcProcessesCiteEchoFixture
 
         if (hasValue)
         {
-            if (value.ValueKind != JsonValueKind.String || !IsBase64(value.GetString()))
+            if (value.ValueKind != JsonValueKind.String)
             {
-                error = "CITE echo input 'binary.value' must be a base64-encoded string.";
+                error = "CITE echo input 'binary.value' must be a string.";
                 return false;
             }
         }
@@ -515,7 +515,7 @@ internal static class OgcProcessesCiteEchoFixture
         {
             OneOf = ImmutableArray.Create(
                 EncodedBinarySchema(),
-                BinaryDescriptorSchema("value", EncodedBinarySchema()),
+                BinaryDescriptorSchema("value", StringSchema()),
                 BinaryDescriptorSchema(
                     "href",
                     new OgcProcessIoSchema

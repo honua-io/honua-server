@@ -65,6 +65,11 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             binaryAlternatives.GetArrayLength().Should().Be(3);
             binaryAlternatives[0].GetProperty("format").GetString().Should().Be("byte");
             binaryAlternatives[1].GetProperty("required")[0].GetString().Should().Be("value");
+            binaryAlternatives[1].GetProperty("properties").GetProperty("value")
+                .GetProperty("type").GetString().Should().Be("string");
+            binaryAlternatives[1].GetProperty("properties").GetProperty("value")
+                .TryGetProperty("contentEncoding", out _).Should().BeFalse(
+                    "the pinned ETS generates an ordinary string for inline descriptor values");
             binaryAlternatives[2].GetProperty("required")[0].GetString().Should().Be("href");
             binaryAlternatives[2].GetProperty("properties").GetProperty("href")
                 .GetProperty("pattern").GetString()
@@ -166,10 +171,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
                   "inputs": {
                     "literal": "teststring",
                     "object": { "value": "teststring" },
-                    "binary": {
-                      "value": "dGVzdA==",
-                      "format": { "mediaType": "image/tiff", "encoding": "base64" }
-                    },
+                    "binary": { "value": "teststring" },
                     "mixed": { "value": "teststring" },
                     "array": ["test1", "test2", "test3"],
                     "bbox": {
@@ -201,8 +203,8 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             results.RootElement.GetProperty("literal").GetString().Should().Be("teststring");
             results.RootElement.GetProperty("object").GetProperty("value").GetString()
                 .Should().Be("teststring");
-            results.RootElement.GetProperty("binary").GetProperty("format")
-                .GetProperty("mediaType").GetString().Should().Be("image/tiff");
+            results.RootElement.GetProperty("binary").GetProperty("value").GetString()
+                .Should().Be("teststring");
             results.RootElement.GetProperty("mixed").GetProperty("value").GetString()
                 .Should().Be("teststring");
             results.RootElement.GetProperty("array").GetArrayLength().Should().Be(3);
