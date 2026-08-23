@@ -85,8 +85,15 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             inputs.GetProperty("array").GetProperty("schema").GetProperty("oneOf")[1]
                 .GetProperty("items")
                 .GetProperty("type").GetString().Should().Be("string");
-            inputs.GetProperty("bbox").GetProperty("schema").GetProperty("properties")
-                .TryGetProperty("bbox", out _).Should().BeTrue();
+            var bboxInputSchema = inputs.GetProperty("bbox").GetProperty("schema");
+            bboxInputSchema.GetProperty("required")[0].GetString().Should().Be("bbox");
+            var bboxCoordinateSchemas = bboxInputSchema.GetProperty("properties")
+                .GetProperty("bbox").GetProperty("oneOf");
+            bboxCoordinateSchemas.GetArrayLength().Should().Be(2);
+            bboxCoordinateSchemas[0].GetProperty("minItems").GetInt32().Should().Be(4);
+            bboxCoordinateSchemas[0].GetProperty("maxItems").GetInt32().Should().Be(4);
+            bboxCoordinateSchemas[1].GetProperty("minItems").GetInt32().Should().Be(6);
+            bboxCoordinateSchemas[1].GetProperty("maxItems").GetInt32().Should().Be(6);
             inputs.GetProperty("pause").GetProperty("schema").GetProperty("type")
                 .GetString().Should().Be("integer");
             inputs.GetProperty("pause").GetProperty("schema").GetProperty("minimum")

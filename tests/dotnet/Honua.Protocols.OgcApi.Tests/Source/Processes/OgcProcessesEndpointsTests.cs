@@ -573,6 +573,45 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
     }
 
+    [Theory]
+    [InlineData("value")]
+    [InlineData("reference")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_FirstSliceProcessWithOutputSelection_Returns400(
+        string transmissionMode)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Content = new StringContent(
+            $$"""
+              {
+                "inputs": {
+                  "wkb": "{{PointWkbBase64}}",
+                  "srid": 4326,
+                  "distance": 25.5
+                },
+                "outputs": {
+                  "outputFeatureLayer": {
+                    "transmissionMode": "{{transmissionMode}}"
+                  }
+                }
+              }
+              """,
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString()
+            .Should().Be("Invalid output selection");
+        error.RootElement.GetProperty("detail").GetString()
+            .Should().Contain("does not support explicit output selection");
+    }
+
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]

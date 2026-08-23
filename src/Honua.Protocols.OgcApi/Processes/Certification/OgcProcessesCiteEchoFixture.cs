@@ -596,11 +596,22 @@ internal static class OgcProcessesCiteEchoFixture
             {
                 ["bbox"] = new OgcProcessIoSchema
                 {
-                    Type = "array",
-                    Items = new OgcProcessIoSchema { Type = "number" }
+                    OneOf = ImmutableArray.Create(
+                        CoordinateArraySchema(4),
+                        CoordinateArraySchema(6))
                 },
                 ["crs"] = StringSchema()
-            }
+            },
+            Required = ImmutableArray.Create("bbox")
+        };
+
+    private static OgcProcessIoSchema CoordinateArraySchema(int itemCount)
+        => new()
+        {
+            Type = "array",
+            Items = new OgcProcessIoSchema { Type = "number" },
+            MinItems = itemCount,
+            MaxItems = itemCount
         };
 
     private static ProcessParameterSpec Parameter(
