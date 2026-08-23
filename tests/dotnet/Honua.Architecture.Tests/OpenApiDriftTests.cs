@@ -212,7 +212,8 @@ public sealed class OpenApiDriftTests
             "properties",
             "required",
             "oneOf",
-            "allOf"
+            "allOf",
+            "not"
         ];
         foreach (var field in emittedSchemaFields)
         {

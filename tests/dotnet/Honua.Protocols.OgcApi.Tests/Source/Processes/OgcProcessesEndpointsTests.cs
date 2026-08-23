@@ -573,12 +573,19 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
     }
 
-    [Theory]
-    [InlineData("value")]
-    [InlineData("reference")]
+    [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_FirstSliceProcessWithOutputSelection_Returns400(
+    public Task Execute_FirstSliceProcessWithValueOutputSelection_Returns400()
+        => ExecuteFirstSliceProcessWithOutputSelectionReturns400("value");
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public Task Execute_FirstSliceProcessWithReferenceOutputSelection_Returns400()
+        => ExecuteFirstSliceProcessWithOutputSelectionReturns400("reference");
+
+    private async Task ExecuteFirstSliceProcessWithOutputSelectionReturns400(
         string transmissionMode)
     {
         using var request = new HttpRequestMessage(
