@@ -123,7 +123,7 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task ResolveFirstAccessibleLayerAsync_NonNumericPublication_UsesStorageLayerFallback()
+    public async Task ResolveFirstAccessibleLayerAsync_ZarrOnlyPublication_DoesNotRequirePostGisRaster()
     {
         var graphProvider = new TestMetadataV2GraphBuilder()
             .AddResource("resource-imagery", "imagery", MetadataV2ResourceType.RasterDataset)
@@ -152,19 +152,23 @@ public class ImageServerTileHandlerTests
         // shared helper dereferences. Using the real validator over the same test graph keeps the
         // test honest about the production resolution path and cannot rot when an overload is added.
         var resourceValidator = new ResourceValidator(graphProvider);
-        var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider);
+        var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider, _rasterStore);
         var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
 
         var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
             "imagery",
             context,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query,
             CancellationToken.None);
 
         resolution.ErrorResult.Should().BeNull();
         resolution.LayerId.Should().Be(42);
         resolution.PublicationId.Should().Be("publication-imagery");
         resolution.PublicationLayerIndex.Should().BeNull();
+        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

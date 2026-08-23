@@ -1569,10 +1569,10 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "entryCount": 141,
-      "provingTestCount": 336,
+      "entryCount": 142,
+      "provingTestCount": 372,
       "maturity": {
-        "implemented": 141
+        "implemented": 142
       },
       "noSurface": null,
       "cite": [],
@@ -1659,10 +1659,10 @@
       "displayName": "GeoServices REST Root",
       "category": "Serve",
       "edition": "Community",
-      "entryCount": 2,
-      "provingTestCount": 16,
+      "entryCount": 3,
+      "provingTestCount": 29,
       "maturity": {
-        "implemented": 2
+        "implemented": 3
       },
       "noSurface": null,
       "cite": [],

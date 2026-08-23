@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Protocols.GeoServices.Catalog;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.MapServer;
@@ -42,6 +43,7 @@ public sealed class GeoServicesProtocolModule : IHonuaProtocolModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+        endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapImageServerEndpoints();
