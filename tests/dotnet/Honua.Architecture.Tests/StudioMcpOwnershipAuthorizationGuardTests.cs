@@ -60,11 +60,15 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
         foreach (var type in registeredTypes)
         {
             var declaration = FindDeclaration(sourceFiles, type);
-            declaration.Should().NotBeNull($"registered Studio tool '{type}' must have an auditable source declaration");
+            if (declaration is not { } resolvedDeclaration)
+            {
+                throw new InvalidOperationException(
+                    $"Registered Studio tool '{type}' must have an auditable source declaration.");
+            }
 
             if (type == "CreateStudioDraftTool")
             {
-                ExtractClassBody(declaration!.Value.Source, declaration.Value.Index)
+                ExtractClassBody(resolvedDeclaration.Source, resolvedDeclaration.Index)
                     .Should().Contain("EnsureStudioAuthorizedAsync(",
                         "creation must authorize a resolved caller/existing item owner before persistence");
                 continue;
@@ -75,7 +79,7 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
                 continue;
             }
 
-            ExtractClassBody(declaration!.Value.Source, declaration.Value.Index)
+            ExtractClassBody(resolvedDeclaration.Source, resolvedDeclaration.Index)
                 .Should().Contain("RequireAuthorizedDraftAsync(",
                     $"'{type}' must load and authorize the recorded draft owner before lifecycle execution");
         }
