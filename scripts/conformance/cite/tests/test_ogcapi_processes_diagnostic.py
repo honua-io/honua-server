@@ -204,8 +204,12 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn(f'commit={parser.ETS_COMMIT}', runner)
         self.assertIn("Licensing__DevGrantEdition: Pro", compose)
         self.assertIn("OgcProcesses__CertificationProfile: ogcapi-processes10", compose)
+        self.assertIn('ExecutionAdmission__MaxConcurrentJobsPerPartition: "100"', compose)
+        self.assertIn('ExecutionAdmission__MaxConcurrentJobsGlobal: "100"', compose)
+        self.assertIn('ExecutionAdmission__MaxSubmissionsPerWindow: "100"', compose)
+        self.assertIn('ExecutionAdmission__MaxCostWeightPerPartition: "100"', compose)
         self.assertEqual(
-            "ogcapi-processes-cite-profile-v3",
+            "ogcapi-processes-cite-profile-v4",
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)

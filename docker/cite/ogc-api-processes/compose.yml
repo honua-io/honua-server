@@ -16,6 +16,14 @@ services:
       # The suite-owned profile needs the durable Redis job store. Test hosts may
       # opt into Pro entitlements explicitly; Production ignores this override.
       Licensing__DevGrantEdition: Pro
+      # The pinned ETS submits its independent async scenarios as a burst. Keep
+      # canonical admission enabled, but give this isolated single-client harness
+      # bounded ceilings above the suite's 33 job cases so admission does not turn
+      # otherwise valid protocol observations into load-shedding 429/503 results.
+      ExecutionAdmission__MaxConcurrentJobsPerPartition: "100"
+      ExecutionAdmission__MaxConcurrentJobsGlobal: "100"
+      ExecutionAdmission__MaxSubmissionsPerWindow: "100"
+      ExecutionAdmission__MaxCostWeightPerPartition: "100"
       Cache__Enabled: "false"
       DataSource__Provider: postgres
       HostValidation__Enabled: "false"
