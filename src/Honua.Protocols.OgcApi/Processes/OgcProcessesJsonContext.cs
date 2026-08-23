@@ -42,6 +42,7 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 [JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(object))]
 internal sealed partial class OgcProcessesJsonContext : JsonSerializerContext
 {

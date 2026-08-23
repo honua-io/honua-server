@@ -153,7 +153,9 @@ internal sealed class OgcProcessesCiteEchoExecutor : IProcessExecutor
         }
         catch (JsonException)
         {
-            return JsonSerializer.SerializeToUtf8Bytes(rawInput);
+            return JsonSerializer.SerializeToUtf8Bytes(
+                rawInput,
+                OgcProcessesJsonContext.Default.String);
         }
     }
 
