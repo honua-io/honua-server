@@ -98,7 +98,7 @@ The initial vocabulary is:
 | Axis | Values | Meaning |
 | --- | --- | --- |
 | `servingFormat` | `3d-tiles`, `quantized-mesh`, `copc` | The canonical persisted representation registered by the catalog. |
-| `contentKind` | `3d-object`, `building`, `point-cloud`, `terrain` | The semantic kind used for presentation and compatibility projection. |
+| `contentKind` | `3d-object`, `building`, `point-cloud`, `terrain`, `unclassified` | The semantic kind used for presentation and compatibility projection; `unclassified` is the explicit migration-safe wire value when legacy provenance cannot prove a semantic kind. |
 
 Examples make the distinction load-bearing: CityGML registers
 `3d-tiles/building`; LAS registers `3d-tiles/point-cloud`; an ordinary mesh is
@@ -117,13 +117,15 @@ record loss, but their semantic axis cannot always be backfilled losslessly.
 `HostedTiles` identifies the serving representation for existing mesh, CityGML,
 and point-cloud publications, and configuration-defined scenes may carry no
 semantic provenance at all. [#3409](https://github.com/honua-io/honua-server/issues/3409)
-therefore maps `servingFormat` independently and assigns `contentKind` only when
-durable publish provenance or validated asset metadata proves it. Otherwise the
-record remains explicitly unclassified/opaque until an operator reclassifies it;
-it stays discoverable through its canonical 3D-Tiles representation but is not
-eligible for a semantic projection such as I3S. Migration must never guess
-`HostedTiles` to mean `3d-object`. Unknown future values likewise fail or remain
-opaque rather than silently falling back to `3DObject` in a public contract.
+therefore maps `servingFormat` independently and assigns a classified
+`contentKind` only when durable publish provenance or validated asset metadata
+proves it. Otherwise list and metadata contracts return the exact
+`contentKind: "unclassified"` wire value until an operator reclassifies the
+record. That record stays discoverable through its canonical 3D-Tiles
+representation, but `unclassified` never maps to an I3S layer/store profile or
+another semantic projection. Migration must never guess `HostedTiles` to mean
+`3d-object`. Unknown future values likewise fail or remain opaque rather than
+silently falling back to `3DObject` in a public contract.
 
 ### 4. Canonical discovery and runtime resolution contracts
 
