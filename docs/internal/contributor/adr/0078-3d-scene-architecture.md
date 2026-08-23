@@ -138,6 +138,18 @@ They must agree with resolution, but new endpoint selection behavior is added to
 provider support; it does not derive an endpoint from `contentKind`, a capability
 label, or a URL convention.
 
+The closed `endpointFormat` vocabulary defines schema values, not a claim that
+every projection is currently available. Resolution returns an endpoint only
+when its production provider and complete asset route are active, the current
+request passes the capability entitlement and resource-authorization gates, and
+the evidence posture permits advertising it as usable. In 2026.1 it must omit
+I3S because descriptor/node metadata without production geometry is not
+renderable, and it must omit COPC because no direct range-serving route exists.
+I3S becomes selectable only after its geometry provider, Enterprise entitlement
+gate, and real-client evidence land; COPC becomes selectable only after its
+serving route, policy, and evidence land. Section 6 applies the same suppression
+rule to quantized mesh.
+
 Each contract gets its own versioned schema and golden JSON. Additive and
 breaking-change rules apply per contract, rather than treating their different
 shapes as accidental drift. [#3410](https://github.com/honua-io/honua-server/issues/3410)
@@ -236,6 +248,16 @@ job-based operations. Canonical submission returns `202 Accepted` plus a job
 status URL; generated output is promoted and registered only after the complete
 tileset succeeds validation.
 
+For multipart CityGML/LAS/LAZ/COPC input, request-level validation and durable
+input staging complete before the endpoint returns `202` or exposes a
+dispatchable job. The endpoint streams the upload into immutable, tenant- and
+job-owned staging and persists only an opaque input reference plus its integrity
+metadata in the job record; it never persists request streams, upload bytes,
+credentials, or a machine-local temporary path. A worker can reopen the staged
+input after restart or retry. Submission failure cleans up an unpublished stage,
+and terminal cancellation, failure, or success schedules idempotent cleanup
+after the configured diagnostic/retry retention period.
+
 The current synchronous `201` generation endpoint is transitional. An optional
 bounded wait mode may preserve compatibility for small inputs, but it is not the
 canonical contract and must converge on the same job/result record. Scene jobs
@@ -243,6 +265,13 @@ reuse the shared `ExecutionJobStatus` lifecycle from ADR-0031 unchanged:
 `Queued`, `Provisioning`, `Running`, `Succeeded`, `Failed`, and `Cancelled`.
 They do not introduce a scene-specific status enum or mapping. Jobs also expose
 stable error codes, progress, and the final scene identity/resolve link.
+
+[#3284](https://github.com/honua-io/honua-server/issues/3284) adds a dedicated
+`ExecutionJobKind.SceneGeneration` and one unambiguous executor for that kind;
+scene generation and staged scene ingest must not masquerade as `TileCache` or
+reuse its executor. The scene executor may orchestrate the separately profiled
+`pcloud.translate` native step from Decision 2, but the durable parent job keeps
+its scene-generation identity and lifecycle.
 
 Large inputs retain deterministic quadtree LOD: stable partitioning, bounded
 features per tile and depth, decreasing geometric error, and byte-stable asset
