@@ -128,18 +128,25 @@ static async Task GeneratePMTilesAsync(string path)
         tileCompression: PMTilesCompression.Gzip,
         internalCompression: PMTilesCompression.Gzip);
 
-    writer.AddTile(0, 0, 0, MakeTilePayload(0));
-    writer.AddTile(1, 0, 0, MakeTilePayload(1));
-    writer.AddTile(1, 1, 1, MakeTilePayload(2));
-    writer.AddTile(2, 2, 1, MakeTilePayload(3));
-    writer.AddTile(2, 1, 2, MakeTilePayload(4));
+    var seed = 0;
+    for (var z = 0; z <= 2; z++)
+    {
+        var width = 1 << z;
+        for (var x = 0; x < width; x++)
+        {
+            for (var y = 0; y < width; y++)
+            {
+                writer.AddTile(z, x, y, MakeTilePayload(seed++));
+            }
+        }
+    }
 
     var metadata = new PMTilesArchiveMetadata
     {
         MinLon = -180,
-        MinLat = -85.0511,
+        MinLat = -90,
         MaxLon = 180,
-        MaxLat = 85.0511,
+        MaxLat = 90,
         MinZoom = 0,
         MaxZoom = 2,
         Attribution = "Honua CNG conformance lane",
@@ -167,7 +174,8 @@ static byte[] MakeTilePayload(int seed)
 
 static void GenerateThreeDTiles(string dir)
 {
-    Directory.CreateDirectory(dir);
+    var contentDir = Path.Combine(dir, "content");
+    Directory.CreateDirectory(contentDir);
 
     // Build a small polygon footprint near San Francisco and extrude it into a
     // vertical prism so the GLB carries real triangle geometry that
@@ -215,18 +223,18 @@ static void GenerateThreeDTiles(string dir)
         extrusion,
         generatorTag: "honua-cng-conformance");
 
-    var glbPath = Path.Combine(dir, "content.glb");
+    var glbPath = Path.Combine(contentDir, "0.glb");
     File.WriteAllBytes(glbPath, glb);
     Console.WriteLine($"glTF GLB content: {glbPath} ({glb.Length} bytes)");
 
     // Bounding region [west, south, east, north] in degrees, plus the extruded
     // vertical extent. geometricError must be positive for the root tile.
     var tileset = TilesetDocumentWriter.Build(
-        boundingRegionDegrees: [-122.4200, 37.7740, -122.4180, 37.7760],
+        boundingRegionDegrees: [-180.0, -90.0, 180.0, 90.0],
         minHeightMeters: 0.0,
-        maxHeightMeters: 25.0,
+        maxHeightMeters: 100.0,
         geometricError: 16.0,
-        tileContentUris: ["content.glb"],
+        tileContentUris: ["content/0.glb"],
         generatorTag: "honua-cng-conformance");
 
     var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
