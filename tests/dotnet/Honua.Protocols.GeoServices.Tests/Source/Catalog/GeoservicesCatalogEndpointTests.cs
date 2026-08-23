@@ -394,6 +394,44 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry()
+    {
+        const string operationName = "AttackerControlledOperation123456";
+        var unboundedActivities = 0;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.DisplayName.Contains(operationName, StringComparison.Ordinal)
+                    || string.Equals(
+                        activity.GetTagItem(HonuaTelemetry.Tags.Operation) as string,
+                        operationName,
+                        StringComparison.Ordinal))
+                {
+                    Interlocked.Increment(ref unboundedActivities);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var catalogResponse = await PostSoapAsync(_fixture.Client, "/services", operationName);
+        using var imageServerResponse = await PostSoapAsync(
+            _fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            operationName);
+
+        catalogResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        imageServerResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        Volatile.Read(ref unboundedActivities).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
     [Endpoint("POST /services")]
     public async Task PostSoapCatalog_GetServiceDescriptionsEx_AppliesFolderAndRejectsUnknownArguments()
@@ -1050,6 +1088,71 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             observedActivity.GetTagItem(HonuaTelemetry.Tags.LayerId).Should().Be(0);
             observedActivity.GetTagItem("http.response.status_code").Should().Be(StatusCodes.Status200OK);
             observedActivity.GetTagItem("honua.result").Should().Be("success");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetServiceInfo_RevalidatesPublicationBeforeRasterRead()
+    {
+        const string serviceGraphId = "service-test";
+        const string publicationId = "publication-test";
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ResolveFirstAccessibleLayerAsync(
+                WebAppFixture.TestServiceId,
+                Arg.Any<HttpContext>(),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
+                Arg.Any<CancellationToken>(),
+                true)
+            .Returns(new ImageServerLayerResolution(7, publicationId, 0, null)
+            {
+                ServiceId = serviceGraphId
+            });
+        resolver.ValidatePublicationAsync(
+                serviceGraphId,
+                publicationId,
+                7,
+                0,
+                Arg.Any<HttpContext>(),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(
+                0,
+                null,
+                null,
+                Results.StatusCode(StatusCodes.Status403Forbidden)));
+        var rasterStore = CreateSoapRasterStore(layerId: 7);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IImageServerLayerResolver>();
+            services.AddSingleton(resolver);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "GetServiceInfo");
+
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden);
+            await resolver.Received(1).ValidatePublicationAsync(
+                serviceGraphId,
+                publicationId,
+                7,
+                0,
+                Arg.Any<HttpContext>(),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().ListRastersAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {

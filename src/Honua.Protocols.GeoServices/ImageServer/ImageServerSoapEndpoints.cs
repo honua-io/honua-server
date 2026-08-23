@@ -89,14 +89,7 @@ internal static class ImageServerSoapEndpoints
         var soapNamespace = request.SoapNamespace!;
         var operationNamespace = operation.Name.Namespace;
         var operationName = operation.Name.LocalName;
-        using var scope = HonuaTelemetryScope.StartFeature(
-            $"soap-{operationName}",
-            HonuaTelemetry.Protocols.ImageServer,
-            "*",
-            context.TraceIdentifier);
-        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
-            .WithTag(HonuaTelemetry.Tags.Operation, operationName);
-        var authorizationOperation = operation.Name.LocalName switch
+        var authorizationOperation = operationName switch
         {
             "ExportImage" or "GetImage" => AuthorizationOperation.Export,
             "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetFields"
@@ -105,11 +98,19 @@ internal static class ImageServerSoapEndpoints
         };
         if (authorizationOperation is null)
         {
-            return CompleteSoapOperation(scope, CreateSoapFault(
-                $"Unsupported ImageServer operation '{operation.Name.LocalName}'.",
+            return CreateSoapFault(
+                $"Unsupported ImageServer operation '{operationName}'.",
                 StatusCodes.Status400BadRequest,
-                soapNamespace));
+                soapNamespace);
         }
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            $"soap-{operationName}",
+            HonuaTelemetry.Protocols.ImageServer,
+            "*",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, operationName);
 
         var requirePrimaryRaster = operationName is "GetServiceInfo" or "ExportImage" or "GetImage";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -145,9 +146,11 @@ internal static class ImageServerSoapEndpoints
                     new XElement("Result", false)),
                 "GetServiceInfo" => await HandleGetServiceInfoAsync(
                     serviceId,
-                    resolution.LayerId,
+                    resolution,
                     soapNamespace,
                     operationNamespace,
+                    context,
+                    layerResolver,
                     rasterStore,
                     cancellationToken).ConfigureAwait(false),
                 "GetFields" => CreateSoapResponse(
@@ -169,10 +172,9 @@ internal static class ImageServerSoapEndpoints
                     operation,
                     soapNamespace,
                     operationNamespace,
-                    resolution.PublicationLayerIndex ?? resolution.LayerId,
-                    resolution.PublicationId!,
-                    resolution.LayerId,
+                    resolution,
                     context,
+                    layerResolver,
                     rasterStore,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false),
@@ -180,10 +182,9 @@ internal static class ImageServerSoapEndpoints
                     operation,
                     soapNamespace,
                     operationNamespace,
-                    resolution.PublicationLayerIndex ?? resolution.LayerId,
-                    resolution.PublicationId!,
-                    resolution.LayerId,
+                    resolution,
                     context,
+                    layerResolver,
                     rasterStore,
                     exportHandler,
                     cancellationToken).ConfigureAwait(false),
@@ -248,13 +249,29 @@ internal static class ImageServerSoapEndpoints
 
     private static async Task<IResult> HandleGetServiceInfoAsync(
         string serviceId,
-        int layerId,
+        ImageServerLayerResolution resolution,
         XNamespace soapNamespace,
         XNamespace operationNamespace,
+        HttpContext context,
+        IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
         CancellationToken cancellationToken)
     {
-        var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var revalidation = await RevalidateRasterPublicationAsync(
+            resolution,
+            context,
+            layerResolver,
+            AuthorizationOperation.Metadata,
+            soapNamespace,
+            cancellationToken).ConfigureAwait(false);
+        if (revalidation.ErrorResult is not null)
+        {
+            return revalidation.ErrorResult;
+        }
+
+        var rasters = await rasterStore.ListRastersAsync(
+            revalidation.Resolution.LayerId,
+            cancellationToken).ConfigureAwait(false);
         if (rasters.Length == 0)
         {
             return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound, soapNamespace);
@@ -319,10 +336,9 @@ internal static class ImageServerSoapEndpoints
         XElement operation,
         XNamespace soapNamespace,
         XNamespace operationNamespace,
-        int publicationLayerIndex,
-        string publicationId,
-        int storageLayerId,
+        ImageServerLayerResolution resolution,
         HttpContext context,
+        IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
@@ -339,8 +355,21 @@ internal static class ImageServerSoapEndpoints
 
         var returnType = FindDescendantValue(operation, "ImageReturnType");
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
+        var revalidation = await RevalidateRasterPublicationAsync(
+            resolution,
+            context,
+            layerResolver,
+            AuthorizationOperation.Export,
+            soapNamespace,
+            cancellationToken).ConfigureAwait(false);
+        if (revalidation.ErrorResult is not null)
+        {
+            return revalidation.ErrorResult;
+        }
+
+        var current = revalidation.Resolution;
         var referenceRaster = await rasterStore
-            .GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken)
+            .GetPrimaryRasterInfoAsync(current.LayerId, cancellationToken)
             .ConfigureAwait(false);
         request = CopyWithResponseFormat(
             request,
@@ -348,9 +377,9 @@ internal static class ImageServerSoapEndpoints
             referenceRaster.HasValue ? MapPixelType(referenceRaster.Value.PixelType) : null);
         var exportResult = await exportHandler.ExportImageAsync(
             context,
-            publicationLayerIndex,
+            current.PublicationLayerIndex ?? current.LayerId,
             request,
-            publicationId,
+            current.PublicationId!,
             AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
 
@@ -403,10 +432,9 @@ internal static class ImageServerSoapEndpoints
         XElement operation,
         XNamespace soapNamespace,
         XNamespace operationNamespace,
-        int publicationLayerIndex,
-        string publicationId,
-        int storageLayerId,
+        ImageServerLayerResolution resolution,
         HttpContext context,
+        IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
         ImageServerExportHandler exportHandler,
         CancellationToken cancellationToken)
@@ -421,8 +449,21 @@ internal static class ImageServerSoapEndpoints
             return noDataFault;
         }
 
+        var revalidation = await RevalidateRasterPublicationAsync(
+            resolution,
+            context,
+            layerResolver,
+            AuthorizationOperation.Export,
+            soapNamespace,
+            cancellationToken).ConfigureAwait(false);
+        if (revalidation.ErrorResult is not null)
+        {
+            return revalidation.ErrorResult;
+        }
+
+        var current = revalidation.Resolution;
         var referenceRaster = await rasterStore
-            .GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken)
+            .GetPrimaryRasterInfoAsync(current.LayerId, cancellationToken)
             .ConfigureAwait(false);
         if (!referenceRaster.HasValue)
         {
@@ -460,9 +501,9 @@ internal static class ImageServerSoapEndpoints
         request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType));
         var exportResult = await exportHandler.ExportImageAsync(
             context,
-            publicationLayerIndex,
+            current.PublicationLayerIndex ?? current.LayerId,
             request,
-            publicationId,
+            current.PublicationId!,
             AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
@@ -484,6 +525,39 @@ internal static class ImageServerSoapEndpoints
         }
 
         return CreateSoapFaultFromResult(exportResult, "Image export failed.", soapNamespace);
+    }
+
+    private static async Task<(ImageServerLayerResolution Resolution, IResult? ErrorResult)>
+        RevalidateRasterPublicationAsync(
+            ImageServerLayerResolution resolution,
+            HttpContext context,
+            IImageServerLayerResolver layerResolver,
+            AuthorizationOperation operation,
+            XNamespace soapNamespace,
+            CancellationToken cancellationToken)
+    {
+        if (resolution.ServiceId is null || resolution.PublicationId is null)
+        {
+            return (default, CreateSoapFault(
+                "Image service was not found or is not accessible.",
+                StatusCodes.Status404NotFound,
+                soapNamespace));
+        }
+
+        var current = await layerResolver.ValidatePublicationAsync(
+            resolution.ServiceId,
+            resolution.PublicationId,
+            resolution.LayerId,
+            resolution.PublicationLayerIndex,
+            context,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+        return current.ErrorResult is null
+            ? (current, null)
+            : (default, CreateSoapFaultFromResult(
+                current.ErrorResult,
+                "Image service was not found or is not accessible.",
+                soapNamespace));
     }
 
     private static IResult? CreateUnsupportedNoDataFault(ExportImageRequest request, XNamespace soapNamespace)

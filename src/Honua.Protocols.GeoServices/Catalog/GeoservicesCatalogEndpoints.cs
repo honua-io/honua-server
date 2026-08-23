@@ -184,6 +184,14 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         var operationName = operation.Name.LocalName;
+        if (!IsSupportedSoapCatalogOperation(operationName))
+        {
+            return CreateSoapFault(
+                $"Unsupported catalog operation '{operationName}'.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
         using var scope = HonuaTelemetryScope.StartFeature(
             $"soap-catalog-{operationName}",
             HonuaTelemetry.Protocols.ImageServer,
@@ -293,6 +301,15 @@ internal static class GeoservicesCatalogEndpoints
             return result;
         }
     }
+
+    private static bool IsSupportedSoapCatalogOperation(string operationName)
+        => operationName is "GetServiceDescriptions"
+            or "GetServiceDescriptionsEx"
+            or "GetFolders"
+            or "GetMessageVersion"
+            or "GetMessageFormats"
+            or "GetTokenServiceURL"
+            or "RequiresTokens";
 
     private static IResult CompleteSoapCatalogOperation(HonuaTelemetryScope scope, IResult result)
     {

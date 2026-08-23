@@ -172,6 +172,93 @@ public class ImageServerTileHandlerTests
     }
 
     [UnitTest]
+    [Operation(Operations.GetMetadata)]
+    public async Task ValidatePublicationAsync_StorageBindingChanged_ReturnsNotFound()
+    {
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-imagery", "imagery", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding(
+                "binding-imagery",
+                "resource-imagery",
+                "imagery.rasters",
+                storageLayerId: 42)
+            .AddService("service-imagery", "imagery", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "publication-imagery",
+                "service-imagery",
+                "resource-imagery",
+                storageBindingId: "binding-imagery",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var resolver = new MetadataV2ImageServerLayerResolver(
+            new ResourceValidator(graphProvider),
+            graphProvider,
+            _rasterStore);
+        var context = CreateImageServerContext(services => services.AddValidationServices());
+
+        var resolution = await resolver.ValidatePublicationAsync(
+            "service-imagery",
+            "publication-imagery",
+            expectedStorageLayerId: 41,
+            expectedPublicationLayerIndex: null,
+            context,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
+            CancellationToken.None);
+
+        resolution.ErrorResult.Should().NotBeNull();
+        await AssertGeoServicesErrorAsync(
+            context,
+            resolution.ErrorResult!,
+            StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetMetadata)]
+    public async Task ValidatePublicationAsync_AccessPolicyChanged_ReturnsForbidden()
+    {
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "resource-imagery",
+                "imagery",
+                MetadataV2ResourceType.RasterDataset,
+                accessPolicy: new AccessPolicy { AllowedRoles = ["imagery-admin"] })
+            .AddStorageBinding(
+                "binding-imagery",
+                "resource-imagery",
+                "imagery.rasters",
+                storageLayerId: 42)
+            .AddService("service-imagery", "imagery", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "publication-imagery",
+                "service-imagery",
+                "resource-imagery",
+                storageBindingId: "binding-imagery",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var resolver = new MetadataV2ImageServerLayerResolver(
+            new ResourceValidator(graphProvider),
+            graphProvider,
+            _rasterStore);
+        var context = CreateImageServerContext(services => services.AddValidationServices());
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
+
+        var resolution = await resolver.ValidatePublicationAsync(
+            "service-imagery",
+            "publication-imagery",
+            expectedStorageLayerId: 42,
+            expectedPublicationLayerIndex: null,
+            context,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
+            CancellationToken.None);
+
+        resolution.ErrorResult.Should().NotBeNull();
+        await AssertGeoServicesErrorAsync(
+            context,
+            resolution.ErrorResult!,
+            StatusCodes.Status403Forbidden);
+    }
+
+    [UnitTest]
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_NegativeLevel_ReturnsBadRequest()
     {

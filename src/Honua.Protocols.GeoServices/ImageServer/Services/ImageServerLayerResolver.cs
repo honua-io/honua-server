@@ -27,13 +27,25 @@ internal interface IImageServerLayerResolver
         HttpContext context,
         AuthorizationOperation operation,
         CancellationToken cancellationToken);
+
+    Task<ImageServerLayerResolution> ValidatePublicationAsync(
+        string serviceId,
+        string publicationId,
+        int expectedStorageLayerId,
+        int? expectedPublicationLayerIndex,
+        HttpContext context,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken);
 }
 
 internal readonly record struct ImageServerLayerResolution(
     int LayerId,
     string? PublicationId,
     int? PublicationLayerIndex,
-    IResult? ErrorResult);
+    IResult? ErrorResult)
+{
+    public string? ServiceId { get; init; }
+}
 
 internal sealed class MetadataV2ImageServerLayerResolver(
     IResourceValidator resourceValidator,
@@ -124,7 +136,10 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             layer.StorageLayerId.Value,
             layer.PublicationId,
             layer.PublicationLayerIndex,
-            null);
+            null)
+        {
+            ServiceId = service.Metadata.Id
+        };
     }
 
     public async Task<ImageServerLayerResolution> ValidateLayerAsync(
@@ -185,7 +200,62 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             snapshot.ResolveStorageLayerId(candidate.Publication) ?? layerId,
             candidate.Publication.Metadata.Id,
             candidate.Publication.LayerIndex,
-            null);
+            null)
+        {
+            ServiceId = candidate.Service!.Metadata.Id
+        };
+    }
+
+    public async Task<ImageServerLayerResolution> ValidatePublicationAsync(
+        string serviceId,
+        string publicationId,
+        int expectedStorageLayerId,
+        int? expectedPublicationLayerIndex,
+        HttpContext context,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service)
+            || !service.IsRoutable()
+            || !MetadataV2ServiceProtocols.IsProtocolEnabled(service, MetadataV2ServiceProtocols.ImageServer)
+            || !snapshot.Index.PublicationsById.TryGetValue(publicationId, out var publication)
+            || !snapshot.IsRoutable(publication)
+            || !string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)
+            || publication.LayerIndex != expectedPublicationLayerIndex
+            || snapshot.ResolveStorageLayerId(publication) != expectedStorageLayerId
+            || snapshot.ResolveResource(publication) is not { } resource)
+        {
+            return new ImageServerLayerResolution(
+                0,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, "Image service publication was not found."));
+        }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            resource,
+            operation,
+            service,
+            cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return new ImageServerLayerResolution(0, null, null, accessError);
+        }
+
+        return new ImageServerLayerResolution(
+            expectedStorageLayerId,
+            publication.Metadata.Id,
+            publication.LayerIndex,
+            null)
+        {
+            ServiceId = service.Metadata.Id
+        };
     }
 
     private readonly record struct ImageServerPublicationLayer(

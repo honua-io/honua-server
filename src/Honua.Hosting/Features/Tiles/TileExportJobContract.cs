@@ -81,17 +81,20 @@ internal static class TileExportJobParameterKeys
 internal static class TileExportArtifactIdentity
 {
     internal const string IdentityMetadataKey = "honua-tile-export-identity";
+    private const int IdentityVersion = 3;
 
-    // Version 2 content-addresses every input that can affect package bytes, including the
-    // pinned source descriptor. Backend, target, retention and artifact-size admission are
-    // operational controls and intentionally remain outside the content identity.
+    // Version 3 content-addresses every input that can affect package bytes, including the
+    // pinned source descriptor, and fences artifacts written before raster TPKX cache names
+    // were normalized to their shared source-layer identity. Backend, target, retention and
+    // artifact-size admission are operational controls and intentionally remain outside the
+    // content identity.
     internal static string Compute(TileExportJobPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         using var canonical = new MemoryStream(capacity: 512);
         using (var writer = new BinaryWriter(canonical, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(TileExportExecutionSpecBuilder.ContractVersion);
+            writer.Write(IdentityVersion);
             writer.Write((int)plan.SourceKind);
             WriteString(writer, TileExportSourceResourceId.Resolve(plan));
             TileExportSourceDescriptorCodec.Write(writer, plan.Source);
