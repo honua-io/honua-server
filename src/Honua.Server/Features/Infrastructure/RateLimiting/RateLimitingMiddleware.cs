@@ -170,10 +170,44 @@ internal sealed partial class RateLimitingMiddleware
         // ?api_key=): an attacker could mint a fresh bucket per request by sending
         // a random token, bypassing the IP-based limit entirely, and the raw secret
         // would be persisted verbatim into the cache/Redis key space.
-        var identity = context.User?.Identity;
-        if (identity?.IsAuthenticated == true && !string.IsNullOrEmpty(identity.Name))
+        var principal = context.User;
+        if (principal?.Identity?.IsAuthenticated == true)
         {
-            return $"{tenantPrefix}{UserKeyFamily}:{identity.Name}";
+            // Prefer the stable subject identifiers carried by OIDC/JWT principals. Many
+            // providers intentionally omit a display-name claim, and falling those callers
+            // back to the source IP would make unrelated users behind one NAT share a bucket.
+            // Keep the API-key id/name fallbacks aligned with StudioAuthorizationService's
+            // actor resolution before finally using ClaimsIdentity.Name for legacy schemes.
+            var authenticatedSubject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrWhiteSpace(authenticatedSubject))
+            {
+                authenticatedSubject = principal.FindFirst("sub")?.Value;
+            }
+
+            if (string.IsNullOrWhiteSpace(authenticatedSubject))
+            {
+                authenticatedSubject = principal.FindFirst("api_key_id")?.Value;
+            }
+
+            if (string.IsNullOrWhiteSpace(authenticatedSubject))
+            {
+                authenticatedSubject = principal.FindFirst("api_key_name")?.Value;
+            }
+
+            if (string.IsNullOrWhiteSpace(authenticatedSubject))
+            {
+                authenticatedSubject = principal.Identity.Name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(authenticatedSubject))
+            {
+                var authenticationScheme = string.IsNullOrWhiteSpace(principal.Identity.AuthenticationType)
+                    ? "authenticated"
+                    : principal.Identity.AuthenticationType;
+                var issuer = principal.FindFirst("iss")?.Value;
+                var issuerScope = string.IsNullOrWhiteSpace(issuer) ? "no-issuer" : issuer;
+                return $"{tenantPrefix}{UserKeyFamily}:{authenticationScheme}:{issuerScope}:{authenticatedSubject}";
+            }
         }
 
         // Fall back to IP-based rate limiting for unauthenticated requests

@@ -634,6 +634,34 @@ public static class OidcAuthenticationExtensions
                             OperatorScopeCatalog.ScopeGovernedClaimValue));
                     }
 
+                    // Scope governance proves only that the token is a validated OAuth access
+                    // token; it does not prove that it represents a human session. Mark bearer
+                    // identities interactive only when the issuer supplied user-session
+                    // provenance (authentication method or authentication time).
+                    if (context.Principal is { } validatedPrincipal)
+                    {
+                        foreach (var candidate in validatedPrincipal.Identities.OfType<ClaimsIdentity>())
+                        {
+                            foreach (var claim in candidate.Claims
+                                         .Where(static claim => string.Equals(
+                                             claim.Type,
+                                             "honua_interactive_provenance",
+                                             StringComparison.OrdinalIgnoreCase))
+                                         .ToArray())
+                            {
+                                candidate.RemoveClaim(claim);
+                            }
+                        }
+
+                        if (validatedPrincipal.Identity is ClaimsIdentity identity &&
+                            identity.HasClaim(static claim =>
+                                string.Equals(claim.Type, "amr", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(claim.Type, "auth_time", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            identity.AddClaim(new Claim("honua_interactive_provenance", "true"));
+                        }
+                    }
+
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&
                         !context.HttpContext.IsAdminAuthSessionBridged())
                     {

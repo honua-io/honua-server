@@ -41,6 +41,9 @@ public sealed class EndpointAuthorizationGuardTests
         // Studio lifecycle policy: method-scoped admin grants plus flag-gated end-user ownership
         // checks performed by StudioEndpointAuthorization in each handler.
         "RequireStudioLifecycleAuthorization",
+        // Studio AI proxy policy: composes the lifecycle flag gate with the stricter interactive
+        // principal boundary used before any model-provider call.
+        "RequireStudioAiProxyAuthorization",
         // Read-only ops-reader policy (A12): a method-aware Require*Authorization helper that admits
         // ops:read/admin for safe reads while still requiring full admin write for mutating routes.
         "RequireOpsReadAuthorization",

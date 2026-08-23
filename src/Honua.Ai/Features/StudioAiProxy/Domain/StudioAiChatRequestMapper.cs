@@ -13,8 +13,17 @@ namespace Honua.Ai.StudioAiProxy.Domain;
 /// </summary>
 public static class StudioAiChatRequestMapper
 {
-    /// <summary>Converts <paramref name="http"/> to a domain request, or returns a rejection reason.</summary>
-    public static (StudioAiChatRequest? Request, string? Error) ToDomain(StudioAiChatHttpRequest http)
+    private const int MaxMessageCount = 256;
+    private const int MaxToolCount = 128;
+    private const int MaxToolCallCount = 256;
+    /// <summary>
+    /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
+    /// When <paramref name="allowCallerOverrides"/> is false, caller-supplied model and output
+    /// token overrides are deliberately omitted so the proxy resolves operator-configured limits.
+    /// </summary>
+    public static (StudioAiChatRequest? Request, string? Error) ToDomain(
+        StudioAiChatHttpRequest http,
+        bool allowCallerOverrides = true)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -27,7 +36,13 @@ public static class StudioAiChatRequestMapper
             return (null, "At least one message is required.");
         }
 
+        if (httpMessages.Count > MaxMessageCount)
+        {
+            return (null, $"A maximum of {MaxMessageCount} messages is allowed per request.");
+        }
+
         var messages = new List<StudioAiMessage>(httpMessages.Count);
+        var totalToolCalls = 0;
         foreach (var message in httpMessages)
         {
             if (message is null)
@@ -48,17 +63,24 @@ public static class StudioAiChatRequestMapper
             IReadOnlyList<StudioAiToolCall>? toolCalls = null;
             if (message.ToolCalls is { Count: > 0 } sourceToolCalls)
             {
+                totalToolCalls += sourceToolCalls.Count;
+                if (totalToolCalls > MaxToolCallCount)
+                {
+                    return (null, $"A maximum of {MaxToolCallCount} assistant tool calls is allowed per request.");
+                }
+
                 if (role != StudioAiRole.Assistant)
                 {
                     return (null, "message.toolCalls is only valid for assistant messages.");
                 }
 
                 if (sourceToolCalls.Any(static call =>
+                        call is null ||
                         string.IsNullOrWhiteSpace(call.Id) ||
                         string.IsNullOrWhiteSpace(call.Name) ||
                         call.Arguments.ValueKind != System.Text.Json.JsonValueKind.Object))
                 {
-                    return (null, "Each assistant tool call requires a non-empty id, name, and JSON object arguments value.");
+                    return (null, "Each assistant tool call must be a non-null value with a non-empty id, name, and JSON object arguments value.");
                 }
 
                 toolCalls = sourceToolCalls
@@ -84,6 +106,11 @@ public static class StudioAiChatRequestMapper
         List<StudioAiToolDefinition>? tools = null;
         if (http.Tools is { Count: > 0 } httpTools)
         {
+            if (httpTools.Count > MaxToolCount)
+            {
+                return (null, $"A maximum of {MaxToolCount} tools is allowed per request.");
+            }
+
             tools = new List<StudioAiToolDefinition>(httpTools.Count);
             foreach (var tool in httpTools)
             {
@@ -124,12 +151,12 @@ public static class StudioAiChatRequestMapper
         var request = new StudioAiChatRequest
         {
             Provider = http.Provider,
-            Model = http.Model,
+            Model = allowCallerOverrides ? http.Model : null,
             System = http.System,
             Messages = messages,
             Tools = tools,
             ToolChoice = toolChoice,
-            MaxTokens = http.MaxTokens,
+            MaxTokens = allowCallerOverrides ? http.MaxTokens : null,
             Temperature = http.Temperature
         };
 
