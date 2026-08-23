@@ -66,6 +66,7 @@ internal static class McpToolOutputSchemas
             "requiresReauthentication": { "type": ["boolean", "null"] },
             "approvalRequired": { "type": ["boolean", "null"] },
             "policyRef": { "type": ["string", "null"] },
+            "studioAuthorizationCode": { "type": ["string", "null"] },
             "conflictingJobId": { "type": ["string", "null"] },
             "retryable": { "type": ["boolean", "null"] },
             "violations": {

@@ -78,6 +78,9 @@ internal sealed class McpErrorData
     [JsonPropertyName("policyRef")]
     public string? PolicyRef { get; set; }
 
+    [JsonPropertyName("studioAuthorizationCode")]
+    public string? StudioAuthorizationCode { get; set; }
+
     [JsonPropertyName("proposalId")]
     public string? ProposalId { get; set; }
 
