@@ -338,14 +338,24 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     }
 
     [Theory]
-    [InlineData(PreliminaryDenialKind.Anonymous, StudioAuthorizationService.AuthenticationRequiredCode)]
-    [InlineData(PreliminaryDenialKind.OperatorGrant, StudioAuthorizationService.OperatorGrantRequiredCode)]
-    [InlineData(PreliminaryDenialKind.OAuthScope, StudioAuthorizationService.OAuthScopeRequiredCode)]
+    [InlineData(
+        PreliminaryDenialKind.Anonymous,
+        StudioAuthorizationService.AuthenticationRequiredCode,
+        McpErrorMapper.Codes.Unauthenticated)]
+    [InlineData(
+        PreliminaryDenialKind.OperatorGrant,
+        StudioAuthorizationService.OperatorGrantRequiredCode,
+        McpErrorMapper.Codes.PermissionDenied)]
+    [InlineData(
+        PreliminaryDenialKind.OAuthScope,
+        StudioAuthorizationService.OAuthScopeRequiredCode,
+        McpErrorMapper.Codes.InsufficientScope)]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
     public async Task GetDraft_PreliminaryGateDenial_RecordsSharedAuthorizationAudit(
         PreliminaryDenialKind denialKind,
-        string expectedCode)
+        string expectedCode,
+        string expectedTransportCode)
     {
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         var authorization = BuildAuthorization();
@@ -380,7 +390,13 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}"""),
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        failure.Which.PolicyCode.Should().Be(expectedCode,
+            "the caller-visible denial must retain the same stable Studio code as the audit record");
+
+        var error = McpToolHelpers.ErrorResult(failure.Which).StructuredContent!.Value;
+        error.GetProperty("code").GetString().Should().Be(expectedTransportCode);
+        error.GetProperty("studioAuthorizationCode").GetString().Should().Be(expectedCode);
         await lifecycle.DidNotReceive().GetDraftAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         auditLog.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(new
         {
