@@ -2253,8 +2253,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetConsoleJobDetail_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_ForFailedJob_ReturnsFailureMetadataAndRetryAction",
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_WithPhaseHistory_EmitsOrderedMultiStageList"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_WithPhaseHistory_EmitsOrderedMultiStageList",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_WithProcessSr_ExposesOnlyNormalizedWkid"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

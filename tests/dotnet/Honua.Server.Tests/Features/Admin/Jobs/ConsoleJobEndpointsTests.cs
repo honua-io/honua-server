@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
+using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -137,6 +138,48 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var retry = actionsDoc.RootElement.GetProperty("actions")[0];
         retry.GetProperty("name").GetString().Should().Be("retry");
         retry.GetProperty("allowed").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
+    public async Task GetJobDetail_WithProcessSr_ExposesOnlyNormalizedWkid()
+    {
+        var validResponse = await _client.GetAsync("/api/v1/admin/jobs/job-process-sr");
+        validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var valid = await ReadJsonAsync(validResponse))
+        {
+            var metadata = valid.RootElement.GetProperty("selectedMetadata");
+            metadata.GetProperty(GeoprocessingProtocolMetadataKeys.GPServerProcessSr)
+                .GetString().Should().Be("3857");
+            metadata.TryGetProperty(GeoprocessingProtocolMetadataKeys.GPServerWorkspace, out _)
+                .Should().BeFalse("workspace labels are not safe admin metadata");
+        }
+
+        var absentResponse = await _client.GetAsync("/api/v1/admin/jobs/job-succeeded");
+        absentResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var absent = await ReadJsonAsync(absentResponse))
+        {
+            absent.RootElement.GetProperty("selectedMetadata")
+                .TryGetProperty(GeoprocessingProtocolMetadataKeys.GPServerProcessSr, out _)
+                .Should().BeFalse();
+        }
+
+        var invalidResponse = await _client.GetAsync("/api/v1/admin/jobs/job-invalid-process-sr");
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var invalid = await ReadJsonAsync(invalidResponse);
+        invalid.RootElement.GetProperty("selectedMetadata")
+            .TryGetProperty(GeoprocessingProtocolMetadataKeys.GPServerProcessSr, out _)
+            .Should().BeFalse("non-normalized job metadata must not reach the admin response");
+
+        foreach (var jobId in new[] { "job-zero-process-sr", "job-negative-process-sr" })
+        {
+            var nonPositiveResponse = await _client.GetAsync($"/api/v1/admin/jobs/{jobId}");
+            nonPositiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var nonPositive = await ReadJsonAsync(nonPositiveResponse);
+            nonPositive.RootElement.GetProperty("selectedMetadata")
+                .TryGetProperty(GeoprocessingProtocolMetadataKeys.GPServerProcessSr, out _)
+                .Should().BeFalse("WKIDs must be positive");
+        }
     }
 
     [IntegrationTest]
@@ -437,6 +480,43 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             {
                 CompletedAt = now.AddMinutes(-5),
                 CurrentPhase = "Completed"
+            },
+            CreateJob("job-process-sr", ExecutionJobStatus.Succeeded, now.AddMinutes(-8), "corr-process-sr") with
+            {
+                CompletedAt = now.AddMinutes(-5),
+                CurrentPhase = "Completed",
+                Spec = CreateSpec("process-sr-workload", new Dictionary<string, string>
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "3857",
+                    [GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = "tenant-private-workspace"
+                })
+            },
+            CreateJob("job-invalid-process-sr", ExecutionJobStatus.Succeeded, now.AddMinutes(-8), "corr-invalid-process-sr") with
+            {
+                CompletedAt = now.AddMinutes(-5),
+                CurrentPhase = "Completed",
+                Spec = CreateSpec("invalid-process-sr-workload", new Dictionary<string, string>
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "{\"wkid\":3857}"
+                })
+            },
+            CreateJob("job-zero-process-sr", ExecutionJobStatus.Succeeded, now.AddMinutes(-8), "corr-zero-process-sr") with
+            {
+                CompletedAt = now.AddMinutes(-5),
+                CurrentPhase = "Completed",
+                Spec = CreateSpec("zero-process-sr-workload", new Dictionary<string, string>
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "0"
+                })
+            },
+            CreateJob("job-negative-process-sr", ExecutionJobStatus.Succeeded, now.AddMinutes(-8), "corr-negative-process-sr") with
+            {
+                CompletedAt = now.AddMinutes(-5),
+                CurrentPhase = "Completed",
+                Spec = CreateSpec("negative-process-sr-workload", new Dictionary<string, string>
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerProcessSr] = "-4326"
+                })
             },
             CreateJob("job-running-standard", ExecutionJobStatus.Running, now.AddMinutes(-1), "corr-running-standard") with
             {
