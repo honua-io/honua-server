@@ -50,6 +50,19 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task Submit_PublicationScopedRaster_UsesStorageLayerAdmissionPartition()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var plan = CreateRasterPlan("publication:binding:layer:7");
+
+        var job = await service.SubmitAsync(plan, idempotencyKey: null, correlationId: null, Principal(Owner), default);
+
+        job.Concurrency.PartitionKey.Should().Be("tile-export:raster:7");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task Submit_SamePrincipalSameKeySamePlan_ReturnsExistingJob()
     {
         var store = new InMemoryExecutionJobStore();
@@ -365,6 +378,29 @@ public sealed class TileExportJobServiceTests
                 [new("0", "default", 1)],
                 "provider-revision-9",
                 null),
+            ZoomLevels = [0, 2],
+            West = -180,
+            South = -85,
+            East = 180,
+            North = 85,
+            TileImageFormat = "PNG",
+            PackageFormat = TileExportPackageFormat.Tpkx,
+            MaxTiles = 10_000,
+            MaxArtifactBytes = 1024 * 1024,
+            RetentionSeconds = 3600
+        };
+
+    private static TileExportJobPlan CreateRasterPlan(string resourceId)
+        => new()
+        {
+            SourceKind = TileExportSourceKind.Raster,
+            ResourceId = resourceId,
+            Source = new TileExportRasterSourceDescriptor(
+                42,
+                "7",
+                "First",
+                null,
+                "same-membership"),
             ZoomLevels = [0, 2],
             West = -180,
             South = -85,

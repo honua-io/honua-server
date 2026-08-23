@@ -8389,6 +8389,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithValidParameters_ReturnsImageOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ExportsInlinePngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ReceivesEsriErrorShapeForInvalidRequests",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageById_ValidatesLayerWithExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImage_WithClipRenderingRule_AppliesClipRegion",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImage_WithColormapRenderingRule_AppliesColormapAndReturnsPng",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImage_WithInvalidClipGeometry_ReturnsBadRequest",
@@ -8425,6 +8426,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WithCompactStorageFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage",
@@ -8519,6 +8521,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitsDurableJobAndProjectsStatus",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.JobStatus_UnknownJob_ReturnsSanitizedNotFound"
       ],
@@ -8534,6 +8537,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
       ],
       "proof_ledger_surface": "image-server",
@@ -10263,7 +10267,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageByService_ResolvesBothRoutesWithExportAuthorization"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented",
@@ -10277,6 +10282,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesByService_UsesResolvedPublicationAndStorageBinding",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
       ],
       "proof_ledger_surface": "image-server",
@@ -10347,6 +10354,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_JobLifecycleByService_PreservesResolvedPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
       ],
       "proof_ledger_surface": "image-server",
@@ -10361,6 +10370,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_JobLifecycleByService_PreservesResolvedPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
       ],
       "proof_ledger_surface": "image-server",
@@ -17940,6 +17951,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
       ],
       "proof_ledger_surface": "image-server",
@@ -18010,6 +18022,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
       ],
       "proof_ledger_surface": "image-server",
@@ -19258,7 +19271,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageByService_ResolvesBothRoutesWithExportAuthorization"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented",
@@ -19272,6 +19286,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
       ],
       "proof_ledger_surface": "image-server",
@@ -19342,6 +19357,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTilesSubmissionAndJobs_RequireExportAuthorization",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_JobLifecycleByService_PreservesResolvedPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
       ],
       "proof_ledger_surface": "image-server",
@@ -20107,6 +20124,67 @@
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
       "capability": "identity.scim"
+    },
+    {
+      "id": "post-services",
+      "route": "/services",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_AllRasterProbesFail_ReturnsServerFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_EnvelopeAndContentTypeVersionsMustMatch",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_GetServiceDescriptionsEx_AppliesFolderAndRejectsUnknownArguments",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_MalformedAndAmbiguousBodies_ReturnSoapFaults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_MetadataProviderFailure_ReturnsSoapFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_MultipleOperations_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_OperationOutsideArcGisNamespace_ReturnsSoapFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_RasterProbeUsesStorageBindingLayerId",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_RequiresTokens_EmitsOperationTelemetry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_Soap12_UsesSoap12EnvelopeAndContentType",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_SupportedOperations_ReturnExpectedResultWrapper",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
+      "id": "post-services-serviceid-imageserver",
+      "route": "/services/{serviceId}/ImageServer",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_DuplicateBodies_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_EnvelopeAndContentTypeVersionsMustMatch",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_RejectsMultispectralPngProjection",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetServiceInfo_ClassifiesNad83AsGeographic",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetServiceInfo_DefaultsMissingSridToWgs84",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetServiceInfo_EmitsResolvedOperationTelemetry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetServiceInfo_MapsLowBitPixelTypes",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetServiceInfo_RevalidatesPublicationBeforeRasterRead",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_MultipleOperations_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_NoDataOverride_ReturnsUnsupportedFaultAndErrorTelemetry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_NonArcGisOperationNamespace_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_RasterProbeFailure_ReturnsSoapFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_SelectsRasterBearingPublicationAndUsesReferencePixelSize",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_Soap12_ReturnsSoap12Response",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_UnknownService_ReturnsNotFoundFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_UsesOperationAwareAuthorizationAndMapsTimeouts",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-imageserver"
     },
     {
       "id": "post-sharing-rest-community-creategroup",
