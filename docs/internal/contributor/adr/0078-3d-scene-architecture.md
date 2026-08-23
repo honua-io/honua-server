@@ -88,14 +88,16 @@ ingest or 3D-Tiles generation completed.
 
 ### 3. Separate serving representation from semantic content
 
-**Decision:** The catalog models `servingFormat` and `contentKind` as independent
-axes. Protocol adapters and clients must not infer one from the other.
+**Decision:** The catalog models its canonical `servingFormat` and semantic
+`contentKind` as independent axes. Runtime resolution separately identifies the
+format of each endpoint projection. Protocol adapters and clients must not infer
+any one of these values from another.
 
 The initial vocabulary is:
 
 | Axis | Values | Meaning |
 | --- | --- | --- |
-| `servingFormat` | `3d-tiles`, `quantized-mesh`, `copc` | The wire/storage representation a selected endpoint serves. |
+| `servingFormat` | `3d-tiles`, `quantized-mesh`, `copc` | The canonical persisted representation registered by the catalog. |
 | `contentKind` | `3d-object`, `building`, `point-cloud`, `terrain` | The semantic kind used for presentation and compatibility projection. |
 
 Examples make the distinction load-bearing: CityGML registers
@@ -103,6 +105,12 @@ Examples make the distinction load-bearing: CityGML registers
 `3d-tiles/3d-object`; a future Cesium terrain endpoint is
 `quantized-mesh/terrain`. I3S `layerType` and store profile derive from
 `contentKind`, never from `servingFormat`.
+
+Resolution uses a distinct closed `endpointFormat` vocabulary: `3d-tiles`,
+`i3s`, `quantized-mesh`, and `copc`. It describes the protocol/representation at
+the returned endpoint, not catalog storage. For example, a scene whose canonical
+`servingFormat` is `3d-tiles` may also resolve to an `i3s` compatibility
+projection; that projection does not register I3S as another canonical store.
 
 The existing enum/database/JSON values require a lossless compatibility mapping
 and migration. [#3409](https://github.com/honua-io/honua-server/issues/3409)
@@ -118,7 +126,10 @@ authority for runtime endpoint selection.
 - `GET /api/scenes` returns compact summaries for discovery and filtering.
 - `GET /api/scenes/{sceneId}` returns descriptive metadata and stable links.
 - `GET /api/scenes/{sceneId}/resolve` returns the endpoints usable for the
-  current scene, including format, media type, and authentication requirement.
+  current scene. Each endpoint includes `endpointFormat`, media type, and
+  authentication requirement. A protected endpoint also includes the
+  credential-free `access-session` link that a host follows to establish
+  access; the resolution result never embeds the resulting credential.
 
 URLs retained in list or metadata shapes for compatibility are hints, not an
 invitation for a client to choose a renderer or synthesize nested-asset URLs.
@@ -147,8 +158,9 @@ MCP result intended for persistence, collaboration record, receipt, or log.
 For a protected scene, the host:
 
 1. calls the canonical resolve contract and observes the auth requirement;
-2. uses its configured identity to acquire a short-lived asset session or access
-   envelope;
+2. follows the credential-free `access-session` link returned for that endpoint,
+   using its configured identity to acquire a short-lived asset session or
+   access envelope rather than synthesizing a server route;
 3. attaches that material to the root and nested asset requests without mutating
    the serializable plan; and
 4. refreshes or disposes the session independently of plan lifetime.
@@ -226,9 +238,11 @@ tileset succeeds validation.
 
 The current synchronous `201` generation endpoint is transitional. An optional
 bounded wait mode may preserve compatibility for small inputs, but it is not the
-canonical contract and must converge on the same job/result record. Jobs expose
-queued, running, succeeded, failed, and cancelled states plus stable error codes,
-progress, and the final scene identity/resolve link.
+canonical contract and must converge on the same job/result record. Scene jobs
+reuse the shared `ExecutionJobStatus` lifecycle from ADR-0031 unchanged:
+`Queued`, `Provisioning`, `Running`, `Succeeded`, `Failed`, and `Cancelled`.
+They do not introduce a scene-specific status enum or mapping. Jobs also expose
+stable error codes, progress, and the final scene identity/resolve link.
 
 Large inputs retain deterministic quadtree LOD: stable partitioning, bounded
 features per tile and depth, decreasing geometric error, and byte-stable asset
@@ -254,6 +268,17 @@ authentication requirement, and stable links.
 Credential handling follows Decision 5 on every transport. A gRPC message or
 MCP result may advertise that authentication is required; it must not turn an
 ephemeral asset credential into serializable scene data.
+
+The currently published geospatial-grpc `SceneService` exposes only
+`ListScenes` and `GetScene`, so it is not yet a resolve projection. Protocol
+parity is blocked on
+[geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90),
+which owns an additive `ResolveScene` contract carrying endpoint format, media
+type, auth requirement, and the credential-free `access-session` link. After a
+new protocol package is published, Honua.Server must update its
+`Geospatial.Grpc` dependency/generated surface before implementing and claiming
+gRPC resolution. Neither gRPC scene resolution nor cross-SDK parity may be
+claimed before both changes land.
 
 ## 2026.1 truth posture
 
@@ -323,6 +348,9 @@ LAZ/COPC documentation, and removes the dead SLPK entry points.
   compatibility migration.
 - [#3410](https://github.com/honua-io/honua-server/issues/3410): versioned
   list/metadata/resolve contract pack.
+- [geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90):
+  additive `ResolveScene` protocol contract and published package; the server
+  dependency update and projection follow that release.
 - [#3280](https://github.com/honua-io/honua-server/issues/3280): production I3S
   geometry, if/when the deferred lane resumes.
 - [#3284](https://github.com/honua-io/honua-server/issues/3284): durable jobs and
