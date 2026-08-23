@@ -14,6 +14,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -78,6 +79,7 @@ internal static class ProcessEndpoints
             .WithName("OgcProcessesList")
             .WithSummary("List available processes")
             .Produces<OgcProcessList>()
+            .Produces<OgcProcessError>(StatusCodes.Status400BadRequest)
             .ExcludeFromDescription();
 
         endpoints.MapGet($"{BasePath}/processes/{{processId}}", GetProcessDescription)
@@ -121,10 +123,19 @@ internal static class ProcessEndpoints
     private static IResult GetProcessList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IProcessCatalog processCatalog)
+        IProcessCatalog processCatalog,
+        [FromQuery] int? limit = null)
     {
         EnrichActivity("GetProcessList");
         OgcProcessesLog.ProcessListRequested(logger);
+
+        if (limit is <= 0)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Invalid limit",
+                "The 'limit' parameter must be a positive integer.");
+        }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var summary = CanonicalProcessSummary with
@@ -140,9 +151,11 @@ internal static class ProcessEndpoints
         var processBuilder = ImmutableArray.CreateBuilder<OgcProcessSummary>();
         processBuilder.Add(summary);
 
+        var remaining = limit.HasValue ? limit.Value - 1 : int.MaxValue;
         foreach (var definition in processCatalog.ListProcesses()
                      .Where(ProcessExecutionCapabilityCatalog.IsOgcCallable)
-                     .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
+                     .OrderBy(process => process.ProcessId, StringComparer.Ordinal)
+                     .Take(Math.Max(remaining, 0)))
         {
             processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
         }

@@ -182,6 +182,32 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "raster.interpolate-kriging"]);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithLimit_ReturnsAtMostRequestedCount()
+    {
+        using var response = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
+        processes.Should().ContainSingle();
+        processes[0].GetProperty("id").GetString().Should().Be("honua-geoprocessing");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithNonPositiveLimit_Returns400()
+    {
+        using var zero = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=0");
+        using var negative = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=-1");
+
+        zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // -----------------------------------------------------------------------
     // Process description
     // -----------------------------------------------------------------------
