@@ -203,9 +203,7 @@ internal static class StudioAiInteractivePrincipal
             identity.IsAuthenticated &&
             ((InteractiveAuthenticationSchemes.Any(scheme =>
                   string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) &&
-              IsHumanSession(identity)) ||
-             identity.HasClaim(OperatorScopeCatalog.ScopeGovernedClaimType,
-                 OperatorScopeCatalog.ScopeGovernedClaimValue)));
+              IsHumanSession(identity))));
     }
 
     private static bool IsHumanSession(ClaimsIdentity identity)
@@ -227,13 +225,8 @@ internal static class StudioAiInteractivePrincipal
             }
 
             return identity.HasClaim(c =>
-                string.Equals(c.Type, ClaimTypes.Name, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(c.Type, ClaimTypes.NameIdentifier, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(c.Type, "name", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(c.Type, "preferred_username", StringComparison.OrdinalIgnoreCase)) ||
-                identity.HasClaim(
-                    OperatorScopeCatalog.ScopeGovernedClaimType,
-                    OperatorScopeCatalog.ScopeGovernedClaimValue);
+                string.Equals(c.Type, "honua_interactive_provenance", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase));
         }
 
         return true;

@@ -355,6 +355,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         {
             new("sub", subject),
             new("name", "Studio Test User"),
+            new("amr", "pwd"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

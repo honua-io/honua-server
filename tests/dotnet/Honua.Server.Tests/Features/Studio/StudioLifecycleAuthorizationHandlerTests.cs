@@ -49,7 +49,10 @@ public sealed class StudioLifecycleAuthorizationHandlerTests
     {
         var handler = new StudioAiProxyAuthorizationHandler(
             new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
-        var principal = Principal("Bearer", new Claim(ClaimTypes.NameIdentifier, "interactive-user"));
+        var principal = Principal("Bearer",
+            new Claim(ClaimTypes.NameIdentifier, "interactive-user"),
+            new Claim("amr", "pwd"),
+            new Claim("honua_interactive_provenance", "true"));
         var context = new AuthorizationHandlerContext(
             [new StudioAiProxyRequirement()], principal, resource: null);
 
