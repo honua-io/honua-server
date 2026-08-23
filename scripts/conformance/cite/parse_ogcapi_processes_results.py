@@ -16,40 +16,174 @@ from pathlib import Path
 
 ETS_COMMIT = "75abd1f37fc3aad95163fdce2e33e393b1ba5a88"
 ETS_VERSION = "1.4-SNAPSHOT"
-FIXTURE_REVISION = "ogcapi-processes-cite-profile-v6"
+FIXTURE_REVISION = "ogcapi-processes-cite-profile-v7"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
-CLASS_MAPPINGS = {
-    "org.opengis.cite.ogcapiprocesses10.SuitePreconditions": (
-        "suite-preconditions", ("positive", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.general.GeneralHttp": (
-        "protocol-http", ("positive", "negative", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.landingpage.LandingPage": (
-        "landing-page", ("positive", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.conformance.Conformance": (
-        "conformance-declaration", ("positive", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.processlist.ProcessList": (
-        "process-list", ("positive", "pagination", "limit", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.process.Process": (
-        "process-description", ("positive", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.ogcprocessdescription.OGCProcessDescription": (
-        "process-description-schema", ("positive", "boundary", "media-schema")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.jobs.Jobs": (
-        "job-lifecycle", ("positive", "negative", "boundary", "media-schema", "recovery")
-    ),
-    "org.opengis.cite.ogcapiprocesses10.joblist.JobList": (
-        "job-list", ("positive", "pagination", "limit", "media-schema")
-    ),
-}
 SUITE_PRECONDITIONS_CLASS = "org.opengis.cite.ogcapiprocesses10.SuitePreconditions"
+GENERAL_HTTP_CLASS = "org.opengis.cite.ogcapiprocesses10.general.GeneralHttp"
+LANDING_PAGE_CLASS = "org.opengis.cite.ogcapiprocesses10.landingpage.LandingPage"
+CONFORMANCE_CLASS = "org.opengis.cite.ogcapiprocesses10.conformance.Conformance"
+PROCESS_LIST_CLASS = "org.opengis.cite.ogcapiprocesses10.processlist.ProcessList"
+PROCESS_CLASS = "org.opengis.cite.ogcapiprocesses10.process.Process"
+PROCESS_DESCRIPTION_CLASS = (
+    "org.opengis.cite.ogcapiprocesses10.ogcprocessdescription.OGCProcessDescription"
+)
+JOBS_CLASS = "org.opengis.cite.ogcapiprocesses10.jobs.Jobs"
+JOB_LIST_CLASS = "org.opengis.cite.ogcapiprocesses10.joblist.JobList"
+
+CLASS_MAPPINGS = {
+    SUITE_PRECONDITIONS_CLASS: "suite-preconditions",
+    GENERAL_HTTP_CLASS: "protocol-http",
+    LANDING_PAGE_CLASS: "landing-page",
+    CONFORMANCE_CLASS: "conformance-declaration",
+    PROCESS_LIST_CLASS: "process-list",
+    PROCESS_CLASS: "process-description",
+    PROCESS_DESCRIPTION_CLASS: "process-description-schema",
+    JOBS_CLASS: "job-lifecycle",
+    JOB_LIST_CLASS: "job-list",
+}
+
+# Facets describe the scenario exercised by one exact ETS method. Never promote a
+# class-wide union onto each verdict: doing so lets an unrelated pass stand in for
+# negative, boundary, pagination, or recovery coverage that it did not execute.
+METHOD_SCENARIO_FACETS = {
+    (GENERAL_HTTP_CLASS, "testHttp"): ("positive", "negative", "media-schema"),
+    (LANDING_PAGE_CLASS, "testLandingPageRetrieval"): ("positive",),
+    (LANDING_PAGE_CLASS, "testLandingPageValidation"): ("positive", "media-schema"),
+    (CONFORMANCE_CLASS, "testValidateConformanceOperationAndResponse"): (
+        "positive",
+        "media-schema",
+    ),
+    (PROCESS_LIST_CLASS, "testPlLimitDefinition"): (
+        "positive",
+        "limit",
+        "media-schema",
+    ),
+    (PROCESS_LIST_CLASS, "testPlLimitResponse"): (
+        "positive",
+        "boundary",
+        "pagination",
+        "limit",
+    ),
+    (PROCESS_LIST_CLASS, "testPlLinks"): ("positive", "pagination", "media-schema"),
+    (PROCESS_LIST_CLASS, "testProcessList"): ("positive", "media-schema"),
+    (PROCESS_LIST_CLASS, "testProcessListSuccess"): ("positive",),
+    (PROCESS_CLASS, "testProcess"): ("positive",),
+    (PROCESS_CLASS, "testProcessExceptionNoSuchProcess"): ("negative",),
+    (PROCESS_CLASS, "testProcessSuccess"): ("positive", "media-schema"),
+    (PROCESS_DESCRIPTION_CLASS, "testOGCProcessDescriptionInputDef"): (
+        "positive",
+        "media-schema",
+    ),
+    (
+        PROCESS_DESCRIPTION_CLASS,
+        "testOGCProcessDescriptionInputDefinitionOfMixedType",
+    ): ("positive", "boundary", "media-schema"),
+    (PROCESS_DESCRIPTION_CLASS, "testOGCProcessDescriptionInputsDef"): (
+        "positive",
+        "media-schema",
+    ),
+    (PROCESS_DESCRIPTION_CLASS, "testOGCProcessDescriptionJSON"): (
+        "positive",
+        "media-schema",
+    ),
+    (PROCESS_DESCRIPTION_CLASS, "testOGCProcessDescriptionOutputDef"): (
+        "positive",
+        "media-schema",
+    ),
+    (
+        PROCESS_DESCRIPTION_CLASS,
+        "testOGCProcessDescriptionOutputDefinitionOfMixedType",
+    ): ("positive", "boundary", "media-schema"),
+    (PROCESS_DESCRIPTION_CLASS, "testOGCProcessDescriptionOutputsDef"): (
+        "positive",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobCreationAutoExecutionMode"): ("positive", "boundary"),
+    (JOBS_CLASS, "testJobCreationDefaultExecutionMode"): ("positive",),
+    (JOBS_CLASS, "testJobCreationDefaultOutputs"): ("positive",),
+    (JOBS_CLASS, "testJobCreationInputArray"): ("positive", "boundary", "media-schema"),
+    (JOBS_CLASS, "testJobCreationInputInline"): ("positive", "media-schema"),
+    (JOBS_CLASS, "testJobCreationInputInlineBbox"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobCreationInputInlineBinary"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobCreationInputInlineMixed"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobCreationInputInlineObject"): ("positive", "media-schema"),
+    (JOBS_CLASS, "testJobCreationInputRef"): ("positive", "media-schema"),
+    (JOBS_CLASS, "testJobCreationInputValidation"): ("negative", "media-schema"),
+    (JOBS_CLASS, "testJobCreationInputs"): ("positive", "media-schema"),
+    (JOBS_CLASS, "testJobCreationOp"): ("positive",),
+    (JOBS_CLASS, "testJobCreationRequest"): ("positive", "media-schema"),
+    (JOBS_CLASS, "testJobCreationSuccessAsync"): ("positive",),
+    (JOBS_CLASS, "testJobCreationSyncDocument"): ("positive",),
+    (JOBS_CLASS, "testJobCreationSyncRawMixedMulti"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobCreationSyncRawRef"): ("positive", "boundary", "media-schema"),
+    (JOBS_CLASS, "testJobCreationSyncRawValueMulti"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobCreationSyncRawValueOne"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobExceptionNoSuchJob"): ("negative",),
+    (JOBS_CLASS, "testJobOp"): ("positive",),
+    (JOBS_CLASS, "testJobResults"): ("positive",),
+    (JOBS_CLASS, "testJobResultsAsyncDocument"): ("positive",),
+    (JOBS_CLASS, "testJobResultsAsyncRawMixedMulti"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobResultsAsyncRawRef"): ("positive", "boundary", "media-schema"),
+    (JOBS_CLASS, "testJobResultsAsyncRawValueMulti"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobResultsAsyncRawValueOne"): (
+        "positive",
+        "boundary",
+        "media-schema",
+    ),
+    (JOBS_CLASS, "testJobResultsExceptionResultsNotReady"): ("negative", "recovery"),
+    (JOBS_CLASS, "testJobResultsFailed"): ("negative", "recovery"),
+    (JOBS_CLASS, "testJobResultsNoSuchJob"): ("negative",),
+    (JOBS_CLASS, "testJobResultsSync"): ("positive",),
+    (JOBS_CLASS, "testJobSuccess"): ("positive",),
+    (JOB_LIST_CLASS, "testJobList"): ("positive", "pagination", "media-schema"),
+    (JOB_LIST_CLASS, "testJobListSuccess"): ("positive", "pagination"),
+}
+
+REPRESENTATIVE_METHODS = {
+    GENERAL_HTTP_CLASS: "testHttp",
+    LANDING_PAGE_CLASS: "testLandingPageRetrieval",
+    CONFORMANCE_CLASS: "testValidateConformanceOperationAndResponse",
+    PROCESS_LIST_CLASS: "testProcessList",
+    PROCESS_CLASS: "testProcess",
+    PROCESS_DESCRIPTION_CLASS: "testOGCProcessDescriptionJSON",
+    JOBS_CLASS: "testJobSuccess",
+    JOB_LIST_CLASS: "testJobList",
+}
+
 MANDATORY_ETS_CLASSES = frozenset(CLASS_MAPPINGS)
 MANDATORY_VERDICT_CLASSES = MANDATORY_ETS_CLASSES - {SUITE_PRECONDITIONS_CLASS}
 
@@ -123,8 +257,12 @@ def _load_provenance(path: Path) -> tuple[dict, list[str]]:
     if not isinstance(source_sha, str) or not SHA.fullmatch(source_sha):
         errors.append("server provenance lacks a full tested Honua git SHA")
     producer_source_sha = value.get("checkedOutHonuaGitSha")
-    if not isinstance(producer_source_sha, str) or not SHA.fullmatch(producer_source_sha):
-        errors.append("server provenance lacks a full checked-out Honua producer git SHA")
+    if not isinstance(producer_source_sha, str) or not SHA.fullmatch(
+        producer_source_sha
+    ):
+        errors.append(
+            "server provenance lacks a full checked-out Honua producer git SHA"
+        )
     image_id = value.get("serverImageId")
     if not isinstance(image_id, str) or not DIGEST.fullmatch(image_id):
         errors.append("server provenance lacks an immutable server image ID")
@@ -141,7 +279,9 @@ def _candidate_image_digest(provenance: dict) -> str | None:
         if match:
             return match.group("digest")
     image_id = provenance.get("serverImageId")
-    return image_id if isinstance(image_id, str) and DIGEST.fullmatch(image_id) else None
+    return (
+        image_id if isinstance(image_id, str) and DIGEST.fullmatch(image_id) else None
+    )
 
 
 def parse_results(
@@ -182,7 +322,7 @@ def parse_results(
         for class_node in test.findall("./class"):
             class_name = class_node.get("name", "")
             seen_ets_classes.add(class_name)
-            mapping = CLASS_MAPPINGS.get(class_name)
+            class_operation = CLASS_MAPPINGS.get(class_name)
             for method in class_node.findall("./test-method"):
                 result = _normalize_status(method.get("status", "UNKNOWN"))
                 if method.get("is-config", "false").lower() == "true":
@@ -191,22 +331,32 @@ def parse_results(
                             f"configuration method {class_name}#{method.get('name', '')} was {result}"
                         )
                     continue
-                if mapping is None:
+
+                method_name = method.get("name", "")
+                if class_operation is None:
                     infrastructure_errors.append(
                         f"unmapped ETS class {class_name or '<missing>'}"
                     )
                     operation = "unmapped"
                     facets: tuple[str, ...] = ("positive",)
                 else:
-                    operation, facets = mapping
+                    operation = class_operation
+                    facets = METHOD_SCENARIO_FACETS.get((class_name, method_name), ())
+                    if not facets:
+                        infrastructure_errors.append(
+                            "unmapped ETS method facets "
+                            f"{class_name or '<missing>'}#{method_name or '<missing>'}"
+                        )
+                        facets = ("positive",)
 
-                method_name = method.get("name", "")
                 signature = method.get("signature", "")
                 invocation_key = (class_name, method_name, signature)
                 invocation_counts[invocation_key] += 1
                 invocation = invocation_counts[invocation_key]
                 base_test_id = f"{class_name}#{method_name}"
-                test_id = base_test_id if invocation == 1 else f"{base_test_id}[{invocation}]"
+                test_id = (
+                    base_test_id if invocation == 1 else f"{base_test_id}[{invocation}]"
+                )
                 reason = _reason(method)
                 observation = {
                     "capabilityKey": "process.ogc-api-processes",
@@ -244,7 +394,9 @@ def parse_results(
         try:
             value = int(root.get(attribute, "0"))
         except ValueError:
-            infrastructure_errors.append(f"TestNG root {attribute} count is not an integer")
+            infrastructure_errors.append(
+                f"TestNG root {attribute} count is not an integer"
+            )
             value = -1
         if value < 0:
             infrastructure_errors.append(f"TestNG root {attribute} count is negative")
@@ -257,7 +409,9 @@ def parse_results(
             f"root={raw_values}, observed={asdict(totals)}"
         )
     if ets_exit_code != 0:
-        infrastructure_errors.append(f"ETS process exited with nonzero code {ets_exit_code}")
+        infrastructure_errors.append(
+            f"ETS process exited with nonzero code {ets_exit_code}"
+        )
     if totals.total == 0:
         infrastructure_errors.append("ETS emitted zero test verdicts")
     if totals.passed + totals.failed == 0:
@@ -270,12 +424,17 @@ def parse_results(
     missing_verdict_classes = sorted(MANDATORY_VERDICT_CLASSES - class_totals.keys())
     if missing_verdict_classes:
         infrastructure_errors.append(
-            "ETS omitted mandatory verdict classes: " + ", ".join(missing_verdict_classes)
+            "ETS omitted mandatory verdict classes: "
+            + ", ".join(missing_verdict_classes)
         )
 
     complete = not infrastructure_errors
     green = complete and totals.failed == totals.skipped == totals.canttell == 0
-    status = "incomplete" if not complete else ("diagnostic-green" if green else "diagnostic-red")
+    status = (
+        "incomplete"
+        if not complete
+        else ("diagnostic-green" if green else "diagnostic-red")
+    )
     payload = {
         "schema": "honua.cite-diagnostic/v1",
         "suite": {
@@ -324,7 +483,9 @@ def write_outputs(payload: dict, summary_path: Path, json_path: Path) -> None:
         )
     errors = payload["infrastructureErrors"]
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    json_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     summary_path.write_text(
         "# OGC API Processes 1.0 CITE Diagnostic Results\n\n"
         "## Summary\n\n"

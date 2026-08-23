@@ -74,11 +74,34 @@ public sealed class OgcProcessesCiteEchoFixtureConfigurationTests
         {
             ["literal"] = JsonSerializer.SerializeToElement(new { transmissionMode = "reference" })
         };
+        var inputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["literal"] = JsonSerializer.SerializeToElement("teststring")
+        };
 
-        OgcProcessesCiteEchoFixture.TryAddOutputBindings(metadata, unknown, out _)
+        OgcProcessesCiteEchoFixture.TryAddOutputBindings(metadata, inputs, unknown, out _)
             .Should().BeFalse();
-        OgcProcessesCiteEchoFixture.TryAddOutputBindings(metadata, reference, out _)
+        OgcProcessesCiteEchoFixture.TryAddOutputBindings(metadata, inputs, reference, out _)
             .Should().BeFalse();
         metadata.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void TryAddOutputBindings_SelectsOnlyOutputsBackedBySubmittedInputs()
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        var inputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["literal"] = JsonSerializer.SerializeToElement("teststring"),
+            ["array"] = JsonSerializer.SerializeToElement("teststring"),
+            ["pause"] = JsonSerializer.SerializeToElement(1)
+        };
+
+        OgcProcessesCiteEchoFixture.TryAddOutputBindings(metadata, inputs, null, out _)
+            .Should().BeTrue();
+
+        metadata.Should().Equal(
+            new KeyValuePair<string, string>("process.output.0", "literal"),
+            new KeyValuePair<string, string>("process.output.1", "array"));
     }
 }

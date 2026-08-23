@@ -40,7 +40,7 @@ internal static class OgcProcessesCiteEchoFixture
             Parameter("object", "Object", "JSON object value."),
             Parameter("binary", "Binary", "Inline or referenced binary descriptor."),
             Parameter("mixed", "Mixed", "String or JSON object value."),
-            Parameter("array", "Array", "JSON array value."),
+            Parameter("array", "Array", "String or JSON array value."),
             Parameter("bbox", "Bounding Box", "OGC bounding-box value."),
             new ProcessParameterSpec
             {
@@ -110,6 +110,7 @@ internal static class OgcProcessesCiteEchoFixture
 
     internal static bool TryAddOutputBindings(
         Dictionary<string, string> metadata,
+        IReadOnlyDictionary<string, JsonElement>? inputs,
         IReadOnlyDictionary<string, JsonElement>? requestedOutputs,
         out string? error)
     {
@@ -149,9 +150,19 @@ internal static class OgcProcessesCiteEchoFixture
             }
         }
 
-        var selected = requestedOutputs is { Count: > 0 }
-            ? OutputIds.Where(requestedOutputs.ContainsKey)
-            : OutputIds;
+        var selected = OutputIds
+            .Where(outputId => inputs?.ContainsKey(outputId) == true)
+            .Where(outputId => requestedOutputs is not { Count: > 0 }
+                               || requestedOutputs.ContainsKey(outputId))
+            .ToArray();
+        if (selected.Length == 0)
+        {
+            error = requestedOutputs is { Count: > 0 }
+                ? "No requested CITE echo output is backed by a submitted input."
+                : "No CITE echo output is backed by a submitted input.";
+            return false;
+        }
+
         var index = 0;
         foreach (var outputId in selected)
         {
@@ -188,7 +199,8 @@ internal static class OgcProcessesCiteEchoFixture
                 "binary" => TryValidateBinaryValue(input.Value, out error),
                 "mixed" => input.Value.ValueKind == JsonValueKind.String
                            || TryValidateValueObject(input.Value, "mixed", out error),
-                "array" => TryValidateStringArray(input.Value, out error),
+                "array" => input.Value.ValueKind == JsonValueKind.String
+                           || TryValidateStringArray(input.Value, out error),
                 "bbox" => TryValidateBoundingBox(input.Value, out error),
                 "pause" => TryValidatePause(input.Value, out error),
                 _ => false
@@ -420,16 +432,34 @@ internal static class OgcProcessesCiteEchoFixture
     private static Dictionary<string, OgcProcessIoDescription> BuildInputs()
         => new(StringComparer.Ordinal)
         {
-            ["literal"] = Description("Literal", "Plain string value.", StringSchema()),
-            ["object"] = Description("Object", "JSON object value.", ObjectSchema()),
-            ["binary"] = Description("Binary", "Inline or referenced GeoTIFF value.", BinarySchema()),
-            ["mixed"] = Description("Mixed", "String or object value.", MixedSchema()),
-            ["array"] = Description("Array", "Array of string values.", ArraySchema()),
-            ["bbox"] = Description("Bounding Box", "OGC bounding-box value.", BoundingBoxSchema()),
+            ["literal"] = Description("Literal", "Plain string value.", StringSchema(), minOccurs: 1),
+            ["object"] = Description("Object", "JSON object value.", ObjectSchema(), minOccurs: 0),
+            ["binary"] = Description(
+                "Binary",
+                "Inline or referenced GeoTIFF value.",
+                BinarySchema(),
+                minOccurs: 0),
+            ["mixed"] = Description("Mixed", "String or object value.", MixedSchema(), minOccurs: 0),
+            ["array"] = Description(
+                "Array",
+                "String or array of string values.",
+                ArraySchema(),
+                minOccurs: 0),
+            ["bbox"] = Description(
+                "Bounding Box",
+                "OGC bounding-box value.",
+                BoundingBoxSchema(),
+                minOccurs: 0),
             ["pause"] = Description(
                 "Pause",
                 "Optional deterministic delay in seconds, bounded from zero through ten.",
-                new OgcProcessIoSchema { Type = "integer" })
+                new OgcProcessIoSchema
+                {
+                    Type = "integer",
+                    Minimum = 0,
+                    Maximum = MaximumPauseSeconds
+                },
+                minOccurs: 0)
         };
 
     private static Dictionary<string, OgcProcessIoDescription> BuildOutputs()
@@ -439,21 +469,30 @@ internal static class OgcProcessesCiteEchoFixture
             ["object"] = Description("Object", "Echoed object value.", ObjectSchema()),
             ["binary"] = Description("Binary", "Echoed binary descriptor.", BinarySchema()),
             ["mixed"] = Description("Mixed", "Echoed mixed value.", MixedSchema()),
-            ["array"] = Description("Array", "Echoed array value.", ArraySchema()),
+            ["array"] = Description("Array", "Echoed string or array value.", ArraySchema()),
             ["bbox"] = Description(
                 "Bounding Box",
                 "Echoed OGC bounding-box value.",
                 new OgcProcessIoSchema
                 {
-                    AllOf = ImmutableArray.Create(new OgcProcessIoSchema { Format = "ogc-bbox" })
+                    AllOf = ImmutableArray.Create(
+                        BoundingBoxSchema(),
+                        new OgcProcessIoSchema { Format = "ogc-bbox" })
                 })
         };
 
     private static OgcProcessIoDescription Description(
         string title,
         string description,
-        OgcProcessIoSchema schema)
-        => new() { Title = title, Description = description, Schema = schema };
+        OgcProcessIoSchema schema,
+        int? minOccurs = null)
+        => new()
+        {
+            Title = title,
+            Description = description,
+            MinOccurs = minOccurs,
+            Schema = schema
+        };
 
     private static OgcProcessIoSchema StringSchema() => new() { Type = "string" };
 
@@ -470,10 +509,43 @@ internal static class OgcProcessesCiteEchoFixture
     private static OgcProcessIoSchema BinarySchema()
         => new()
         {
+            OneOf = ImmutableArray.Create(
+                EncodedBinarySchema(),
+                BinaryDescriptorSchema("value", EncodedBinarySchema()),
+                BinaryDescriptorSchema(
+                    "href",
+                    new OgcProcessIoSchema { Type = "string", Format = "uri" }))
+        };
+
+    private static OgcProcessIoSchema EncodedBinarySchema()
+        => new()
+        {
             Type = "string",
             Format = "byte",
             ContentMediaType = "image/tiff",
             ContentEncoding = "base64"
+        };
+
+    private static OgcProcessIoSchema BinaryDescriptorSchema(
+        string valueProperty,
+        OgcProcessIoSchema valueSchema)
+        => new()
+        {
+            Type = "object",
+            Properties = new Dictionary<string, OgcProcessIoSchema>(StringComparer.Ordinal)
+            {
+                [valueProperty] = valueSchema,
+                ["format"] = new OgcProcessIoSchema
+                {
+                    Type = "object",
+                    Properties = new Dictionary<string, OgcProcessIoSchema>(StringComparer.Ordinal)
+                    {
+                        ["mediaType"] = StringSchema(),
+                        ["encoding"] = StringSchema()
+                    }
+                }
+            },
+            Required = ImmutableArray.Create(valueProperty)
         };
 
     private static OgcProcessIoSchema MixedSchema()
@@ -483,7 +555,12 @@ internal static class OgcProcessesCiteEchoFixture
         };
 
     private static OgcProcessIoSchema ArraySchema()
-        => new() { Type = "array", Items = StringSchema() };
+        => new()
+        {
+            OneOf = ImmutableArray.Create(
+                StringSchema(),
+                new OgcProcessIoSchema { Type = "array", Items = StringSchema() })
+        };
 
     private static OgcProcessIoSchema BoundingBoxSchema()
         => new()
