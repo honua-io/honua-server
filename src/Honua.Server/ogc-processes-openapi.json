@@ -83,12 +83,31 @@
       "get": {
         "summary": "List available processes",
         "operationId": "OgcProcessesList",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Process list",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ProcessList" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
               }
             }
           }

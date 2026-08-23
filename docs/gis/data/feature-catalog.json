@@ -7025,7 +7025,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesImageryInferenceProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesRasterSurfaceProcesses",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithLimit_ReturnsAtMostRequestedCount",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_WithNonPositiveLimit_Returns400"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",
