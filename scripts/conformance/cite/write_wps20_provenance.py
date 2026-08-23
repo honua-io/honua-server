@@ -11,6 +11,7 @@ from pathlib import Path
 
 GIT_SHA = re.compile(r"^[0-9a-fA-F]{40,64}$")
 IMAGE_ID = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
+REFERENCE_DIGEST = re.compile(r"(?:^|@)(sha256:[0-9a-fA-F]{64})$")
 
 
 def write_provenance(
@@ -49,11 +50,36 @@ def write_provenance(
     if not isinstance(inspected, list) or len(inspected) != 1:
         raise ValueError("Honua Server image inspection must contain exactly one image")
     if inspected[0].get("Id") != server_image_id:
-        raise ValueError("Running Honua Server image ID does not match its image inspection")
+        raise ValueError(
+            "Running Honua Server image ID does not match its image inspection"
+        )
     labels = inspected[0].get("Config", {}).get("Labels", {})
-    image_revision = labels.get("org.opencontainers.image.revision") if isinstance(labels, dict) else None
+    image_revision = (
+        labels.get("org.opencontainers.image.revision")
+        if isinstance(labels, dict)
+        else None
+    )
     if require_tested_git_sha and image_revision != tested_git_sha:
-        raise ValueError("Honua Server image revision label does not match the tested git SHA")
+        raise ValueError(
+            "Honua Server image revision label does not match the tested git SHA"
+        )
+    repo_digests = inspected[0].get("RepoDigests") or []
+    if not isinstance(repo_digests, list) or not all(
+        isinstance(reference, str) for reference in repo_digests
+    ):
+        raise ValueError("Honua Server image repository digests must be strings")
+    requested_digest_match = REFERENCE_DIGEST.search(requested_server_image)
+    if requested_digest_match:
+        requested_digest = requested_digest_match.group(1).lower()
+        inspected_digests = {
+            match.group(1).lower()
+            for reference in repo_digests
+            if (match := REFERENCE_DIGEST.search(reference)) is not None
+        }
+        if requested_digest not in inspected_digests:
+            raise ValueError(
+                "Requested Honua Server image digest does not match its image inspection"
+            )
 
     payload = {
         "schemaVersion": 1,
@@ -64,7 +90,7 @@ def write_provenance(
         "serverContainerId": server_container_id,
         "serverImageId": server_image_id,
         "serverImageRevision": image_revision,
-        "serverImageRepoDigests": inspected[0].get("RepoDigests") or [],
+        "serverImageRepoDigests": repo_digests,
         "serverImageReference": "honua-server:latest",
         "serverImageInspectFile": image_inspect_path.name,
     }
@@ -79,7 +105,11 @@ def main() -> int:
     parser.add_argument("--checkout-git-sha", required=True)
     parser.add_argument("--server-container-id", required=True)
     parser.add_argument("--server-image-id", required=True)
-    parser.add_argument("--server-build-mode", choices=("source-build", "prebuilt", "local-existing"), required=True)
+    parser.add_argument(
+        "--server-build-mode",
+        choices=("source-build", "prebuilt", "local-existing"),
+        required=True,
+    )
     parser.add_argument("--requested-server-image", default="")
     parser.add_argument("--image-inspect", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

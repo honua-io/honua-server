@@ -212,6 +212,73 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn("omitted pinned verdict methods", errors)
         self.assertIn("LandingPage#testLandingPageValidation", errors)
 
+    def test_pinned_method_invocation_count_drift_fails_closed(self) -> None:
+        methods = """
+          <test-method status="PASS" name="testLandingPageRetrieval" />
+          <test-method status="PASS" name="testLandingPageRetrieval" />
+          <test-method status="PASS" name="testLandingPageValidation" />
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._files(
+                Path(directory),
+                _complete_testng(
+                    methods,
+                    total=3,
+                    passed=3,
+                    failed=0,
+                    skipped=0,
+                ),
+            )
+            payload, exit_code = self._parse(paths)
+
+        self.assertEqual(2, exit_code)
+        self.assertEqual("incomplete", payload["status"])
+        errors = " ".join(payload["infrastructureErrors"])
+        self.assertIn("pinned verdict invocation counts differ", errors)
+        self.assertIn(
+            "LandingPage#testLandingPageRetrieval expected 1, observed 2",
+            errors,
+        )
+
+    def test_requested_digest_must_match_inspected_image(self) -> None:
+        methods = """
+          <test-method status="PASS" name="testLandingPageRetrieval" />
+          <test-method status="PASS" name="testLandingPageValidation" />
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._files(
+                Path(directory),
+                _complete_testng(
+                    methods,
+                    total=2,
+                    passed=2,
+                    failed=0,
+                    skipped=0,
+                ),
+            )
+            requested_digest = "sha256:" + ("d" * 64)
+            inspected_digest = "sha256:" + ("e" * 64)
+            provenance = json.loads(paths[1].read_text(encoding="utf-8"))
+            provenance.update(
+                {
+                    "requestedServerImage": (
+                        "ghcr.io/honua-io/honua-server@" + requested_digest
+                    ),
+                    "serverImageRepoDigests": [
+                        "ghcr.io/honua-io/honua-server@" + inspected_digest
+                    ],
+                }
+            )
+            paths[1].write_text(json.dumps(provenance), encoding="utf-8")
+            payload, exit_code = self._parse(paths)
+
+        self.assertEqual(2, exit_code)
+        self.assertEqual("incomplete", payload["status"])
+        self.assertIn(
+            "requested server image digest does not match the inspected image",
+            " ".join(payload["infrastructureErrors"]),
+        )
+
     def test_all_skip_run_is_incomplete(self) -> None:
         methods = '<test-method status="SKIP" name="testLandingPageRetrieval" />'
         with tempfile.TemporaryDirectory() as directory:
@@ -362,7 +429,7 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn('ExecutionAdmission__MaxSubmissionsPerWindow: "100"', compose)
         self.assertIn('ExecutionAdmission__MaxCostWeightPerPartition: "100"', compose)
         self.assertEqual(
-            "ogcapi-processes-cite-profile-v10",
+            "ogcapi-processes-cite-profile-v11",
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)
