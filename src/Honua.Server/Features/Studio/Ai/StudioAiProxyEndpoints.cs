@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -28,7 +29,7 @@ internal static class StudioAiProxyEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Studio", "AI")
-            .RequireStudioLifecycleAuthorization();
+            .RequireStudioAiProxyAuthorization();
 
         group.MapGet("/capabilities", HandleGetCapabilities)
             .WithName("GetStudioAiCapabilities")
@@ -64,12 +65,20 @@ internal static class StudioAiProxyEndpoints
         HttpContext context,
         StudioAiChatHttpRequest httpRequest,
         IStudioAiProxyService service,
+        IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
 
-        var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(httpRequest);
+        // A model id is an operator-controlled credential boundary: provider credentials may
+        // have access to models the deployment did not approve for end users. Admin callers
+        // retain the explicit override, while every non-admin request is pinned to the model in
+        // StudioAiProxy configuration by omitting its wire-level override before dispatch.
+        var allowModelOverride = authorizationService.IsAdmin(context.User);
+        var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
+            httpRequest,
+            allowModelOverride);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");

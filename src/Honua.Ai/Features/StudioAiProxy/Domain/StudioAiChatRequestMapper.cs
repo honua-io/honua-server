@@ -13,8 +13,14 @@ namespace Honua.Ai.StudioAiProxy.Domain;
 /// </summary>
 public static class StudioAiChatRequestMapper
 {
-    /// <summary>Converts <paramref name="http"/> to a domain request, or returns a rejection reason.</summary>
-    public static (StudioAiChatRequest? Request, string? Error) ToDomain(StudioAiChatHttpRequest http)
+    /// <summary>
+    /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
+    /// When <paramref name="allowModelOverride"/> is false, the caller-supplied model is
+    /// deliberately omitted so the proxy resolves the provider's operator-configured model.
+    /// </summary>
+    public static (StudioAiChatRequest? Request, string? Error) ToDomain(
+        StudioAiChatHttpRequest http,
+        bool allowModelOverride = true)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -124,7 +130,7 @@ public static class StudioAiChatRequestMapper
         var request = new StudioAiChatRequest
         {
             Provider = http.Provider,
-            Model = http.Model,
+            Model = allowModelOverride ? http.Model : null,
             System = http.System,
             Messages = messages,
             Tools = tools,

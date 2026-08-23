@@ -30,6 +30,13 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class StudioLifecycleRequirement : IAuthorizationRequirement;
 
 /// <summary>
+/// Additional boundary for the Studio AI proxy. The general Studio lifecycle policy may admit
+/// scoped API keys so they can own drafts, but model-provider access is reserved for interactive
+/// OIDC/session users and administrators until a dedicated Studio AI permission exists.
+/// </summary>
+internal sealed class StudioAiProxyRequirement : IAuthorizationRequirement;
+
+/// <summary>
 /// Evaluates <see cref="StudioLifecycleRequirement"/> against the caller's admin role and the
 /// <c>Studio:EndUserAuthorization:Enabled</c> flag.
 /// </summary>
@@ -55,7 +62,7 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         AuthorizationHandlerContext context,
         StudioLifecycleRequirement requirement)
     {
-        if (IsRecognizedAdmin(context.User))
+        if (IsRecognizedAdmin(context.User, _adminRoleOptions.CurrentValue))
         {
             // Preserve the scoped admin-permission boundary this policy replaced (#1985) --
             // but only for API-key principals. The prior RequireAdminAuthorization() gate ran
@@ -107,14 +114,14 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     /// the same set <c>StudioAuthorizationService.IsAdmin</c> resolves), so an OIDC admin via
     /// an alias role keeps admin-tier Studio access rather than degrading to end-user scoping.
     /// </summary>
-    private bool IsRecognizedAdmin(ClaimsPrincipal principal)
+    internal static bool IsRecognizedAdmin(ClaimsPrincipal principal, AdminRoleOptions options)
     {
         if (principal.IsInRole("admin"))
         {
             return true;
         }
 
-        var aliases = _adminRoleOptions.CurrentValue.AdminRoles;
+        var aliases = options.AdminRoles;
         if (aliases is null)
         {
             return false;
@@ -123,9 +130,41 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         return aliases.Any(alias => !string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias));
     }
 
-    private static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
+    internal static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
         => principal.Identities.Any(identity =>
             string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
+}
+
+/// <summary>
+/// Keeps non-admin API keys out of the Studio AI proxy while preserving both interactive
+/// end-user access and the existing admin family.
+/// </summary>
+internal sealed class StudioAiProxyAuthorizationHandler(
+    IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
+    : AuthorizationHandler<StudioAiProxyRequirement>
+{
+    internal const string InteractivePrincipalRequiredCode =
+        "studio_authorization/interactive_principal_required";
+
+    private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions = adminRoleOptions;
+
+    /// <inheritdoc />
+    protected override Task HandleRequirementAsync(
+        AuthorizationHandlerContext context,
+        StudioAiProxyRequirement requirement)
+    {
+        if (!StudioLifecycleAuthorizationHandler.IsApiKeyPrincipal(context.User) ||
+            StudioLifecycleAuthorizationHandler.IsRecognizedAdmin(
+                context.User,
+                _adminRoleOptions.CurrentValue))
+        {
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
+        context.Fail(new AuthorizationFailureReason(this, InteractivePrincipalRequiredCode));
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>
@@ -137,6 +176,8 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
 {
     private const string StudioProblemType = "https://honua.io/problems/studio";
     private const string EndUserModeDisabledDetail = "Studio package lifecycle operations require the admin role.";
+    private const string InteractivePrincipalRequiredDetail =
+        "Studio AI proxy operations require an interactive user session or the admin role.";
     private readonly AuthorizationMiddlewareResultHandler _fallback = new();
 
     /// <inheritdoc />
@@ -152,19 +193,21 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
             await RecordPolicyDenialAuditAsync(context, denialCode).ConfigureAwait(false);
         }
 
-        if (authorizeResult.Forbidden &&
-            string.Equals(
-                denialCode,
-                StudioAuthorizationService.EndUserModeDisabledCode,
-                StringComparison.Ordinal))
+        var denialDetail = denialCode switch
+        {
+            StudioAuthorizationService.EndUserModeDisabledCode => EndUserModeDisabledDetail,
+            StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode => InteractivePrincipalRequiredDetail,
+            _ => null,
+        };
+        if (authorizeResult.Forbidden && denialDetail is not null)
         {
             await ProblemDetailsHelpers.CreateProblem(
                 context,
                 StudioProblemType,
                 StatusCodes.Status403Forbidden,
                 "Forbidden",
-                EndUserModeDisabledDetail,
-                StudioAuthorizationService.EndUserModeDisabledCode).ExecuteAsync(context).ConfigureAwait(false);
+                denialDetail,
+                denialCode!).ExecuteAsync(context).ConfigureAwait(false);
             return;
         }
 
@@ -201,6 +244,11 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
         if (HasFailureReason(authorizeResult, StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode))
         {
             return StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode;
+        }
+
+        if (HasFailureReason(authorizeResult, StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode))
+        {
+            return StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode;
         }
 
         // Future requirements added to the Studio policy must not silently create a new

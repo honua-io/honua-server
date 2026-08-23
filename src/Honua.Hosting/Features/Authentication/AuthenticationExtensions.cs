@@ -80,6 +80,13 @@ public static class AuthenticationExtensions
     public const string StudioLifecyclePolicy = "StudioLifecycle";
 
     /// <summary>
+    /// Authorization policy for the Studio AI proxy. Composes the Studio lifecycle feature-flag
+    /// gate with an interactive-principal boundary: administrators and OIDC/session users are
+    /// admitted, while non-admin API keys are not model-provider credentials.
+    /// </summary>
+    public const string StudioAiProxyPolicy = "StudioAiProxy";
+
+    /// <summary>
     /// Adds API key authentication and authorization services
     /// </summary>
     public static IServiceCollection AddApiKeyAuthentication(
@@ -104,6 +111,7 @@ public static class AuthenticationExtensions
         // Widens the Studio package lifecycle surface from admin-only to ownership-scoped end
         // users behind a feature flag (honua-server#3001).
         services.AddSingleton<IAuthorizationHandler, StudioLifecycleAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, StudioAiProxyAuthorizationHandler>();
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, StudioLifecycleAuthorizationMiddlewareResultHandler>();
 
         // Add authentication with API key scheme
@@ -134,6 +142,11 @@ public static class AuthenticationExtensions
             options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(ConformanceMutatePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled));
+            options.AddPolicy(StudioAiProxyPolicy, policy =>
+            {
+                ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled);
+                _ = policy.AddRequirements(new StudioAiProxyRequirement());
+            });
         });
 
         return services;
@@ -290,4 +303,12 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireStudioLifecycleAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(StudioLifecyclePolicy);
+
+    /// <summary>
+    /// Requires Studio AI proxy authorization for an endpoint or group (honua-server#3303).
+    /// In addition to the Studio lifecycle feature-flag gate, non-admin callers must be
+    /// authenticated through an interactive OIDC/session identity rather than an API key.
+    /// </summary>
+    public static TBuilder RequireStudioAiProxyAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(StudioAiProxyPolicy);
 }

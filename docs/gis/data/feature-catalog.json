@@ -5311,6 +5311,7 @@
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Admin_ReturnsConfiguredProvider",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Anonymous_Returns401",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOff_AuthenticatedNonAdminBearerReturns403",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16539,6 +16540,7 @@
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_RetainsThirtyRequestsPerMinuteRateLimit",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_UnknownProvider_Returns400AndDoesNotAudit",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOff_AuthenticatedNonAdminBearerReturns403",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",

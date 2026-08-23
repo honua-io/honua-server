@@ -107,6 +107,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
         using var chatResponse = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
         {
+            model = "unapproved-model",
             messages = new[] { new { role = "user", content = "hi" } }
         });
 
@@ -159,6 +160,45 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         var chatAudit = audit.Recorded.Should().ContainSingle(e => e.Action == "studio_ai.chat").Subject;
         chatAudit.Actor.Should().Be("studio-user-enabled");
         chatAudit.ActorType.Should().Be(AuditActorType.UserId);
+        chatAudit.Details.Should().Contain("\"model\":\"test-model\"");
+        chatAudit.Details.Should().NotContain("unapproved-model",
+            "non-admin callers are pinned to the operator-configured model");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403()
+    {
+        var audit = new CapturingAuditLog();
+        await using var fixture = await CreateEndUserFixtureAsync(audit);
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var scopedKey = await apiKeyStore.CreateAsync(
+            "studio-ai-unrelated-key",
+            ["studio:enduser"],
+            null,
+            null,
+            CancellationToken.None);
+        using var client = fixture.CreateClient(
+            options => options.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
+
+        using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
+        using var chatResponse = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            messages = new[] { new { role = "user", content = "hi" } }
+        });
+
+        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        chatResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await AssertInteractivePrincipalRequiredProblemAsync(capabilitiesResponse);
+        await AssertInteractivePrincipalRequiredProblemAsync(chatResponse);
+        audit.Recorded.Should().HaveCount(2);
+        audit.Recorded.Should().OnlyContain(auditEvent =>
+            auditEvent.Action == "studio.lifecycle" &&
+            auditEvent.Outcome == AuditOutcome.Denied &&
+            auditEvent.Details == "{\"code\":\"studio_authorization/interactive_principal_required\"}");
+        audit.Recorded.Should().NotContain(auditEvent => auditEvent.Action == "studio_ai.chat",
+            "an unrelated API key must be denied before any model-provider call begins");
     }
 
     [IntegrationTest]
@@ -348,6 +388,14 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("code").GetString().Should().Be(
             "studio_authorization/end_user_mode_disabled");
+    }
+
+    private static async Task AssertInteractivePrincipalRequiredProblemAsync(HttpResponseMessage response)
+    {
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("code").GetString().Should().Be(
+            "studio_authorization/interactive_principal_required");
     }
 
     private sealed class CapturingAuditLog : IAuditLog
