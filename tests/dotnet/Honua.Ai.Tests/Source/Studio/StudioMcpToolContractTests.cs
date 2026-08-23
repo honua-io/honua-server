@@ -62,6 +62,19 @@ public sealed class StudioMcpToolContractTests
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_*")]
+    public void ToolRoster_AdvertisesStudioAuthorizationCodeOnErrorBranch()
+    {
+        foreach (var tool in BuildAllTools())
+        {
+            var properties = tool.Describe().OutputSchema!.Value.GetProperty("properties");
+            properties.TryGetProperty("studioAuthorizationCode", out _).Should().BeTrue(
+                $"'{tool.Name}' must advertise the governed Studio denial code emitted at runtime");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     public async Task ProposePublication_NeverCallsVersionOrPointerMovingLifecycleMembers()
     {
