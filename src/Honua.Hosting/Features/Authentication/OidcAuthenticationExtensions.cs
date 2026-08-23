@@ -374,6 +374,11 @@ public static class OidcAuthenticationExtensions
     {
         builder.AddJwtBearer(JwtBearerScheme, options =>
         {
+            // Configure claim mapping on the bearer handler itself. Current ASP.NET Core uses a
+            // JsonWebTokenHandler by default, so clearing JwtSecurityTokenHandler's process-wide
+            // legacy map above does not preserve short OIDC claim names such as `amr` here.
+            options.MapInboundClaims = false;
+
             // Configure token validation parameters
             options.TokenValidationParameters = new TokenValidationParameters
             {

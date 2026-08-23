@@ -168,6 +168,35 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
     [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403()
+    {
+        var audit = new CapturingAuditLog();
+        await using var fixture = await CreateEndUserFixtureAsync(audit);
+        var token = CreateToken("studio-machine", isClientCredentials: true);
+        using var client = CreateBearerClient(fixture, token);
+
+        using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
+        using var chatResponse = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            messages = new[] { new { role = "user", content = "hi" } }
+        });
+
+        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        chatResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await AssertInteractivePrincipalRequiredProblemAsync(capabilitiesResponse);
+        await AssertInteractivePrincipalRequiredProblemAsync(chatResponse);
+        audit.Recorded.Should().HaveCount(2);
+        audit.Recorded.Should().OnlyContain(auditEvent =>
+            auditEvent.Action == "studio.lifecycle" &&
+            auditEvent.Outcome == AuditOutcome.Denied &&
+            auditEvent.Details == "{\"code\":\"studio_authorization/interactive_principal_required\"}");
+        audit.Recorded.Should().NotContain(auditEvent => auditEvent.Action == "studio_ai.chat",
+            "a client-credentials bearer must be denied before any model-provider call begins");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403()
     {
         var audit = new CapturingAuditLog();
@@ -347,7 +376,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         => fixture.CreateClient(client =>
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token));
 
-    private static string CreateToken(string subject)
+    private static string CreateToken(string subject, bool isClientCredentials = false)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -358,6 +387,10 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
             new("amr", "pwd"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+        if (isClientCredentials)
+        {
+            claims.Add(new Claim("grant_type", "client_credentials"));
+        }
 
         var token = new JwtSecurityToken(
             issuer: Issuer,
