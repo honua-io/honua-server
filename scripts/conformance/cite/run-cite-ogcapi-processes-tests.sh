@@ -55,6 +55,13 @@ fi
 
 CHECKED_OUT_HONUA_GIT_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 TESTED_HONUA_GIT_SHA="${HONUA_CITE_TESTED_GIT_SHA:-$CHECKED_OUT_HONUA_GIT_SHA}"
+if [[ "$SERVER_BUILD_MODE" == "local-existing" ]]; then
+    REQUIRE_SERVER_PROVENANCE=true
+    if [[ ! "${HONUA_CITE_TESTED_GIT_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "Local-existing CITE images require HONUA_CITE_TESTED_GIT_SHA as a full SHA" >&2
+        exit 2
+    fi
+fi
 if [[ "${GITHUB_ACTIONS:-false}" == "true" ]]; then
     REQUIRE_SERVER_PROVENANCE=true
     if [[ ! "$TESTED_HONUA_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
