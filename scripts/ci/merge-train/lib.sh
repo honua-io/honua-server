@@ -68,7 +68,7 @@ train_init_controller_deadline() {
 # the opt-in demo path) removes the race; this signature is defense-in-depth so
 # any residual/related static-web-assets content-root race is rerun-and-merged-
 # through rather than escalating the whole batch.
-: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed}"
+: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|Testcontainers.*((timed out|connection refused).*ryuk|ryuk.*(timed out|connection refused))|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed}"
 
 # Heavy CI jobs the train treats as NON-BLOCKING. They run on EVERY batch (not
 # shard-targeted), flake on environment (Docker registry, browser, JS/Python

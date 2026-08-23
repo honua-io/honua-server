@@ -365,6 +365,8 @@ export TRAIN_RUN_LOG_TEXT="... ERROR 40P01: deadlock detected ..."
 train_run_logs_match_flake 999 && ok "flake: 40P01 recognized" || bad "flake: 40P01 missed"
 export TRAIN_RUN_LOG_TEXT="Testcontainers timed out waiting for ryuk"
 train_run_logs_match_flake 999 && ok "flake: testcontainers/ryuk recognized" || bad "flake: missed"
+export TRAIN_RUN_LOG_TEXT="TESTCONTAINERS_RYUK_DISABLED: false"
+train_run_logs_match_flake 999 && bad "flake: Ryuk status line misclassified" || ok "flake: Ryuk status line not a flake"
 export TRAIN_RUN_LOG_TEXT="Assert.Equal() Failure: expected 3 actual 4"
 train_run_logs_match_flake 999 && bad "flake: real assertion misclassified" || ok "flake: real assertion not a flake"
 # classify_flake: under cap with a flake => returns 0 (rerun once, dry-run logs).
