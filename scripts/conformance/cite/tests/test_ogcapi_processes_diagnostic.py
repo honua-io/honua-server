@@ -341,6 +341,11 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn("diagnostic-only: true", workflow)
         self.assertIn("cron: '0 8 * * *'", workflow)
         self.assertNotIn("pull_request:", workflow)
+        self.assertLess(
+            common.index("id: run-suite"),
+            common.index("name: Generate SBOM (SPDX JSON) for honua-server:latest"),
+            "workflow-owned SBOM output must not dirty source-build inputs",
+        )
         self.assertEqual(2, dockerfile.count(parser.ETS_COMMIT))
         self.assertIn("HONUA_CITE_SKIP_ETS_BUILD", runner)
         self.assertIn(f"commit={parser.ETS_COMMIT}", runner)
@@ -361,6 +366,28 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)
+
+    def test_runner_supports_the_documented_interactive_mode(self) -> None:
+        repo = Path(__file__).resolve().parents[4]
+        runner = repo / "scripts/conformance/cite/run-cite-ogcapi-processes-tests.sh"
+
+        completed = subprocess.run(
+            ["/bin/bash", str(runner), "--help"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, completed.returncode)
+        self.assertIn("--interactive", completed.stdout)
+        runner_source = runner.read_text(encoding="utf-8")
+        self.assertIn(
+            "--interactive) INTERACTIVE=true; CLEANUP=false; shift ;;",
+            runner_source,
+        )
+        self.assertIn('if [[ "$INTERACTIVE" == "true" ]]', runner_source)
+        self.assertIn("tail -f /dev/null", runner_source)
 
     def test_local_existing_runner_requires_explicit_candidate_sha(self) -> None:
         repo = Path(__file__).resolve().parents[4]
