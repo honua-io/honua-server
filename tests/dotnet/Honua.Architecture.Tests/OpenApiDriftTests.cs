@@ -207,6 +207,8 @@ public sealed class OpenApiDriftTests
             "maximum",
             "enum",
             "items",
+            "minItems",
+            "maxItems",
             "properties",
             "required",
             "oneOf",
