@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
@@ -40,6 +41,7 @@ internal sealed partial class ConsoleJobService(
         ExecutionJobParameterKeys.GeoprocessingPlanId,
         ExecutionJobParameterKeys.GeoprocessingProcessDefinitions,
         ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds,
+        GeoprocessingProtocolMetadataKeys.GPServerProcessSr,
         ExecutionJobParameterKeys.ShareExportId,
         ExecutionJobParameterKeys.ShareRunId,
         ExecutionJobParameterKeys.ShareDestinationType,
@@ -1111,7 +1113,28 @@ internal sealed partial class ConsoleJobService(
             return false;
         }
 
-        return !ContainsSecretToken(key) && !ContainsSecretToken(value);
+        if (ContainsSecretToken(key) || ContainsSecretToken(value))
+        {
+            return false;
+        }
+
+        if (string.Equals(
+                key,
+                GeoprocessingProtocolMetadataKeys.GPServerProcessSr,
+                StringComparison.Ordinal))
+        {
+            return int.TryParse(
+                    value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var wkid)
+                && string.Equals(
+                    value,
+                    wkid.ToString(CultureInfo.InvariantCulture),
+                    StringComparison.Ordinal);
+        }
+
+        return true;
     }
 
     private static bool ContainsSecretToken(string value)
