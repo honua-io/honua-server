@@ -327,6 +327,20 @@ internal static class ProcessEndpoints
                     $"Response mode '{request.Response}' is not supported. V1 only supports 'document' mode.");
             }
 
+            if (definition != null
+                && OgcProcessesCiteEchoFixture.IsDefinition(definition)
+                && !OgcProcessesCiteEchoFixture.TryValidateBinaryInput(request.Inputs, out var inputError))
+            {
+                OgcProcessesLog.PlanStructureInvalid(
+                    logger,
+                    processId,
+                    inputError ?? "Unknown CITE echo input validation error.");
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid process input",
+                    inputError ?? "The CITE echo process input is invalid.");
+            }
+
             if (!TryBuildAnalysisPlan(processId, request, definition, out var analysisPlan, out var parseError))
             {
                 OgcProcessesLog.PlanStructureInvalid(logger, processId, parseError ?? "Unknown plan parsing error.");

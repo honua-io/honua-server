@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
@@ -108,7 +109,7 @@ internal static class OgcProcessesCiteEchoFixture
 
     internal static bool TryAddOutputBindings(
         Dictionary<string, string> metadata,
-        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? requestedOutputs,
+        IReadOnlyDictionary<string, JsonElement>? requestedOutputs,
         out string? error)
     {
         ArgumentNullException.ThrowIfNull(metadata);
@@ -128,14 +129,14 @@ internal static class OgcProcessesCiteEchoFixture
 
             foreach (var requestedOutput in requestedOutputs)
             {
-                if (requestedOutput.Value.ValueKind != System.Text.Json.JsonValueKind.Object)
+                if (requestedOutput.Value.ValueKind != JsonValueKind.Object)
                 {
                     error = $"CITE echo output '{requestedOutput.Key}' must be an object.";
                     return false;
                 }
 
                 if (requestedOutput.Value.TryGetProperty("transmissionMode", out var transmissionMode)
-                    && (transmissionMode.ValueKind != System.Text.Json.JsonValueKind.String
+                    && (transmissionMode.ValueKind != JsonValueKind.String
                         || !string.Equals(
                             transmissionMode.GetString(),
                             "value",
@@ -155,6 +156,76 @@ internal static class OgcProcessesCiteEchoFixture
         {
             metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputId;
             index++;
+        }
+
+        return true;
+    }
+
+    internal static bool TryValidateBinaryInput(
+        IReadOnlyDictionary<string, JsonElement>? inputs,
+        out string? error)
+    {
+        error = null;
+        if (inputs == null || !inputs.TryGetValue("binary", out var binaryInput))
+        {
+            return true;
+        }
+
+        if (binaryInput.ValueKind != JsonValueKind.Object)
+        {
+            error = "CITE echo input 'binary' must be an inline or referenced input object.";
+            return false;
+        }
+
+        var hasValue = binaryInput.TryGetProperty("value", out var value);
+        var hasHref = binaryInput.TryGetProperty("href", out var href);
+        if (hasValue == hasHref)
+        {
+            error = "CITE echo input 'binary' must contain exactly one of 'value' or 'href'.";
+            return false;
+        }
+
+        if (hasValue)
+        {
+            if (value.ValueKind != JsonValueKind.String || !IsBase64(value.GetString()))
+            {
+                error = "CITE echo input 'binary.value' must be a base64-encoded string.";
+                return false;
+            }
+        }
+        else if (href.ValueKind != JsonValueKind.String
+                 || !Uri.TryCreate(href.GetString(), UriKind.Absolute, out var hrefUri)
+                 || (hrefUri.Scheme != Uri.UriSchemeHttp && hrefUri.Scheme != Uri.UriSchemeHttps))
+        {
+            error = "CITE echo input 'binary.href' must be an absolute HTTP or HTTPS URI.";
+            return false;
+        }
+
+        if (!binaryInput.TryGetProperty("format", out var format))
+        {
+            return true;
+        }
+
+        if (format.ValueKind != JsonValueKind.Object)
+        {
+            error = "CITE echo input 'binary.format' must be an object.";
+            return false;
+        }
+
+        if (format.TryGetProperty("mediaType", out var mediaType)
+            && (mediaType.ValueKind != JsonValueKind.String
+                || !string.Equals(mediaType.GetString(), "image/tiff", StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "CITE echo input 'binary.format.mediaType' must be 'image/tiff'.";
+            return false;
+        }
+
+        if (format.TryGetProperty("encoding", out var encoding)
+            && (encoding.ValueKind != JsonValueKind.String
+                || !string.Equals(encoding.GetString(), "base64", StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "CITE echo input 'binary.format.encoding' must be 'base64'.";
+            return false;
         }
 
         return true;
@@ -292,4 +363,22 @@ internal static class OgcProcessesCiteEchoFixture
             ValueType = ProcessParameterValueType.Text,
             Required = required
         };
+
+    private static bool IsBase64(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length % 4 != 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = Convert.FromBase64String(value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 }
