@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -284,6 +285,47 @@ public sealed class StudioMcpOwnershipAuthorizationTests
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_NonOwnerDenial_RecordsSharedAuthorizationAudit()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>())
+            .Returns(BuildDraft(Alice));
+        var authorization = BuildAuthorization();
+        var auditLog = new RecordingAuditLog();
+        var context = BuildContext(
+            CallerKind.NonOwner,
+            lifecycle,
+            validator: null,
+            authorization,
+            auditLog);
+        context.TraceIdentifier = "studio-mcp-denial";
+        var tool = new GetStudioDraftTool(
+            Substitute.For<IGeoprocessingJobService>(),
+            NullLogger<GetStudioDraftTool>.Instance);
+
+        var act = () => tool.InvokeAsync(
+            context,
+            McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}"""),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        auditLog.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(new
+        {
+            EventType = AuditEventType.Authorization,
+            Actor = Bob,
+            ActorType = AuditActorType.UserId,
+            ResourceType = "studio-package-draft",
+            ResourceId = DraftId.ToString("D"),
+            Action = "studio.read_draft",
+            Outcome = AuditOutcome.Denied,
+            CorrelationId = "studio-mcp-denial",
+            Details = """{"code":"studio_authorization/cross_user_denied"}""",
+        });
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
     public async Task CreateDraft_NonAdminDerivesOwnerFromAuthenticatedPrincipal()
     {
@@ -475,12 +517,17 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         CallerKind callerKind,
         IStudioPackageLifecycleService lifecycle,
         IStudioPackageValidator? validator,
-        IStudioAuthorizationService authorization)
+        IStudioAuthorizationService authorization,
+        IAuditLog? auditLog = null)
     {
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
         {
             services.AddSingleton(lifecycle);
             services.AddSingleton(authorization);
+            if (auditLog is not null)
+            {
+                services.AddSingleton<IAuditLog>(auditLog);
+            }
             if (validator is not null)
             {
                 services.AddSingleton(validator);
@@ -566,6 +613,17 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         StudioAuthorizationOperation Operation,
         string? ResourceOwnerId,
         string? ResourceId);
+
+    private sealed class RecordingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class RecordingStudioAuthorizationService(IStudioAuthorizationService inner)
         : IStudioAuthorizationService

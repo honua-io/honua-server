@@ -95,11 +95,13 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             ? await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
             : null;
         await EnsureStudioAuthorizedAsync(
+            httpContext,
             authorization,
             principal,
             StudioAuthorizationOperation.CreateDraft,
             existingPointers is null ? actorId : existingPointers.OwnerId,
             existingPointers is null ? null : argument.ItemId?.ToString("D"),
+            existingPointers is null ? "studio-package-draft" : "studio-content-item",
             OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
 
