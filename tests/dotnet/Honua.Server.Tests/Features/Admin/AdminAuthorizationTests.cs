@@ -195,6 +195,14 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
+    public async Task GetConsoleJobDetail_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/jobs/job-process-sr");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     // --- DeployControlEndpoints ---
 
     [IntegrationTest]

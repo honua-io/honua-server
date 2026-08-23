@@ -306,11 +306,11 @@ internal static class GPServerEndpoints
                 return formatError;
             }
 
-            // Recognized GP environment controls (env:outSR, env:processSR,
-            // env:workspace, env:overwriteOutput) are honored on submitJob using
-            // the same parsing/threading the synchronous execute route uses; any
-            // other env:* control still yields a clear 400 instead of being
-            // silently stripped. See #1228.
+            // Recognized GP environment controls use the same parsing/threading as
+            // synchronous execute. env:outSR, env:workspace, and
+            // env:overwriteOutput affect result handling; env:processSR is
+            // validated and preserved for future engine support but is not yet
+            // applied. Any other env:* control yields a clear 400. See #1228.
             var envError = TryParseEnvControls(context, logger, parameters, out var envControls);
             if (envError != null)
             {
@@ -1246,8 +1246,9 @@ internal static class GPServerEndpoints
     }
 
     /// <summary>
-    /// Parsed GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
-    /// <c>env:workspace</c>, and <c>env:overwriteOutput</c> are honored; any
+    /// Parsed GP environment controls. <c>env:outSR</c>, <c>env:workspace</c>,
+    /// and <c>env:overwriteOutput</c> are honored. <c>env:processSR</c> is
+    /// validated and preserved but not yet applied by the execution engine. Any
     /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
     /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
     /// output location for tool results) and <c>env:overwriteOutput</c> mirrors

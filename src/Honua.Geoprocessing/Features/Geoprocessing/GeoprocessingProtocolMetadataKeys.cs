@@ -31,7 +31,9 @@ internal static class GeoprocessingProtocolMetadataKeys
 
     /// <summary>
     /// Job spec parameter key storing the GP <c>env:processSR</c> processing
-    /// spatial reference requested by the caller (WKID).
+    /// spatial reference requested by the caller (WKID). The value is currently
+    /// validated and preserved for future engine support, but does not yet change
+    /// the processing spatial reference.
     /// </summary>
     public const string GPServerProcessSr = "gpserver.env.processSR";
 
