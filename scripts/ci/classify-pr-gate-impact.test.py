@@ -143,6 +143,7 @@ REFERENCE_ONLY_DOCS = frozenset(
         "docs/internal/admin-api/studio-package-lifecycle.md",
         "docs/internal/contributor/adr/0041-core-abstractions-extraction.md",
         "docs/internal/contributor/entitlement-sweep-known-gaps.md",
+        "docs/internal/contributor/mcp-certification.md",
     }
 )
 
