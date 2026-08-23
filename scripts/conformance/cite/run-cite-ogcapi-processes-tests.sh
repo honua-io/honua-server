@@ -69,6 +69,17 @@ if [[ "${GITHUB_ACTIONS:-false}" == "true" ]]; then
         exit 2
     fi
 fi
+if [[ "$SERVER_BUILD_MODE" == "source-build" ]]; then
+    SOURCE_TREE_STATUS=""
+    if ! SOURCE_TREE_STATUS="$(git status --porcelain --untracked-files=all)"; then
+        echo "Could not inspect the source tree before building CITE evidence" >&2
+        exit 2
+    fi
+    if [[ -n "$SOURCE_TREE_STATUS" ]]; then
+        echo "Source-build CITE evidence requires a clean Git worktree" >&2
+        exit 2
+    fi
+fi
 
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 2; }
 command -v docker >/dev/null || { echo "Docker is required" >&2; exit 2; }
