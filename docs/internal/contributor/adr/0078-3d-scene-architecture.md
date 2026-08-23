@@ -128,8 +128,10 @@ authority for runtime endpoint selection.
 - `GET /api/scenes/{sceneId}/resolve` returns the endpoints usable for the
   current scene. Each endpoint includes `endpointFormat`, media type, and
   authentication requirement. A protected endpoint also includes the
-  credential-free `access-session` link that a host follows to establish
-  access; the resolution result never embeds the resulting credential.
+  credential-free `access-session` HTTP affordance (`href` plus
+  `method: POST`) that a host invokes to establish access. The method is part
+  of the versioned contract and golden fixture, not an implicit link default;
+  the resolution result never embeds the resulting credential.
 
 URLs retained in list or metadata shapes for compatibility are hints, not an
 invitation for a client to choose a renderer or synthesize nested-asset URLs.
@@ -170,9 +172,9 @@ MCP result intended for persistence, collaboration record, receipt, or log.
 For a protected scene, the host:
 
 1. calls the canonical resolve contract and observes the auth requirement;
-2. follows the credential-free `access-session` link returned for that endpoint,
-   using its configured identity to acquire a short-lived asset session or
-   access envelope rather than synthesizing a server route;
+2. invokes the returned credential-free `access-session` POST affordance, using
+   its configured identity to acquire a short-lived asset session or access
+   envelope rather than synthesizing a server route or assuming GET semantics;
 3. attaches that material to the root and nested asset requests without mutating
    the serializable plan; and
 4. refreshes or disposes the session independently of plan lifetime.
@@ -248,15 +250,27 @@ job-based operations. Canonical submission returns `202 Accepted` plus a job
 status URL; generated output is promoted and registered only after the complete
 tileset succeeds validation.
 
-For multipart CityGML/LAS/LAZ/COPC input, request-level validation and durable
-input staging complete before the endpoint returns `202` or exposes a
-dispatchable job. The endpoint streams the upload into immutable, tenant- and
-job-owned staging and persists only an opaque input reference plus its integrity
-metadata in the job record; it never persists request streams, upload bytes,
-credentials, or a machine-local temporary path. A worker can reopen the staged
-input after restart or retry. Submission failure cleans up an unpublished stage,
-and terminal cancellation, failure, or success schedules idempotent cleanup
-after the configured diagnostic/retry retention period.
+For multipart CityGML/LAS/LAZ/COPC input, the endpoint first creates or claims a
+durable staging reservation scoped to the tenant, submitter, and submission
+idempotency key. That reservation has an independently discoverable identifier,
+lease generation, and expiry in a staging index or provider lifecycle policy;
+its cleanup does not depend on a job record existing. Request-level validation,
+streaming into immutable staging, and digest verification complete before the
+endpoint returns `202` or exposes a dispatchable job. The job persists only an
+opaque input reference plus integrity metadata, never request streams, upload
+bytes, credentials, or a machine-local temporary path. A live submitter/worker
+renews or claims the lease. If the API dies after upload but before job creation,
+an orphan sweeper/provider expiry reclaims the unclaimed stage; terminal jobs
+schedule idempotent cleanup after the configured diagnostic/retry retention.
+
+Async multipart submission requires the shared idempotency key. Its canonical
+request fingerprint covers normalized form fields, target scene identity, and
+the staged content digest/size/media type, and is scoped to the tenant and
+submitter. Job creation conditionally binds that key and fingerprint to exactly
+one staged digest and status URL. A retry with the same key and fingerprint
+returns the existing job/reference, even after a lost `202`; a different
+fingerprint returns a conflict, and neither path dispatches a duplicate job.
+Any losing duplicate stage is aborted or left to its bounded orphan lease.
 
 The current synchronous `201` generation endpoint is transitional. An optional
 bounded wait mode may preserve compatibility for small inputs, but it is not the
@@ -272,6 +286,23 @@ scene generation and staged scene ingest must not masquerade as `TileCache` or
 reuse its executor. The scene executor may orchestrate the separately profiled
 `pcloud.translate` native step from Decision 2, but the durable parent job keeps
 its scene-generation identity and lifecycle.
+
+The promoted asset tree and active catalog registration are required members of
+one job-wide, attempt-fenced output-set manifest governed by ADR-0031 and
+ADR-0071. Before dispatch, the coordinator prepares idempotent sink intents for
+both members and captures their expected destination versions. An attempt writes
+only to its immutable staged asset tree and a non-public catalog candidate. The
+conditional `Running` to `Finalizing` handoff freezes the complete manifest to
+the winning attempt/fencing token; a publication reconciler then advances both
+sink intents under the same completion token. A changed or concurrently reserved
+normalized scene destination fails its expected-version check; publication never
+refreshes the expectation or falls back to last-writer-wins. Public asset/catalog
+readers and job result projections expose neither member until the durable
+manifest is `Complete`, and the job cannot become `Succeeded` before that point.
+A crash or partial sink commit is reconciled idempotently for the same winning
+attempt, never re-executed as a competing publication; cancellation/failure
+aborts or quarantines the incomplete set without changing the previously
+visible scene.
 
 Large inputs retain deterministic quadtree LOD: stable partitioning, bounded
 features per tile and depth, decreasing geometric error, and byte-stable asset
@@ -303,11 +334,11 @@ The currently published geospatial-grpc `SceneService` exposes only
 parity is blocked on
 [geospatial-grpc#90](https://github.com/honua-io/geospatial-grpc/issues/90),
 which owns an additive `ResolveScene` contract carrying endpoint format, media
-type, auth requirement, and the credential-free `access-session` link. After a
-new protocol package is published, Honua.Server must update its
-`Geospatial.Grpc` dependency/generated surface before implementing and claiming
-gRPC resolution. Neither gRPC scene resolution nor cross-SDK parity may be
-claimed before both changes land.
+type, auth requirement, and the credential-free `access-session` POST
+affordance. After a new protocol package is published, Honua.Server must update
+its `Geospatial.Grpc` dependency/generated surface before implementing and
+claiming gRPC resolution. Neither gRPC scene resolution nor cross-SDK parity may
+be claimed before both changes land.
 
 ## 2026.1 truth posture
 
