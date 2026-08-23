@@ -142,7 +142,7 @@ internal static class ProcessEndpoints
 
         var remaining = limit.HasValue ? limit.Value - 1 : int.MaxValue;
         foreach (var definition in processCatalog.ListProcesses()
-                     .Where(ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess)
+                     .Where(IsPublishedOgcProcess)
                      .OrderBy(process => process.ProcessId, StringComparer.Ordinal)
                      .Take(Math.Max(remaining, 0)))
         {
@@ -209,13 +209,21 @@ internal static class ProcessEndpoints
         }
 
         var definition = processCatalog.GetProcess(processId);
-        if (definition == null || !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+        if (definition == null || !IsPublishedOgcProcess(definition))
         {
             OgcProcessesLog.ProcessNotFound(logger, processId);
             return OgcProcessesResults.NoSuchProcess(processId);
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        if (OgcProcessesCiteEchoFixture.IsDefinition(definition))
+        {
+            return Results.Json(
+                OgcProcessesCiteEchoFixture.CreateDescription(baseUrl),
+                OgcProcessesJsonContext.Default.OgcProcessDescription,
+                MediaTypes.Json);
+        }
+
         return Results.Json(
             ToOgcProcessDescription(definition, baseUrl),
             OgcProcessesJsonContext.Default.OgcProcessDescription,
@@ -262,7 +270,7 @@ internal static class ProcessEndpoints
             var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : processCatalog.GetProcess(processId);
-            if (definition != null && !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+            if (definition != null && !IsPublishedOgcProcess(definition))
             {
                 definition = null;
             }
@@ -337,7 +345,23 @@ internal static class ProcessEndpoints
             };
             if (definition != null)
             {
-                AddOutputBindings(metadata, definition);
+                if (OgcProcessesCiteEchoFixture.IsDefinition(definition))
+                {
+                    if (!OgcProcessesCiteEchoFixture.TryAddOutputBindings(
+                            metadata,
+                            request.Outputs,
+                            out var outputError))
+                    {
+                        return OgcProcessesResults.Error(
+                            StatusCodes.Status400BadRequest,
+                            "Invalid output selection",
+                            outputError ?? "The requested output selection is invalid.");
+                    }
+                }
+                else
+                {
+                    AddOutputBindings(metadata, definition);
+                }
             }
 
             var jobRecord = await jobService
@@ -593,6 +617,10 @@ internal static class ProcessEndpoints
                     MediaTypes.Json,
                     "Process description"))
         };
+
+    private static bool IsPublishedOgcProcess(ProcessDefinition definition)
+        => ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition)
+           || OgcProcessesCiteEchoFixture.IsDefinition(definition);
 
     private static OgcProcessDescription ToOgcProcessDescription(ProcessDefinition definition, string baseUrl)
         => new()

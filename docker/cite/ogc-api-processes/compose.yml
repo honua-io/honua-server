@@ -10,6 +10,9 @@ services:
       HONUA_DEV_AUTH: "true"
       HONUA_DEV_AUTH_ALLOW_BYPASS: "true"
       HONUA_REGISTER_TEST_INFRASTRUCTURE: "true"
+      # Exact opt-in for the suite-owned echo fixture. Registration also requires
+      # Test environment and HONUA_REGISTER_TEST_INFRASTRUCTURE=true.
+      OgcProcesses__CertificationProfile: ogcapi-processes10
       # The suite-owned profile needs the durable Redis job store. Test hosts may
       # opt into Pro entitlements explicitly; Production ignores this override.
       Licensing__DevGrantEdition: Pro
