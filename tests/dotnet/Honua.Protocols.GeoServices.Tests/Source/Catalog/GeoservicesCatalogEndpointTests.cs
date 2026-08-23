@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -970,6 +972,59 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_GetServiceInfo_EmitsResolvedOperationTelemetry()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        Activity? observedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (string.Equals(
+                        activity.GetTagItem(HonuaTelemetry.Tags.Operation) as string,
+                        "GetServiceInfo",
+                        StringComparison.Ordinal)
+                    && string.Equals(
+                        activity.GetTagItem(HonuaTelemetry.Tags.ServiceId) as string,
+                        WebAppFixture.TestServiceId,
+                        StringComparison.Ordinal))
+                {
+                    observedActivity = activity;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        try
+        {
+            using var response = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                "GetServiceInfo");
+
+            response.Be200Ok();
+            observedActivity.Should().NotBeNull();
+            observedActivity!.Status.Should().Be(ActivityStatusCode.Ok);
+            observedActivity.GetTagItem(HonuaTelemetry.Tags.Protocol)
+                .Should().Be(HonuaTelemetry.Protocols.ImageServer);
+            observedActivity.GetTagItem(HonuaTelemetry.Tags.LayerId).Should().Be(0);
+            observedActivity.GetTagItem("http.response.status_code").Should().Be(StatusCodes.Status200OK);
+            observedActivity.GetTagItem("honua.result").Should().Be("success");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GetServiceInfo_MapsLowBitPixelTypes()
     {
         foreach (var (postgisPixelType, esriPixelType) in new[]
@@ -1074,7 +1129,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 Arg.Any<string>(),
                 Arg.Any<HttpContext>(),
                 Arg.Any<Honua.Core.Features.Authorization.Domain.AuthorizationOperation>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(callInfo => string.Equals(callInfo.ArgAt<string>(0), "timeout", StringComparison.Ordinal)
                 ? Task.FromException<ImageServerLayerResolution>(new OperationCanceledException("server timeout"))
                 : Task.FromResult(new ImageServerLayerResolution(0, null, null, Results.NotFound())));
@@ -1109,12 +1165,14 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 "metadata",
                 Arg.Any<HttpContext>(),
                 Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata,
-                Arg.Any<CancellationToken>());
+                Arg.Any<CancellationToken>(),
+                false);
             await resolver.Received().ResolveFirstAccessibleLayerAsync(
                 "export",
                 Arg.Any<HttpContext>(),
                 Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
-                Arg.Any<CancellationToken>());
+                Arg.Any<CancellationToken>(),
+                true);
         }
         finally
         {
@@ -1233,6 +1291,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Should().HaveCount(pixelByteCount + ((16 * 8 + 7) / 8));
             result.AsSpan(0, 6).ToArray().Should().Equal(17, 34, 51, 17, 34, 51);
             result.AsSpan(pixelByteCount).ToArray().Should().OnlyContain(value => value == 0xff);
+            await rasterStore.Received().GetPrimaryRasterInfoAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().ListRastersAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {

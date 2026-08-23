@@ -14,6 +14,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using SkiaSharp;
@@ -87,6 +88,14 @@ internal static class ImageServerSoapEndpoints
         var operation = request.Operation!;
         var soapNamespace = request.SoapNamespace!;
         var operationNamespace = operation.Name.Namespace;
+        var operationName = operation.Name.LocalName;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            $"soap-{operationName}",
+            HonuaTelemetry.Protocols.ImageServer,
+            "*",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, operationName);
         var authorizationOperation = operation.Name.LocalName switch
         {
             "ExportImage" or "GetImage" => AuthorizationOperation.Export,
@@ -96,12 +105,13 @@ internal static class ImageServerSoapEndpoints
         };
         if (authorizationOperation is null)
         {
-            return CreateSoapFault(
+            return CompleteSoapOperation(scope, CreateSoapFault(
                 $"Unsupported ImageServer operation '{operation.Name.LocalName}'.",
                 StatusCodes.Status400BadRequest,
-                soapNamespace);
+                soapNamespace));
         }
 
+        var requirePrimaryRaster = operationName is "GetServiceInfo" or "ExportImage" or "GetImage";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
@@ -109,15 +119,19 @@ internal static class ImageServerSoapEndpoints
                 serviceId,
                 context,
                 authorizationOperation.Value,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                requirePrimaryRaster).ConfigureAwait(false);
             if (resolution.ErrorResult is not null)
             {
                 var statusCode = (resolution.ErrorResult as IStatusCodeHttpResult)?.StatusCode
                     ?? StatusCodes.Status404NotFound;
-                return CreateSoapFault("Image service was not found or is not accessible.", statusCode, soapNamespace);
+                return CompleteSoapOperation(
+                    scope,
+                    CreateSoapFault("Image service was not found or is not accessible.", statusCode, soapNamespace));
             }
 
-            return operation.Name.LocalName switch
+            scope.WithTag(HonuaTelemetry.Tags.LayerId, resolution.LayerId);
+            var result = operation.Name.LocalName switch
             {
                 "GetVersion" => CreateSoapResponse(
                     soapNamespace,
@@ -178,6 +192,7 @@ internal static class ImageServerSoapEndpoints
                     StatusCodes.Status400BadRequest,
                     soapNamespace)
             };
+            return CompleteSoapOperation(scope, result);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -185,28 +200,48 @@ internal static class ImageServerSoapEndpoints
         }
         catch (OperationCanceledException exception)
         {
+            scope.RecordException(exception);
             ImageServerSoapEndpointLogging.LogOperationFailed(
                 logger,
                 serviceId,
                 operation.Name.LocalName,
                 exception);
-            return CreateSoapFault(
+            return CompleteSoapOperation(scope, CreateSoapFault(
                 "The ImageServer operation timed out.",
                 StatusCodes.Status503ServiceUnavailable,
-                soapNamespace);
+                soapNamespace));
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            scope.RecordException(exception);
             ImageServerSoapEndpointLogging.LogOperationFailed(
                 logger,
                 serviceId,
                 operation.Name.LocalName,
                 exception);
-            return CreateSoapFault(
+            return CompleteSoapOperation(scope, CreateSoapFault(
                 "The ImageServer operation could not be completed.",
                 StatusCodes.Status500InternalServerError,
-                soapNamespace);
+                soapNamespace));
         }
+    }
+
+    private static IResult CompleteSoapOperation(HonuaTelemetryScope scope, IResult result)
+    {
+        var statusCode = (result as IStatusCodeHttpResult)?.StatusCode ?? StatusCodes.Status200OK;
+        var succeeded = statusCode < StatusCodes.Status400BadRequest;
+        scope.WithTag("http.response.status_code", statusCode)
+            .WithTag("honua.result", succeeded ? "success" : "error");
+        if (succeeded)
+        {
+            scope.SetSuccess(1);
+        }
+        else
+        {
+            scope.WithTag(HonuaTelemetry.Tags.Error, true);
+        }
+
+        return result;
     }
 
     private static async Task<IResult> HandleGetServiceInfoAsync(
@@ -374,15 +409,16 @@ internal static class ImageServerSoapEndpoints
             return CreateSoapFault(error!, StatusCodes.Status400BadRequest, soapNamespace);
         }
 
-        var rasters = await rasterStore.ListRastersAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-        var referenceRaster = SelectReferenceRaster(rasters);
-
-        if (referenceRaster.Id == 0)
+        var referenceRaster = await rasterStore
+            .GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!referenceRaster.HasValue)
         {
             return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound, soapNamespace);
         }
 
-        if (!string.Equals(referenceRaster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
+        var raster = referenceRaster.Value;
+        if (!string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
         {
             return CreateSoapFault(
                 "SOAP GetImage currently supports unsigned 8-bit image services.",
@@ -399,7 +435,7 @@ internal static class ImageServerSoapEndpoints
                 soapNamespace);
         }
 
-        var bandCount = ResolveGetImageBandCount(request.BandIds, referenceRaster.BandCount);
+        var bandCount = ResolveGetImageBandCount(request.BandIds, raster.BandCount);
         if (bandCount is not (1 or 3))
         {
             return CreateSoapFault(
@@ -409,7 +445,7 @@ internal static class ImageServerSoapEndpoints
                 soapNamespace);
         }
 
-        request = CopyWithResponseFormat(request, "image", MapPixelType(referenceRaster.PixelType));
+        request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType));
         var exportResult = await exportHandler.ExportImageAsync(
             context,
             publicationLayerIndex,

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -14,6 +15,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
@@ -423,6 +425,25 @@ internal sealed class ImageServerExportTilesHandler
         {
             ImageServerLog.LayerNotFound(_logger, layerId);
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        if (resolvedLayer.Resource is not { } currentResource
+            || !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var currentService)
+            || !ServiceProtocols.IsProtocolEnabled(currentService, ServiceProtocols.ImageServer))
+        {
+            ImageServerLog.LayerNotFound(_logger, layerId);
+            return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            currentResource,
+            AuthorizationOperation.Export,
+            currentService,
+            cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return (null, accessError);
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;
@@ -1173,6 +1194,24 @@ internal sealed class ImageServerExportTilesHandler
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        if (resolvedLayer.Resource is not { } currentResource
+            || !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var currentService)
+            || !ServiceProtocols.IsProtocolEnabled(currentService, ServiceProtocols.ImageServer))
+        {
+            return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            currentResource,
+            AuthorizationOperation.Export,
+            currentService,
+            cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return (null, accessError);
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? layerId;

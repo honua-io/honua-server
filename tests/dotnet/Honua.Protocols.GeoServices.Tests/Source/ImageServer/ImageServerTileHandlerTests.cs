@@ -123,7 +123,7 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task ResolveFirstAccessibleLayerAsync_NonNumericPublication_UsesStorageLayerFallback()
+    public async Task ResolveFirstAccessibleLayerAsync_ZarrOnlyPublication_DoesNotRequirePostGisRaster()
     {
         var graphProvider = new TestMetadataV2GraphBuilder()
             .AddResource("resource-imagery", "imagery", MetadataV2ResourceType.RasterDataset)
@@ -152,17 +152,6 @@ public class ImageServerTileHandlerTests
         // shared helper dereferences. Using the real validator over the same test graph keeps the
         // test honest about the production resolution path and cannot rot when an overload is added.
         var resourceValidator = new ResourceValidator(graphProvider);
-        _rasterStore.GetPrimaryRasterInfoAsync(42, Arg.Any<CancellationToken>())
-            .Returns(new RasterInfo
-            {
-                Id = 1,
-                LayerId = 42,
-                Name = "imagery",
-                Width = 1,
-                Height = 1,
-                BandCount = 1,
-                PixelType = "8BUI"
-            });
         var resolver = new MetadataV2ImageServerLayerResolver(resourceValidator, graphProvider, _rasterStore);
         var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
@@ -177,6 +166,9 @@ public class ImageServerTileHandlerTests
         resolution.LayerId.Should().Be(42);
         resolution.PublicationId.Should().Be("publication-imagery");
         resolution.PublicationLayerIndex.Should().BeNull();
+        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

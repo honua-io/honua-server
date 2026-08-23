@@ -19,7 +19,8 @@ internal interface IImageServerLayerResolver
         string serviceId,
         HttpContext context,
         AuthorizationOperation operation,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool requirePrimaryRaster = false);
 
     Task<ImageServerLayerResolution> ValidateLayerAsync(
         int layerId,
@@ -43,7 +44,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         string serviceId,
         HttpContext context,
         AuthorizationOperation operation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requirePrimaryRaster = false)
     {
         var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
@@ -88,6 +90,12 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             }
 
             hasAuthorizedResource = true;
+            if (!requirePrimaryRaster)
+            {
+                layer = publication;
+                break;
+            }
+
             var raster = await rasterStore.GetPrimaryRasterInfoAsync(
                 publication.StorageLayerId!.Value,
                 cancellationToken).ConfigureAwait(false);
