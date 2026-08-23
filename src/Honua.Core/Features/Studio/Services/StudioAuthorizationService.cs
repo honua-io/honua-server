@@ -23,8 +23,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     internal const string OwnResourceSentinel = "own";
 
     private const string AdminRole = "admin";
-    private const string AnonymousPrincipalScheme = "anonymous";
-
     /// <summary>Denial code: the flag is off, so only admins may use the Studio lifecycle surface.</summary>
     public const string EndUserModeDisabledCode = "studio_authorization/end_user_mode_disabled";
 
@@ -36,6 +34,15 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
 
     /// <summary>Denial code: an elevated operation (publish-request/rollback) has no matching operator grant.</summary>
     public const string ElevatedGrantRequiredCode = "studio_authorization/elevated_grant_required";
+
+    /// <summary>Denial code: assigning a Studio resource owner requires an admin principal.</summary>
+    public const string OwnerAssignmentAdminRequiredCode = "studio_authorization/owner_assignment_admin_required";
+
+    /// <summary>Denial code: the preliminary MCP operator-grant gate rejected the caller.</summary>
+    public const string OperatorGrantRequiredCode = "studio_authorization/operator_grant_required";
+
+    /// <summary>Denial code: the preliminary MCP OAuth-scope gate rejected the caller.</summary>
+    public const string OAuthScopeRequiredCode = "studio_authorization/oauth_scope_required";
 
     private readonly IOperatorAuthorizationEvaluator _evaluator;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
@@ -178,9 +185,13 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // brand-new resource never reach this method with a null resourceOwnerId; they pass
         // the actual (possibly just-created) owner id of an existing resource in every call
         // site (see StudioPackageEndpoints.EnsureAuthorizedAsync call sites).
+        // Owner ids are canonical actor ids. Historical MCP session keys have no persisted
+        // provenance marker that distinguishes them from a legitimate canonical subject with
+        // the same text, so interpreting every owner as a possible legacy alias would create a
+        // cross-principal collision. Unmarked legacy rows therefore fail closed and require an
+        // explicit admin migration to a canonical owner id.
         var isOwn = resourceOwnerId is not null
-            && (string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal)
-                || string.Equals(resourceOwnerId, ResolveLegacyMcpOwnerId(principal), StringComparison.Ordinal));
+            && string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
 
         if (!isElevated)
         {
@@ -256,27 +267,4 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         return decision.IsAllowed;
     }
 
-    /// <summary>
-    /// Resolves the scheme-qualified owner key written by Studio MCP before #3412, but only
-    /// when that key identifies this principal uniquely. Keeping compatibility at the shared
-    /// Studio policy boundary makes REST and MCP authorize the same durable draft owner.
-    /// Ambiguous <c>&lt;scheme&gt;:authenticated</c> and <c>&lt;scheme&gt;:name:*</c> values fail
-    /// closed because identity names are not guaranteed to identify one principal.
-    /// </summary>
-    private static string? ResolveLegacyMcpOwnerId(ClaimsPrincipal principal)
-    {
-        var identity = principal.Identity?.IsAuthenticated == true
-            ? principal.Identity as ClaimsIdentity
-            : principal.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
-        if (identity is null || !identity.IsAuthenticated)
-        {
-            return null;
-        }
-
-        var scheme = string.IsNullOrWhiteSpace(identity.AuthenticationType)
-            ? AnonymousPrincipalScheme
-            : identity.AuthenticationType;
-        var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return string.IsNullOrEmpty(subject) ? null : $"{scheme}:sub:{subject}";
-    }
 }

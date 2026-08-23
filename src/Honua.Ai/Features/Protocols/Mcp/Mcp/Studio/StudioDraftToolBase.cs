@@ -67,13 +67,34 @@ internal abstract class StudioDraftToolBase
     /// applies identically to every other <c>/mcp</c> tool.
     /// </summary>
     protected async Task<ClaimsPrincipal> EnsureAuthorizedAsync(
-        HttpContext httpContext, OperatorOperation operation, CancellationToken cancellationToken)
+        HttpContext httpContext,
+        OperatorOperation operation,
+        StudioAuthorizationOperation studioOperation,
+        CancellationToken cancellationToken)
     {
-        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        await JobService
-            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.StudioDraft, operation, cancellationToken)
-            .ConfigureAwait(false);
-        return principal;
+        try
+        {
+            var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+            await JobService
+                .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.StudioDraft, operation, cancellationToken)
+                .ConfigureAwait(false);
+            return principal;
+        }
+        catch (GeoprocessingAuthorizationException exception)
+        {
+            var code = exception.PolicyCode
+                ?? (exception.RequiresAuthentication
+                    ? StudioAuthorizationService.AuthenticationRequiredCode
+                    : exception.DenialReason == AuthorizationDenialReason.InsufficientScope
+                        ? StudioAuthorizationService.OAuthScopeRequiredCode
+                        : StudioAuthorizationService.OperatorGrantRequiredCode);
+            await RecordAuthorizationDecisionAsync(
+                httpContext,
+                studioOperation,
+                resourceId: null,
+                StudioAuthorizationDecision.Deny(code, exception.Message)).ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <summary>
@@ -170,19 +191,12 @@ internal abstract class StudioDraftToolBase
             resourceId: resourceId,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var auditLog = httpContext.RequestServices.GetService<IAuditLog>();
-        if (auditLog is not null)
-        {
-            var timeProvider = httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
-            await StudioAuthorizationAudit.RecordDecisionAsync(
-                httpContext,
-                auditLog,
-                timeProvider,
-                studioOperation,
-                resourceType,
-                resourceId,
-                decision).ConfigureAwait(false);
-        }
+        await RecordAuthorizationDecisionAsync(
+            httpContext,
+            studioOperation,
+            resourceId,
+            decision,
+            resourceType).ConfigureAwait(false);
 
         if (!decision.IsAllowed)
         {
@@ -196,6 +210,81 @@ internal abstract class StudioDraftToolBase
                 operation: operatorOperation,
                 policyCode: decision.Code);
         }
+    }
+
+    /// <summary>
+    /// Rejects an explicit owner assignment from a non-admin caller. The MCP schema advertises
+    /// this field as admin-only, and rejecting it prevents a successful response from implying
+    /// that a silently ignored ownership transfer occurred.
+    /// </summary>
+    protected static async Task EnsureOwnerAssignmentAuthorizedAsync(
+        HttpContext httpContext,
+        IStudioAuthorizationService authorization,
+        ClaimsPrincipal principal,
+        string? requestedOwnerId,
+        StudioAuthorizationOperation studioOperation,
+        string? resourceId,
+        OperatorOperation operatorOperation)
+    {
+        if (requestedOwnerId is null || authorization.IsAdmin(principal))
+        {
+            return;
+        }
+
+        const string reason = "Assigning a Studio draft owner requires the admin role.";
+        var decision = StudioAuthorizationDecision.Deny(
+            StudioAuthorizationService.OwnerAssignmentAdminRequiredCode,
+            reason);
+        await RecordAuthorizationDecisionAsync(
+            httpContext,
+            studioOperation,
+            resourceId,
+            decision).ConfigureAwait(false);
+        throw new GeoprocessingAuthorizationException(
+            requiresAuthentication: false,
+            message: reason,
+            resourceType: OperatorResourceType.StudioDraft,
+            operation: operatorOperation,
+            policyCode: decision.Code);
+    }
+
+    /// <summary>
+    /// Binds a mutating request's expected generation to the exact owner-authorized snapshot.
+    /// The lifecycle store still performs its compare-and-swap, covering changes after this
+    /// check; this check prevents a caller from supplying a future generation that belongs to a
+    /// concurrently rebound resource.
+    /// </summary>
+    protected static void RequireAuthorizedGeneration(StudioPackageDraft draft, long expectedGeneration)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        if (draft.Generation != expectedGeneration)
+        {
+            throw new GeoprocessingPreconditionFailedException("Stale draft generation; refresh and retry.");
+        }
+    }
+
+    private static async Task RecordAuthorizationDecisionAsync(
+        HttpContext httpContext,
+        StudioAuthorizationOperation studioOperation,
+        string? resourceId,
+        StudioAuthorizationDecision decision,
+        string resourceType = "studio-package-draft")
+    {
+        var auditLog = httpContext.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null)
+        {
+            return;
+        }
+
+        var timeProvider = httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+        await StudioAuthorizationAudit.RecordDecisionAsync(
+            httpContext,
+            auditLog,
+            timeProvider,
+            studioOperation,
+            resourceType,
+            resourceId,
+            decision).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -73,7 +73,11 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         McpTelemetry.EnrichActivity("StudioProposePublication");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Create,
+                StudioAuthorizationOperation.UpdateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -92,6 +96,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             StudioAuthorizationOperation.UpdateDraft,
             OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
+        RequireAuthorizedGeneration(draft, generation);
         var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);
 
         var intent = new StudioPublicationIntent
