@@ -151,6 +151,35 @@ class WriteWps20ProvenanceTests(unittest.TestCase):
             self.assertEqual(payload["checkedOutHonuaGitSha"], "e" * 40)
             self.assertEqual(payload["serverImageRevision"], "a" * 40)
 
+    def test_prebuilt_requested_digest_must_match_inspected_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_id = "sha256:" + ("b" * 64)
+            requested = "ghcr.io/honua-io/honua-server@sha256:" + ("c" * 64)
+            inspected = "ghcr.io/honua-io/honua-server@sha256:" + ("d" * 64)
+            inspect_path = root / "inspect.json"
+            inspect_path.write_text(json.dumps([{
+                "Id": image_id,
+                "RepoDigests": [inspected],
+                "Config": {"Labels": {"org.opencontainers.image.revision": "a" * 40}},
+            }]), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "Requested Honua Server image digest does not match",
+            ):
+                write_provenance(
+                    "a" * 40,
+                    "a" * 40,
+                    "d" * 64,
+                    image_id,
+                    "prebuilt",
+                    requested,
+                    inspect_path,
+                    root / "out.json",
+                    True,
+                )
+
     def test_required_provenance_rejects_unlabelled_local_existing_image(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

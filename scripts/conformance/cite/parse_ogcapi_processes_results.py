@@ -16,9 +16,10 @@ from pathlib import Path
 
 ETS_COMMIT = "75abd1f37fc3aad95163fdce2e33e393b1ba5a88"
 ETS_VERSION = "1.4-SNAPSHOT"
-FIXTURE_REVISION = "ogcapi-processes-cite-profile-v10"
+FIXTURE_REVISION = "ogcapi-processes-cite-profile-v11"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+REFERENCE_DIGEST = re.compile(r"(?:^|@)(sha256:[0-9a-f]{64})$")
 
 SUITE_PRECONDITIONS_CLASS = "org.opengis.cite.ogcapiprocesses10.SuitePreconditions"
 GENERAL_HTTP_CLASS = "org.opengis.cite.ogcapiprocesses10.general.GeneralHttp"
@@ -175,6 +176,11 @@ METHOD_SCENARIO_FACETS = {
 
 MANDATORY_ETS_CLASSES = frozenset(CLASS_MAPPINGS)
 MANDATORY_VERDICT_CLASSES = MANDATORY_ETS_CLASSES - {SUITE_PRECONDITIONS_CLASS}
+# This suite source commit and diagnostic profile execute each pinned verdict
+# method exactly once (54 invocations total). Pin the count as well as method
+# presence so a self-consistent but truncated/duplicated TestNG result cannot be
+# treated as complete.
+EXPECTED_METHOD_INVOCATION_COUNTS = {method: 1 for method in METHOD_SCENARIO_FACETS}
 
 
 @dataclass
@@ -258,15 +264,35 @@ def _load_provenance(path: Path) -> tuple[dict, list[str]]:
     requested = value.get("requestedServerImage")
     if requested is not None and not isinstance(requested, str):
         errors.append("server provenance requested image must be a string or null")
+    requested_digest_match = (
+        REFERENCE_DIGEST.search(requested) if isinstance(requested, str) else None
+    )
+    if requested_digest_match:
+        requested_digest = requested_digest_match.group(1)
+        repo_digests = value.get("serverImageRepoDigests")
+        if not isinstance(repo_digests, list) or not all(
+            isinstance(reference, str) for reference in repo_digests
+        ):
+            errors.append("server provenance image repository digests must be strings")
+        else:
+            inspected_digests = {
+                match.group(1)
+                for reference in repo_digests
+                if (match := REFERENCE_DIGEST.search(reference)) is not None
+            }
+            if requested_digest not in inspected_digests:
+                errors.append(
+                    "requested server image digest does not match the inspected image"
+                )
     return value, errors
 
 
 def _candidate_image_digest(provenance: dict) -> str | None:
     requested = provenance.get("requestedServerImage")
     if isinstance(requested, str):
-        match = re.search(r"@(?P<digest>sha256:[0-9a-f]{64})$", requested)
+        match = REFERENCE_DIGEST.search(requested)
         if match:
-            return match.group("digest")
+            return match.group(1)
     image_id = provenance.get("serverImageId")
     return (
         image_id if isinstance(image_id, str) and DIGEST.fullmatch(image_id) else None
@@ -305,6 +331,7 @@ def parse_results(
     class_totals: dict[str, Counts] = defaultdict(Counts)
     seen_ets_classes: set[str] = set()
     seen_ets_methods: set[tuple[str, str]] = set()
+    method_invocation_counts: Counter[tuple[str, str]] = Counter()
     invocation_counts: Counter[tuple[str, str, str]] = Counter()
 
     for test in root.findall(".//test"):
@@ -324,6 +351,7 @@ def parse_results(
 
                 method_name = method.get("name", "")
                 seen_ets_methods.add((class_name, method_name))
+                method_invocation_counts[(class_name, method_name)] += 1
                 if class_operation is None:
                     infrastructure_errors.append(
                         f"unmapped ETS class {class_name or '<missing>'}"
@@ -419,6 +447,27 @@ def parse_results(
             + ", ".join(
                 f"{class_name}#{method_name}"
                 for class_name, method_name in missing_ets_methods
+            )
+        )
+    invocation_count_drift = sorted(
+        (
+            class_name,
+            method_name,
+            expected_count,
+            method_invocation_counts[(class_name, method_name)],
+        )
+        for (
+            class_name,
+            method_name,
+        ), expected_count in EXPECTED_METHOD_INVOCATION_COUNTS.items()
+        if method_invocation_counts[(class_name, method_name)] != expected_count
+    )
+    if invocation_count_drift:
+        infrastructure_errors.append(
+            "ETS pinned verdict invocation counts differ: "
+            + ", ".join(
+                f"{class_name}#{method_name} expected {expected_count}, observed {observed_count}"
+                for class_name, method_name, expected_count, observed_count in invocation_count_drift
             )
         )
     missing_verdict_classes = sorted(MANDATORY_VERDICT_CLASSES - class_totals.keys())
