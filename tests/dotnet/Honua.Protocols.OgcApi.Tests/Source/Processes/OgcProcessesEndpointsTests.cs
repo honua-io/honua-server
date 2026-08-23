@@ -194,6 +194,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
         processes.Should().ContainSingle();
         processes[0].GetProperty("id").GetString().Should().Be("honua-geoprocessing");
+        var selfLink = json.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "self");
+        selfLink.GetProperty("href").GetString().Should()
+            .EndWith("/ogc/processes/processes?limit=1");
     }
 
     [IntegrationTest]
@@ -203,9 +207,17 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     {
         using var zero = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=0");
         using var negative = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=-1");
+        using var malformed = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=abc");
 
         zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        malformed.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        using var error = JsonDocument.Parse(await malformed.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString().Should().Be("Invalid limit");
+        error.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        error.RootElement.GetProperty("detail").GetString().Should()
+            .Be("The 'limit' parameter must be a positive integer.");
     }
 
     // -----------------------------------------------------------------------
