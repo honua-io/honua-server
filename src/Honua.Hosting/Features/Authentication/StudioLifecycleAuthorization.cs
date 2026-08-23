@@ -201,9 +201,10 @@ internal static class StudioAiInteractivePrincipal
              string.Equals(c.Value, "client_credentials", StringComparison.OrdinalIgnoreCase))));
         return !hasMachineGrant && principal.Identities.Any(identity =>
             identity.IsAuthenticated &&
-            ((InteractiveAuthenticationSchemes.Any(scheme =>
-                  string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) &&
-              IsHumanSession(identity))));
+            (IsHumanSession(identity) &&
+             (InteractiveAuthenticationSchemes.Any(scheme =>
+                  string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) ||
+              HasSessionProvenance(identity))));
     }
 
     private static bool IsHumanSession(ClaimsIdentity identity)
@@ -224,13 +225,19 @@ internal static class StudioAiInteractivePrincipal
                 return false;
             }
 
-            return identity.HasClaim(c =>
-                string.Equals(c.Type, "honua_interactive_provenance", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase));
+            return HasSessionProvenance(identity);
         }
 
         return true;
     }
+
+    private static bool HasSessionProvenance(ClaimsIdentity identity)
+        => identity.HasClaim(c =>
+                string.Equals(c.Type, "honua_interactive_provenance", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
+           identity.HasClaim(c =>
+                string.Equals(c.Type, "amr", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Type, "auth_time", StringComparison.OrdinalIgnoreCase));
 }
 
 
