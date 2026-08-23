@@ -4,12 +4,14 @@
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -133,6 +135,9 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     internal static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
         => principal.Identities.Any(identity =>
             string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
+
+    internal static bool IsInteractivePrincipal(ClaimsPrincipal principal)
+        => StudioAiInteractivePrincipal.IsInteractive(principal);
 }
 
 /// <summary>
@@ -153,10 +158,10 @@ internal sealed class StudioAiProxyAuthorizationHandler(
         AuthorizationHandlerContext context,
         StudioAiProxyRequirement requirement)
     {
-        if (!StudioLifecycleAuthorizationHandler.IsApiKeyPrincipal(context.User) ||
-            StudioLifecycleAuthorizationHandler.IsRecognizedAdmin(
+        if (StudioLifecycleAuthorizationHandler.IsRecognizedAdmin(
                 context.User,
-                _adminRoleOptions.CurrentValue))
+                _adminRoleOptions.CurrentValue) ||
+            StudioLifecycleAuthorizationHandler.IsInteractivePrincipal(context.User))
         {
             context.Succeed(requirement);
             return Task.CompletedTask;
@@ -166,6 +171,35 @@ internal sealed class StudioAiProxyAuthorizationHandler(
         return Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// Keeps the AI proxy's interactive admission list explicit. Non-admin mTLS and other machine
+/// identities must not be treated as browser/session users merely because they are not API keys.
+/// </summary>
+internal static class StudioAiInteractivePrincipal
+{
+    private static readonly string[] InteractiveAuthenticationSchemes =
+    [
+        JwtBearerDefaults.AuthenticationScheme,
+        OidcAuthenticationExtensions.CompositeScheme,
+        OidcAuthenticationExtensions.AdminSessionScheme,
+        OidcAuthenticationExtensions.OidcScheme,
+        OidcAuthenticationExtensions.GoogleScheme,
+        OidcAuthenticationExtensions.OktaScheme,
+        OidcAuthenticationExtensions.Auth0Scheme,
+        OidcAuthenticationExtensions.AzureAdScheme,
+    ];
+
+    internal static bool IsInteractive(ClaimsPrincipal principal)
+        => principal.Identities.Any(identity =>
+            identity.IsAuthenticated &&
+            (InteractiveAuthenticationSchemes.Any(scheme =>
+                 string.Equals(identity.AuthenticationType, scheme, StringComparison.OrdinalIgnoreCase)) ||
+             identity.HasClaim(
+                 OperatorScopeCatalog.ScopeGovernedClaimType,
+                 OperatorScopeCatalog.ScopeGovernedClaimValue)));
+}
+
 
 /// <summary>
 /// Audits Studio lifecycle route-group policy denials that short-circuit before the endpoint

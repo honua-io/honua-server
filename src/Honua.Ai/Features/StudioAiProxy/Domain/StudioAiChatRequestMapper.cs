@@ -15,12 +15,12 @@ public static class StudioAiChatRequestMapper
 {
     /// <summary>
     /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
-    /// When <paramref name="allowModelOverride"/> is false, the caller-supplied model is
-    /// deliberately omitted so the proxy resolves the provider's operator-configured model.
+    /// When <paramref name="allowCallerOverrides"/> is false, caller-supplied model and output
+    /// token overrides are deliberately omitted so the proxy resolves operator-configured limits.
     /// </summary>
     public static (StudioAiChatRequest? Request, string? Error) ToDomain(
         StudioAiChatHttpRequest http,
-        bool allowModelOverride = true)
+        bool allowCallerOverrides = true)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -130,12 +130,12 @@ public static class StudioAiChatRequestMapper
         var request = new StudioAiChatRequest
         {
             Provider = http.Provider,
-            Model = allowModelOverride ? http.Model : null,
+            Model = allowCallerOverrides ? http.Model : null,
             System = http.System,
             Messages = messages,
             Tools = tools,
             ToolChoice = toolChoice,
-            MaxTokens = http.MaxTokens,
+            MaxTokens = allowCallerOverrides ? http.MaxTokens : null,
             Temperature = http.Temperature
         };
 

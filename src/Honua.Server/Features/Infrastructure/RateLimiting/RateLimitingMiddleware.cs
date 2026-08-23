@@ -201,7 +201,12 @@ internal sealed partial class RateLimitingMiddleware
 
             if (!string.IsNullOrWhiteSpace(authenticatedSubject))
             {
-                return $"{tenantPrefix}{UserKeyFamily}:{authenticatedSubject}";
+                var authenticationScheme = string.IsNullOrWhiteSpace(principal.Identity.AuthenticationType)
+                    ? "authenticated"
+                    : principal.Identity.AuthenticationType;
+                var issuer = principal.FindFirst("iss")?.Value;
+                var issuerScope = string.IsNullOrWhiteSpace(issuer) ? "no-issuer" : issuer;
+                return $"{tenantPrefix}{UserKeyFamily}:{authenticationScheme}:{issuerScope}:{authenticatedSubject}";
             }
         }
 

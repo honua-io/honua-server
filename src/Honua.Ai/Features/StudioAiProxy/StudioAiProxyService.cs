@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,9 @@ namespace Honua.Ai.StudioAiProxy;
 /// </summary>
 internal sealed class StudioAiProxyService : IStudioAiProxyService
 {
+    private const int MaxToolCount = 128;
+    private const int MaxToolComponentCharacters = 64_000;
+
     private readonly StudioAiProxyConfiguration _configuration;
     private readonly Dictionary<string, IStudioAiProxyAdapter> _adaptersByKind;
     private readonly ILogger<StudioAiProxyService> _logger;
@@ -75,7 +79,55 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return "Message content must not be null.";
         }
 
-        var totalChars = request.Messages.Sum(m => m.Content.Length) + (request.System?.Length ?? 0);
+        if (request.Tools is { Count: > MaxToolCount })
+        {
+            return $"A maximum of {MaxToolCount} tools is allowed per request.";
+        }
+
+        long totalChars = request.Messages.Sum(m => (long)m.Content.Length) + (request.System?.Length ?? 0);
+        if (request.ToolChoice is not null)
+        {
+            totalChars += request.ToolChoice.ToolName?.Length ?? 0;
+            totalChars += request.ToolChoice.Mode.ToString().Length;
+        }
+
+        if (request.Tools is { Count: > 0 } tools)
+        {
+            foreach (var tool in tools)
+            {
+                var toolSchemaCharacters = JsonCharacterCount(tool.InputSchema);
+                if (toolSchemaCharacters > MaxToolComponentCharacters)
+                {
+                    return $"Tool '{tool.Name}' input schema exceeds the configured per-tool limit of {MaxToolComponentCharacters} characters.";
+                }
+
+                totalChars += tool.Name.Length;
+                totalChars += tool.Description?.Length ?? 0;
+                totalChars += toolSchemaCharacters;
+            }
+        }
+
+        foreach (var message in request.Messages)
+        {
+            totalChars += message.ToolCallId?.Length ?? 0;
+            totalChars += message.ToolName?.Length ?? 0;
+            if (message.ToolCalls is { Count: > 0 } toolCalls)
+            {
+                foreach (var toolCall in toolCalls)
+                {
+                    var argumentCharacters = JsonCharacterCount(toolCall.Arguments);
+                    if (argumentCharacters > MaxToolComponentCharacters)
+                    {
+                        return $"Tool call '{toolCall.Name}' arguments exceed the configured per-call limit of {MaxToolComponentCharacters} characters.";
+                    }
+
+                    totalChars += toolCall.Id.Length;
+                    totalChars += toolCall.Name.Length;
+                    totalChars += argumentCharacters;
+                }
+            }
+        }
+
         if (totalChars > _configuration.MaxPromptCharacters)
         {
             return $"Request content exceeds the configured limit of {_configuration.MaxPromptCharacters} characters.";
@@ -115,6 +167,11 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
 
         return null;
     }
+
+    private static int JsonCharacterCount(JsonElement value)
+        => value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+            ? 0
+            : value.GetRawText().Length;
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(
         StudioAiChatRequest request,

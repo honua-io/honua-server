@@ -24,6 +24,40 @@ namespace Honua.Server.Tests.Features.Studio;
 /// </summary>
 public sealed class StudioLifecycleAuthorizationHandlerTests
 {
+    [Fact]
+    public async Task AiProxy_NonAdminClientCertificate_IsDenied()
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(
+                new AdminRoleOptions { AdminRoles = ["admin", "administrator"] }));
+        var principal = Principal(
+            "HonuaClientCertificate",
+            new Claim(ClaimTypes.NameIdentifier, "certificate-user"));
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeFalse(
+            "a non-admin client certificate is a machine identity, not an interactive Studio session");
+        context.FailureReasons.Should().ContainSingle()
+            .Which.Message.Should().Be(StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode);
+    }
+
+    [Fact]
+    public async Task AiProxy_JwtBearerUser_IsAdmitted()
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
+        var principal = Principal("Bearer", new Claim(ClaimTypes.NameIdentifier, "interactive-user"));
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeTrue();
+    }
+
     private static Task<AuthorizationHandlerContext> EvaluateAsync(
         ClaimsPrincipal principal,
         string httpMethod,

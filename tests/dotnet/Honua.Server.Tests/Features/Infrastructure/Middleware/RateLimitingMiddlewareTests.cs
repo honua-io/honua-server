@@ -163,6 +163,33 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_PartitionsSameSubjectAcrossOidcIssuers()
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        var issuerAFirst = CreateContext(
+            "198.51.100.72",
+            subject: "shared-subject",
+            issuer: "https://issuer-a.example.com");
+        await middleware.InvokeAsync(issuerAFirst);
+        var issuerASecond = CreateContext(
+            "198.51.100.72",
+            subject: "shared-subject",
+            issuer: "https://issuer-a.example.com");
+        await middleware.InvokeAsync(issuerASecond);
+
+        var issuerBFirst = CreateContext(
+            "198.51.100.72",
+            subject: "shared-subject",
+            issuer: "https://issuer-b.example.com");
+        await middleware.InvokeAsync(issuerBFirst);
+
+        issuerAFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        issuerASecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        issuerBFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_PartitionsByTenant_IndependentlyForSameUserName()
     {
         var middleware = CreateMiddleware(limit: 1);
@@ -347,6 +374,7 @@ public sealed class RateLimitingMiddlewareTests
         string? localIp = null,
         string? user = null,
         string? subject = null,
+        string? issuer = null,
         string? tenantId = null,
         string? endpointName = null,
         int endpointLimit = 0,
@@ -382,6 +410,11 @@ public sealed class RateLimitingMiddlewareTests
             if (!string.IsNullOrWhiteSpace(subject))
             {
                 claims.Add(new Claim("sub", subject));
+            }
+
+            if (!string.IsNullOrWhiteSpace(issuer))
+            {
+                claims.Add(new Claim("iss", issuer));
             }
 
             var identity = new ClaimsIdentity(

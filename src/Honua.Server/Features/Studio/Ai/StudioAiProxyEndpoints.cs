@@ -71,14 +71,14 @@ internal static class StudioAiProxyEndpoints
     {
         SetNoStore(context);
 
-        // A model id is an operator-controlled credential boundary: provider credentials may
-        // have access to models the deployment did not approve for end users. Admin callers
-        // retain the explicit override, while every non-admin request is pinned to the model in
-        // StudioAiProxy configuration by omitting its wire-level override before dispatch.
-        var allowModelOverride = authorizationService.IsAdmin(context.User);
+        // Model and output-token limits are operator-controlled provider boundaries: provider
+        // credentials may have access to models or token ceilings the deployment did not approve
+        // for end users. Admin callers retain explicit overrides, while every non-admin request
+        // is pinned to configured limits by omitting both wire-level overrides before dispatch.
+        var allowCallerOverrides = authorizationService.IsAdmin(context.User);
         var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
             httpRequest,
-            allowModelOverride);
+            allowCallerOverrides);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");

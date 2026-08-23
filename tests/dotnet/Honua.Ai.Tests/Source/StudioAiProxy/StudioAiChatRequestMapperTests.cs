@@ -133,20 +133,23 @@ public sealed class StudioAiChatRequestMapperTests
     }
 
     [UnitTest]
-    public void ToDomain_ModelOverrideNotAllowed_OmitsCallerSuppliedModel()
+    public void ToDomain_CallerOverridesNotAllowed_OmitsModelAndMaxTokens()
     {
         var http = new StudioAiChatHttpRequest
         {
             Model = "unapproved-model",
+            MaxTokens = 99_999,
             Messages = [new StudioAiChatHttpMessage { Role = "user", Content = "hi" }]
         };
 
-        var (request, error) = StudioAiChatRequestMapper.ToDomain(http, allowModelOverride: false);
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(http, allowCallerOverrides: false);
 
         error.Should().BeNull();
         request.Should().NotBeNull();
         request!.Model.Should().BeNull(
             "the proxy service must fall back to the operator-configured model for non-admin callers");
+        request.MaxTokens.Should().BeNull(
+            "the proxy service must fall back to the operator-configured output-token limit for non-admin callers");
     }
 
     [UnitTest]
