@@ -66,6 +66,9 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             binaryAlternatives[0].GetProperty("format").GetString().Should().Be("byte");
             binaryAlternatives[1].GetProperty("required")[0].GetString().Should().Be("value");
             binaryAlternatives[2].GetProperty("required")[0].GetString().Should().Be("href");
+            binaryAlternatives[2].GetProperty("properties").GetProperty("href")
+                .GetProperty("pattern").GetString()
+                .Should().Be(OgcProcessesCiteEchoFixture.HttpUrlPattern);
             var inlineBinaryFormat = binaryAlternatives[1].GetProperty("properties")
                 .GetProperty("format").GetProperty("properties");
             inlineBinaryFormat.GetProperty("mediaType").GetProperty("enum")[0]
@@ -257,6 +260,7 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [InlineData("{\"literal\":\"ok\",\"array\":[\"ok\",1]}", "array")]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,\"bad\"]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"pause\":11}", "pause")]
+    [InlineData("{\"literal\":\"ok\",\"binary\":{\"href\":\"ftp://example.test/file.tif\"}}", "binary")]
     [InlineData("{\"literal\":\"ok\",\"unknown\":true}", "unknown")]
     [InlineData("{}", "literal")]
     public void InputValidation_RejectsValuesOutsidePublishedSchemas(

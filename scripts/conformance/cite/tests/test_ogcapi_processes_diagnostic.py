@@ -357,7 +357,7 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn('ExecutionAdmission__MaxSubmissionsPerWindow: "100"', compose)
         self.assertIn('ExecutionAdmission__MaxCostWeightPerPartition: "100"', compose)
         self.assertEqual(
-            "ogcapi-processes-cite-profile-v8",
+            "ogcapi-processes-cite-profile-v9",
             parser.FIXTURE_REVISION,
         )
         self.assertIn("upstream-aio-plus-pinned-testdata", dockerfile)
@@ -387,6 +387,51 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertEqual(2, completed.returncode)
         self.assertIn(
             "Local-existing CITE images require HONUA_CITE_TESTED_GIT_SHA as a full SHA",
+            completed.stderr,
+        )
+
+    def test_source_build_runner_rejects_a_dirty_checkout(self) -> None:
+        repo = Path(__file__).resolve().parents[4]
+        runner = repo / "scripts/conformance/cite/run-cite-ogcapi-processes-tests.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            fake_git = Path(directory) / "git"
+            fake_git.write_text(
+                f"""#!/bin/sh
+if [ "$1" = "rev-parse" ]; then
+    printf '%s\\n' '{SHA}'
+    exit 0
+fi
+if [ "$1" = "status" ]; then
+    printf '%s\\n' ' M src/Honua.Server/Program.cs'
+    exit 0
+fi
+exit 1
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "GITHUB_ACTIONS": "false",
+                    "HONUA_CITE_SERVER_BUILD_MODE": "source-build",
+                    "HONUA_CITE_TESTED_GIT_SHA": SHA,
+                    "PATH": f"{directory}:{environment['PATH']}",
+                }
+            )
+
+            completed = subprocess.run(
+                ["/bin/bash", str(runner)],
+                cwd=repo,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(2, completed.returncode)
+        self.assertIn(
+            "Source-build CITE evidence requires a clean Git worktree",
             completed.stderr,
         )
 
