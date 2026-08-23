@@ -47,7 +47,8 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Description =
             "Create a mutable Studio package lifecycle draft (query, analysis, map, dashboard, report, form, app, workflow, gp, or etl family). "
             + "The composition a user and agent build IS this draft (AD-8): the returned draft's generation must be passed as `generation` on "
-            + "every subsequent honua_studio_update_draft / composition-mutation call for optimistic concurrency.",
+            + "every subsequent honua_studio_update_draft / composition-mutation call for optimistic concurrency. "
+            + "The optional `ownerId` field is admin-only; non-admin callers must omit it and become the owner automatically.",
         InputSchema = StudioMcpSchemas.CreateDraftArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Write tool: it authors a new draft. Not destructive; not idempotent
@@ -62,7 +63,11 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioCreateDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Create,
+                StudioAuthorizationOperation.CreateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -87,6 +92,14 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var authorization = RequireAuthorizationService(httpContext);
         var actorId = ActorIdFor(authorization, principal);
+        await EnsureOwnerAssignmentAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            argument.OwnerId,
+            StudioAuthorizationOperation.CreateDraft,
+            argument.ItemId?.ToString("D"),
+            OperatorOperation.Create).ConfigureAwait(false);
 
         // Match the REST lifecycle boundary: an explicit item id targets an
         // existing content item's recorded owner; otherwise creation is
@@ -107,7 +120,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // A non-admin caller can create only a draft they own. Admins retain
         // the REST surface's ability to assign an explicit owner.
-        var ownerId = authorization.IsAdmin(principal) ? argument.OwnerId : actorId;
+        var ownerId = argument.OwnerId ?? actorId;
         var draft = await lifecycleService.CreateDraftAsync(
             new CreateStudioPackageDraftCommand
             {
@@ -167,7 +180,11 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioGetDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Read,
+                StudioAuthorizationOperation.ReadDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -226,6 +243,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             "Replace a Studio package lifecycle draft's editable fields (packageKey, workspaceId, ownerId, schemaVersion, format, body) "
             + "with optimistic-generation checking. Pass the `generation` last read from honua_studio_get_draft/honua_studio_create_draft; "
             + "a stale generation returns a failed_precondition error — re-fetch and retry rather than blindly resubmitting. "
+            + "The optional `ownerId` field is admin-only; non-admin callers must omit it. "
             + "Does not accept publicationIntent: use honua_studio_propose_publication to record publish intent.",
         InputSchema = StudioMcpSchemas.UpdateDraftArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -244,7 +262,11 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioUpdateDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Create,
+                StudioAuthorizationOperation.UpdateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -270,6 +292,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             StudioAuthorizationOperation.UpdateDraft,
             OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
+        RequireAuthorizedGeneration(existing, generation);
         var envelope = existing.Envelope with
         {
             SchemaVersion = argument.SchemaVersion,
@@ -279,6 +302,14 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var authorization = RequireAuthorizationService(httpContext);
         var actorId = ActorIdFor(authorization, principal);
+        await EnsureOwnerAssignmentAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            argument.OwnerId,
+            StudioAuthorizationOperation.UpdateDraft,
+            draftId.ToString("D"),
+            OperatorOperation.Create).ConfigureAwait(false);
         var updated = await ApplyUpdateAsync(
             lifecycleService,
             draftId,
@@ -286,9 +317,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             {
                 PackageKey = argument.PackageKey,
                 WorkspaceId = argument.WorkspaceId ?? existing.WorkspaceId,
-                OwnerId = authorization.IsAdmin(principal)
-                    ? argument.OwnerId ?? existing.OwnerId
-                    : existing.OwnerId,
+                OwnerId = argument.OwnerId ?? existing.OwnerId,
                 Envelope = envelope,
                 Generation = generation,
                 ActorId = actorId,
@@ -350,7 +379,11 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioValidateDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Read,
+                StudioAuthorizationOperation.ValidateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
         var validator = RequireValidator(httpContext);
@@ -425,7 +458,11 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioPreviewDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Read,
+                StudioAuthorizationOperation.ValidateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
         var validator = RequireValidator(httpContext);

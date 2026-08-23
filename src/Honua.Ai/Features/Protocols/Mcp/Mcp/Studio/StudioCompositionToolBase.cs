@@ -62,6 +62,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
                 StudioAuthorizationOperation.UpdateDraft,
                 OperatorOperation.Create,
                 cancellationToken).ConfigureAwait(false);
+            RequireAuthorizedGeneration(draft, expectedGeneration);
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
 
             var body = StudioCompositionBodyEditor.ReadBody(draft.Envelope);

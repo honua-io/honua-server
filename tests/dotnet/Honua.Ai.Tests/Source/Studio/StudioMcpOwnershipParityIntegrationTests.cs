@@ -72,13 +72,20 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         using var bobClient = _fixture.CreateClient(
             client => client.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        // A non-admin MCP caller cannot assign the draft to someone else.
-        var created = await CallToolAsync(
+        // Explicit non-admin ownership assignment is rejected rather than silently ignored.
+        var rejectedCreate = await CallToolAsync(
             aliceClient,
             "honua_studio_create_draft",
             $$"""
               {"packageKey":"owner-parity-map","family":"map","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
               """);
+        AssertOwnerAssignmentToolDenial(rejectedCreate);
+
+        // Omitting ownerId derives the canonical owner from the authenticated principal.
+        var created = await CallToolAsync(
+            aliceClient,
+            "honua_studio_create_draft",
+            """{"packageKey":"owner-parity-map","family":"map","schemaVersion":"1.0"}""");
         var draftId = created.GetProperty("structuredContent").GetProperty("draftId").GetGuid();
         created.GetProperty("structuredContent").GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
@@ -118,13 +125,19 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
               """);
         AssertCrossUserToolDenial(bobMcpUpdate);
 
-        // Alice may update, but cannot transfer ownership to Bob.
-        var aliceMcpUpdate = await CallToolAsync(
+        // Alice may update, but an explicit transfer attempt is rejected.
+        var rejectedAliceTransfer = await CallToolAsync(
             aliceClient,
             "honua_studio_update_draft",
             $$"""
               {"draftId":"{{draftId:D}}","generation":1,"packageKey":"owner-parity-map-v2","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
               """);
+        AssertOwnerAssignmentToolDenial(rejectedAliceTransfer);
+
+        var aliceMcpUpdate = await CallToolAsync(
+            aliceClient,
+            "honua_studio_update_draft",
+            $$"""{"draftId":"{{draftId:D}}","generation":1,"packageKey":"owner-parity-map-v2","schemaVersion":"1.0"}""");
         aliceMcpUpdate.GetProperty("structuredContent").GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
     }
@@ -136,6 +149,15 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         error.GetProperty("code").GetString().Should().Be("permission_denied");
         error.GetProperty("studioAuthorizationCode").GetString()
             .Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+    }
+
+    private static void AssertOwnerAssignmentToolDenial(JsonElement result)
+    {
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var error = result.GetProperty("structuredContent");
+        error.GetProperty("code").GetString().Should().Be("permission_denied");
+        error.GetProperty("studioAuthorizationCode").GetString()
+            .Should().Be(StudioAuthorizationService.OwnerAssignmentAdminRequiredCode);
     }
 
     private static async Task<JsonElement> CallToolAsync(

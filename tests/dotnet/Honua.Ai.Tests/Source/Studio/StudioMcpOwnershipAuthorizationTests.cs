@@ -186,13 +186,11 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     }
 
     [Theory]
-    [InlineData(CallerKind.Owner, true)]
-    [InlineData(CallerKind.NonOwner, false)]
+    [InlineData(CallerKind.Owner)]
+    [InlineData(CallerKind.NonOwner)]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
-    public async Task GetDraft_LegacyMcpOwnerKey_OnlyOriginalPrincipalRetainsAccess(
-        CallerKind callerKind,
-        bool expectedAllowed)
+    public async Task GetDraft_UnmarkedLegacyMcpOwnerKey_FailsClosed(CallerKind callerKind)
     {
         const string legacyAliceOwnerId = "Test:sub:alice";
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
@@ -207,22 +205,37 @@ public sealed class StudioMcpOwnershipAuthorizationTests
 
         var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
 
-        if (expectedAllowed)
-        {
-            var result = await act();
-            result.IsError.Should().BeFalse();
-            authorization.Calls.Should().ContainSingle(call =>
-                call.Operation == StudioAuthorizationOperation.ReadDraft &&
-                call.ResourceOwnerId == legacyAliceOwnerId);
-        }
-        else
-        {
-            var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
-            failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
-            authorization.Calls.Should().ContainSingle(call =>
-                call.Operation == StudioAuthorizationOperation.ReadDraft &&
-                call.ResourceOwnerId == legacyAliceOwnerId);
-        }
+        var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+        authorization.Calls.Should().ContainSingle(call =>
+            call.Operation == StudioAuthorizationOperation.ReadDraft &&
+            call.ResourceOwnerId == legacyAliceOwnerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_CanonicalSubjectMatchingLegacyShape_DoesNotCollideWithLegacyAlias()
+    {
+        const string canonicalOwner = "Bearer:sub:alice";
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(BuildDraft(canonicalOwner));
+        var authorization = BuildAuthorization();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var tool = new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}""");
+
+        var legacyAliasCaller = BuildContext(CallerKind.Owner, lifecycle, validator: null, authorization);
+        legacyAliasCaller.User = UserPrincipal(Alice, authenticationType: "Bearer");
+        var legacyAct = () => tool.InvokeAsync(legacyAliasCaller, arguments, CancellationToken.None);
+
+        var failure = await legacyAct.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+
+        var canonicalCaller = BuildContext(CallerKind.Owner, lifecycle, validator: null, authorization);
+        canonicalCaller.User = UserPrincipal(canonicalOwner, authenticationType: "Oidc");
+        var result = await tool.InvokeAsync(canonicalCaller, arguments, CancellationToken.None);
+        result.IsError.Should().BeFalse();
     }
 
     [UnitTest]
@@ -324,6 +337,63 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         });
     }
 
+    [Theory]
+    [InlineData(PreliminaryDenialKind.Anonymous, StudioAuthorizationService.AuthenticationRequiredCode)]
+    [InlineData(PreliminaryDenialKind.OperatorGrant, StudioAuthorizationService.OperatorGrantRequiredCode)]
+    [InlineData(PreliminaryDenialKind.OAuthScope, StudioAuthorizationService.OAuthScopeRequiredCode)]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_PreliminaryGateDenial_RecordsSharedAuthorizationAudit(
+        PreliminaryDenialKind denialKind,
+        string expectedCode)
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var authorization = BuildAuthorization();
+        var auditLog = new RecordingAuditLog();
+        var callerKind = denialKind == PreliminaryDenialKind.Anonymous
+            ? CallerKind.Anonymous
+            : CallerKind.Owner;
+        var context = BuildContext(callerKind, lifecycle, validator: null, authorization, auditLog);
+        context.TraceIdentifier = "studio-mcp-preliminary-denial";
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        if (denialKind != PreliminaryDenialKind.Anonymous)
+        {
+            var reason = denialKind == PreliminaryDenialKind.OAuthScope
+                ? AuthorizationDenialReason.InsufficientScope
+                : AuthorizationDenialReason.InsufficientGrant;
+            jobService.EnsureCallerAuthorizedAsync(
+                    Arg.Any<ClaimsPrincipal>(),
+                    OperatorResourceType.StudioDraft,
+                    OperatorOperation.Read,
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.FromException(new GeoprocessingAuthorizationException(
+                    requiresAuthentication: false,
+                    "preliminary denial",
+                    OperatorResourceType.StudioDraft,
+                    OperatorOperation.Read,
+                    reason)));
+        }
+
+        var tool = new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var act = () => tool.InvokeAsync(
+            context,
+            McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}"""),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await lifecycle.DidNotReceive().GetDraftAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        auditLog.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(new
+        {
+            EventType = AuditEventType.Authorization,
+            ResourceType = "studio-package-draft",
+            ResourceId = (string?)null,
+            Action = "studio.read_draft",
+            Outcome = AuditOutcome.Denied,
+            CorrelationId = "studio-mcp-preliminary-denial",
+            Details = $$"""{"code":"{{expectedCode}}"}""",
+        });
+    }
+
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
@@ -346,7 +416,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         var result = await tool.InvokeAsync(
             context,
             McpTestFactory.ParseJson(
-                """{"packageKey":"owner-map","family":"map","schemaVersion":"1.0","ownerId":"bob"}"""),
+                """{"packageKey":"owner-map","family":"map","schemaVersion":"1.0"}"""),
             CancellationToken.None);
 
         result.IsError.Should().BeFalse();
@@ -357,6 +427,31 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             call.Operation == StudioAuthorizationOperation.CreateDraft &&
             call.ResourceOwnerId == Alice &&
             call.ResourceId == null);
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
+    public async Task CreateDraft_NonAdminExplicitOwner_IsRejected()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var authorization = BuildAuthorization();
+        var context = BuildContext(CallerKind.Owner, lifecycle, validator: null, authorization);
+        var tool = new CreateStudioDraftTool(
+            Substitute.For<IGeoprocessingJobService>(),
+            NullLogger<CreateStudioDraftTool>.Instance);
+
+        var act = () => tool.InvokeAsync(
+            context,
+            McpTestFactory.ParseJson(
+                """{"packageKey":"owner-map","family":"map","schemaVersion":"1.0","ownerId":"bob"}"""),
+            CancellationToken.None);
+
+        var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.OwnerAssignmentAdminRequiredCode);
+        await lifecycle.DidNotReceive().CreateDraftAsync(
+            Arg.Any<CreateStudioPackageDraftCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -449,38 +544,86 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
-    public async Task UpdateDraft_NonAdminCannotTransferOwnership()
+    public async Task UpdateDraft_NonAdminExplicitOwner_IsRejected()
     {
-        UpdateStudioPackageDraftCommand? captured = null;
         var draft = BuildDraft(Alice);
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
-        lifecycle.UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                captured = call.Arg<UpdateStudioPackageDraftCommand>();
-                return draft with { Generation = 2, OwnerId = captured.OwnerId ?? draft.OwnerId };
-            });
         var authorization = BuildAuthorization();
         var context = BuildContext(CallerKind.Owner, lifecycle, validator: null, authorization);
         var tool = new UpdateStudioDraftTool(
             Substitute.For<IGeoprocessingJobService>(),
             NullLogger<UpdateStudioDraftTool>.Instance);
 
-        await tool.InvokeAsync(
+        var act = () => tool.InvokeAsync(
             context,
             McpTestFactory.ParseJson(
                 $$"""{"draftId":"{{DraftId:D}}","generation":1,"packageKey":"owner-map","schemaVersion":"1.0","ownerId":"bob"}"""),
             CancellationToken.None);
 
-        captured.Should().NotBeNull();
-        captured!.OwnerId.Should().Be(Alice);
-        captured.ActorId.Should().Be(Alice);
+        var failure = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.OwnerAssignmentAdminRequiredCode);
+        await lifecycle.DidNotReceive().UpdateDraftAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<UpdateStudioPackageDraftCommand>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(DraftToolFamily.Update)]
+    [InlineData(DraftToolFamily.Composition)]
+    [InlineData(DraftToolFamily.PublicationProposal)]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_*")]
+    public async Task MutationFamily_FutureGeneration_DoesNotCrossAuthorizedSnapshot(
+        DraftToolFamily family)
+    {
+        var draft = BuildDraft(Alice);
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        lifecycle.UpdateDraftAsync(
+                DraftId,
+                Arg.Any<UpdateStudioPackageDraftCommand>(),
+                Arg.Any<CancellationToken>())
+            .Returns(draft with { Generation = 3, OwnerId = Bob });
+        var authorization = BuildAuthorization();
+        var context = BuildContext(CallerKind.Owner, lifecycle, validator: null, authorization);
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var (tool, arguments) = BuildInvocation(family, jobService, generation: 2);
+
+        var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("Stale draft generation; refresh and retry.");
+        await lifecycle.DidNotReceive().UpdateDraftAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<UpdateStudioPackageDraftCommand>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    public void OwnerIdSchemas_AdvertiseAdminOnlyAssignment()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var tools = new IMcpTool[]
+        {
+            new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
+            new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
+        };
+
+        tools.Should().OnlyContain(tool => tool.Describe().InputSchema
+            .GetProperty("properties")
+            .GetProperty("ownerId")
+            .GetProperty("description")
+            .GetString()!
+            .Contains("Admin-only", StringComparison.Ordinal));
     }
 
     private static (IMcpTool Tool, System.Text.Json.JsonElement Arguments) BuildInvocation(
         DraftToolFamily family,
-        IGeoprocessingJobService jobService) => family switch
+        IGeoprocessingJobService jobService,
+        long generation = 1) => family switch
         {
             DraftToolFamily.Read =>
                 (new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
@@ -488,7 +631,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             DraftToolFamily.Update =>
                 (new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
                     McpTestFactory.ParseJson(
-                        $$"""{"draftId":"{{DraftId:D}}","generation":1,"packageKey":"owner-map","schemaVersion":"1.0","ownerId":"bob"}""")),
+                        $$"""{"draftId":"{{DraftId:D}}","generation":{{generation}},"packageKey":"owner-map","schemaVersion":"1.0"}""")),
             DraftToolFamily.Validate =>
                 (new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
                     McpTestFactory.ParseJson($$"""{"draftId":"{{DraftId:D}}"}""")),
@@ -498,11 +641,11 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             DraftToolFamily.Composition =>
                 (new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
                     McpTestFactory.ParseJson(
-                        $$$"""{"draftId":"{{{DraftId:D}}}","generation":1,"layer":{"id":"parcels"}}""")),
+                        $$$"""{"draftId":"{{{DraftId:D}}}","generation":{{{generation}}},"layer":{"id":"parcels"}}""")),
             DraftToolFamily.PublicationProposal =>
                 (new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
                     McpTestFactory.ParseJson(
-                        $$"""{"draftId":"{{DraftId:D}}","generation":1,"route":"/studio/owner-map"}""")),
+                        $$"""{"draftId":"{{DraftId:D}}","generation":{{generation}},"route":"/studio/owner-map"}""")),
             _ => throw new ArgumentOutOfRangeException(nameof(family), family, null),
         };
 
@@ -547,13 +690,16 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         _ => throw new ArgumentOutOfRangeException(nameof(callerKind), callerKind, null),
     };
 
-    private static ClaimsPrincipal UserPrincipal(string id, string role = "creator") =>
+    private static ClaimsPrincipal UserPrincipal(
+        string id,
+        string role = "creator",
+        string authenticationType = "Test") =>
         new(new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, id),
             new Claim(ClaimTypes.Name, id),
             new Claim(ClaimTypes.Role, role),
-        ], "Test"));
+        ], authenticationType));
 
     private static RecordingStudioAuthorizationService BuildAuthorization(
         IOperatorAuthorizationEvaluator? evaluator = null)
@@ -607,6 +753,13 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         NonOwner,
         DelegatedOperator,
         Admin,
+    }
+
+    public enum PreliminaryDenialKind
+    {
+        Anonymous,
+        OperatorGrant,
+        OAuthScope,
     }
 
     private sealed record AuthorizationCall(
