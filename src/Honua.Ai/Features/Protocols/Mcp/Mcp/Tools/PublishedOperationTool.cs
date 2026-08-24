@@ -34,8 +34,11 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// </remarks>
 internal sealed class PublishedOperationTool : IMcpTool
 {
-    /// <summary>Prefix for the MCP tool name projected from an operation id.</summary>
+    /// <summary>Prefix for non-admin MCP tool names projected from operation ids.</summary>
     public const string NamePrefix = "honua_op_";
+
+    /// <summary>Prefix for MCP tool names projected from <c>admin.*</c> operation ids.</summary>
+    public const string AdminNamePrefix = "honua_admin_";
 
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
@@ -68,18 +71,24 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     /// <summary>
     /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
-    /// tool name (for example <c>honua_op_service_publish</c>).
+    /// tool name (for example <c>honua_op_service_publish</c>, or
+    /// <c>honua_admin_server_status</c> for an <c>admin.*</c> operation).
     /// </summary>
     public static string ProjectName(string operationId)
     {
-        var sanitized = new char[operationId.Length];
-        for (var i = 0; i < operationId.Length; i++)
+        var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
+        var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;
+        var sanitized = new char[operationName.Length];
+        for (var i = 0; i < operationName.Length; i++)
         {
-            var c = operationId[i];
+            var c = operationName[i];
             sanitized[i] = char.IsAsciiLetterOrDigit(c) ? char.ToLowerInvariant(c) : '_';
         }
 
-        return NamePrefix + new string(sanitized);
+        var prefix = isAdminOperation
+            ? AdminNamePrefix
+            : NamePrefix;
+        return prefix + new string(sanitized);
     }
 
     public McpToolDescriptor Describe()
