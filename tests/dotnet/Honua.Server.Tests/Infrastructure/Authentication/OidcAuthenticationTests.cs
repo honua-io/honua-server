@@ -1152,6 +1152,30 @@ public class OidcAuthenticationTests
     }
 
     [UnitTest]
+    public async Task ClaimsTransformation_WithSingularJwtRole_PreservesRole()
+    {
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["admin"]
+        });
+        var transformation = new OidcClaimsTransformation(
+            oidcOptions,
+            new TestLogger<OidcClaimsTransformation>(),
+            EnterpriseEntitledServices());
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "singular-role-user"),
+            new Claim("role", "editor")
+        ], "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("editor"));
+        Assert.Contains(result.FindAll(ClaimTypes.Role), claim => claim.Value == "editor");
+    }
+
+    [UnitTest]
     public async Task ClaimsTransformation_UnauthenticatedPrincipal_ReturnsUnchanged()
     {
         // Arrange

@@ -368,6 +368,16 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public void Capture_RawSubjectOnly_PreservesPrincipalId()
+    {
+        var principal = BuildPrincipal(("sub", "subject-only-user"));
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+
+        captured.PrincipalId.Should().Be("subject-only-user");
+    }
+
+    [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
         var principal = BuildPrincipal(

@@ -24,6 +24,91 @@ namespace Honua.Server.Tests.Features.Studio;
 /// </summary>
 public sealed class StudioLifecycleAuthorizationHandlerTests
 {
+    [Fact]
+    public async Task AiProxy_NonAdminClientCertificate_IsDenied()
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(
+                new AdminRoleOptions { AdminRoles = ["admin", "administrator"] }));
+        var principal = Principal(
+            "HonuaClientCertificate",
+            new Claim(ClaimTypes.NameIdentifier, "certificate-user"));
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeFalse(
+            "a non-admin client certificate is a machine identity, not an interactive Studio session");
+        context.FailureReasons.Should().ContainSingle()
+            .Which.Message.Should().Be(StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode);
+    }
+
+    [Fact]
+    public async Task AiProxy_JwtBearerUser_IsAdmitted()
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
+        var principal = Principal("Bearer",
+            new Claim("sub", "interactive-user"),
+            new Claim("sid", "browser-session-1"),
+            new Claim("auth_time", "1787508000"));
+        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(principal);
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AiProxy_JwtBearerWithOnlyPasswordAmr_IsDenied()
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
+        var principal = Principal("Bearer",
+            new Claim("sub", "machine-client"),
+            new Claim("amr", "pwd"));
+        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(principal);
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeFalse(
+            "a subject and weak password method do not prove a human browser session");
+        context.FailureReasons.Should().ContainSingle()
+            .Which.Message.Should().Be(StudioAiProxyAuthorizationHandler.InteractivePrincipalRequiredCode);
+        principal.HasClaim(
+            StudioAiInteractivePrincipal.InteractiveProvenanceClaimType,
+            "true").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("employee_id", "employee_id")]
+    [InlineData("oid", null)]
+    public async Task AiProxy_JwtBearerWithNormalizedSubjectClaim_IsAllowed(
+        string subjectClaimType,
+        string? configuredUserIdClaimType)
+    {
+        var handler = new StudioAiProxyAuthorizationHandler(
+            new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = ["admin"] }));
+        var principal = Principal("Bearer",
+            new Claim(subjectClaimType, "interactive-user"),
+            new Claim("amr", "mfa"));
+        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(
+            principal,
+            configuredUserIdClaimType);
+        var context = new AuthorizationHandlerContext(
+            [new StudioAiProxyRequirement()], principal, resource: null);
+
+        await handler.HandleAsync(context);
+
+        context.HasSucceeded.Should().BeTrue(
+            "Studio bearer admission must use the same configured and oid subject fallbacks as claims normalization");
+    }
+
     private static Task<AuthorizationHandlerContext> EvaluateAsync(
         ClaimsPrincipal principal,
         string httpMethod,

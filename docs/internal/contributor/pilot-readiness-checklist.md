@@ -69,7 +69,7 @@ gh workflow run load-soak-nightly.yml --repo honua-io/honua-server --ref trunk -
 gh workflow run client-interop-nightly.yml --repo honua-io/honua-server --ref trunk
 gh workflow run client-compat-smoke-nightly.yml --repo honua-io/honua-server --ref trunk
 gh workflow run sdk-server-compatibility.yml --repo honua-io/honua-server --ref trunk -f server_current_ref=<candidate-sha>
-gh workflow run release-bundle.yml --repo honua-io/honua-server --ref trunk -f release_id=honua-YYYY-MM-preview -f channel=preview -f server_ref=<candidate-sha> -f run_integration=true -f run_sdk=true -f promote=false
+gh workflow run release-bundle.yml --repo honua-io/honua-server --ref <candidate-ref> -f release_id=honua-YYYY-MM-preview -f channel=preview -f run_integration=true -f run_sdk=true -f promote=false
 ```
 
 For local multi-node validation, use the supported scale-test entrypoint and

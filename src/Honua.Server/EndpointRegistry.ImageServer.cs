@@ -9,6 +9,8 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> ImageServerEndpoints =>
     [
+        new("POST", "/services"),
+        new("POST", "/services/{serviceId}/ImageServer"),
         new("GET", "/rest/services/{id}/ImageServer"),
         new("POST", "/rest/services/{id}/ImageServer"),
         new("GET", "/rest/services/{id}/ImageServer/conf.json"),

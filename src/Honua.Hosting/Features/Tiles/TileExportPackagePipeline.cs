@@ -46,7 +46,7 @@ internal static class TileExportPackagePipeline
                 cancellationToken).ConfigureAwait(false),
             TileExportPackageFormat.Tpkx => await CompactTilePackageWriter.WriteAsync(
                 destination,
-                plan.ResourceId,
+                TileExportSourceResourceId.Resolve(plan),
                 plan.TileImageFormat,
                 [plan.West, plan.South, plan.East, plan.North],
                 admittedTiles.ValidateAsync(tiles, cancellationToken),

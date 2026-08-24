@@ -133,6 +133,26 @@ public sealed class StudioAiChatRequestMapperTests
     }
 
     [UnitTest]
+    public void ToDomain_CallerOverridesNotAllowed_OmitsModelAndMaxTokens()
+    {
+        var http = new StudioAiChatHttpRequest
+        {
+            Model = "unapproved-model",
+            MaxTokens = 99_999,
+            Messages = [new StudioAiChatHttpMessage { Role = "user", Content = "hi" }]
+        };
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(http, allowCallerOverrides: false);
+
+        error.Should().BeNull();
+        request.Should().NotBeNull();
+        request!.Model.Should().BeNull(
+            "the proxy service must fall back to the operator-configured model for non-admin callers");
+        request.MaxTokens.Should().BeNull(
+            "the proxy service must fall back to the operator-configured output-token limit for non-admin callers");
+    }
+
+    [UnitTest]
     public void ToDomain_JsonNullMessagesArray_ReturnsValidationErrorInsteadOfThrowing()
     {
         // honua-server#3010 review: System.Text.Json assigns a JSON `null` straight through to
@@ -232,5 +252,28 @@ public sealed class StudioAiChatRequestMapperTests
 
         request.Should().BeNull();
         error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [UnitTest]
+    public void ToDomain_TooManyTools_IsRejectedBeforeMappingDefinitions()
+    {
+        var tools = new List<StudioAiChatHttpTool>();
+        for (var i = 0; i < 129; i++)
+        {
+            tools.Add(new StudioAiChatHttpTool
+            {
+                Name = $"tool-{i}",
+                InputSchema = JsonDocument.Parse("{}").RootElement
+            });
+        }
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(new StudioAiChatHttpRequest
+        {
+            Messages = [new StudioAiChatHttpMessage { Role = "user", Content = "hi" }],
+            Tools = tools
+        });
+
+        request.Should().BeNull();
+        error.Should().Be("A maximum of 128 tools is allowed per request.");
     }
 }

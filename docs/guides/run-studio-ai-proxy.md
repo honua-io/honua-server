@@ -17,6 +17,10 @@ forwards a client's inference request through this explicitly configured proxy a
   routing rules, no prompt templating. v0 is deliberately minimal — see Non-Goals in
   honua-server#3000.
 
+Studio AI routes require an interactive authenticated user session (or an administrator). API
+keys, client certificates/mTLS, and client-credentials bearer tokens are machine credentials and
+are not admitted by the AI policy, even when the general authentication feature flag is enabled.
+
 ## Adapters
 
 | Adapter kind | Upstream API | Typical use |
@@ -106,8 +110,19 @@ Notes:
 
 ## Endpoints
 
-Both endpoints require admin authorization (the same posture as the Studio package lifecycle
-surface, `WorkflowPackageEndpoints`) pending a dedicated per-session Studio-user authorization scope.
+Both endpoints use the same Studio lifecycle admission policy as package drafts:
+
+- admins are always admitted;
+- an authenticated non-admin is admitted when
+  `Studio:EndUserAuthorization:Enabled=true` (environment variable
+  `Studio__EndUserAuthorization__Enabled=true`);
+- with the flag off, a non-admin receives `403` with
+  `code: "studio_authorization/end_user_mode_disabled"`;
+- an anonymous request receives `401`.
+
+Provider credentials remain server-side regardless of caller tier. The caller's authenticated
+identity is attached to the chat audit record, and the same bearer/session credential can be used
+for MCP tool discovery and the proxy without elevating it to an admin credential.
 
 ### `GET /api/v1/studio/ai/capabilities`
 
@@ -139,7 +154,7 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
 ```jsonc
 {
   "provider": "claude",              // optional; falls back to StudioAiProxy:DefaultProvider
-  "model": "claude-opus-4-1",        // optional per-call override
+  "model": "claude-opus-4-1",        // optional admin-only per-call override
   "system": "You are a GIS analyst.",
   "messages": [
     { "role": "user", "content": "Summarize the incidents layer." }
@@ -152,10 +167,14 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
     }
   ],
   "toolChoice": { "mode": "auto" },  // "auto" | "none" | "required" | "specific" (+ "toolName")
-  "maxTokens": 2048,
+  "maxTokens": 2048,                  // optional admin-only per-call override
   "temperature": 0.2
 }
 ```
+
+The `model` and `maxTokens` fields are admin-only controls. For admitted non-admin Studio users,
+the proxy ignores both fields and uses the operator-configured provider model and output-token
+limit. Other request fields shown above are available to both caller tiers.
 
 After a `tool_call_stop`, replay the assistant tool call before its result so the provider can
 match the result to the pending call:
@@ -224,7 +243,7 @@ surfaces (`FeatureStreamEndpoints`, `CloudDemoEndpoints`).
 ## Rate limiting and audit
 
 - `POST /chat` carries an explicit per-endpoint rate limit (30 requests/minute per authenticated
-  admin identity), consistent with the `RateLimitAttribute` precedent used for other
+  caller identity), consistent with the `RateLimitAttribute` precedent used for other
   sensitive/expensive admin endpoints (`AdminAuthEndpoints`). This applies **in addition to** the
   platform's opt-in subject-wide rate limiter (`RateLimiting:Enabled`, off by default, ADR-0004);
   edge enforcement remains the default rate-limiting posture.

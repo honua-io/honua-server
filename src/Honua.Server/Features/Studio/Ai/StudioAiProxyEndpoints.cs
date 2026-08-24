@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -14,9 +15,9 @@ namespace Honua.Server.Features.Studio.Ai;
 
 /// <summary>
 /// Studio AI proxy endpoints (honua-server#3000): a provider-neutral, server-mediated chat surface
-/// so Studio clients never see model credentials. Admin-authorized in MVP — the same posture as the
-/// Studio package lifecycle surface (<c>WorkflowPackageEndpoints</c>) — pending a dedicated
-/// per-session Studio-user authorization scope.
+/// so Studio clients never see model credentials. Authorization follows the Studio lifecycle
+/// posture: admins are always admitted, and authenticated Studio users are admitted when
+/// <c>Studio:EndUserAuthorization:Enabled</c> is on.
 /// </summary>
 internal static class StudioAiProxyEndpoints
 {
@@ -28,7 +29,7 @@ internal static class StudioAiProxyEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Studio", "AI")
-            .RequireAdminAuthorization();
+            .RequireStudioAiProxyAuthorization();
 
         group.MapGet("/capabilities", HandleGetCapabilities)
             .WithName("GetStudioAiCapabilities")
@@ -64,12 +65,20 @@ internal static class StudioAiProxyEndpoints
         HttpContext context,
         StudioAiChatHttpRequest httpRequest,
         IStudioAiProxyService service,
+        IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
 
-        var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(httpRequest);
+        // Model and output-token limits are operator-controlled provider boundaries: provider
+        // credentials may have access to models or token ceilings the deployment did not approve
+        // for end users. Admin callers retain explicit overrides, while every non-admin request
+        // is pinned to configured limits by omitting both wire-level overrides before dispatch.
+        var allowCallerOverrides = authorizationService.IsAdmin(context.User);
+        var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
+            httpRequest,
+            allowCallerOverrides);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");

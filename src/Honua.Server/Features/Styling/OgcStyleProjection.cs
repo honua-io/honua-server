@@ -855,6 +855,12 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 return false;
             }
 
+            if (LooksLikeEsriDrawingInfo(root))
+            {
+                error = "The request body appears to be an Esri drawingInfo document, which cannot be stored as MapLibre. Use a drawingInfo-capable operation with Content-Type: application/vnd.esri.drawinginfo+json, or submit a standalone MapLibre style.";
+                return false;
+            }
+
             if (strict)
             {
                 if (!MapLibreStyleNormalizer.TryValidateStandalone(root, out error))
@@ -870,6 +876,17 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             error = $"MapLibre style is not valid JSON: {ex.Message}";
             return false;
         }
+    }
+
+    private static bool LooksLikeEsriDrawingInfo(JsonElement root)
+    {
+        if (root.TryGetProperty("version", out _) || root.TryGetProperty("layers", out _))
+        {
+            return false;
+        }
+
+        return root.TryGetProperty("renderer", out var renderer)
+            && renderer.ValueKind == JsonValueKind.Object;
     }
 
     private static OgcStylesheet DeriveSld(

@@ -130,6 +130,7 @@ public sealed record PortalTokenIntrospection(
 /// the fallback is unknown (legacy persisted provenance) and therefore fails closed; an empty
 /// list is a known role-free fallback.
 /// </param>
+/// <param name="IsClientCredentials">Whether the token was minted for the OAuth2 client-credentials grant.</param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -140,7 +141,8 @@ public sealed record PortalTokenIssueRequest(
     DateTimeOffset ExpiresAt,
     bool? RolesRequireClaimsMappingEntitlement = false,
     bool? TenantRequiresClaimsMappingEntitlement = false,
-    IReadOnlyList<string>? RolesWithoutClaimsMapping = null);
+    IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
+    bool IsClientCredentials = false);
 
 /// <summary>
 /// Token issuance result.
