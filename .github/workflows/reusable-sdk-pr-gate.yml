@@ -72,7 +72,7 @@ jobs:
 
       - name: Setup .NET
         if: inputs.dotnet-version != ''
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
