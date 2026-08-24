@@ -171,6 +171,12 @@ public sealed record OperationProposalAutonomyMetadata
 public sealed record OperationProposal
 {
     /// <summary>
+    /// Stable invocation identity. Distinct from the operation descriptor, proposal,
+    /// execution, resource, and audit identifiers.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>
     /// Stable proposal identifier.
     /// </summary>
     public required string ProposalId { get; init; }
@@ -194,6 +200,15 @@ public sealed record OperationProposal
     /// Agent identifier when the proposal originated from an autonomous agent.
     /// </summary>
     public string? RequestedByAgent { get; init; }
+
+    /// <summary>
+    /// Authenticated proposer authority captured before approval. The approver never
+    /// replaces this snapshot during approved replay.
+    /// </summary>
+    public OperationAuthorityContext? Authority { get; init; }
+
+    /// <summary>Durable approval metadata, when the proposal has been resolved.</summary>
+    public OperationApprovalRecord? Approval { get; init; }
 
     /// <summary>
     /// Optimistic-concurrency version token incremented on every store write.

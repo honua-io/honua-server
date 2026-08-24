@@ -69,6 +69,12 @@ public enum OperationGatewayOutcome
 public sealed record OperationGatewayRequest
 {
     /// <summary>
+    /// Stable invocation identity assigned before policy evaluation. Replays reuse
+    /// the identity persisted on the proposal.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>
     /// Operation class being routed.
     /// </summary>
     public required OperationClass Kind { get; init; }
@@ -91,6 +97,12 @@ public sealed record OperationGatewayRequest
     /// Agent identifier when the request originated from an autonomous agent.
     /// </summary>
     public string? RequestedByAgent { get; init; }
+
+    /// <summary>
+    /// Trusted authenticated proposer authority. This is retained for approved
+    /// execution and is never replaced by the approver's authority.
+    /// </summary>
+    public OperationAuthorityContext? Authority { get; init; }
 
     /// <summary>
     /// Free-form operator reason or change note.
@@ -164,6 +176,9 @@ public sealed record OperationGatewayAutonomyContext
 /// </summary>
 public sealed record OperationGatewayResult
 {
+    /// <summary>Stable invocation identity for this routing result.</summary>
+    public string? OperationInstanceId { get; init; }
+
     /// <summary>
     /// Routing outcome.
     /// </summary>
