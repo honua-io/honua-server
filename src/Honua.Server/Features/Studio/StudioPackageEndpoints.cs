@@ -667,13 +667,14 @@ internal static class StudioPackageEndpoints
 
             var isAdmin = authorization.IsAdmin(context.User);
 
-            // honua-server#3001: once end-user mode is on, a non-admin caller cannot transfer
-            // ownership of a draft they are otherwise authorized to edit -- ignore any
-            // client-supplied ownerId (UpdateStudioPackageDraftCommand.OwnerId falls back to the
-            // existing owner when null) rather than trusting it.
-            var ownerId = !isAdmin && authorization.IsEndUserAuthorizationEnabled
-                ? null
-                : request.OwnerId;
+            if (!isAdmin
+                && authorization.IsEndUserAuthorizationEnabled
+                && request.OwnerId is not null)
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            var ownerId = request.OwnerId;
 
             var draft = await service.UpdateDraftAsync(
                 draftId,

@@ -395,9 +395,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
-        // Alice creates her own draft: any client-supplied ownerId is ignored and resolves to
-        // her own caller id (item 1 -- populated from the authenticated principal).
-        var createResponse = await aliceClient.PostAsync(
+        // End-user callers cannot assign an explicit owner; the REST lifecycle rejects the
+        // request instead of silently normalizing it.
+        var rejectedCreateResponse = await aliceClient.PostAsync(
             "/api/v1/studio/package-drafts",
             JsonContent(
                 new CreateStudioPackageDraftRequest
@@ -405,6 +405,18 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                     PackageKey = "enduser-owner-query",
                     WorkspaceId = "studio",
                     OwnerId = "someone-else",
+                    Envelope = BuildEnvelope("1=1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        rejectedCreateResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var createResponse = await aliceClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = "enduser-owner-query",
+                    WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
                 StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
