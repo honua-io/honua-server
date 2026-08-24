@@ -514,6 +514,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             return null;
         }
 
+        var pointers = await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
+
         return await CreateDraftAsync(
             new CreateStudioPackageDraftCommand
             {
@@ -521,6 +523,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
                 PackageKey = version.PackageKey,
                 WorkspaceId = version.WorkspaceId,
                 OwnerId = version.OwnerId,
+                ExpectedExistingItemOwnerId = pointers?.OwnerId,
                 Envelope = version.Envelope,
                 ActorId = actorId,
                 BaseVersionId = versionId,
