@@ -85,6 +85,21 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public void AdminServerStatus_UsesResultsFamilyAndLiveMetadata()
+    {
+        var tool = new PublishedOperationTool(
+            AdminServerStatusDescriptor(), "cat-v1", NullLogger.Instance);
+
+        tool.WorkflowFamily.Should().Be(McpTelemetry.WorkflowFamily.Results);
+        tool.IsDeterministic.Should().BeFalse();
+
+        var descriptor = tool.Describe();
+        descriptor.Description.Should().Contain("live runtime status");
+        descriptor.Description.Should().NotContain("param-keyed-cached");
+        descriptor.Description.Should().NotContain("AI-assisted");
+    }
+
+    [UnitTest]
     public async Task Source_Enabled_PublishesAdminDescriptorWithAdminToolName()
     {
         var source = new PublishedOperationToolSource(

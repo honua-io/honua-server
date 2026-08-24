@@ -82,6 +82,12 @@ public sealed record CapabilityDescriptor
     public string? McpToolName { get; init; }
 
     /// <summary>
+    /// Whether this MCP tool is published dynamically from an enabled operation
+    /// catalog rather than being part of the static taxonomy roster.
+    /// </summary>
+    public bool IsDynamic { get; init; }
+
+    /// <summary>
     /// The <c>honua://</c> resource-URI templates this capability serves
     /// (Decision A grammar), or empty for non-resource capabilities. Mirrors the
     /// emitter's <c>uriForm</c> and the <c>McpResourceUris</c> seam.
