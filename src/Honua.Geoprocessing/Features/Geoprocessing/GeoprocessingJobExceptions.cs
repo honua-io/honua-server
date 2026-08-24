@@ -57,6 +57,13 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     /// </summary>
     public OperatorOperation? Operation { get; }
 
+    /// <summary>
+    /// Stable policy-specific denial code, when the authorizer exposes one.
+    /// Protocol adapters can retain this alongside their transport-level
+    /// <c>permission_denied</c>/<c>unauthenticated</c> classification.
+    /// </summary>
+    public string? PolicyCode { get; }
+
     public GeoprocessingAuthorizationException(bool requiresAuthentication)
         : base(requiresAuthentication
             ? "Authentication is required for this operation."
@@ -77,18 +84,21 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     /// <param name="resourceType">The resource type the denied check evaluated, when known.</param>
     /// <param name="operation">The operation the denied check evaluated, when known.</param>
     /// <param name="denialReason">Why the check denied the caller (grant vs. OAuth scope).</param>
+    /// <param name="policyCode">Stable policy-specific denial code, when available.</param>
     public GeoprocessingAuthorizationException(
         bool requiresAuthentication,
         string message,
         OperatorResourceType? resourceType = null,
         OperatorOperation? operation = null,
-        AuthorizationDenialReason denialReason = AuthorizationDenialReason.InsufficientGrant)
+        AuthorizationDenialReason denialReason = AuthorizationDenialReason.InsufficientGrant,
+        string? policyCode = null)
         : base(message)
     {
         RequiresAuthentication = requiresAuthentication;
         ResourceType = resourceType;
         Operation = operation;
         DenialReason = denialReason;
+        PolicyCode = policyCode;
     }
 }
 

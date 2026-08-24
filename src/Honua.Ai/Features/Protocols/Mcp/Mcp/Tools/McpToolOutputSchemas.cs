@@ -46,6 +46,7 @@ internal static class McpToolOutputSchemas
             "status": { "type": "string", "const": "error" },
             "code": { "type": "string" },
             "message": { "type": "string" },
+            "studioAuthorizationCode": { "type": ["string", "null"] },
             "error": { "type": "object" }
         """;
 
@@ -66,6 +67,7 @@ internal static class McpToolOutputSchemas
             "requiresReauthentication": { "type": ["boolean", "null"] },
             "approvalRequired": { "type": ["boolean", "null"] },
             "policyRef": { "type": ["string", "null"] },
+            "studioAuthorizationCode": { "type": ["string", "null"] },
             "conflictingJobId": { "type": ["string", "null"] },
             "retryable": { "type": ["boolean", "null"] },
             "violations": {

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Studio.Domain;
 
@@ -29,6 +30,7 @@ public sealed class CreateStudioPackageDraftRequest
 
     /// <summary>Owner principal identifier.</summary>
     [StringLength(200)]
+    [Description("Admin-only owner principal identifier. Non-admin callers must omit this field.")]
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 
@@ -56,6 +58,7 @@ public sealed class UpdateStudioPackageDraftRequest
 
     /// <summary>Owner principal identifier.</summary>
     [StringLength(200)]
+    [Description("Admin-only owner principal identifier. Non-admin callers must omit this field.")]
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 

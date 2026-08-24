@@ -3,10 +3,13 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
@@ -18,8 +21,9 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// canonical Studio package lifecycle service — so no lifecycle logic
 /// (generation checking, validation, persistence) is duplicated here; this
 /// base only owns the MCP-specific plumbing: authorization against the
-/// <c>StudioDraft</c> operator-grant family, typed error translation, and the
-/// generation-before/after audit record (NFR-001).
+/// <c>StudioDraft</c> operator-grant family and the canonical Studio ownership
+/// policy, typed error translation, and the generation-before/after audit
+/// record (NFR-001).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -43,6 +47,20 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </remarks>
 internal abstract class StudioDraftToolBase
 {
+    /// <summary>
+    /// Records the authorization denial for a Studio tool rejected by the MCP
+    /// dispatcher before <see cref="IMcpTool.InvokeAsync"/> can run. The
+    /// dispatcher deliberately does not reveal tool names to anonymous callers,
+    /// but a known Studio call still needs the same audit trail as an invocation
+    /// that reaches <see cref="EnsureAuthorizedAsync"/>.
+    /// </summary>
+    internal static void RecordAnonymousAuthorizationDenied(
+        ILogger logger, HttpContext httpContext, string toolName)
+    {
+        var principal = httpContext.User ?? new ClaimsPrincipal(new ClaimsIdentity());
+        StudioMcpAudit.Record(logger, principal, toolName, draftId: null, generationBefore: null, generationAfter: null);
+    }
+
     protected StudioDraftToolBase(IGeoprocessingJobService jobService, ILogger logger)
     {
         JobService = jobService;
@@ -63,13 +81,49 @@ internal abstract class StudioDraftToolBase
     /// applies identically to every other <c>/mcp</c> tool.
     /// </summary>
     protected async Task<ClaimsPrincipal> EnsureAuthorizedAsync(
-        HttpContext httpContext, OperatorOperation operation, CancellationToken cancellationToken)
+        HttpContext httpContext,
+        OperatorOperation operation,
+        StudioAuthorizationOperation studioOperation,
+        CancellationToken cancellationToken)
     {
-        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        await JobService
-            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.StudioDraft, operation, cancellationToken)
-            .ConfigureAwait(false);
-        return principal;
+        try
+        {
+            var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+            await JobService
+                .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.StudioDraft, operation, cancellationToken)
+                .ConfigureAwait(false);
+            return principal;
+        }
+        catch (GeoprocessingAuthorizationException exception)
+        {
+            var code = exception.PolicyCode
+                ?? (exception.RequiresAuthentication
+                    ? StudioAuthorizationService.AuthenticationRequiredCode
+                    : exception.DenialReason == AuthorizationDenialReason.InsufficientScope
+                        ? StudioAuthorizationService.OAuthScopeRequiredCode
+                        : StudioAuthorizationService.OperatorGrantRequiredCode);
+            await RecordAuthorizationDecisionAsync(
+                httpContext,
+                studioOperation,
+                resourceId: null,
+                StudioAuthorizationDecision.Deny(code, exception.Message)).ConfigureAwait(false);
+
+            if (exception.PolicyCode is not null)
+            {
+                throw;
+            }
+
+            // The generic operator gate does not know Studio's stable denial vocabulary.
+            // Carry the code derived above into the exception that the MCP transport maps so
+            // the audited preliminary decision and the caller-visible tool error stay bound.
+            throw new GeoprocessingAuthorizationException(
+                exception.RequiresAuthentication,
+                exception.Message,
+                exception.ResourceType,
+                exception.Operation,
+                exception.DenialReason,
+                code);
+        }
     }
 
     /// <summary>
@@ -85,6 +139,16 @@ internal abstract class StudioDraftToolBase
         ?? throw new GeoprocessingStoreUnavailableException("The Studio package lifecycle service is not available on this server.");
 
     /// <summary>
+    /// Resolves the canonical Studio ownership-policy service from the current
+    /// request scope. Studio MCP tools must use the same owner rules as the REST
+    /// lifecycle surface; failing closed when that policy was not composed is
+    /// safer than falling back to the generic operator-grant check alone.
+    /// </summary>
+    protected static IStudioAuthorizationService RequireAuthorizationService(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioAuthorizationService>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio lifecycle authorization service is not available on this server.");
+
+    /// <summary>
     /// Resolves the pure <see cref="IStudioPackageValidator"/> from the
     /// current request's DI scope, for tools that validate WITHOUT persisting
     /// (<c>honua_studio_validate_draft</c>, <c>honua_studio_preview_draft</c>
@@ -96,14 +160,160 @@ internal abstract class StudioDraftToolBase
         ?? throw new GeoprocessingStoreUnavailableException("The Studio package validator is not available on this server.");
 
     /// <summary>
-    /// Loads a draft by id, translating a missing draft into the typed
-    /// <c>not_found</c> MCP error channel instead of returning null.
+    /// Loads a draft by id and authorizes the loaded owner through the same
+    /// <see cref="IStudioAuthorizationService"/> policy used by the REST
+    /// lifecycle surface. Keeping the raw load private makes the secure
+    /// load-then-authorize sequence the only draft-loading helper available to
+    /// derived tools.
     /// </summary>
-    protected static async Task<StudioPackageDraft> RequireDraftAsync(
-        IStudioPackageLifecycleService lifecycleService, Guid draftId, CancellationToken cancellationToken)
+    protected static async Task<StudioPackageDraft> RequireAuthorizedDraftAsync(
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
+        IStudioPackageLifecycleService lifecycleService,
+        Guid draftId,
+        StudioAuthorizationOperation studioOperation,
+        OperatorOperation operatorOperation,
+        CancellationToken cancellationToken)
     {
         var draft = await lifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
-        return draft ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        if (draft is null)
+        {
+            throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        }
+
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            RequireAuthorizationService(httpContext),
+            principal,
+            studioOperation,
+            draft.OwnerId,
+            draftId.ToString("D"),
+            "studio-package-draft",
+            operatorOperation,
+            cancellationToken).ConfigureAwait(false);
+
+        return draft;
+    }
+
+    /// <summary>
+    /// Applies the canonical Studio ownership decision and translates a denial
+    /// into the MCP authorization exception channel while retaining the stable
+    /// Studio decision code for protocol parity with REST.
+    /// </summary>
+    protected static async Task EnsureStudioAuthorizedAsync(
+        HttpContext httpContext,
+        IStudioAuthorizationService authorization,
+        ClaimsPrincipal principal,
+        StudioAuthorizationOperation studioOperation,
+        string? resourceOwnerId,
+        string? resourceId,
+        string resourceType,
+        OperatorOperation operatorOperation,
+        CancellationToken cancellationToken)
+    {
+        var callerId = authorization.ResolveCallerId(principal);
+        var decision = await authorization.AuthorizeAsync(
+            principal,
+            callerId,
+            studioOperation,
+            resourceOwnerId,
+            resourceId: resourceId,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        await RecordAuthorizationDecisionAsync(
+            httpContext,
+            studioOperation,
+            resourceId,
+            decision,
+            resourceType).ConfigureAwait(false);
+
+        if (!decision.IsAllowed)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: string.Equals(
+                    decision.Code,
+                    StudioAuthorizationService.AuthenticationRequiredCode,
+                    StringComparison.Ordinal),
+                message: decision.Reason ?? "The caller is not authorized to access this Studio resource.",
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: operatorOperation,
+                policyCode: decision.Code);
+        }
+    }
+
+    /// <summary>
+    /// Rejects an explicit owner assignment from a non-admin caller. The MCP schema advertises
+    /// this field as admin-only, and rejecting it prevents a successful response from implying
+    /// that a silently ignored ownership transfer occurred.
+    /// </summary>
+    protected static async Task EnsureOwnerAssignmentAuthorizedAsync(
+        HttpContext httpContext,
+        IStudioAuthorizationService authorization,
+        ClaimsPrincipal principal,
+        string? requestedOwnerId,
+        StudioAuthorizationOperation studioOperation,
+        string? resourceId,
+        OperatorOperation operatorOperation)
+    {
+        if (requestedOwnerId is null || authorization.IsAdmin(principal))
+        {
+            return;
+        }
+
+        const string reason = "Assigning a Studio draft owner requires the admin role.";
+        var decision = StudioAuthorizationDecision.Deny(
+            StudioAuthorizationService.OwnerAssignmentAdminRequiredCode,
+            reason);
+        await RecordAuthorizationDecisionAsync(
+            httpContext,
+            studioOperation,
+            resourceId,
+            decision).ConfigureAwait(false);
+        throw new GeoprocessingAuthorizationException(
+            requiresAuthentication: false,
+            message: reason,
+            resourceType: OperatorResourceType.StudioDraft,
+            operation: operatorOperation,
+            policyCode: decision.Code);
+    }
+
+    /// <summary>
+    /// Binds a mutating request's expected generation to the exact owner-authorized snapshot.
+    /// The lifecycle store still performs its compare-and-swap, covering changes after this
+    /// check; this check prevents a caller from supplying a future generation that belongs to a
+    /// concurrently rebound resource.
+    /// </summary>
+    protected static void RequireAuthorizedGeneration(StudioPackageDraft draft, long expectedGeneration)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        if (draft.Generation != expectedGeneration)
+        {
+            throw new GeoprocessingPreconditionFailedException("Stale draft generation; refresh and retry.");
+        }
+    }
+
+    protected static async Task RecordAuthorizationDecisionAsync(
+        HttpContext httpContext,
+        StudioAuthorizationOperation studioOperation,
+        string? resourceId,
+        StudioAuthorizationDecision decision,
+        string resourceType = "studio-package-draft")
+    {
+        var auditLog = httpContext.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null)
+        {
+            return;
+        }
+
+        var timeProvider = httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+        await StudioAuthorizationAudit.RecordDecisionAsync(
+            httpContext,
+            auditLog,
+            timeProvider,
+            studioOperation,
+            resourceType,
+            resourceId,
+            decision).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -165,8 +375,12 @@ internal abstract class StudioDraftToolBase
             ActorId = actorId,
         };
 
-    /// <summary>Resolves the audit-record actor id from the resolved principal key.</summary>
-    protected static string ActorIdFor(ClaimsPrincipal principal) => McpAuthorizationHelper.ResolvePrincipalKey(principal);
+    /// <summary>
+    /// Resolves the lifecycle actor/owner identifier through the canonical
+    /// Studio policy so MCP-created ownership keys match REST-created keys.
+    /// </summary>
+    protected static string? ActorIdFor(IStudioAuthorizationService authorization, ClaimsPrincipal principal) =>
+        authorization.ResolveCallerId(principal);
 
     /// <summary>Records the per-call audit entry (NFR-001).</summary>
     protected void Audit(ClaimsPrincipal principal, string toolName, Guid? draftId, long? generationBefore, long? generationAfter)
