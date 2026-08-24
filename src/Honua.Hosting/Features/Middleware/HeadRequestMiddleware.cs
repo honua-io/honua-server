@@ -3,6 +3,7 @@
 
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Middleware;
@@ -123,6 +124,55 @@ internal static class HeadRequestSupport
         => statusCode is not (>= StatusCodes.Status100Continue and < StatusCodes.Status200OK)
             and not StatusCodes.Status204NoContent
             and not StatusCodes.Status304NotModified;
+
+    /// <summary>The media type that identifies a Server-Sent Events response.</summary>
+    internal const string EventStreamContentType = "text/event-stream";
+
+    /// <summary>
+    /// Set when the matched endpoint is a long-lived stream. The equivalent GET never
+    /// completes on its own, so the byte count a bounded HEAD probe observed is the size of
+    /// the preamble rather than of the response, and stamping it as <c>Content-Length</c>
+    /// would advertise a length no GET would ever send.
+    /// </summary>
+    internal static readonly object SuppressSynthesizedContentLengthKey = new();
+
+    internal static bool SuppressesSynthesizedContentLength(HttpContext context)
+        => context.Items.ContainsKey(SuppressSynthesizedContentLengthKey);
+
+    /// <summary>
+    /// True when the endpoint declares that it produces <c>text/event-stream</c>.
+    /// </summary>
+    /// <remarks>
+    /// Read from the endpoint's own declared response metadata (the <c>Produces</c> call that
+    /// already documents it in OpenAPI) rather than from a separate marker attribute, so a
+    /// new SSE endpoint is bounded by construction instead of by remembering to annotate it.
+    /// </remarks>
+    internal static bool IsLongLivedStreamEndpoint(Endpoint? endpoint)
+    {
+        var metadata = endpoint?.Metadata;
+        if (metadata is null)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < metadata.Count; i++)
+        {
+            if (metadata[i] is not IProducesResponseTypeMetadata produces)
+            {
+                continue;
+            }
+
+            foreach (var contentType in produces.ContentTypes)
+            {
+                if (contentType.StartsWith(EventStreamContentType, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>
@@ -186,10 +236,13 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
             discardingBodyFeature.Dispose();
 
             if (!context.Response.HasStarted &&
-                context.Response.ContentLength is null &&
                 HeadRequestSupport.CanCarryContentLength(context.Response.StatusCode))
             {
-                context.Response.ContentLength = bytesWritten;
+                if (context.Response.ContentLength is null &&
+                    !HeadRequestSupport.SuppressesSynthesizedContentLength(context))
+                {
+                    context.Response.ContentLength = bytesWritten;
+                }
 
                 // RFC 9110 section 14.3: "A server that does not support any kind of range
                 // request for the target resource MAY send Accept-Ranges: none to advise the
@@ -207,9 +260,15 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
                 // started working (honua-server#3389). Declaring `none` restores the
                 // streaming read.
                 //
-                // Only synthesized responses are stamped: an endpoint that genuinely serves
-                // ranges (the PMTiles range proxy, scene assets) sets its own Content-Length
-                // and Accept-Ranges, so it never reaches this branch and keeps its own value.
+                // Stamped whenever the response is silent about ranges, NOT only when this
+                // middleware synthesized the length. The handlers that serve a whole buffer
+                // through `Results.File(byte[])` -- WCS GetCoverage, OGC Maps, ImageServer
+                // exportImage -- set their own Content-Length and never set Accept-Ranges, so
+                // gating on a synthesized length left exactly the Content-Length-plus-no-range
+                // shape described above in place for the binary raster responses /vsicurl is
+                // most likely to probe (review finding on honua-server#3489). An endpoint that
+                // genuinely serves ranges (the PMTiles range proxy, scene assets) sets its own
+                // Accept-Ranges, and the ContainsKey guard below preserves that value.
                 if (!context.Response.Headers.ContainsKey(HeaderNames.AcceptRanges))
                 {
                     context.Response.Headers[HeaderNames.AcceptRanges] = "none";
@@ -254,8 +313,10 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        var endpoint = context.GetEndpoint();
+
         if (!HeadRequestSupport.WasRewrittenFromHead(context) ||
-            AdvertisesHead(context.GetEndpoint()))
+            AdvertisesHead(endpoint))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -265,7 +326,14 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 
         try
         {
-            await _next(context).ConfigureAwait(false);
+            if (HeadRequestSupport.IsLongLivedStreamEndpoint(endpoint))
+            {
+                await InvokeBoundedStreamAsync(context).ConfigureAwait(false);
+            }
+            else
+            {
+                await _next(context).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -273,6 +341,73 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
             // completed request (Serilog request logging, performance monitoring, auditing)
             // records the method the client actually sent.
             context.Request.Method = HttpMethods.Head;
+        }
+    }
+
+    /// <summary>
+    /// Runs a long-lived streaming handler only as far as its first written byte, then cancels
+    /// it.
+    /// </summary>
+    /// <remarks>
+    /// A Server-Sent Events handler commits its status code and headers and writes a preamble,
+    /// and only then loops until the client disconnects. Left alone under HEAD that loop never
+    /// ends: the discarding body feature swallows every heartbeat, so the transport response is
+    /// never started and nothing ever aborts the request. <c>HEAD
+    /// /api/v1/realtime/incidents/sse</c> therefore hung until the client timed out, and the
+    /// SensorThings observation stream additionally held one of a bounded number of stream
+    /// sessions open for that whole time — a HEAD probe from a link checker or a CDN could
+    /// exhaust them (review finding on honua-server#3489).
+    ///
+    /// Bounding at the first write rather than skipping the handler outright is what keeps HEAD
+    /// honest: the status code and headers are the ones the handler really produced, so the
+    /// early returns that precede the stream still answer as themselves — 404 for an unknown
+    /// datastream, 503 when no session can be leased, 400 when the client did not negotiate
+    /// SSE — instead of being flattened into a synthetic 200.
+    /// </remarks>
+    private async Task InvokeBoundedStreamAsync(HttpContext context)
+    {
+        // The equivalent GET is unbounded and sends no Content-Length; the preamble byte count
+        // observed here must not be stamped as one.
+        context.Items[HeadRequestSupport.SuppressSynthesizedContentLengthKey] = true;
+
+        var clientToken = context.RequestAborted;
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(clientToken);
+        var headBody = context.Features.Get<IHttpResponseBodyFeature>() as HeadResponseBodyFeature;
+
+        if (headBody is not null)
+        {
+            headBody.FirstWriteCallback = () =>
+            {
+                try
+                {
+                    bounded.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The request finished on its own between the write and this callback.
+                }
+            };
+        }
+
+        context.RequestAborted = bounded.Token;
+
+        try
+        {
+            await _next(context).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (bounded.IsCancellationRequested && !clientToken.IsCancellationRequested)
+        {
+            // The handler observed the bound this middleware imposed, not a client disconnect.
+            // Its headers are already on the response; ending quietly is the whole point.
+        }
+        finally
+        {
+            if (headBody is not null)
+            {
+                headBody.FirstWriteCallback = null;
+            }
+
+            context.RequestAborted = clientToken;
         }
     }
 
@@ -313,6 +448,17 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
         _writer ??= PipeWriter.Create(_stream, new StreamPipeWriterOptions(leaveOpen: true));
 
     public long BytesWritten => _stream.BytesWritten;
+
+    /// <summary>
+    /// Invoked once, on the first byte the handler writes. A long-lived stream commits its
+    /// status and headers immediately and only then loops, so the first write is the point at
+    /// which a HEAD probe has learned everything the equivalent GET would tell it.
+    /// </summary>
+    internal Action? FirstWriteCallback
+    {
+        get => _stream.FirstWriteCallback;
+        set => _stream.FirstWriteCallback = value;
+    }
 
     public void DisableBuffering()
     {
@@ -375,8 +521,31 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
     private sealed class CountingNullStream : Stream
     {
         private long _bytesWritten;
+        private Action? _firstWriteCallback;
+        private bool _firstWriteSignalled;
 
         public long BytesWritten => _bytesWritten;
+
+        public Action? FirstWriteCallback
+        {
+            get => _firstWriteCallback;
+            set => _firstWriteCallback = value;
+        }
+
+        /// <summary>
+        /// Fires the first-write callback exactly once. Callbacks run inline on the writing
+        /// thread, so this stays allocation-free and never re-enters after the first byte.
+        /// </summary>
+        private void SignalFirstWrite()
+        {
+            if (_firstWriteSignalled)
+            {
+                return;
+            }
+
+            _firstWriteSignalled = true;
+            _firstWriteCallback?.Invoke();
+        }
 
         public override bool CanRead => false;
 
@@ -392,7 +561,11 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
             set => throw new NotSupportedException();
         }
 
-        public void AddUntransferredBytes(long count) => _bytesWritten += count;
+        public void AddUntransferredBytes(long count)
+        {
+            _bytesWritten += count;
+            SignalFirstWrite();
+        }
 
         public override void Flush()
         {
@@ -407,21 +580,35 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
 
         public override void SetLength(long value) => throw new NotSupportedException();
 
-        public override void Write(byte[] buffer, int offset, int count) => _bytesWritten += count;
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _bytesWritten += count;
+            SignalFirstWrite();
+        }
 
-        public override void Write(ReadOnlySpan<byte> buffer) => _bytesWritten += buffer.Length;
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            _bytesWritten += buffer.Length;
+            SignalFirstWrite();
+        }
 
-        public override void WriteByte(byte value) => _bytesWritten++;
+        public override void WriteByte(byte value)
+        {
+            _bytesWritten++;
+            SignalFirstWrite();
+        }
 
         public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
             _bytesWritten += count;
+            SignalFirstWrite();
             return Task.CompletedTask;
         }
 
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
             _bytesWritten += buffer.Length;
+            SignalFirstWrite();
             return ValueTask.CompletedTask;
         }
     }

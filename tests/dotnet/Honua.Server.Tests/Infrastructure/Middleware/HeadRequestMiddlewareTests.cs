@@ -7,6 +7,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Logging;
 
@@ -25,6 +26,13 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
 {
     private const long DualEndpointContentLength = 4096;
+    private const int FixedLengthPayloadSize = 64;
+
+    /// <summary>
+    /// Long enough that a genuinely unbounded handler cannot pass by luck, short enough that a
+    /// regression fails the test instead of hanging the suite.
+    /// </summary>
+    private static readonly TimeSpan StreamProbeTimeout = TimeSpan.FromSeconds(20);
 
     private WebApplication _app = null!;
     private HttpClient _client = null!;
@@ -35,6 +43,13 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     /// cross-test synchronisation.
     /// </summary>
     private string? _upstreamMethodOnUnwind;
+
+    /// <summary>
+    /// Completed by the streaming route when its loop unwinds, so a test can prove the handler
+    /// was actually released rather than merely that the response came back.
+    /// </summary>
+    private readonly TaskCompletionSource<bool> _streamHandlerExited =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public async Task InitializeAsync()
     {
@@ -92,6 +107,55 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
 
         _app.MapPost("/post-only", () => Results.Ok(new { ok = true }));
         _app.MapGet("/no-content", () => Results.NoContent());
+
+        // A long-lived Server-Sent Events route: commits headers, writes a preamble, then loops
+        // until the client disconnects. Under HEAD the discarding body feature swallows every
+        // heartbeat, so nothing ever aborts the request and the loop would run forever.
+        _app.MapGet("/stream", async context =>
+        {
+            context.Response.ContentType = "text/event-stream";
+            await context.Response.WriteAsync("retry: 3000\n\n", context.RequestAborted);
+            await context.Response.Body.FlushAsync(context.RequestAborted);
+
+            try
+            {
+                while (!context.RequestAborted.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(15), context.RequestAborted);
+                    await context.Response.WriteAsync(": heartbeat\n\n", context.RequestAborted);
+                }
+            }
+            finally
+            {
+                _streamHandlerExited.TrySetResult(true);
+            }
+        }).WithMetadata(new ProducesResponseTypeMetadata(
+            StatusCodes.Status200OK,
+            contentTypes: ["text/event-stream"]));
+
+        // The same SSE contract, but the request is rejected before the stream opens. HEAD must
+        // report that real status rather than a synthetic 200.
+        _app.MapGet("/stream-missing", () => Results.NotFound())
+            .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+            .Produces(StatusCodes.Status404NotFound);
+
+        // The `Results.File(byte[])` shape used by WCS GetCoverage, OGC Maps and ImageServer
+        // exportImage: the handler sets its own Content-Length and says nothing about ranges.
+        _app.MapGet("/fixed-length", async context =>
+        {
+            var payload = new byte[FixedLengthPayloadSize];
+            context.Response.ContentType = "image/png";
+            context.Response.ContentLength = payload.Length;
+            await context.Response.Body.WriteAsync(payload);
+        });
+
+        // An endpoint that genuinely serves ranges must keep its own advertisement.
+        _app.MapGet("/ranged", async context =>
+        {
+            context.Response.ContentType = "application/octet-stream";
+            context.Response.Headers.AcceptRanges = "bytes";
+            await context.Response.WriteAsync("ranged-payload");
+        });
 
         await _app.StartAsync();
         _client = _app.GetTestClient();
@@ -204,5 +268,81 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
                 "{0} must not be rewritten to GET",
                 method.Method);
         }
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnLongLivedStream_CompletesInsteadOfHanging()
+    {
+        using var timeout = new CancellationTokenSource(StreamProbeTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/stream");
+
+        using var response = await _client.SendAsync(request, timeout.Token);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            "the status must be the one the streaming handler really produced");
+        response.Content.Headers.ContentType?.ToString().Should().Be("text/event-stream");
+        (await response.Content.ReadAsByteArrayAsync(timeout.Token)).Should().BeEmpty();
+
+        var exited = await Task.WhenAny(
+            _streamHandlerExited.Task,
+            Task.Delay(StreamProbeTimeout, timeout.Token));
+        exited.Should().BeSameAs(
+            _streamHandlerExited.Task,
+            "the handler's heartbeat loop must be released, not merely detached from the response; " +
+            "a stream session held open by a HEAD probe is the resource-exhaustion half of the bug");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnLongLivedStream_DoesNotAdvertiseThePreambleAsContentLength()
+    {
+        using var timeout = new CancellationTokenSource(StreamProbeTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/stream");
+
+        using var response = await _client.SendAsync(request, timeout.Token);
+
+        response.Content.Headers.ContentLength.Should().BeNull(
+            "the equivalent GET is unbounded and sends no Content-Length, so the few preamble " +
+            "bytes this probe observed must not be advertised as the response length");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnStreamRouteThatRejectsBeforeStreaming_KeepsTheRealStatus()
+    {
+        using var timeout = new CancellationTokenSource(StreamProbeTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/stream-missing");
+
+        using var response = await _client.SendAsync(request, timeout.Token);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.NotFound,
+            "bounding a stream at its first write must not flatten the early returns that precede " +
+            "it into a synthetic 200");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnHandlerProvidedContentLength_StillDeclaresNoRangeSupport()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/fixed-length");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentLength.Should().Be(FixedLengthPayloadSize);
+        response.Headers.AcceptRanges.Should().ContainSingle()
+            .Which.Should().Be(
+                "none",
+                "a Content-Length with no Accept-Ranges is exactly the shape GDAL /vsicurl reads as " +
+                "'ranges are available'; the handlers that serve a whole buffer set their own length, " +
+                "so gating the stamp on a synthesized one left the binary raster responses broken");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnRangeServingRoute_PreservesTheHandlersAdvertisement()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/ranged");
+
+        response.Headers.AcceptRanges.Should().ContainSingle()
+            .Which.Should().Be(
+                "bytes",
+                "an endpoint that genuinely serves ranges must keep its own advertisement");
     }
 }
