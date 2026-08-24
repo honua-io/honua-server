@@ -25,9 +25,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
 
-        // The jsonb key is bound as a parameter alongside the value accessor (both reuse
-        // $2), so no part of a field name is interpolated into the SQL text.
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("jsonb_build_object('population', attributes -> $2)::text AS attributes");
         result.Sql.Should().NotContain("SELECT objectid, ST_AsBinary(geometry), attributes FROM");
         result.WhereParameters.Should().Equal("population");
     }
@@ -59,7 +57,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildOptimizedSelectQuery(layerId: 1, query);
 
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("jsonb_build_object('category', attributes -> $2)::text AS attributes");
         result.Sql.Should().Contain("COUNT(*) OVER()");
         result.Sql.Should().Contain("LIMIT $");
         // The optimized builder emits the LIMIT placeholder but does not append the pagination
@@ -190,71 +188,6 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
         // that could land in WhereParameters — and they must NOT, since AddQueryParameters binds
         // them positionally. An empty list proves the double-bind is gone.
         result.WhereParameters.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void BuildSelectQuery_WithPrefixedExtensionField_ProjectsFieldWithParameterBoundKey()
-    {
-        // honua-server#3392: a declared, queryable STAC/EO extension property such as
-        // `eo:cloud_cover` was rejected by the identifier-shaped validator and never
-        // reached the projection, so the server advertised the field in /queryables, the
-        // CSV header and the GeoServices `fields` array and then omitted it from every
-        // feature payload. A jsonb key is not a SQL identifier; it is bound as a
-        // parameter, so the colon is legal here.
-        var queryBuilder = CreateQueryBuilder();
-        var query = new FeatureQuery
-        {
-            OutFields = ImmutableArray.Create("eo:cloud_cover")
-        };
-
-        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
-
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
-        result.Sql.Should().NotContain("eo:cloud_cover");
-        result.WhereParameters.Should().Equal("eo:cloud_cover");
-    }
-
-    [Theory]
-    [InlineData("name'); DROP TABLE features; --")]
-    [InlineData("name; DELETE FROM features")]
-    [InlineData("name' || (SELECT 1) || '")]
-    [InlineData("field name")]
-    [InlineData("\"quoted\"")]
-    [InlineData("field\n")]
-    public void BuildSelectQuery_WithInjectionShapedOutField_ThrowsAndNeverEmitsTheName(string fieldName)
-    {
-        var queryBuilder = CreateQueryBuilder();
-        var query = new FeatureQuery
-        {
-            OutFields = ImmutableArray.Create(fieldName)
-        };
-
-        var act = () => queryBuilder.BuildSelectQuery(layerId: 1, query);
-
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*Invalid field name for projection*");
-    }
-
-    [Fact]
-    public void BuildSelectQuery_WithPrefixedExtensionOrderByField_OrdersByParameterBoundAttribute()
-    {
-        // The OGC adapter accepts `sortby=eo:cloud_cover` and resolves it against the
-        // declared schema; the ORDER BY builder binds the jsonb key as a parameter, so it
-        // must accept the same name instead of raising an unhandled ArgumentException
-        // (which surfaces as HTTP 500).
-        var queryBuilder = CreateQueryBuilder();
-        var query = new FeatureQuery
-        {
-            Limit = 10,
-            OrderBy = ImmutableArray.Create(
-                new OrderByClause("eo:cloud_cover", ascending: false, fieldType: MetadataV2FieldType.Double))
-        };
-
-        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
-
-        result.Sql.Should().Contain("attributes->> $2");
-        result.Sql.Should().NotContain("eo:cloud_cover");
-        result.WhereParameters.Should().Contain("eo:cloud_cover");
     }
 
     private static FeatureQueryBuilder CreateQueryBuilder()

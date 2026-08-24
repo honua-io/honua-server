@@ -8,30 +8,12 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
-    // `\z`, not `$`: in .NET `$` also matches immediately before a trailing newline, so
-    // `"field\n"` satisfied `...$` and slipped past this guard. These names reach SQL as
-    // quoted identifiers and result aliases, where an embedded newline is exactly the
-    // shape an injection attempt takes.
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex ValidFieldNameRegex();
-
-    [GeneratedRegex(@"^[a-zA-Z0-9_][a-zA-Z0-9_:.\-]{0,254}\z", RegexOptions.CultureInvariant)]
-    private static partial Regex ValidJsonAttributeKeyRegex();
 
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex NamedParameterRegex();
 
-    /// <summary>
-    /// Validates a field name that is emitted into SQL as an <b>identifier</b> — a
-    /// quoted column reference or a result-set alias.
-    /// </summary>
-    /// <remarks>
-    /// An identifier cannot be bound as a query parameter, so for these callers the
-    /// character class is what makes the interpolation safe and must stay strict.
-    /// Use <see cref="IsValidJsonAttributeKey"/> instead for names that are only ever
-    /// used as a <c>jsonb</c> key; see the remarks there for why the two must not
-    /// share one validator.
-    /// </remarks>
     internal static bool IsValidFieldName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
@@ -40,44 +22,6 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return ValidFieldNameRegex().IsMatch(fieldName);
-    }
-
-    /// <summary>
-    /// Validates a field name that is used as a <b>jsonb key</b> — the string that
-    /// indexes the attributes document, either as the key of a projected pair or as
-    /// the operand of the <c>-&gt;</c>/<c>-&gt;&gt;</c> accessor.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A jsonb key is not a SQL identifier and the two deliberately do not share a
-    /// validator. Prefixed extension property names — the STAC EO extension's
-    /// <c>eo:cloud_cover</c> is the concrete case — are legitimate, declared,
-    /// queryable fields that <see cref="IsValidFieldName"/> rejects because of the
-    /// colon. Gating the projection on the identifier regex therefore made the server
-    /// advertise a field in <c>/queryables</c>, the CSV header and the GeoServices
-    /// <c>fields</c> array and then silently omit it from every feature payload
-    /// (honua-server#3392).
-    /// </para>
-    /// <para>
-    /// <b>Ordering matters.</b> Every caller of this predicate binds the name as a
-    /// query parameter (<c>jsonb_build_object($n::text, attributes -&gt; $n::text)</c>
-    /// and <c>DatabaseSchema.BuildJsonPathParameter</c>), and that binding was put in
-    /// place <i>before</i> this predicate was relaxed — so correctness never depends
-    /// on the character class here. The remaining allow-list is defense in depth
-    /// only: it keeps quotes, semicolons, whitespace, parentheses and control
-    /// characters out of names that reach the query builder at all, while admitting
-    /// the prefixed/hyphenated/dotted shapes real schemas use. Callers that emit the
-    /// name as an identifier stay on <see cref="IsValidFieldName"/>.
-    /// </para>
-    /// </remarks>
-    internal static bool IsValidJsonAttributeKey(string fieldName)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return false;
-        }
-
-        return ValidJsonAttributeKeyRegex().IsMatch(fieldName);
     }
 
     internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)

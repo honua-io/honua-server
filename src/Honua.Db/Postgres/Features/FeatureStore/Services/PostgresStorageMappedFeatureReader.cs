@@ -502,25 +502,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var maskedFields = query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields
             ? fields.ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
-        // A field name only has to be a safe SQL identifier when the resource maps
-        // each field to its own column — that is the branch in
-        // BuildAttributesExpressionChunk which emits ValidateAndQuoteIdentifier.
-        // When the resource declares an attributes JSONB column the name is used
-        // solely as a JSON key and an escaped string literal, so requiring
-        // identifier safety there silently dropped legitimate field names from
-        // every protocol's projection. STAC extension properties are the concrete
-        // case: `eo:cloud_cover` is a declared, filterable queryable, yet it was
-        // absent from FeatureServer/OGC API Features/STAC responses because the
-        // colon failed the identifier check (honua-server#3392). The JSONB branch is not
-        // ungated, though: it keeps the jsonb-key allow-list (which admits the prefixed
-        // shapes but no quote, whitespace or control character), so nothing that could
-        // break out of the escaped string literal reaches the emitted SQL either way.
-        var requiresIdentifierSafeNames = string.IsNullOrWhiteSpace(_mapping.AttributesColumn);
         var declaredFields = _resource.SchemaFields
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-                && (requiresIdentifierSafeNames
-                    ? IsSafeIdentifier(field.Name)
-                    : FeatureQueryBuilder.IsValidJsonAttributeKey(field.Name))
+                && IsSafeIdentifier(field.Name)
                 && !maskedFields.Contains(field.Name))
             .ToArray();
 
