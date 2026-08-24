@@ -634,6 +634,12 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             throw new InvalidOperationException($"Operation authority is invalid: {error}");
         }
+
+        if (authority is not null && !authority.PermitsBoundOperation())
+        {
+            throw new InvalidOperationException(
+                "The proposer's OAuth scope ceiling no longer permits the canonical operation.");
+        }
     }
 
     private static void RequireProposalAuthority(OperationAuthorityContext? authority)

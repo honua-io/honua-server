@@ -179,6 +179,23 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public async Task AuthorizeAsync_ValidateDraft_RequiresUpdateRatherThanReadGrant()
+    {
+        var scopeAuthorizer = new SingleOperationScopeAuthorizer(OperatorOperation.Read);
+        var service = BuildService(enabled: true, out _, scopeAuthorizer: scopeAuthorizer);
+
+        var denied = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ValidateDraft, resourceOwnerId: Alice);
+
+        Assert.False(denied.IsAllowed);
+
+        scopeAuthorizer.AllowedOperation = OperatorOperation.Update;
+        var allowed = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ValidateDraft, resourceOwnerId: Alice);
+        Assert.True(allowed.IsAllowed);
+    }
+
+    [UnitTest]
     public async Task AuthorizeAsync_FlagOn_NonAdminOwnResource_ElevatedOperationAllowedWithOwnGrant()
     {
         var service = BuildService(enabled: true, out var evaluator);
@@ -351,12 +368,26 @@ public sealed class StudioAuthorizationServiceTests
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,
-        string[]? adminRoles = null)
+        string[]? adminRoles = null,
+        IOperatorScopeAuthorizer? scopeAuthorizer = null)
     {
         evaluator = new FakeOperatorAuthorizationEvaluator();
         var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
         var adminRoleOptions = new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = adminRoles ?? [] });
-        return new StudioAuthorizationService(evaluator, options, adminRoleOptions);
+        return new StudioAuthorizationService(evaluator, options, adminRoleOptions, scopeAuthorizer);
+    }
+
+    private sealed class SingleOperationScopeAuthorizer(OperatorOperation allowedOperation) : IOperatorScopeAuthorizer
+    {
+        public OperatorOperation AllowedOperation { get; set; } = allowedOperation;
+
+        public OperatorScopeDecision Evaluate(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation)
+            => operation == AllowedOperation
+                ? OperatorScopeDecision.Allowed()
+                : OperatorScopeDecision.Denied("scope denied");
     }
 
     private static ClaimsPrincipal AdminPrincipal()

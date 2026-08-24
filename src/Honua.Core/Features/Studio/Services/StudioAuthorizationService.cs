@@ -36,7 +36,11 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     /// <summary>Denial code: an elevated operation (publish-request/rollback) has no matching operator grant.</summary>
     public const string ElevatedGrantRequiredCode = "studio_authorization/elevated_grant_required";
 
+    /// <summary>Denial code: the authenticated OAuth scope does not permit the operation.</summary>
+    public const string InsufficientScopeCode = "studio_authorization/insufficient_scope";
+
     private readonly IOperatorAuthorizationEvaluator _evaluator;
+    private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions;
 
@@ -44,12 +48,14 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
         IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
-        IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
+        IOptionsMonitor<AdminRoleOptions> adminRoleOptions,
+        IOperatorScopeAuthorizer? scopeAuthorizer = null)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(adminRoleOptions);
         _evaluator = evaluator;
+        _scopeAuthorizer = scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance;
         _options = options;
         _adminRoleOptions = adminRoleOptions;
     }
@@ -142,6 +148,17 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        var scopeDecision = _scopeAuthorizer.Evaluate(
+            principal,
+            OperatorResourceType.StudioDraft,
+            ResolveOperatorOperation(operation));
+        if (!scopeDecision.IsAllowed)
+        {
+            return StudioAuthorizationDecision.Deny(
+                InsufficientScopeCode,
+                scopeDecision.Reason ?? "The authenticated OAuth scope does not permit this Studio operation.");
+        }
+
         // Admins always have full, unscoped access -- unchanged before and after #3001, and
         // independent of the feature flag.
         if (IsAdmin(principal))
@@ -203,12 +220,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // id regardless of who owns it. A grant scoped to the "own" sentinel authorizes every
         // resource the caller owns; a grant scoped to the concrete resourceId (or the "*"
         // wildcard) authorizes an operator-provisioned delegate, independent of ownership.
-        var operatorOperation = operation switch
-        {
-            StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
-            StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
-            _ => OperatorOperation.Rollback,
-        };
+        var operatorOperation = ResolveOperatorOperation(operation);
 
         if (isOwn && await HasOperatorGrantAsync(principal, operatorOperation, OwnResourceSentinel, cancellationToken).ConfigureAwait(false))
         {
@@ -234,6 +246,24 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             $"'{operation}' requires a StudioDraft '{operatorOperation}' operator grant.",
             elevated: true);
     }
+
+    private static OperatorOperation ResolveOperatorOperation(StudioAuthorizationOperation operation)
+        => operation switch
+        {
+            StudioAuthorizationOperation.ReadDraft
+                or StudioAuthorizationOperation.ReadContentItem
+                or StudioAuthorizationOperation.ListOwn
+                => OperatorOperation.Read,
+            StudioAuthorizationOperation.ValidateDraft => OperatorOperation.Update,
+            StudioAuthorizationOperation.CreateDraft
+                or StudioAuthorizationOperation.CreateVersion
+                or StudioAuthorizationOperation.ReopenVersion => OperatorOperation.Create,
+            StudioAuthorizationOperation.DeleteDraft => OperatorOperation.Delete,
+            StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
+            StudioAuthorizationOperation.Rollback => OperatorOperation.Rollback,
+            StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
+            _ => OperatorOperation.Update,
+        };
 
     private async Task<bool> HasOperatorGrantAsync(
         ClaimsPrincipal principal,

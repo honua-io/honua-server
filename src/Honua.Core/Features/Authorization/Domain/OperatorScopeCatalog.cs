@@ -45,6 +45,12 @@ public static class OperatorScopeCatalog
     /// <summary>Scope authorizing creation of new resources or artifacts (<see cref="OperatorOperation.Create"/>).</summary>
     public const string Create = "honua.mcp.create";
 
+    /// <summary>Scope authorizing updates to existing resources.</summary>
+    public const string Update = "honua.mcp.update";
+
+    /// <summary>Scope authorizing deletion of resources.</summary>
+    public const string Delete = "honua.mcp.delete";
+
     /// <summary>Scope authorizing execution of built-in analytic tools/jobs (<see cref="OperatorOperation.Execute"/>).</summary>
     public const string Execute = "honua.mcp.execute";
 
@@ -68,6 +74,9 @@ public static class OperatorScopeCatalog
     /// <summary>Scope authorizing publishing/deployment (<see cref="OperatorOperation.Publish"/>).</summary>
     public const string Publish = "honua.mcp.publish";
 
+    /// <summary>Scope authorizing rollback of an immutable resource pointer.</summary>
+    public const string Rollback = "honua.mcp.rollback";
+
     private static readonly Dictionary<string, OperatorOperation[]> ScopeOperations =
         new(StringComparer.Ordinal)
         {
@@ -75,11 +84,14 @@ public static class OperatorScopeCatalog
             [Discover] = [OperatorOperation.Discover],
             [Read] = [OperatorOperation.Read, OperatorOperation.Discover],
             [Create] = [OperatorOperation.Create],
+            [Update] = [OperatorOperation.Update],
+            [Delete] = [OperatorOperation.Delete],
             [Execute] = [OperatorOperation.Execute],
             [ExecuteMutating] = [OperatorOperation.ExecuteMutatingProcess, OperatorOperation.Execute],
             [ExecuteCustomCode] = [OperatorOperation.ExecuteCustomCode, OperatorOperation.Execute],
             [Promote] = [OperatorOperation.Promote],
             [Publish] = [OperatorOperation.Publish],
+            [Rollback] = [OperatorOperation.Rollback],
         };
 
     /// <summary>
@@ -109,11 +121,14 @@ public static class OperatorScopeCatalog
         Discover,
         Read,
         Create,
+        Update,
+        Delete,
         Execute,
         ExecuteMutating,
         ExecuteCustomCode,
         Promote,
         Publish,
+        Rollback,
     ];
 
     /// <summary>

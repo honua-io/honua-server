@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -38,7 +39,11 @@ public sealed class ProposeOperationToolTests
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "agent-x")], "Test"))
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "stable-subject"),
+                new Claim(ClaimTypes.Name, "Mutable Agent Display Name"),
+            ], "Test"))
         };
     }
 
@@ -69,8 +74,11 @@ public sealed class ProposeOperationToolTests
         content.GetProperty("resourceUri").GetString().Should().Be("honua://proposals/proposal-123");
         gateway.LastRequest.Should().NotBeNull();
         gateway.LastRequest!.Authority.Should().NotBeNull();
-        gateway.LastRequest.Authority!.Actor.Should().Be("agent-x");
+        gateway.LastRequest.Authority!.Actor.Should().Be("stable-subject");
+        gateway.LastRequest.RequestedBy.Should().Be("stable-subject");
         gateway.LastRequest.Authority.EffectiveTenant.Should().Be("tenant-1");
+        gateway.LastRequest.Authority.ResourceType.Should().Be(OperatorResourceType.Deployment);
+        gateway.LastRequest.Authority.Operation.Should().Be(OperatorOperation.Publish);
     }
 
     [UnitTest]
@@ -96,6 +104,39 @@ public sealed class ProposeOperationToolTests
         content.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         content.GetProperty("outcome").GetString().Should().Be("Executed");
         content.GetProperty("executionOperationId").GetString().Should().Be("exec-1");
+    }
+
+    [Fact]
+    public async Task ProposeOperation_Geoprocess_IsRejectedBeforePayloadReachesGateway()
+    {
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.Executed,
+            Decision = new GuardrailDecision(
+                GuardrailTier.DirectExecute,
+                OperationClass.Geoprocess,
+                default,
+                "test"),
+        });
+        var context = ContextWithGateway(gateway);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "stable-subject"),
+            new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.ExecuteMutating),
+        ], "Bearer"));
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = "Geoprocess",
+                ExecutionPayload = "{\"requestedBy\":\"forged-operator\",\"submitterSecurityContext\":{\"tenantId\":\"victim\"}}",
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+        gateway.LastRequest.Should().BeNull();
     }
 
     [UnitTest]

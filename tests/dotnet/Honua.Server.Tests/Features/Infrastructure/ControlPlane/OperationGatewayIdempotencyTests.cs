@@ -84,12 +84,11 @@ public sealed class OperationGatewayIdempotencyTests
 
     private static OperationAuthorityContext ValidAuthority() => new()
     {
-        Issuer = "https://issuer.example",
+        Issuer = "test-service",
         Actor = "agent",
-        Scheme = "Bearer",
+        Scheme = "Service",
         EffectiveTenant = "tenant-1",
-        OAuthScopes = ["service:write"],
-        ScopeCeiling = ["service:write"],
+        ScopeGoverned = false,
     };
 
     private static OperationGateway BuildGateway(IOperationProposalStore store, IGuardrailLadder ladder)

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -178,6 +179,17 @@ public sealed class StudioMcpToolDelegationTests
         pointers!.CurrentVersionId.Should().BeNull("no honua_studio_* tool ever creates a content version");
         pointers.PublishedVersionId.Should().BeNull(
             "propose-publication must never create a content version or move the published pointer");
+
+        await jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<System.Security.Claims.ClaimsPrincipal>(),
+            OperatorResourceType.StudioDraft,
+            OperatorOperation.Create,
+            Arg.Any<CancellationToken>());
+        await jobService.Received().EnsureCallerAuthorizedAsync(
+            Arg.Any<System.Security.Claims.ClaimsPrincipal>(),
+            OperatorResourceType.StudioDraft,
+            OperatorOperation.Update,
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
