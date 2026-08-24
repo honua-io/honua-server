@@ -408,6 +408,17 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn("diagnostic-only: true", workflow)
         self.assertIn("cron: '0 8 * * *'", workflow)
         self.assertNotIn("pull_request:", workflow)
+        self.assertIn("validate-image:", workflow)
+        self.assertIn("needs: validate-image", workflow)
+        self.assertIn(
+            "SERVER_IMAGE: ${{ inputs.server_image || '' }}",
+            workflow,
+        )
+        self.assertIn(
+            "@sha256:[0-9a-fA-F]{64}$",
+            workflow,
+        )
+        self.assertIn("server_image must be an immutable", workflow)
         self.assertLess(
             common.index("id: run-suite"),
             common.index("name: Generate SBOM (SPDX JSON) for honua-server:latest"),
