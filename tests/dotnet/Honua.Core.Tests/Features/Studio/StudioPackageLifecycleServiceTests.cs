@@ -16,6 +16,46 @@ namespace Honua.Core.Tests.Features.Studio;
 public sealed class StudioPackageLifecycleServiceTests
 {
     [UnitTest]
+    public async Task CreateDraft_ConcurrentOwners_CannotAttachToAnotherOwnersItem()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var itemId = Guid.NewGuid();
+
+        var creates = new[] { "owner-a", "owner-b" }.Select(owner =>
+            service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+            {
+                ItemId = itemId,
+                PackageKey = $"race-{owner}",
+                WorkspaceId = "studio",
+                OwnerId = owner,
+                ActorId = owner,
+                Envelope = BuildEnvelope("1=1", "content.parcels"),
+            })).ToArray();
+
+        var results = await Task.WhenAll(
+            creates.Select(async operation =>
+            {
+                try
+                {
+                    return (Draft: await operation, Error: (Exception?)null);
+                }
+                catch (Exception ex)
+                {
+                    return (Draft: (StudioPackageDraft?)null, Error: ex);
+                }
+            }));
+
+        Assert.Single(results, result => result.Draft is not null);
+        var rejected = Assert.Single(results, result => result.Error is not null);
+        Assert.IsType<InvalidOperationException>(rejected.Error);
+
+        var pointers = await store.GetPointersAsync(itemId);
+        Assert.NotNull(pointers);
+        Assert.Single((await store.ListDraftsAsync(new StudioPackageDraftQuery { SearchTerm = "race-owner-" })).Items);
+    }
+
+    [UnitTest]
     public async Task SaveDraftAsVersion_WithExpectedGeneration_VersionsOnlyThatGeneration()
     {
         // Callers that apply an edit and then version it (the live-collaboration checkpoint) must

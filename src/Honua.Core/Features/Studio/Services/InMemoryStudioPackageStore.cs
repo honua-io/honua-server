@@ -36,6 +36,15 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         lock (_gate)
         {
             EnsurePackageKeyAvailable(draft);
+            if (_items.TryGetValue(draft.ItemId, out var existingItem)
+                && !string.Equals(existingItem.OwnerId, draft.OwnerId, StringComparison.Ordinal))
+            {
+                // Ownership is immutable. Keep this check inside the same lock as
+                // the item upsert so a pointer lookup followed by draft creation
+                // cannot authorize against a stale, ownerless snapshot.
+                throw new InvalidOperationException("Studio content item is owned by another caller.");
+            }
+
             var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
             _items[draft.ItemId] = item with
             {

@@ -1019,6 +1019,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 family = EXCLUDED.family,
                 updated_by = EXCLUDED.updated_by,
                 updated_at = EXCLUDED.updated_at
+            WHERE {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1032,7 +1033,14 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@updated_by", (object?)updatedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_at", createdAt);
         command.Parameters.AddWithValue("@updated_at", updatedAt);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (affected == 0)
+        {
+            // The owner predicate makes the immutable ownership invariant
+            // atomic with the upsert. A concurrent create cannot slip between
+            // the MCP pointer check and draft insertion.
+            throw new InvalidOperationException("Studio content item is owned by another caller.");
+        }
     }
 
     private async Task LockItemAsync(
