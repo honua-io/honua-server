@@ -63,13 +63,19 @@ public sealed class StudioPackageLifecycleServiceTests
         var itemId = Guid.NewGuid();
         await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
-            ItemId = itemId, PackageKey = "mixed-owner-a", OwnerId = "owner-a", ActorId = "owner-a",
+            ItemId = itemId,
+            PackageKey = "mixed-owner-a",
+            OwnerId = "owner-a",
+            ActorId = "owner-a",
             Envelope = BuildEnvelope("1=1", "content.parcels"),
         });
 
         var mixed = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
-            ItemId = itemId, PackageKey = "mixed-owner-b", OwnerId = "owner-b", ActorId = "owner-b",
+            ItemId = itemId,
+            PackageKey = "mixed-owner-b",
+            OwnerId = "owner-b",
+            ActorId = "owner-b",
             ExpectedExistingItemOwnerId = "owner-a",
             Envelope = BuildEnvelope("1=1", "content.parcels"),
         });
@@ -86,12 +92,18 @@ public sealed class StudioPackageLifecycleServiceTests
         var itemId = Guid.NewGuid();
         await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
-            ItemId = itemId, PackageKey = "item-owner-key", OwnerId = "owner-a", ActorId = "owner-a",
+            ItemId = itemId,
+            PackageKey = "item-owner-key",
+            OwnerId = "owner-a",
+            ActorId = "owner-a",
             Envelope = BuildEnvelope("1=1", "content.parcels"),
         });
         var mixed = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
-            ItemId = itemId, PackageKey = "draft-owner-key", OwnerId = "owner-b", ActorId = "owner-b",
+            ItemId = itemId,
+            PackageKey = "draft-owner-key",
+            OwnerId = "owner-b",
+            ActorId = "owner-b",
             ExpectedExistingItemOwnerId = "owner-a",
             Envelope = BuildEnvelope("2=2", "content.parcels"),
         });
