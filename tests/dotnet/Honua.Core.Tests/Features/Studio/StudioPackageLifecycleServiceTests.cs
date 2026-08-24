@@ -48,7 +48,7 @@ public sealed class StudioPackageLifecycleServiceTests
 
         Assert.Single(results, result => result.Draft is not null);
         var rejected = Assert.Single(results, result => result.Error is not null);
-        Assert.IsType<InvalidOperationException>(rejected.Error);
+        Assert.IsType<StudioCompositionConflictException>(rejected.Error);
 
         var pointers = await store.GetPointersAsync(itemId);
         Assert.NotNull(pointers);
