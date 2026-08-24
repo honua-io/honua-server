@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -64,6 +65,7 @@ internal sealed class TenantContextMiddleware(
             if (isAuthenticated && PrincipalHasMultiTenantAdminRole(principal!))
             {
                 tenantContext.Set(headerTenantId, TenantContextSource.Header);
+                CanonicalSecurityActor.StampRequestBinding(principal!, headerTenantId);
                 TenantContextLog.HeaderOverrideAccepted(
                     _logger,
                     GetPrincipalIdentifier(principal),
@@ -80,13 +82,34 @@ internal sealed class TenantContextMiddleware(
                 GetPrincipalIdentifier(principal),
                 TenantContextOptions.TenantHeaderName,
                 path);
+
+            // A bearer caller with an unauthorized override must fail closed. Falling
+            // through to a claim or default tenant would make the request appear valid
+            // to downstream middleware while silently discarding the caller's choice.
+            if (isAuthenticated && IsBearerPrincipal(principal!))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
         }
 
         // 2. Claim-based resolution.
         if (isAuthenticated && TryReadClaim(principal!, out var claimTenantId))
         {
             tenantContext.Set(claimTenantId, TenantContextSource.Claim);
+            CanonicalSecurityActor.StampRequestBinding(principal!, claimTenantId);
             TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Claim), claimTenantId, path);
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        // An authenticated bearer without a validated tenant claim must never inherit
+        // the anonymous public default. Tenant-required operations will reject the
+        // null context downstream rather than running under the wrong tenant.
+        if (isAuthenticated && IsBearerPrincipal(principal!))
+        {
+            tenantContext.Set(null, TenantContextSource.Anonymous);
+            CanonicalSecurityActor.StampRequestBinding(principal!, null);
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -105,6 +128,11 @@ internal sealed class TenantContextMiddleware(
         TenantContextLog.AnonymousNoDefault(_logger, path);
         await _next(context).ConfigureAwait(false);
     }
+
+    private static bool IsBearerPrincipal(ClaimsPrincipal principal) =>
+        string.Equals(principal.FindFirst("auth_type")?.Value, "oidc", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(principal.Identity?.AuthenticationType, "Bearer", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(principal.Identity?.AuthenticationType, "JwtBearer", StringComparison.OrdinalIgnoreCase);
 
     private bool TryReadHeader(HttpContext context, out string tenantId)
     {

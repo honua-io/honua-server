@@ -5,6 +5,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Builder;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -47,6 +48,47 @@ namespace Honua.Ai.Protocols.Mcp;
 internal static class McpBearerAuthenticationEndpointExtensions
 {
     private const string BearerPrefix = "Bearer ";
+
+    /// <summary>
+    /// Validates MCP bearer credentials before tenant resolution. Endpoint filters
+    /// remain as a defense-in-depth check, but cannot be the authority boundary.
+    /// </summary>
+    public static IApplicationBuilder UseMcpBearerAuthentication(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (httpContext, next) =>
+        {
+            if (!httpContext.Request.Path.Equals(McpEndpointExtensions.RoutePath, StringComparison.Ordinal)
+                || !HasBearerCredential(httpContext))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var options = httpContext.RequestServices
+                .GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
+            if (McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count == 0)
+            {
+                // No authority means no bearer identity. Anonymous discovery remains
+                // available, while tool handlers still require an authenticated principal.
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var result = await httpContext.AuthenticateAsync(OidcAuthenticationExtensions.JwtBearerScheme)
+                .ConfigureAwait(false);
+            if (result.Succeeded && result.Principal is not null)
+            {
+                httpContext.User = result.Principal;
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            McpProtectedResourceMetadataEndpointExtensions.StampChallengeOnUnauthorized(httpContext);
+            await BuildInvalidTokenResult().ExecuteAsync(httpContext).ConfigureAwait(false);
+        });
+    }
 
     /// <summary>
     /// Endpoint filter that validates a presented bearer token and authenticates the caller
