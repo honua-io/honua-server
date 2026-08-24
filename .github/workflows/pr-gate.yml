@@ -45,6 +45,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Admission tier: ~3 seconds over every tracked text blob, so a branch that
+      # saved documentation as Windows-1252 (#3320) is named here instead of
+      # surfacing as a bare UnicodeDecodeError from whichever later step happens
+      # to read one of the affected files -- or, for files nothing reads, merging
+      # corrupted. Binary fixtures are excluded by git's own classification.
+      - name: Verify tracked text files are UTF-8
+        run: |
+          # The reporting check runs FIRST. Its whole purpose is to name the
+          # offending file, byte, offset and line; running the fixture suite
+          # ahead of it meant a genuinely mis-encoded file tripped the suite's
+          # own live-repository assertion, `&&` short-circuited, and the gate
+          # blocked with no diagnostic at all -- the exact failure #3321 was
+          # filed about. The suite still runs after, so a checker that wrongly
+          # reports clean is caught in the same step.
+          python3 scripts/ci/validate-tracked-file-encoding.py
+          python3 scripts/ci/validate-tracked-file-encoding.test.py
+
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
 
