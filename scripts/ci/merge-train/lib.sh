@@ -51,7 +51,13 @@ train_init_controller_deadline() {
 
 # Flake signature regex (classify-flake). A failing job whose log matches this
 # is treated as environmental and rerun once; persistent recognized flakes may merge through. Generic timeout/exit-124 handling has higher precedence and persistent timeouts remain real.
-# the Postgres deadlock/Testcontainers signatures, the test harness's isolation
+# In addition to the line-scoped signatures below, train_log_is_flake requires
+# Testcontainers, a failure-marked Ryuk event, and timeout/connection-failure
+# evidence in the same failed-job log before treating a resource-reaper failure
+# as a flake. The terms are often split across logger lines, so that correlation
+# cannot live in this grep expression without making harmless Ryuk status lines
+# sufficient.
+# The Postgres deadlock signatures and the test harness's isolation
 # race surfaces as transient schema-setup errors ("relation/column/schema ...
 # does not exist", "does not exist at character N") when a test runs before its
 # per-test schema is migrated (honua-server#1568/#2049). These are intermittent:
@@ -68,7 +74,7 @@ train_init_controller_deadline() {
 # the opt-in demo path) removes the race; this signature is defense-in-depth so
 # any residual/related static-web-assets content-root race is rerun-and-merged-
 # through rather than escalating the whole batch.
-: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed}"
+: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed}"
 
 # Heavy CI jobs the train treats as NON-BLOCKING. They run on EVERY batch (not
 # shard-targeted), flake on environment (Docker registry, browser, JS/Python
@@ -389,10 +395,42 @@ train_join_job_names() {
 }
 
 # --- flake classification (pure, testable) -----------------------------------
-# train_log_is_flake <log-text>: returns 0 if the text matches the flake regex.
+# train_log_is_flake <log-text>: returns 0 if the text matches a line-scoped
+# flake regex or contains correlated Testcontainers/Ryuk failure evidence.
 train_log_is_flake() {
   local text="$1"
-  printf '%s' "${text}" | grep -Eq "${TRAIN_FLAKE_REGEX}"
+  if [[ -n "${TRAIN_FLAKE_REGEX}" ]] &&
+      grep -Eq "${TRAIN_FLAKE_REGEX}" <<<"${text}"; then
+    return 0
+  fi
+
+  # Testcontainers may identify itself near the start of a large job log, then
+  # report the resource-reaper identity and transport error on separate lines
+  # much later. Read the text once: this avoids grep -q closing a pipe early
+  # under pipefail, while still requiring both a failure-marked,
+  # non-configuration Ryuk event and transport evidence in the same failed-job
+  # log. In particular, neither `testcontainers.ryuk.disabled=false` nor a
+  # successful Ryuk status plus an unrelated timeout is a resource-reaper
+  # failure that may authorize optimistic merge-through.
+  awk '
+    {
+      lines[NR] = tolower($0)
+      if (lines[NR] ~ /testcontainers/) has_testcontainers = 1
+    }
+    END {
+      if (!has_testcontainers) exit 1
+      for (i = 1; i <= NR; i++) {
+        ryuk_event = lines[i]
+        gsub(/testcontainers[._]ryuk[._]disabled[[:space:]]*[:=][[:space:]]*(true|false)/, "", ryuk_event)
+        if (ryuk_event ~ /ryuk/ &&
+            ryuk_event ~ /(timed out|connection refused|fail(ed|ure)?|did not|not .*ready|unable|cannot|can not|could not|error)/) {
+          has_ryuk_failure = 1
+        }
+        if (lines[i] ~ /(timed out|connection refused)/) has_transport_error = 1
+      }
+      exit !(has_ryuk_failure && has_transport_error)
+    }
+  ' <<<"${text}"
 }
 
 # --- attribution (pure, testable) --------------------------------------------
