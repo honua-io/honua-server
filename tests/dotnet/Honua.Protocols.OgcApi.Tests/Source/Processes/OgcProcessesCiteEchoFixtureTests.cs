@@ -296,7 +296,8 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [Theory]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,2,3,4]}}")]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,2,3,4,5,6]}}")]
-    public void InputValidation_AcceptsFourAndSixCoordinateBoundingBoxes(string json)
+    [InlineData("{\"literal\":\"ok\",\"binary\":\"\"}")]
+    public void InputValidation_AcceptsPublishedSchemaValues(string json)
     {
         using var document = JsonDocument.Parse(json);
         var inputs = document.RootElement.EnumerateObject()
