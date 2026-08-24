@@ -75,7 +75,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 draft.CreatedAt,
                 draft.UpdatedAt,
                 cancellationToken,
-                draft.ExpectedExistingItemOwnerId).ConfigureAwait(false);
+                draft.ExpectedExistingItemOwnerId,
+                draft.ExpectedExistingItemPresent).ConfigureAwait(false);
 
             var sql = $"""
                 INSERT INTO {_draftsTable}
@@ -1002,7 +1003,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken,
-        string? expectedExistingOwnerId = null)
+        string? expectedExistingOwnerId = null,
+        bool expectedExistingItemPresent = false)
     {
         // owner_id is intentionally set only on INSERT and left out of the ON CONFLICT UPDATE
         // clause: ownership is populated once, on create, from the authenticated principal
@@ -1022,7 +1024,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 updated_by = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.updated_by ELSE {_itemsTable}.updated_by END,
                 updated_at = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.updated_at ELSE {_itemsTable}.updated_at END
             WHERE {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
-               OR {_itemsTable}.owner_id IS NOT DISTINCT FROM @expected_existing_owner_id
+               OR (@expected_existing_item_present
+                   AND {_itemsTable}.owner_id IS NOT DISTINCT FROM @expected_existing_owner_id)
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1033,6 +1036,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_owner_id", (object?)expectedExistingOwnerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@expected_existing_item_present", expectedExistingItemPresent);
         command.Parameters.AddWithValue("@created_by", (object?)createdBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_by", (object?)updatedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_at", createdAt);
