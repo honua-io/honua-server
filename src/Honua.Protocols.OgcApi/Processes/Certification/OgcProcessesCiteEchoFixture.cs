@@ -636,7 +636,19 @@ internal static class OgcProcessesCiteEchoFixture
 
     private static bool IsBase64(string? value)
     {
-        if (string.IsNullOrEmpty(value) || value.Length % 4 != 0)
+        if (value is null)
+        {
+            return false;
+        }
+
+        // An empty payload is a valid RFC 4648 base64 value. Keep it aligned
+        // with the advertised byte schema, which imposes no minimum length.
+        if (value.Length == 0)
+        {
+            return true;
+        }
+
+        if (value.Length % 4 != 0)
         {
             return false;
         }
