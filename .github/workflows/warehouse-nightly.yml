@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload warehouse test results
         if: always() && steps.gate.outputs.skipped != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: warehouse-nightly-${{ matrix.project }}-${{ github.run_id }}
           path: tests/TestResults/

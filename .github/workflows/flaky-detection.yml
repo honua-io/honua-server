@@ -313,7 +313,7 @@ jobs:
 
       - name: Upload shard flake evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: flaky-detection-${{ matrix.suffix }}
           path: |
@@ -371,7 +371,7 @@ jobs:
       # only MISSING evidence does (above).
       - name: Upload flake report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: flaky-detection-report
           path: |

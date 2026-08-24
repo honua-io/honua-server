@@ -141,7 +141,7 @@ jobs:
           popd >/dev/null
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: honua-core-${{ github.run_id }}-packages
           path: nupkgs/*.nupkg

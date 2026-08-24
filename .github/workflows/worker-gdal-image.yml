@@ -103,7 +103,7 @@ jobs:
 
       - name: Retain worker scan report
         if: always() && steps.sarif.outputs.created == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: trivy-worker-gdal-${{ github.sha }}
           path: trivy-worker-gdal.sarif

@@ -69,7 +69,7 @@ jobs:
             --results-directory ./tests/TestResults
 
       - name: Retain exact fixture, digest, and provenance
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: honua-server-geoarrow-02-${{ env.HONUA_GEOARROW_PRODUCER_COMMIT }}
           path: |

@@ -163,7 +163,7 @@ jobs:
 
       - name: Retain observation skip marker
         if: steps.target.outputs.skip == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-skipped-${{ steps.target.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -241,7 +241,7 @@ jobs:
 
       - name: Retain immutable shadow plan
         if: steps.target.outputs.skip != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-plan-${{ steps.target.outputs.pr }}-${{ steps.target.outputs.head_sha }}-attempt-${{ github.run_attempt }}
           path: |
@@ -344,7 +344,7 @@ jobs:
             --receipt "payload/server-test-prebuild-${suffix}.receipt.json"
 
       - name: Upload immutable exact-head prebuild
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-${{ matrix.project_suffix }}-attempt-${{ github.run_attempt }}
           path: payload/
@@ -369,7 +369,7 @@ jobs:
               selected_shards:$selected_shards, elapsed_ms:$elapsed_ms}' \
             > metrics/producer-${{ matrix.project_suffix }}.json
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-metrics-${{ needs.plan.outputs.pr }}-${{ matrix.project_suffix }}-${{ github.run_attempt }}
           path: metrics/

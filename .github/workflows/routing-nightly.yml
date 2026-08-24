@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload routing test results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: routing-nightly-results-${{ github.run_id }}
           path: tests/TestResults/

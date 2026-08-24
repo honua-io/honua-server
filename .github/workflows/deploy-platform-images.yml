@@ -460,7 +460,7 @@ jobs:
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
 
       - name: Upload Trivy unfixed-inclusive inventory
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: always() && hashFiles(format('trivy-inventory-{0}-{1}.json', matrix.image_key, matrix.arch)) != ''
         with:
           name: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}

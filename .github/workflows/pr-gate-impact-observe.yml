@@ -237,7 +237,7 @@ jobs:
       # regression. Read from the artifact catalog; never downloaded.
       - name: Retain observation skip marker
         if: steps.collect.outputs.skip == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: pr-gate-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -268,7 +268,7 @@ jobs:
 
       - name: Upload trusted PR Gate impact observation
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pr-gate-impact-observation.json
@@ -368,7 +368,7 @@ jobs:
 
       - name: Upload trusted PR Gate build receipt
         if: steps.validate-build-evidence.outputs.accepted == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: pr-gate-build-evidence-receipt-${{ steps.collect.outputs.run_id }}-attempt-${{ steps.collect.outputs.run_attempt }}
           path: ${{ runner.temp }}/pr-gate-build-receipt/receipt.json
