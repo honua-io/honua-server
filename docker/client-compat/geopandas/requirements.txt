@@ -1,0 +1,37 @@
+# GeoPandas canonical-analyst certification lane (honua-server#3392).
+#
+# Every version is pinned exactly: the certification envelope records the
+# resolved client stack in `client_version`, so a floating requirement would
+# make two runs of the "same" lane incomparable and break baseline diffing.
+#
+# The GDAL that backs this lane is the one vendored inside the pyogrio wheel
+# (GDAL 3.9.1), which ships the OAPIF and WFS drivers this lane needs. Fiona's
+# wheel vendors its own GDAL (3.9.2) and is used for cross-engine agreement
+# checks only.
+
+# --- client under certification -------------------------------------------
+geopandas==1.0.1
+pyogrio==0.10.0
+fiona==1.10.1
+shapely==2.0.6
+pyproj==3.7.0
+
+# --- dataframe / IO runtime the client is built on -------------------------
+pandas==2.2.3
+numpy==2.1.3
+pyarrow==17.0.0
+
+# --- lane harness ----------------------------------------------------------
+httpx==0.27.2
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-timeout==2.3.1
+
+# --- imports pulled in by tests/python/conftest.py -------------------------
+# pytest resolves tests/python as the rootdir (tests/python/pytest.ini), so the
+# repository-wide tests/python/conftest.py is imported before this lane's own
+# conftest. It imports shared.postgis, which imports psycopg + testcontainers
+# at module scope. The lane never starts a container - these are import-time
+# requirements only.
+psycopg[binary]==3.2.3
+testcontainers[postgres]==4.8.2

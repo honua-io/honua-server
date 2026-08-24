@@ -31,7 +31,25 @@ tests/baselines/client-compat/
     arcgis-stub-featureserver.cert.json
     arcgis-stub-mapserver.cert.json
     arcgis-stub-portal.cert.json
+  geopandas/            # py-geopandas   (#3392)
+    py-geopandas-ogc-features.cert.json
+    py-geopandas-wfs.cert.json
+  owslib/               # py-owslib      (#3392)
+    py-owslib-{ogc-features,wfs,wms,wmts}.cert.json
+  duckdb/               # duckdb         (#3392)
+    duckdb-ogc-features.cert.json
+  r-sf/                 # r-sf           (#3392)
+    r-sf-{ogc-features,wfs}.cert.json
+  pystac/               # py-pystac      (#3392)
+    py-pystac-stac.cert.json
 ```
+
+The five canonical analyst lanes also carry lane-specific `NB-*` extension cases in the
+envelope's `extensions` array (224 of them across the five). Those IDs are declared in
+`docs/gis/data/client-certification-matrix.v1.json` and documented in
+`docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`; `DocumentationMatrixDriftTests` joins all
+three in both directions, so an extension ID cannot appear in evidence without also being
+declared and documented.
 
 Filenames omit the `run_id` prefix so the baseline is content-stable across
 runs. The diff script identifies envelopes by `(client_lane, protocol)` from
@@ -58,7 +76,8 @@ manifest in lockstep with `docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`
 when a lane × protocol is added or retired.
 
 The full-matrix contract is the complete set enumerated by `expected-pairs.json`: 4 `js-cesium`, 6 `js`, 2
-`desktop-qgis`, 2 `cli`, and 3 `arcgis-stub` envelopes. A
+`desktop-qgis`, 2 `cli`, 3 `arcgis-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
+`py-pystac` envelopes — 27 pairs in total. A
 `workflow_dispatch` subset run passes `--client-lanes` so strict mode evaluates
 only the requested `client_lane` values; the scheduled nightly run evaluates the
 entire manifest.

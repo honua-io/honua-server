@@ -1,0 +1,395 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T211844Z",
+  "run_date": "2026-08-23T21:18:44.388698+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "py-geopandas",
+  "client_version": "geopandas=1.0.1;pyogrio=0.10.0;fiona=1.10.1;GDAL=3.9.1",
+  "protocol": "wfs",
+  "protocol_version": "2.0.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 151,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "pyogrio.read_dataframe over the WFS driver returned 10 rows for typename 'honua:test_layer'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Certified endpoint uses scheme 'http'. The client-compat compose network is plain HTTP by design; TLS posture is exercised in the release tier against the HTTPS candidate build.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": 24,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GET /api/v1/admin/services without credentials returned 401 with WWW-Authenticate='ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"'. httpx is used here because the control plane has no GeoPandas client surface.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": 26,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GET /api/v1/admin/services authenticated with the X-API-Key scheme (observed: X-API-Key->200). httpx is used because the control plane has no GeoPandas client surface.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 30,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "GetCapabilities advertised 5 feature types: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 39,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "read_info reported driver=WFS, crs=EPSG:4326, features=10, geometry_name='shape', title='Test Layer'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": 38,
+      "measured_count": 15,
+      "measured_delta": null,
+      "notes": "WFS exposed 15 attributes (['active', 'count', 'created_at', 'description', 'eo_x003A_cloud_cover', 'event_date', 'event_time', 'gml_id', 'name', 'numbers', 'objectid', 'ratio', 'status', 'tags', 'uid']), covering every canonical attribute field plus the 'objectid' identifier and gml_id.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": 80,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "read_info geometry_type='Point' for geometry element 'shape'; materialized types=['Point'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": 68,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "pyogrio where=\"status = 'active'\" returned 5 rows. A CPL_DEBUG trace shows GDAL's WFS driver fetching GetFeature without a FILTER parameter, so the predicate was evaluated client-side over the full response; server-side fes 2.0 predicate evaluation is certified by NB-GPD-WFS-FLT-01.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": 70,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Server-side KVP BBOX (urn:ogc:def:crs:EPSG::4326, lat/lon ordered) returned 3 features, matching the canonical subset. The same envelope passed to pyogrio's bbox= returned 4 rows because GDAL's WFS driver evaluates the spatial filter client-side and retains the null-geometry feature; the 3 located rows agree with the server-side result.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": 38,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "max_features=3 returned 3 rows.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": 90,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "page 1 ids=[1, 2, 3], page 2 ids=[4, 5, 6]; the two pages are disjoint.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": 48,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "anchor 'alpha' materialized at (-122.49, 37.71); expected (-122.49, 37.71); max abs deviation 0.0 deg against a 1e-06 deg limit. GDAL applied the EPSG:4326 lat/lon-to-lon/lat axis swap the WFS response declares.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 52,
+      "measured_count": 4326,
+      "measured_delta": null,
+      "notes": "gdf.crs=EPSG:4326 (EPSG:4326).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 46,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pyogrio raised DataLayerError(\"Layer 'does-not-exist-9999' could not be opened\"); the underlying transport shape was verified with httpx: 400 carrying an ows:ExceptionReport.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": 27,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pyogrio rejected where='status ==': \"Invalid SQL query for layer 'b'honua:test_layer'': 'status =='\".",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 8
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-GPD-WFS-CRS-01",
+      "status": "pass",
+      "duration_ms": 46,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "total_bounds=(np.float64(-122.49), np.float64(37.71), np.float64(-122.37), np.float64(37.79)) after GDAL applied the axis swap implied by srsName=urn:ogc:def:crs:EPSG::4326; the server's GML coordinate order is therefore consistent with the CRS it declares.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-CRS-02",
+      "status": "pass",
+      "duration_ms": 20,
+      "measured_count": null,
+      "measured_delta": 2.7939677238464355e-09,
+      "notes": "SRSNAME=urn:ogc:def:crs:EPSG::3857 returned EPSG:3857; the anchor landed 2.7939677238464355e-09 m from the pyproj reference (limit 0.01 m).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-SCH-01",
+      "status": "pass",
+      "duration_ms": 44,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "WFS exposed the namespaced field as 'eo_x003A_cloud_cover' (GML escapes ':' as _x003A_) with 9 populated values, e.g. [5.0, 8.0, 25.0]. The identical field is missing from every OGC API Features / FeatureServer payload - see NB-GPD-SCH-01 on the ogc-features envelope.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-TYP-01",
+      "status": "pass",
+      "duration_ms": 47,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "objectid dtype=int32, count=int32, ratio=float64, active=bool; xsd:int/xsd:double/xsd:boolean from DescribeFeatureType survived into pandas dtypes.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-TYP-02",
+      "status": "pass",
+      "duration_ms": 50,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "created_at='2024-01-01T12:00:00+00:00', event_date='2024-02-01', event_time='12:34:56.0000000' - all parse to the seeded instants. GDAL delivers them as strings rather than OFTDateTime because it falls back to data-driven GML typing when the DescribeFeatureType schema contains an xsd:anyType element (the tags/numbers JSON columns), which is a GDAL schema-parsing behaviour, not a value defect.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-NUL-01",
+      "status": "pass",
+      "duration_ms": 47,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "10 features returned with 1 nil geometry; the server emits the nillable geometry property rather than dropping the feature or writing an empty gml:Point.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-PAG-01",
+      "status": "pass",
+      "duration_ms": 77,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "4 pages of COUNT=3 produced 10 distinct features with no repeats and no gaps.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-PAG-02",
+      "status": "pass",
+      "duration_ms": 29,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "COUNT=1000000 returned 10 features (clamped, not rejected); STARTINDEX=10000 returned an empty FeatureCollection rather than a service exception.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-HIT-01",
+      "status": "pass",
+      "duration_ms": 37,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "GDAL satisfies GetFeatureCount with GetFeature&RESULTTYPE=hits (fast_feature_count=True) and the server reported numberMatched=10, matching the seeded row count without transferring features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-PRP-01",
+      "status": "pass",
+      "duration_ms": 16,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "PROPERTYNAME=name,status produced exactly ['name', 'status'] on 3 features; no unrequested property was serialized.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-BBX-01",
+      "status": "pass",
+      "duration_ms": 22,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "BBOX in urn:ogc:def:crs:EPSG::4326 lat/lon order matched 3 features; the same numbers supplied in lon/lat order yielded HTTP 400, proving the server applies the CRS-declared axis order instead of guessing.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-FLT-01",
+      "status": "pass",
+      "duration_ms": 20,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "fes:PropertyIsEqualTo(status, 'active') returned 5 features, all with status='active', so the server evaluates OGC Filter Encoding 2.0 predicates.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-ERR-01",
+      "status": "pass",
+      "duration_ms": 9,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "Client-observed statuses: {'unknown-typename': '400', 'malformed-srsname': '400'}. The unknown-typename response body was a well-formed ows:ExceptionReport, so a GeoPandas caller receives a diagnosable failure instead of an empty document.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-IDN-01",
+      "status": "pass",
+      "duration_ms": 39,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "10 unique gml:id values (e.g. ['test_layer.1', 'test_layer.2', 'test_layer.3']), identical across two requests and each suffixed with the feature's objectid, so a client can key on them across pages.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-IO-01",
+      "status": "pass",
+      "duration_ms": 67,
+      "measured_count": 10,
+      "measured_delta": 0.0,
+      "notes": "GeoPackage round trip preserved 10 features, EPSG:4326, the objectid ordering and the null geometry, with a worst deviation of 0.0 deg.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-CAP-01",
+      "status": "pass",
+      "duration_ms": 200,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "All 5 feature types advertised by GetCapabilities resolved through DescribeFeatureType and reported a geometry type: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-GPD-WFS-NS-01",
+      "status": "pass",
+      "duration_ms": 36,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "TYPENAMES='honua:test_layer' and TYPENAMES='test_layer' returned the same 10 features in the same order, so the unprefixed name used by the server's own paging links and xsi:schemaLocation is resolvable.",
+      "evidence_ref": ""
+    }
+  ]
+}

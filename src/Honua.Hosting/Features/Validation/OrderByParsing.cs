@@ -103,6 +103,29 @@ internal static class OrderByParsing
         return clauses.Count == 0 ? null : clauses.ToImmutableArray();
     }
 
+    /// <summary>
+    /// Syntactic shape guard for an order-by field token.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is a shape check, not the authorization: <see cref="ParseOrderByV2"/> resolves
+    /// every accepted token against <c>resource.SchemaFields</c> and throws
+    /// <c>unknownFieldException</c> when the field is not declared, and the provider then
+    /// binds the resolved name as a query parameter
+    /// (<c>FeatureQueryBuilder.MapOrderByField</c> gates on
+    /// <c>IsValidJsonAttributeKey</c> and orders by a parameter-bound jsonb accessor).
+    /// </para>
+    /// <para>
+    /// The class therefore admits the prefixed, dotted and hyphenated shapes real schemas
+    /// use — the STAC EO extension's <c>eo:cloud_cover</c> is the concrete case. Rejecting
+    /// the colon here made <c>sortby=eo:cloud_cover</c> (OGC API Features, whose adapter
+    /// rewrites this message) and <c>orderByFields=eo:cloud_cover</c> (GeoServices) fail
+    /// with 400 on a field the service advertises as queryable and sortable
+    /// (honua-server#3392). Quotes, semicolons, whitespace and control characters remain
+    /// excluded, so a malformed token is still rejected as 400 rather than reaching the
+    /// provider.
+    /// </para>
+    /// </remarks>
     private static bool IsValidFeatureServerFieldName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
@@ -113,7 +136,10 @@ internal static class OrderByParsing
         for (var i = 0; i < fieldName.Length; i++)
         {
             var ch = fieldName[i];
-            if (!(char.IsLetterOrDigit(ch) || ch == '_'))
+            var allowed = char.IsLetterOrDigit(ch)
+                || ch == '_'
+                || (i > 0 && (ch == ':' || ch == '.' || ch == '-'));
+            if (!allowed)
             {
                 return false;
             }

@@ -1,0 +1,395 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T211850Z",
+  "run_date": "2026-08-23T21:18:50.648229+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "protocol": "wms",
+  "protocol_version": "1.3.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "owslib.wms.WebMapService parsed a live WMS 1.3.0 capabilities document ('browser_compat') into 3 named layers.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS"
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Transport verified as plain http on the compose client-compat network, which terminates no TLS. TLS handshake behaviour is exercised in the release tier, where the same lane runs against the HTTPS candidate.",
+      "evidence_ref": "http://honua:5000"
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Anonymous GET /api/v1/admin/services -> 401, WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". The WMS surface is anonymous in this fixture, so the control plane substantiates the AUTH facets.",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Accepted scheme x-api-key -> 200; ladder: x-api-key=200",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "WebMapService.contents listed 3 named layers (['Browser Points', 'Browser Lines', 'Browser Polygons']), each nested under the service root layer.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Layer 'Browser Points': queryable=1, abstract present, CRS options ['EPSG:4326', 'EPSG:3857', 'CRS:84'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 24,
+      "measured_count": 173,
+      "measured_delta": null,
+      "notes": "OWSLib emitted the WMS 1.3.0 CRS parameter (crs=EPSG:3857, never the 1.1.1 SRS spelling) for a CRS the layer advertises, and the server returned rendered content at the requested size instead of a ServiceException. The response is imagery, so the CRS is substantiated by the request/response pair plus the CRS:84/EPSG:4326 axis-order equivalence proved in NB-OWS-WMS-MAP-02.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?service=WMS&version=1.3.0&request=GetMap&layers=Browser+Points&styles=&width=256&height=256&crs=EPSG%3A3857&bbox=-13631071.64763635%2C4542761.36318661%2C-13623279.28328082%2C4551210.919691889&format=image%2Fpng&transparent=TRUE&exceptions=XML&bgcolor=0xFFFFFF"
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 6,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib raised owslib.util.ServiceException from the server's WMS ServiceExceptionReport, and the message names the undefined layer: \"Layer 'does-not-exist-9999' is not defined.\"",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": 57,
+      "measured_count": 173,
+      "measured_delta": null,
+      "notes": "GetMap returned a decodable 256x200 PNG at the requested size and format, with 173 non-transparent pixels over the seeded extent. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?service=WMS&version=1.3.0&request=GetMap&layers=Browser+Points&styles=&width=256&height=200&crs=CRS%3A84&bbox=-122.45%2C37.74%2C-122.38%2C37.8&format=image%2Fpng&transparent=TRUE&exceptions=XML&bgcolor=0xFFFFFF"
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 15
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-OWS-WMS-CAP-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Service block: Name=WMS, Title='browser_compat', Abstract='Honua WMS service', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource http://honua:5000/rest/services/browser_compat/MapServer/WMS.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-CAP-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 8,
+      "measured_delta": null,
+      "notes": "OWSLib parsed 8 ContactInformation fields: {'name': 'Honua Support', 'organization': 'Honua', 'position': 'Support Engineer', 'address': '1 Honua Way', 'city': 'Honolulu', 'region': 'HI', 'postcode': '96815', 'country': 'US'}. A WMS whose contact block does not survive a strict parser breaks catalogue harvesting.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-CAP-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79); on the wire the BoundingBox for CRS:84 is (-122.44, 37.76, -122.4, 37.79) (longitude first) and for EPSG:4326 is (37.76, -122.44, 37.79, -122.4) (latitude first), i.e. axis-swapped views of the same ground area. OWSLib normalises both to the same longitude/latitude tuple.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-CAP-04",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3904,
+      "measured_delta": null,
+      "notes": "The advertised LegendURL for style 'default' returned a decodable 122x32 PNG. A dangling LegendURL silently breaks every client legend panel.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&LAYER=Browser%20Points&STYLE=default&FORMAT=image/png"
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-CAP-05",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "GetMap formats ['image/png', 'image/jpeg']; GetFeatureInfo formats ['text/plain', 'application/vnd.ogc.gml', 'application/json']; exception formats ['XML']; every operation carries an HTTP Get OnlineResource.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-MAP-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "Every advertised GetMap format decoded at the requested size: image/png -> PNG/RGBA, image/jpeg -> JPEG/RGB",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-MAP-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 123,
+      "measured_delta": null,
+      "notes": "CRS:84 and EPSG:4326 requests for the same ground area are pixel-identical even though OWSLib sends latitude-first ordinates for EPSG:4326, and the EPSG:3857 reprojection of the same area also renders content.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-MAP-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 103,
+      "measured_delta": null,
+      "notes": "TRANSPARENT=TRUE -> fully transparent background; TRANSPARENT=FALSE -> opaque white; BGCOLOR=0xFF0000 -> opaque red, with the features still drawn on top (103 non-background pixels).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-MAP-04",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 667,
+      "measured_delta": null,
+      "notes": "STYLES=default matches the implicit default style pixel for pixel, and a 3-layer LAYERS request composites strictly more content than the single layer alone.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-MAP-05",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "A well-formed bbox outside the layer extent returns a correctly sized, fully transparent PNG rather than a ServiceException, so tiled clients degrade to empty tiles instead of error tiles.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-GFI-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "GetFeatureInfo at I/J (111, 107) -- the pixel the seeded pt-alpha point projects to in the requested view -- returned that feature with its attributes, so the server's pixel-to-world inverse transform agrees with the client's.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-GFI-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "All 3 advertised GetFeatureInfo formats identified the same feature with a body matching the declared media type: text/plain=46B, application/vnd.ogc.gml=570B, application/json=117B",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-GFI-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "A GetFeatureInfo aimed at empty space returns a well-formed response with an empty feature list rather than an exception, which is what identify tools rely on.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-ERR-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "All 5 deliberate GetMap errors (unsupported-format, unknown-crs, inverted-bbox, degenerate-bbox, oversize-width) raised owslib ServiceException from an ogc:ServiceExceptionReport served as text/xml with a machine-readable code attribute; none produced a 5xx or an untyped body.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-VER-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 6,
+      "measured_delta": null,
+      "notes": "Version negotiation: {'1.3.0': '1.3.0', '1.1.1': '1.1.1', '1.1.0': '1.1.1', '1.0.0': '1.1.1', '9.9.9': '1.3.0', '<absent>': '1.3.0'}. A request above the supported range degrades to the highest supported version and one below it degrades to the lowest, which is the WMS negotiation rule rather than a blind echo.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-111-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 123,
+      "measured_delta": null,
+      "notes": "WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of the same ground area.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-XPRO-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Layer 'Browser Points' has the same title and the same WGS84 extent (-122.44, 37.76, -122.4, 37.79) through WMS capabilities and the OGC API - Features collection, so the two adapters read one catalogue.",
+      "evidence_ref": ""
+    }
+  ]
+}

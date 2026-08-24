@@ -375,6 +375,18 @@ internal static class SearchEndpoints
             long totalMatched = 0;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
+            // STAC item search is a union across the selected collections. When the
+            // request spans more than one collection, a collection whose schema does not
+            // declare a property the filter references simply contributes no items — the
+            // same treatment `datetime` already gets in TryBuildLayerQuery for a layer
+            // with no temporal field. Rejecting the whole search was a real interop
+            // failure: an unscoped `client.search(filter=...)` on any collection-specific
+            // property (or even on `datetime`, which /stac/queryables advertises
+            // catalog-wide) returned 400 (honua-server#3392). The error is retained and
+            // still returned when *no* collection can satisfy the filter, so a typo is
+            // never silently answered with an empty result set.
+            string? inapplicableFilterError = null;
+            var appliedToAnyCollection = false;
             foreach (var target in targets)
             {
                 if (hasEmptyIdFilter)
@@ -395,9 +407,17 @@ internal static class SearchEndpoints
                     cancellationToken);
                 if (!layerQueryResult.IsSuccess)
                 {
+                    if (layerQueryResult.IsCollectionInapplicable && targets.Length > 1)
+                    {
+                        inapplicableFilterError ??= layerQueryResult.Error;
+                        continue;
+                    }
+
                     StacTelemetry.SetFailed(activity, "invalid_search_parameters");
                     return StandardErrorHelpers.CreateBadRequest(context, layerQueryResult.Error ?? "Invalid search parameters.");
                 }
+
+                appliedToAnyCollection = true;
 
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
@@ -566,6 +586,14 @@ internal static class SearchEndpoints
                 }
             }
 
+            // No collection declared any property the filter references: that is an
+            // invalid filter for this catalog, not an empty result set.
+            if (!appliedToAnyCollection && inapplicableFilterError is not null && !hasEmptyIdFilter)
+            {
+                StacTelemetry.SetFailed(activity, "invalid_search_parameters");
+                return StandardErrorHelpers.CreateBadRequest(context, inapplicableFilterError);
+            }
+
             if (globallyOrderedCandidates is not null)
             {
                 if (globallyOrderedCandidates.Count == 0)
@@ -673,7 +701,7 @@ internal static class SearchEndpoints
     private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
         => incomingCount > MaxItemIdCount - currentCount;
 
-    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error)> TryBuildLayerQuery(
+    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error, bool IsCollectionInapplicable)> TryBuildLayerQuery(
         StacSearchRequest request,
         MetadataV2Resource resource,
         ImmutableArray<string>? requestedItemIds,
@@ -703,13 +731,13 @@ internal static class SearchEndpoints
                     out var north,
                     out error))
             {
-                return (false, query, projection, null, error);
+                return (false, query, projection, null, error, false);
             }
 
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
-                return (false, query, projection, null, error);
+                return (false, query, projection, null, error, false);
             }
 
             query = query with
@@ -728,7 +756,7 @@ internal static class SearchEndpoints
                     out var intersectsError))
             {
                 error = intersectsError;
-                return (false, query, projection, null, error);
+                return (false, query, projection, null, error, false);
             }
 
             if (intersectsSpatialFilter.HasValue)
@@ -760,7 +788,11 @@ internal static class SearchEndpoints
         if (!filterQueryResult.IsSuccess)
         {
             error = filterQueryResult.Error;
-            return (false, query, projection, null, error);
+            // An unresolvable property is a statement about *this* collection's schema,
+            // not about the filter. Reported separately so a multi-collection item
+            // search can skip the collection rather than reject the whole request; the
+            // caller still returns this error when no collection can satisfy the filter.
+            return (false, query, projection, null, error, filterQueryResult.IsUnknownField);
         }
 
         FilterExpression? candidateFilter = null;
@@ -770,7 +802,7 @@ internal static class SearchEndpoints
                 !InMemoryFilterEvaluator.TryValidateStreamingExpression(filterQueryResult.Expression, out _))
             {
                 error = "filter expression is not supported when combined with ids for a storage-bound collection.";
-                return (false, query, projection, null, error);
+                return (false, query, projection, null, error, false);
             }
 
             candidateFilter = filterQueryResult.Expression;
@@ -795,7 +827,7 @@ internal static class SearchEndpoints
             if (!TryBuildSortOrder(resource, sortby, out var orderBy, out var sortError))
             {
                 error = sortError;
-                return (false, query, projection, null, error);
+                return (false, query, projection, null, error, false);
             }
 
             query = query with { OrderBy = orderBy };
@@ -806,16 +838,16 @@ internal static class SearchEndpoints
             if (!TryBuildFieldSelection(resource, request.Fields, out var outFields, out projection, out var fieldError))
             {
                 error = fieldError;
-                return (false, query, projection, null, error);
+                return (false, query, projection, null, error, false);
             }
 
             query = query with { OutFields = outFields };
         }
 
-        return (true, query, projection, candidateFilter, null);
+        return (true, query, projection, candidateFilter, null, false);
     }
 
-    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, FilterExpression? Expression, string? Error)> TryResolveFilterQuery(
+    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, FilterExpression? Expression, string? Error, bool IsUnknownField)> TryResolveFilterQuery(
         StacSearchRequest request,
         MetadataV2Resource resource,
         Cql2FilterProcessor filterProcessor,
@@ -833,8 +865,8 @@ internal static class SearchEndpoints
             collectionId).ConfigureAwait(false);
 
         return result.IsSuccess
-            ? (true, result.SqlFilter, result.Expression, null)
-            : (false, null, null, result.ErrorMessage);
+            ? (true, result.SqlFilter, result.Expression, null, false)
+            : (false, null, null, result.ErrorMessage, result.IsUnknownField);
     }
 
     private static bool TryBuildSortOrder(

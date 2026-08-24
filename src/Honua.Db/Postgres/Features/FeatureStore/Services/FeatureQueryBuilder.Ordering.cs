@@ -90,7 +90,14 @@ internal sealed partial class FeatureQueryBuilder
     {
         var fieldName = orderBy.Field;
 
-        if (!IsValidFieldName(fieldName))
+        // ORDER BY resolves either to a fixed system column (matched against constants
+        // below, never interpolated from the request) or to an attributes-jsonb accessor
+        // whose key BuildAttributeValueExpression binds as a parameter. Both roles are
+        // jsonb-key/constant shaped rather than identifier shaped, so the projection's
+        // predicate applies here too — otherwise `sortby=eo:cloud_cover`, which the OGC
+        // adapter accepts and resolves against the declared schema, turned into an
+        // unhandled ArgumentException (HTTP 500) instead of an ordered page.
+        if (!IsValidJsonAttributeKey(fieldName))
         {
             throw new ArgumentException($"Invalid field name for ordering: {fieldName}");
         }

@@ -1,0 +1,36 @@
+# OWSLib canonical-client certification lane (#3392, parent #3389).
+#
+# Every version is pinned exactly so a certification envelope emitted by this
+# lane names a reproducible client stack: the `client_version` recorded in the
+# envelope is OWSLib's, and the rest of the runtime must not drift underneath
+# it between baseline refreshes.
+
+# --- the client under certification -------------------------------------
+OWSLib==0.36.0
+
+# --- OWSLib's own runtime dependencies (pinned, not resolved) ------------
+lxml==6.1.2
+requests==2.34.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+urllib3==2.7.0
+certifi==2026.7.22
+charset-normalizer==3.5.1
+idna==3.19
+six==1.17.0
+
+# --- lane harness --------------------------------------------------------
+# pytest is held on 8.x: tests/python/pytest.ini (the ini this lane inherits)
+# declares asyncio_mode/timeout options owned by pytest-asyncio and
+# pytest-timeout, and the lane conftest uses the `hookwrapper=True` hook form.
+pytest==8.4.2
+pytest-asyncio==1.4.0
+pytest-timeout==2.4.0
+
+# Pillow decodes the WMS GetMap / WMTS GetTile responses so CERT-RNDR-01 can
+# assert real image dimensions instead of trusting a Content-Type header.
+pillow==12.3.0
+
+# tests/python/shared/cert_envelope.py imports httpx for the server-version
+# receipt probe.
+httpx==0.28.1

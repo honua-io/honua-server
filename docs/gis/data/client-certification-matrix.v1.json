@@ -3,21 +3,38 @@
   "matrixSource": "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
   "evidenceRoot": "tests/baselines/client-compat",
   "fixturePolicy": {
-    "status": "migration-required",
+    "status": "frozen-2026.1",
+    "manifest": "docs/gis/data/client-certification-fixture.v1.json",
+    "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
     "trackingIssue": "https://github.com/honua-io/honua-server/issues/3393",
+    "fixtureRevision": "sha256:d7c9c28fbfeea766d3d40768637d46452541355fd5e5817ed94ce4e4f9c172fc",
+    "serverConfigRevision": "sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6",
+    "authPolicyRevision": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
     "currentInputs": [
       "tests/seed/client-compat-v1.sql",
       "tests/seed/browser-compat.yaml",
-      "honua-esri-compat licensed fixtures",
-      "SDK-owned fixtures",
-      "cloud-native format fixtures"
+      "tests/seed/portal-compat.yaml",
+      "tests/seed/apply-yaml-seed.sh",
+      "docker/client-compat/seed/run.sh",
+      "tests/config/client-compat-server-v1.json"
     ],
-    "requiredReceiptFields": ["fixture_revision", "server_config_revision"],
+    "requiredReceiptFields": [
+      "fixture_revision",
+      "server_config_revision"
+    ],
+    "plannedReceiptFields": [
+      "auth_policy_revision"
+    ],
     "exceptions": [
       {
         "laneFamily": "ogc-cite",
         "reason": "OGC CITE suites retain their specification-mandated custom seed and setup procedures",
-        "sharedBindings": ["candidate_revision", "candidate_image_digest", "auth_policy_revision", "capability_mapping"]
+        "sharedBindings": [
+          "candidate_revision",
+          "candidate_image_digest",
+          "auth_policy_revision",
+          "capability_mapping"
+        ]
       }
     ]
   },
@@ -38,116 +55,1670 @@
     }
   },
   "testCases": [
-    { "id": "CERT-CONN-01", "category": "CONN" },
-    { "id": "CERT-CONN-02", "category": "CONN" },
-    { "id": "CERT-AUTH-01", "category": "AUTH" },
-    { "id": "CERT-AUTH-02", "category": "AUTH" },
-    { "id": "CERT-DISC-01", "category": "DISC" },
-    { "id": "CERT-DISC-02", "category": "DISC" },
-    { "id": "CERT-SCHM-01", "category": "SCHM" },
-    { "id": "CERT-SCHM-02", "category": "SCHM" },
-    { "id": "CERT-QFLT-01", "category": "QFLT" },
-    { "id": "CERT-QFLT-02", "category": "QFLT" },
-    { "id": "CERT-PAGE-01", "category": "PAGE" },
-    { "id": "CERT-PAGE-02", "category": "PAGE" },
-    { "id": "CERT-GEOM-01", "category": "GEOM" },
-    { "id": "CERT-GEOM-02", "category": "GEOM" },
-    { "id": "CERT-ERRH-01", "category": "ERRH" },
-    { "id": "CERT-ERRH-02", "category": "ERRH" },
-    { "id": "CERT-RNDR-01", "category": "RNDR" },
-    { "id": "CERT-RNDR-02", "category": "RNDR" },
-    { "id": "CERT-RNDR-SYM-01", "category": "RNDR" },
-    { "id": "CERT-RNDR-LIN-01", "category": "RNDR" },
-    { "id": "CERT-RNDR-FIL-01", "category": "RNDR" },
-    { "id": "CERT-RNDR-LBL-01", "category": "RNDR" },
-    { "id": "CERT-RNDR-SPR-01", "category": "RNDR" },
-    { "id": "CERT-RNDR-URL-01", "category": "RNDR" },
-    { "id": "JS-EXT-01", "category": "JS" },
-    { "id": "JS-EXT-02", "category": "JS" },
-    { "id": "JS-EXT-OL-COLL-01", "category": "JS" },
-    { "id": "JS-EXT-OL-ITEMTYPE-01", "category": "JS" },
-    { "id": "JS-EXT-OL-ITEMS-01", "category": "JS" },
-    { "id": "JS-EXT-OL-GEOJSON-01", "category": "JS" },
-    { "id": "JS-EXT-OL-GEOJSON-02", "category": "JS" },
-    { "id": "JS-EXT-TILES-DISC-01", "category": "JS" },
-    { "id": "JS-EXT-TILES-DISC-02", "category": "JS" },
-    { "id": "JS-EXT-TILES-SCHM-01", "category": "JS" },
-    { "id": "JS-EXT-OGC-MAPS-01", "category": "JS" },
-    { "id": "EL-EXT-01", "category": "EL" },
-    { "id": "EL-EXT-02", "category": "EL" },
-    { "id": "EL-EXT-03", "category": "EL" },
-    { "id": "EL-EXT-04", "category": "EL" },
-    { "id": "JS-CES-IMG-01", "category": "CESIUM" },
-    { "id": "JS-CES-TILE-01", "category": "CESIUM" },
-    { "id": "DSK-EXT-01", "category": "DESKTOP" },
-    { "id": "DSK-EXT-02", "category": "DESKTOP" },
-    { "id": "CLI-EXT-01", "category": "CLI" },
-    { "id": "CLI-EXT-02", "category": "CLI" },
-    { "id": "BI-EXT-01", "category": "BI" },
-    { "id": "BI-EXT-02", "category": "BI" },
-    { "id": "CERT-PRTL-INFO-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-SELF-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-SRCH-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-ITEM-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-RBAC-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-TOKN-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-AUTH-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-OAUTH-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-SELF-02", "category": "PORTAL" },
-    { "id": "CERT-PRTL-COMM-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-COMM-02", "category": "PORTAL" },
-    { "id": "CERT-PRTL-TOKN-02", "category": "PORTAL" },
-    { "id": "CERT-PRTL-OAUTH-02", "category": "PORTAL" }
+    {
+      "id": "CERT-CONN-01",
+      "category": "CONN"
+    },
+    {
+      "id": "CERT-CONN-02",
+      "category": "CONN"
+    },
+    {
+      "id": "CERT-AUTH-01",
+      "category": "AUTH"
+    },
+    {
+      "id": "CERT-AUTH-02",
+      "category": "AUTH"
+    },
+    {
+      "id": "CERT-DISC-01",
+      "category": "DISC"
+    },
+    {
+      "id": "CERT-DISC-02",
+      "category": "DISC"
+    },
+    {
+      "id": "CERT-SCHM-01",
+      "category": "SCHM"
+    },
+    {
+      "id": "CERT-SCHM-02",
+      "category": "SCHM"
+    },
+    {
+      "id": "CERT-QFLT-01",
+      "category": "QFLT"
+    },
+    {
+      "id": "CERT-QFLT-02",
+      "category": "QFLT"
+    },
+    {
+      "id": "CERT-PAGE-01",
+      "category": "PAGE"
+    },
+    {
+      "id": "CERT-PAGE-02",
+      "category": "PAGE"
+    },
+    {
+      "id": "CERT-GEOM-01",
+      "category": "GEOM"
+    },
+    {
+      "id": "CERT-GEOM-02",
+      "category": "GEOM"
+    },
+    {
+      "id": "CERT-ERRH-01",
+      "category": "ERRH"
+    },
+    {
+      "id": "CERT-ERRH-02",
+      "category": "ERRH"
+    },
+    {
+      "id": "CERT-RNDR-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-02",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-SYM-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-LIN-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-FIL-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-LBL-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-SPR-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "CERT-RNDR-URL-01",
+      "category": "RNDR"
+    },
+    {
+      "id": "JS-EXT-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-02",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-OL-COLL-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-OL-ITEMTYPE-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-OL-ITEMS-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-OL-GEOJSON-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-OL-GEOJSON-02",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-TILES-DISC-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-TILES-DISC-02",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-TILES-SCHM-01",
+      "category": "JS"
+    },
+    {
+      "id": "JS-EXT-OGC-MAPS-01",
+      "category": "JS"
+    },
+    {
+      "id": "EL-EXT-01",
+      "category": "EL"
+    },
+    {
+      "id": "EL-EXT-02",
+      "category": "EL"
+    },
+    {
+      "id": "EL-EXT-03",
+      "category": "EL"
+    },
+    {
+      "id": "EL-EXT-04",
+      "category": "EL"
+    },
+    {
+      "id": "JS-CES-IMG-01",
+      "category": "CESIUM"
+    },
+    {
+      "id": "JS-CES-TILE-01",
+      "category": "CESIUM"
+    },
+    {
+      "id": "DSK-EXT-01",
+      "category": "DESKTOP"
+    },
+    {
+      "id": "DSK-EXT-02",
+      "category": "DESKTOP"
+    },
+    {
+      "id": "CLI-EXT-01",
+      "category": "CLI"
+    },
+    {
+      "id": "CLI-EXT-02",
+      "category": "CLI"
+    },
+    {
+      "id": "BI-EXT-01",
+      "category": "BI"
+    },
+    {
+      "id": "BI-EXT-02",
+      "category": "BI"
+    },
+    {
+      "id": "CERT-PRTL-INFO-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-SELF-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-SRCH-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-ITEM-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-RBAC-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-TOKN-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-AUTH-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-OAUTH-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-SELF-02",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-COMM-01",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-COMM-02",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-TOKN-02",
+      "category": "PORTAL"
+    },
+    {
+      "id": "CERT-PRTL-OAUTH-02",
+      "category": "PORTAL"
+    },
+    {
+      "id": "NB-DDB-AUTH-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-AUTH-04",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-CRS-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-CRS-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-CRS-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-ERR-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-ERR-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-ERR-04",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-FMT-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-FMT-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-GEOM-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-GEOM-04",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-GEOM-05",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-GEOM-06",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-NULL-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-NULL-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-PAGE-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-PAGE-04",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-PUSH-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-PUSH-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-PUSH-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-QRY-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-QRY-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-QRY-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-TYPE-01",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-TYPE-02",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-TYPE-03",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-DDB-TYPE-04",
+      "category": "NB-DDB"
+    },
+    {
+      "id": "NB-GPD-AUTH-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-CRS-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-CRS-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-CRS-03",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-CRS-04",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-ENG-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-ERR-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-FLT-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-FLT-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-FLT-03",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-FLT-04",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-GEO-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-GEO-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-IO-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-IO-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-NUL-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-NUL-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-PAG-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-PAG-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-SCH-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-SRT-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-TYP-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-TYP-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-TYP-03",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-TYP-04",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-BBX-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-CAP-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-CRS-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-CRS-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-ERR-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-FLT-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-HIT-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-IDN-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-IO-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-NS-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-NUL-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-PAG-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-PAG-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-PRP-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-SCH-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-TYP-01",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-GPD-WFS-TYP-02",
+      "category": "NB-GPD"
+    },
+    {
+      "id": "NB-OWS-OAF-AUTH-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-COLL-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-COLL-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-CONF-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-CONF-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-CRS-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-CRS-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-DATE-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-ERR-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-ITEM-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-LAND-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-LAND-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-LINK-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-LINK-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-PAGE-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-QFLT-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-QRYB-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-SCHM-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-OAF-SORT-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-BBOX-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-CAP-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-CAP-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-CAP-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-CRS-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-CRS-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-DFT-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-ERR-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-FILT-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-HITS-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-PAGE-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-PROP-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-SORT-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-STQ-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-VER-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-XPRO-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-111-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-04",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-05",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-ERR-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-GFI-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-GFI-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-GFI-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-04",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-05",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-VER-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-XPRO-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-04",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-05",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-ERR-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-GFI-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-02",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-03",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-04",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-05",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMTS-XPRO-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-RSF-AUT-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-AUT-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-AUT-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-CRS-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-CRS-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-CRS-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-CRS-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-ERR-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-ERR-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-ERR-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-ERR-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-FMT-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-FMT-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-FMT-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-GEO-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-GEO-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-GEO-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-NUL-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-NUL-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OAF-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OAF-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OAF-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OAF-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OAF-05",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OAF-06",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-05",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-06",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-07",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-08",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-09",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-10",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-11",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-OWS-12",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-PAG-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-PAG-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-PAG-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-PAG-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-PAG-05",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-TYP-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-TYP-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-TYP-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-TYP-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-XPR-01",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-XPR-02",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-XPR-03",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-RSF-XPR-04",
+      "category": "NB-RSF"
+    },
+    {
+      "id": "NB-STAC-COLL-01",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-COLL-02",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-COLL-03",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-01",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-02",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-03",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-04",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-05",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-06",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-07",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-08",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-CONF-09",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ERR-01",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ERR-02",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ERR-03",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ERR-04",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ERR-05",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ERR-06",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ITEM-01",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ITEM-02",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ITEM-03",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ITEM-04",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ITEM-05",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-ITEM-06",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-PAGE-01",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-PAGE-02",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-PAGE-03",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-PAGE-04",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-PAGE-05",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-01",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-02",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-03",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-04",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-05",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-06",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-07",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-08",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-SEARCH-09",
+      "category": "NB-STAC"
+    },
+    {
+      "id": "NB-STAC-VALID-01",
+      "category": "NB-STAC"
+    }
   ],
   "plannedLanes": [
-    { "id": "py-geopandas", "client": "GeoPandas via pyogrio/Fiona", "protocols": ["ogc-features", "wfs"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
-    { "id": "py-owslib", "client": "OWSLib", "protocols": ["ogc-features", "wfs", "wms", "wmts"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
-    { "id": "duckdb", "client": "DuckDB Spatial", "protocols": ["ogc-features"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
-    { "id": "r-sf", "client": "R sf and ows4R", "protocols": ["ogc-features", "wfs"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
-    { "id": "py-pystac", "client": "pystac-client", "protocols": ["stac"], "requiredTier": "nightly", "licensed": false, "issue": "https://github.com/honua-io/honua-server/issues/3392" },
-    { "id": "desktop-arcgis", "client": "ArcGIS Pro and arcpy", "protocols": ["featureserver", "mapserver", "imageserver", "geometryserver", "version-management-server", "ogc-features", "wfs", "wms", "wmts"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-esri-compat/issues/75" },
-    { "id": "bi-excel", "client": "Microsoft Excel Power Query", "protocols": ["odata"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-server/issues/3390" },
-    { "id": "bi-powerbi", "client": "Power BI Desktop", "protocols": ["odata"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-server/issues/3390" },
-    { "id": "bi-tableau", "client": "Tableau Desktop", "protocols": ["odata", "ogc-features"], "requiredTier": "release", "licensed": true, "issue": "https://github.com/honua-io/honua-server/issues/3390" }
+    {
+      "id": "desktop-arcgis",
+      "client": "ArcGIS Pro and arcpy",
+      "protocols": [
+        "featureserver",
+        "mapserver",
+        "imageserver",
+        "geometryserver",
+        "version-management-server",
+        "ogc-features",
+        "wfs",
+        "wms",
+        "wmts"
+      ],
+      "requiredTier": "release",
+      "licensed": true,
+      "issue": "https://github.com/honua-io/honua-esri-compat/issues/75"
+    },
+    {
+      "id": "bi-excel",
+      "client": "Microsoft Excel Power Query",
+      "protocols": [
+        "odata"
+      ],
+      "requiredTier": "release",
+      "licensed": true,
+      "issue": "https://github.com/honua-io/honua-server/issues/3390"
+    },
+    {
+      "id": "bi-powerbi",
+      "client": "Power BI Desktop",
+      "protocols": [
+        "odata"
+      ],
+      "requiredTier": "release",
+      "licensed": true,
+      "issue": "https://github.com/honua-io/honua-server/issues/3390"
+    },
+    {
+      "id": "bi-tableau",
+      "client": "Tableau Desktop",
+      "protocols": [
+        "odata",
+        "ogc-features"
+      ],
+      "requiredTier": "release",
+      "licensed": true,
+      "issue": "https://github.com/honua-io/honua-server/issues/3390"
+    }
   ],
   "exclusions": [
-    { "id": "mapbox-gl-js-v2-plus", "reason": "Proprietary license and mandatory telemetry; MapLibre covers the applicable protocol surface" },
-    { "id": "arcgis-earth", "reason": "No distinct server surface beyond governed MapServer and KML lanes" },
-    { "id": "golden-surfer", "reason": "File-import workflow rather than a server protocol client" },
-    { "id": "avenza-maps", "reason": "File-import workflow rather than a server protocol client" },
-    { "id": "looker-studio", "reason": "No direct geospatial connector; warehouse access is certified separately" }
+    {
+      "id": "mapbox-gl-js-v2-plus",
+      "reason": "Proprietary license and mandatory telemetry; MapLibre covers the applicable protocol surface"
+    },
+    {
+      "id": "arcgis-earth",
+      "reason": "No distinct server surface beyond governed MapServer and KML lanes"
+    },
+    {
+      "id": "golden-surfer",
+      "reason": "File-import workflow rather than a server protocol client"
+    },
+    {
+      "id": "avenza-maps",
+      "reason": "File-import workflow rather than a server protocol client"
+    },
+    {
+      "id": "looker-studio",
+      "reason": "No direct geospatial connector; warehouse access is certified separately"
+    }
   ],
   "lanes": [
     {
       "id": "js",
       "requiredTier": "nightly",
-      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-RNDR-*", "JS-EXT-01", "JS-EXT-02", "JS-EXT-OL-*", "JS-EXT-OGC-MAPS-01"],
-      "manual": ["JS-EXT-TILES-*"]
+      "automated": [
+        "CERT-CONN-*",
+        "CERT-AUTH-*",
+        "CERT-DISC-*",
+        "CERT-SCHM-*",
+        "CERT-QFLT-*",
+        "CERT-PAGE-*",
+        "CERT-GEOM-*",
+        "CERT-ERRH-*",
+        "CERT-RNDR-*",
+        "JS-EXT-01",
+        "JS-EXT-02",
+        "JS-EXT-OL-*",
+        "JS-EXT-OGC-MAPS-01"
+      ],
+      "manual": [
+        "JS-EXT-TILES-*"
+      ]
     },
     {
       "id": "js-cesium",
       "requiredTier": "nightly",
-      "automated": ["JS-CES-IMG-01", "JS-CES-TILE-01"],
-      "manual": ["CERT-*"]
+      "automated": [
+        "JS-CES-IMG-01",
+        "JS-CES-TILE-01"
+      ],
+      "manual": [
+        "CERT-*"
+      ]
     },
     {
       "id": "desktop-qgis",
       "requiredTier": "nightly",
-      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-RNDR-01", "CERT-RNDR-02", "CERT-RNDR-SYM-01", "CERT-RNDR-LIN-01", "CERT-RNDR-FIL-01"],
-      "manual": ["CERT-RNDR-LBL-01", "CERT-RNDR-SPR-01", "CERT-RNDR-URL-01", "DSK-EXT-01", "DSK-EXT-02"]
+      "automated": [
+        "CERT-CONN-*",
+        "CERT-AUTH-*",
+        "CERT-DISC-*",
+        "CERT-SCHM-*",
+        "CERT-QFLT-*",
+        "CERT-PAGE-*",
+        "CERT-GEOM-*",
+        "CERT-ERRH-*",
+        "CERT-RNDR-01",
+        "CERT-RNDR-02",
+        "CERT-RNDR-SYM-01",
+        "CERT-RNDR-LIN-01",
+        "CERT-RNDR-FIL-01"
+      ],
+      "manual": [
+        "CERT-RNDR-LBL-01",
+        "CERT-RNDR-SPR-01",
+        "CERT-RNDR-URL-01",
+        "DSK-EXT-01",
+        "DSK-EXT-02"
+      ]
     },
     {
       "id": "cli",
       "requiredTier": "nightly",
-      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-ERRH-*"],
-      "manual": ["CLI-EXT-01", "CLI-EXT-02"],
-      "notApplicable": ["CERT-GEOM-*", "CERT-RNDR-*"]
+      "automated": [
+        "CERT-CONN-*",
+        "CERT-AUTH-*",
+        "CERT-DISC-*",
+        "CERT-SCHM-*",
+        "CERT-QFLT-*",
+        "CERT-PAGE-*",
+        "CERT-ERRH-*"
+      ],
+      "manual": [
+        "CLI-EXT-01",
+        "CLI-EXT-02"
+      ],
+      "notApplicable": [
+        "CERT-GEOM-*",
+        "CERT-RNDR-*"
+      ]
     },
     {
       "id": "arcgis-stub",
       "requiredTier": "nightly",
-      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-PRTL-*"],
-      "manual": ["CERT-RNDR-*"]
+      "automated": [
+        "CERT-CONN-*",
+        "CERT-AUTH-*",
+        "CERT-DISC-*",
+        "CERT-SCHM-*",
+        "CERT-QFLT-*",
+        "CERT-PAGE-*",
+        "CERT-GEOM-*",
+        "CERT-ERRH-*",
+        "CERT-PRTL-*"
+      ],
+      "manual": [
+        "CERT-RNDR-*"
+      ]
+    },
+    {
+      "id": "py-geopandas",
+      "requiredTier": "nightly",
+      "automated": [
+        "CERT-AUTH-01",
+        "CERT-AUTH-02",
+        "CERT-CONN-01",
+        "CERT-CONN-02",
+        "CERT-DISC-01",
+        "CERT-DISC-02",
+        "CERT-ERRH-01",
+        "CERT-ERRH-02",
+        "CERT-GEOM-01",
+        "CERT-GEOM-02",
+        "CERT-PAGE-01",
+        "CERT-PAGE-02",
+        "CERT-QFLT-01",
+        "CERT-QFLT-02",
+        "CERT-SCHM-01",
+        "CERT-SCHM-02",
+        "NB-GPD-AUTH-01",
+        "NB-GPD-CRS-01",
+        "NB-GPD-CRS-02",
+        "NB-GPD-CRS-03",
+        "NB-GPD-CRS-04",
+        "NB-GPD-ENG-01",
+        "NB-GPD-ERR-01",
+        "NB-GPD-FLT-01",
+        "NB-GPD-FLT-02",
+        "NB-GPD-FLT-03",
+        "NB-GPD-FLT-04",
+        "NB-GPD-GEO-01",
+        "NB-GPD-GEO-02",
+        "NB-GPD-IO-01",
+        "NB-GPD-IO-02",
+        "NB-GPD-NUL-01",
+        "NB-GPD-NUL-02",
+        "NB-GPD-PAG-01",
+        "NB-GPD-PAG-02",
+        "NB-GPD-SCH-01",
+        "NB-GPD-SRT-01",
+        "NB-GPD-TYP-01",
+        "NB-GPD-TYP-02",
+        "NB-GPD-TYP-03",
+        "NB-GPD-TYP-04",
+        "NB-GPD-WFS-BBX-01",
+        "NB-GPD-WFS-CAP-01",
+        "NB-GPD-WFS-CRS-01",
+        "NB-GPD-WFS-CRS-02",
+        "NB-GPD-WFS-ERR-01",
+        "NB-GPD-WFS-FLT-01",
+        "NB-GPD-WFS-HIT-01",
+        "NB-GPD-WFS-IDN-01",
+        "NB-GPD-WFS-IO-01",
+        "NB-GPD-WFS-NS-01",
+        "NB-GPD-WFS-NUL-01",
+        "NB-GPD-WFS-PAG-01",
+        "NB-GPD-WFS-PAG-02",
+        "NB-GPD-WFS-PRP-01",
+        "NB-GPD-WFS-SCH-01",
+        "NB-GPD-WFS-TYP-01",
+        "NB-GPD-WFS-TYP-02"
+      ],
+      "notApplicable": [
+        "CERT-RNDR-*"
+      ]
+    },
+    {
+      "id": "py-owslib",
+      "requiredTier": "nightly",
+      "automated": [
+        "CERT-AUTH-01",
+        "CERT-AUTH-02",
+        "CERT-CONN-01",
+        "CERT-CONN-02",
+        "CERT-DISC-01",
+        "CERT-DISC-02",
+        "CERT-ERRH-01",
+        "CERT-ERRH-02",
+        "CERT-GEOM-01",
+        "CERT-GEOM-02",
+        "CERT-PAGE-01",
+        "CERT-PAGE-02",
+        "CERT-QFLT-01",
+        "CERT-QFLT-02",
+        "CERT-RNDR-01",
+        "CERT-SCHM-01",
+        "CERT-SCHM-02",
+        "NB-OWS-OAF-AUTH-03",
+        "NB-OWS-OAF-COLL-01",
+        "NB-OWS-OAF-COLL-02",
+        "NB-OWS-OAF-CONF-01",
+        "NB-OWS-OAF-CONF-02",
+        "NB-OWS-OAF-CRS-01",
+        "NB-OWS-OAF-CRS-02",
+        "NB-OWS-OAF-DATE-01",
+        "NB-OWS-OAF-ERR-01",
+        "NB-OWS-OAF-ITEM-01",
+        "NB-OWS-OAF-LAND-01",
+        "NB-OWS-OAF-LAND-02",
+        "NB-OWS-OAF-LINK-01",
+        "NB-OWS-OAF-LINK-02",
+        "NB-OWS-OAF-PAGE-03",
+        "NB-OWS-OAF-QFLT-03",
+        "NB-OWS-OAF-QRYB-01",
+        "NB-OWS-OAF-SCHM-03",
+        "NB-OWS-OAF-SORT-01",
+        "NB-OWS-WFS-BBOX-01",
+        "NB-OWS-WFS-CAP-01",
+        "NB-OWS-WFS-CAP-02",
+        "NB-OWS-WFS-CAP-03",
+        "NB-OWS-WFS-CRS-02",
+        "NB-OWS-WFS-CRS-03",
+        "NB-OWS-WFS-DFT-01",
+        "NB-OWS-WFS-ERR-02",
+        "NB-OWS-WFS-FILT-02",
+        "NB-OWS-WFS-HITS-01",
+        "NB-OWS-WFS-PAGE-03",
+        "NB-OWS-WFS-PROP-01",
+        "NB-OWS-WFS-SORT-01",
+        "NB-OWS-WFS-STQ-01",
+        "NB-OWS-WFS-VER-01",
+        "NB-OWS-WFS-XPRO-01",
+        "NB-OWS-WMS-111-01",
+        "NB-OWS-WMS-CAP-01",
+        "NB-OWS-WMS-CAP-02",
+        "NB-OWS-WMS-CAP-03",
+        "NB-OWS-WMS-CAP-04",
+        "NB-OWS-WMS-CAP-05",
+        "NB-OWS-WMS-ERR-01",
+        "NB-OWS-WMS-GFI-01",
+        "NB-OWS-WMS-GFI-02",
+        "NB-OWS-WMS-GFI-03",
+        "NB-OWS-WMS-MAP-01",
+        "NB-OWS-WMS-MAP-02",
+        "NB-OWS-WMS-MAP-03",
+        "NB-OWS-WMS-MAP-04",
+        "NB-OWS-WMS-MAP-05",
+        "NB-OWS-WMS-VER-01",
+        "NB-OWS-WMS-XPRO-01",
+        "NB-OWS-WMTS-CAP-01",
+        "NB-OWS-WMTS-CAP-02",
+        "NB-OWS-WMTS-CAP-03",
+        "NB-OWS-WMTS-CAP-04",
+        "NB-OWS-WMTS-CAP-05",
+        "NB-OWS-WMTS-ERR-01",
+        "NB-OWS-WMTS-GFI-01",
+        "NB-OWS-WMTS-TILE-01",
+        "NB-OWS-WMTS-TILE-02",
+        "NB-OWS-WMTS-TILE-03",
+        "NB-OWS-WMTS-TILE-04",
+        "NB-OWS-WMTS-TILE-05",
+        "NB-OWS-WMTS-XPRO-01"
+      ],
+      "notApplicable": [
+        "CERT-RNDR-02",
+        "CERT-RNDR-FIL-01",
+        "CERT-RNDR-LBL-01",
+        "CERT-RNDR-LIN-01",
+        "CERT-RNDR-SPR-01",
+        "CERT-RNDR-SYM-01",
+        "CERT-RNDR-URL-01"
+      ]
+    },
+    {
+      "id": "duckdb",
+      "requiredTier": "nightly",
+      "automated": [
+        "CERT-AUTH-01",
+        "CERT-AUTH-02",
+        "CERT-CONN-01",
+        "CERT-CONN-02",
+        "CERT-DISC-01",
+        "CERT-DISC-02",
+        "CERT-ERRH-01",
+        "CERT-ERRH-02",
+        "CERT-GEOM-01",
+        "CERT-GEOM-02",
+        "CERT-PAGE-01",
+        "CERT-PAGE-02",
+        "CERT-QFLT-01",
+        "CERT-QFLT-02",
+        "CERT-SCHM-01",
+        "CERT-SCHM-02",
+        "NB-DDB-AUTH-03",
+        "NB-DDB-AUTH-04",
+        "NB-DDB-CRS-01",
+        "NB-DDB-CRS-02",
+        "NB-DDB-CRS-03",
+        "NB-DDB-ERR-01",
+        "NB-DDB-ERR-02",
+        "NB-DDB-ERR-04",
+        "NB-DDB-FMT-01",
+        "NB-DDB-FMT-02",
+        "NB-DDB-GEOM-03",
+        "NB-DDB-GEOM-04",
+        "NB-DDB-GEOM-05",
+        "NB-DDB-GEOM-06",
+        "NB-DDB-NULL-01",
+        "NB-DDB-NULL-02",
+        "NB-DDB-PAGE-03",
+        "NB-DDB-PAGE-04",
+        "NB-DDB-PUSH-01",
+        "NB-DDB-PUSH-02",
+        "NB-DDB-PUSH-03",
+        "NB-DDB-QRY-01",
+        "NB-DDB-QRY-02",
+        "NB-DDB-QRY-03",
+        "NB-DDB-TYPE-01",
+        "NB-DDB-TYPE-02",
+        "NB-DDB-TYPE-03",
+        "NB-DDB-TYPE-04"
+      ],
+      "notApplicable": [
+        "CERT-RNDR-*"
+      ]
+    },
+    {
+      "id": "r-sf",
+      "requiredTier": "nightly",
+      "automated": [
+        "CERT-AUTH-01",
+        "CERT-AUTH-02",
+        "CERT-CONN-01",
+        "CERT-CONN-02",
+        "CERT-DISC-01",
+        "CERT-DISC-02",
+        "CERT-ERRH-01",
+        "CERT-ERRH-02",
+        "CERT-GEOM-01",
+        "CERT-GEOM-02",
+        "CERT-PAGE-01",
+        "CERT-PAGE-02",
+        "CERT-QFLT-01",
+        "CERT-QFLT-02",
+        "CERT-SCHM-01",
+        "CERT-SCHM-02",
+        "NB-RSF-AUT-01",
+        "NB-RSF-AUT-02",
+        "NB-RSF-AUT-03",
+        "NB-RSF-CRS-01",
+        "NB-RSF-CRS-02",
+        "NB-RSF-CRS-03",
+        "NB-RSF-CRS-04",
+        "NB-RSF-ERR-01",
+        "NB-RSF-ERR-02",
+        "NB-RSF-ERR-03",
+        "NB-RSF-ERR-04",
+        "NB-RSF-FMT-01",
+        "NB-RSF-FMT-02",
+        "NB-RSF-FMT-03",
+        "NB-RSF-GEO-01",
+        "NB-RSF-GEO-02",
+        "NB-RSF-GEO-03",
+        "NB-RSF-NUL-01",
+        "NB-RSF-NUL-02",
+        "NB-RSF-OAF-01",
+        "NB-RSF-OAF-02",
+        "NB-RSF-OAF-03",
+        "NB-RSF-OAF-04",
+        "NB-RSF-OAF-05",
+        "NB-RSF-OAF-06",
+        "NB-RSF-OWS-01",
+        "NB-RSF-OWS-02",
+        "NB-RSF-OWS-03",
+        "NB-RSF-OWS-04",
+        "NB-RSF-OWS-05",
+        "NB-RSF-OWS-06",
+        "NB-RSF-OWS-07",
+        "NB-RSF-OWS-08",
+        "NB-RSF-OWS-09",
+        "NB-RSF-OWS-10",
+        "NB-RSF-OWS-11",
+        "NB-RSF-OWS-12",
+        "NB-RSF-PAG-01",
+        "NB-RSF-PAG-02",
+        "NB-RSF-PAG-03",
+        "NB-RSF-PAG-04",
+        "NB-RSF-PAG-05",
+        "NB-RSF-TYP-01",
+        "NB-RSF-TYP-02",
+        "NB-RSF-TYP-03",
+        "NB-RSF-TYP-04",
+        "NB-RSF-XPR-01",
+        "NB-RSF-XPR-02",
+        "NB-RSF-XPR-03",
+        "NB-RSF-XPR-04"
+      ],
+      "notApplicable": [
+        "CERT-RNDR-*"
+      ]
+    },
+    {
+      "id": "py-pystac",
+      "requiredTier": "nightly",
+      "automated": [
+        "CERT-AUTH-01",
+        "CERT-AUTH-02",
+        "CERT-CONN-01",
+        "CERT-CONN-02",
+        "CERT-DISC-01",
+        "CERT-DISC-02",
+        "CERT-ERRH-01",
+        "CERT-ERRH-02",
+        "CERT-GEOM-01",
+        "CERT-GEOM-02",
+        "CERT-PAGE-01",
+        "CERT-PAGE-02",
+        "CERT-QFLT-01",
+        "CERT-QFLT-02",
+        "CERT-SCHM-01",
+        "CERT-SCHM-02",
+        "NB-STAC-COLL-01",
+        "NB-STAC-COLL-02",
+        "NB-STAC-COLL-03",
+        "NB-STAC-CONF-01",
+        "NB-STAC-CONF-02",
+        "NB-STAC-CONF-03",
+        "NB-STAC-CONF-04",
+        "NB-STAC-CONF-05",
+        "NB-STAC-CONF-06",
+        "NB-STAC-CONF-07",
+        "NB-STAC-CONF-08",
+        "NB-STAC-CONF-09",
+        "NB-STAC-ERR-01",
+        "NB-STAC-ERR-02",
+        "NB-STAC-ERR-03",
+        "NB-STAC-ERR-04",
+        "NB-STAC-ERR-05",
+        "NB-STAC-ERR-06",
+        "NB-STAC-ITEM-01",
+        "NB-STAC-ITEM-02",
+        "NB-STAC-ITEM-03",
+        "NB-STAC-ITEM-04",
+        "NB-STAC-ITEM-05",
+        "NB-STAC-ITEM-06",
+        "NB-STAC-PAGE-01",
+        "NB-STAC-PAGE-02",
+        "NB-STAC-PAGE-03",
+        "NB-STAC-PAGE-04",
+        "NB-STAC-PAGE-05",
+        "NB-STAC-SEARCH-01",
+        "NB-STAC-SEARCH-02",
+        "NB-STAC-SEARCH-03",
+        "NB-STAC-SEARCH-04",
+        "NB-STAC-SEARCH-05",
+        "NB-STAC-SEARCH-06",
+        "NB-STAC-SEARCH-07",
+        "NB-STAC-SEARCH-08",
+        "NB-STAC-SEARCH-09",
+        "NB-STAC-VALID-01"
+      ],
+      "notApplicable": [
+        "CERT-RNDR-*"
+      ]
     }
   ]
 }

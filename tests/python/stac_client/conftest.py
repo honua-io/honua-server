@@ -20,8 +20,11 @@ import httpx
 import pytest
 from _pytest.reports import TestReport
 
+from shared.cert_envelope import CertificationEvidenceCollector
 from shared.postgis import PostGISFixture
 from shared.server import HonuaServer
+
+from . import cert_lane
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -193,6 +196,13 @@ class CompatibilityEvidenceCollector:
 
 _evidence: CompatibilityEvidenceCollector | None = None
 
+# Certification-envelope collector for the registered ``py-pystac`` lane
+# (honua-server#3392). Kept beside the bespoke ``stac-client-compat`` report
+# collector above rather than replacing it: the bespoke report is the
+# human-readable lane transcript, the envelope is the machine-diffable
+# certification receipt, and the baseline gate consumes only the latter.
+_cert_evidence: CertificationEvidenceCollector | None = None
+
 
 def _safe_package_version(name: str) -> str:
     try:
@@ -209,6 +219,20 @@ def _utc_now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def _results_root() -> Path:
+    """Directory the lane writes its artifacts to.
+
+    ``HONUA_PYSTAC_OUTPUT_DIR`` (set to ``/output`` by the container lane)
+    overrides the in-repo default because ``tests/`` is bind-mounted read-only
+    inside the client-compat containers. Unset — every local/CI invocation
+    today — this is exactly the previous ``tests/TestResults`` behavior.
+    """
+    override = os.environ.get(cert_lane.OUTPUT_DIR_ENV)
+    if override and override.strip():
+        return Path(override.strip())
+    return TEST_RESULTS_ROOT
+
+
 def write_stac_api_validator_artifact(
     *,
     command: list[str],
@@ -222,10 +246,11 @@ def write_stac_api_validator_artifact(
     stderr: str,
 ) -> Path:
     """Persist the external validator process transcript as CI evidence."""
-    TEST_RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+    results_root = _results_root()
+    results_root.mkdir(parents=True, exist_ok=True)
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
-    artifact_path = TEST_RESULTS_ROOT / f"stac-api-validator-results{suffix}.json"
+    artifact_path = results_root / f"stac-api-validator-results{suffix}.json"
     artifact = {
         "schema_version": "1.0",
         "lane": "stac-client-compat",
@@ -317,7 +342,10 @@ def reset_worker_state() -> None:
 @pytest.fixture(scope="session")
 def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
     """Start a dedicated STAC compatibility server or target an external base URL."""
-    base_url_override = os.getenv("HONUA_STAC_COMPAT_BASE_URL")
+    # HONUA_STAC_COMPAT_BASE_URL keeps precedence so the existing lane contract
+    # is unchanged; HONUA_BASE_URL is the shared docker/client-compat variable
+    # every other lane already honors, which is what the pystac container sets.
+    base_url_override = cert_lane.external_base_url()
     service_id = os.getenv("HONUA_STAC_COMPAT_SERVICE_ID", DEFAULT_SERVICE_ID)
     collection_id = os.getenv("HONUA_STAC_COMPAT_COLLECTION_ID", DEFAULT_COLLECTION_ID)
     seed_path = Path(os.getenv("HONUA_STAC_COMPAT_SEED_PATH", str(DEFAULT_SEED_PATH)))
@@ -419,11 +447,82 @@ def _write_evidence_report(
 
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
-    results_dir = TEST_RESULTS_ROOT
+    results_dir = _results_root()
     results_dir.mkdir(parents=True, exist_ok=True)
     json_path = results_dir / f"stac-client-compat-results{suffix}.json"
     markdown_path = results_dir / f"stac-client-compat-results{suffix}.md"
     evidence_collector.write_reports(json_path, markdown_path)
+
+
+@pytest.fixture(scope="session")
+def cert_collector(
+    stac_runtime: StacCompatibilityRuntime,
+) -> CertificationEvidenceCollector:
+    """Session-scoped certification-envelope collector for the ``py-pystac`` lane.
+
+    Separate from ``evidence_collector`` (the bespoke ``stac-client-compat``
+    report) on purpose: this one speaks the shared CERT-* vocabulary defined by
+    ``docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md`` and is what the
+    baseline-diff gate compares.
+    """
+    global _cert_evidence
+    if _cert_evidence is None:
+        _cert_evidence = cert_lane.build_collector(stac_runtime.base_url)
+    return _cert_evidence
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _write_cert_envelope(
+    cert_collector: CertificationEvidenceCollector,
+) -> Generator[None, None, None]:
+    """Persist the ``.cert.json`` envelope at session teardown.
+
+    Written unconditionally once the collector exists so a run that crashed
+    part-way still emits the fail-closed ``skip`` rows for everything it never
+    reached, rather than leaving the lane with no evidence at all.
+    """
+    yield
+    cert_lane.write_envelope(cert_collector)
+
+
+def _extract_cert_id(item: pytest.Item) -> str | None:
+    """Extract a CERT-* ID from the closest ``cert`` marker, if present."""
+    marker = item.get_closest_marker("cert")
+    if marker and marker.args:
+        return str(marker.args[0])
+    return None
+
+
+def _record_cert_outcome(item: pytest.Item, report: TestReport) -> None:
+    """Mirror unexpected failures/skips onto the certification collector.
+
+    A test body records its own ``pass`` with real measurements; this hook is
+    the fail-closed backstop that makes a regression or an unexpected skip show
+    up in the envelope even when the body never reached its ``record`` call.
+    """
+    if _cert_evidence is None:
+        return
+
+    cert_id = _extract_cert_id(item)
+    if cert_id is None:
+        return
+
+    # try_record rather than record: the hook fires for every test in the
+    # package, including the pre-existing bespoke-report tests, so a marker the
+    # collector does not accept must be ignored rather than take the session
+    # down. Extension (NB-STAC-*) ids are accepted and routed to extensions[].
+    if report.when == "call" and report.failed:
+        _cert_evidence.try_record(
+            cert_id,
+            "fail",
+            notes=(report.longreprtext or "")[:500],
+        )
+    elif report.skipped:
+        _cert_evidence.try_record(
+            cert_id,
+            "skip",
+            notes=str(report.longrepr)[:500] if report.longrepr else "",
+        )
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -431,6 +530,8 @@ def pytest_runtest_makereport(item: pytest.Item, call):
     """Record failures and skips so evidence survives regressions."""
     outcome = yield
     report: TestReport = outcome.get_result()
+
+    _record_cert_outcome(item, report)
 
     if _evidence is None:
         return

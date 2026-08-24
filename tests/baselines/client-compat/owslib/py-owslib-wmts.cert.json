@@ -1,0 +1,359 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T211850Z",
+  "run_date": "2026-08-23T21:18:50.648645+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "protocol": "wmts",
+  "protocol_version": "1.0.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "owslib.wmts.WebMapTileService parsed a live WMTS 1.0.0 capabilities document ('browser_compat') into 3 layers and 2 tile matrix sets.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS"
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Transport verified as plain http on the compose client-compat network, which terminates no TLS. TLS handshake behaviour is exercised in the release tier, where the same lane runs against the HTTPS candidate.",
+      "evidence_ref": "http://honua:5000"
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Anonymous GET /api/v1/admin/services -> 401, WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". The WMTS surface is anonymous in this fixture, so the control plane substantiates the AUTH facets.",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Accepted scheme x-api-key -> 200; ladder: x-api-key=200",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "WebMapTileService.contents listed 3 layers (['2000', '2001', '2002']), each with a title, at least one format and at least one TileMatrixSetLink.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "Layer '2000': title='Browser Points', formats ['image/png'], styles ['default'] (default flagged isDefault), WGS84 bounds (-122.44, 37.76, -122.4, 37.79), linked to every advertised tile matrix set ['WebMercatorQuad', 'WorldCRS84Quad'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 14,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "TILEMATRIXSET=WebMercatorQuad (SupportedCRS urn:ogc:def:crs:EPSG:6.18:3:3857) is carried verbatim in the request OWSLib builds and served at the declared tile size; a column index that is only valid in the WorldCRS84Quad grid is rejected as TileOutOfRange, so the requested grid geometry really is the one being applied.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 3,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "An unknown LAYER produced an ows:ExceptionReport with a machine-readable exceptionCode, which OWSLib surfaces as owslib.util.ServiceException rather than handing the caller a broken image.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": 15,
+      "measured_count": 558,
+      "measured_delta": null,
+      "notes": "GetTile(WebMercatorQuad/5/12/5) returned a decodable 256x256 PNG (558 bytes) whose dimensions match the TileWidth/TileHeight the capabilities declare. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib consumes server-rendered imagery for this protocol; feature schema, attribute/spatial query, pagination, and per-feature geometry fidelity facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 15
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-OWS-WMTS-CAP-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "OperationsMetadata declares ['GetCapabilities', 'GetFeatureInfo', 'GetTile']; GetTile offers both ['KVP', 'RESTFUL'] GetEncoding constraints and OWSLib selects the KVP binding from them.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-CAP-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "Both tile matrix sets are internally consistent: contiguous zoom identifiers, 256px tiles, a fixed TopLeftCorner, power-of-two matrix growth and halving scale denominators. WebMercatorQuad: urn:ogc:def:crs:EPSG:6.18:3:3857 levels 0..18 base 1x1; WorldCRS84Quad: urn:ogc:def:crs:OGC:1.3:CRS84 levels 0..18 base 2x1",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-CAP-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 38,
+      "measured_delta": null,
+      "notes": "38 TileMatrixLimits entries across both grids stay within the row/column range of the tile matrix they constrain, so a limits-aware client cannot be steered at a tile that does not exist.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-CAP-04",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "3 ResourceURL entries (['FeatureInfo', 'tile']); OWSLib's own buildTileResource substituted the tile template to http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png with no variables left over, and that URL returned a 256x256 PNG.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png"
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-TILE-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Tile indices derived from the capabilities scale denominators with the WMTS pixel-span formula produced in-range tiles at every sampled level and all decoded as 256x256 PNGs: {'0': (0, 0), '2': (1, 0), '5': (12, 5), '10': (395, 163), '18': (101324, 41928)}.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-TILE-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "WorldCRS84Quad declares the OGC 2x1 level-0 grid with its origin at (-180, 90) in CRS84 longitude/latitude order, and GetTile(WorldCRS84Quad/4/4/5) -- derived from that geometry -- returned a 256x256 PNG.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-TILE-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 558,
+      "measured_delta": null,
+      "notes": "The advertised RESTful ResourceURL (http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png) and the KVP GetTile binding return byte-identical 558-byte tiles, so the two encodings are genuinely the same resource rather than two code paths.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png"
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-ERR-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Every out-of-contract GetTile returned a coded ows:ExceptionReport: row-out-of-range=TileOutOfRange, column-out-of-range=TileOutOfRange, unknown-tilematrixset=InvalidParameterValue, zoom-above-maximum=InvalidParameterValue, negative-row=InvalidParameterValue. Out-of-range indices are reported as TileOutOfRange rather than as a blank tile.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-CAP-05",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 509,
+      "measured_delta": null,
+      "notes": "The default style's LegendURL returned a decodable 256x256 PNG matching the declared LegendURL width/height (256, 256).",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=2000&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0"
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-TILE-04",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 558,
+      "measured_delta": null,
+      "notes": "Two identical GetTile requests returned byte-identical 558-byte payloads, so the tile stream is cacheable and reproducible.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-TILE-05",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 350,
+      "measured_delta": null,
+      "notes": "GetTile(WebMercatorQuad/5/18/24) -- a valid index far from the seeded extent -- returned a fully transparent 256x256 PNG rather than a ServiceException.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-GFI-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "The advertised FeatureInfo ResourceURL, substituted for tile 14/6332/2620 at pixel I/J (142, 194) -- derived from the capabilities tile geometry -- identified the seeded pt-alpha feature, so the server's tile-pixel inverse transform agrees with the grid it advertises.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/14/6332/2620/194/142.json"
+    },
+    {
+      "test_case_id": "NB-OWS-WMTS-XPRO-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Layer 'Browser Points' carries the same title and the same WGS84 bounding box (-122.44, 37.76, -122.4, 37.79) through the WMTS capabilities and the OGC API - Features collection for the same layer id.",
+      "evidence_ref": ""
+    }
+  ]
+}

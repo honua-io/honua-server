@@ -713,8 +713,13 @@ internal sealed partial class Wfs20Handler
             plan.Query.SpatialReferenceSrid ??
             plan.Descriptor.Resource.ReadSrid() ??
             SpatialReference.WGS84.Wkid;
-        var srsName = IsWfs10(version) ? $"EPSG:{outputSrid.ToString(CultureInfo.InvariantCulture)}" : FormatCrs(outputSrid);
         var axisOrder = IsWfs10(version) ? AxisOrder.EastNorth : plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
+        // WFS 1.0.0 KVP CRS identifiers are always the short EPSG form and always
+        // longitude/latitude, so no axis-order disambiguation applies there. For
+        // 1.1.0/2.0 the identifier must agree with the axis order actually written.
+        var srsName = IsWfs10(version)
+            ? $"EPSG:{outputSrid.ToString(CultureInfo.InvariantCulture)}"
+            : FormatCrs(outputSrid, axisOrder);
 
         if (IsWfs10(version))
         {

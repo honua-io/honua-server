@@ -23,6 +23,13 @@ shapely>=2.0.0
 geopandas>=0.14.0
 pyproj>=3.6.0
 
+# Canonical OGC client used by the py-owslib certification lane (#3392).
+# tests/python/pytest.ini lists owslib_client in testpaths, so a plain
+# `pytest tests/python` outside the lane container needs these. The lane's
+# own container pins exact versions in docker/client-compat/owslib/requirements.txt.
+OWSLib>=0.31.0
+pillow>=10.0.0
+
 # Numerical: backs the Euclidean allocation worker-step unit test (#2255),
 # which exercises the nearest-source distance-transform algorithm directly.
 scipy>=1.11.0

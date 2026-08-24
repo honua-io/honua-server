@@ -1,0 +1,4202 @@
+{
+  "schemaVersion": "1.0.0",
+  "manifestId": "honua.client-certification-fixture/v1",
+  "targetRelease": "2026.1",
+  "status": "frozen",
+  "trackingIssue": "https://github.com/honua-io/honua-server/issues/3393",
+  "expansionIssue": "https://github.com/honua-io/honua-server/issues/3435",
+  "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
+  "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
+  "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+  "fixtureRevision": "sha256:d7c9c28fbfeea766d3d40768637d46452541355fd5e5817ed94ce4e4f9c172fc",
+  "serverConfigRevision": "sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6",
+  "authPolicyRevision": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
+  "digestAlgorithms": {
+    "fileDigest": {
+      "id": "honua.file-digest/v1",
+      "description": "SHA-256 over the raw bytes of the file, rendered as 'sha256:' plus 64 lowercase hex characters.",
+      "reproduce": "sha256sum <path>"
+    },
+    "inputSetDigest": {
+      "id": "honua.input-set-digest/v1",
+      "description": "Composite digest over a role's input set. Select every inputs[] entry with the target role; sort them ascending by the UTF-8 bytes of inputs[].path; render one line per entry as the 64 lowercase hex characters of its sha256, two ASCII spaces, the repo-relative POSIX path, and a single LF; concatenate the lines as UTF-8 and SHA-256 the result. This is byte-identical to piping GNU sha256sum output for the same files, in the same order, through sha256sum again.",
+      "lineFormat": "{sha256hex}  {repoRelativePath}\\n",
+      "sortOrder": "ascending by UTF-8 bytes of the repo-relative path",
+      "reproduce": "LC_ALL=C sha256sum <paths in sorted order> | sha256sum",
+      "appliesTo": [
+        "fixtureRevision",
+        "serverConfigRevision"
+      ]
+    },
+    "canonicalJsonDigest": {
+      "id": "honua.canonical-json-digest/v1",
+      "description": "SHA-256 over the canonical JSON serialization of this manifest's authPolicy object: object members sorted ascending by the code points of their names, no insignificant whitespace, ',' and ':' separators, strings escaped only for '\\\\', '\"', and the JSON control-character escapes, and non-ASCII characters emitted literally as UTF-8. Numbers are not permitted anywhere inside authPolicy so the serialization never depends on a numeric formatter.",
+      "equivalentTo": "python3 -c \"json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)\"",
+      "appliesTo": [
+        "authPolicyRevision"
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "path": "tests/seed/client-compat-v1.sql",
+      "role": "fixture",
+      "sha256": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+      "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, layer 0, and the ten seeded features."
+    },
+    {
+      "path": "tests/seed/browser-compat.yaml",
+      "role": "fixture",
+      "sha256": "sha256:28f3d5a8eb38a459ccc00c1ee1d98e9b0bc35ca20a425fcaeb9775539d5a9777",
+      "purpose": "Render/raster seed: service browser_compat with Point/LineString/Polygon layers 2000/2001/2002 and one deterministic 64x64 single-band raster on layer 2000."
+    },
+    {
+      "path": "tests/seed/portal-compat.yaml",
+      "role": "fixture",
+      "sha256": "sha256:4119618c30d96b5b0e3b04d38dcf12a908b6d5cdcaa10c67f57a5578ee45ec52",
+      "purpose": "Authorization seed: the public/org/private Portal tier ladder (services portal_public/portal_org/portal_private, layers 3000/3001/3002)."
+    },
+    {
+      "path": "tests/seed/apply-yaml-seed.sh",
+      "role": "fixture",
+      "sha256": "sha256:85900c332c86e2cdc382a6188243eac51c7ca4d3ce7d058fa0e784739ae1049a",
+      "purpose": "Applier that materializes the YAML seed files; the YAML inputs have no meaning independent of it, so it is part of the fixture input set."
+    },
+    {
+      "path": "docker/client-compat/seed/run.sh",
+      "role": "fixture",
+      "sha256": "sha256:05b894d123b57076d8e221495905890f1629c414c7922a66192fdddce1779e03",
+      "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
+    },
+    {
+      "path": "tests/config/client-compat-server-v1.json",
+      "role": "server-config",
+      "sha256": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+      "purpose": "Declared server-configuration input: server mode, runtime and database images, environment, base URL, canonical service/layer identity, and the pinned setup-action revision."
+    }
+  ],
+  "identities": {
+    "services": [
+      {
+        "serviceId": "test_service",
+        "role": "canonical-vector",
+        "srid": 4326,
+        "maxRecordCount": 1000,
+        "declaredCapabilities": [
+          "Query",
+          "Extract",
+          "Create",
+          "Update",
+          "Delete",
+          "Sync"
+        ],
+        "accessPolicy": "allowAnonymous",
+        "serviceExtent": [
+          -122.5,
+          37.7,
+          -122.35,
+          37.84
+        ],
+        "layers": [
+          {
+            "layerId": "0",
+            "layerName": "Test Layer",
+            "geometryType": "Point",
+            "featureIdField": "objectid",
+            "featureCount": 10,
+            "temporalStartField": "created_at",
+            "attributeFields": [
+              "name",
+              "description",
+              "status",
+              "count",
+              "ratio",
+              "active",
+              "created_at",
+              "event_date",
+              "event_time",
+              "uid",
+              "tags",
+              "numbers"
+            ],
+            "declaredLayerFields": [
+              "objectid",
+              "name",
+              "description",
+              "shape",
+              "status",
+              "count",
+              "ratio",
+              "active",
+              "created_at",
+              "event_date",
+              "event_time",
+              "uid",
+              "tags",
+              "numbers",
+              "eo:cloud_cover"
+            ]
+          }
+        ],
+        "source": "tests/seed/client-compat-v1.sql"
+      },
+      {
+        "serviceId": "browser_compat",
+        "role": "render-and-raster",
+        "srid": 4326,
+        "accessPolicy": "allowAnonymous",
+        "serviceExtent": [
+          -122.45,
+          37.74,
+          -122.38,
+          37.8
+        ],
+        "layers": [
+          {
+            "layerId": "2000",
+            "layerName": "Browser Points",
+            "geometryType": "Point",
+            "featureCount": 3,
+            "rasterCount": 1
+          },
+          {
+            "layerId": "2001",
+            "layerName": "Browser Lines",
+            "geometryType": "LineString",
+            "featureCount": 2
+          },
+          {
+            "layerId": "2002",
+            "layerName": "Browser Polygons",
+            "geometryType": "Polygon",
+            "featureCount": 2
+          }
+        ],
+        "source": "tests/seed/browser-compat.yaml"
+      },
+      {
+        "serviceId": "portal_public",
+        "role": "authorization-public-tier",
+        "accessPolicy": "allowAnonymous",
+        "projectedPortalAccess": "public",
+        "layers": [
+          {
+            "layerId": "3000",
+            "geometryType": "Point",
+            "featureCount": 1
+          }
+        ],
+        "source": "tests/seed/portal-compat.yaml"
+      },
+      {
+        "serviceId": "portal_org",
+        "role": "authorization-org-tier",
+        "accessPolicy": "authenticated",
+        "projectedPortalAccess": "org",
+        "layers": [
+          {
+            "layerId": "3001",
+            "geometryType": "Point",
+            "featureCount": 1
+          }
+        ],
+        "source": "tests/seed/portal-compat.yaml"
+      },
+      {
+        "serviceId": "portal_private",
+        "role": "authorization-private-tier",
+        "accessPolicy": "role:portal-admin",
+        "projectedPortalAccess": "private",
+        "layers": [
+          {
+            "layerId": "3002",
+            "geometryType": "Point",
+            "featureCount": 1
+          }
+        ],
+        "source": "tests/seed/portal-compat.yaml"
+      }
+    ],
+    "metadataGraph": {
+      "generator": "honua.seed_metadata_v2_compat_snapshot()",
+      "snapshotRevision": 1,
+      "generatedAt": "2024-01-01T00:00:00Z",
+      "environments": [
+        "default",
+        "Development",
+        "Test",
+        "Production"
+      ],
+      "resourceIdFormat": "res-layer-{layerId}",
+      "imageResourceIdFormat": "res-image-layer-{layerId}",
+      "serviceIdFormat": "svc-{slugifiedServiceName}-{feature|map|image|ogc|stac}",
+      "publicationIdFormat": "pub-{slugifiedServiceName}-{feature|map|image|ogc|stac}-{layerId}",
+      "publicationPath": "{layerId}",
+      "notes": "The snapshot is deterministic: generatedAt is a frozen literal and every collection is aggregated in a declared sort order, so re-running the seed against the same inputs reproduces the same document and the same etag."
+    }
+  },
+  "ordering": {
+    "featureIdAssignment": "features.objectid is a BIGSERIAL. PostgreSQL evaluates the seed's VALUES scan in declaration order, so on a freshly created database the ids run alpha=1 through lambda=10, and the insert is guarded by WHERE NOT EXISTS on layer 0 so re-applying the seed never renumbers or duplicates rows. Lanes must nevertheless address features by attribute (name, status) and treat objectid as stable-but-opaque; no case id asserts a literal id value.",
+    "defaultFeatureOrder": "ascending by objectid",
+    "stableSortField": "objectid",
+    "pagination": "Deterministic paging requires an explicit sort on objectid; PAGE_SIZE 3 over 10 features yields pages of 3, 3, 3, 1.",
+    "metadataCollectionOrder": "Resources and storage bindings are aggregated ORDER BY their id; publications are aggregated ORDER BY service slug, layer id, then a fixed per-publication-type rank (image, ogc, feature, map, stac).",
+    "wfsFeatureTypeOrder": "Feature types are ordered by storage layer id, then publication layer index, then resource name (case-insensitive).",
+    "portalItemIdentity": "Portal item ids are derived from the Metadata v2 graph at request time and are not stable literals. Clients must discover them through /sharing/rest/search and must not hard-code them; the stable identity is the service name and its projected access tier."
+  },
+  "protocolProjections": [
+    {
+      "protocol": "ogc-features",
+      "root": "/ogc/features",
+      "serviceProjection": "single shared OGC API Features root; the v1 service name is not part of the path",
+      "collectionId": "0",
+      "itemId": "{objectid}",
+      "operations": [
+        "GET /ogc/features",
+        "GET /ogc/features/collections",
+        "GET /ogc/features/collections/0",
+        "GET /ogc/features/collections/0/items",
+        "GET /ogc/features/collections/0/items/{objectid}"
+      ]
+    },
+    {
+      "protocol": "wfs",
+      "root": "/wfs",
+      "typeName": "honua:test_layer",
+      "localTypeName": "test_layer",
+      "namespaceUri": "http://honua.io/wfs",
+      "featureIdFormat": "{localTypeName}.{objectid}",
+      "operations": [
+        "GET /wfs?REQUEST=GetCapabilities",
+        "GET /wfs?REQUEST=DescribeFeatureType",
+        "GET /wfs?REQUEST=GetFeature"
+      ],
+      "notes": "The local type name is derived from the layer name by lowercasing and collapsing non-alphanumeric runs to underscores; the feature-id format is derived from the stored-query parser and is not asserted by any 2026.1 case id."
+    },
+    {
+      "protocol": "wms",
+      "roots": [
+        "/ogc/services/{serviceId}/wms",
+        "/rest/services/{serviceId}/MapServer/WMS"
+      ],
+      "layerIdentity": "the storage layer id rendered as a string",
+      "canonicalLayers": [
+        "0"
+      ],
+      "renderLayers": [
+        "2000",
+        "2001",
+        "2002"
+      ],
+      "operations": [
+        "GET /ogc/services/{serviceId}/wms?REQUEST=GetCapabilities",
+        "GET /ogc/services/{serviceId}/wms?REQUEST=GetMap",
+        "GET /rest/services/{serviceId}/MapServer/WMS?REQUEST=GetCapabilities",
+        "GET /rest/services/{serviceId}/MapServer/WMS?REQUEST=GetMap"
+      ],
+      "notes": "There is no unscoped /wms route: WMS is always service-scoped. The js lane uses the /ogc/services form and the js-cesium lane uses the MapServer form."
+    },
+    {
+      "protocol": "wmts",
+      "roots": [
+        "/ogc/services/{serviceId}/wmts",
+        "/rest/services/{serviceId}/MapServer/WMTS"
+      ],
+      "layerIdentity": "the storage layer id rendered as a string",
+      "renderLayers": [
+        "2000"
+      ],
+      "operations": [
+        "GET /ogc/services/{serviceId}/wmts?REQUEST=GetCapabilities",
+        "GET /ogc/services/{serviceId}/wmts?REQUEST=GetTile",
+        "GET /rest/services/{serviceId}/MapServer/WMTS?REQUEST=GetCapabilities",
+        "GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}"
+      ],
+      "notes": "There is no unscoped /wmts route: WMTS is always service-scoped."
+    },
+    {
+      "protocol": "ogc-tiles",
+      "root": "/ogc/tiles",
+      "collectionId": "2000",
+      "tileMatrixSet": "WebMercatorQuad",
+      "operations": [
+        "GET /ogc/tiles",
+        "GET /ogc/tiles/collections/{collectionId}/tiles/WebMercatorQuad",
+        "GET /ogc/tiles/collections/{collectionId}/tiles/WebMercatorQuad/{z}/{y}/{x}"
+      ]
+    },
+    {
+      "protocol": "ogc-maps",
+      "root": "/ogc/maps",
+      "collectionId": "2000",
+      "operations": [
+        "GET /ogc/maps/collections/{collectionId}/map"
+      ]
+    },
+    {
+      "protocol": "mvt",
+      "root": "/ogc/tiles",
+      "collectionIds": [
+        "2000",
+        "2001",
+        "2002"
+      ],
+      "tileMatrixSet": "WebMercatorQuad",
+      "operations": [
+        "GET /ogc/tiles/collections/{collectionId}/tiles/WebMercatorQuad/{z}/{y}/{x}?f=mvt"
+      ],
+      "notes": "Vector tiles are the mvt projection of the OGC API Tiles surface; the three browser_compat layers supply the point, line, and polygon symbology facets."
+    },
+    {
+      "protocol": "featureserver",
+      "root": "/rest/services/test_service/FeatureServer",
+      "layerIndex": "0",
+      "objectIdField": "objectid",
+      "operations": [
+        "GET /rest/services/test_service/FeatureServer",
+        "GET /rest/services/test_service/FeatureServer/0",
+        "GET /rest/services/test_service/FeatureServer/0/query"
+      ]
+    },
+    {
+      "protocol": "mapserver",
+      "root": "/rest/services/test_service/MapServer",
+      "layerIndex": "0",
+      "operations": [
+        "GET /rest/services/test_service/MapServer",
+        "GET /rest/services/test_service/MapServer/0",
+        "GET /rest/services/test_service/MapServer/export",
+        "GET /rest/services/test_service/MapServer/identify"
+      ]
+    },
+    {
+      "protocol": "stac",
+      "root": "/stac",
+      "collectionId": "0",
+      "itemId": "{objectid}",
+      "queryableNumericField": "eo:cloud_cover",
+      "temporalField": "created_at",
+      "operations": [
+        "GET /stac",
+        "GET /stac/collections",
+        "GET /stac/collections/0",
+        "GET /stac/collections/0/items",
+        "GET /stac/search",
+        "POST /stac/search"
+      ]
+    },
+    {
+      "protocol": "odata",
+      "root": "/odata",
+      "entitySets": [
+        "Layers",
+        "Features"
+      ],
+      "canonicalKey": "0",
+      "operations": [
+        "GET /odata",
+        "GET /odata/$metadata",
+        "GET /odata/Layers",
+        "GET /odata/Layers(0)",
+        "GET /odata/Features(0)"
+      ],
+      "boundToManifest": false,
+      "notes": "The 2026.1 OData certification producer runs in-process against tests/seed/odata.yaml; see gap odata-surface-uses-separate-seed."
+    },
+    {
+      "protocol": "portal",
+      "root": "/sharing/rest",
+      "itemIdentity": "derived-at-discovery",
+      "accessTiers": {
+        "portal_public": "public",
+        "portal_org": "org",
+        "portal_private": "private"
+      },
+      "operations": [
+        "GET /sharing/rest/info",
+        "GET /sharing/rest/portals/self",
+        "GET /sharing/rest/search",
+        "GET /sharing/rest/content/items/{itemId}",
+        "GET /sharing/rest/community/self",
+        "POST /sharing/rest/generateToken",
+        "POST /sharing/rest/oauth2/token"
+      ]
+    }
+  ],
+  "vectorSeedCoverage": [
+    {
+      "dimension": "point-geometry",
+      "status": "covered",
+      "evidence": "test_service layer 0 seeds nine POINT geometries."
+    },
+    {
+      "dimension": "line-geometry",
+      "status": "covered-on-render-service",
+      "evidence": "browser_compat layer 2001 seeds two LINESTRING geometries.",
+      "gapId": "line-and-polygon-not-on-canonical-service"
+    },
+    {
+      "dimension": "polygon-geometry",
+      "status": "covered-on-render-service",
+      "evidence": "browser_compat layer 2002 seeds two POLYGON geometries.",
+      "gapId": "line-and-polygon-not-on-canonical-service"
+    },
+    {
+      "dimension": "multipart-geometry",
+      "status": "gap",
+      "gapId": "multipart-geometry-absent"
+    },
+    {
+      "dimension": "hole-geometry",
+      "status": "gap",
+      "gapId": "polygon-hole-geometry-absent"
+    },
+    {
+      "dimension": "null-geometry",
+      "status": "covered",
+      "evidence": "The tenth feature (lambda) is seeded with a NULL geometry, so nine of ten rows carry geometry."
+    },
+    {
+      "dimension": "null-attribute",
+      "status": "covered",
+      "evidence": "The description attribute is NULL on alpha, delta, eta, and lambda."
+    },
+    {
+      "dimension": "unicode-attribute",
+      "status": "gap",
+      "gapId": "unicode-attribute-values-absent"
+    },
+    {
+      "dimension": "numeric-attribute",
+      "status": "covered",
+      "evidence": "count is a monotone integer 1..10 and ratio a double 1.25..12.50; eo:cloud_cover is a double 2.0..95.0 with one NULL."
+    },
+    {
+      "dimension": "boolean-attribute",
+      "status": "covered",
+      "evidence": "active alternates true/false across the ten rows."
+    },
+    {
+      "dimension": "date-and-time-attribute",
+      "status": "covered",
+      "evidence": "created_at (timestamptz), event_date (date), and event_time (time) are seeded on every row."
+    },
+    {
+      "dimension": "uuid-attribute",
+      "status": "covered",
+      "evidence": "uid carries ten distinct UUID literals."
+    },
+    {
+      "dimension": "array-attribute",
+      "status": "covered",
+      "evidence": "tags (string array) and numbers (integer array) are seeded as JSON arrays on every row."
+    },
+    {
+      "dimension": "stable-attribute-query",
+      "status": "covered",
+      "evidence": "status = 'active' selects exactly five rows on every run."
+    },
+    {
+      "dimension": "stable-spatial-query",
+      "status": "covered",
+      "evidence": "The subset bbox (-122.495, 37.705, -122.455, 37.735) selects exactly the first three points."
+    },
+    {
+      "dimension": "stable-sort-and-pagination",
+      "status": "covered",
+      "evidence": "objectid is assigned in seed order and page size 3 partitions the ten features as 3/3/3/1."
+    },
+    {
+      "dimension": "edit-path",
+      "status": "gap",
+      "gapId": "edit-path-uncertified"
+    }
+  ],
+  "supportingFixtures": {
+    "raster": {
+      "status": "realized",
+      "source": "tests/seed/browser-compat.yaml",
+      "description": "One deterministic 64x64 single-band 8BUI raster with every pixel set to 180, anchored at (-122.45, 37.80) with a 0.00109375 degree pixel, plus a matching honua.raster_statistics row (min=max=mean=180, stddev=0, 4096 valid pixels).",
+      "boundLayer": "2000",
+      "gapId": "raster-absent-on-canonical-service"
+    },
+    "styleAndRender": {
+      "status": "partial",
+      "description": "Render facets are certified from the three browser_compat geometry-type layers through the mvt and image surfaces. No stored style document exists: every seeded resource declares an empty styleResourceIds array.",
+      "gapId": "style-resources-absent"
+    },
+    "stac": {
+      "status": "realized",
+      "source": "tests/seed/client-compat-v1.sql",
+      "description": "The stac-api service projection publishes collection 0 over the same ten seeded features, with eo:cloud_cover as a real queryable numeric field and created_at as the temporal field."
+    },
+    "gpBuffer": {
+      "status": "not-required",
+      "reason": "No active or bounded 2026.1 client lane binds the GPServer surface: no lane in the certification matrix declares a gpserver protocol, so a GP buffer fixture is not part of the frozen 2026.1 core.",
+      "expansionIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    "mapAndDashboard": {
+      "status": "partial",
+      "source": "tests/seed/portal-compat.yaml",
+      "description": "The Portal/Sharing facade projects the three tiered services as Feature/Map/Image Service items, which is the map-catalogue input the 2026.1 arcgis-stub lane consumes.",
+      "gapId": "portal-map-and-dashboard-items-absent"
+    }
+  },
+  "authPolicy": {
+    "policyId": "client-compat-auth-v1",
+    "secretMaterial": "none",
+    "secretHandling": "This manifest names environment variables, headers, principals, and roles only. The single literal it carries is the well-known non-production bootstrap key value that already appears in docker/client-compat/compose.yml and tests/python/shared/canonical_fixture.py; it is never a production credential and must never be reused outside the client-compat fixture.",
+    "mechanisms": [
+      {
+        "id": "admin-api-key",
+        "kind": "api-key",
+        "header": "X-API-Key",
+        "valueSource": "HONUA_ADMIN_PASSWORD",
+        "fixtureValue": "ClientCompatAdmin123!",
+        "challenge": "WWW-Authenticate: ApiKey realm, header=X-API-Key",
+        "implementation": "src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs",
+        "notes": "The bootstrap key carries no permission claims, so AdminApiKeyPermission treats it as full admin (read and write). Scoped keys (admin:read, admin:write, ops:read) are supported by the server but no scoped key is provisioned by this fixture."
+      },
+      {
+        "id": "portal-named-user",
+        "kind": "portal-token",
+        "endpoint": "/sharing/rest/generateToken",
+        "principal": "admin",
+        "credentialSource": "HONUA_ADMIN_PASSWORD",
+        "configuration": "Authentication__PortalToken__RequireHttps=false",
+        "implementation": "src/Honua.Hosting/Features/Authentication/AdminPortalCredentialVerifier.cs",
+        "notes": "AdminPortalCredentialVerifier maps the admin principal to roles [admin] only. No principal in this fixture ever holds portal-admin."
+      },
+      {
+        "id": "anonymous",
+        "kind": "none",
+        "notes": "Anonymous access is granted where the seeded accessPolicy sets allowAnonymous true, and refused everywhere else. The dev-auth bypass is disabled because the stack runs ASPNETCORE_ENVIRONMENT=Production."
+      }
+    ],
+    "roles": [
+      {
+        "id": "admin",
+        "grantedTo": [
+          "admin"
+        ],
+        "notes": "Bootstrap admin role projected by the API-key handler and the portal credential verifier."
+      },
+      {
+        "id": "portal-admin",
+        "grantedTo": [],
+        "notes": "Required by portal_private.accessPolicy.allowedRoles. Deliberately granted to no principal, so the private tier is the denial arm of the role ladder."
+      }
+    ],
+    "profiles": [
+      {
+        "id": "anonymous",
+        "expectation": "allow-on-public-surfaces-deny-elsewhere",
+        "status": "realized",
+        "realizedByFixture": [
+          "tests/seed/client-compat-v1.sql",
+          "tests/seed/browser-compat.yaml",
+          "tests/seed/portal-compat.yaml"
+        ],
+        "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
+        "mechanism": "anonymous",
+        "cases": [
+          "CERT-CONN-01",
+          "CERT-DISC-01",
+          "CERT-AUTH-01",
+          "CERT-PRTL-RBAC-01",
+          "CERT-PRTL-COMM-01"
+        ],
+        "notes": "test_service, browser_compat, and portal_public set allowAnonymous true; the admin surface and portal_org/portal_private refuse anonymous callers."
+      },
+      {
+        "id": "valid-credential",
+        "expectation": "allow",
+        "status": "realized",
+        "realizedByFixture": [
+          "tests/seed/portal-compat.yaml"
+        ],
+        "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
+        "mechanism": "admin-api-key",
+        "cases": [
+          "CERT-AUTH-02",
+          "CERT-PRTL-TOKN-01",
+          "CERT-PRTL-AUTH-01",
+          "CERT-PRTL-SELF-02",
+          "CERT-PRTL-COMM-02"
+        ],
+        "notes": "A data client presents X-API-Key on ADMIN_PROBE_PATH (/api/v1/admin/services); the Portal lane exchanges the same secret for a named-user token."
+      },
+      {
+        "id": "invalid-credential",
+        "expectation": "deny",
+        "status": "realized",
+        "realizedByFixture": [
+          "tests/seed/portal-compat.yaml"
+        ],
+        "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
+        "mechanism": "admin-api-key",
+        "cases": [
+          "CERT-AUTH-01",
+          "CERT-PRTL-TOKN-02",
+          "CERT-PRTL-OAUTH-01"
+        ],
+        "notes": "A wrong X-API-Key value yields 401 with the ApiKey challenge; generateToken with wrong credentials yields the Esri error envelope without leaking a token."
+      },
+      {
+        "id": "expired-credential",
+        "expectation": "deny",
+        "status": "gap",
+        "gapId": "expired-credential-unrealized",
+        "mechanism": "portal-named-user",
+        "notes": "Only the oauth2 refresh_token invalid-grant arm (CERT-PRTL-OAUTH-02) approximates expiry; no fixture mints a token that is genuinely past its expiry window."
+      },
+      {
+        "id": "insufficient-role-or-scope",
+        "expectation": "deny",
+        "status": "realized-not-asserted",
+        "realizedByFixture": [
+          "tests/seed/portal-compat.yaml"
+        ],
+        "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
+        "mechanism": "portal-named-user",
+        "gapId": "insufficient-role-assertion-absent",
+        "notes": "portal_private requires role portal-admin, which the admin principal never holds, so the denial condition exists in the fixture; no 2026.1 case id asserts that the private tier stays hidden from a token holder."
+      },
+      {
+        "id": "cross-tenant-denial",
+        "expectation": "deny",
+        "status": "gap",
+        "gapId": "cross-tenant-denial-unrealized",
+        "mechanism": "admin-api-key",
+        "notes": "The client-compat stack seeds a single tenant, so no second tenant exists to be denied."
+      },
+      {
+        "id": "separate-proposer-approver",
+        "expectation": "allow-only-with-two-principals",
+        "status": "gap",
+        "gapId": "proposer-approver-unrealized",
+        "mechanism": "admin-api-key",
+        "notes": "Only one principal (admin) is provisioned, so a proposer and a distinct approver cannot be distinguished."
+      },
+      {
+        "id": "licensed-entitlement",
+        "expectation": "allow-with-entitlement",
+        "status": "gap",
+        "gapId": "licensed-entitlement-unrealized-locally",
+        "mechanism": "external",
+        "notes": "Entitlement-bound access is realized only by the licensed release overlay (ArcGIS Pro, BI clients); the unlicensed local profile has no entitlement to present."
+      }
+    ]
+  },
+  "deploymentProfiles": [
+    {
+      "id": "local-unlicensed",
+      "tier": [
+        "pr",
+        "nightly"
+      ],
+      "licensed": false,
+      "description": "The shared unlicensed profile: source-built server on the docker/client-compat network, PostGIS 16-3.4, Redis, HTTP only.",
+      "serverConfig": "tests/config/client-compat-server-v1.json",
+      "fixtureRevisionBinding": "identical",
+      "authPolicyBinding": "identical",
+      "notApplicableAdditions": [
+        "CERT-CONN-02"
+      ]
+    },
+    {
+      "id": "exact-candidate",
+      "tier": [
+        "release"
+      ],
+      "licensed": false,
+      "description": "The release overlay: the exact candidate container image rather than a source build, behind TLS, with the same seeds applied by the same applier.",
+      "overlayRules": [
+        "Additive only: the overlay may pin the candidate image digest and enable TLS, and may not change any seeded identity, count, extent, or access policy.",
+        "fixtureRevision, serverConfigRevision, and authPolicyRevision are carried through unchanged; a differing value is drift, not an overlay.",
+        "CERT-CONN-02 becomes applicable here because the transport is TLS."
+      ],
+      "fixtureRevisionBinding": "identical",
+      "authPolicyBinding": "identical"
+    },
+    {
+      "id": "licensed",
+      "tier": [
+        "release"
+      ],
+      "licensed": true,
+      "description": "The licensed overlay for entitlement-bound clients (ArcGIS Pro/arcpy, Excel, Power BI, Tableau) running against the exact candidate.",
+      "overlayRules": [
+        "Additive only: licensed lanes bind the same seeded identities and the same auth policy, plus an entitlement the unlicensed profile cannot present.",
+        "Licensed evidence must be fresh for the release run and content-addressed to the same candidate image digest.",
+        "The licensed overlay may not substitute its own seed for the canonical fixture; a lane that needs a different seed declares a governed exception instead."
+      ],
+      "fixtureRevisionBinding": "identical",
+      "authPolicyBinding": "identical",
+      "gapId": "licensed-entitlement-unrealized-locally"
+    }
+  ],
+  "scenarioFacets": [
+    {
+      "id": "SF-CONN-REACH",
+      "description": "Reach the protocol entry point over the deployed transport."
+    },
+    {
+      "id": "SF-CONN-NEGOTIATE",
+      "description": "Negotiate transport/version/format before any data is read."
+    },
+    {
+      "id": "SF-AUTH-ANON",
+      "description": "Anonymous access is granted exactly where the access policy allows it."
+    },
+    {
+      "id": "SF-AUTH-CRED",
+      "description": "A credential is required, accepted, or rejected as the auth policy declares."
+    },
+    {
+      "id": "SF-DISC-CATALOG",
+      "description": "Enumerate the services, collections, or entity sets a client can bind to."
+    },
+    {
+      "id": "SF-DISC-RESOURCE",
+      "description": "Read the metadata document of one addressed resource."
+    },
+    {
+      "id": "SF-SCHM-FIELDS",
+      "description": "Project the attribute schema (names, types, nullability) to the client."
+    },
+    {
+      "id": "SF-SCHM-GEOMETRY",
+      "description": "Project geometry type and coordinate reference system."
+    },
+    {
+      "id": "SF-QFLT-ATTRIBUTE",
+      "description": "Attribute predicate returns the declared deterministic subset."
+    },
+    {
+      "id": "SF-QFLT-SPATIAL",
+      "description": "Spatial predicate (bbox or geometry) returns the declared deterministic subset."
+    },
+    {
+      "id": "SF-PAGE-LIMIT",
+      "description": "Bounded first page honours the requested page size."
+    },
+    {
+      "id": "SF-PAGE-OFFSET",
+      "description": "Offset, cursor, or next-link paging yields a disjoint next page."
+    },
+    {
+      "id": "SF-GEOM-FIDELITY",
+      "description": "Coordinates round-trip within the declared tolerance."
+    },
+    {
+      "id": "SF-GEOM-NULL",
+      "description": "Null geometry and null attribute values survive projection without inventing data."
+    },
+    {
+      "id": "SF-ERRH-UNKNOWN",
+      "description": "Unknown resource yields a structured, protocol-shaped error."
+    },
+    {
+      "id": "SF-ERRH-MALFORMED",
+      "description": "Malformed request yields a structured, protocol-shaped error."
+    },
+    {
+      "id": "SF-RNDR-IMAGE",
+      "description": "Server-rendered image is produced and consumed without client error."
+    },
+    {
+      "id": "SF-RNDR-TILE",
+      "description": "Tiled render pipeline (raster or vector tile) loads and decodes."
+    },
+    {
+      "id": "SF-RNDR-STATE",
+      "description": "Refreshing data preserves client-side layer state."
+    },
+    {
+      "id": "SF-RNDR-SYMBOL",
+      "description": "Declared point/line/fill symbology is applied by the client."
+    },
+    {
+      "id": "SF-RNDR-LABEL",
+      "description": "Declared label or text placement is applied by the client."
+    },
+    {
+      "id": "SF-RNDR-SPRITE",
+      "description": "Sprite or icon resource resolves and draws."
+    },
+    {
+      "id": "SF-RNDR-STYLE-URL",
+      "description": "Style URL or drawingInfo metadata is fetched and consumed."
+    },
+    {
+      "id": "SF-EXT-FORMAT",
+      "description": "Binary or text encoding decodes to the expected structure."
+    },
+    {
+      "id": "SF-EXT-CLIENT-IDIOM",
+      "description": "Client-library-specific idiom (parser, adapter, or workflow) succeeds."
+    },
+    {
+      "id": "SF-PRTL-IDENTITY",
+      "description": "Portal identity and security advertisement documents are well formed."
+    },
+    {
+      "id": "SF-PRTL-DISCOVERY",
+      "description": "Portal search and item documents resolve to real service endpoints."
+    },
+    {
+      "id": "SF-PRTL-RBAC",
+      "description": "Portal access-tier projection reflects the exported RBAC decision."
+    },
+    {
+      "id": "SF-PRTL-TOKEN",
+      "description": "Portal token issuance succeeds and fails in the Esri-shaped way."
+    },
+    {
+      "id": "SF-PRTL-OAUTH",
+      "description": "OAuth2 bridge returns RFC 6749-shaped responses."
+    },
+    {
+      "id": "SF-PRTL-COMMUNITY",
+      "description": "Portal community/self reflects the signed-in principal or refuses anonymously."
+    }
+  ],
+  "cases": [
+    {
+      "id": "BI-EXT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Power Query M expression executes."
+    },
+    {
+      "id": "BI-EXT-02",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "OData $apply aggregation returns results."
+    },
+    {
+      "id": "CERT-AUTH-01",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "Unauthenticated request to a protected surface returns 401/403."
+    },
+    {
+      "id": "CERT-AUTH-02",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "Valid credential grants access to the protected surface."
+    },
+    {
+      "id": "CERT-CONN-01",
+      "scenarioFacetId": "SF-CONN-REACH",
+      "description": "Establish HTTP connection to base URL."
+    },
+    {
+      "id": "CERT-CONN-02",
+      "scenarioFacetId": "SF-CONN-NEGOTIATE",
+      "description": "TLS handshake completes (transport negotiation)."
+    },
+    {
+      "id": "CERT-DISC-01",
+      "scenarioFacetId": "SF-DISC-CATALOG",
+      "description": "List available services/collections."
+    },
+    {
+      "id": "CERT-DISC-02",
+      "scenarioFacetId": "SF-DISC-RESOURCE",
+      "description": "Retrieve single service/collection metadata."
+    },
+    {
+      "id": "CERT-ERRH-01",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Invalid endpoint or unknown collection returns a structured error."
+    },
+    {
+      "id": "CERT-ERRH-02",
+      "scenarioFacetId": "SF-ERRH-MALFORMED",
+      "description": "Malformed filter returns a structured error."
+    },
+    {
+      "id": "CERT-GEOM-01",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Returned coordinates are within tolerance of the anchor."
+    },
+    {
+      "id": "CERT-GEOM-02",
+      "scenarioFacetId": "SF-SCHM-GEOMETRY",
+      "description": "Output CRS/SR matches the requested CRS."
+    },
+    {
+      "id": "CERT-PAGE-01",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "First page with limit returns the expected count."
+    },
+    {
+      "id": "CERT-PAGE-02",
+      "scenarioFacetId": "SF-PAGE-OFFSET",
+      "description": "Second page offset returns different features."
+    },
+    {
+      "id": "CERT-PRTL-AUTH-01",
+      "scenarioFacetId": "SF-PRTL-RBAC",
+      "description": "A named-user token widens discovery to org-tier items."
+    },
+    {
+      "id": "CERT-PRTL-COMM-01",
+      "scenarioFacetId": "SF-PRTL-COMMUNITY",
+      "description": "Anonymous community/self returns the Esri error envelope, never a user document."
+    },
+    {
+      "id": "CERT-PRTL-COMM-02",
+      "scenarioFacetId": "SF-PRTL-COMMUNITY",
+      "description": "community/self with a named-user token returns the signed-in user document."
+    },
+    {
+      "id": "CERT-PRTL-INFO-01",
+      "scenarioFacetId": "SF-PRTL-IDENTITY",
+      "description": "/sharing/rest/info advertises token-based security and tokenServicesUrl."
+    },
+    {
+      "id": "CERT-PRTL-ITEM-01",
+      "scenarioFacetId": "SF-PRTL-DISCOVERY",
+      "description": "/sharing/rest/content/items/{id} resolves to a /rest/services URL with an access tier."
+    },
+    {
+      "id": "CERT-PRTL-OAUTH-01",
+      "scenarioFacetId": "SF-PRTL-OAUTH",
+      "description": "oauth2/token returns an RFC 6749 error envelope for an invalid grant."
+    },
+    {
+      "id": "CERT-PRTL-OAUTH-02",
+      "scenarioFacetId": "SF-PRTL-OAUTH",
+      "description": "oauth2/token refresh_token grant returns invalid_grant for an unknown or expired token."
+    },
+    {
+      "id": "CERT-PRTL-RBAC-01",
+      "scenarioFacetId": "SF-PRTL-RBAC",
+      "description": "Anonymous search projects only public-tier items."
+    },
+    {
+      "id": "CERT-PRTL-SELF-01",
+      "scenarioFacetId": "SF-PRTL-IDENTITY",
+      "description": "/sharing/rest/portals/self returns portal identity."
+    },
+    {
+      "id": "CERT-PRTL-SELF-02",
+      "scenarioFacetId": "SF-PRTL-COMMUNITY",
+      "description": "portals/self with a named-user token populates the user block."
+    },
+    {
+      "id": "CERT-PRTL-SRCH-01",
+      "scenarioFacetId": "SF-PRTL-DISCOVERY",
+      "description": "/sharing/rest/search returns the Esri paging shape."
+    },
+    {
+      "id": "CERT-PRTL-TOKN-01",
+      "scenarioFacetId": "SF-PRTL-TOKEN",
+      "description": "generateToken issues a token whose expires is Unix milliseconds."
+    },
+    {
+      "id": "CERT-PRTL-TOKN-02",
+      "scenarioFacetId": "SF-PRTL-TOKEN",
+      "description": "generateToken with invalid credentials returns the Esri error envelope without leaking a token."
+    },
+    {
+      "id": "CERT-QFLT-01",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "Attribute equality filter returns the declared subset."
+    },
+    {
+      "id": "CERT-QFLT-02",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "Spatial bbox/geometry filter returns the declared subset."
+    },
+    {
+      "id": "CERT-RNDR-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Map/table renders without client error."
+    },
+    {
+      "id": "CERT-RNDR-02",
+      "scenarioFacetId": "SF-RNDR-STATE",
+      "description": "Data refresh preserves client state."
+    },
+    {
+      "id": "CERT-RNDR-FIL-01",
+      "scenarioFacetId": "SF-RNDR-SYMBOL",
+      "description": "Polygon fill renders with declared color."
+    },
+    {
+      "id": "CERT-RNDR-LBL-01",
+      "scenarioFacetId": "SF-RNDR-LABEL",
+      "description": "Label/text renders where supported."
+    },
+    {
+      "id": "CERT-RNDR-LIN-01",
+      "scenarioFacetId": "SF-RNDR-SYMBOL",
+      "description": "Line renders with declared stroke and width."
+    },
+    {
+      "id": "CERT-RNDR-SPR-01",
+      "scenarioFacetId": "SF-RNDR-SPRITE",
+      "description": "Sprite/icon resolves and draws."
+    },
+    {
+      "id": "CERT-RNDR-SYM-01",
+      "scenarioFacetId": "SF-RNDR-SYMBOL",
+      "description": "Point symbol renders with declared color/size."
+    },
+    {
+      "id": "CERT-RNDR-URL-01",
+      "scenarioFacetId": "SF-RNDR-STYLE-URL",
+      "description": "Style URL/metadata is consumed."
+    },
+    {
+      "id": "CERT-SCHM-01",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "Retrieve field/property schema."
+    },
+    {
+      "id": "CERT-SCHM-02",
+      "scenarioFacetId": "SF-SCHM-GEOMETRY",
+      "description": "Geometry type reported correctly."
+    },
+    {
+      "id": "CLI-EXT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Admin publish workflow completes."
+    },
+    {
+      "id": "CLI-EXT-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Import lifecycle (upload to ready)."
+    },
+    {
+      "id": "DSK-EXT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Desktop project save/reopen preserves layers."
+    },
+    {
+      "id": "DSK-EXT-02",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Desktop WMS/WMTS layer load and tile render."
+    },
+    {
+      "id": "EL-EXT-01",
+      "scenarioFacetId": "SF-RNDR-SYMBOL",
+      "description": "Esri Leaflet FeatureLayer symbology renders from drawingInfo."
+    },
+    {
+      "id": "EL-EXT-02",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Esri Leaflet DynamicMapLayer export image renders."
+    },
+    {
+      "id": "EL-EXT-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Feature attributes accessible through eachFeature."
+    },
+    {
+      "id": "EL-EXT-04",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "MapServer identify returns attributes at a point."
+    },
+    {
+      "id": "JS-CES-IMG-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Cesium WMS GetMap request parameters are spec compliant."
+    },
+    {
+      "id": "JS-CES-TILE-01",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Cesium OGC API Tiles URL template substitution is correct."
+    },
+    {
+      "id": "JS-EXT-01",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "Binary format fidelity (PBF/MVT decode)."
+    },
+    {
+      "id": "JS-EXT-02",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Streaming/MVT tile load pipeline."
+    },
+    {
+      "id": "JS-EXT-OGC-MAPS-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "OpenLayers ImageStatic targets the OGC API Maps collection image endpoint."
+    },
+    {
+      "id": "JS-EXT-OL-COLL-01",
+      "scenarioFacetId": "SF-DISC-CATALOG",
+      "description": "OpenLayers collections-list discovery."
+    },
+    {
+      "id": "JS-EXT-OL-GEOJSON-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ol/format/GeoJSON feature-collection parsing."
+    },
+    {
+      "id": "JS-EXT-OL-GEOJSON-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ol/format/GeoJSON single-item parsing."
+    },
+    {
+      "id": "JS-EXT-OL-ITEMS-01",
+      "scenarioFacetId": "SF-DISC-CATALOG",
+      "description": "Feature items list and count."
+    },
+    {
+      "id": "JS-EXT-OL-ITEMTYPE-01",
+      "scenarioFacetId": "SF-DISC-RESOURCE",
+      "description": "itemType field present in collection metadata."
+    },
+    {
+      "id": "JS-EXT-TILES-DISC-01",
+      "scenarioFacetId": "SF-DISC-CATALOG",
+      "description": "OGC API Tiles landing page."
+    },
+    {
+      "id": "JS-EXT-TILES-DISC-02",
+      "scenarioFacetId": "SF-DISC-CATALOG",
+      "description": "Collection tilesets listing."
+    },
+    {
+      "id": "JS-EXT-TILES-SCHM-01",
+      "scenarioFacetId": "SF-DISC-RESOURCE",
+      "description": "Tileset metadata introspection."
+    },
+    {
+      "id": "NB-DDB-AUTH-03",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "GET /api/v1/admin/services with an invalid X-API-Key -> 401 (not 403, not 500)."
+    },
+    {
+      "id": "NB-DDB-AUTH-04",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "DuckDB httpfs authenticated the same control-plane read via CREATE SECRET (TYPE http, EXTRA_HTTP_HEADERS MAP) on duckdb=1.5.5;spatial=eb1e57c; the header survives into the HTTP GET."
+    },
+    {
+      "id": "NB-DDB-CRS-01",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Content-Crs echoes the negotiated CRS for every supported value and defaults to CRS84: {'<default>': '<http://www.opengis.net/def/crs/OGC/1.3/CRS84>',...."
+    },
+    {
+      "id": "NB-DDB-CRS-02",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "crs=CRS84 -> (-122.49, 37.71) = (lon, lat); crs=EPSG:4326 -> (37.71, -122.49) = (lat, lon)."
+    },
+    {
+      "id": "NB-DDB-CRS-03",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "bbox-crs=EPSG:3857 with the DuckDB-reprojected envelope selected [1, 2, 3], identical to the CRS84 bbox."
+    },
+    {
+      "id": "NB-DDB-ERR-01",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Unknown collection -> 404 application/problem+json; malformed bbox -> 400 application/problem+json."
+    },
+    {
+      "id": "NB-DDB-ERR-02",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Unsupported format/CRS/bbox-crs each answered 400 application/problem+json rather than 500 or a hang: {'f=nosuchformat': \"Unsupported format 'nosuchformat'\", 'crs=bogus': \"Unsupported...."
+    },
+    {
+      "id": "NB-DDB-ERR-04",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Unparseable paging parameters answered structured problem+json 400s: {'limit=abc': (400, 'application/problem+json'), 'limit=1.5': (400, 'application/problem+json'), 'offset=abc': (400,...."
+    },
+    {
+      "id": "NB-DDB-FMT-01",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "COPY ... TO PARQUET then read_parquet preserved 10 rows, 9 WKB geometries and the anchor within 0.0 degrees."
+    },
+    {
+      "id": "NB-DDB-FMT-02",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "COPY ... (FORMAT GDAL, DRIVER 'GeoJSON') then ST_Read preserved 9 geometries and the anchor within 0.0 degrees of the server's coordinates."
+    },
+    {
+      "id": "NB-DDB-GEOM-03",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "ST_AsText(geom) = POINT (-122.49 37.71); WKB round-trip is bit-identical (deviation 0.0), so the server's coordinates survive DuckDB's binary encoding without precision loss."
+    },
+    {
+      "id": "NB-DDB-GEOM-04",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "ST_IsValid returned true for all 9 emitted geometries."
+    },
+    {
+      "id": "NB-DDB-GEOM-05",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Collection 2001: 2 LINESTRINGs, lengths [2634.4, 2634.5] m in EPSG:3857."
+    },
+    {
+      "id": "NB-DDB-GEOM-06",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Server crs=EPSG:3857 -> (-13635524.42726808, 4538539.15341347); DuckDB ST_Transform(always_xy) -> (-13635524.427268079, 4538539.1534134755); max deviation 5.587935447692871e-09 m <= 0.01...."
+    },
+    {
+      "id": "NB-DDB-NULL-01",
+      "scenarioFacetId": "SF-GEOM-NULL",
+      "description": "4 NULL and 6 populated description values across 10 rows \u2014 the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
+    },
+    {
+      "id": "NB-DDB-NULL-02",
+      "scenarioFacetId": "SF-GEOM-NULL",
+      "description": "1 null-geometry row ('lambda', status 'inactive') and 9 geometry rows totalling 10."
+    },
+    {
+      "id": "NB-DDB-PAGE-03",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] \u2014 exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
+    },
+    {
+      "id": "NB-DDB-PAGE-04",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "limit=100000 -> numberMatched/numberReturned 10/10; bbox subset with limit=2 -> 3/2 (numberMatched counts the filtered set, not the page); offset=100000 -> 0 rows via DuckDB; limit=0 ->...."
+    },
+    {
+      "id": "NB-DDB-PUSH-01",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "SERVER-SIDE bbox pushdown and CLIENT-SIDE ST_Intersects over a full fetch both selected [1, 2, 3]."
+    },
+    {
+      "id": "NB-DDB-PUSH-02",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "SERVER-SIDE cql2-text filter status='active' and the CLIENT-SIDE DuckDB predicate both selected [1, 3, 5, 7, 9]."
+    },
+    {
+      "id": "NB-DDB-PUSH-03",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "SERVER-SIDE datetime=2024-01-01T00:00:00Z/2024-01-03T23:59:59Z and the CLIENT-SIDE DuckDB TIMESTAMPTZ BETWEEN predicate both selected [1, 2, 3], so the server's temporal field binding...."
+    },
+    {
+      "id": "NB-DDB-QRY-01",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "A zero-match cql2-text filter returned an empty FeatureCollection (HTTP 200) that GDAL opened without error, so DuckDB sees 0 rows rather than an exception."
+    },
+    {
+      "id": "NB-DDB-QRY-02",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "min/max/sum over 'count' = 1/10/55, avg(ratio) = 6.875, GROUP BY status = {'active': 5, 'inactive': 5}. Every value matches the canonical fixture, so the server delivered a complete,...."
+    },
+    {
+      "id": "NB-DDB-QRY-03",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "Spatial join of collections 0 and 2000 via ST_DWithin produced 27 pairs; row_number() OVER (PARTITION BY status) picked [('active', 'alpha', 1), ('inactive', 'beta', 1)]."
+    },
+    {
+      "id": "NB-DDB-TYPE-01",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "All 13 columns kept their natural type through the server -> GeoJSON -> GDAL -> DuckDB path; nothing was silently coerced to VARCHAR."
+    },
+    {
+      "id": "NB-DDB-TYPE-02",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "Cross-checked 11 fields from http://honua:5000/ogc/features/collections/0/queryables against the DuckDB types ST_Read produced."
+    },
+    {
+      "id": "NB-DDB-TYPE-03",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "The server declares uid with JSON-Schema format 'uuid'; GeoJSON has no UUID type so GDAL/DuckDB materialize it as VARCHAR."
+    },
+    {
+      "id": "NB-DDB-TYPE-04",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "tags -> VARCHAR[] ['red', 'blue'], numbers -> INTEGER[] [0, 1, 2]; list indexing and len() work, so the server emitted real JSON arrays rather than JSON-encoded strings."
+    },
+    {
+      "id": "NB-GPD-AUTH-01",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "An invalid X-API-Key produced 401 (not 403, which would imply an authenticated-but-forbidden principal, and not 500)."
+    },
+    {
+      "id": "NB-GPD-CRS-01",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "total_bounds=(np.float64(-122.49), np.float64(37.71), np.float64(-122.37), np.float64(37.79)) matches the canonical lon/lat extent, proving the default GeoJSON output uses CRS84 axis...."
+    },
+    {
+      "id": "NB-GPD-CRS-02",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Opened with the OAPIF driver's CRS=EPSG:3857 open option; the server returned EPSG:3857 and the anchor landed 5.587935447692871e-09 m from the pyproj reference (limit 0.01 m)."
+    },
+    {
+      "id": "NB-GPD-CRS-03",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Compared 9 features; worst server-vs-pyproj EPSG:3857 deviation 5.587935447692871e-09 m."
+    },
+    {
+      "id": "NB-GPD-CRS-04",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "bbox=-13636081.024722047,4537835.6179989865,-13631628.245090313,4542057.542774347 with bbox-crs=http://www.opengis.net/def/crs/EPSG/0/3857 returned 3 rows, matching the EPSG:4326 bbox result."
+    },
+    {
+      "id": "NB-GPD-ENG-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "geopandas.read_file with engine='fiona' and engine='pyogrio' (two independently vendored GDAL builds) agreed on row count, ordering, CRS and geometry to within 0.0 deg."
+    },
+    {
+      "id": "NB-GPD-ERR-01",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Status codes observed by the client: {'unknown-collection': 404, 'malformed-crs': 400, 'malformed-cql2': 400}. A missing resource is 404 while malformed CRS and CQL2 inputs are 400, so a...."
+    },
+    {
+      "id": "NB-GPD-FLT-01",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "datetime=2024-01-03T00:00:00Z/2024-01-05T23:59:59Z selected ['delta', 'epsilon', 'gamma'], i.e. exactly the three features whose created_at falls inside the interval."
+    },
+    {
+      "id": "NB-GPD-FLT-02",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "filter='count > 5' returned 5 rows ([6, 7, 8, 9, 10]); the conjunction with status='active' returned 2 rows, so the server evaluates CQL2-text predicates including AND."
+    },
+    {
+      "id": "NB-GPD-FLT-03",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "Both an unmatched OGR attribute filter and an unmatched CQL2 predicate produced empty GeoDataFrames with the schema intact rather than an HTTP error or a malformed payload."
+    },
+    {
+      "id": "NB-GPD-FLT-04",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "An Antarctic bbox in EPSG:4326 (lat/lon axis order) returned an empty FeatureCollection, confirming the server treats a disjoint-but-valid envelope as a zero-result query."
+    },
+    {
+      "id": "NB-GPD-GEO-01",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "9 geometries round-tripped through shapely WKB and WKT with a worst-case deviation of 0.0 deg."
+    },
+    {
+      "id": "NB-GPD-GEO-02",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "declared collection extent (-122.5, 37.7, -122.35, 37.84) contains the materialized data bounds (-122.49, 37.71, -122.37, 37.79), which equal the canonical fixture extent."
+    },
+    {
+      "id": "NB-GPD-IO-01",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "Round-tripped the server response through {'GPKG': 10, 'FlatGeobuf': 10}; worst coordinate deviation 0.0 deg and the null-geometry row stayed null in both formats."
+    },
+    {
+      "id": "NB-GPD-IO-02",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "GeoParquet round trip preserved 10 rows, EPSG:4326 and the datetime64[ms, UTC] timestamp dtype."
+    },
+    {
+      "id": "NB-GPD-NUL-01",
+      "scenarioFacetId": "SF-GEOM-NULL",
+      "description": "4 of 10 rows carried a null description; the remainder are non-empty strings, so JSON null was not coerced to an empty string."
+    },
+    {
+      "id": "NB-GPD-NUL-02",
+      "scenarioFacetId": "SF-GEOM-NULL",
+      "description": "10 rows returned with 1 null geometry (['lambda']); the geometry-less feature is neither dropped nor given a placeholder geometry."
+    },
+    {
+      "id": "NB-GPD-PAG-01",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "4 pages of limit=3 produced 10 distinct features with no repeats and no gaps, so limit/offset paging is stable and complete."
+    },
+    {
+      "id": "NB-GPD-PAG-02",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "limit=1000000 was clamped and returned 10 rows; offset=10000 returned an empty FeatureCollection rather than an error."
+    },
+    {
+      "id": "NB-GPD-SCH-01",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "The declared queryable 'eo:cloud_cover' is present in the feature properties and filterable (3 rows matched > 50); ?properties= answered HTTP 200 with columns ['eo:cloud_cover',...."
+    },
+    {
+      "id": "NB-GPD-SRT-01",
+      "scenarioFacetId": "SF-QFLT-ATTRIBUTE",
+      "description": "sortby=-count produced [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]; the first two pages match the corresponding slices of the full ordering, so the sort is applied before paging."
+    },
+    {
+      "id": "NB-GPD-TYP-01",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "count dtype=int32, ratio dtype=float64; anchor count=1, ratio=1.25 round-tripped exactly."
+    },
+    {
+      "id": "NB-GPD-TYP-02",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "active dtype=bool with 5 true rows, consistent with status='active' on every row."
+    },
+    {
+      "id": "NB-GPD-TYP-03",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "created_at dtype=datetime64[ms, UTC] (anchor 2024-01-01 12:00:00+00:00), event_date dtype=datetime64[ms] (anchor 2024-02-01 00:00:00); the RFC 3339 timestamps the server emits are parsed...."
+    },
+    {
+      "id": "NB-GPD-TYP-04",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "Through pyogrio's Arrow path: event_time=datetime.time(12, 34, 56) (a real time value, not a string), tags=['red', 'blue'], numbers=[np.int32(0), np.int32(1), np.int32(2)],...."
+    },
+    {
+      "id": "NB-GPD-WFS-BBX-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "BBOX in urn:ogc:def:crs:EPSG::4326 lat/lon order matched 3 features; the same numbers supplied in lon/lat order yielded HTTP 400, proving the server applies the CRS-declared axis order...."
+    },
+    {
+      "id": "NB-GPD-WFS-CAP-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 5 feature types advertised by GetCapabilities resolved through DescribeFeatureType and reported a geometry type: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines',...."
+    },
+    {
+      "id": "NB-GPD-WFS-CRS-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "total_bounds=(np.float64(-122.49), np.float64(37.71), np.float64(-122.37), np.float64(37.79)) after GDAL applied the axis swap implied by srsName=urn:ogc:def:crs:EPSG::4326; the server's...."
+    },
+    {
+      "id": "NB-GPD-WFS-CRS-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "SRSNAME=urn:ogc:def:crs:EPSG::3857 returned EPSG:3857; the anchor landed 2.7939677238464355e-09 m from the pyproj reference (limit 0.01 m)."
+    },
+    {
+      "id": "NB-GPD-WFS-ERR-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Client-observed statuses: {'unknown-typename': '400', 'malformed-srsname': '400'}. The unknown-typename response body was a well-formed ows:ExceptionReport, so a GeoPandas caller...."
+    },
+    {
+      "id": "NB-GPD-WFS-FLT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "fes:PropertyIsEqualTo(status, 'active') returned 5 features, all with status='active', so the server evaluates OGC Filter Encoding 2.0 predicates."
+    },
+    {
+      "id": "NB-GPD-WFS-HIT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "GDAL satisfies GetFeatureCount with GetFeature&RESULTTYPE=hits (fast_feature_count=True) and the server reported numberMatched=10, matching the seeded row count without transferring features."
+    },
+    {
+      "id": "NB-GPD-WFS-IDN-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "10 unique gml:id values (e.g. ['test_layer.1', 'test_layer.2', 'test_layer.3']), identical across two requests and each suffixed with the feature's objectid, so a client can key on them...."
+    },
+    {
+      "id": "NB-GPD-WFS-IO-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "GeoPackage round trip preserved 10 features, EPSG:4326, the objectid ordering and the null geometry, with a worst deviation of 0.0 deg."
+    },
+    {
+      "id": "NB-GPD-WFS-NS-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "TYPENAMES='honua:test_layer' and TYPENAMES='test_layer' returned the same 10 features in the same order, so the unprefixed name used by the server's own paging links and...."
+    },
+    {
+      "id": "NB-GPD-WFS-NUL-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "10 features returned with 1 nil geometry; the server emits the nillable geometry property rather than dropping the feature or writing an empty gml:Point."
+    },
+    {
+      "id": "NB-GPD-WFS-PAG-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "4 pages of COUNT=3 produced 10 distinct features with no repeats and no gaps."
+    },
+    {
+      "id": "NB-GPD-WFS-PAG-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "COUNT=1000000 returned 10 features (clamped, not rejected); STARTINDEX=10000 returned an empty FeatureCollection rather than a service exception."
+    },
+    {
+      "id": "NB-GPD-WFS-PRP-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "PROPERTYNAME=name,status produced exactly ['name', 'status'] on 3 features; no unrequested property was serialized."
+    },
+    {
+      "id": "NB-GPD-WFS-SCH-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "WFS exposed the namespaced field as 'eo_x003A_cloud_cover' (GML escapes ':' as _x003A_) with 9 populated values, e.g. [5.0, 8.0, 25.0]."
+    },
+    {
+      "id": "NB-GPD-WFS-TYP-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "objectid dtype=int32, count=int32, ratio=float64, active=bool; xsd:int/xsd:double/xsd:boolean from DescribeFeatureType survived into pandas dtypes."
+    },
+    {
+      "id": "NB-GPD-WFS-TYP-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "created_at='2024-01-01T12:00:00+00:00', event_date='2024-02-01', event_time='12:34:56.0000000' - all parse to the seeded instants."
+    },
+    {
+      "id": "NB-OWS-OAF-AUTH-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "A syntactically valid but incorrect X-API-Key returns 401, not 403 or 500."
+    },
+    {
+      "id": "NB-OWS-OAF-COLL-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "collection.extent.spatial.bbox=[-122.5, 37.7, -122.35, 37.84] encloses the seeded feature envelope [-122.49, 37.71, -122.37, 37.79] and is declared in CRS84; temporal interval...."
+    },
+    {
+      "id": "NB-OWS-OAF-COLL-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Features.feature_collections() -> ['2000', '2001', '2002', '3000', '0']; every collection declares itemType=feature."
+    },
+    {
+      "id": "NB-OWS-OAF-CONF-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "/conformance declares 26 classes including Features 1.0 core/geojson/oas30."
+    },
+    {
+      "id": "NB-OWS-OAF-CONF-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Declared conformance classes were exercised rather than trusted: ['crs', 'queryables', 'cql2-text'] all behaved as advertised."
+    },
+    {
+      "id": "NB-OWS-OAF-CRS-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "CRS84 -> lon/lat, EPSG:4326 -> lat/lon (axis order honoured, not just echoed), EPSG:3857 -> (-13635524.42726808, 4538539.15341347) which is within 3.725290298461914e-09 m of the...."
+    },
+    {
+      "id": "NB-OWS-OAF-CRS-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 3 CRSs advertised on the collection were accepted by /items and echoed back in Content-Crs: ['http://www.opengis.net/def/crs/EPSG/0/3857',...."
+    },
+    {
+      "id": "NB-OWS-OAF-DATE-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "A closed RFC 3339 interval on the seeded created_at column selects exactly the three features inside it (alpha/beta/gamma)."
+    },
+    {
+      "id": "NB-OWS-OAF-ERR-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 5 deliberate client errors (unknown collection, unknown item, bad CRS, negative offset, short bbox) returned RFC 7807 problem+json with matching status, title, detail and instance."
+    },
+    {
+      "id": "NB-OWS-OAF-ITEM-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "/items/1 returned the identical Feature the collection listing carried, with self and collection link relations."
+    },
+    {
+      "id": "NB-OWS-OAF-LAND-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Landing page carries typed self/conformance/data/service-desc links plus an alternate representation, which is what OWSLib navigates from."
+    },
+    {
+      "id": "NB-OWS-OAF-LAND-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Features.api() resolved the service-desc link to an OpenAPI 3.0.3 document describing 15 paths, including the landing page, collections, single collection and collection items resources."
+    },
+    {
+      "id": "NB-OWS-OAF-LINK-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Paged responses advertise self+next and no prev on page 1; a response that already covers numberMatched advertises no next link."
+    },
+    {
+      "id": "NB-OWS-OAF-LINK-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Followed the advertised next href verbatim (http://honua:5000/ogc/features/collections/0/items?limit=3&offset=3&f=geojson); it returned a disjoint GeoJSON page, so OWSLib-style link...."
+    },
+    {
+      "id": "NB-OWS-OAF-PAGE-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "A limit=3 walk over the collection yielded 10 distinct feature ids, exactly matching numberMatched=10: no gaps, no repeats, stable ordering."
+    },
+    {
+      "id": "NB-OWS-OAF-QFLT-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "CQL2-text `count > 7` compares numerically (3 rows: theta/iota/lambda); a lexical comparison would also return rows 8 and 9 or drop 10."
+    },
+    {
+      "id": "NB-OWS-OAF-QRYB-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Queryables is a 2020-12 JSON Schema with $id, every property typed, and the non-queryable JSON array columns correctly excluded."
+    },
+    {
+      "id": "NB-OWS-OAF-SCHM-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 12 seeded attributes round-trip with their JSON types preserved (bool/int/double/array), not stringified."
+    },
+    {
+      "id": "NB-OWS-OAF-SORT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib's (property, direction) sortby tuple maps to the server's `-name` convention; desc is the exact reverse of asc over all 10 features."
+    },
+    {
+      "id": "NB-OWS-WFS-BBOX-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "The 4-element BBOX (default CRS, longitude/latitude) and the 5-element CRS84 BBOX select the identical feature set ['alpha', 'beta', 'gamma'], so the server's bbox axis-order handling...."
+    },
+    {
+      "id": "NB-OWS-WFS-CAP-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OperationsMetadata advertises 27 entries covering every mandatory WFS 2.0 operation, and GetFeature offers both ['get', 'post'] DCP bindings."
+    },
+    {
+      "id": "NB-OWS-WFS-CAP-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Capabilities declare the WFS 2.0 conformance constraint set including ImplementsBasicWFS, ImplementsResultPaging, KVPEncoding and XMLEncoding; the paging and encoding claims are...."
+    },
+    {
+      "id": "NB-OWS-WFS-CAP-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 5 advertised GetFeature output formats returned real payloads: application/gml+xml; version=3.2=1707B, GML3.2=1671B, application/geo+json=518B, text/csv=375B, application/json=518B."
+    },
+    {
+      "id": "NB-OWS-WFS-CRS-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "4 (CRS, spelling) combinations from the advertised crsOptions were served, each labelled with a matching srsName and reprojected within tolerance."
+    },
+    {
+      "id": "NB-OWS-WFS-CRS-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All three CRS84 spellings (URN, CRS:84, OGC URI) return longitude/latitude ordinates labelled with the CRS84 URN, so srsName and axis order agree."
+    },
+    {
+      "id": "NB-OWS-WFS-DFT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "DescribeFeatureType returned a well-formed XSD declaring 'test_layer' in the gml:AbstractFeature substitution group and importing GML 3.2."
+    },
+    {
+      "id": "NB-OWS-WFS-ERR-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Every deliberate client error produced an ows:ExceptionReport OWSLib could parse: bad-srsname=InvalidParameterValue, structurally-invalid-filter=InvalidParameterValue,...."
+    },
+    {
+      "id": "NB-OWS-WFS-FILT-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "fes:PropertyIsGreaterThan on the integer `count` column returns exactly the three rows above 7; a lexical comparison would mis-order 10."
+    },
+    {
+      "id": "NB-OWS-WFS-HITS-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "RESULTTYPE=hits reported numberMatched=10 with numberReturned=0 and no wfs:member elements, which is what a client uses to size a query before fetching."
+    },
+    {
+      "id": "NB-OWS-WFS-PAGE-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "A COUNT=3 walk produced 10 distinct gml:id values summing exactly to numberMatched: no gaps, no repeats, stable ordering across pages."
+    },
+    {
+      "id": "NB-OWS-WFS-PROP-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "propertyname=['name','status'] narrowed the payload to exactly those two columns, and the PROPERTYNAME=* wildcard widened it back to all 13 properties."
+    },
+    {
+      "id": "NB-OWS-WFS-SORT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "SORTBY=name returned all 10 features in ascending name order."
+    },
+    {
+      "id": "NB-OWS-WFS-STQ-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the...."
+    },
+    {
+      "id": "NB-OWS-WFS-VER-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions."
+    },
+    {
+      "id": "NB-OWS-WFS-XPRO-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC...."
+    },
+    {
+      "id": "NB-OWS-WMS-111-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of...."
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Service block: Name=WMS, Title='browser_compat', Abstract='Honua WMS service', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource...."
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-02",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "OWSLib parsed 8 ContactInformation fields: {'name': 'Honua Support', 'organization': 'Honua', 'position': 'Support Engineer', 'address': '1 Honua Way', 'city': 'Honolulu', 'region':...."
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-03",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79); on the wire the BoundingBox for CRS:84 is (-122.44, 37.76, -122.4, 37.79) (longitude first) and for EPSG:4326 is (37.76,...."
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-04",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "The advertised LegendURL for style 'default' returned a decodable 122x32 PNG."
+    },
+    {
+      "id": "NB-OWS-WMS-CAP-05",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "GetMap formats ['image/png', 'image/jpeg']; GetFeatureInfo formats ['text/plain', 'application/vnd.ogc.gml', 'application/json']; exception formats ['XML']; every operation carries an...."
+    },
+    {
+      "id": "NB-OWS-WMS-ERR-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "All 5 deliberate GetMap errors (unsupported-format, unknown-crs, inverted-bbox, degenerate-bbox, oversize-width) raised owslib ServiceException from an ogc:ServiceExceptionReport served...."
+    },
+    {
+      "id": "NB-OWS-WMS-GFI-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "GetFeatureInfo at I/J (111, 107) -- the pixel the seeded pt-alpha point projects to in the requested view -- returned that feature with its attributes, so the server's pixel-to-world...."
+    },
+    {
+      "id": "NB-OWS-WMS-GFI-02",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "All 3 advertised GetFeatureInfo formats identified the same feature with a body matching the declared media type: text/plain=46B, application/vnd.ogc.gml=570B, application/json=117B."
+    },
+    {
+      "id": "NB-OWS-WMS-GFI-03",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "A GetFeatureInfo aimed at empty space returns a well-formed response with an empty feature list rather than an exception, which is what identify tools rely on."
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Every advertised GetMap format decoded at the requested size: image/png -> PNG/RGBA, image/jpeg -> JPEG/RGB."
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-02",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "CRS:84 and EPSG:4326 requests for the same ground area are pixel-identical even though OWSLib sends latitude-first ordinates for EPSG:4326, and the EPSG:3857 reprojection of the same...."
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-03",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "TRANSPARENT=TRUE -> fully transparent background; TRANSPARENT=FALSE -> opaque white; BGCOLOR=0xFF0000 -> opaque red, with the features still drawn on top (103 non-background pixels)."
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-04",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "STYLES=default matches the implicit default style pixel for pixel, and a 3-layer LAYERS request composites strictly more content than the single layer alone."
+    },
+    {
+      "id": "NB-OWS-WMS-MAP-05",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "A well-formed bbox outside the layer extent returns a correctly sized, fully transparent PNG rather than a ServiceException, so tiled clients degrade to empty tiles instead of error tiles."
+    },
+    {
+      "id": "NB-OWS-WMS-VER-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Version negotiation: {'1.3.0': '1.3.0', '1.1.1': '1.1.1', '1.1.0': '1.1.1', '1.0.0': '1.1.1', '9.9.9': '1.3.0', '<absent>': '1.3.0'}. A request above the supported range degrades to the...."
+    },
+    {
+      "id": "NB-OWS-WMS-XPRO-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "Layer 'Browser Points' has the same title and the same WGS84 extent (-122.44, 37.76, -122.4, 37.79) through WMS capabilities and the OGC API - Features collection, so the two adapters...."
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-01",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "OperationsMetadata declares ['GetCapabilities', 'GetFeatureInfo', 'GetTile']; GetTile offers both ['KVP', 'RESTFUL'] GetEncoding constraints and OWSLib selects the KVP binding from them."
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-02",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Both tile matrix sets are internally consistent: contiguous zoom identifiers, 256px tiles, a fixed TopLeftCorner, power-of-two matrix growth and halving scale denominators."
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-03",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "38 TileMatrixLimits entries across both grids stay within the row/column range of the tile matrix they constrain, so a limits-aware client cannot be steered at a tile that does not exist."
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-04",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "3 ResourceURL entries (['FeatureInfo', 'tile']); OWSLib's own buildTileResource substituted the tile template to...."
+    },
+    {
+      "id": "NB-OWS-WMTS-CAP-05",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "The default style's LegendURL returned a decodable 256x256 PNG matching the declared LegendURL width/height (256, 256)."
+    },
+    {
+      "id": "NB-OWS-WMTS-ERR-01",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Every out-of-contract GetTile returned a coded ows:ExceptionReport: row-out-of-range=TileOutOfRange, column-out-of-range=TileOutOfRange, unknown-tilematrixset=InvalidParameterValue,...."
+    },
+    {
+      "id": "NB-OWS-WMTS-GFI-01",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "The advertised FeatureInfo ResourceURL, substituted for tile 14/6332/2620 at pixel I/J (142, 194) -- derived from the capabilities tile geometry -- identified the seeded pt-alpha...."
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-01",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Tile indices derived from the capabilities scale denominators with the WMTS pixel-span formula produced in-range tiles at every sampled level and all decoded as 256x256 PNGs: {'0': (0,...."
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-02",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "WorldCRS84Quad declares the OGC 2x1 level-0 grid with its origin at (-180, 90) in CRS84 longitude/latitude order, and GetTile(WorldCRS84Quad/4/4/5) -- derived from that geometry --...."
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-03",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "The advertised RESTful ResourceURL (http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png) and the KVP GetTile binding return...."
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-04",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Two identical GetTile requests returned byte-identical 558-byte payloads, so the tile stream is cacheable and reproducible."
+    },
+    {
+      "id": "NB-OWS-WMTS-TILE-05",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "GetTile(WebMercatorQuad/5/18/24) -- a valid index far from the seeded extent -- returned a fully transparent 256x256 PNG rather than a ServiceException."
+    },
+    {
+      "id": "NB-OWS-WMTS-XPRO-01",
+      "scenarioFacetId": "SF-RNDR-TILE",
+      "description": "Layer 'Browser Points' carries the same title and the same WGS84 bounding box (-122.44, 37.76, -122.4, 37.79) through the WMTS capabilities and the OGC API - Features collection for the...."
+    },
+    {
+      "id": "NB-RSF-AUT-01",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "401 challenge shape on /api/v1/admin/services: WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"."
+    },
+    {
+      "id": "NB-RSF-AUT-02",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "A wrong X-API-Key value returned HTTP 401 on /api/v1/admin/services; it must be 401 (bad credential), not 403 (authenticated but forbidden) and never 500."
+    },
+    {
+      "id": "NB-RSF-AUT-03",
+      "scenarioFacetId": "SF-AUTH-CRED",
+      "description": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the WFS DSN: 7 layer(s) listed and the certification target 'honua:test_layer' is present."
+    },
+    {
+      "id": "NB-RSF-CRS-01",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "WFS advertises CRS list {4326, 3857} for the certification layer; both the storage CRS (EPSG:4326) and the Web Mercator alternative (EPSG:3857) must be offered or R users cannot request...."
+    },
+    {
+      "id": "NB-RSF-CRS-02",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Server-side reprojection to EPSG:3857 (urn:ogc:def:crs:EPSG::3857) returned (-13635524.4273, 4538539.1534); PROJ 9.4.0 via sf::st_transform() computes (-13635524.4273, 4538539.1534); max...."
+    },
+    {
+      "id": "NB-RSF-CRS-03",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "Axis order with srsName=urn:ogc:def:crs:EPSG::4326: raw GML gml:pos is '37.71 -122.49' (spec requires lat lon for the urn form) and sf/GDAL recovered (-122.4900, 37.7100) as lon/lat."
+    },
+    {
+      "id": "NB-RSF-CRS-04",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "bbox axis-order contract for WFS: the specified order (the feature type's default CRS, lat,lon for urn EPSG::4326) selected 3 feature(s) (expected 3), and the reversed order returned...."
+    },
+    {
+      "id": "NB-RSF-ERR-01",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "WFS error shape: unknown typeName returned 400 with an ows:ExceptionReport (exceptionCode present); an unsupported REQUEST returned 501."
+    },
+    {
+      "id": "NB-RSF-ERR-02",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Malformed CRS 'urn:ogc:def:crs:BOGUS::9999' returned HTTP 400 with a structured error body (problem+json / ExceptionReport)."
+    },
+    {
+      "id": "NB-RSF-ERR-03",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Unsupported output format returned HTTP 400 (expected a 4xx)."
+    },
+    {
+      "id": "NB-RSF-ERR-04",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "Truncated protocol filter (\"status = 'active' AND\") returned HTTP 400 (expected a 4xx structured error, never a 500 and never a silent full result set)."
+    },
+    {
+      "id": "NB-RSF-FMT-01",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate...."
+    },
+    {
+      "id": "NB-RSF-FMT-02",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate deviation...."
+    },
+    {
+      "id": "NB-RSF-FMT-03",
+      "scenarioFacetId": "SF-EXT-FORMAT",
+      "description": "Advertised output formats all serve the complete feature set: application/geo+json -> HTTP 200, 4059 byte(s), anchor present, last feature present; text/csv -> HTTP 200, 2516 byte(s),...."
+    },
+    {
+      "id": "NB-RSF-GEO-01",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "st_bbox() of the returned features (-122.49000 37.71000 -122.37000 37.79000) against the WFS declared extent (-122.50000 37.70000 -122.35000 37.84000): the data extent must lie inside...."
+    },
+    {
+      "id": "NB-RSF-GEO-02",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "WKB (st_as_binary) and WKT (st_as_text) round-trip of 9 server geometries: max coordinate deviation 0.000e+00 (WKB 0.000e+00, WKT 0.000e+00), threshold 1e-06."
+    },
+    {
+      "id": "NB-RSF-GEO-03",
+      "scenarioFacetId": "SF-GEOM-FIDELITY",
+      "description": "sf::st_is_valid() over 9 server geometries: 9 valid, 0 invalid, 0 indeterminate."
+    },
+    {
+      "id": "NB-RSF-NUL-01",
+      "scenarioFacetId": "SF-GEOM-NULL",
+      "description": "Nullable `description`: 4 of 10 rows are NA (fixture seeds 4 NULLs); 'alpha' is NA and 'beta' is 'description_1'. A server that emitted \"\" or the string \"null\" would fail this."
+    },
+    {
+      "id": "NB-RSF-NUL-02",
+      "scenarioFacetId": "SF-GEOM-NULL",
+      "description": "Null-geometry handling: 10 row(s) returned with 1 empty geometry/geometries (fixture seeds 10 features, 9 with geometry); the null-geometry row 'lambda' is present."
+    },
+    {
+      "id": "NB-RSF-OAF-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Landing page http://honua:5000/ogc/features returned HTTP 200 with link relations {self, alternate, service-desc, conformance, data, https://www.opengis.net/def/rel/ogc/1.0/map,...."
+    },
+    {
+      "id": "NB-RSF-OAF-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Declared-vs-honoured conformance: 7 of 26 declared classes were probed and all held."
+    },
+    {
+      "id": "NB-RSF-OAF-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Link relations: self=http://honua:5000/ogc/features/collections/0/items?limit=3; following `next` returned HTTP 200 with 3 feature(s) disjoint from page one (overlap 0); the final page...."
+    },
+    {
+      "id": "NB-RSF-OAF-04",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Single-item retrieval /items/1 returned HTTP 200 as a GeoJSON Feature with name 'alpha' (expected the 'alpha' anchor)."
+    },
+    {
+      "id": "NB-RSF-OAF-05",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "datetime=2024-01-01T00:00:00Z/2024-01-03T00:00:00Z returned HTTP 200 with 2 of 10 feature(s); every returned created_at is inside the interval."
+    },
+    {
+      "id": "NB-RSF-OAF-06",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "CQL2-text `filter=status = 'active'` returned HTTP 200 with 5 feature(s) (expected 5) and status values {active}. This is the protocol filter parameter, not a client-side filter."
+    },
+    {
+      "id": "NB-RSF-OWS-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R parsed ows:ServiceIdentification: title='Honua WFS 2.0', serviceType='WFS', serviceTypeVersion={2.0.0}."
+    },
+    {
+      "id": "NB-RSF-OWS-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R parsed ows:OperationsMetadata with 9 operation(s): {GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries,...."
+    },
+    {
+      "id": "NB-RSF-OWS-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R parsed 5 feature type(s) from the WFS 2.0.0 capabilities: {honua:test_layer, honua:browser_points, honua:browser_lines, honua:browser_polygons, honua:portal_public_points}; the...."
+    },
+    {
+      "id": "NB-RSF-OWS-04",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R per-feature-type metadata: DefaultCRS parsed to epsg:4326 (expected EPSG:4326) and ows:WGS84BoundingBox parsed."
+    },
+    {
+      "id": "NB-RSF-OWS-05",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R DescribeFeatureType returned 15 element(s); 12 of 12 canonical attribute fields present."
+    },
+    {
+      "id": "NB-RSF-OWS-06",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R WFSFeatureType$getFeatures() returned a sf/data.frame with 10 row(s); expected 10."
+    },
+    {
+      "id": "NB-RSF-OWS-07",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R getFeatures(count=3) then getFeatures(count=3, startIndex=3) returned 3 and 3 row(s) with overlap 0: {alpha,beta,gamma} then {delta,epsilon,zeta}."
+    },
+    {
+      "id": "NB-RSF-OWS-08",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "RESULTTYPE=hits (httr transport-shape check) returned HTTP 200 with numberMatched=10, numberReturned=0 and 0 wfs:member element(s)."
+    },
+    {
+      "id": "NB-RSF-OWS-09",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "PROPERTYNAME=name,status returned HTTP 200 with properties {name, status}; expected exactly {name, status}. Property subsetting that silently returns everything wastes the bandwidth the...."
+    },
+    {
+      "id": "NB-RSF-OWS-10",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OGC Filter Encoding 2.0 fes:PropertyIsEqualTo(status='active') returned HTTP 200 with 5 feature(s) (expected 5) and status values {active}."
+    },
+    {
+      "id": "NB-RSF-OWS-11",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "SORTBY=name A produced {alpha,beta,delta,epsilon,eta,gamma,iota,lambda,theta,zeta} (sorted) and SORTBY=name D produced {zeta,theta,lambda,iota,gamma,eta,epsilon,delta,beta,alpha} (sorted)."
+    },
+    {
+      "id": "NB-RSF-OWS-12",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ows4R against the advertised legacy WFS versions: 1.1.0 -> 5 feature type(s), target present; 1.0.0 -> 5 feature type(s), target present."
+    },
+    {
+      "id": "NB-RSF-PAG-01",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "Full paginated walk in pages of 3 over 5 request(s) collected 10 unique feature name(s) with 0 duplicate(s); the fixture seeds 10."
+    },
+    {
+      "id": "NB-RSF-PAG-02",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "Oversized page request (limit/COUNT=100000) returned HTTP 400 with n/a row(s)."
+    },
+    {
+      "id": "NB-RSF-PAG-03",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "Paging counters on a 2-feature page (httr transport-shape check): numberMatched=10 (expected 10), numberReturned=2, actual features=2. numberMatched must be the unpaged total, not the...."
+    },
+    {
+      "id": "NB-RSF-PAG-04",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "Offset/startIndex past the end returned HTTP 200 with 0 feature(s) and numberMatched=10 (expected 200, 0 features, 10 matched)."
+    },
+    {
+      "id": "NB-RSF-PAG-05",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "Zero-size page request (limit/COUNT=0) returned HTTP 200 with 0 feature(s): a structured 4xx or an empty 200 are both defensible; a 5xx or a full result set is not."
+    },
+    {
+      "id": "NB-RSF-TYP-01",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "Numeric/boolean typing through WFS: count=integer, ratio=numeric, active=logical."
+    },
+    {
+      "id": "NB-RSF-TYP-02",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "Temporal typing through WFS: created_at as character, event_date as character, event_time as character."
+    },
+    {
+      "id": "NB-RSF-TYP-03",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "JSON array columns through WFS/GML: tags as character, numbers as character; values tags=[red|blue] numbers=[0|1|2]."
+    },
+    {
+      "id": "NB-RSF-TYP-04",
+      "scenarioFacetId": "SF-SCHM-FIELDS",
+      "description": "uuid column materialised as character with value '00000000-0000-0000-0000-000000000001' (expected '00000000-0000-0000-0000-000000000001')."
+    },
+    {
+      "id": "NB-RSF-XPR-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Cross-protocol extent agreement: OGC API Features collection extent [-122.50000 37.70000 -122.35000 37.84000] vs WFS ows:WGS84BoundingBox [-122.50000 37.70000 -122.35000 37.84000]; max...."
+    },
+    {
+      "id": "NB-RSF-XPR-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Cross-protocol count agreement: OGC API Features numberMatched=10, WFS resultType=hits numberMatched=10, fixture total=10."
+    },
+    {
+      "id": "NB-RSF-XPR-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Cross-protocol CRS agreement: OGC API Features offers {3857, 4326}, WFS offers {3857, 4326}. A CRS available on one protocol but not the other is a metadata bug, not a capability difference."
+    },
+    {
+      "id": "NB-RSF-XPR-04",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Cross-protocol attribute agreement: 13 field(s) in OGC API Features items vs 13 in WFS DescribeFeatureType."
+    },
+    {
+      "id": "NB-STAC-COLL-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Declared temporal extent [2024-01-01 12:00:00+00:00, 2024-01-10 12:00:00+00:00] covers all 10 item datetimes (observed [2024-01-01 12:00:00+00:00, 2024-01-10 12:00:00+00:00])."
+    },
+    {
+      "id": "NB-STAC-COLL-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Required members present (license='proprietary', stac_version=1.0.0, links ['alternate', 'http://www.opengis.net/def/rel/ogc/1.0/queryables', 'items', 'parent', 'root', 'self']);...."
+    },
+    {
+      "id": "NB-STAC-COLL-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "/stac/collections returned 5 entries, each rehydrating under pystac.Collection with a spatial extent."
+    },
+    {
+      "id": "NB-STAC-CONF-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "core honored: landing page carries ['child', 'conformance', 'data', 'http://www.opengis.net/def/rel/ogc/1.0/queryables', 'root', 'search', 'self', 'service-desc', 'service-doc'] and...."
+    },
+    {
+      "id": "NB-STAC-CONF-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "collections honored: all 5 listed collections (0, 2000, 2001, 2002, 3000) round-tripped through get_collection(id)."
+    },
+    {
+      "id": "NB-STAC-CONF-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "ogcapi-features honored: /items honored limit and bbox and every returned feature rehydrated under pystac.Item.from_dict."
+    },
+    {
+      "id": "NB-STAC-CONF-04",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "item-search honored: landing page advertises ['GET', 'POST'] search links and both methods returned 10 items."
+    },
+    {
+      "id": "NB-STAC-CONF-05",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "item-search#fields honored: include narrowed properties to the requested set and exclude removed only properties.tags."
+    },
+    {
+      "id": "NB-STAC-CONF-06",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "item-search#sort honored: +properties.name and -properties.name produced exactly reversed orderings over 10 items."
+    },
+    {
+      "id": "NB-STAC-CONF-07",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "item-search#filter honored: queryables publish 16 properties (dialect https://json-schema.org/draft/2019-09/schema) and a CQL2-JSON comparison on eo:cloud_cover narrowed to 5 items."
+    },
+    {
+      "id": "NB-STAC-CONF-08",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "oas30 honored: service-desc served OpenAPI 3.0.3 with 9 paths; service-doc link present."
+    },
+    {
+      "id": "NB-STAC-CONF-09",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "basic-cql2 honored in both dialects: an AND of an equality and a numeric comparison returned the same 3 items via cql2-json and cql2-text."
+    },
+    {
+      "id": "NB-STAC-ERR-01",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "GET an unknown item -> status=404 title='Not Found' detail=\"Item '999999' not found in collection '0'.\"; pystac-client surfaced it as APIError(status_code=404)."
+    },
+    {
+      "id": "NB-STAC-ERR-02",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "3-value bbox -> status=400 title='Bad Request' detail='bbox must contain four or six numeric values.'; inverted bbox -> status=400 title='Bad Request' detail='bbox latitude values are...."
+    },
+    {
+      "id": "NB-STAC-ERR-03",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "datetime=not-a-date -> status=400 title='Bad Request' detail='Invalid datetime parameter.'; reversed interval -> status=400 title='Bad Request' detail='Invalid datetime parameter.'."
+    },
+    {
+      "id": "NB-STAC-ERR-04",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "filter-lang=bogus-lang -> status=400 title='Bad Request' detail=\"Invalid filter-lang 'bogus-lang'.\"; filter-lang without filter -> status=400 title='Bad Request' detail='filter-lang and...."
+    },
+    {
+      "id": "NB-STAC-ERR-05",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "GET /api/v1/admin/services with an incorrect X-API-Key -> 401."
+    },
+    {
+      "id": "NB-STAC-ERR-06",
+      "scenarioFacetId": "SF-ERRH-UNKNOWN",
+      "description": "An unknown search query parameter -> status=400 title='Bad Request' detail='Unknown query parameter: not-a-real-parameter'."
+    },
+    {
+      "id": "NB-STAC-ITEM-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 1 assets on item 1 (geojson) carried href/type/roles and resolved with a matching content type."
+    },
+    {
+      "id": "NB-STAC-ITEM-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "9 items had a bbox containing their geometry; the 1 null-geometry item correctly omitted bbox."
+    },
+    {
+      "id": "NB-STAC-ITEM-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Item 1 carried ['collection', 'parent', 'root', 'self'] links; the self link re-fetched the same item and the collection link resolved to the owning collection."
+    },
+    {
+      "id": "NB-STAC-ITEM-04",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "All 10 items carried an RFC 3339 UTC datetime that pystac parsed into a timezone-aware value with zero offset."
+    },
+    {
+      "id": "NB-STAC-ITEM-05",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "stac_extensions declared: none; eo:cloud_cover present on items: True."
+    },
+    {
+      "id": "NB-STAC-ITEM-06",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Catalog: validated against the published STAC JSON Schemas; Collection: validated against the published STAC JSON Schemas; Item: validated against the published STAC JSON Schemas."
+    },
+    {
+      "id": "NB-STAC-PAGE-01",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "pages() walked to exhaustion in page sizes [3, 3, 3, 1], collecting all 10 seeded items with no duplicates and terminating without a next link."
+    },
+    {
+      "id": "NB-STAC-PAGE-02",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "ItemSearch.matched()=10 agrees with numberMatched=10 and numberReturned=3 equals the actual feature count on the page."
+    },
+    {
+      "id": "NB-STAC-PAGE-03",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page."
+    },
+    {
+      "id": "NB-STAC-PAGE-04",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "limit=1000000 clamped to the server maximum and still answered 200; limit=0 was rejected with status=400 title='Bad Request' detail='limit must be greater than or equal to 1.'. Raw httpx...."
+    },
+    {
+      "id": "NB-STAC-PAGE-05",
+      "scenarioFacetId": "SF-PAGE-LIMIT",
+      "description": "A token past the end returned an empty FeatureCollection with no next link; a malformed token was rejected with status=400 title='Bad Request' detail='Invalid pagination token.'."
+    },
+    {
+      "id": "NB-STAC-SEARCH-01",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "intersects(Polygon) and the equivalent bbox both returned ['1', '2', '3']."
+    },
+    {
+      "id": "NB-STAC-SEARCH-02",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "intersects(Point) at the anchor coordinate matched exactly the anchor item; a degenerate point geometry is the classic spatial-predicate edge case."
+    },
+    {
+      "id": "NB-STAC-SEARCH-03",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "datetime=2024-01-03T12:00:00Z matched exactly the one seeded item at that instant."
+    },
+    {
+      "id": "NB-STAC-SEARCH-04",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "A closed RFC 3339 interval selected the three items inside it, with both endpoints treated inclusively."
+    },
+    {
+      "id": "NB-STAC-SEARCH-05",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "Open-start ../T returned ['1', '2', '3'] and open-end T/.. returned ['10', '8', '9']; the two halves are disjoint."
+    },
+    {
+      "id": "NB-STAC-SEARCH-06",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "ids=['2', '4'] returned exactly those items; an unknown id returned an empty FeatureCollection rather than an error or the whole collection."
+    },
+    {
+      "id": "NB-STAC-SEARCH-07",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "collections=['0'] returned 10 items all bearing that collection back-reference; the unscoped search spanned ['0', '2000', '2001', '2002', '3000']; an unknown collection matched nothing."
+    },
+    {
+      "id": "NB-STAC-SEARCH-08",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "An identical bbox + datetime + sortby search returned the same ordered ids (['1', '2', '3']) over both GET and POST."
+    },
+    {
+      "id": "NB-STAC-SEARCH-09",
+      "scenarioFacetId": "SF-QFLT-SPATIAL",
+      "description": "limit=3 with max_items=4 crossed a page boundary and yielded four distinct items."
+    },
+    {
+      "id": "NB-STAC-VALID-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "stac-api-validator validated core, collections, features, item-search, filter against http://honua:5000/stac with exit code 0."
+    }
+  ],
+  "notApplicableReasons": [
+    {
+      "id": "no-drawing-surface",
+      "reason": "The client has no drawing surface at all, so rendering and style facets are structurally impossible rather than unexercised."
+    },
+    {
+      "id": "no-vector-feature-surface",
+      "reason": "The client consumes server-rendered imagery or tiles only and never reads a vector feature collection."
+    },
+    {
+      "id": "server-rendered-imagery-only",
+      "reason": "The client consumes server-rendered raster output, so per-feature drawing-info and style-resource facets do not exist for it."
+    },
+    {
+      "id": "no-geometry-capable-protocol",
+      "reason": "The protocol this lane binds carries no geometry, so geometry and spatial-filter facets do not exist on it."
+    },
+    {
+      "id": "protocol-lacks-operation",
+      "reason": "The protocol does not define the operation the case describes."
+    },
+    {
+      "id": "transport-not-tls-in-fixture",
+      "reason": "The unlicensed local profile runs plain HTTP on a private docker network, so the TLS handshake facet is not exercised by the fixture; TLS is certified by the exact-candidate profile instead."
+    },
+    {
+      "id": "spec-owned-fixture",
+      "reason": "The suite is specification-owned (OGC CITE) and supplies its own seed, so canonical-fixture projections do not apply."
+    },
+    {
+      "id": "manual-evidence-lane",
+      "reason": "The case is certified by a governed manual runbook rather than an automated producer in this tier."
+    }
+  ],
+  "laneBindings": [
+    {
+      "laneId": "js",
+      "client": "OpenLayers and MapLibre in Node and Chromium",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "discovered-collection",
+            "pinned": false,
+            "preferredServiceId": "browser_compat",
+            "preferredCollectionId": "2000",
+            "discovery": "GET /ogc/features/collections, prefer the configured layer id, otherwise take the first collection."
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02"
+          ],
+          "extensionCases": [
+            "JS-EXT-OL-COLL-01",
+            "JS-EXT-OL-ITEMTYPE-01",
+            "JS-EXT-OL-ITEMS-01",
+            "JS-EXT-OL-GEOJSON-01",
+            "JS-EXT-OL-GEOJSON-02"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "The docker matrix points this lane at browser_compat layer 2000 and the suite still falls back to the first advertised collection, so it does not bind the canonical vector identity; see gaps js-lane-identity-not-pinned and active-lanes-bind-render-fixture-not-canonical-vector."
+        },
+        {
+          "protocol": "wfs",
+          "fixtureProjection": {
+            "target": "discovered-feature-type",
+            "pinned": false,
+            "discovery": "WFS GetCapabilities, then the first advertised feature type that returns features."
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "The OpenLayers WFS suite reads the bare /wfs capabilities document and picks the first feature type that returns features; it binds no pinned identity."
+        },
+        {
+          "protocol": "wms",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wmts",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "ogc-maps",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "extensionCases": [
+            "JS-EXT-OGC-MAPS-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "mvt",
+          "fixtureProjection": {
+            "target": "render-vector",
+            "serviceId": "browser_compat",
+            "layerIds": [
+              "2000",
+              "2001",
+              "2002"
+            ],
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01",
+            "CERT-RNDR-02",
+            "CERT-RNDR-SYM-01",
+            "CERT-RNDR-LIN-01",
+            "CERT-RNDR-FIL-01",
+            "CERT-RNDR-SPR-01",
+            "CERT-RNDR-URL-01"
+          ],
+          "extensionCases": [
+            "JS-EXT-01",
+            "JS-EXT-02",
+            "JS-EXT-TILES-DISC-01",
+            "JS-EXT-TILES-DISC-02",
+            "JS-EXT-TILES-SCHM-01"
+          ],
+          "notApplicableCases": {
+            "manual-evidence-lane": [
+              "CERT-RNDR-LBL-01"
+            ],
+            "protocol-lacks-operation": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "Vector tiles are the mvt projection of the OGC API Tiles surface; browser_compat carries the Point, LineString, and Polygon layers the symbol, line, and fill facets need."
+        }
+      ],
+      "notes": "The Esri Leaflet browser sub-lane documented in the matrix emits EL-EXT-01..04 against the featureserver and mapserver projections of test_service, but it has no registered lane id and no committed baseline, so those cases are declared in unboundCases rather than claimed here."
+    },
+    {
+      "laneId": "js-cesium",
+      "client": "CesiumJS imagery providers",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "wms",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "extensionCases": [
+            "JS-CES-IMG-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wmts",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "ogc-tiles",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "extensionCases": [
+            "JS-CES-TILE-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "ogc-maps",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ],
+      "notes": "Cesium consumes server-rendered imagery only, so every vector-feature facet is structurally not applicable."
+    },
+    {
+      "laneId": "desktop-qgis",
+      "client": "QGIS and PyQGIS",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-RNDR-01",
+            "CERT-RNDR-02",
+            "CERT-RNDR-SYM-01",
+            "CERT-RNDR-LIN-01",
+            "CERT-RNDR-FIL-01"
+          ],
+          "extensionCases": [
+            "DSK-EXT-01"
+          ],
+          "notApplicableCases": {
+            "manual-evidence-lane": [
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "QGIS draws: CERT-RNDR-01/02/SYM/LIN/FIL are automated through the PyQGIS renderer and the remaining style facets stay on the governed manual runbook."
+        },
+        {
+          "protocol": "wfs",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-RNDR-01",
+            "CERT-RNDR-02",
+            "CERT-RNDR-SYM-01",
+            "CERT-RNDR-LIN-01",
+            "CERT-RNDR-FIL-01"
+          ],
+          "extensionCases": [
+            "DSK-EXT-02"
+          ],
+          "notApplicableCases": {
+            "manual-evidence-lane": [
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "laneId": "cli",
+      "client": "GDAL/OGR, admin SDK, and Microsoft.OData.Client",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02"
+          ],
+          "extensionCases": [
+            "CLI-EXT-01",
+            "CLI-EXT-02"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wfs",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ],
+      "notes": "The cli lane's OData sub-surface is certified by an in-process xUnit producer bound to tests/seed/odata.yaml, not to this manifest; see gap odata-surface-uses-separate-seed."
+    },
+    {
+      "laneId": "arcgis-stub",
+      "client": "Esri REST reference client stub",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "featureserver",
+          "fixtureProjection": {
+            "target": "render-vector",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02"
+          ],
+          "notApplicableCases": {
+            "manual-evidence-lane": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "ARCGIS_STUB_SERVICE_NAME/ARCGIS_STUB_LAYER_ID point this lane at browser_compat layer 2000, not the canonical vector service; see gap active-lanes-bind-render-fixture-not-canonical-vector."
+        },
+        {
+          "protocol": "mapserver",
+          "fixtureProjection": {
+            "target": "render-vector",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01"
+          ],
+          "notApplicableCases": {
+            "manual-evidence-lane": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "protocol-lacks-operation": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "MapServer is certified as a map surface; the query-shaped facets live on the featureserver binding."
+        },
+        {
+          "protocol": "portal",
+          "fixtureProjection": {
+            "target": "portal-tiers",
+            "serviceIds": [
+              "portal_public",
+              "portal_org",
+              "portal_private"
+            ],
+            "layerIds": [
+              "3000",
+              "3001",
+              "3002"
+            ],
+            "itemIdentity": "derived-at-discovery"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01"
+          ],
+          "extensionCases": [
+            "CERT-PRTL-INFO-01",
+            "CERT-PRTL-SELF-01",
+            "CERT-PRTL-SELF-02",
+            "CERT-PRTL-SRCH-01",
+            "CERT-PRTL-ITEM-01",
+            "CERT-PRTL-RBAC-01",
+            "CERT-PRTL-TOKN-01",
+            "CERT-PRTL-TOKN-02",
+            "CERT-PRTL-AUTH-01",
+            "CERT-PRTL-OAUTH-01",
+            "CERT-PRTL-OAUTH-02",
+            "CERT-PRTL-COMM-01",
+            "CERT-PRTL-COMM-02"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "protocol-lacks-operation": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "The Portal/Sharing facade lane is the authorization-ladder producer: it binds the portal-compat tiers rather than the canonical vector service."
+        }
+      ]
+    },
+    {
+      "laneId": "py-geopandas",
+      "client": "GeoPandas via pyogrio and Fiona",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-GPD-AUTH-01",
+            "NB-GPD-CRS-01",
+            "NB-GPD-CRS-02",
+            "NB-GPD-CRS-03",
+            "NB-GPD-CRS-04",
+            "NB-GPD-ENG-01",
+            "NB-GPD-ERR-01",
+            "NB-GPD-FLT-01",
+            "NB-GPD-FLT-02",
+            "NB-GPD-FLT-03",
+            "NB-GPD-FLT-04",
+            "NB-GPD-GEO-01",
+            "NB-GPD-GEO-02",
+            "NB-GPD-IO-01",
+            "NB-GPD-IO-02",
+            "NB-GPD-NUL-01",
+            "NB-GPD-NUL-02",
+            "NB-GPD-PAG-01",
+            "NB-GPD-PAG-02",
+            "NB-GPD-SCH-01",
+            "NB-GPD-SRT-01",
+            "NB-GPD-TYP-01",
+            "NB-GPD-TYP-02",
+            "NB-GPD-TYP-03",
+            "NB-GPD-TYP-04"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wfs",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-GPD-WFS-BBX-01",
+            "NB-GPD-WFS-CAP-01",
+            "NB-GPD-WFS-CRS-01",
+            "NB-GPD-WFS-CRS-02",
+            "NB-GPD-WFS-ERR-01",
+            "NB-GPD-WFS-FLT-01",
+            "NB-GPD-WFS-HIT-01",
+            "NB-GPD-WFS-IDN-01",
+            "NB-GPD-WFS-IO-01",
+            "NB-GPD-WFS-NS-01",
+            "NB-GPD-WFS-NUL-01",
+            "NB-GPD-WFS-PAG-01",
+            "NB-GPD-WFS-PAG-02",
+            "NB-GPD-WFS-PRP-01",
+            "NB-GPD-WFS-SCH-01",
+            "NB-GPD-WFS-TYP-01",
+            "NB-GPD-WFS-TYP-02"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ],
+      "notes": "Landing concurrently under honua-server#3392; the matrix row moves from plannedLanes to lanes when its real envelopes land."
+    },
+    {
+      "laneId": "py-owslib",
+      "client": "OWSLib",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-OWS-OAF-AUTH-03",
+            "NB-OWS-OAF-COLL-01",
+            "NB-OWS-OAF-COLL-02",
+            "NB-OWS-OAF-CONF-01",
+            "NB-OWS-OAF-CONF-02",
+            "NB-OWS-OAF-CRS-01",
+            "NB-OWS-OAF-CRS-02",
+            "NB-OWS-OAF-DATE-01",
+            "NB-OWS-OAF-ERR-01",
+            "NB-OWS-OAF-ITEM-01",
+            "NB-OWS-OAF-LAND-01",
+            "NB-OWS-OAF-LAND-02",
+            "NB-OWS-OAF-LINK-01",
+            "NB-OWS-OAF-LINK-02",
+            "NB-OWS-OAF-PAGE-03",
+            "NB-OWS-OAF-QFLT-03",
+            "NB-OWS-OAF-QRYB-01",
+            "NB-OWS-OAF-SCHM-03",
+            "NB-OWS-OAF-SORT-01"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wfs",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-OWS-WFS-BBOX-01",
+            "NB-OWS-WFS-CAP-01",
+            "NB-OWS-WFS-CAP-02",
+            "NB-OWS-WFS-CAP-03",
+            "NB-OWS-WFS-CRS-02",
+            "NB-OWS-WFS-CRS-03",
+            "NB-OWS-WFS-DFT-01",
+            "NB-OWS-WFS-ERR-02",
+            "NB-OWS-WFS-FILT-02",
+            "NB-OWS-WFS-HITS-01",
+            "NB-OWS-WFS-PAGE-03",
+            "NB-OWS-WFS-PROP-01",
+            "NB-OWS-WFS-SORT-01",
+            "NB-OWS-WFS-STQ-01",
+            "NB-OWS-WFS-VER-01",
+            "NB-OWS-WFS-XPRO-01"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wms",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01",
+            "NB-OWS-WMS-111-01",
+            "NB-OWS-WMS-CAP-01",
+            "NB-OWS-WMS-CAP-02",
+            "NB-OWS-WMS-CAP-03",
+            "NB-OWS-WMS-CAP-04",
+            "NB-OWS-WMS-CAP-05",
+            "NB-OWS-WMS-ERR-01",
+            "NB-OWS-WMS-GFI-01",
+            "NB-OWS-WMS-GFI-02",
+            "NB-OWS-WMS-GFI-03",
+            "NB-OWS-WMS-MAP-01",
+            "NB-OWS-WMS-MAP-02",
+            "NB-OWS-WMS-MAP-03",
+            "NB-OWS-WMS-MAP-04",
+            "NB-OWS-WMS-MAP-05",
+            "NB-OWS-WMS-VER-01",
+            "NB-OWS-WMS-XPRO-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "OWSLib is a capabilities and request-construction client: the render facet asserts a well-formed GetMap response, not pixels."
+        },
+        {
+          "protocol": "wmts",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000",
+            "collectionId": "2000"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-RNDR-01",
+            "NB-OWS-WMTS-CAP-01",
+            "NB-OWS-WMTS-CAP-02",
+            "NB-OWS-WMTS-CAP-03",
+            "NB-OWS-WMTS-CAP-04",
+            "NB-OWS-WMTS-CAP-05",
+            "NB-OWS-WMTS-ERR-01",
+            "NB-OWS-WMTS-GFI-01",
+            "NB-OWS-WMTS-TILE-01",
+            "NB-OWS-WMTS-TILE-02",
+            "NB-OWS-WMTS-TILE-03",
+            "NB-OWS-WMTS-TILE-04",
+            "NB-OWS-WMTS-TILE-05",
+            "NB-OWS-WMTS-XPRO-01"
+          ],
+          "notApplicableCases": {
+            "no-vector-feature-surface": [
+              "CERT-ERRH-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02"
+            ],
+            "server-rendered-imagery-only": [
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ],
+      "notes": "Landing concurrently under honua-server#3392."
+    },
+    {
+      "laneId": "duckdb",
+      "client": "DuckDB Spatial",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-DDB-AUTH-03",
+            "NB-DDB-AUTH-04",
+            "NB-DDB-CRS-01",
+            "NB-DDB-CRS-02",
+            "NB-DDB-CRS-03",
+            "NB-DDB-ERR-01",
+            "NB-DDB-ERR-02",
+            "NB-DDB-ERR-04",
+            "NB-DDB-FMT-01",
+            "NB-DDB-FMT-02",
+            "NB-DDB-GEOM-03",
+            "NB-DDB-GEOM-04",
+            "NB-DDB-GEOM-05",
+            "NB-DDB-GEOM-06",
+            "NB-DDB-NULL-01",
+            "NB-DDB-NULL-02",
+            "NB-DDB-PAGE-03",
+            "NB-DDB-PAGE-04",
+            "NB-DDB-PUSH-01",
+            "NB-DDB-PUSH-02",
+            "NB-DDB-PUSH-03",
+            "NB-DDB-QRY-01",
+            "NB-DDB-QRY-02",
+            "NB-DDB-QRY-03",
+            "NB-DDB-TYPE-01",
+            "NB-DDB-TYPE-02",
+            "NB-DDB-TYPE-03",
+            "NB-DDB-TYPE-04"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ],
+      "notes": "Landing concurrently under honua-server#3392."
+    },
+    {
+      "laneId": "r-sf",
+      "client": "R sf and ows4R",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "ogc-features",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-RSF-AUT-01",
+            "NB-RSF-AUT-02",
+            "NB-RSF-AUT-03",
+            "NB-RSF-CRS-01",
+            "NB-RSF-CRS-02",
+            "NB-RSF-CRS-03",
+            "NB-RSF-CRS-04",
+            "NB-RSF-ERR-01",
+            "NB-RSF-ERR-02",
+            "NB-RSF-ERR-03",
+            "NB-RSF-ERR-04",
+            "NB-RSF-FMT-01",
+            "NB-RSF-FMT-02",
+            "NB-RSF-FMT-03",
+            "NB-RSF-GEO-01",
+            "NB-RSF-GEO-02",
+            "NB-RSF-GEO-03",
+            "NB-RSF-NUL-01",
+            "NB-RSF-NUL-02",
+            "NB-RSF-OAF-01",
+            "NB-RSF-OAF-02",
+            "NB-RSF-OAF-03",
+            "NB-RSF-OAF-04",
+            "NB-RSF-OAF-05",
+            "NB-RSF-OAF-06",
+            "NB-RSF-PAG-01",
+            "NB-RSF-PAG-02",
+            "NB-RSF-PAG-03",
+            "NB-RSF-PAG-04",
+            "NB-RSF-PAG-05",
+            "NB-RSF-TYP-01",
+            "NB-RSF-TYP-02",
+            "NB-RSF-TYP-03",
+            "NB-RSF-TYP-04",
+            "NB-RSF-XPR-01",
+            "NB-RSF-XPR-02",
+            "NB-RSF-XPR-03",
+            "NB-RSF-XPR-04"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        },
+        {
+          "protocol": "wfs",
+          "fixtureProjection": {
+            "target": "canonical-vector",
+            "serviceId": "test_service",
+            "layerId": "0",
+            "collectionId": "0",
+            "featureIdField": "objectid"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-GEOM-02",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "CERT-SCHM-02",
+            "NB-RSF-AUT-01",
+            "NB-RSF-AUT-02",
+            "NB-RSF-AUT-03",
+            "NB-RSF-CRS-01",
+            "NB-RSF-CRS-02",
+            "NB-RSF-CRS-03",
+            "NB-RSF-CRS-04",
+            "NB-RSF-ERR-01",
+            "NB-RSF-ERR-02",
+            "NB-RSF-ERR-03",
+            "NB-RSF-ERR-04",
+            "NB-RSF-FMT-01",
+            "NB-RSF-FMT-02",
+            "NB-RSF-FMT-03",
+            "NB-RSF-GEO-01",
+            "NB-RSF-GEO-02",
+            "NB-RSF-GEO-03",
+            "NB-RSF-NUL-01",
+            "NB-RSF-NUL-02",
+            "NB-RSF-OWS-01",
+            "NB-RSF-OWS-02",
+            "NB-RSF-OWS-03",
+            "NB-RSF-OWS-04",
+            "NB-RSF-OWS-05",
+            "NB-RSF-OWS-06",
+            "NB-RSF-OWS-07",
+            "NB-RSF-OWS-08",
+            "NB-RSF-OWS-09",
+            "NB-RSF-OWS-10",
+            "NB-RSF-OWS-11",
+            "NB-RSF-OWS-12",
+            "NB-RSF-PAG-01",
+            "NB-RSF-PAG-02",
+            "NB-RSF-PAG-03",
+            "NB-RSF-PAG-04",
+            "NB-RSF-PAG-05",
+            "NB-RSF-TYP-01",
+            "NB-RSF-TYP-02",
+            "NB-RSF-TYP-03",
+            "NB-RSF-TYP-04",
+            "NB-RSF-XPR-01",
+            "NB-RSF-XPR-02",
+            "NB-RSF-XPR-03",
+            "NB-RSF-XPR-04"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          }
+        }
+      ],
+      "notes": "Landing concurrently under honua-server#3392."
+    },
+    {
+      "laneId": "py-pystac",
+      "client": "pystac-client",
+      "status": "active",
+      "requiredTier": "nightly",
+      "protocols": [
+        {
+          "protocol": "stac",
+          "fixtureProjection": {
+            "target": "canonical-stac",
+            "serviceId": "test_service",
+            "collectionId": "0",
+            "itemIdField": "objectid",
+            "queryableNumericField": "eo:cloud_cover"
+          },
+          "applicableCases": [
+            "CERT-AUTH-01",
+            "CERT-AUTH-02",
+            "CERT-CONN-01",
+            "CERT-DISC-01",
+            "CERT-DISC-02",
+            "CERT-ERRH-01",
+            "CERT-ERRH-02",
+            "CERT-GEOM-01",
+            "CERT-PAGE-01",
+            "CERT-PAGE-02",
+            "CERT-QFLT-01",
+            "CERT-QFLT-02",
+            "CERT-SCHM-01",
+            "NB-STAC-COLL-01",
+            "NB-STAC-COLL-02",
+            "NB-STAC-COLL-03",
+            "NB-STAC-CONF-01",
+            "NB-STAC-CONF-02",
+            "NB-STAC-CONF-03",
+            "NB-STAC-CONF-04",
+            "NB-STAC-CONF-05",
+            "NB-STAC-CONF-06",
+            "NB-STAC-CONF-07",
+            "NB-STAC-CONF-08",
+            "NB-STAC-CONF-09",
+            "NB-STAC-ERR-01",
+            "NB-STAC-ERR-02",
+            "NB-STAC-ERR-03",
+            "NB-STAC-ERR-04",
+            "NB-STAC-ERR-05",
+            "NB-STAC-ERR-06",
+            "NB-STAC-ITEM-01",
+            "NB-STAC-ITEM-02",
+            "NB-STAC-ITEM-03",
+            "NB-STAC-ITEM-04",
+            "NB-STAC-ITEM-05",
+            "NB-STAC-ITEM-06",
+            "NB-STAC-PAGE-01",
+            "NB-STAC-PAGE-02",
+            "NB-STAC-PAGE-03",
+            "NB-STAC-PAGE-04",
+            "NB-STAC-PAGE-05",
+            "NB-STAC-SEARCH-01",
+            "NB-STAC-SEARCH-02",
+            "NB-STAC-SEARCH-03",
+            "NB-STAC-SEARCH-04",
+            "NB-STAC-SEARCH-05",
+            "NB-STAC-SEARCH-06",
+            "NB-STAC-SEARCH-07",
+            "NB-STAC-SEARCH-08",
+            "NB-STAC-SEARCH-09",
+            "NB-STAC-VALID-01"
+          ],
+          "notApplicableCases": {
+            "no-drawing-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "protocol-lacks-operation": [
+              "CERT-GEOM-02",
+              "CERT-SCHM-02"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "notes": "STAC items project the same ten seeded features; eo:cloud_cover is the seeded numeric queryable the Filter Extension conformance class needs."
+        }
+      ],
+      "notes": "Landing concurrently under honua-server#3392."
+    }
+  ],
+  "unboundCases": [
+    {
+      "caseId": "EL-EXT-01",
+      "owner": "js/esri-leaflet",
+      "reason": "The Esri Leaflet browser sub-lane is documented in the matrix but has no registered lane id and no committed baseline, so no 2026.1 lane binding claims it.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "caseId": "EL-EXT-02",
+      "owner": "js/esri-leaflet",
+      "reason": "The Esri Leaflet browser sub-lane is documented in the matrix but has no registered lane id and no committed baseline, so no 2026.1 lane binding claims it.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "caseId": "EL-EXT-03",
+      "owner": "js/esri-leaflet",
+      "reason": "The Esri Leaflet browser sub-lane is documented in the matrix but has no registered lane id and no committed baseline, so no 2026.1 lane binding claims it.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "caseId": "EL-EXT-04",
+      "owner": "js/esri-leaflet",
+      "reason": "The Esri Leaflet browser sub-lane is documented in the matrix but has no registered lane id and no committed baseline, so no 2026.1 lane binding claims it.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "caseId": "BI-EXT-01",
+      "owner": "bi-excel/bi-powerbi/bi-tableau",
+      "reason": "The BI and office lanes are planned, licensed, release-tier lanes; they are not active in 2026.1 and therefore bind no fixture projection yet.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3390"
+    },
+    {
+      "caseId": "BI-EXT-02",
+      "owner": "bi-excel/bi-powerbi/bi-tableau",
+      "reason": "The BI and office lanes are planned, licensed, release-tier lanes; they are not active in 2026.1 and therefore bind no fixture projection yet.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3390"
+    }
+  ],
+  "policy": {
+    "failClosed": {
+      "applicableButUnexecuted": {
+        "recordedStatus": "skip",
+        "gateOutcome": "fail",
+        "rule": "A case an active lane declares applicable but does not execute is emitted as skip and treated as a failure by the strict baseline diff. It is never absent from the envelope and never counted as a pass."
+      },
+      "unsupported": {
+        "recordedStatus": "not-applicable",
+        "gateOutcome": "accept",
+        "requires": [
+          "notApplicableReason"
+        ],
+        "reasonVocabulary": "notApplicableReasons[].id",
+        "rule": "A case a lane cannot structurally execute is emitted as not-applicable and must carry a reason drawn from the governed vocabulary. An ungoverned or empty reason is a gate failure."
+      },
+      "placeholderBaseline": {
+        "definition": "An envelope in which no common-core result carries the status pass or fail.",
+        "gateOutcome": "reject",
+        "rule": "All-skip and all-not-applicable baselines are rejected; a lane cannot be registered without a real envelope."
+      },
+      "missingReceiptBinding": {
+        "gateOutcome": "reject",
+        "rule": "An envelope that omits a required receipt field, or binds a revision this manifest does not publish, cannot claim canonical-fixture provenance."
+      },
+      "missingEvidence": {
+        "nightly": "fail",
+        "release": "fail",
+        "rule": "A required lane that produces no envelope at all fails the tier; absence is never treated as a pass."
+      }
+    },
+    "tiers": {
+      "pr": "Validate this manifest, its schema, its digests, and the generators. No real client runs.",
+      "nightly": "Run the unlicensed real-client lanes against the local-unlicensed profile using the shared fixture.",
+      "release": "Re-run the exact candidate image across every required lane, with fresh licensed overlays for entitlement-bound clients."
+    }
+  },
+  "receiptBindings": {
+    "requiredFields": [
+      "fixture_revision",
+      "server_config_revision"
+    ],
+    "plannedFields": [
+      "auth_policy_revision"
+    ],
+    "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
+    "currentValues": {
+      "fixture_revision": {
+        "value": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+        "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
+        "convergenceTarget": "fixtureRevision",
+        "gapId": "receipt-binding-uses-per-file-digests"
+      },
+      "server_config_revision": {
+        "value": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+        "boundTo": "inputs[tests/config/client-compat-server-v1.json].sha256",
+        "convergenceTarget": "serverConfigRevision",
+        "gapId": "receipt-binding-uses-per-file-digests"
+      },
+      "auth_policy_revision": {
+        "value": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
+        "boundTo": "authPolicyRevision",
+        "status": "not-yet-emitted",
+        "gapId": "auth-policy-revision-not-in-receipts"
+      }
+    },
+    "rule": "A receipt binds the revisions of the profile it ran against. Until the convergence gaps close, a verifier accepts either the per-file value recorded in currentValues or the composite revision it converges to, and accepts nothing else."
+  },
+  "exceptions": [
+    {
+      "laneFamily": "ogc-cite",
+      "reason": "OGC CITE suites retain their specification-mandated custom seed and setup procedures.",
+      "sharedBindings": [
+        "candidate_revision",
+        "candidate_image_digest",
+        "auth_policy_revision",
+        "capability_mapping"
+      ],
+      "boundToFixtureRevision": false,
+      "notApplicableReasonId": "spec-owned-fixture",
+      "rule": "A CITE run shares exact candidate identity, image digest, authentication policy, and capability mapping with release certification, and is never relabelled as having used the canonical client fixture."
+    }
+  ],
+  "outOfScope": {
+    "issue": "https://github.com/honua-io/honua-server/issues/3435",
+    "statement": "Exhaustive geometry, schema, raster, topography, cloud-native, and 3D fixture depth is 2026.2 expansion work tracked by honua-server#3435. Its absence is recorded here as governed gaps and must not block the 2026.1 core.",
+    "dimensions": [
+      "exhaustive-geometry",
+      "exhaustive-schema",
+      "raster-depth",
+      "topography",
+      "cloud-native-formats",
+      "3d-and-tiled-scene"
+    ]
+  },
+  "gaps": [
+    {
+      "id": "multipart-geometry-absent",
+      "area": "vector-seed",
+      "reason": "No MultiPoint, MultiLineString, or MultiPolygon geometry exists in any canonical fixture input: client-compat-v1.sql seeds only POINT literals and browser-compat.yaml seeds single-part LINESTRING and POLYGON literals.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "polygon-hole-geometry-absent",
+      "area": "vector-seed",
+      "reason": "No polygon with an interior ring is seeded, so ring-order and hole-preservation fidelity is unproven for every client.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "unicode-attribute-values-absent",
+      "area": "vector-seed",
+      "reason": "Every seeded attribute value is ASCII; the only non-ASCII byte in client-compat-v1.sql is inside a SQL comment. Unicode round-trip through the attribute path is therefore not certified by this fixture.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "line-and-polygon-not-on-canonical-service",
+      "area": "vector-seed",
+      "reason": "LineString and Polygon coverage lives on browser_compat layers 2001/2002, whose only fields are objectid, name, and shape. The canonical service test_service layer 0 is Point-only, so no single collection carries both the geometry-type spread and the attribute-type spread.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "edit-path-uncertified",
+      "area": "vector-seed",
+      "reason": "test_service advertises Create/Update/Delete/Sync, but the frozen 2026.1 case vocabulary contains no edit case id and no active lane writes to the canonical fixture; the only write probe is the unauthenticated OData negative in the cli lane.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "raster-absent-on-canonical-service",
+      "area": "raster",
+      "reason": "honua.raster_data is seeded only for browser_compat layer 2000. The res-image-layer-0 resource on test_service exists in the Metadata v2 graph with no raster rows behind it, so ImageServer, WCS, and OGC API Coverages on the canonical service have no deterministic content.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "style-resources-absent",
+      "area": "style",
+      "reason": "Every seeded resource declares styleResourceIds as an empty array, so CERT-RNDR-URL-01 and CERT-RNDR-SYM/LIN/FIL are certified against client-side defaults and Esri drawingInfo derived at request time rather than against a stored, content-addressed style document.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "portal-map-and-dashboard-items-absent",
+      "area": "map-dashboard",
+      "reason": "The Portal facade projects only Feature/Map/Image Service items from the seeded services. No Web Map or Dashboard item type is seeded, so the map/dashboard client input named by honua-server#3393 is limited to service items.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "odata-surface-uses-separate-seed",
+      "area": "protocol-projection",
+      "reason": "The cli lane's OData certification producer (tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs) runs in-process against tests/seed/odata.yaml, so its envelope cannot bind this manifest's fixtureRevision.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "active-lanes-bind-render-fixture-not-canonical-vector",
+      "area": "lane-binding",
+      "reason": "Two of the five active lanes run their query, schema, and geometry facets against browser_compat layer 2000 rather than the canonical vector service: the js lane through HONUA_SERVICE_ID/HONUA_LAYER_ID and the arcgis-stub lane through ARCGIS_STUB_SERVICE_NAME/ARCGIS_STUB_LAYER_ID. That layer holds three point features and only objectid, name, and shape, so those lanes do not exercise the canonical attribute-type spread, the null geometry, or the ten-feature pagination shape.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "id": "js-lane-identity-not-pinned",
+      "area": "lane-binding",
+      "reason": "The js lane discovers its OGC API Features collection (preferring the configured layer id but falling back to the first collection) and its WFS feature type (the first one that returns features) instead of binding a pinned identity, so a change to the frozen identities would not fail that lane.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "id": "receipt-binding-uses-per-file-digests",
+      "area": "receipt-binding",
+      "reason": "tests/python/shared/cert_envelope.py binds fixture_revision to the SHA-256 of tests/seed/client-compat-v1.sql alone and server_config_revision to the SHA-256 of tests/config/client-compat-server-v1.json alone, rather than to the composite fixtureRevision and serverConfigRevision this manifest publishes.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "id": "auth-policy-revision-not-in-receipts",
+      "area": "receipt-binding",
+      "reason": "No producer emits auth_policy_revision and fixturePolicy.requiredReceiptFields does not require it, so the auth-policy binding this manifest publishes is not yet enforced on receipts.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "id": "active-baselines-lack-receipt-bindings",
+      "area": "receipt-binding",
+      "reason": "The committed .cert.json baselines under tests/baselines/client-compat carry no fixture_revision or server_config_revision field, so the currently active lanes cannot be verified against this manifest until they are re-baselined.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3392"
+    },
+    {
+      "id": "expired-credential-unrealized",
+      "area": "auth-profile",
+      "reason": "No fixture mints a genuinely expired credential; the closest evidence is the oauth2 refresh_token invalid-grant arm.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "insufficient-role-assertion-absent",
+      "area": "auth-profile",
+      "reason": "portal_private realizes the insufficient-role condition (role portal-admin is granted to no principal) but no 2026.1 case id asserts that a named-user token is refused the private tier.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "cross-tenant-denial-unrealized",
+      "area": "auth-profile",
+      "reason": "The client-compat stack provisions a single tenant, so cross-tenant denial cannot be exercised.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "proposer-approver-unrealized",
+      "area": "auth-profile",
+      "reason": "Only the admin principal is provisioned, so a separate proposer and approver cannot be represented.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "licensed-entitlement-unrealized-locally",
+      "area": "auth-profile",
+      "reason": "Entitlement-bound access is only realizable on the licensed release overlay; the unlicensed local profile has no entitlement to present.",
+      "trackingIssue": "https://github.com/honua-io/honua-esri-compat/issues/75"
+    },
+    {
+      "id": "tls-not-exercised-in-local-profile",
+      "area": "server-config",
+      "reason": "The unlicensed local profile serves plain HTTP on a private docker network, so CERT-CONN-02 (TLS handshake) is recorded not-applicable there and is certified only by the exact-candidate profile.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    },
+    {
+      "id": "runtime-composition-not-content-addressed",
+      "area": "server-config",
+      "reason": "docker/client-compat/compose.yml carries the runtime auth settings (HONUA_ADMIN_PASSWORD, Authentication__PortalToken__RequireHttps) alongside the per-lane service definitions, so it is referenced by name rather than digested: every lane addition would otherwise churn serverConfigRevision. The auth-relevant settings are instead pinned by name in authPolicy and digested into authPolicyRevision.",
+      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
+    }
+  ],
+  "pythonProjection": {
+    "path": "tests/python/shared/canonical_fixture.py",
+    "digested": false,
+    "digestExemptionReason": "The Python projection is compared symbol by symbol rather than by digest, so a comment or docstring edit does not force a manifest revision while a value change still fails the drift test.",
+    "symbols": {
+      "SERVICE_ID": "test_service",
+      "COLLECTION_ID": "0",
+      "TOTAL_FEATURES": 10,
+      "FEATURES_WITH_GEOMETRY": 9,
+      "ACTIVE_FEATURES": 5,
+      "INACTIVE_FEATURES": 5,
+      "ANCHOR_NAME": "alpha",
+      "ANCHOR_LON": -122.49,
+      "ANCHOR_LAT": 37.71,
+      "FIXTURE_BBOX": [
+        -122.49,
+        37.71,
+        -122.37,
+        37.79
+      ],
+      "SUBSET_BBOX": [
+        -122.495,
+        37.705,
+        -122.455,
+        37.735
+      ],
+      "SUBSET_BBOX_FEATURE_COUNT": 3,
+      "STORAGE_CRS_EPSG": 4326,
+      "PROJECTED_CRS_EPSG": 3857,
+      "FEATURE_ID_FIELD": "objectid",
+      "ATTRIBUTE_FIELDS": [
+        "name",
+        "description",
+        "status",
+        "count",
+        "ratio",
+        "active",
+        "created_at",
+        "event_date",
+        "event_time",
+        "uid",
+        "tags",
+        "numbers"
+      ],
+      "FILTER_FIELD": "status",
+      "FILTER_VALUE": "active",
+      "PAGE_SIZE": 3,
+      "ADMIN_PROBE_PATH": "/api/v1/admin/services",
+      "ADMIN_API_KEY_HEADER": "X-API-Key",
+      "ADMIN_API_KEY": "ClientCompatAdmin123!",
+      "ADMIN_USERNAME": "admin",
+      "UNKNOWN_COLLECTION_ID": "does-not-exist-9999",
+      "MALFORMED_CQL2_FILTER": "status =="
+    },
+    "aliases": {
+      "ADMIN_PASSWORD": "ADMIN_API_KEY"
+    }
+  }
+}

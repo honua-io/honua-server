@@ -1,0 +1,593 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T211917Z",
+  "run_date": "2026-08-23T21:19:17.960304+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "py-pystac",
+  "client_version": "pystac=1.15.2;pystac-client=0.9.0",
+  "protocol": "stac",
+  "protocol_version": "1.0.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 60,
+      "measured_count": 14,
+      "measured_delta": null,
+      "notes": "pystac_client.Client.open(http://honua:5000/stac) returned STAC 1.1.0 Catalog id='honua-stac-catalog'; pystac.Catalog.from_dict rehydrated the same document.",
+      "evidence_ref": "http://honua:5000/stac"
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": 56,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "docker/client-compat runs an HTTP-only bridge network, so this lane certifies cleartext transport; TLS is exercised in the release tier against the HTTPS candidate.",
+      "evidence_ref": "http://honua:5000"
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": 47,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Anonymous GET /api/v1/admin/services -> 401 with WWW-Authenticate='ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"'; pystac-client's StacApiIO surfaced the same status as APIError. Raw httpx used because the control plane is not a STAC endpoint.",
+      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": 42,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GET /api/v1/admin/services with X-API-Key -> 200. Honua's control plane is API-key authenticated; HTTP Basic is an opt-in compatibility mode that also refuses non-HTTPS transport, and there is no bearer/login flow for this surface.",
+      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 49,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "pystac_client.Client.get_collections() yielded 5 collection(s): 0, 2000, 2001, 2002, 3000.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 35,
+      "measured_count": 6,
+      "measured_delta": null,
+      "notes": "Client.get_collection('0') rehydrated under pystac.Collection with license='proprietary' and stac_version=1.1.0; validated against the published STAC JSON Schemas.",
+      "evidence_ref": "schema-validated"
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": 8,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "Item 1 exposed 13 properties covering the seeded schema plus eo:cloud_cover=5; validated against the published STAC JSON Schemas.",
+      "evidence_ref": "schema-validated"
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "All 9 geometry-bearing items reported GeoJSON Point; the one seeded null-geometry row kept an explicit JSON null.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": 20,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "CQL2-JSON status='active' returned 5/10 items.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": 42,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "client.search(bbox=[-122.495, 37.705, -122.455, 37.735]) returned 3 items (1, 2, 3), every one inside the envelope.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": 12,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "ItemSearch(limit=3).pages() first page returned ids 1, 2, 3.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": 24,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Page 1 ids ['1', '2', '3'] and page 2 ids ['4', '5', '6'] are disjoint; pystac-client followed the server's next link without repeating an item.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "alpha returned (-122.49, 37.71) against seeded (-122.49, 37.71); max abs deviation 0.0 <= 1e-06.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "All 9 geometry-bearing items are CRS84 lon/lat and fall inside the collection's declared extent [-122.5, 37.7, -122.35, 37.84]; STAC mandates CRS84 for item geometry and collection extent alike.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 38,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Client.get_collection('does-not-exist-9999') raised pystac_client.exceptions.APIError with status_code=404; body status=404 title='Not Found' detail=\"Collection 'does-not-exist-9999' not found.\".",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": 36,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "POST /stac/search with filter='status ==' (cql2-text) raised APIError(status_code=400); body status=400 title='Bad Request' detail=\"Failed to parse CQL2 expression. (Parameter 'cql2Text')\".",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pystac-client is a catalog/metadata client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 8
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-STAC-CONF-01",
+      "status": "pass",
+      "duration_ms": 30,
+      "measured_count": 14,
+      "measured_delta": null,
+      "notes": "core honored: landing page carries ['child', 'conformance', 'data', 'http://www.opengis.net/def/rel/ogc/1.0/queryables', 'root', 'search', 'self', 'service-desc', 'service-doc'] and /stac/conformance publishes the same 14 classes.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-02",
+      "status": "pass",
+      "duration_ms": 21,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "collections honored: all 5 listed collections (0, 2000, 2001, 2002, 3000) round-tripped through get_collection(id).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-03",
+      "status": "pass",
+      "duration_ms": 85,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "ogcapi-features honored: /items honored limit and bbox and every returned feature rehydrated under pystac.Item.from_dict.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-04",
+      "status": "pass",
+      "duration_ms": 29,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "item-search honored: landing page advertises ['GET', 'POST'] search links and both methods returned 10 items.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-05",
+      "status": "pass",
+      "duration_ms": 100,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "item-search#fields honored: include narrowed properties to the requested set and exclude removed only properties.tags.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-06",
+      "status": "pass",
+      "duration_ms": 34,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "item-search#sort honored: +properties.name and -properties.name produced exactly reversed orderings over 10 items.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-07",
+      "status": "pass",
+      "duration_ms": 53,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "item-search#filter honored: queryables publish 16 properties (dialect https://json-schema.org/draft/2019-09/schema) and a CQL2-JSON comparison on eo:cloud_cover narrowed to 5 items.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-08",
+      "status": "pass",
+      "duration_ms": 29,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "oas30 honored: service-desc served OpenAPI 3.0.3 with 9 paths; service-doc link present.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-CONF-09",
+      "status": "pass",
+      "duration_ms": 21,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "basic-cql2 honored in both dialects: an AND of an equality and a numeric comparison returned the same 3 items via cql2-json and cql2-text.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-01",
+      "status": "pass",
+      "duration_ms": 84,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "intersects(Polygon) and the equivalent bbox both returned ['1', '2', '3'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-02",
+      "status": "pass",
+      "duration_ms": 30,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "intersects(Point) at the anchor coordinate matched exactly the anchor item; a degenerate point geometry is the classic spatial-predicate edge case.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-03",
+      "status": "pass",
+      "duration_ms": 12,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "datetime=2024-01-03T12:00:00Z matched exactly the one seeded item at that instant.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-04",
+      "status": "pass",
+      "duration_ms": 12,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "A closed RFC 3339 interval selected the three items inside it, with both endpoints treated inclusively.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-05",
+      "status": "pass",
+      "duration_ms": 30,
+      "measured_count": 6,
+      "measured_delta": null,
+      "notes": "Open-start ../T returned ['1', '2', '3'] and open-end T/.. returned ['10', '8', '9']; the two halves are disjoint.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-06",
+      "status": "pass",
+      "duration_ms": 53,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "ids=['2', '4'] returned exactly those items; an unknown id returned an empty FeatureCollection rather than an error or the whole collection.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-07",
+      "status": "pass",
+      "duration_ms": 52,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "collections=['0'] returned 10 items all bearing that collection back-reference; the unscoped search spanned ['0', '2000', '2001', '2002', '3000']; an unknown collection matched nothing.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-08",
+      "status": "pass",
+      "duration_ms": 28,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "An identical bbox + datetime + sortby search returned the same ordered ids (['1', '2', '3']) over both GET and POST.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-SEARCH-09",
+      "status": "pass",
+      "duration_ms": 23,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "limit=3 with max_items=4 crossed a page boundary and yielded four distinct items.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-PAGE-01",
+      "status": "pass",
+      "duration_ms": 47,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "pages() walked to exhaustion in page sizes [3, 3, 3, 1], collecting all 10 seeded items with no duplicates and terminating without a next link.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-PAGE-02",
+      "status": "pass",
+      "duration_ms": 55,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "ItemSearch.matched()=10 agrees with numberMatched=10 and numberReturned=3 equals the actual feature count on the page.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-PAGE-03",
+      "status": "pass",
+      "duration_ms": 120,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-PAGE-04",
+      "status": "pass",
+      "duration_ms": 73,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "limit=1000000 clamped to the server maximum and still answered 200; limit=0 was rejected with status=400 title='Bad Request' detail='limit must be greater than or equal to 1.'. Raw httpx used because pystac-client refuses out-of-range limits client-side.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-PAGE-05",
+      "status": "pass",
+      "duration_ms": 85,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "A token past the end returned an empty FeatureCollection with no next link; a malformed token was rejected with status=400 title='Bad Request' detail='Invalid pagination token.'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ITEM-01",
+      "status": "pass",
+      "duration_ms": 43,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "All 1 assets on item 1 (geojson) carried href/type/roles and resolved with a matching content type.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ITEM-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "9 items had a bbox containing their geometry; the 1 null-geometry item correctly omitted bbox.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ITEM-03",
+      "status": "pass",
+      "duration_ms": 81,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Item 1 carried ['collection', 'parent', 'root', 'self'] links; the self link re-fetched the same item and the collection link resolved to the owning collection.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ITEM-04",
+      "status": "pass",
+      "duration_ms": 40,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "All 10 items carried an RFC 3339 UTC datetime that pystac parsed into a timezone-aware value with zero offset.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ITEM-05",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "stac_extensions declared: none; eo:cloud_cover present on items: True. The fixture's eo:cloud_cover is projected without the server claiming the EO extension schema, which is legal but worth naming.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ITEM-06",
+      "status": "pass",
+      "duration_ms": 36,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Catalog: validated against the published STAC JSON Schemas; Collection: validated against the published STAC JSON Schemas; Item: validated against the published STAC JSON Schemas",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-COLL-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "Declared temporal extent [2024-01-01 12:00:00+00:00, 2024-01-10 12:00:00+00:00] covers all 10 item datetimes (observed [2024-01-01 12:00:00+00:00, 2024-01-10 12:00:00+00:00]).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-COLL-02",
+      "status": "pass",
+      "duration_ms": 56,
+      "measured_count": 6,
+      "measured_delta": null,
+      "notes": "Required members present (license='proprietary', stac_version=1.0.0, links ['alternate', 'http://www.opengis.net/def/rel/ogc/1.0/queryables', 'items', 'parent', 'root', 'self']); optional members present: ['title'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-COLL-03",
+      "status": "pass",
+      "duration_ms": 38,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "/stac/collections returned 5 entries, each rehydrating under pystac.Collection with a spatial extent.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ERR-01",
+      "status": "pass",
+      "duration_ms": 79,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GET an unknown item -> status=404 title='Not Found' detail=\"Item '999999' not found in collection '0'.\"; pystac-client surfaced it as APIError(status_code=404).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ERR-02",
+      "status": "pass",
+      "duration_ms": 99,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "3-value bbox -> status=400 title='Bad Request' detail='bbox must contain four or six numeric values.'; inverted bbox -> status=400 title='Bad Request' detail='bbox latitude values are out of range.'; out-of-range bbox -> status=400 title='Bad Request' detail='bbox latitude values are out of range.'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ERR-03",
+      "status": "pass",
+      "duration_ms": 68,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "datetime=not-a-date -> status=400 title='Bad Request' detail='Invalid datetime parameter.'; reversed interval -> status=400 title='Bad Request' detail='Invalid datetime parameter.'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ERR-04",
+      "status": "pass",
+      "duration_ms": 70,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "filter-lang=bogus-lang -> status=400 title='Bad Request' detail=\"Invalid filter-lang 'bogus-lang'.\"; filter-lang without filter -> status=400 title='Bad Request' detail='filter-lang and filter-crs require a filter parameter.'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ERR-05",
+      "status": "pass",
+      "duration_ms": 34,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GET /api/v1/admin/services with an incorrect X-API-Key -> 401. Raw httpx: the control plane is not a STAC endpoint.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-ERR-06",
+      "status": "pass",
+      "duration_ms": 33,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "An unknown search query parameter -> status=400 title='Bad Request' detail='Unknown query parameter: not-a-real-parameter'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-STAC-VALID-01",
+      "status": "pass",
+      "duration_ms": 8607,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "stac-api-validator validated core, collections, features, item-search, filter against http://honua:5000/stac with exit code 0.",
+      "evidence_ref": ""
+    }
+  ]
+}
