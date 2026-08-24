@@ -289,6 +289,29 @@ public sealed class StudioMcpToolContractTests
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
+    public async Task CreateDraft_ExistingItemWithoutOwner_UsesRecordedItemOwner()
+    {
+        var itemId = Guid.NewGuid();
+        var recordedOwner = "recorded-owner";
+        _lifecycleService.GetPointersAsync(itemId, Arg.Any<CancellationToken>())
+            .Returns(new StudioContentItemPointers { ItemId = itemId, OwnerId = recordedOwner });
+        _lifecycleService.CreateDraftAsync(
+                Arg.Any<CreateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
+            .Returns(BuildDraft(StudioPackageFamily.Map, generation: 1));
+
+        var tool = new CreateStudioDraftTool(_jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($"{{\"itemId\":\"{itemId:D}\",\"packageKey\":\"existing-map\",\"family\":\"map\",\"schemaVersion\":\"1.0\"}}");
+
+        await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
+
+        await _lifecycleService.Received(1).CreateDraftAsync(
+            Arg.Is<CreateStudioPackageDraftCommand>(command => command.OwnerId == recordedOwner),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_validate_draft")]
     public async Task ValidateDraft_IsGenuinelyReadOnly_NeverPersistsOrChangesGeneration()
     {
