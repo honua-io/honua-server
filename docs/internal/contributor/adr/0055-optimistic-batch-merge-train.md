@@ -103,10 +103,19 @@ dry-run.
    a job log that merely PRINTS a marker token (every `CI Router Validation` log
    does) stays an ordinary, subtractable failure.
 
-6. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. GitHub job-level timeouts may surface as terminal `cancelled`, `timed_out`, or `startup_failure` conclusions instead of an exit code; those conclusions enter the same bounded retry path and cannot be removed by the non-blocking allowlist or pre-existing-failure subtraction. Pending, skipped selected-shard, missing, and neutral evidence still fail closed. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
-   `40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)`
-   over failing-job logs. Match → a single `gh run rerun --failed` (cap 1),
-   never bisection. Their existing optimistic merge-through policy remains separate from generic timeout handling.
+6. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. GitHub job-level timeouts may surface as terminal `cancelled`, `timed_out`, or `startup_failure` conclusions instead of an exit code; those conclusions enter the same bounded retry path and cannot be removed by the non-blocking allowlist or pre-existing-failure subtraction. Pending, skipped selected-shard, missing, and neutral evidence still fail closed. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the line-scoped regex
+   `40P01|deadlock detected|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed`
+   over failing-job logs. Ryuk is deliberately not a standalone regex
+   alternative: a resource-reaper flake requires case-insensitive evidence of
+   `Testcontainers`, a failure-marked non-configuration `Ryuk` event, and either
+   `timed out` or `connection refused` in the same failed-job log, even when the
+   failure event and transport error appear on separate lines. Harmless status
+   such as `testcontainers.ryuk.disabled=false` or a successful Ryuk startup
+   cannot combine with an unrelated timeout to authorize a rerun or optimistic
+   merge-through. Match → a single `gh run rerun --failed` (cap 1), never
+   bisection.
+   Their existing optimistic merge-through policy remains separate from generic
+   timeout handling.
 7. **attribute** — REVERSE of smart-CI routing: failing shard →
    `.paths[]` from ci-shards.json → which INCLUDED PR's diff touches those
    prefixes. 1 suspect → drop it; ≥2 → drop all; 0 → escalate the whole batch.

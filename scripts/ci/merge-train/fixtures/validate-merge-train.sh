@@ -363,8 +363,23 @@ unset TRAIN_DIFF_FOR_PR
 echo "== Case 6: flake (single rerun, no bisection; reproduce-twice => real) =="
 export TRAIN_RUN_LOG_TEXT="... ERROR 40P01: deadlock detected ..."
 train_run_logs_match_flake 999 && ok "flake: 40P01 recognized" || bad "flake: 40P01 missed"
-export TRAIN_RUN_LOG_TEXT="Testcontainers timed out waiting for ryuk"
+export TRAIN_RUN_LOG_TEXT="Testcontainers timed out waiting for Ryuk"
 train_run_logs_match_flake 999 && ok "flake: testcontainers/ryuk recognized" || bad "flake: missed"
+export TRAIN_RUN_LOG_TEXT=$'Testcontainers startup failed\nconnection refused while contacting the resource reaper\nRyuk container did not become ready'
+train_run_logs_match_flake 999 && ok "flake: multiline testcontainers/ryuk recognized" || bad "flake: multiline ryuk missed"
+export TRAIN_RUN_LOG_TEXT=$'Testcontainers\nCan not connect to Ryuk at localhost:8080\nConnection refused'
+train_run_logs_match_flake 999 && ok "flake: split can-not Ryuk failure recognized" || bad "flake: split can-not Ryuk failure missed"
+export TRAIN_RUN_LOG_TEXT=$'Testcontainers startup failed\nRyuk container did not become ready\ndiagnostic one\ndiagnostic two\ndiagnostic three\ndiagnostic four\ndiagnostic five\nconnection refused while contacting the resource reaper'
+train_run_logs_match_flake 999 && ok "flake: expanded multiline testcontainers/ryuk recognized" || bad "flake: expanded multiline ryuk missed"
+export TRAIN_RUN_LOG_TEXT=$'testcontainers.ryuk.disabled=false\nAssert.Equal() Failure: expected 3 actual 4'
+train_run_logs_match_flake 999 && bad "flake: Ryuk status line misclassified" || ok "flake: Ryuk status line not a flake"
+export TRAIN_RUN_LOG_TEXT=$'testcontainers.ryuk.disabled=false\nrequest timed out waiting for expected callback\nAssert.Equal() Failure: expected 3 actual 4'
+train_run_logs_match_flake 999 && bad "flake: Ryuk setting laundered unrelated timeout" || ok "flake: unrelated timeout beside Ryuk setting is real"
+export TRAIN_RUN_LOG_TEXT=$'Testcontainers initialized resource reaper Ryuk successfully\nrequest timed out waiting for expected callback\nAssert.Equal() Failure: expected 3 actual 4'
+train_run_logs_match_flake 999 && bad "flake: successful Ryuk event laundered unrelated timeout" || ok "flake: unrelated timeout after successful Ryuk event is real"
+export -n TRAIN_RUN_LOG_TEXT
+printf -v TRAIN_RUN_LOG_TEXT 'Testcontainers bootstrap\n%*s\nconnection refused while contacting resource reaper\nRyuk container did not become ready' 220000 ''
+train_run_logs_match_flake 999 && ok "flake: large multiline testcontainers/ryuk recognized" || bad "flake: large multiline ryuk missed"
 export TRAIN_RUN_LOG_TEXT="Assert.Equal() Failure: expected 3 actual 4"
 train_run_logs_match_flake 999 && bad "flake: real assertion misclassified" || ok "flake: real assertion not a flake"
 # classify_flake: under cap with a flake => returns 0 (rerun once, dry-run logs).
