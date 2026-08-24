@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
@@ -116,6 +117,30 @@ internal interface IGeoprocessingJobService
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Submits through the canonical durable runtime while validating against an
+    /// adapter-scoped process catalog. This keeps protocol-only definitions out of
+    /// the shared discovery catalog used by every other adapter.
+    /// </summary>
+    /// <remarks>
+    /// The default forwarding implementation preserves lightweight adapter test doubles.
+    /// The production service overrides it and uses <paramref name="protocolCatalog"/>
+    /// for every catalog-dependent submission gate.
+    /// </remarks>
+    Task<ExecutionJobRecord> SubmitProtocolJobAsync(
+        AnalysisPlan plan,
+        string? idempotencyKey,
+        ClaimsPrincipal principal,
+        IProcessCatalog protocolCatalog,
+        IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+        => SubmitJobAsync(
+            plan,
+            idempotencyKey,
+            principal,
+            protocolMetadata,
+            cancellationToken);
 
     /// <summary>
     /// Resumes an approved destructive/sink plan whose submission was previously
