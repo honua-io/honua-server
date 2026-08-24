@@ -277,7 +277,7 @@ jobs:
 
       - name: Retain the exact parity plan
         if: steps.resolve.outputs.eligible == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-parity-plan-${{ steps.resolve.outputs.pr }}-${{ steps.resolve.outputs.head_sha }}-attempt-${{ github.run_attempt }}
           path: evidence/
@@ -345,7 +345,7 @@ jobs:
             --metrics metrics/baseline-${{ matrix.identity }}.json \
             --identity '${{ matrix.identity }}' --filter "${FILTER}" \
             --job-start-epoch-ms '${{ steps.timing.outputs.job_start_ms }}'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-parity-baseline-${{ matrix.identity }}-${{ github.run_attempt }}
           path: metrics/
@@ -459,7 +459,7 @@ jobs:
               artifact_download_ms:$download_ms}' \
             metrics/candidate-${{ matrix.identity }}.json > metrics/candidate-updated.json
           mv metrics/candidate-updated.json metrics/candidate-${{ matrix.identity }}.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-parity-candidate-${{ matrix.identity }}-${{ github.run_attempt }}
           path: metrics/
@@ -546,7 +546,7 @@ jobs:
           path: evidence/parity-observation.json
           retention-days: ${{ needs.plan.outputs.receipt_retention_days }}
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: server-test-prebuild-parity-evidence-${{ needs.plan.outputs.pr }}-${{ needs.plan.outputs.head_sha }}-attempt-${{ github.run_attempt }}
           path: evidence/

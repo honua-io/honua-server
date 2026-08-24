@@ -872,7 +872,7 @@ jobs:
       - name: Retain PR Gate build reuse shadow evidence
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: pr-gate-build-reuse-shadow-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -1414,7 +1414,7 @@ jobs:
             --results-directory ./tests/TestResults
 
       - name: Upload foundation test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         timeout-minutes: 3
         with:
@@ -1427,7 +1427,7 @@ jobs:
       # artifact so downstream coverage tooling (CodeCov, ReportGenerator, etc.)
       # can pull them without unpacking the full test-results bundle.
       - name: Upload foundation coverage (cobertura)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         timeout-minutes: 3
         with:
@@ -1740,7 +1740,7 @@ jobs:
 
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: operator-eval-report
           path: tests/TestResults/eval-report.json
@@ -1757,7 +1757,7 @@ jobs:
 
       - name: Upload shard test results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
@@ -1907,7 +1907,7 @@ jobs:
 
       - name: Upload Worker GDAL test results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         timeout-minutes: 3
         with:
           name: worker-gdal-test-results
@@ -1968,7 +1968,7 @@ jobs:
         working-directory: tests/python
 
       - name: Upload Python test results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         timeout-minutes: 3
         with:
@@ -2126,7 +2126,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload OpenLayers Evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: openlayers-compat-results
@@ -2213,7 +2213,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: esri-leaflet-browser-results
@@ -2310,7 +2310,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: maplibre-compat-results
           path: |
@@ -2418,7 +2418,7 @@ jobs:
 
       - name: Upload certification artifact
         if: always() && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: mcp-certification-${{ matrix.transport }}
           path: |
@@ -2511,7 +2511,7 @@ jobs:
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.setup.outputs.smoke-available == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: mcp-llm-smoke-transcripts
           path: |
@@ -2590,7 +2590,7 @@ jobs:
           "${test_args[@]}"
 
       - name: Upload Postgres coverage (cobertura)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         if: ${{ always() && matrix.collect_coverage }}
         timeout-minutes: 3
         with:

@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload consume artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: cross-server-consume-${{ github.run_id }}
           path: |

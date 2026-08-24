@@ -141,7 +141,7 @@ jobs:
       # regression. Read from the artifact catalog; never downloaded.
       - name: Retain observation skip marker
         if: steps.collect.outputs.skip == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: native-image-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -300,7 +300,7 @@ jobs:
 
       - name: Retain trusted observation evidence
         if: steps.recheck.outputs.retain == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}
           path: |
