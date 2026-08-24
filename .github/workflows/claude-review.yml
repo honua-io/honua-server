@@ -289,7 +289,7 @@ jobs:
       - name: Review the diff and publish evidence
         id: claude
         if: steps.target.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@459ad358ae43fea66bfefd0a1f8d840b4b9791fb # v1
+        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
         with:
           # Exactly one of these is set; the empty one is ignored. Do NOT add a
           # `github_token` input — the default path mints the Claude App token,
@@ -365,6 +365,38 @@ jobs:
             (each with `path`, `line` and `summary`). The next step re-derives
             what was actually published from GitHub and fails the job if it
             disagrees with this verdict.
+
+      - name: Explain a reviewer failure honestly
+        if: failure() && steps.target.outputs.skip == 'false'
+        run: |
+          set -uo pipefail
+          # The action reports EVERY failed run as "Claude did not return
+          # structured_output", because its guard is
+          # `isSuccess && structured_output`, where
+          # `isSuccess = subtype === "success" && !is_error`. So a model call
+          # that errored -- overload, model access, tool startup -- is announced
+          # as a schema problem, naming the one thing that is demonstrably fine.
+          # That message cost a full debugging session once (#3491); print what
+          # actually happened instead.
+          out=/home/runner/work/_temp/claude-execution-output.json
+          if [ ! -f "${out}" ]; then
+            echo "::warning::No claude-execution-output.json; the reviewer failed before producing a result."
+            exit 0
+          fi
+          echo "--- result message ---"
+          jq -c '[.[] | select(.type == "result")] | last' "${out}" 2>/dev/null || tail -c 2000 "${out}"
+          if jq -e '[.[] | select(.type == "result")] | last | .is_error == true' "${out}" >/dev/null 2>&1; then
+            echo "::error::The reviewer run itself errored (is_error=true). The structured_output message above is a symptom, not the cause."
+          fi
+
+      - name: Preserve the reviewer transcript for diagnosis
+        if: failure() && steps.target.outputs.skip == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: claude-review-execution-${{ steps.target.outputs.pr }}-${{ github.run_attempt }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify the published evidence matches the verdict
         if: always() && steps.target.outputs.skip == 'false'
