@@ -48,14 +48,17 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
-            _items[draft.ItemId] = item with
-            {
-                PackageKey = draft.PackageKey,
-                WorkspaceId = draft.WorkspaceId,
-                Family = draft.Family,
-                UpdatedBy = draft.UpdatedBy,
-                UpdatedAt = draft.UpdatedAt,
-            };
+            _items[draft.ItemId] = existingItem is not null
+                && !string.Equals(existingItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
+                ? item
+                : item with
+                {
+                    PackageKey = draft.PackageKey,
+                    WorkspaceId = draft.WorkspaceId,
+                    Family = draft.Family,
+                    UpdatedBy = draft.UpdatedBy,
+                    UpdatedAt = draft.UpdatedAt,
+                };
             _drafts.Add(draft.DraftId, draft);
             return Task.FromResult(draft);
         }

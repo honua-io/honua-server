@@ -79,6 +79,34 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task ReopenVersion_MixedOwner_DoesNotRewriteItemMetadata()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var itemId = Guid.NewGuid();
+        await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            ItemId = itemId, PackageKey = "item-owner-key", OwnerId = "owner-a", ActorId = "owner-a",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+        });
+        var mixed = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            ItemId = itemId, PackageKey = "draft-owner-key", OwnerId = "owner-b", ActorId = "owner-b",
+            ExpectedExistingItemOwnerId = "owner-a",
+            Envelope = BuildEnvelope("2=2", "content.parcels"),
+        });
+        var version = await service.SaveDraftAsVersionAsync(mixed.DraftId, "mixed", "owner-b");
+        var before = await store.ListContentItemsAsync(new StudioContentItemQuery());
+
+        await service.ReopenVersionAsync(itemId, version!.VersionId, "owner-b");
+
+        var after = await store.ListContentItemsAsync(new StudioContentItemQuery());
+        Assert.Single(after.Items);
+        Assert.Equal(before.Items[0].PackageKey, after.Items[0].PackageKey);
+        Assert.Equal("owner-a", after.Items[0].OwnerId);
+    }
+
+    [UnitTest]
     public async Task SaveDraftAsVersion_WithExpectedGeneration_VersionsOnlyThatGeneration()
     {
         // Callers that apply an edit and then version it (the live-collaboration checkpoint) must
