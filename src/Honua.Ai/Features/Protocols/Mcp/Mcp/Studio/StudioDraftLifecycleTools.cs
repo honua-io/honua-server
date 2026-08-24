@@ -92,9 +92,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var authorization = RequireAuthorizationService(httpContext);
         var actorId = ActorIdFor(authorization, principal);
-        var requestedOwnerId = !authorization.IsAdmin(principal) && authorization.IsEndUserAuthorizationEnabled
-            ? null
-            : argument.OwnerId;
+        var requestedOwnerId = argument.OwnerId;
         await EnsureOwnerAssignmentAuthorizedAsync(
             httpContext,
             authorization,
@@ -156,7 +154,8 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
                 requiresAuthentication: false,
                 message: ex.Message,
                 resourceType: OperatorResourceType.StudioDraft,
-                operation: OperatorOperation.Create);
+                operation: OperatorOperation.Create,
+                policyCode: "studio_authorization/owner_conflict");
         }
 
         Audit(principal, ToolName, draft.DraftId, generationBefore: null, generationAfter: draft.Generation);
