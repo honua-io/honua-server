@@ -120,7 +120,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // A non-admin caller can create only a draft they own. Admins retain
         // the REST surface's ability to assign an explicit owner.
-        var ownerId = argument.OwnerId ?? actorId;
+        var ownerId = argument.OwnerId ?? existingPointers?.OwnerId ?? actorId;
         StudioPackageDraft draft;
         try
         {
