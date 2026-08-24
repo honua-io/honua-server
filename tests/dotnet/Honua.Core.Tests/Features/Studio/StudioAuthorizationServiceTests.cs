@@ -445,6 +445,47 @@ public sealed class StudioAuthorizationServiceTests
         Assert.Null(service.ResolveCallerId(new ClaimsPrincipal(new ClaimsIdentity())));
     }
 
+    [UnitTest]
+    public async Task AuthorizeAsync_ReadScopedAdmin_CannotCreateDraft()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = ScopeGovernedPrincipal("admin-1", "admin", OperatorScopeCatalog.Read);
+
+        var decision = await service.AuthorizeAsync(
+            principal, "admin-1", StudioAuthorizationOperation.CreateDraft, "admin-1");
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.ScopeDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_ReadScopedOwner_CanReadButCannotUpdateOwnDraft()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Read);
+
+        var read = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.ReadDraft, Alice);
+        var update = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+
+        Assert.True(read.IsAllowed);
+        Assert.False(update.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.ScopeDeniedCode, update.Code);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_CreateScopedOwner_CanUpdateOwnDraft()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Create);
+
+        var decision = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+
+        Assert.True(decision.IsAllowed);
+    }
+
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,
@@ -453,7 +494,11 @@ public sealed class StudioAuthorizationServiceTests
         evaluator = new FakeOperatorAuthorizationEvaluator();
         var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
         var adminRoleOptions = new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = adminRoles ?? [] });
-        return new StudioAuthorizationService(evaluator, options, adminRoleOptions);
+        return new StudioAuthorizationService(
+            evaluator,
+            new OperatorScopeAuthorizer(),
+            options,
+            adminRoleOptions);
     }
 
     private static ClaimsPrincipal AdminPrincipal()
@@ -471,6 +516,21 @@ public sealed class StudioAuthorizationServiceTests
                 new Claim(ClaimTypes.Role, "creator"),
             ],
             authenticationType: "Test"));
+
+    private static ClaimsPrincipal ScopeGovernedPrincipal(
+        string userId,
+        string role,
+        params string[] scopes)
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Role, role),
+                new Claim(
+                    OperatorScopeCatalog.ScopeGovernedClaimType,
+                    OperatorScopeCatalog.ScopeGovernedClaimValue),
+                new Claim(OperatorScopeCatalog.ScopeClaimType, string.Join(' ', scopes)),
+            ],
+            authenticationType: "Bearer"));
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

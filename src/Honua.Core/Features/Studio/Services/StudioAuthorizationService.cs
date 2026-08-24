@@ -44,20 +44,27 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     /// <summary>Denial code: the preliminary MCP OAuth-scope gate rejected the caller.</summary>
     public const string OAuthScopeRequiredCode = "studio_authorization/oauth_scope_required";
 
+    /// <summary>Denial code: the caller's OAuth scope ceiling does not permit the Studio operation.</summary>
+    public const string ScopeDeniedCode = "studio_authorization/insufficient_scope";
+
     private readonly IOperatorAuthorizationEvaluator _evaluator;
+    private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions;
 
     /// <summary>Initializes a new Studio authorization service.</summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
+        IOperatorScopeAuthorizer scopeAuthorizer,
         IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
         IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
+        ArgumentNullException.ThrowIfNull(scopeAuthorizer);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(adminRoleOptions);
         _evaluator = evaluator;
+        _scopeAuthorizer = scopeAuthorizer;
         _options = options;
         _adminRoleOptions = adminRoleOptions;
     }
@@ -69,6 +76,21 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     public bool IsAdmin(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
+
+        // OAuth scopes are an unconditional ceiling over role, grant, and ownership authority.
+        // Keep this ahead of the admin bypass so Studio HTTP and MCP composition share the same
+        // protocol-independent narrowing seam.
+        var scopeDecision = _scopeAuthorizer.Evaluate(
+            principal,
+            OperatorResourceType.StudioDraft,
+            MapToScopeOperation(operation));
+        if (!scopeDecision.IsAllowed)
+        {
+            return StudioAuthorizationDecision.Deny(
+                ScopeDeniedCode,
+                scopeDecision.Reason
+                    ?? $"The access token's scopes do not permit '{operation}' on Studio drafts.");
+        }
 
         // The literal "admin" role is always recognized regardless of configuration -- this
         // matches every other admin check on the platform (AdminApiKeyPermission, AdminSession,
@@ -248,6 +270,19 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             $"'{operation}' requires a StudioDraft '{operatorOperation}' operator grant.",
             elevated: true);
     }
+
+    private static OperatorOperation MapToScopeOperation(StudioAuthorizationOperation operation)
+        => operation switch
+        {
+            StudioAuthorizationOperation.ReadDraft
+                or StudioAuthorizationOperation.ReadContentItem
+                or StudioAuthorizationOperation.ListOwn
+                or StudioAuthorizationOperation.ValidateDraft => OperatorOperation.Read,
+            StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
+            StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
+            StudioAuthorizationOperation.Rollback => OperatorOperation.Rollback,
+            _ => OperatorOperation.Create,
+        };
 
     private async Task<bool> HasOperatorGrantAsync(
         ClaimsPrincipal principal,
