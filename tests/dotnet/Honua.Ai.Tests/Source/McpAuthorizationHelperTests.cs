@@ -60,4 +60,29 @@ public sealed class McpAuthorizationHelperTests
         McpAuthorizationHelper.ResolvePrincipalKey(bearer).Should().Be("JwtBearer:sub:identity-1");
         McpAuthorizationHelper.ResolvePrincipalKey(apiKey).Should().Be("ApiKey:sub:identity-1");
     }
+
+    [UnitTest]
+    public void ResolveSessionKey_DifferentIssuersAndTenantsCannotCollide()
+    {
+        var issuerA = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "same-subject"),
+            new Claim("iss", "https://issuer-a.example")
+        ], "JwtBearer"));
+        var issuerB = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "same-subject"),
+            new Claim("iss", "https://issuer-b.example")
+        ], "JwtBearer"));
+
+        var first = McpAuthorizationHelper.ResolveSessionKey(issuerA, "tenant-a");
+        var secondIssuer = McpAuthorizationHelper.ResolveSessionKey(issuerB, "tenant-a");
+        var secondTenant = McpAuthorizationHelper.ResolveSessionKey(issuerA, "tenant-b");
+
+        first.Should().NotBe(secondIssuer);
+        first.Should().NotBe(secondTenant);
+        first.Should().Contain("issuer:https://issuer-a.example");
+        first.Should().Contain("actor:same-subject");
+        first.Should().Contain("tenant:tenant-a");
+    }
 }

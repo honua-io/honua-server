@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -65,5 +66,40 @@ internal static class McpAuthorizationHelper
         return string.IsNullOrEmpty(identity.Name)
             ? $"{scheme}:authenticated"
             : $"{scheme}:name:{identity.Name}";
+    }
+
+    /// <summary>
+    /// Resolves the immutable MCP session binding from the validated request principal
+    /// and the effective tenant selected by server-side tenant resolution.
+    /// </summary>
+    public static string ResolveSessionKey(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        return ResolveSessionKey(context.User, tenantId);
+    }
+
+    /// <summary>
+    /// Resolves a session key that cannot collide across OIDC issuers or tenants.
+    /// </summary>
+    public static string ResolveSessionKey(ClaimsPrincipal? principal, string? effectiveTenantId)
+    {
+        var identity = principal?.Identity?.IsAuthenticated == true
+            ? principal.Identity
+            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+        if (identity is null || !identity.IsAuthenticated)
+        {
+            return $"{McpSessionManager.AnonymousPrincipalKey}:tenant:{effectiveTenantId ?? "-"}";
+        }
+
+        var scheme = string.IsNullOrWhiteSpace(identity.AuthenticationType)
+            ? AnonymousPrincipalScheme
+            : identity.AuthenticationType;
+        var actor = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? identity.Name
+            ?? "authenticated";
+        var issuer = principal.FindFirst("iss")?.Value ?? "-";
+        var tenant = string.IsNullOrWhiteSpace(effectiveTenantId) ? "-" : effectiveTenantId.Trim();
+        return $"{scheme}:issuer:{issuer}:actor:{actor}:tenant:{tenant}";
     }
 }

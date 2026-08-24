@@ -4,6 +4,7 @@
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
@@ -44,9 +45,51 @@ namespace Honua.Ai.Protocols.Mcp;
 /// which the transport arms on every MCP route.
 /// </para>
 /// </remarks>
-internal static class McpBearerAuthenticationEndpointExtensions
+public static class McpBearerAuthenticationEndpointExtensions
 {
     private const string BearerPrefix = "Bearer ";
+
+    /// <summary>
+    /// Adds MCP bearer authentication before tenant resolution. The endpoint filter remains
+    /// as a defense-in-depth guard for isolated endpoint compositions.
+    /// </summary>
+    public static IApplicationBuilder UseMcpBearerAuthentication(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        return app.Use(async (httpContext, next) =>
+        {
+            if (!httpContext.Request.Path.Equals("/mcp", StringComparison.OrdinalIgnoreCase)
+                || !HasBearerCredential(httpContext))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var options = httpContext.RequestServices
+                .GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
+            if (McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count == 0)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var result = await httpContext
+                .AuthenticateAsync(OidcAuthenticationExtensions.JwtBearerScheme)
+                .ConfigureAwait(false);
+            if (result.Succeeded && result.Principal is not null)
+            {
+                httpContext.User = result.Principal;
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            // This middleware short-circuits before endpoint filters run, so arm the
+            // shared RFC 9728 challenge hook explicitly for the 401 response.
+            McpProtectedResourceMetadataEndpointExtensions.StampChallengeOnUnauthorized(httpContext);
+            await BuildInvalidTokenResult().ExecuteAsync(httpContext).ConfigureAwait(false);
+        });
+    }
 
     /// <summary>
     /// Endpoint filter that validates a presented bearer token and authenticates the caller
@@ -60,6 +103,17 @@ internal static class McpBearerAuthenticationEndpointExtensions
         ArgumentNullException.ThrowIfNull(next);
 
         var httpContext = context.HttpContext;
+
+        // The application middleware has already performed resource-server validation before
+        // tenant resolution. Avoid authenticating the same bearer twice.
+        if (httpContext.User.Identity?.IsAuthenticated == true
+            && string.Equals(
+                httpContext.User.Identity.AuthenticationType,
+                OidcAuthenticationExtensions.JwtBearerScheme,
+                StringComparison.Ordinal))
+        {
+            return await next(context).ConfigureAwait(false);
+        }
 
         // Only engage when a bearer credential is actually presented. Absent an
         // Authorization header the anonymous handshake and the X-API-Key path are

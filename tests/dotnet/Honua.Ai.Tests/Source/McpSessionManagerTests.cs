@@ -115,6 +115,24 @@ public sealed class McpSessionManagerTests
     }
 
     [UnitTest]
+    public void ValidateAccess_RejectsSameActorFromDifferentIssuerOrTenant()
+    {
+        var manager = new McpSessionManager();
+        manager.TryCreateSession(
+            "JwtBearer:issuer:https://issuer-a.example:actor:alice:tenant:tenant-a",
+            out var id).Should().BeTrue();
+
+        manager.ValidateAccess(
+            id,
+            "JwtBearer:issuer:https://issuer-b.example:actor:alice:tenant:tenant-a")
+            .Should().Be(McpSessionValidation.PrincipalMismatch);
+        manager.ValidateAccess(
+            id,
+            "JwtBearer:issuer:https://issuer-a.example:actor:alice:tenant:tenant-b")
+            .Should().Be(McpSessionValidation.PrincipalMismatch);
+    }
+
+    [UnitTest]
     public void ValidateAccess_AfterIdleTimeout_ExpiresSession()
     {
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
