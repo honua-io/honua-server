@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
+
 namespace Honua.Core.Features.ControlPlane.Domain;
 
 /// <summary>
@@ -30,6 +33,15 @@ public sealed record OperationAuthorityContext
     /// of <see cref="OAuthScopes"/> so replay can only narrow authority.
     /// </summary>
     public IReadOnlyList<string> ScopeCeiling { get; init; } = Array.Empty<string>();
+
+    /// <summary>Whether this authority was established from an OAuth bearer token.</summary>
+    public bool ScopeGoverned { get; init; }
+
+    /// <summary>Canonical resource family bound to the authority, when applicable.</summary>
+    public OperatorResourceType? ResourceType { get; init; }
+
+    /// <summary>Canonical operation bound to the authority, when applicable.</summary>
+    public OperatorOperation? Operation { get; init; }
 
     /// <summary>
     /// Validates the bounded, non-secret authority lineage before it is persisted.
@@ -61,6 +73,16 @@ public sealed record OperationAuthorityContext
         error = null;
         return true;
     }
+
+    /// <summary>
+    /// Returns whether the persisted scope ceiling still permits the canonical operation.
+    /// Non-OAuth authority remains governed by the normal grant/RBAC decision.
+    /// </summary>
+    public bool PermitsBoundOperation()
+        => !ScopeGoverned
+            || Operation is not { } operation
+            || OperatorScopeCatalog.PermitsOperation(
+                ScopeCeiling.ToHashSet(StringComparer.Ordinal), operation);
 
     private static bool IsBounded(string? value, int maxLength)
         => !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength;

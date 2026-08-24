@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,7 +57,14 @@ internal sealed class ProposalStatusResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetProposal");
-        _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var jobService = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
+            ?? throw new InvalidOperationException("The authorization service is unavailable.");
+        await jobService.EnsureCallerAuthorizedAsync(
+            principal,
+            OperatorResourceType.Catalog,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         var proposalId = uri[McpResourceUris.ProposalsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);

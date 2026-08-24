@@ -2,7 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -106,6 +109,7 @@ internal sealed class ProposeOperationTool : IMcpTool
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,
+            Authority = BuildAuthority(principal, kind, actor),
         };
 
         var result = await gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
@@ -122,5 +126,35 @@ internal sealed class ProposeOperationTool : IMcpTool
         };
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpProposeOperationOutput);
+    }
+
+    private static OperationAuthorityContext BuildAuthority(
+        ClaimsPrincipal principal,
+        OperationClass kind,
+        string? actor)
+    {
+        var governed = OperatorScopeCatalog.IsScopeGoverned(principal);
+        var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).ToArray();
+        var operation = kind switch
+        {
+            OperationClass.Deploy or OperationClass.MetadataRelease => OperatorOperation.Publish,
+            OperationClass.Seed => OperatorOperation.Create,
+            _ => OperatorOperation.Update,
+        };
+
+        return new OperationAuthorityContext
+        {
+            Issuer = principal.FindFirst("iss")?.Value ?? "unknown",
+            Actor = actor ?? "unknown",
+            Scheme = principal.Identity?.AuthenticationType ?? "unknown",
+            EffectiveTenant = principal.FindFirst("tenant_id")?.Value
+                ?? principal.FindFirst("tenant")?.Value
+                ?? "default",
+            OAuthScopes = scopes,
+            ScopeCeiling = scopes,
+            ScopeGoverned = governed,
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = operation,
+        };
     }
 }

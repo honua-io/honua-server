@@ -604,6 +604,12 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             throw new InvalidOperationException($"Operation authority is invalid: {error}");
         }
+
+        if (authority is { ScopeGoverned: true } && !authority.PermitsBoundOperation())
+        {
+            throw new InvalidOperationException(
+                "The proposer's OAuth scope ceiling no longer permits the canonical operation.");
+        }
     }
 
     private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(
