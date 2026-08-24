@@ -399,18 +399,38 @@ train_join_job_names() {
 train_log_is_flake() {
   local text="$1"
   if [[ -n "${TRAIN_FLAKE_REGEX}" ]] &&
-      printf '%s' "${text}" | grep -Eq "${TRAIN_FLAKE_REGEX}"; then
+      grep -Eq "${TRAIN_FLAKE_REGEX}" <<<"${text}"; then
     return 0
   fi
 
-  # Testcontainers may log the resource-reaper identity, transport error, and
-  # failure on separate lines. Require all three case-insensitively across the
-  # same failed-job log. In particular, `testcontainers.ryuk.disabled=false`
-  # alone is ordinary configuration output and must never authorize a rerun or
-  # optimistic merge-through.
-  printf '%s' "${text}" | grep -Eqi 'testcontainers' || return 1
-  printf '%s' "${text}" | grep -Eqi 'ryuk' || return 1
-  printf '%s' "${text}" | grep -Eqi 'timed out|connection refused'
+  # Testcontainers may identify itself near the start of a large job log, then
+  # report the resource-reaper identity and transport error on separate lines
+  # much later. Read the text once: this avoids grep -q closing a pipe early
+  # under pipefail, while still requiring timeout/connection evidence within a
+  # small window of a real (non-configuration) Ryuk event. In particular,
+  # `testcontainers.ryuk.disabled=false` plus an unrelated timeout is not a
+  # resource-reaper failure and must never authorize optimistic merge-through.
+  awk '
+    {
+      lines[NR] = tolower($0)
+      if (lines[NR] ~ /testcontainers/) has_testcontainers = 1
+    }
+    END {
+      if (!has_testcontainers) exit 1
+      for (i = 1; i <= NR; i++) {
+        ryuk_event = lines[i]
+        gsub(/testcontainers[._]ryuk[._]disabled[[:space:]]*[:=][[:space:]]*(true|false)/, "", ryuk_event)
+        if (ryuk_event !~ /ryuk/) continue
+
+        first = i > 3 ? i - 3 : 1
+        last = i + 3 < NR ? i + 3 : NR
+        for (j = first; j <= last; j++) {
+          if (lines[j] ~ /(timed out|connection refused)/) exit 0
+        }
+      }
+      exit 1
+    }
+  ' <<<"${text}"
 }
 
 # --- attribution (pure, testable) --------------------------------------------

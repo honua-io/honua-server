@@ -369,6 +369,11 @@ export TRAIN_RUN_LOG_TEXT=$'Testcontainers startup failed\nconnection refused wh
 train_run_logs_match_flake 999 && ok "flake: multiline testcontainers/ryuk recognized" || bad "flake: multiline ryuk missed"
 export TRAIN_RUN_LOG_TEXT=$'testcontainers.ryuk.disabled=false\nAssert.Equal() Failure: expected 3 actual 4'
 train_run_logs_match_flake 999 && bad "flake: Ryuk status line misclassified" || ok "flake: Ryuk status line not a flake"
+export TRAIN_RUN_LOG_TEXT=$'testcontainers.ryuk.disabled=false\nrequest timed out waiting for expected callback\nAssert.Equal() Failure: expected 3 actual 4'
+train_run_logs_match_flake 999 && bad "flake: Ryuk setting laundered unrelated timeout" || ok "flake: unrelated timeout beside Ryuk setting is real"
+export -n TRAIN_RUN_LOG_TEXT
+printf -v TRAIN_RUN_LOG_TEXT 'Testcontainers bootstrap\n%*s\nconnection refused while contacting resource reaper\nRyuk container did not become ready' 220000 ''
+train_run_logs_match_flake 999 && ok "flake: large multiline testcontainers/ryuk recognized" || bad "flake: large multiline ryuk missed"
 export TRAIN_RUN_LOG_TEXT="Assert.Equal() Failure: expected 3 actual 4"
 train_run_logs_match_flake 999 && bad "flake: real assertion misclassified" || ok "flake: real assertion not a flake"
 # classify_flake: under cap with a flake => returns 0 (rerun once, dry-run logs).
