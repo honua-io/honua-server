@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -72,4 +74,25 @@ internal static class McpAuthorizationHelper
         string.IsNullOrWhiteSpace(identity.AuthenticationType)
             ? AnonymousPrincipalScheme
             : identity.AuthenticationType;
+
+    /// <summary>
+    /// Resolves the immutable MCP session binding from the framework-authenticated
+    /// actor, the effective tenant selected by tenant policy, and the OAuth scope
+    /// ceiling. Client-supplied issuer, subject, tenant, and scope values are never
+    /// read from request headers or parameters.
+    /// </summary>
+    public static string ResolveSessionBindingKey(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var actor = CanonicalSecurityActor.Resolve(context.User);
+        if (actor is null)
+        {
+            return McpSessionManager.AnonymousPrincipalKey;
+        }
+
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId
+            ?? context.User.FindFirstValue(CanonicalSecurityActor.EffectiveTenantClaim);
+        return CanonicalSecurityActor.BuildBindingKey(actor, tenant, context.User);
+    }
 }

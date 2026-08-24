@@ -1304,6 +1304,11 @@ app.UseApiKeyAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// MCP bearer credentials must be fully validated before tenant context, schema
+// routing, tenant status, rate limiting, or audit middleware observes the request.
+// The endpoint filter remains defense-in-depth for non-standard hosting pipelines.
+Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions.UseMcpBearerAuthentication(app);
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
