@@ -52,6 +52,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = EnsureOperationInstance(request);
+        ValidateAuthority(request.Authority);
 
         // For an AdminConfigChange, the ops-action discriminator selects a per-action
         // guardrail tier. Prefer an explicit discriminator on the request; otherwise
@@ -102,6 +104,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = EnsureOperationInstance(request);
+        ValidateAuthority(request.Authority);
 
         // The approval requirement was already decided by an upstream domain gate
         // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
@@ -138,6 +142,17 @@ internal sealed partial class OperationGateway : IOperationGateway
             await ReconcileAutonomyProposalResolutionAsync(proposal, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
+        }
+
+        if (string.IsNullOrWhiteSpace(approvedBy))
+        {
+            throw new InvalidOperationException("An identified approver is required.");
+        }
+
+        if (string.Equals(proposal.RequestedBy, approvedBy, StringComparison.Ordinal) ||
+            string.Equals(proposal.Authority?.Actor, approvedBy, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The proposer cannot approve its own operation.");
         }
 
         // Atomically claim the proposal before invoking the executor.
@@ -193,6 +208,13 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedBy = approvedBy,
             ResolvedAt = now,
             ExecutionOperationId = executionOperationId,
+            Approval = new OperationApprovalRecord
+            {
+                Approver = approvedBy,
+                Approved = true,
+                DecidedAt = now,
+                ProposerAuthorityRetained = true,
+            },
             Plan = failureMessage == null
                 ? proposal.Plan
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
@@ -240,6 +262,13 @@ internal sealed partial class OperationGateway : IOperationGateway
             Status = OperationProposalStatus.Rejected,
             ResolvedBy = rejectedBy,
             ResolutionReason = reason,
+            Approval = new OperationApprovalRecord
+            {
+                Approver = rejectedBy,
+                Approved = false,
+                DecidedAt = now,
+                ProposerAuthorityRetained = true,
+            },
             ResolvedAt = now
         };
 
@@ -281,6 +310,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = OperationGatewayOutcome.Executed,
             Decision = decision,
+            OperationInstanceId = request.OperationInstanceId,
             ExecutionOperationId = executionOperationId,
             Message = "Executed directly."
         };
@@ -322,6 +352,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
+            OperationInstanceId = request.OperationInstanceId,
             ProposalId = hasIdempotencyKey
                 ? DeriveProposalId(request.Kind, request.IdempotencyKey!)
                 : $"proposal-{Guid.NewGuid():N}",
@@ -329,6 +360,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             Status = OperationProposalStatus.AwaitingApproval,
             RequestedBy = request.RequestedBy,
             RequestedByAgent = request.RequestedByAgent,
+            Authority = request.Authority,
             Plan = plan,
             GuardrailDecision = decision,
             AutonomyMetadata = NormalizeAutonomyContext(request.AutonomyContext, actionDiscriminator: request.ActionDiscriminator),
@@ -375,6 +407,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = OperationGatewayOutcome.ProposalCreated,
             Decision = decision,
+            OperationInstanceId = proposal.OperationInstanceId,
             ProposalId = proposal.ProposalId,
             Message = "Proposal created and awaiting approval."
         };
@@ -397,6 +430,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = OperationGatewayOutcome.ProposalCreated,
             Decision = decision,
+            OperationInstanceId = existing.OperationInstanceId,
             ProposalId = existing.ProposalId,
             Message = $"Existing proposal returned for idempotency key '{idempotencyKey}'.",
         };
@@ -535,9 +569,11 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
+        OperationInstanceId = proposal.OperationInstanceId,
         Kind = proposal.Kind,
         RequestedBy = proposal.RequestedBy,
         RequestedByAgent = proposal.RequestedByAgent,
+        Authority = proposal.Authority,
         Reason = proposal.Audit.Reason,
         CorrelationId = proposal.Audit.CorrelationId,
         IdempotencyKey = proposal.Audit.IdempotencyKey,
@@ -556,6 +592,19 @@ internal sealed partial class OperationGateway : IOperationGateway
                 EvidenceRefs = proposal.AutonomyMetadata.EvidenceRefs,
             },
     };
+
+    private static OperationGatewayRequest EnsureOperationInstance(OperationGatewayRequest request)
+        => string.IsNullOrWhiteSpace(request.OperationInstanceId)
+            ? request with { OperationInstanceId = $"opinst-{Guid.NewGuid():N}" }
+            : request;
+
+    private static void ValidateAuthority(OperationAuthorityContext? authority)
+    {
+        if (authority is not null && !authority.TryValidate(out var error))
+        {
+            throw new InvalidOperationException($"Operation authority is invalid: {error}");
+        }
+    }
 
     private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(
         OperationGatewayRequest request,
