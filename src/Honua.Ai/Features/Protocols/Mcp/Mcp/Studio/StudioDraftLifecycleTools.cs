@@ -121,18 +121,33 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         // A non-admin caller can create only a draft they own. Admins retain
         // the REST surface's ability to assign an explicit owner.
         var ownerId = argument.OwnerId ?? actorId;
-        var draft = await lifecycleService.CreateDraftAsync(
-            new CreateStudioPackageDraftCommand
-            {
-                ItemId = argument.ItemId,
-                PackageKey = argument.PackageKey,
-                WorkspaceId = argument.WorkspaceId,
-                OwnerId = ownerId,
-                Envelope = envelope,
-                ActorId = actorId,
-                BaseVersionId = argument.BaseVersionId,
-            },
-            cancellationToken).ConfigureAwait(false);
+        StudioPackageDraft draft;
+        try
+        {
+            draft = await lifecycleService.CreateDraftAsync(
+                new CreateStudioPackageDraftCommand
+                {
+                    ItemId = argument.ItemId,
+                    PackageKey = argument.PackageKey,
+                    WorkspaceId = argument.WorkspaceId,
+                    OwnerId = ownerId,
+                    Envelope = envelope,
+                    ActorId = actorId,
+                    BaseVersionId = argument.BaseVersionId,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (StudioCompositionConflictException ex)
+        {
+            // The store performs this ownership check atomically with creation;
+            // map the race outcome to the stable MCP permission channel rather
+            // than leaking it as an internal error.
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: ex.Message,
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: OperatorOperation.Create);
+        }
 
         Audit(principal, ToolName, draft.DraftId, generationBefore: null, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);

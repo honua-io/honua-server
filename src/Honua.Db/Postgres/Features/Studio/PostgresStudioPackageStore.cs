@@ -1039,7 +1039,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             // The owner predicate makes the immutable ownership invariant
             // atomic with the upsert. A concurrent create cannot slip between
             // the MCP pointer check and draft insertion.
-            throw new InvalidOperationException("Studio content item is owned by another caller.");
+            throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
         }
     }
 
