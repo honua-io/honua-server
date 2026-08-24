@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties version="1.0">
+  <comment>Honua OGC API Processes 1.0 diagnostic profile</comment>
+  <entry key="iut">http://honua-server:8080/ogc/processes</entry>
+  <entry key="echoprocessid">honua-cite-echo</entry>
+  <entry key="processtestlimit">5</entry>
+  <entry key="testallprocesses">off</entry>
+</properties>

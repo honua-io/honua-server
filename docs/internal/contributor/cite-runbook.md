@@ -15,6 +15,7 @@ For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy O
 |---|---|---|---|
 | OGC API Features 1.0 | service | `run-cite-tests.sh` | `cite-conformance.yml` |
 | OGC API Tiles | service | `run-cite-tiles-tests.sh` | `cite-tiles-conformance.yml` |
+| OGC API Processes 1.0 | service diagnostic | `run-cite-ogcapi-processes-tests.sh` | `cite-ogcapi-processes-conformance.yml` |
 | OGC API Maps | service | `run-ogc-maps-conformance-tests.sh` (integration suite — not TeamEngine) | `ogc-maps-conformance.yml` |
 | WMS 1.3 | service | `run-cite-wms-tests.sh` | `cite-wms-conformance.yml` |
 | WMTS 1.0 | service | `run-cite-wmts-tests.sh` | `cite-wmts-conformance.yml` |
@@ -54,12 +55,18 @@ Interactive mode exposes:
 
 ## CI execution
 
-Each suite has a dedicated workflow (see table above) on a weekly schedule plus `workflow_dispatch`. None of these are PR-blocking — see [CI gate model](../ci/gate-model.md) for the tier rationale.
+Each suite has a dedicated scheduled workflow (see the workflow inventory for its cadence) plus `workflow_dispatch`. None of these are PR-blocking — see [CI gate model](../ci/gate-model.md) for the tier rationale.
 
-CI baseline for every suite:
+CI baseline for required suites:
 - `failed_tests` must be `0`.
 - `total_tests` must be greater than `0`.
 - For format-level suites: `skipped_tests` and `canttell_tests` must also be `0` (these run a strict no-skip `applicable` profile by default).
+
+The OGC API Processes lane is diagnostic until #3405 is satisfied. It retains
+failed and skipped verdicts as provisional observations, but still fails on a
+missing summary, nonzero ETS exit, timeout, zero tests, an all-skip/CantTell
+run, unknown test classes, or result-accounting drift. A diagnostic-red run is
+not a public conformance claim and is not added to the passing CITE aggregate.
 
 Artifacts (markdown summary + raw TeamEngine outputs or TRX) are uploaded with 30-day retention. Preserve anything you need for release or certification evidence outside the normal workflow artifact store.
 
@@ -93,6 +100,23 @@ For format-level suites, the upstream OGC ETS images are pinned to `:latest` (KM
 - **Scope:** Core, Tileset, Tilesets List, Dataset Tilesets, Geodata Tilesets, MVT, OpenAPI 3.0.
 - **Profiles:** `full` (default), `default` (core classes), `minimal`.
 - **Test params:** `docker/cite/ogc-api-tiles/config/test-params.xml`.
+
+### OGC API Processes 1.0
+
+- **Scope:** official `ets-ogcapi-processes10` Core/JSON diagnostic, including landing, conformance, process discovery, process descriptions, execution, and job-list observations.
+- **Profile:** `diagnostic` only. The workflow runs outside PR CI daily at 08:00 UTC and on demand.
+- **Test params:** `docker/cite/ogc-api-processes/config/test-run-props.xml`. This is a suite-owned CITE configuration/seed exception; it does not claim to consume the shared canonical-client fixture. Its `echoprocessid` is the deterministic `honua-cite-echo` process.
+- **Fixture isolation:** `honua-cite-echo` is registered only when the exact `OgcProcesses:CertificationProfile=ogcapi-processes10` opt-in, `ASPNETCORE_ENVIRONMENT=Test`, and `HONUA_REGISTER_TEST_INFRASTRUCTURE=true` are all present. It is absent from normal and production process catalogs. The adapter still submits through the canonical authorization, durable job store, Redis queue, worker dispatcher, status, and result-package path; the profile contributes only its catalog definition, bounded executor, and by-value result projection.
+- **Admission profile:** canonical execution admission remains enabled. The isolated Compose harness raises its concurrency, submission-window, and cost ceilings to 100 because the pinned ETS bursts 33 independent job cases concurrently; the bounded test-only ceilings prevent load shedding from replacing protocol observations without changing production defaults.
+- **Fixture behavior:** the echo process exposes ordered literal, object, binary, mixed, array, bounding-box, and bounded `pause` inputs matching the pinned ETS discovery rules. It never fetches an input reference, limits pause to ten seconds, respects requested value outputs, and fails closed on invalid bindings or result artifacts.
+- **Upstream pin:** commit `75abd1f37fc3aad95163fdce2e33e393b1ba5a88`, built as the official all-in-one Java 17 JAR. The pinned POM excludes its own `testgeotiff.tiff` testdata even though `Jobs.java` loads that exact upstream resource from the classpath; the harness adds only the byte-identical pinned resource to the JAR and records its digest in ETS provenance. No executable class or assertion is changed.
+- **Artifacts:** raw TestNG/EARL output, normalized per-test observations and exact class mappings, configuration and result digests, ETS provenance, server image inspection, source/image provenance, and server logs.
+- **Evidence status:** diagnostic only. Promotion requires seven complete green runs and an exact-candidate rerun under #3405.
+- **Sanity check:** open `http://localhost:8101/ogc/processes/processes` after the runner starts its Compose stack.
+
+```bash
+./scripts/conformance/cite/run-cite-ogcapi-processes-tests.sh --profile diagnostic --verbose
+```
 
 ### OGC API Maps
 

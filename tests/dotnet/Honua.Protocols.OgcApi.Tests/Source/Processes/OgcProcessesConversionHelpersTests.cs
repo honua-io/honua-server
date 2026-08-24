@@ -20,6 +20,7 @@ public sealed class OgcProcessesConversionHelpersTests
     private const string BaseUrl = "https://example.com";
     private const string ProcessId = "honua-geoprocessing";
     private const string ResultsRelation = "http://www.opengis.net/def/rel/ogc/1.0/results";
+    private const string MonitorRelation = "monitor";
 
     [Fact]
     [Operation(Operations.JobStatus)]
@@ -64,6 +65,39 @@ public sealed class OgcProcessesConversionHelpersTests
         statusInfo.Links.Should().NotBeNull();
         statusInfo.Links!.Value.Should().NotContain(l => l.Rel == ResultsRelation,
             "non-terminal jobs should never have a results link");
+    }
+
+    [Theory]
+    [InlineData(ExecutionJobStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Running)]
+    [InlineData(ExecutionJobStatus.Provisioning)]
+    [Operation(Operations.JobStatus)]
+    public void ToOgcStatusInfo_NonTerminalJob_AdvertisesMonitorLink(ExecutionJobStatus status)
+    {
+        var job = CreateJob(status);
+
+        var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(job, ProcessId, BaseUrl);
+
+        statusInfo.Links.Should().NotBeNull();
+        statusInfo.Links!.Value.Should().ContainSingle(
+            l => l.Rel == MonitorRelation && l.Href == $"{BaseUrl}/ogc/processes/jobs/{job.OperationId}",
+            "clients need an explicit monitor relation to discover asynchronous polling");
+    }
+
+    [Theory]
+    [InlineData(ExecutionJobStatus.Succeeded)]
+    [InlineData(ExecutionJobStatus.Failed)]
+    [InlineData(ExecutionJobStatus.Cancelled)]
+    [Operation(Operations.JobStatus)]
+    public void ToOgcStatusInfo_TerminalJob_DoesNotAdvertiseMonitorLink(ExecutionJobStatus status)
+    {
+        var job = CreateJob(status);
+
+        var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(job, ProcessId, BaseUrl);
+
+        statusInfo.Links.Should().NotBeNull();
+        statusInfo.Links!.Value.Should().NotContain(l => l.Rel == MonitorRelation,
+            "terminal jobs no longer need a polling relation");
     }
 
     [Fact]

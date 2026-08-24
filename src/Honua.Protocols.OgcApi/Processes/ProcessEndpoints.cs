@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -75,6 +76,7 @@ internal static class ProcessEndpoints
             .WithName("OgcProcessesList")
             .WithSummary("List available processes")
             .Produces<OgcProcessList>()
+            .Produces<OgcProcessError>(StatusCodes.Status400BadRequest)
             .ExcludeFromDescription();
 
         endpoints.MapGet($"{BasePath}/processes/{{processId}}", GetProcessDescription)
@@ -111,10 +113,26 @@ internal static class ProcessEndpoints
     private static IResult GetProcessList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IProcessCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog)
     {
         EnrichActivity("GetProcessList");
         OgcProcessesLog.ProcessListRequested(logger);
+
+        if (!TryParseProcessListLimit(context.Request, out var limit))
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Invalid limit",
+                "The 'limit' parameter must be a positive integer.");
+        }
+
+        if (!TryParseProcessListOffset(context.Request, out var offset))
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Invalid offset",
+                "The 'offset' parameter must be a non-negative integer.");
+        }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var summary = CanonicalProcessSummary with
@@ -127,31 +145,104 @@ internal static class ProcessEndpoints
                     "Process description"))
         };
 
-        var processBuilder = ImmutableArray.CreateBuilder<OgcProcessSummary>();
-        processBuilder.Add(summary);
-
+        var allProcesses = ImmutableArray.CreateBuilder<OgcProcessSummary>();
+        allProcesses.Add(summary);
         foreach (var definition in processCatalog.ListProcesses()
-                     .Where(ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess)
+                     .Where(IsPublishedOgcProcess)
                      .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
         {
-            processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
+            allProcesses.Add(ToOgcProcessSummary(definition, baseUrl));
+        }
+
+        var pageStart = Math.Min(offset, allProcesses.Count);
+        var available = allProcesses.Count - pageStart;
+        var pageSize = limit.HasValue ? Math.Min(limit.Value, available) : available;
+        var page = allProcesses
+            .Skip(pageStart)
+            .Take(pageSize)
+            .ToImmutableArray();
+
+        var processListUrl = $"{baseUrl}{BasePath}/processes";
+        var selfUrl = BuildProcessListUrl(processListUrl, limit, offset);
+        var links = ImmutableArray.CreateBuilder<Link>();
+        links.Add(
+            Link.Create(
+                selfUrl,
+                RelationTypes.Self,
+                MediaTypes.Json,
+                "This document"));
+
+        var nextOffset = pageStart + pageSize;
+        if (limit.HasValue && nextOffset < allProcesses.Count)
+        {
+            links.Add(
+                Link.Create(
+                    BuildProcessListUrl(processListUrl, limit, nextOffset),
+                    RelationTypes.Next,
+                    MediaTypes.Json,
+                    "Next page"));
         }
 
         var processList = new OgcProcessList
         {
-            Processes = processBuilder.ToImmutable(),
-            Links = ImmutableArray.Create(
-                Link.Create($"{baseUrl}{BasePath}/processes", RelationTypes.Self, MediaTypes.Json, "This document"))
+            Processes = page,
+            Links = links.ToImmutable()
         };
 
         return Results.Json(processList, OgcProcessesJsonContext.Default.OgcProcessList, MediaTypes.Json);
+    }
+
+    private static bool TryParseProcessListLimit(HttpRequest request, out int? limit)
+    {
+        limit = null;
+        if (!request.Query.TryGetValue("limit", out var values))
+        {
+            return true;
+        }
+
+        if (values.Count != 1 ||
+            !int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+            parsed <= 0)
+        {
+            return false;
+        }
+
+        limit = parsed;
+        return true;
+    }
+
+    private static bool TryParseProcessListOffset(HttpRequest request, out int offset)
+    {
+        offset = 0;
+        if (!request.Query.TryGetValue("offset", out var values))
+        {
+            return true;
+        }
+
+        return values.Count == 1
+            && int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out offset);
+    }
+
+    private static string BuildProcessListUrl(string processListUrl, int? limit, int offset)
+    {
+        if (!limit.HasValue)
+        {
+            return offset == 0
+                ? processListUrl
+                : $"{processListUrl}?offset={offset.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        var url = $"{processListUrl}?limit={limit.Value.ToString(CultureInfo.InvariantCulture)}";
+        return offset == 0
+            ? url
+            : $"{url}&offset={offset.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static IResult GetProcessDescription(
         string processId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IProcessCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog)
     {
         EnrichActivity("GetProcess");
         OgcProcessesLog.ProcessDescriptionRequested(logger, processId);
@@ -170,13 +261,21 @@ internal static class ProcessEndpoints
         }
 
         var definition = processCatalog.GetProcess(processId);
-        if (definition == null || !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+        if (definition == null || !IsPublishedOgcProcess(definition))
         {
             OgcProcessesLog.ProcessNotFound(logger, processId);
             return OgcProcessesResults.NoSuchProcess(processId);
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        if (OgcProcessesCiteEchoFixture.IsDefinition(definition))
+        {
+            return Results.Json(
+                OgcProcessesCiteEchoFixture.CreateDescription(baseUrl),
+                OgcProcessesJsonContext.Default.OgcProcessDescription,
+                MediaTypes.Json);
+        }
+
         return Results.Json(
             ToOgcProcessDescription(definition, baseUrl),
             OgcProcessesJsonContext.Default.OgcProcessDescription,
@@ -188,7 +287,7 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IGeoprocessingJobService jobService,
-        IProcessCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -223,7 +322,7 @@ internal static class ProcessEndpoints
             var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : processCatalog.GetProcess(processId);
-            if (definition != null && !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+            if (definition != null && !IsPublishedOgcProcess(definition))
             {
                 definition = null;
             }
@@ -280,6 +379,29 @@ internal static class ProcessEndpoints
                     $"Response mode '{request.Response}' is not supported. V1 only supports 'document' mode.");
             }
 
+            if (definition != null
+                && OgcProcessesCiteEchoFixture.IsDefinition(definition)
+                && !OgcProcessesCiteEchoFixture.TryValidateInputs(request.Inputs, out var inputError))
+            {
+                OgcProcessesLog.PlanStructureInvalid(
+                    logger,
+                    processId,
+                    inputError ?? "Unknown CITE echo input validation error.");
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid process input",
+                    inputError ?? "The CITE echo process input is invalid.");
+            }
+
+            if ((definition == null || !OgcProcessesCiteEchoFixture.IsDefinition(definition))
+                && request.Outputs is { Count: > 0 })
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid output selection",
+                    $"Process '{processId}' does not support explicit output selection.");
+            }
+
             if (!TryBuildAnalysisPlan(processId, request, definition, out var analysisPlan, out var parseError))
             {
                 OgcProcessesLog.PlanStructureInvalid(logger, processId, parseError ?? "Unknown plan parsing error.");
@@ -298,14 +420,32 @@ internal static class ProcessEndpoints
             };
             if (definition != null)
             {
-                AddOutputBindings(metadata, definition);
+                if (OgcProcessesCiteEchoFixture.IsDefinition(definition))
+                {
+                    if (!OgcProcessesCiteEchoFixture.TryAddOutputBindings(
+                            metadata,
+                            request.Inputs,
+                            request.Outputs,
+                            out var outputError))
+                    {
+                        return OgcProcessesResults.Error(
+                            StatusCodes.Status400BadRequest,
+                            "Invalid output selection",
+                            outputError ?? "The requested output selection is invalid.");
+                    }
+                }
+                else
+                {
+                    AddOutputBindings(metadata, definition);
+                }
             }
 
             var jobRecord = await jobService
-                .SubmitJobAsync(
+                .SubmitProtocolJobAsync(
                     analysisPlan!,
                     idempotencyKey: null,
                     context.User,
+                    processCatalog,
                     metadata,
                     context.RequestAborted)
                 .ConfigureAwait(false);
@@ -506,7 +646,9 @@ internal static class ProcessEndpoints
                 return false;
             }
 
-            inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
+            inputs[input.Key] = OgcProcessesCiteEchoFixture.IsDefinition(processDefinition)
+                ? input.Value.GetRawText()
+                : JsonElementToCanonicalInput(input.Value);
         }
 
         var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
@@ -554,6 +696,10 @@ internal static class ProcessEndpoints
                     MediaTypes.Json,
                     "Process description"))
         };
+
+    private static bool IsPublishedOgcProcess(ProcessDefinition definition)
+        => ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition)
+           || OgcProcessesCiteEchoFixture.IsDefinition(definition);
 
     private static OgcProcessDescription ToOgcProcessDescription(ProcessDefinition definition, string baseUrl)
         => new()

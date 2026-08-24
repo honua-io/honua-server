@@ -257,7 +257,8 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        [FromServices] IGeoprocessingJobService jobService)
+        [FromServices] IGeoprocessingJobService jobService,
+        [FromServices] IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobresults");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
@@ -394,13 +395,32 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
-        var resultsDocument = ToOgcResultsDocument(
-            resultPackage,
-            BaseUrlResolver.GetBaseUrl(context),
-            jobId,
-            context.RequestServices
-                .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
-            logger);
+        OgcResultsDocument resultsDocument;
+        if (OgcProcessesCiteEchoFixture.IsJob(job))
+        {
+            if (!TryToCiteEchoResultsDocument(
+                    job,
+                    resultPackage,
+                    executorOptions.CurrentValue.MaxArtifactBytes,
+                    out resultsDocument))
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status500InternalServerError,
+                    "Invalid certification result",
+                    "The certification fixture produced invalid result evidence.");
+            }
+        }
+        else
+        {
+            resultsDocument = ToOgcResultsDocument(
+                resultPackage,
+                BaseUrlResolver.GetBaseUrl(context),
+                jobId,
+                context.RequestServices
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
+                logger);
+        }
+
         return Results.Json(
             resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
@@ -950,6 +970,43 @@ internal static class JobEndpoints
         }
 
         return new OgcResultsDocument { Outputs = outputs };
+    }
+
+    private static bool TryToCiteEchoResultsDocument(
+        ExecutionJobRecord job,
+        AnalysisResultPackage resultPackage,
+        long maxArtifactBytes,
+        out OgcResultsDocument resultsDocument)
+    {
+        if (!OgcProcessesCiteEchoFixture.TryResolveOutputBindings(
+                job.Spec.Parameters,
+                out var outputIds)
+            || resultPackage.Artifacts.Count != outputIds.Length)
+        {
+            resultsDocument = new OgcResultsDocument();
+            return false;
+        }
+
+        var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        for (var index = 0; index < resultPackage.Artifacts.Count; index++)
+        {
+            var artifact = resultPackage.Artifacts[index];
+            var outputName = ResolveOutputName(artifact, index);
+            if (!string.Equals(outputName, outputIds[index], StringComparison.Ordinal)
+                || !OgcProcessesCiteEchoExecutor.TryDecodeArtifact(
+                    artifact.Uri,
+                    maxArtifactBytes,
+                    out var value))
+            {
+                resultsDocument = new OgcResultsDocument();
+                return false;
+            }
+
+            outputs[outputName] = value;
+        }
+
+        resultsDocument = new OgcResultsDocument { Outputs = outputs };
+        return true;
     }
 
     private static string ResolveOutputName(ArtifactRef artifact, int index)
