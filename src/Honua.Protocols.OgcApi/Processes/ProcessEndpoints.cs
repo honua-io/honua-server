@@ -694,7 +694,27 @@ internal static class ProcessEndpoints
                 return false;
             }
 
-            return TryParseAnalysisPlan(planElement, out plan, out error);
+            if (!TryParseAnalysisPlan(planElement, out plan, out error))
+            {
+                return false;
+            }
+
+            // The certification echo fixture is a protocol-only process. A
+            // canonical plan is executed as `honua-geoprocessing`, so allowing
+            // an echo step here would create a job whose durable protocol
+            // identity cannot be handled by the echo executor.
+            if (plan!.Steps.Any(step =>
+                    string.Equals(
+                        step.ProcessId,
+                        OgcProcessesCiteEchoFixture.ProcessId,
+                        StringComparison.Ordinal)))
+            {
+                error = $"Canonical plans cannot contain protocol-only process '{OgcProcessesCiteEchoFixture.ProcessId}'.";
+                plan = null;
+                return false;
+            }
+
+            return true;
         }
 
         if (request.Inputs == null)
