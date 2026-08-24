@@ -230,7 +230,7 @@ internal static class StudioMcpSchemas
             },
             "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
-            "ownerId": { "type": "string", "maxLength": 200, "description": "Owner principal identifier." },
+            "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field and become the owner automatically." },
             "body": { "type": "object", "description": "Optional initial composition/family body. Omit to start empty." },
             "itemId": { "type": "string", "format": "uuid", "description": "Existing content item id, to add a draft under an existing item." },
             "baseVersionId": { "type": "string", "format": "uuid", "description": "Immutable version this draft was reopened from, when applicable." }
@@ -261,7 +261,7 @@ internal static class StudioMcpSchemas
             "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
-            "ownerId": { "type": "string", "maxLength": 200, "description": "Owner principal identifier." },
+            "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field; explicit non-admin assignment is rejected." },
             "body": { "type": "object", "description": "Replacement composition/family body. Omit to leave the existing body unchanged." }
           }
         }

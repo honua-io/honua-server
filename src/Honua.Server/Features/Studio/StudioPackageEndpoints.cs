@@ -474,17 +474,18 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            StudioContentItemPointers? existingPointers = null;
             // honua-server#3001: creating a draft under an existing content item must be
             // authorized against that item's recorded owner, not treated as a brand-new
             // (ownerless) resource.
             if (request.ItemId is { } existingItemId)
             {
-                var pointers = await service.GetPointersAsync(existingItemId, context.RequestAborted).ConfigureAwait(false);
-                if (pointers is not null)
+                existingPointers = await service.GetPointersAsync(existingItemId, context.RequestAborted).ConfigureAwait(false);
+                if (existingPointers is not null)
                 {
                     var authResult = await EnsureAuthorizedAsync(
                         authorization, context,
-                        StudioAuthorizationOperation.CreateDraft, pointers.OwnerId,
+                        StudioAuthorizationOperation.CreateDraft, existingPointers.OwnerId,
                         resourceType: "studio-content-item", resourceId: existingItemId.ToString("D")).ConfigureAwait(false);
                     if (authResult is not null)
                     {
@@ -495,14 +496,23 @@ internal static class StudioPackageEndpoints
 
             var actor = ConsolePrincipal.ResolveActorId(context.User);
 
-            // honua-server#3001: once end-user mode is on, a non-admin caller may only ever
-            // own the drafts they create -- ignore any client-supplied ownerId (which would
-            // otherwise let a caller assign a draft to someone else) rather than trusting it.
-            // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null, so
-            // omitting it here resolves ownership to the authenticated caller.
-            var ownerId = !authorization.IsAdmin(context.User) && authorization.IsEndUserAuthorizationEnabled
-                ? null
-                : request.OwnerId;
+            if (!authorization.IsAdmin(context.User)
+                && authorization.IsEndUserAuthorizationEnabled
+                && request.OwnerId is not null)
+            {
+                return await DenyAsync(
+                    authorization,
+                    context,
+                    StudioAuthorizationOperation.CreateDraft,
+                    "studio-package-draft",
+                    request.ItemId?.ToString("D"),
+                    "Assigning a Studio draft owner requires the admin role.",
+                    StudioAuthorizationService.OwnerAssignmentAdminRequiredCode).ConfigureAwait(false);
+            }
+
+            // Existing-item creates inherit the recorded item owner when the request omits
+            // ownerId, matching the MCP lifecycle path. New-item creates fall back to actor.
+            var ownerId = request.OwnerId ?? existingPointers?.OwnerId;
 
             var draft = await service.CreateDraftAsync(
                 new CreateStudioPackageDraftCommand
@@ -511,6 +521,8 @@ internal static class StudioPackageEndpoints
                     PackageKey = request.PackageKey,
                     WorkspaceId = request.WorkspaceId,
                     OwnerId = ownerId,
+                    ExpectedExistingItemOwnerId = existingPointers?.OwnerId,
+                    ExpectedExistingItemPresent = existingPointers is not null,
                     Envelope = request.Envelope,
                     ActorId = actor,
                 },
@@ -662,13 +674,21 @@ internal static class StudioPackageEndpoints
 
             var isAdmin = authorization.IsAdmin(context.User);
 
-            // honua-server#3001: once end-user mode is on, a non-admin caller cannot transfer
-            // ownership of a draft they are otherwise authorized to edit -- ignore any
-            // client-supplied ownerId (UpdateStudioPackageDraftCommand.OwnerId falls back to the
-            // existing owner when null) rather than trusting it.
-            var ownerId = !isAdmin && authorization.IsEndUserAuthorizationEnabled
-                ? null
-                : request.OwnerId;
+            if (!isAdmin
+                && authorization.IsEndUserAuthorizationEnabled
+                && request.OwnerId is not null)
+            {
+                return await DenyAsync(
+                    authorization,
+                    context,
+                    StudioAuthorizationOperation.UpdateDraft,
+                    "studio-package-draft",
+                    draftId.ToString("D"),
+                    "Assigning a Studio draft owner requires the admin role.",
+                    StudioAuthorizationService.OwnerAssignmentAdminRequiredCode).ConfigureAwait(false);
+            }
+
+            var ownerId = request.OwnerId;
 
             var draft = await service.UpdateDraftAsync(
                 draftId,

@@ -398,7 +398,11 @@ public sealed class StudioControlMcpToolTests
     }
 
     private Microsoft.AspNetCore.Http.DefaultHttpContext MockedHttpContext() =>
-        McpTestFactory.AuthenticatedHttpContextWithServices(services => services.AddSingleton(_lifecycleService));
+        McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
 
     private static StudioPackageDraft MockDraft(long generation, bool withControl = false)
     {
@@ -472,6 +476,7 @@ public sealed class StudioControlMcpToolTests
             {
                 registrations.AddSingleton(lifecycle);
                 registrations.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+                McpTestFactory.AddAllowingStudioAuthorization(registrations);
             });
 
             var createTool = new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance);

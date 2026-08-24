@@ -77,7 +77,8 @@ internal static class McpErrorMapper
             Data = new McpErrorData
             {
                 Code = Codes.Unauthenticated,
-                RequiresReauthentication = true
+                RequiresReauthentication = true,
+                StudioAuthorizationCode = authEx.PolicyCode
             }
         },
 
@@ -87,7 +88,8 @@ internal static class McpErrorMapper
             Message = authEx.Message,
             Data = new McpErrorData
             {
-                Code = Codes.InsufficientScope
+                Code = Codes.InsufficientScope,
+                StudioAuthorizationCode = authEx.PolicyCode
             }
         },
 
@@ -97,7 +99,8 @@ internal static class McpErrorMapper
             Message = authEx.Message,
             Data = new McpErrorData
             {
-                Code = Codes.PermissionDenied
+                Code = Codes.PermissionDenied,
+                StudioAuthorizationCode = authEx.PolicyCode
             }
         },
 

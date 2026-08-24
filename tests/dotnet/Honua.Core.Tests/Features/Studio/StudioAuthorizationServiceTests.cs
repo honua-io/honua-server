@@ -126,6 +126,102 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_LegacyMcpSubjectOwner_AllowsOriginalPrincipal()
+    {
+        var service = BuildService(enabled: true, out _);
+
+        var decision = await service.AuthorizeAsync(
+            UserPrincipal(Alice),
+            Alice,
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: "Test:sub:alice");
+
+        Assert.True(decision.IsAllowed);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_LegacyMcpSubjectOwner_DeniesOtherPrincipal()
+    {
+        var service = BuildService(enabled: true, out _);
+
+        var decision = await service.AuthorizeAsync(
+            UserPrincipal(Bob),
+            Bob,
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: "Test:sub:alice");
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_AmbiguousLegacyMcpOwner_FailsClosed()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", Alice),
+            new Claim(ClaimTypes.Role, "creator"),
+        ], "Test"));
+
+        var decision = await service.AuthorizeAsync(
+            principal,
+            service.ResolveCallerId(principal),
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: "Test:authenticated");
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_LegacyIdentityNameOwner_FailsClosed()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, Alice),
+            new Claim(ClaimTypes.Role, "creator"),
+        ], "Test"));
+
+        var decision = await service.AuthorizeAsync(
+            principal,
+            service.ResolveCallerId(principal),
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: "Test:name:alice");
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("11111111-2222-3333-4444-555555555555")]
+    public async Task AuthorizeAsync_FlagOn_LegacyApiKeyNameOwner_FailsClosed(string? apiKeyId)
+    {
+        var service = BuildService(enabled: true, out _);
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, "shared-studio-key"),
+            new(ClaimTypes.Role, "creator"),
+        };
+        if (apiKeyId is not null)
+        {
+            claims.Add(new Claim("api_key_id", apiKeyId));
+        }
+
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "ApiKey"));
+        var decision = await service.AuthorizeAsync(
+            principal,
+            service.ResolveCallerId(principal),
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: "ApiKey:name:shared-studio-key");
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
     public async Task AuthorizeAsync_FlagOn_NonAdminCrossUser_PublishedReadAllowed()
     {
         var service = BuildService(enabled: true, out _);

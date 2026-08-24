@@ -47,7 +47,8 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Description =
             "Create a mutable Studio package lifecycle draft (query, analysis, map, dashboard, report, form, app, workflow, gp, or etl family). "
             + "The composition a user and agent build IS this draft (AD-8): the returned draft's generation must be passed as `generation` on "
-            + "every subsequent honua_studio_update_draft / composition-mutation call for optimistic concurrency.",
+            + "every subsequent honua_studio_update_draft / composition-mutation call for optimistic concurrency. "
+            + "The optional `ownerId` field is admin-only; non-admin callers must omit it and become the owner automatically.",
         InputSchema = StudioMcpSchemas.CreateDraftArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Write tool: it authors a new draft. Not destructive; not idempotent
@@ -62,7 +63,11 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioCreateDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Create,
+                StudioAuthorizationOperation.CreateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -85,19 +90,77 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             Body = argument.Body,
         };
 
-        var actorId = ActorIdFor(principal);
-        var draft = await lifecycleService.CreateDraftAsync(
-            new CreateStudioPackageDraftCommand
-            {
-                ItemId = argument.ItemId,
-                PackageKey = argument.PackageKey,
-                WorkspaceId = argument.WorkspaceId,
-                OwnerId = argument.OwnerId,
-                Envelope = envelope,
-                ActorId = actorId,
-                BaseVersionId = argument.BaseVersionId,
-            },
+        var authorization = RequireAuthorizationService(httpContext);
+        var actorId = ActorIdFor(authorization, principal);
+        var requestedOwnerId = argument.OwnerId;
+        // Match the REST lifecycle boundary: an explicit item id targets an
+        // existing content item's recorded owner; otherwise creation is
+        // authorized as a new resource owned by the authenticated caller.
+        var existingPointers = argument.ItemId is { } itemId
+            ? await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
+            : null;
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            StudioAuthorizationOperation.CreateDraft,
+            existingPointers is null ? actorId : existingPointers.OwnerId,
+            existingPointers is null ? null : argument.ItemId?.ToString("D"),
+            existingPointers is null ? "studio-package-draft" : "studio-content-item",
+            OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
+
+        // Apply the canonical Studio mode/ownership decision first. This keeps
+        // the end-user mode gate's policy code authoritative when that mode is
+        // disabled, before applying the admin-only owner-assignment rule.
+        await EnsureOwnerAssignmentAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            requestedOwnerId,
+            StudioAuthorizationOperation.CreateDraft,
+            argument.ItemId?.ToString("D"),
+            OperatorOperation.Create).ConfigureAwait(false);
+
+        // A non-admin caller can create only a draft they own. Admins retain
+        // the REST surface's ability to assign an explicit owner.
+        var ownerId = requestedOwnerId ?? existingPointers?.OwnerId ?? actorId;
+        StudioPackageDraft draft;
+        try
+        {
+            draft = await lifecycleService.CreateDraftAsync(
+                new CreateStudioPackageDraftCommand
+                {
+                    ItemId = argument.ItemId,
+                    PackageKey = argument.PackageKey,
+                    WorkspaceId = argument.WorkspaceId,
+                    OwnerId = ownerId,
+                    ExpectedExistingItemOwnerId = existingPointers?.OwnerId,
+                    ExpectedExistingItemPresent = existingPointers is not null,
+                    Envelope = envelope,
+                    ActorId = actorId,
+                    BaseVersionId = argument.BaseVersionId,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (StudioCompositionConflictException ex)
+        {
+            // The store performs this ownership check atomically with creation;
+            // map the race outcome to the stable MCP permission channel rather
+            // than leaking it as an internal error.
+            await RecordAuthorizationDecisionAsync(
+                httpContext,
+                StudioAuthorizationOperation.CreateDraft,
+                argument.ItemId?.ToString("D"),
+                StudioAuthorizationDecision.Deny("studio_authorization/owner_conflict", ex.Message),
+                resourceType: "studio-content-item").ConfigureAwait(false);
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: ex.Message,
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: OperatorOperation.Create,
+                policyCode: "studio_authorization/owner_conflict");
+        }
 
         Audit(principal, ToolName, draft.DraftId, generationBefore: null, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);
@@ -145,13 +208,24 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioGetDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Read,
+                StudioAuthorizationOperation.ReadDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.ReadDraft,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         Audit(principal, ToolName, draft.DraftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);
@@ -197,6 +271,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             "Replace a Studio package lifecycle draft's editable fields (packageKey, workspaceId, ownerId, schemaVersion, format, body) "
             + "with optimistic-generation checking. Pass the `generation` last read from honua_studio_get_draft/honua_studio_create_draft; "
             + "a stale generation returns a failed_precondition error — re-fetch and retry rather than blindly resubmitting. "
+            + "The optional `ownerId` field is admin-only; non-admin callers must omit it. "
             + "Does not accept publicationIntent: use honua_studio_propose_publication to record publish intent.",
         InputSchema = StudioMcpSchemas.UpdateDraftArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -215,7 +290,11 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioUpdateDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Create,
+                StudioAuthorizationOperation.UpdateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -233,7 +312,15 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             throw new GeoprocessingValidationException("'schemaVersion' is required.");
         }
 
-        var existing = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var existing = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.UpdateDraft,
+            OperatorOperation.Create,
+            cancellationToken).ConfigureAwait(false);
+        RequireAuthorizedGeneration(existing, generation);
         var envelope = existing.Envelope with
         {
             SchemaVersion = argument.SchemaVersion,
@@ -241,7 +328,16 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             Body = argument.Body ?? existing.Envelope.Body,
         };
 
-        var actorId = ActorIdFor(principal);
+        var authorization = RequireAuthorizationService(httpContext);
+        var actorId = ActorIdFor(authorization, principal);
+        await EnsureOwnerAssignmentAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            argument.OwnerId,
+            StudioAuthorizationOperation.UpdateDraft,
+            draftId.ToString("D"),
+            OperatorOperation.Create).ConfigureAwait(false);
         var updated = await ApplyUpdateAsync(
             lifecycleService,
             draftId,
@@ -311,14 +407,25 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioValidateDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Read,
+                StudioAuthorizationOperation.ValidateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
         var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.ValidateDraft,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         // Pure computation only — no UpdateDraftAsync/ValidateDraftAsync call,
         // so the draft's persisted generation is untouched.
@@ -379,14 +486,25 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioPreviewDraft");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Read,
+                StudioAuthorizationOperation.ValidateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
         var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.ValidateDraft,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
 
         // Pure computation only — mirrors StudioPackageLifecycleService.PreviewPlanAsync's
         // projection without calling it (that method persists via ValidateDraftAsync first).

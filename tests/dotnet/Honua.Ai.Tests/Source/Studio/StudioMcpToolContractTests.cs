@@ -62,6 +62,19 @@ public sealed class StudioMcpToolContractTests
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_*")]
+    public void ToolRoster_AdvertisesStudioAuthorizationCodeOnErrorBranch()
+    {
+        foreach (var tool in BuildAllTools())
+        {
+            var properties = tool.Describe().OutputSchema!.Value.GetProperty("properties");
+            properties.TryGetProperty("studioAuthorizationCode", out _).Should().BeTrue(
+                $"'{tool.Name}' must advertise the governed Studio denial code emitted at runtime");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     public async Task ProposePublication_NeverCallsVersionOrPointerMovingLifecycleMembers()
     {
@@ -231,6 +244,25 @@ public sealed class StudioMcpToolContractTests
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_WhenOwnershipPolicyIsNotComposed_FailsClosedAsUnavailable()
+    {
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>())
+            .Returns(BuildDraft(StudioPackageFamily.Map, generation: 1));
+        var tool = new GetStudioDraftTool(_jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpStudioDraftIdArgument { DraftId = DraftId },
+            StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(
+            services => services.AddSingleton(_lifecycleService));
+
+        var act = () => tool.InvokeAsync(httpContext, arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
     public async Task CreateDraft_WhenPackageKeyMissing_SurfacesInvalidArgument()
     {
@@ -253,6 +285,29 @@ public sealed class StudioMcpToolContractTests
         var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
+    public async Task CreateDraft_ExistingItemWithoutOwner_UsesRecordedItemOwner()
+    {
+        var itemId = Guid.NewGuid();
+        var recordedOwner = "recorded-owner";
+        _lifecycleService.GetPointersAsync(itemId, Arg.Any<CancellationToken>())
+            .Returns(new StudioContentItemPointers { ItemId = itemId, OwnerId = recordedOwner });
+        _lifecycleService.CreateDraftAsync(
+                Arg.Any<CreateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
+            .Returns(BuildDraft(StudioPackageFamily.Map, generation: 1));
+
+        var tool = new CreateStudioDraftTool(_jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($"{{\"itemId\":\"{itemId:D}\",\"packageKey\":\"existing-map\",\"family\":\"map\",\"schemaVersion\":\"1.0\"}}");
+
+        await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
+
+        await _lifecycleService.Received(1).CreateDraftAsync(
+            Arg.Is<CreateStudioPackageDraftCommand>(command => command.OwnerId == recordedOwner),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -368,13 +423,18 @@ public sealed class StudioMcpToolContractTests
     }
 
     private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleService() =>
-        McpTestFactory.AuthenticatedHttpContextWithServices(services => services.AddSingleton(_lifecycleService));
+        McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
 
     private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleServiceAndValidator() =>
         McpTestFactory.AuthenticatedHttpContextWithServices(services =>
         {
             services.AddSingleton(_lifecycleService);
             services.AddSingleton(_validator);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
         });
 
     private static IReadOnlyList<IMcpTool> BuildAllTools()
@@ -396,6 +456,8 @@ public sealed class StudioMcpToolContractTests
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
             new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
             new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
+            new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
+            new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
             new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
         ];
     }
