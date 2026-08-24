@@ -75,7 +75,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
         var principal = await EnsureAuthorizedAsync(
                 httpContext,
-                OperatorOperation.Create,
+                OperatorOperation.Update,
                 StudioAuthorizationOperation.UpdateDraft,
                 cancellationToken)
             .ConfigureAwait(false);

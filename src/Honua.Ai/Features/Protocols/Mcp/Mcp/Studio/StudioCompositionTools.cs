@@ -58,7 +58,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -145,7 +145,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -218,7 +218,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -299,7 +299,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -377,7 +377,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -454,7 +454,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -539,7 +539,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -622,7 +622,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -765,7 +765,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -854,7 +854,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -984,7 +984,7 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
         var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
+                httpContext, OperatorOperation.Update, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 

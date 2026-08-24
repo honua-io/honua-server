@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 
@@ -52,6 +53,18 @@ public sealed record OperationAuthorityContext
     public IReadOnlyList<string> PermissionCeiling { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Whether this authority was established from an OAuth bearer token. A missing value marks
+    /// a legacy record whose authentication provenance cannot be established and must fail closed.
+    /// </summary>
+    public bool? ScopeGoverned { get; init; }
+
+    /// <summary>Canonical resource family bound to the authority, when applicable.</summary>
+    public OperatorResourceType? ResourceType { get; init; }
+
+    /// <summary>Canonical operation bound to the authority, when applicable.</summary>
+    public OperatorOperation? Operation { get; init; }
+
+    /// <summary>
     /// Captures a bounded authority snapshot from an already-authenticated principal and the
     /// effective tenant selected by request middleware. Only identity, scope, and permission claims are
     /// retained; credentials and token material never enter the durable proposal.
@@ -66,21 +79,9 @@ public sealed record OperationAuthorityContext
             ?? throw new InvalidOperationException(
                 "An authenticated principal is required to capture operation authority.");
         var scheme = identity.AuthenticationType;
-        var actor = FirstNonBlank(
-            identity.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            identity.FindFirst("sub")?.Value,
-            identity.FindFirst(ApiKeyIdClaim)?.Value,
-            identity.FindFirst(ApiKeyNameClaim)?.Value,
-            identity.Name);
+        var actor = ResolveActor(identity);
         var issuer = identity.FindFirst("iss")?.Value ?? scheme;
-        var scopes = identity.Claims
-            .Where(claim => claim.Type is OperatorScopeCatalog.ScopeClaimType
-                or OperatorScopeCatalog.ScpClaimType
-                or OperatorScopeCatalog.ScopeClaimUri)
-            .SelectMany(claim => claim.Value.Split(
-                ' ',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            .Distinct(StringComparer.Ordinal)
+        var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
             .OrderBy(scope => scope, StringComparer.Ordinal)
             .ToArray();
         var permissions = identity.FindAll(ApiKeyPermissionClaim)
@@ -90,7 +91,14 @@ public sealed record OperationAuthorityContext
             .OrderBy(permission => permission, StringComparer.Ordinal)
             .ToArray();
 
-        return CreateValidated(issuer, actor, scheme, effectiveTenant, scopes, permissions);
+        return CreateValidated(
+            issuer,
+            actor,
+            scheme,
+            effectiveTenant,
+            scopes,
+            permissions,
+            OperatorScopeCatalog.IsScopeGoverned(principal));
     }
 
     /// <summary>
@@ -126,8 +134,19 @@ public sealed record OperationAuthorityContext
             "Service",
             effectiveTenant,
             Array.Empty<string>(),
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            scopeGoverned: false);
 
+    /// <summary>
+    /// Resolves the stable actor identifier used by both proposal creation and approval
+    /// separation-of-duties checks. Display names are only a final compatibility fallback.
+    /// </summary>
+    public static string? ResolveActor(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        var identity = principal.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+        return identity is null ? null : ResolveActor(identity);
+    }
     /// <summary>
     /// Validates the bounded, non-secret authority lineage before it is persisted.
     /// </summary>
@@ -174,11 +193,47 @@ public sealed record OperationAuthorityContext
         return true;
     }
 
+    /// <summary>
+    /// Returns whether the persisted scope ceiling still permits the canonical operation.
+    /// Non-OAuth authority remains governed by the normal grant/RBAC decision.
+    /// </summary>
+    public bool PermitsBoundOperation()
+    {
+        if (ScopeGoverned is null)
+        {
+            return false;
+        }
+
+        return !IsScopeGovernedForReplay()
+            || (ResourceType is not null
+                && Operation is { } operation
+                && OperatorScopeCatalog.PermitsOperation(
+                    ScopeCeiling.ToHashSet(StringComparer.Ordinal), operation));
+    }
+
+    /// <summary>
+    /// Returns whether durable replay must enforce an OAuth scope ceiling. New non-OAuth records
+    /// explicitly persist <see langword="false"/>; an absent legacy marker, a positive marker,
+    /// or retained scope data all fail closed as scope-governed.
+    /// </summary>
+    public bool IsScopeGovernedForReplay()
+        => ScopeGoverned is not false
+            || OAuthScopes.Count > 0
+            || ScopeCeiling.Count > 0;
+
     private static bool IsBounded(string? value, int maxLength)
         => !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength;
 
     private static string? FirstNonBlank(params string?[] candidates)
         => candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
+
+    private static string? ResolveActor(ClaimsIdentity identity)
+        => FirstNonBlank(
+            identity.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            identity.FindFirst("sub")?.Value,
+            identity.FindFirst(ApiKeyIdClaim)?.Value,
+            identity.FindFirst(ApiKeyNameClaim)?.Value,
+            identity.Name);
 
     private static OperationAuthorityContext CreateValidated(
         string? issuer,
@@ -186,7 +241,8 @@ public sealed record OperationAuthorityContext
         string? scheme,
         string effectiveTenant,
         IReadOnlyList<string> scopes,
-        IReadOnlyList<string> permissions)
+        IReadOnlyList<string> permissions,
+        bool scopeGoverned)
     {
         var authority = new OperationAuthorityContext
         {
@@ -198,6 +254,7 @@ public sealed record OperationAuthorityContext
             ScopeCeiling = scopes,
             Permissions = permissions,
             PermissionCeiling = permissions,
+            ScopeGoverned = scopeGoverned,
         };
 
         if (!authority.TryValidate(out var error))

@@ -256,12 +256,11 @@ public sealed class OperationGatewayApprovalConcurrencyTests
 
     private static OperationAuthorityContext ValidAuthority() => new()
     {
-        Issuer = "https://issuer.example",
+        Issuer = "test-service",
         Actor = "proposer",
-        Scheme = "Bearer",
+        Scheme = "Service",
         EffectiveTenant = "tenant-1",
-        OAuthScopes = ["service:read", "service:write"],
-        ScopeCeiling = ["service:write"],
+        ScopeGoverned = false,
     };
 
     private static OperationGateway BuildGateway(

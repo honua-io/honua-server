@@ -179,12 +179,11 @@ public sealed class GatewayExecutorCompletenessTests
             RequestedBy = "agent:proposer",
             Authority = new OperationAuthorityContext
             {
-                Issuer = "https://issuer.example",
+                Issuer = "test-service",
                 Actor = "agent:proposer",
-                Scheme = "Bearer",
+                Scheme = "Service",
                 EffectiveTenant = "tenant-1",
-                OAuthScopes = ["service:write"],
-                ScopeCeiling = ["service:write"],
+                ScopeGoverned = false,
             },
             ExecutionPayload = payload,
         });

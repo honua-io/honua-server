@@ -110,6 +110,29 @@ public sealed class OperationAuthorityContractTests
         error.Should().Contain("permission ceiling");
     }
 
+    [Fact]
+    public void PreMarkerBearerAuthority_IsScopeGovernedForReplay()
+    {
+        var authority = Authority([], []);
+
+        authority.ScopeGoverned.Should().BeNull();
+        authority.IsScopeGovernedForReplay().Should().BeTrue();
+        authority.PermitsBoundOperation().Should().BeFalse();
+    }
+
+    [Fact]
+    public void OperatorBearerWithoutOAuthScopes_RemainsGrantGoverned()
+    {
+        var authority = Authority([], []) with
+        {
+            Scheme = "OperatorBearer",
+            ScopeGoverned = false,
+        };
+
+        authority.IsScopeGovernedForReplay().Should().BeFalse();
+        authority.PermitsBoundOperation().Should().BeTrue();
+    }
+
     private static OperationAuthorityContext Authority(
         IReadOnlyList<string> scopes,
         IReadOnlyList<string> ceiling)

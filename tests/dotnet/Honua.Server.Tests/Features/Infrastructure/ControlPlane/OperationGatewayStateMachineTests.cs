@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -185,6 +186,110 @@ public sealed class OperationGatewayStateMachineTests
     }
 
     [Fact]
+    public async Task ApplyApprovedProposal_WhenPersistedScopeCeilingNoLongerPermitsOperation_FailsBeforeClaim()
+    {
+        var proposal = CreateProposal("p-stale-scope", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                OAuthScopes = [OperatorScopeCatalog.Read],
+                ScopeCeiling = [OperatorScopeCatalog.Read],
+                ScopeGoverned = true,
+                ResourceType = OperatorResourceType.Deployment,
+                Operation = OperatorOperation.Publish,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-stale-scope", "admin");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_ScopeGovernedLegacyRecordWithoutBinding_FailsBeforeClaim()
+    {
+        var proposal = CreateProposal("p-missing-binding", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                OAuthScopes = [OperatorScopeCatalog.Full],
+                ScopeCeiling = [OperatorScopeCatalog.Full],
+                ScopeGoverned = true,
+                ResourceType = null,
+                Operation = null,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-missing-binding", "admin");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ApplyApprovedProposal_PreMarkerRecordWithoutBinding_FailsBeforeClaim(
+        bool retainsRecognizedScope)
+    {
+        var scopes = retainsRecognizedScope
+            ? new[] { OperatorScopeCatalog.Full }
+            : Array.Empty<string>();
+        var proposal = CreateProposal("p-pre-marker-bearer", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                Scheme = retainsRecognizedScope ? "Bearer" : "Federation",
+                OAuthScopes = scopes,
+                ScopeCeiling = scopes,
+                ScopeGoverned = null,
+                ResourceType = null,
+                Operation = null,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bearer", "admin");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_PreMarkerRecordWithPermittedBinding_FailsBeforeClaim()
+    {
+        var proposal = CreateProposal("p-pre-marker-bound", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                Scheme = "Federation",
+                OAuthScopes = [OperatorScopeCatalog.Publish],
+                ScopeCeiling = [OperatorScopeCatalog.Publish],
+                ScopeGoverned = null,
+                ResourceType = OperatorResourceType.Deployment,
+                Operation = OperatorOperation.Publish,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bound", "admin");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Fact]
     public async Task ApplyApprovedProposal_WhenExecutorThrows_ReachesTerminalFailed()
     {
         // Executor exceptions must also yield terminal Failed (pre-existing behaviour;
@@ -224,12 +329,11 @@ public sealed class OperationGatewayStateMachineTests
 
     private static OperationAuthorityContext ValidAuthority() => new()
     {
-        Issuer = "https://issuer.example",
+        Issuer = "test-service",
         Actor = "proposer",
-        Scheme = "Bearer",
+        Scheme = "Service",
         EffectiveTenant = "tenant-1",
-        OAuthScopes = ["service:write"],
-        ScopeCeiling = ["service:write"],
+        ScopeGoverned = false,
     };
 
     private static OperationGateway BuildGateway(
