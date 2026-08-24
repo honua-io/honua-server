@@ -496,11 +496,14 @@ internal static class StudioPackageEndpoints
 
             var actor = ConsolePrincipal.ResolveActorId(context.User);
 
-            // honua-server#3001: once end-user mode is on, a non-admin caller may only ever
-            // own the drafts they create -- ignore any client-supplied ownerId (which would
-            // otherwise let a caller assign a draft to someone else) rather than trusting it.
-            // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null, so
-            // omitting it here resolves ownership to the authenticated caller.
+            if (!authorization.IsAdmin(context.User)
+                && authorization.IsEndUserAuthorizationEnabled
+                && request.OwnerId is not null)
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null.
             var ownerId = !authorization.IsAdmin(context.User) && authorization.IsEndUserAuthorizationEnabled
                 ? null
                 : request.OwnerId;
