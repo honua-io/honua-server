@@ -500,7 +500,14 @@ internal static class StudioPackageEndpoints
                 && authorization.IsEndUserAuthorizationEnabled
                 && request.OwnerId is not null)
             {
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
+                return await DenyAsync(
+                    authorization,
+                    context,
+                    StudioAuthorizationOperation.CreateDraft,
+                    "studio-package-draft",
+                    request.ItemId?.ToString("D"),
+                    "Assigning a Studio draft owner requires the admin role.",
+                    StudioAuthorizationService.OwnerAssignmentAdminRequiredCode).ConfigureAwait(false);
             }
 
             // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null.
@@ -671,7 +678,14 @@ internal static class StudioPackageEndpoints
                 && authorization.IsEndUserAuthorizationEnabled
                 && request.OwnerId is not null)
             {
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
+                return await DenyAsync(
+                    authorization,
+                    context,
+                    StudioAuthorizationOperation.UpdateDraft,
+                    "studio-package-draft",
+                    draftId.ToString("D"),
+                    "Assigning a Studio draft owner requires the admin role.",
+                    StudioAuthorizationService.OwnerAssignmentAdminRequiredCode).ConfigureAwait(false);
             }
 
             var ownerId = request.OwnerId;
