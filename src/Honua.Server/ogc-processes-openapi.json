@@ -83,12 +83,40 @@
       "get": {
         "summary": "List available processes",
         "operationId": "OgcProcessesList",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Process list",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ProcessList" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
               }
             }
           }
@@ -601,6 +629,7 @@
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
+          "minOccurs": { "type": "integer", "minimum": 0 },
           "schema": { "$ref": "#/components/schemas/ProcessIoSchema" }
         }
       },
@@ -620,9 +649,66 @@
             "type": "string",
             "description": "JSON Schema type (string, number, object, array, etc.)."
           },
+          "format": {
+            "type": "string",
+            "description": "JSON Schema format keyword."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "JSON Schema regular-expression constraint for string values."
+          },
           "contentMediaType": {
             "type": "string",
             "description": "Content media type hint for complex inputs."
+          },
+          "contentEncoding": {
+            "type": "string",
+            "description": "JSON Schema content encoding hint."
+          },
+          "minimum": {
+            "type": "number",
+            "description": "Inclusive lower bound for numeric values."
+          },
+          "maximum": {
+            "type": "number",
+            "description": "Inclusive upper bound for numeric values."
+          },
+          "enum": {
+            "type": "array",
+            "description": "Enumerated string values accepted by the schema.",
+            "items": { "type": "string" }
+          },
+          "items": {
+            "$ref": "#/components/schemas/ProcessIoSchema"
+          },
+          "minItems": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Minimum number of items accepted by an array schema."
+          },
+          "maxItems": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum number of items accepted by an array schema."
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/components/schemas/ProcessIoSchema" }
+          },
+          "required": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "oneOf": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
+          },
+          "allOf": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
+          },
+          "not": {
+            "$ref": "#/components/schemas/ProcessIoSchema"
           }
         }
       },
@@ -632,11 +718,25 @@
         "properties": {
           "inputs": {
             "type": "object",
-            "required": ["plan"],
+            "description": "Inputs for the selected process. The canonical analysis process uses plan; direct processes use their advertised input identifiers.",
             "properties": {
               "plan": { "$ref": "#/components/schemas/AnalysisPlan" }
             },
             "additionalProperties": true
+          },
+          "outputs": {
+            "type": "object",
+            "description": "Optional output selection keyed by advertised output identifier.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "transmissionMode": {
+                  "type": "string",
+                  "enum": ["value"]
+                }
+              },
+              "additionalProperties": false
+            }
           },
           "response": {
             "type": "string",

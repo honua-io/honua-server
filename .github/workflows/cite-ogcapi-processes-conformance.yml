@@ -1,0 +1,56 @@
+name: OGC API Processes 1.0 CITE Diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_image:
+        description: Optional digest-addressed Honua Server candidate image
+        required: false
+        type: string
+      source_sha:
+        description: Full source SHA represented by server_image; defaults to this workflow commit
+        required: false
+        type: string
+  schedule:
+    - cron: '0 8 * * *'
+
+# Tier: nightly diagnostic. Promotion to a required exact-candidate release gate
+# is owned by server#3405 after seven complete greens.
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cite-ogcapi-processes-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-image:
+    name: Validate candidate image reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject mutable candidate image tags
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image || '' }}
+        run: |
+          if [[ -n "$SERVER_IMAGE" && ! "$SERVER_IMAGE" =~ @sha256:[0-9a-fA-F]{64}$ ]]; then
+            echo '::error::server_image must be an immutable image@sha256 digest reference'
+            exit 1
+          fi
+
+  cite:
+    needs: validate-image
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: ogcapi-processes10
+      display-name: OGC API Processes 1.0
+      runner-script: ./scripts/conformance/cite/run-cite-ogcapi-processes-tests.sh
+      results-dir: cite-ogcapi-processes-results
+      summary-file: cite-ogcapi-processes-summary.md
+      timeout-seconds: 3600
+      job-timeout-minutes: 70
+      cite-profile: diagnostic
+      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
+      honua-image: ${{ inputs.server_image || '' }}
+      extra-artifact-paths: docker/cite/ogc-api-processes/config/
+      diagnostic-only: true

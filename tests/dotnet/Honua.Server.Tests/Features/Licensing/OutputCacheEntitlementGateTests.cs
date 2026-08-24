@@ -198,7 +198,7 @@ public sealed class OutputCacheEntitlementGateTests
             "IsOutputCacheEntitledAsync",
             "the boot-time capture is what froze the entitlement for the process lifetime");
         source.Should().Contain(
-            "AddServerFeatures(builder.Configuration, redisCacheEntitled)",
+            "redisCacheEntitled,\n    builder.Environment.EnvironmentName)",
             "the Redis output-cache backend must receive the boot-time caching.redis decision");
     }
 
