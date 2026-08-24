@@ -406,8 +406,8 @@ train_log_is_flake() {
   # Testcontainers may identify itself near the start of a large job log, then
   # report the resource-reaper identity and transport error on separate lines
   # much later. Read the text once: this avoids grep -q closing a pipe early
-  # under pipefail, while still requiring timeout/connection evidence within a
-  # small window of a real (non-configuration) Ryuk event. In particular,
+  # under pipefail, while still requiring both a real (non-configuration) Ryuk
+  # event and transport evidence in the same failed-job log. In particular,
   # `testcontainers.ryuk.disabled=false` plus an unrelated timeout is not a
   # resource-reaper failure and must never authorize optimistic merge-through.
   awk '
@@ -420,15 +420,10 @@ train_log_is_flake() {
       for (i = 1; i <= NR; i++) {
         ryuk_event = lines[i]
         gsub(/testcontainers[._]ryuk[._]disabled[[:space:]]*[:=][[:space:]]*(true|false)/, "", ryuk_event)
-        if (ryuk_event !~ /ryuk/) continue
-
-        first = i > 3 ? i - 3 : 1
-        last = i + 3 < NR ? i + 3 : NR
-        for (j = first; j <= last; j++) {
-          if (lines[j] ~ /(timed out|connection refused)/) exit 0
-        }
+        if (ryuk_event ~ /ryuk/) has_ryuk_event = 1
+        if (lines[i] ~ /(timed out|connection refused)/) has_transport_error = 1
       }
-      exit 1
+      exit !(has_ryuk_event && has_transport_error)
     }
   ' <<<"${text}"
 }
