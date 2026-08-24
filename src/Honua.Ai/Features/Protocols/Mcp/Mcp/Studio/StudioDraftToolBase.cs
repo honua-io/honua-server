@@ -47,6 +47,20 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </remarks>
 internal abstract class StudioDraftToolBase
 {
+    /// <summary>
+    /// Records the authorization denial for a Studio tool rejected by the MCP
+    /// dispatcher before <see cref="IMcpTool.InvokeAsync"/> can run. The
+    /// dispatcher deliberately does not reveal tool names to anonymous callers,
+    /// but a known Studio call still needs the same audit trail as an invocation
+    /// that reaches <see cref="EnsureAuthorizedAsync"/>.
+    /// </summary>
+    internal static void RecordAnonymousAuthorizationDenied(
+        ILogger logger, HttpContext httpContext, string toolName)
+    {
+        var principal = httpContext.User ?? new ClaimsPrincipal(new ClaimsIdentity());
+        StudioMcpAudit.Record(logger, principal, toolName, draftId: null, generationBefore: null, generationAfter: null);
+    }
+
     protected StudioDraftToolBase(IGeoprocessingJobService jobService, ILogger logger)
     {
         JobService = jobService;
