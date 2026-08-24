@@ -510,10 +510,9 @@ internal static class StudioPackageEndpoints
                     StudioAuthorizationService.OwnerAssignmentAdminRequiredCode).ConfigureAwait(false);
             }
 
-            // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null.
-            var ownerId = !authorization.IsAdmin(context.User) && authorization.IsEndUserAuthorizationEnabled
-                ? null
-                : request.OwnerId;
+            // Existing-item creates inherit the recorded item owner when the request omits
+            // ownerId, matching the MCP lifecycle path. New-item creates fall back to actor.
+            var ownerId = request.OwnerId ?? existingPointers?.OwnerId;
 
             var draft = await service.CreateDraftAsync(
                 new CreateStudioPackageDraftCommand
