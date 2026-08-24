@@ -761,7 +761,7 @@ public sealed class StudioCompositionNotFoundException : Exception
 /// Raised when a composition mutation would create a duplicate layer/widget id
 /// (add).
 /// </summary>
-public sealed class StudioCompositionConflictException : Exception
+public sealed class StudioCompositionConflictException : InvalidOperationException
 {
     public StudioCompositionConflictException(string message) : base(message)
     {

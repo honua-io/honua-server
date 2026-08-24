@@ -74,7 +74,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 draft.UpdatedBy,
                 draft.CreatedAt,
                 draft.UpdatedAt,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                draft.ExpectedExistingItemOwnerId).ConfigureAwait(false);
 
             var sql = $"""
                 INSERT INTO {_draftsTable}
@@ -1000,7 +1001,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         string? updatedBy,
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedExistingOwnerId = null)
     {
         // owner_id is intentionally set only on INSERT and left out of the ON CONFLICT UPDATE
         // clause: ownership is populated once, on create, from the authenticated principal
@@ -1020,6 +1022,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 updated_by = EXCLUDED.updated_by,
                 updated_at = EXCLUDED.updated_at
             WHERE {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+               OR {_itemsTable}.owner_id IS NOT DISTINCT FROM @expected_existing_owner_id
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1029,6 +1032,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@current_version_id", (object?)currentVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@expected_existing_owner_id", (object?)expectedExistingOwnerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_by", (object?)createdBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_by", (object?)updatedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_at", createdAt);

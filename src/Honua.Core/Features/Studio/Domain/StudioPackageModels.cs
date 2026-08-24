@@ -312,6 +312,15 @@ public sealed record StudioPackageDraft
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 
+    /// <summary>
+    /// Owner observed during the authorization preflight when attaching this
+    /// draft to an existing item. Persistence uses this internal concurrency
+    /// fence to permit an explicitly authorized mixed-owner draft while
+    /// rejecting a race that creates the item after the preflight.
+    /// </summary>
+    [JsonIgnore]
+    public string? ExpectedExistingItemOwnerId { get; init; }
+
     /// <summary>Package family.</summary>
     [JsonPropertyName("family")]
     public required StudioPackageFamily Family { get; init; }
