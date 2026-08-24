@@ -77,6 +77,7 @@ public sealed class StudioPackageLifecycleServiceTests
             OwnerId = "owner-b",
             ActorId = "owner-b",
             ExpectedExistingItemOwnerId = "owner-a",
+            ExpectedExistingItemPresent = true,
             Envelope = BuildEnvelope("1=1", "content.parcels"),
         });
 
@@ -105,6 +106,7 @@ public sealed class StudioPackageLifecycleServiceTests
             OwnerId = "owner-b",
             ActorId = "owner-b",
             ExpectedExistingItemOwnerId = "owner-a",
+            ExpectedExistingItemPresent = true,
             Envelope = BuildEnvelope("2=2", "content.parcels"),
         });
         var version = await service.SaveDraftAsVersionAsync(mixed.DraftId, "mixed", "owner-b");
