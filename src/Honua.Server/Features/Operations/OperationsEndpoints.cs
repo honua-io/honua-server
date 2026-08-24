@@ -105,21 +105,31 @@ internal static class OperationsEndpoints
         HttpContext context,
         string id,
         OperationInvokeRequest request,
+        IOperationCatalog catalog,
         IOperationInvoker invoker,
         OperationHandleStore handleStore,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
 
-        // ApprovalModel=OperatorGate: publish operations flow through the operator approval
-        // gate at the HTTP layer, matching LayerPublishingEndpoints. The policy decision point
-        // (Community pass-through today) is consulted again inside the dispatcher.
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var approvalResult = gate.EvaluateApproval(
-            context, OperatorResourceType.Catalog, OperatorOperation.Publish);
-        if (approvalResult != null)
+        var descriptor = await catalog.GetDescriptorAsync(id, cancellationToken).ConfigureAwait(false);
+        if (descriptor is null)
         {
-            return approvalResult;
+            return NotFound(context, $"Operation '{id}' was not found.");
+        }
+
+        // Only descriptors that explicitly select the HTTP operator gate enter this
+        // approval lane. All operations still pass through the dispatcher policy point;
+        // ApprovalModel.None means no operator gate, not a bypass of policy decisions.
+        if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        {
+            var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+            var approvalResult = gate.EvaluateApproval(
+                context, OperatorResourceType.Catalog, OperatorOperation.Publish);
+            if (approvalResult != null)
+            {
+                return approvalResult;
+            }
         }
 
         try

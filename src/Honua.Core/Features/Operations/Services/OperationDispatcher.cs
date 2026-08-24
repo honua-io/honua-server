@@ -70,16 +70,6 @@ public sealed class OperationDispatcher : IOperationInvoker
             .EvaluateAsync(descriptor, request, context, cancellationToken)
             .ConfigureAwait(false);
 
-        // Approval is descriptor-owned. A read-only operation explicitly declaring
-        // ApprovalModel.None must not inherit the publish/operator approval lane from
-        // a generic policy default. Policy denials and dry-run requirements remain
-        // authoritative and still short-circuit the executor below.
-        if (descriptor.ApprovalModel == OperationApprovalModel.None
-            && decision.Kind == PolicyDecisionKind.RequireApproval)
-        {
-            decision = PolicyDecision.Allowed;
-        }
-
         // Guardrail seam: anything other than Allow short-circuits the executor.
         if (decision.Kind != PolicyDecisionKind.Allow)
         {
