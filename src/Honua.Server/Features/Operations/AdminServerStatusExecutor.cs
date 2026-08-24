@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Operations;
 /// <summary>Executes the live, read-only <c>admin.server.status</c> operation.</summary>
 internal sealed class AdminServerStatusExecutor : IOperationExecutor
 {
-    public const string OperationId = "admin.server.status";
+    public const string OperationName = "admin.server.status";
 
     private readonly IReadinessCheckService _readiness;
     private readonly TimeProvider _clock;
@@ -21,7 +21,7 @@ internal sealed class AdminServerStatusExecutor : IOperationExecutor
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
-    public string OperationId => AdminServerStatusExecutor.OperationId;
+    public string OperationId => OperationName;
 
     public Task<OperationValidation> ValidateAsync(
         OperationRequest request,
