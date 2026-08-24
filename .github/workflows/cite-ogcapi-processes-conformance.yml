@@ -25,7 +25,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-image:
+    name: Validate candidate image reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject mutable candidate image tags
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image || '' }}
+        run: |
+          if [[ -n "$SERVER_IMAGE" && ! "$SERVER_IMAGE" =~ @sha256:[0-9a-fA-F]{64}$ ]]; then
+            echo '::error::server_image must be an immutable image@sha256 digest reference'
+            exit 1
+          fi
+
   cite:
+    needs: validate-image
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
       suite: ogcapi-processes10
