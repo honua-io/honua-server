@@ -205,12 +205,64 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ steps.target.outputs.pr }}
+          BOUND_HEAD: ${{ steps.target.outputs.head }}
+          # Refuse to stage a diff so large that the reviewer could not judge it
+          # faithfully. Failing here leaves the gate red, which is the correct
+          # outcome: a partial diff reviewed as if it were whole would attest
+          # `clean` over code nobody looked at.
+          MAX_DIFF_LINES: '250000'
         run: |
           set -euo pipefail
           # The diff is pre-fetched by this trusted step so the reviewer needs no
           # `gh` read tools of its own.
-          gh pr diff "${PR}" --patch > review-input/pr.diff
-          gh pr view "${PR}" --json files --jq '.files[].path' > review-input/files.txt
+          #
+          # `gh pr diff` reads the API, which refuses any diff over 20000 lines
+          # with HTTP 406. That is an API ceiling, not a reviewability one, and
+          # it used to fail the whole lane -- so the larger a change was, the
+          # less likely it was to be reviewed at all, and Codex became the only
+          # reviewer that could attest it (honua-server#3481 tripped this at
+          # +36648 lines). Fall back to computing the diff from the refs, which
+          # has no such ceiling.
+          if ! gh pr diff "${PR}" --patch > review-input/pr.diff 2>review-input/diff.err; then
+            if grep -qiE 'exceeded the maximum number of lines|too_large' review-input/diff.err; then
+              echo "::notice::PR #${PR} exceeds the API diff ceiling; staging from git refs instead."
+              base_ref="$(gh pr view "${PR}" --json baseRefName --jq .baseRefName)"
+              rm -rf .pr-diff-src
+              git init -q .pr-diff-src
+              # Unauthenticated: this repository is public, and the two refs are
+              # all that is needed. No token reaches this remote. A full history
+              # fetch is acceptable because only oversized PRs take this path.
+              git -C .pr-diff-src fetch -q --no-tags \
+                "https://github.com/${GITHUB_REPOSITORY}.git" \
+                "refs/pull/${PR}/head:pr-head" \
+                "refs/heads/${base_ref}:base-ref"
+              # The gate is SHA-bound, so prove the ref we fetched is the exact
+              # head it bound. A push landing mid-run must not get an older diff
+              # attested against the newer SHA.
+              fetched_head="$(git -C .pr-diff-src rev-parse pr-head)"
+              if [ "${fetched_head}" != "${BOUND_HEAD}" ]; then
+                echo "::error::refs/pull/${PR}/head is ${fetched_head}, not the bound head ${BOUND_HEAD}; not staging a mismatched diff."
+                exit 1
+              fi
+              merge_base="$(git -C .pr-diff-src merge-base base-ref pr-head)"
+              git -C .pr-diff-src diff --patch "${merge_base}" pr-head > review-input/pr.diff
+              rm -rf .pr-diff-src
+            else
+              cat review-input/diff.err >&2
+              exit 1
+            fi
+          fi
+          rm -f review-input/diff.err
+          diff_lines="$(wc -l < review-input/pr.diff)"
+          if [ "${diff_lines}" -gt "${MAX_DIFF_LINES}" ]; then
+            echo "::error::Staged diff is ${diff_lines} lines, over the ${MAX_DIFF_LINES}-line reviewable ceiling; refusing to stage a diff that cannot be judged in full."
+            exit 1
+          fi
+          # Derive the path list from the staged diff rather than `--json files`,
+          # which the API also caps (at 100 per page). The reviewer must never be
+          # handed a file list that disagrees with the diff it is judging.
+          awk '/^diff --git /{ p = $4; sub(/^b\//, "", p); if (p == "/dev/null") { p = $3; sub(/^a\//, "", p) } print p }' \
+            review-input/pr.diff | sort -u > review-input/files.txt
           wc -l review-input/pr.diff review-input/files.txt
 
       - name: Check out the pull request tree as data
