@@ -83,6 +83,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             PackageKey = command.PackageKey.Trim(),
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? command.ActorId),
+            ExpectedExistingItemOwnerId = NormalizeOptional(command.ExpectedExistingItemOwnerId),
             Family = envelope.Family,
             Envelope = envelope with { Validation = validation },
             Validation = validation,

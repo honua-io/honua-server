@@ -38,9 +38,9 @@ public sealed class StudioPackageLifecycleServiceTests
             {
                 try
                 {
-                    return (Draft: await operation, Error: (Exception?)null);
+                    return (Draft: (StudioPackageDraft?)await operation, Error: (Exception?)null);
                 }
-                catch (Exception ex)
+                catch (StudioCompositionConflictException ex)
                 {
                     return (Draft: (StudioPackageDraft?)null, Error: ex);
                 }
@@ -53,6 +53,29 @@ public sealed class StudioPackageLifecycleServiceTests
         var pointers = await store.GetPointersAsync(itemId);
         Assert.NotNull(pointers);
         Assert.Single((await store.ListDraftsAsync(new StudioPackageDraftQuery { SearchTerm = "race-owner-" })).Items);
+    }
+
+    [UnitTest]
+    public async Task CreateDraft_AuthorizedMixedOwner_AttachesToStableExistingItem()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var itemId = Guid.NewGuid();
+        await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            ItemId = itemId, PackageKey = "mixed-owner-a", OwnerId = "owner-a", ActorId = "owner-a",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+        });
+
+        var mixed = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            ItemId = itemId, PackageKey = "mixed-owner-b", OwnerId = "owner-b", ActorId = "owner-b",
+            ExpectedExistingItemOwnerId = "owner-a",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+        });
+
+        Assert.Equal("owner-b", mixed.OwnerId);
+        Assert.Equal("owner-a", (await store.GetPointersAsync(itemId))!.OwnerId);
     }
 
     [UnitTest]

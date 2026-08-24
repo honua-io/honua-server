@@ -474,17 +474,18 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            StudioContentItemPointers? existingPointers = null;
             // honua-server#3001: creating a draft under an existing content item must be
             // authorized against that item's recorded owner, not treated as a brand-new
             // (ownerless) resource.
             if (request.ItemId is { } existingItemId)
             {
-                var pointers = await service.GetPointersAsync(existingItemId, context.RequestAborted).ConfigureAwait(false);
-                if (pointers is not null)
+                existingPointers = await service.GetPointersAsync(existingItemId, context.RequestAborted).ConfigureAwait(false);
+                if (existingPointers is not null)
                 {
                     var authResult = await EnsureAuthorizedAsync(
                         authorization, context,
-                        StudioAuthorizationOperation.CreateDraft, pointers.OwnerId,
+                        StudioAuthorizationOperation.CreateDraft, existingPointers.OwnerId,
                         resourceType: "studio-content-item", resourceId: existingItemId.ToString("D")).ConfigureAwait(false);
                     if (authResult is not null)
                     {
@@ -511,6 +512,7 @@ internal static class StudioPackageEndpoints
                     PackageKey = request.PackageKey,
                     WorkspaceId = request.WorkspaceId,
                     OwnerId = ownerId,
+                    ExpectedExistingItemOwnerId = existingPointers?.OwnerId,
                     Envelope = request.Envelope,
                     ActorId = actor,
                 },

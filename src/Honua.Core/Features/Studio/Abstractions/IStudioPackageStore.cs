@@ -252,6 +252,9 @@ public sealed record CreateStudioPackageDraftCommand
     /// <summary>Owner principal identifier.</summary>
     public string? OwnerId { get; init; }
 
+    /// <summary>Owner observed during authorization when attaching to an existing item.</summary>
+    public string? ExpectedExistingItemOwnerId { get; init; }
+
     /// <summary>Package envelope.</summary>
     public required StudioPackageEnvelope Envelope { get; init; }
 

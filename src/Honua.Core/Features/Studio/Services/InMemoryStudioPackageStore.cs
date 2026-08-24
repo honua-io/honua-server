@@ -42,7 +42,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 // Ownership is immutable. Keep this check inside the same lock as
                 // the item upsert so a pointer lookup followed by draft creation
                 // cannot authorize against a stale, ownerless snapshot.
-                throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
+                if (draft.ExpectedExistingItemOwnerId is null
+                    || !string.Equals(existingItem.OwnerId, draft.ExpectedExistingItemOwnerId, StringComparison.Ordinal))
+                {
+                    throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
+                }
             }
 
             var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
