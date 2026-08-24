@@ -81,6 +81,20 @@ public sealed class PublishedOperationToolTests
     {
         PublishedOperationTool.ProjectName("service.publish").Should().Be("honua_op_service_publish");
         PublishedOperationTool.ProjectName("Geo.Buffer-2").Should().Be("honua_op_geo_buffer_2");
+        PublishedOperationTool.ProjectName("admin.server.status").Should().Be("honua_admin_server_status");
+    }
+
+    [UnitTest]
+    public async Task Source_Enabled_PublishesAdminDescriptorWithAdminToolName()
+    {
+        var source = new PublishedOperationToolSource(
+            Catalog(AdminServerStatusDescriptor()),
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        tools.Should().ContainSingle().Which.Name.Should().Be("honua_admin_server_status");
     }
 
     // ---- Governance through the policy decision point --------------------------
@@ -537,6 +551,13 @@ public sealed class PublishedOperationToolTests
     {
         OperationId = PublishServiceTool.PublishOperationId,
         Title = "Publish service",
+    };
+
+    private static OperationDescriptor AdminServerStatusDescriptor() => DeterministicReadOnlyDescriptor() with
+    {
+        OperationId = "admin.server.status",
+        Title = "Read server status",
+        Category = "admin",
     };
 
     private static OperationParameterDescriptor Param(string name, bool required) => new()

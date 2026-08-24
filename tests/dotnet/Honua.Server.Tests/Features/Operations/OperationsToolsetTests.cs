@@ -50,6 +50,27 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task Catalog_Lists_AdminStatus_Descriptor_With_ReadOnly_Convention_Metadata()
+    {
+        var catalog = new OperationCatalog(
+            [new ServerOperationDescriptorProvider()],
+            TimeProvider.System);
+
+        var descriptor = (await catalog.GetSnapshotAsync(CancellationToken.None))
+            .Operations.Should().ContainSingle(op => op.OperationId == "admin.server.status").Subject;
+
+        descriptor.Category.Should().Be("admin");
+        descriptor.ExecutionKind.Should().Be(OperationExecutionKind.Synchronous);
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None);
+        descriptor.InputSchema.Should().BeEmpty();
+        descriptor.OutputSchema.Select(parameter => parameter.Name)
+            .Should().BeEquivalentTo(["status", "version"]);
+        descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
+        descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
+        descriptor.Policy.Determinism.Should().Be(OperationDeterminism.Deterministic);
+    }
+
+    [UnitTest]
     public async Task ValidateAsync_Delegates_To_ValidateTableForPublishAsync()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
