@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -34,17 +35,20 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     private static readonly IReadOnlyList<IMcpTool> Empty = [];
 
     private readonly IOperationCatalog _catalog;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly IOptions<McpPublishedOperationOptions> _options;
     private readonly ILogger<PublishedOperationToolSource> _logger;
 
     public PublishedOperationToolSource(
         IOperationCatalog catalog,
         IOptions<McpPublishedOperationOptions> options,
-        ILogger<PublishedOperationToolSource> logger)
+        ILogger<PublishedOperationToolSource> logger,
+        IServiceScopeFactory? scopeFactory = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     /// <inheritdoc />
@@ -57,10 +61,23 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         }
 
         var snapshot = await _catalog.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<string>? executorOperationIds = null;
+        if (_scopeFactory is not null)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            executorOperationIds = scope.ServiceProvider
+                .GetServices<IOperationExecutor>()
+                .Select(e => e.OperationId)
+                .ToHashSet(StringComparer.Ordinal);
+        }
 
         var tools = new List<IMcpTool>(snapshot.Operations.Count);
         foreach (var descriptor in snapshot.Operations)
         {
+            if (executorOperationIds is not null && !executorOperationIds.Contains(descriptor.OperationId))
+            {
+                continue;
+            }
             if (ExcludedOperationIds.Contains(descriptor.OperationId))
             {
                 continue;

@@ -35,6 +35,8 @@ internal static class OperationsServiceCollectionExtensions
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
 
         // Policy seam. Bind the configurable guardrail policy from "Operations:Policy".
         // When it is enabled, the configurable decision point enforces the rule set; otherwise

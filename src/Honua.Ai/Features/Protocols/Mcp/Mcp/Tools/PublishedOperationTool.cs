@@ -67,7 +67,9 @@ internal sealed class PublishedOperationTool : IMcpTool
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
     private bool IsCacheable =>
-        IsDeterministic && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
+        IsDeterministic
+        && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly
+        && !string.Equals(_descriptor.OperationId, "admin.server.status", StringComparison.Ordinal);
 
     /// <summary>
     /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
