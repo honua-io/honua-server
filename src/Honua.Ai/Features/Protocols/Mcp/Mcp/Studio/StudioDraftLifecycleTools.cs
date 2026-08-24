@@ -93,15 +93,6 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         var authorization = RequireAuthorizationService(httpContext);
         var actorId = ActorIdFor(authorization, principal);
         var requestedOwnerId = argument.OwnerId;
-        await EnsureOwnerAssignmentAuthorizedAsync(
-            httpContext,
-            authorization,
-            principal,
-            requestedOwnerId,
-            StudioAuthorizationOperation.CreateDraft,
-            argument.ItemId?.ToString("D"),
-            OperatorOperation.Create).ConfigureAwait(false);
-
         // Match the REST lifecycle boundary: an explicit item id targets an
         // existing content item's recorded owner; otherwise creation is
         // authorized as a new resource owned by the authenticated caller.
@@ -118,6 +109,18 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             existingPointers is null ? "studio-package-draft" : "studio-content-item",
             OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
+
+        // Apply the canonical Studio mode/ownership decision first. This keeps
+        // the end-user mode gate's policy code authoritative when that mode is
+        // disabled, before applying the admin-only owner-assignment rule.
+        await EnsureOwnerAssignmentAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            requestedOwnerId,
+            StudioAuthorizationOperation.CreateDraft,
+            argument.ItemId?.ToString("D"),
+            OperatorOperation.Create).ConfigureAwait(false);
 
         // A non-admin caller can create only a draft they own. Admins retain
         // the REST surface's ability to assign an explicit owner.
