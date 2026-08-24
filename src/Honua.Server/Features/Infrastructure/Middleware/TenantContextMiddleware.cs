@@ -130,9 +130,12 @@ internal sealed class TenantContextMiddleware(
     }
 
     private static bool IsBearerPrincipal(ClaimsPrincipal principal) =>
-        string.Equals(principal.FindFirst("auth_type")?.Value, "oidc", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(principal.Identity?.AuthenticationType, "Bearer", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(principal.Identity?.AuthenticationType, "JwtBearer", StringComparison.OrdinalIgnoreCase);
+        principal.Identities.Any(identity =>
+            identity.IsAuthenticated &&
+            string.Equals(
+                identity.AuthenticationType,
+                Honua.Infrastructure.Authentication.OidcAuthenticationExtensions.JwtBearerScheme,
+                StringComparison.Ordinal));
 
     private bool TryReadHeader(HttpContext context, out string tenantId)
     {

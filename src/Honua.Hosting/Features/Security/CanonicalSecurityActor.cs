@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Infrastructure.Security;
 
@@ -22,29 +23,30 @@ internal static class CanonicalSecurityActor
 
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
     {
-        if (principal?.Identity is not { IsAuthenticated: true } identity)
+        if (principal?.Identity is not ClaimsIdentity { IsAuthenticated: true } identity)
         {
             return null;
         }
 
-        var scheme = NormalizeScheme(principal.FindFirstValue(AuthTypeClaim) ?? identity.AuthenticationType);
+        var scheme = NormalizeScheme(identity.AuthenticationType);
         if (scheme is null)
         {
             return null;
         }
 
-        var apiKeyValue = principal.FindFirstValue(ApiKeyIdClaim);
-        if (Guid.TryParse(apiKeyValue, out var apiKeyId))
+        var apiKeyValue = identity.FindFirst(ApiKeyIdClaim)?.Value;
+        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal)
+            && Guid.TryParse(apiKeyValue, out var apiKeyId))
         {
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:api-key:{apiKeyId:D}", scheme, null, null, apiKeyId.ToString("D"), true);
         }
 
-        var subject = NormalizeValue(principal.FindFirstValue(ClaimTypes.NameIdentifier))
-            ?? NormalizeValue(principal.FindFirstValue(SubjectClaim));
+        var subject = NormalizeValue(identity.FindFirst(ClaimTypes.NameIdentifier)?.Value)
+            ?? NormalizeValue(identity.FindFirst(SubjectClaim)?.Value);
         if (subject is not null)
         {
-            var issuer = NormalizeValue(principal.FindFirstValue(IssuerClaim));
+            var issuer = NormalizeValue(identity.FindFirst(IssuerClaim)?.Value);
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:subject:{Encode(issuer ?? "-")}:{Encode(subject)}",
                 scheme, subject, issuer, null, true);
@@ -55,7 +57,11 @@ internal static class CanonicalSecurityActor
             return new CanonicalSecurityActorIdentity("admin:bootstrap", scheme, null, null, null, false);
         }
 
-        return null;
+        var name = NormalizeValue(identity.Name);
+        return name is null
+            ? null
+            : new CanonicalSecurityActorIdentity(
+                $"{scheme}:name:{Encode(name)}", scheme, null, null, null, false);
     }
 
     internal static string BuildBindingKey(
