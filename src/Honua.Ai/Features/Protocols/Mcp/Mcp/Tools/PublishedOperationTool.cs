@@ -59,10 +59,21 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     public string Name { get; }
 
-    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+    public string WorkflowFamily => _descriptor.Category switch
+    {
+        "planning" => McpTelemetry.WorkflowFamily.Planning,
+        "execution" => McpTelemetry.WorkflowFamily.Execution,
+        "results" or "admin" => McpTelemetry.WorkflowFamily.Results,
+        _ => McpTelemetry.WorkflowFamily.Lifecycle,
+    };
 
     /// <summary>Whether the backing descriptor is deterministic (AI-free).</summary>
-    public bool IsDeterministic => _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
+    public bool IsDeterministic =>
+        !IsRuntimeDynamic
+        && _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
+
+    private bool IsRuntimeDynamic =>
+        string.Equals(_descriptor.OperationId, "admin.server.status", StringComparison.Ordinal);
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
@@ -107,7 +118,9 @@ internal sealed class PublishedOperationTool : IMcpTool
             // destroy state nor reach deployment scope.
             : McpToolAnnotationSets.Write(title, destructive, idempotent: !destructive);
 
-        var determinismNote = IsDeterministic
+        var determinismNote = IsRuntimeDynamic
+            ? " This operation reports live runtime status and is not cacheable."
+            : IsDeterministic
             ? " This operation is deterministic (AI-free); identical inputs return an identical, param-keyed-cached result."
             : " This operation is AI-assisted.";
 

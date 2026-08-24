@@ -130,6 +130,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     {
         var registryNames = new CapabilityRegistry().All
             .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal))
+            .Where(d => !d.IsDynamic)
             .Select(d => d.McpToolName!)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
@@ -138,6 +139,19 @@ public sealed partial class McpTaxonomyAlignmentTests
             TaxonomyToolNames.OrderBy(n => n, StringComparer.Ordinal),
             "CapabilityRegistry MCP descriptors and McpTaxonomyAlignmentTests.TaxonomyToolNames "
             + "must be updated together when the static /mcp tool roster changes");
+    }
+
+    [UnitTest]
+    public void DynamicOperationDescriptors_AreExplicitlyOutsideStaticTaxonomyRoster()
+    {
+        var dynamicTools = new CapabilityRegistry().All
+            .Where(d => d.IsDynamic)
+            .Select(d => (d.McpToolName, d.Category))
+            .ToArray();
+
+        dynamicTools.Should().ContainSingle()
+            .Which.Should().Be(("honua_admin_server_status", McpTelemetry.WorkflowFamily.Results));
+        TaxonomyToolNames.Should().NotContain("honua_admin_server_status");
     }
 
     [UnitTest]

@@ -172,6 +172,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Maturity = CapabilityMaturity.Implemented,
                 StandardName = standard,
                 McpToolName = advertised,
+                IsDynamic = advertised == "honua_admin_server_status",
                 ConformanceMapping = "tools",
             };
         }
