@@ -1473,17 +1473,9 @@ internal static class WmtsRequestHandlers
                     parameterSeparator: ";",
                     escapeAmpersandsForXmlEmbedding: true);
                 var legendDimensionSuffix = BuildWmtsLegendDimensionQuerySuffix(dimensions);
-                // ResourceURL template variables are spelled {Style}, matching the
-                // WMTS 1.0.0 variable names every other Honua WMTS surface emits
-                // (see ImageServerWmtsHandler) and the spelling REST clients
-                // substitute. The lowercase {style} form is not substituted by
-                // OWSLib's buildTileResource or by Cesium's
-                // WebMapTileServiceImageryProvider, so the advertised template was
-                // unusable even though the route itself is positional and
-                // case-insensitive. Only the advertised name changes here.
-                var tileTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}";
-                var featureInfoTextTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}";
-                var featureInfoJsonTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}";
+                var tileTemplate = $"{wmtsEndpoint}/{layerId}/{{style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}";
+                var featureInfoTextTemplate = $"{wmtsEndpoint}/{layerId}/{{style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}";
+                var featureInfoJsonTemplate = $"{wmtsEndpoint}/{layerId}/{{style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}";
                 var legendHref = $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}";
 
                 sb.AppendLine("    <Layer>");

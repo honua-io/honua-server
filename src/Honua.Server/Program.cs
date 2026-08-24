@@ -949,11 +949,6 @@ builder.Services.AddApiVersioning(options =>
 // Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
 builder.Services.AddHonuaJsonContexts();
 
-// RFC 9110 §9.3.2: answer HEAD wherever GET is answered (#3389). Registered as a startup
-// filter so the HEAD -> GET rewrite runs ahead of WebApplication's implicit UseRouting;
-// the matching restoration middleware below puts HEAD back once the endpoint is selected.
-builder.Services.AddHonuaHeadRequestSupport();
-
 // Add comprehensive IOptions configuration validation
 builder.Services.AddConfigurationOptionsValidation();
 
@@ -968,13 +963,6 @@ if (activeDbConnectionTracker != null)
 {
     EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
 }
-
-// First middleware in the application pipeline, which for a WebApplication is the first
-// thing to run *after* the implicit UseRouting: routing has already matched the GET endpoint
-// for a request that arrived as HEAD, so restore HEAD here and every cross-cutting component
-// (auth, tenancy, rate limiting, auditing, telemetry, request logging) sees the method the
-// client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
-app.UseHonuaHeadRequestMethod();
 
 if (forwardedHeadersEnabled)
 {
@@ -1386,14 +1374,6 @@ app.UseWhen(
         context.RequestServices,
         redisOutputCacheConfigured),
     static entitled => entitled.UseOutputCache());
-
-// LAST middleware before endpoint execution (WebApplication appends its implicit UseEndpoints
-// after everything registered here). For a request that arrived as HEAD, hand the matched
-// endpoint the method its handler was written for: HEAD when the endpoint maps HEAD itself
-// (PMTiles range proxy, scene assets), otherwise the GET it maps — a GET-only handler has no
-// HEAD code path, and several read the request body whenever the method is not GET, which would
-// answer 400/415 where GET answers 200. Everything upstream still observes HEAD (#3389).
-app.UseHonuaHeadRequestGetSemantics();
 
 // Log application startup
 var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";

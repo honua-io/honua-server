@@ -227,12 +227,7 @@ internal sealed partial class FeatureQueryBuilder
 
         foreach (var fieldName in requestedOutFields)
         {
-            // Projected names are jsonb keys, not SQL identifiers: both the key and the
-            // value accessor bind the name as a parameter below, so this predicate is a
-            // shape guard rather than the thing that makes the SQL safe. See
-            // FeatureQueryBuilder.IsValidJsonAttributeKey for why it is deliberately
-            // separate from the identifier-oriented IsValidFieldName.
-            if (!IsValidJsonAttributeKey(fieldName))
+            if (!IsValidFieldName(fieldName))
             {
                 throw new ArgumentException($"Invalid field name for projection: {fieldName}");
             }
@@ -248,17 +243,10 @@ internal sealed partial class FeatureQueryBuilder
                 continue;
             }
 
-            // Bind the key side as a parameter too, not just the value side. Postgres
-            // accepts a bound parameter as a jsonb_build_object key, so no part of a
-            // field name is ever interpolated into the SQL text and the projection is
-            // injection-safe independently of the character class the validator above
-            // admits. The same positional parameter serves both halves of the pair; the
-            // explicit ::text casts keep the overloaded `jsonb -> ?` operator (which also
-            // has an integer-subscript form) unambiguous.
             var fieldParamIndex = paramIndex++;
             parameters.Add(fieldName);
-            projectedFields.Add(
-                $"${fieldParamIndex}::text, {DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text");
+            var escapedFieldName = fieldName.Replace("'", "''", StringComparison.Ordinal);
+            projectedFields.Add($"'{escapedFieldName}', {DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}");
         }
 
         if (projectedFields.Count == 0)
@@ -324,12 +312,8 @@ internal sealed partial class FeatureQueryBuilder
         // raw fast paths honor masking just like the materialized-Feature paths.
         var maskedFields = ResolveMaskedFields(query);
 
-        // The public-id attribute name is bound as a parameter on both sides of this
-        // expression (the `-> $n` promotion and the `- $n` key removal), so it is a
-        // jsonb key, not an identifier — gating it on IsValidFieldName silently
-        // un-promoted a prefixed public-id field instead of projecting it.
         if (!string.IsNullOrWhiteSpace(query.PublicIdAttributeName) &&
-            IsValidJsonAttributeKey(query.PublicIdAttributeName))
+            IsValidFieldName(query.PublicIdAttributeName))
         {
             var fieldParamIndex = paramIndex++;
             parameters.Add(query.PublicIdAttributeName);

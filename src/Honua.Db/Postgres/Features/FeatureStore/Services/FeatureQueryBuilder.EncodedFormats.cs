@@ -83,15 +83,7 @@ internal sealed partial class FeatureQueryBuilder
     {
         foreach (var field in GetEncodedBinaryAttributeFields(resource, query))
         {
-            // The value side binds the name as a parameter (BuildAttributeValueExpression)
-            // and the alias side goes through QuoteIdentifier, which double-quotes the name
-            // and doubles any embedded quote — and IsValidJsonAttributeKey admits no quote,
-            // whitespace or control character in the first place. So the binary projection
-            // is safe for exactly the names this predicate accepts, and staying on the
-            // identifier regex only meant a declared field such as `eo:cloud_cover` was
-            // dropped from MVT/FlatGeobuf/Geobuf output — or, when explicitly requested via
-            // outFields, raised an unhandled ArgumentException (HTTP 500).
-            if (!IsValidJsonAttributeKey(field.Name))
+            if (!IsValidFieldName(field.Name))
             {
                 throw new ArgumentException($"Invalid field name for binary projection: {field.Name}");
             }

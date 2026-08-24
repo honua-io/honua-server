@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text.Json;
 using System.Diagnostics;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -130,8 +129,8 @@ internal static partial class FeaturesEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        string? limit,
-        string? offset,
+        int? limit,
+        int? offset,
         string? bbox,
         string? datetime,
         string? filter,
@@ -146,63 +145,9 @@ internal static partial class FeaturesEndpoints
             return tenantError!;
         }
 
-        // `limit` and `offset` are bound as strings and parsed here rather than
-        // declared as `int?`. Minimal-API model binding answers an unparseable
-        // simple-type parameter with a bare 400 and an EMPTY body, which is the
-        // one invalid-parameter path on this endpoint that did not produce an
-        // application/problem+json document (`limit=0`, `offset=-5`,
-        // `bbox=notanumber` and `crs=bogus` all do). Parsing at the adapter
-        // boundary keeps every rejection on the same structured error surface.
-        // The published contract is unchanged: the parameters remain integers
-        // in src/Honua.Server/openapi.json and non-integers are still rejected
-        // with 400.
-        if (!TryParseIntegerQueryParameter(limit, "limit", out var parsedLimit, out var limitError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, limitError!);
-        }
-
-        if (!TryParseIntegerQueryParameter(offset, "offset", out var parsedOffset, out var offsetError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, offsetError!);
-        }
-
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await queryHandler.HandleGetItemsAsync(
-            collectionId, context, f, parsedLimit, parsedOffset, bbox, datetime, filter, ids, properties, sortby, crs, cancellationToken);
-    }
-
-    /// <summary>
-    /// Parses an optional integer query parameter, mapping an unparseable value
-    /// to a structured error message instead of an empty framework response.
-    /// </summary>
-    /// <remarks>
-    /// A repeated query parameter (<c>?limit=3&amp;limit=5</c>) binds as the
-    /// comma-joined <see cref="Microsoft.Extensions.Primitives.StringValues"/>
-    /// text and therefore also lands here as an explicit rejection rather than
-    /// an ambiguous silent pick.
-    /// </remarks>
-    private static bool TryParseIntegerQueryParameter(
-        string? raw,
-        string parameterName,
-        out int? value,
-        out string? error)
-    {
-        value = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-        {
-            value = parsed;
-            return true;
-        }
-
-        error = $"{parameterName} must be a valid integer.";
-        return false;
+            collectionId, context, f, limit, offset, bbox, datetime, filter, ids, properties, sortby, crs, cancellationToken);
     }
 
     /// <summary>

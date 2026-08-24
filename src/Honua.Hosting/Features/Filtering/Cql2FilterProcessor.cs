@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -34,15 +33,6 @@ internal sealed class Cql2FilterProcessor(
         public SqlFragment? SqlFilter { get; init; }
         public FilterExpression? Expression { get; init; }
 
-        /// <summary>
-        /// True when the failure is "this resource does not declare a property the
-        /// filter references" rather than "this filter is invalid". A caller that
-        /// applies one filter to several resources (STAC item search across
-        /// collections) uses this to let the non-matching resource contribute no
-        /// rows instead of failing the whole request (honua-server#3392).
-        /// </summary>
-        public bool IsUnknownField { get; init; }
-
         public static ProcessingResult Success(SqlFragment? sqlFilter, FilterExpression? expression = null)
             => new()
             {
@@ -51,12 +41,11 @@ internal sealed class Cql2FilterProcessor(
                 Expression = expression
             };
 
-        public static ProcessingResult Failure(string errorMessage, bool isUnknownField = false)
+        public static ProcessingResult Failure(string errorMessage)
             => new()
             {
                 IsSuccess = false,
-                ErrorMessage = errorMessage,
-                IsUnknownField = isUnknownField
+                ErrorMessage = errorMessage
             };
     }
 
@@ -158,7 +147,7 @@ internal sealed class Cql2FilterProcessor(
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
         {
-            return ProcessingResult.Failure(ex.Message, ex is UnknownFilterFieldException);
+            return ProcessingResult.Failure(ex.Message);
         }
 
         var translationResult = _filterExpressionService.Translate(parsedExpression, resource);
