@@ -29,6 +29,7 @@ public sealed class CreateStudioPackageDraftRequest
 
     /// <summary>Owner principal identifier.</summary>
     [StringLength(200)]
+    [JsonPropertyDescription("Admin-only owner principal identifier. Non-admin callers must omit this field.")]
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 
@@ -56,6 +57,7 @@ public sealed class UpdateStudioPackageDraftRequest
 
     /// <summary>Owner principal identifier.</summary>
     [StringLength(200)]
+    [JsonPropertyDescription("Admin-only owner principal identifier. Non-admin callers must omit this field.")]
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
 
