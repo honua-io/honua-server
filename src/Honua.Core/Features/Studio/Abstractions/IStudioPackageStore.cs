@@ -255,6 +255,9 @@ public sealed record CreateStudioPackageDraftCommand
     /// <summary>Owner observed during authorization when attaching to an existing item.</summary>
     public string? ExpectedExistingItemOwnerId { get; init; }
 
+    /// <summary>Whether authorization observed an existing item, including ownerless items.</summary>
+    public bool ExpectedExistingItemPresent { get; init; }
+
     /// <summary>Package envelope.</summary>
     public required StudioPackageEnvelope Envelope { get; init; }
 
