@@ -107,10 +107,13 @@ dry-run.
    `40P01|deadlock detected|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed`
    over failing-job logs. Ryuk is deliberately not a standalone regex
    alternative: a resource-reaper flake requires case-insensitive evidence of
-   `Testcontainers`, `Ryuk`, and either `timed out` or `connection refused` in
-   the same failed-job log, even when those terms appear on separate lines. A
-   harmless status line such as `testcontainers.ryuk.disabled=false` is not a
-   flake. Match → a single `gh run rerun --failed` (cap 1), never bisection.
+   `Testcontainers`, a failure-marked non-configuration `Ryuk` event, and either
+   `timed out` or `connection refused` in the same failed-job log, even when the
+   failure event and transport error appear on separate lines. Harmless status
+   such as `testcontainers.ryuk.disabled=false` or a successful Ryuk startup
+   cannot combine with an unrelated timeout to authorize a rerun or optimistic
+   merge-through. Match → a single `gh run rerun --failed` (cap 1), never
+   bisection.
    Their existing optimistic merge-through policy remains separate from generic
    timeout handling.
 7. **attribute** — REVERSE of smart-CI routing: failing shard →

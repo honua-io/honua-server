@@ -52,10 +52,11 @@ train_init_controller_deadline() {
 # Flake signature regex (classify-flake). A failing job whose log matches this
 # is treated as environmental and rerun once; persistent recognized flakes may merge through. Generic timeout/exit-124 handling has higher precedence and persistent timeouts remain real.
 # In addition to the line-scoped signatures below, train_log_is_flake requires
-# Testcontainers, Ryuk, and timeout/connection-failure evidence anywhere in the
-# same failed-job log before treating a resource-reaper failure as a flake. The
-# terms are often split across logger lines, so that correlation cannot live in
-# this grep expression without making a harmless Ryuk status line sufficient.
+# Testcontainers, a failure-marked Ryuk event, and timeout/connection-failure
+# evidence in the same failed-job log before treating a resource-reaper failure
+# as a flake. The terms are often split across logger lines, so that correlation
+# cannot live in this grep expression without making harmless Ryuk status lines
+# sufficient.
 # The Postgres deadlock signatures and the test harness's isolation
 # race surfaces as transient schema-setup errors ("relation/column/schema ...
 # does not exist", "does not exist at character N") when a test runs before its
@@ -406,10 +407,11 @@ train_log_is_flake() {
   # Testcontainers may identify itself near the start of a large job log, then
   # report the resource-reaper identity and transport error on separate lines
   # much later. Read the text once: this avoids grep -q closing a pipe early
-  # under pipefail, while still requiring both a real (non-configuration) Ryuk
-  # event and transport evidence in the same failed-job log. In particular,
-  # `testcontainers.ryuk.disabled=false` plus an unrelated timeout is not a
-  # resource-reaper failure and must never authorize optimistic merge-through.
+  # under pipefail, while still requiring both a failure-marked,
+  # non-configuration Ryuk event and transport evidence in the same failed-job
+  # log. In particular, neither `testcontainers.ryuk.disabled=false` nor a
+  # successful Ryuk status plus an unrelated timeout is a resource-reaper
+  # failure that may authorize optimistic merge-through.
   awk '
     {
       lines[NR] = tolower($0)
@@ -420,10 +422,13 @@ train_log_is_flake() {
       for (i = 1; i <= NR; i++) {
         ryuk_event = lines[i]
         gsub(/testcontainers[._]ryuk[._]disabled[[:space:]]*[:=][[:space:]]*(true|false)/, "", ryuk_event)
-        if (ryuk_event ~ /ryuk/) has_ryuk_event = 1
+        if (ryuk_event ~ /ryuk/ &&
+            ryuk_event ~ /(timed out|connection refused|fail(ed|ure)?|did not|not .*ready|unable|cannot|could not|error)/) {
+          has_ryuk_failure = 1
+        }
         if (lines[i] ~ /(timed out|connection refused)/) has_transport_error = 1
       }
-      exit !(has_ryuk_event && has_transport_error)
+      exit !(has_ryuk_failure && has_transport_error)
     }
   ' <<<"${text}"
 }
