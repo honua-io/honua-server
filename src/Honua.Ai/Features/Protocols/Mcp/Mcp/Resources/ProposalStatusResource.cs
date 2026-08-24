@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,8 +59,7 @@ internal sealed class ProposalStatusResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetProposal");
-        _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         var proposalId = uri[McpResourceUris.ProposalsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
 
@@ -65,6 +68,29 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         var proposal = await store.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
+        var authority = proposal.Authority;
+        var callerAuthority = OperationAuthorityContext.Capture(
+            principal,
+            httpContext.RequestServices.GetRequiredService<ITenantContext>());
+        if (authority?.ResourceType is not { } resourceType ||
+            authority.Operation is not { } operation ||
+            !string.Equals(authority.Actor, callerAuthority.Actor, StringComparison.Ordinal) ||
+            !string.Equals(authority.Issuer, callerAuthority.Issuer, StringComparison.Ordinal) ||
+            !string.Equals(authority.Scheme, callerAuthority.Scheme, StringComparison.Ordinal) ||
+            !string.Equals(authority.EffectiveTenant, callerAuthority.EffectiveTenant, StringComparison.Ordinal))
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "Proposal status is available only to its retained proposer authority.");
+        }
+
+        var jobService = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
+            ?? throw new InvalidOperationException("The authorization service is unavailable.");
+        await jobService.EnsureCallerAuthorizedAsync(
+            principal,
+            resourceType,
+            operation,
+            cancellationToken).ConfigureAwait(false);
 
         var resource = new McpProposalResource
         {

@@ -672,7 +672,11 @@ internal static class DeployControlEndpoints
         var requestedBy = ResolveRequestedBy(context);
         var authority = OperationAuthorityContext.Capture(
             context.User,
-            context.RequestServices.GetRequiredService<ITenantContext>());
+            context.RequestServices.GetRequiredService<ITenantContext>()) with
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish,
+        };
         var reason = string.IsNullOrWhiteSpace(request?.Reason)
             ? $"Converge serving targets to platform release {declaredVersion}."
             : request!.Reason!;

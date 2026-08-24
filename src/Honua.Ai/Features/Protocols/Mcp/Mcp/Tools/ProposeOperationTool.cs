@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -66,6 +68,7 @@ internal sealed class ProposeOperationTool : IMcpTool
         // learns the real supported set instead of hitting a silent dead end.
         var catalog = httpContext.RequestServices.GetService<IOperationExecutorCatalog>();
         var supportedKinds = catalog?.SupportedKinds
+            .Where(supportedKind => supportedKind != OperationClass.Geoprocess)
             .Select(supportedKind => supportedKind.ToString())
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
@@ -85,6 +88,19 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
+        if (kind == OperationClass.Geoprocess)
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "rejected",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = "Geoprocess execution is not accepted by this generic proposal surface; use the dedicated geoprocessing tools."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
         var gateway = httpContext.RequestServices.GetService<IOperationGateway>();
         if (gateway is null)
         {
@@ -99,7 +115,11 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
-        var actor = principal.Identity?.Name;
+        var authority = BuildAuthority(
+            principal,
+            httpContext.RequestServices.GetRequiredService<ITenantContext>(),
+            kind);
+        var actor = authority.Actor;
         var request = new OperationGatewayRequest
         {
             Kind = kind,
@@ -108,9 +128,7 @@ internal sealed class ProposeOperationTool : IMcpTool
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,
-            Authority = OperationAuthorityContext.Capture(
-                principal,
-                httpContext.RequestServices.GetRequiredService<ITenantContext>()),
+            Authority = authority,
         };
 
         var result = await gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
@@ -127,5 +145,34 @@ internal sealed class ProposeOperationTool : IMcpTool
         };
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpProposeOperationOutput);
+    }
+
+    private static OperationAuthorityContext BuildAuthority(
+        ClaimsPrincipal principal,
+        ITenantContext tenantContext,
+        OperationClass kind)
+    {
+        var governed = OperatorScopeCatalog.IsScopeGoverned(principal);
+        var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).ToArray();
+        var operation = kind switch
+        {
+            OperationClass.Deploy or OperationClass.MetadataRelease => OperatorOperation.Publish,
+            OperationClass.Seed => OperatorOperation.Create,
+            _ => OperatorOperation.Update,
+        };
+        var resourceType = kind switch
+        {
+            OperationClass.Deploy or OperationClass.MetadataRelease => OperatorResourceType.Deployment,
+            _ => OperatorResourceType.Catalog,
+        };
+
+        return OperationAuthorityContext.Capture(principal, tenantContext) with
+        {
+            OAuthScopes = scopes,
+            ScopeCeiling = scopes,
+            ScopeGoverned = governed,
+            ResourceType = resourceType,
+            Operation = operation,
+        };
     }
 }

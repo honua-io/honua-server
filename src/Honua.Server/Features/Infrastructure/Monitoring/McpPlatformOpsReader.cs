@@ -9,6 +9,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -182,16 +183,21 @@ internal sealed class McpPlatformOpsReader(
             CurrentRevision = selection.CurrentRevision,
         }.Serialize();
 
-        var actor = principal.Identity?.Name;
+        var authority = OperationAuthorityContext.Capture(
+            principal,
+            _services.GetRequiredService<ITenantContext>()) with
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Rollback,
+        };
+        var actor = authority.Actor;
         var result = await gateway.RouteAsync(
                 new OperationGatewayRequest
                 {
                     Kind = OperationClass.Deploy,
                     RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
                     RequestedBy = actor,
-                    Authority = OperationAuthorityContext.Capture(
-                        principal,
-                        _services.GetRequiredService<ITenantContext>()),
+                    Authority = authority,
                     Reason = string.IsNullOrWhiteSpace(argument.Reason)
                         ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'."
                         : argument.Reason,

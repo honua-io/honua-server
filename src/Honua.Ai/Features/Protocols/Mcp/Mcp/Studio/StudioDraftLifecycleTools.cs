@@ -296,7 +296,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(
                 httpContext,
-                OperatorOperation.Create,
+                OperatorOperation.Update,
                 StudioAuthorizationOperation.UpdateDraft,
                 cancellationToken)
             .ConfigureAwait(false);
