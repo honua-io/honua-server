@@ -1018,14 +1018,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 (@item_id, @package_key, @workspace_id, @family, @current_version_id, @published_version_id,
                  @owner_id, @created_by, @updated_by, @created_at, @updated_at)
             ON CONFLICT (item_id) DO UPDATE
-            SET package_key = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.package_key ELSE {_itemsTable}.package_key END,
-                workspace_id = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.workspace_id ELSE {_itemsTable}.workspace_id END,
-                family = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.family ELSE {_itemsTable}.family END,
-                updated_by = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.updated_by ELSE {_itemsTable}.updated_by END,
-                updated_at = CASE WHEN {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id THEN EXCLUDED.updated_at ELSE {_itemsTable}.updated_at END
-            WHERE {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
-               OR (@expected_existing_item_present
-                   AND {_itemsTable}.owner_id IS NOT DISTINCT FROM @expected_existing_owner_id)
+            SET package_key = EXCLUDED.package_key,
+                workspace_id = EXCLUDED.workspace_id,
+                family = EXCLUDED.family,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = EXCLUDED.updated_at
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1044,9 +1041,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         if (affected == 0)
         {
-            // The owner predicate makes the immutable ownership invariant
-            // atomic with the upsert. A concurrent create cannot slip between
-            // the MCP pointer check and draft insertion.
+            // A zero-row result is unexpected because both insert and conflict
+            // paths affect the item. Keep the failure explicit if the schema or
+            // command is changed in a way that violates that invariant.
             throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
         }
     }
