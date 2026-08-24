@@ -163,7 +163,8 @@ public sealed class OpenApiDriftTests
         statusInfoProps.TryGetProperty("type", out _).Should()
             .BeTrue("StatusInfo must document the type discriminator emitted by all job status responses");
 
-        // Execute schema must require inputs.plan (server enforces this at runtime).
+        // Execute always requires an inputs object. `plan` is optional at this generic
+        // service-desc boundary because direct process endpoints use their advertised keys.
         var execute = schemas.GetProperty("Execute");
         execute.TryGetProperty("required", out var executeRequired).Should()
             .BeTrue("Execute must declare required properties");
@@ -171,10 +172,14 @@ public sealed class OpenApiDriftTests
             .Should().Contain("inputs", "Execute must require 'inputs'");
 
         var executeInputs = execute.GetProperty("properties").GetProperty("inputs");
-        executeInputs.TryGetProperty("required", out var inputsRequired).Should()
-            .BeTrue("Execute.inputs must declare required properties");
-        inputsRequired.EnumerateArray().Select(e => e.GetString())
-            .Should().Contain("plan", "Execute.inputs must require 'plan'");
+        executeInputs.TryGetProperty("required", out _).Should()
+            .BeFalse("direct processes accept process-specific inputs without a plan wrapper");
+        executeInputs.GetProperty("properties").TryGetProperty("plan", out _).Should()
+            .BeTrue("the canonical analysis process must still document its plan input");
+        var executeOutputs = execute.GetProperty("properties").GetProperty("outputs");
+        executeOutputs.GetProperty("additionalProperties").GetProperty("properties")
+            .GetProperty("transmissionMode").GetProperty("enum")[0].GetString()
+            .Should().Be("value", "document-mode direct processes support value transmission");
 
         // AnalysisPlan schema must describe the minimum accepted shape.
         var plan = schemas.GetProperty("AnalysisPlan");
@@ -191,10 +196,34 @@ public sealed class OpenApiDriftTests
         // ProcessIoSchema must expose the fields emitted by process description endpoints.
         var ioSchema = schemas.GetProperty("ProcessIoSchema");
         var ioSchemaProps = ioSchema.GetProperty("properties");
-        ioSchemaProps.TryGetProperty("type", out _).Should()
-            .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
-        ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
-            .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+        string[] emittedSchemaFields =
+        [
+            "type",
+            "format",
+            "pattern",
+            "contentMediaType",
+            "contentEncoding",
+            "minimum",
+            "maximum",
+            "enum",
+            "items",
+            "minItems",
+            "maxItems",
+            "properties",
+            "required",
+            "oneOf",
+            "allOf",
+            "not"
+        ];
+        foreach (var field in emittedSchemaFields)
+        {
+            ioSchemaProps.TryGetProperty(field, out _).Should()
+                .BeTrue($"ProcessIoSchema must document the '{field}' field emitted by process descriptions");
+        }
+
+        schemas.GetProperty("InputDescription").GetProperty("properties")
+            .TryGetProperty("minOccurs", out _).Should()
+            .BeTrue("InputDescription must document required input cardinality emitted by process descriptions");
 
         // InputDescription and OutputDescription must reference ProcessIoSchema.
         foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })
