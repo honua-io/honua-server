@@ -48,8 +48,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
-            _items[draft.ItemId] = existingItem is not null
-                && !string.Equals(existingItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
+            _items[draft.ItemId] = existingItem is { } existingOwnerItem
+                && !string.Equals(existingOwnerItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
                 ? item
                 : item with
                 {
