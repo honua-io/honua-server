@@ -6,6 +6,7 @@ using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Builder;
+using System.Security.Claims;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -58,7 +59,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
         ArgumentNullException.ThrowIfNull(app);
         return app.Use(async (httpContext, next) =>
         {
-            if (!httpContext.Request.Path.Equals(McpEndpointExtensions.RoutePath, StringComparison.Ordinal)
+            if (!httpContext.Request.Path.Equals(McpEndpointExtensions.RoutePath, StringComparison.OrdinalIgnoreCase)
                 || !HasBearerCredential(httpContext))
             {
                 await next().ConfigureAwait(false);
@@ -79,7 +80,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
                 .ConfigureAwait(false);
             if (result.Succeeded && result.Principal is not null)
             {
-                httpContext.User = result.Principal;
+                httpContext.User = CreateTrustedBearerPrincipal(result.Principal);
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -133,7 +134,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
             // Bind the validated principal to the request so the JSON-RPC handler and the
             // per-tool grant checks observe the same claim shape the X-API-Key path
             // produces.
-            httpContext.User = result.Principal;
+            httpContext.User = CreateTrustedBearerPrincipal(result.Principal);
             return await next(context).ConfigureAwait(false);
         }
 
@@ -161,6 +162,17 @@ internal static class McpBearerAuthenticationEndpointExtensions
         }
 
         return false;
+    }
+
+    private static ClaimsPrincipal CreateTrustedBearerPrincipal(ClaimsPrincipal principal)
+    {
+        var sourceIdentity = principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated);
+        var identity = new ClaimsIdentity(
+            principal.Claims,
+            OidcAuthenticationExtensions.JwtBearerScheme,
+            sourceIdentity?.NameClaimType ?? ClaimTypes.Name,
+            sourceIdentity?.RoleClaimType ?? ClaimTypes.Role);
+        return new ClaimsPrincipal(identity);
     }
 
     private static IResult BuildInvalidTokenResult()

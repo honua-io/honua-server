@@ -1304,9 +1304,13 @@ app.UseApiKeyAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Audit must wrap the early MCP bearer authority boundary so invalid credentials
+// are recorded before the middleware returns its 401 response.
+app.UseHonuaAuditLog();
+
 // MCP bearer credentials must be fully validated before tenant context, schema
-// routing, tenant status, rate limiting, or audit middleware observes the request.
-// The endpoint filter remains defense-in-depth for non-standard hosting pipelines.
+// routing, or tenant status observes the request. The endpoint filter remains
+// defense-in-depth for non-standard hosting pipelines.
 Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions.UseMcpBearerAuthentication(app);
 
 // Resolve tenant context immediately after authentication so claims (and the
@@ -1323,11 +1327,6 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
-
-// Audit-log middleware records security-relevant request outcomes. It runs after
-// auth so the audit actor is the authenticated principal, and before endpoint
-// execution so 401/403/5xx responses are still observed (#1144).
-app.UseHonuaAuditLog();
 
 // App-level rate limiting (issue #355). Runs after authentication and tenant resolution
 // so buckets partition by tenant + authenticated user/API-key identity (falling back to
