@@ -367,6 +367,8 @@ export TRAIN_RUN_LOG_TEXT="Testcontainers timed out waiting for Ryuk"
 train_run_logs_match_flake 999 && ok "flake: testcontainers/ryuk recognized" || bad "flake: missed"
 export TRAIN_RUN_LOG_TEXT=$'Testcontainers startup failed\nconnection refused while contacting the resource reaper\nRyuk container did not become ready'
 train_run_logs_match_flake 999 && ok "flake: multiline testcontainers/ryuk recognized" || bad "flake: multiline ryuk missed"
+export TRAIN_RUN_LOG_TEXT=$'Testcontainers\nCan not connect to Ryuk at localhost:8080\nConnection refused'
+train_run_logs_match_flake 999 && ok "flake: split can-not Ryuk failure recognized" || bad "flake: split can-not Ryuk failure missed"
 export TRAIN_RUN_LOG_TEXT=$'Testcontainers startup failed\nRyuk container did not become ready\ndiagnostic one\ndiagnostic two\ndiagnostic three\ndiagnostic four\ndiagnostic five\nconnection refused while contacting the resource reaper'
 train_run_logs_match_flake 999 && ok "flake: expanded multiline testcontainers/ryuk recognized" || bad "flake: expanded multiline ryuk missed"
 export TRAIN_RUN_LOG_TEXT=$'testcontainers.ryuk.disabled=false\nAssert.Equal() Failure: expected 3 actual 4'

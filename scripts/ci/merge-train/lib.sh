@@ -423,7 +423,7 @@ train_log_is_flake() {
         ryuk_event = lines[i]
         gsub(/testcontainers[._]ryuk[._]disabled[[:space:]]*[:=][[:space:]]*(true|false)/, "", ryuk_event)
         if (ryuk_event ~ /ryuk/ &&
-            ryuk_event ~ /(timed out|connection refused|fail(ed|ure)?|did not|not .*ready|unable|cannot|could not|error)/) {
+            ryuk_event ~ /(timed out|connection refused|fail(ed|ure)?|did not|not .*ready|unable|cannot|can not|could not|error)/) {
           has_ryuk_failure = 1
         }
         if (lines[i] ~ /(timed out|connection refused)/) has_transport_error = 1
