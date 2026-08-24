@@ -1,0 +1,14 @@
+# DuckDB Spatial client-compat lane dependencies.
+#
+# Pinned exactly so the certification envelope's `client_version`
+# (duckdb=<ver>;spatial=<ver>) is reproducible run to run. Bumping any pin is a
+# deliberate re-certification, not an incidental upgrade.
+duckdb==1.5.5
+httpx==0.28.1
+pytest==8.4.2
+
+# DuckDB converts TIMESTAMP WITH TIME ZONE values to Python via pytz. Without
+# it, `SELECT created_at FROM ST_Read(...)` raises
+# "Required module 'pytz' failed to import" and the type-fidelity cases cannot
+# read the server's date-time column at all.
+pytz==2025.2

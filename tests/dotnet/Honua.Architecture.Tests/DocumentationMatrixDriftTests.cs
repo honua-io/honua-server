@@ -15,7 +15,7 @@ public sealed class DocumentationMatrixDriftTests
 {
     private static readonly Regex RouteParameterPattern = new(@"\{[^}]+\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex MatrixRoutePattern = new(@"(?<methods>GET(?:/POST)?|POST) (?<route>/rest/services/[^`, |]+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex MatrixIdPattern = new(@"^\| (?<id>(?:CERT|JS|EL|DSK|CLI|BI)-[A-Z0-9-]*\d) \|", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline);
+    private static readonly Regex MatrixIdPattern = new(@"^\| (?<id>(?:CERT|JS|EL|DSK|CLI|BI|NB)-[A-Z0-9-]*\d) \|", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline);
 
     [ArchitectureTest]
     public void MetadataCatalogImplementedRoutes_AreGeneratedFeatureCatalogRoutes()
@@ -160,7 +160,11 @@ public sealed class DocumentationMatrixDriftTests
         tiers.GetProperty("release").GetProperty("missingEvidence").GetString().Should().Be("fail");
 
         var fixturePolicy = document.GetProperty("fixturePolicy");
-        fixturePolicy.GetProperty("status").GetString().Should().Be("migration-required");
+        // #3393 froze the bounded 2026.1 fixture/config/auth contract, so the policy is no
+        // longer "migration-required". The manifest it points at is content-addressed and
+        // CanonicalFixtureManifestTests proves every digest recomputes from the real files.
+        fixturePolicy.GetProperty("status").GetString().Should().Be("frozen-2026.1");
+        fixturePolicy.GetProperty("manifest").GetString().Should().Be("docs/gis/data/client-certification-fixture.v1.json");
         fixturePolicy.GetProperty("requiredReceiptFields").EnumerateArray()
             .Select(value => value.GetString()).Should().BeEquivalentTo("fixture_revision", "server_config_revision");
         fixturePolicy.GetProperty("exceptions").EnumerateArray()

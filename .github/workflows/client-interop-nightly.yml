@@ -4,7 +4,9 @@ name: Real-Client Interop Matrix (Nightly)
 # nightly passes are observed across all lanes (#806 design).
 #
 # Exercises Honua against the actual GIS clients customers use (QGIS, GDAL,
-# OpenLayers, Cesium, ArcGIS Pro stub) via Docker harnesses under
+# OpenLayers, Cesium, ArcGIS Pro stub) and the canonical analyst clients
+# (GeoPandas, OWSLib, DuckDB Spatial, R sf/ows4R, pystac-client — #3392)
+# via Docker harnesses under
 # docker/client-compat/. CITE conformance suites prove spec compliance; this
 # matrix proves real-client compatibility.
 
@@ -16,7 +18,7 @@ on:
       lanes:
         description: 'Comma-separated lane subset (default = all)'
         required: false
-        default: 'gdal,pyqgis,openlayers,cesium,arcgis-stub'
+        default: 'gdal,pyqgis,openlayers,cesium,arcgis-stub,geopandas,owslib,duckdb,r-sf,pystac'
 
 permissions:
   contents: read    # gap-report is published as a workflow artifact, not pushed to trunk
@@ -44,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           # Schedule and dispatch-with-empty-input default to the full matrix.
-          default='gdal,pyqgis,openlayers,cesium,arcgis-stub'
+          default='gdal,pyqgis,openlayers,cesium,arcgis-stub,geopandas,owslib,duckdb,r-sf,pystac'
           raw="${LANES_INPUT:-}"
           # Strip whitespace and trailing/leading commas.
           raw="${raw// /}"
@@ -59,7 +61,12 @@ jobs:
           pyqgis
           openlayers
           cesium
-          arcgis-stub'
+          arcgis-stub
+          geopandas
+          owslib
+          duckdb
+          r-sf
+          pystac'
           IFS=',' read -ra requested <<<"$raw"
           for lane in "${requested[@]}"; do
             if ! grep -Fxq "$lane" <<<"$allowed"; then
@@ -81,6 +88,11 @@ jobs:
             [openlayers]="js"
             [cesium]="js-cesium"
             [arcgis-stub]="arcgis-stub"
+            [geopandas]="py-geopandas"
+            [owslib]="py-owslib"
+            [duckdb]="duckdb"
+            [r-sf]="r-sf"
+            [pystac]="py-pystac"
           )
           client_lanes=""
           for lane in "${requested[@]}"; do
@@ -164,6 +176,11 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ github.token }}
           PREBUILD_EXIT: ${{ steps.prebuild.outputs.build_exit }}
+          # Binds every lane's .cert.json receipt to the exact source revision under
+          # test. docker/client-compat/compose.yml forwards this into each canonical
+          # analyst lane as HONUA_<LANE>_SERVER_COMMIT; without it the envelope
+          # records "unknown" and the receipt cannot name the build it certified.
+          HONUA_SERVER_COMMIT: ${{ github.sha }}
         run: |
           set +e
           build_exit="${PREBUILD_EXIT:-1}"

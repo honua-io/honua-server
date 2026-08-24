@@ -1,0 +1,494 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T212544Z",
+  "run_date": "2026-08-23T21:25:44.795585+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "duckdb",
+  "client_version": "duckdb=1.5.5;spatial=eb1e57c",
+  "protocol": "ogc-features",
+  "protocol_version": "1.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 58,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "ST_Read('OAPIF:<landing>', layer='0') over the GDAL OAPIF driver returned 10 rows.",
+      "evidence_ref": "OAPIF:http://honua:5000/ogc/features layer=0"
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Transport scheme is 'http'. The docker/client-compat network is HTTP-only by construction, so TLS negotiation is exercised in the release tier against the HTTPS candidate rather than here. DuckDB httpfs reached the endpoint over this scheme.",
+      "evidence_ref": "http://honua:5000"
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": 4,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Anonymous GET /api/v1/admin/services -> 401 with WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". Measured with httpx: DuckDB surfaces no HTTP status code or challenge header.",
+      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": 41,
+      "measured_count": 6,
+      "measured_delta": null,
+      "notes": "GET /api/v1/admin/services with X-API-Key -> 200, 6 services. Honua's control plane uses an API key, not HTTP Basic and not a bearer login flow; HTTP Basic against the same path returns 401 on this deployment. DuckDB httpfs could not range-read the admin document (IO Error: Short read for HTTP GET to 'http://honua:5000/api/v1/admin/services': requested range bytes=0-1514 (1515 bytes), but received 1514 bytes); authenticated access proven over httpx instead.",
+      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "read_json_auto over /ogc/features/collections listed 5 collections: ['0', '2000', '2001', '2002', '3000'].",
+      "evidence_ref": "http://honua:5000/ogc/features/collections"
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 16,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "read_json_auto over http://honua:5000/ogc/features/collections/0 returned id=0, itemType=feature, storageCrs=http://www.opengis.net/def/crs/EPSG/0/4326, bbox=[-122.5, 37.7, -122.35, 37.84].",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0"
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": 18,
+      "measured_count": 12,
+      "measured_delta": null,
+      "notes": "DESCRIBE exposed 15 columns covering all 12 canonical attribute fields. The feature id surfaces as GDAL's OGC_FID rather than 'objectid', which is a driver convention.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": 98,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "ST_GeometryType returned POINT for all 9 non-null geometries and ST_Read_Meta declares 'Point' for the layer.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": 60,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "DuckDB predicate WHERE status = 'active' over ST_Read returned 5 rows. The predicate is evaluated CLIENT-SIDE in DuckDB after the OAPIF driver fetched the layer; the server-side equivalent is covered by NB-DDB-PUSH-02.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": 23,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "SERVER-SIDE pushdown: the OAPIF bbox query parameter was placed in the items URL that ST_Read opened, so the server did the spatial selection. DuckDB Spatial 1.5.x accepts no spatial_filter_box argument on ST_Read, so the OAPIF driver cannot be asked to push a filter down any other way.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?bbox=-122.495%2C37.705%2C-122.455%2C37.735&limit=1000"
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": 15,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "ST_Read over the items URL with limit=3 returned 3 rows.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?limit=3&offset=0"
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": 20,
+      "measured_count": 6,
+      "measured_delta": null,
+      "notes": "offset=0 -> [1, 2, 3], offset=3 -> [4, 5, 6]; the id sets are disjoint.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?limit=3&offset=3"
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": 50,
+      "measured_count": 1,
+      "measured_delta": 0.0,
+      "notes": "ST_X/ST_Y on 'alpha' returned (-122.49, 37.71) against (-122.49, 37.71); max abs deviation 0.0 <= 1e-06 degrees.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 97,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "ST_Read_Meta reports EPSG:4326 and the DuckDB column type is GEOMETRY('EPSG:4326'). The server's storageCrs is EPSG:4326 and the OAPIF driver propagates it.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 7,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "ST_Read('OAPIF:http://honua:5000/ogc/features/collections/does-not-exist-9999') raised duckdb.IOException: IO Error: Could not open GDAL dataset at: OAPIF:http://honua:5000/ogc/features/collections/does-not-exist-9999. NOTE: the alternative spelling ST_Read('OAPIF:<landing>', layer='<unknown>') SEGFAULTS DuckDB Spatial 1.5.5, so the collection-scoped dataset string is used instead.",
+      "evidence_ref": "OAPIF:http://honua:5000/ogc/features/collections/does-not-exist-9999"
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": 15,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "filter='status ==' -> DuckDB raised duckdb.IOException and the server answered 400 application/problem+json: \"Invalid CQL filter: Failed to parse CQL2 expression. (Parameter 'cql2Text')\" (status code and body read with httpx; DuckDB does not surface either).",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?filter=status+%3D%3D&filter-lang=cql2-text&limit=100"
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB Spatial is an analytical SQL client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 8
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-DDB-AUTH-04",
+      "status": "pass",
+      "duration_ms": 41,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "DuckDB httpfs authenticated the same control-plane read via CREATE SECRET (TYPE http, EXTRA_HTTP_HEADERS MAP) on duckdb=1.5.5;spatial=eb1e57c; the header survives into the HTTP GET.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-AUTH-03",
+      "status": "pass",
+      "duration_ms": 2,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GET /api/v1/admin/services with an invalid X-API-Key -> 401 (not 403, not 500). Measured with httpx.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-ERR-01",
+      "status": "pass",
+      "duration_ms": 7,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Unknown collection -> 404 application/problem+json; malformed bbox -> 400 application/problem+json. Both collapse to a single duckdb.IOException client-side, so the distinction only exists at the HTTP layer (measured with httpx).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-TYPE-01",
+      "status": "pass",
+      "duration_ms": 18,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "All 13 columns kept their natural type through the server -> GeoJSON -> GDAL -> DuckDB path; nothing was silently coerced to VARCHAR. Geometry column is GEOMETRY('EPSG:4326').",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-TYPE-02",
+      "status": "pass",
+      "duration_ms": 29,
+      "measured_count": 11,
+      "measured_delta": null,
+      "notes": "Cross-checked 11 fields from http://honua:5000/ogc/features/collections/0/queryables against the DuckDB types ST_Read produced. Note the server's queryables document omits the JSON array columns (tags, numbers) while declaring additionalProperties:false, so those two are covered by NB-DDB-TYPE-04 instead. Declared-double fields whose seeded values are all integral and therefore infer as an integer client-side: eo:cloud_cover (JSON has one number type; 5.0 is on the wire as 5).",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/queryables"
+    },
+    {
+      "test_case_id": "NB-DDB-TYPE-03",
+      "status": "pass",
+      "duration_ms": 48,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "The server declares uid with JSON-Schema format 'uuid'; GeoJSON has no UUID type so GDAL/DuckDB materialize it as VARCHAR. All 10 values still TRY_CAST to UUID, so the coercion is representation-only and loses nothing.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-TYPE-04",
+      "status": "pass",
+      "duration_ms": 44,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "tags -> VARCHAR[] ['red', 'blue'], numbers -> INTEGER[] [0, 1, 2]; list indexing and len() work, so the server emitted real JSON arrays rather than JSON-encoded strings.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-NULL-01",
+      "status": "pass",
+      "duration_ms": 45,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "4 NULL and 6 populated description values across 10 rows \u2014 the server emits JSON null (not an omitted key or an empty string) and no row was dropped.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-NULL-02",
+      "status": "pass",
+      "duration_ms": 90,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "1 null-geometry row ('lambda', status 'inactive') and 9 geometry rows totalling 10. The server emits \"geometry\": null and neither the driver nor the server dropped the row.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-GEOM-03",
+      "status": "pass",
+      "duration_ms": 42,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "ST_AsText(geom) = POINT (-122.49 37.71); WKB round-trip is bit-identical (deviation 0.0), so the server's coordinates survive DuckDB's binary encoding without precision loss.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-GEOM-04",
+      "status": "pass",
+      "duration_ms": 43,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "ST_IsValid returned true for all 9 emitted geometries.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-GEOM-05",
+      "status": "pass",
+      "duration_ms": 85,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Collection 2001: 2 LINESTRINGs, lengths [2634.4, 2634.5] m in EPSG:3857. Collection 2002: 2 valid POLYGONs, areas [1567773.1, 940663.8] m2.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-GEOM-06",
+      "status": "pass",
+      "duration_ms": 69,
+      "measured_count": null,
+      "measured_delta": 5.587935447692871e-09,
+      "notes": "Server crs=EPSG:3857 -> (-13635524.42726808, 4538539.15341347); DuckDB ST_Transform(always_xy) -> (-13635524.427268079, 4538539.1534134755); max deviation 5.587935447692871e-09 m <= 0.01 m. always_xy is required: without it DuckDB honours EPSG:4326's lat/lon axis order and ST_Transform returns inf for lon/lat input.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F3857&limit=1000"
+    },
+    {
+      "test_case_id": "NB-DDB-CRS-01",
+      "status": "pass",
+      "duration_ms": 27,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Content-Crs echoes the negotiated CRS for every supported value and defaults to CRS84: {'<default>': '<http://www.opengis.net/def/crs/OGC/1.3/CRS84>', 'http://www.opengis.net/def/crs/OGC/1.3/CRS84': '<http://www.opengis.net/def/crs/OGC/1.3/CRS84>', 'http://www.opengis.net/def/crs/EPSG/0/4326': '<http://www.opengis.net/def/crs/EPSG/0/4326>', 'http://www.opengis.net/def/crs/EPSG/0/3857': '<http://www.opengis.net/def/crs/EPSG/0/3857>'}. Read with httpx \u2014 GDAL/DuckDB discard response headers, which is why NB-DDB-CRS-02 matters.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-CRS-02",
+      "status": "pass",
+      "duration_ms": 42,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "crs=CRS84 -> (-122.49, 37.71) = (lon, lat); crs=EPSG:4326 -> (37.71, -122.49) = (lat, lon). The server honours the EPSG:4326 axis order mandated by OGC API Features Part 2 and declares it in Content-Crs. CLIENT HAZARD: GDAL reads the payload with the GeoJSON driver, which assumes CRS84, so ST_X on the EPSG:4326 response returns a latitude \u2014 DuckDB users must request CRS84 (the default) or swap the ordinates themselves.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326&limit=1000"
+    },
+    {
+      "test_case_id": "NB-DDB-CRS-03",
+      "status": "pass",
+      "duration_ms": 27,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "bbox-crs=EPSG:3857 with the DuckDB-reprojected envelope selected [1, 2, 3], identical to the CRS84 bbox. The server reprojects the query envelope rather than ignoring bbox-crs.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?bbox=-13636081.024722047%2C4537835.6179989865%2C-13631628.245090313%2C4542057.542774347&limit=1000&bbox-crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F3857"
+    },
+    {
+      "test_case_id": "NB-DDB-PUSH-01",
+      "status": "pass",
+      "duration_ms": 48,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "SERVER-SIDE bbox pushdown and CLIENT-SIDE ST_Intersects over a full fetch both selected [1, 2, 3]. The server's spatial predicate agrees with DuckDB's.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?bbox=-122.495%2C37.705%2C-122.455%2C37.735&limit=1000"
+    },
+    {
+      "test_case_id": "NB-DDB-PUSH-02",
+      "status": "pass",
+      "duration_ms": 61,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "SERVER-SIDE cql2-text filter status='active' and the CLIENT-SIDE DuckDB predicate both selected [1, 3, 5, 7, 9].",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?limit=1000&filter=status%3D%27active%27&filter-lang=cql2-text"
+    },
+    {
+      "test_case_id": "NB-DDB-PUSH-03",
+      "status": "pass",
+      "duration_ms": 66,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "SERVER-SIDE datetime=2024-01-01T00:00:00Z/2024-01-03T23:59:59Z and the CLIENT-SIDE DuckDB TIMESTAMPTZ BETWEEN predicate both selected [1, 2, 3], so the server's temporal field binding matches the created_at values it serves.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?datetime=2024-01-01T00%3A00%3A00Z%2F2024-01-03T23%3A59%3A59Z&limit=1000"
+    },
+    {
+      "test_case_id": "NB-DDB-QRY-01",
+      "status": "pass",
+      "duration_ms": 64,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "A zero-match cql2-text filter returned an empty FeatureCollection (HTTP 200) that GDAL opened without error, so DuckDB sees 0 rows rather than an exception.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?limit=1000&filter=status%3D%27no-such-status-value%27&filter-lang=cql2-text"
+    },
+    {
+      "test_case_id": "NB-DDB-QRY-02",
+      "status": "pass",
+      "duration_ms": 100,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "min/max/sum over 'count' = 1/10/55, avg(ratio) = 6.875, GROUP BY status = {'active': 5, 'inactive': 5}. Every value matches the canonical fixture, so the server delivered a complete, uncorrupted result set to the analytical engine.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-QRY-03",
+      "status": "pass",
+      "duration_ms": 159,
+      "measured_count": 27,
+      "measured_delta": null,
+      "notes": "Spatial join of collections 0 and 2000 via ST_DWithin produced 27 pairs; row_number() OVER (PARTITION BY status) picked [('active', 'alpha', 1), ('inactive', 'beta', 1)]. Two independent OAPIF reads inside one statement stayed consistent.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-PAGE-03",
+      "status": "pass",
+      "duration_ms": 58,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] \u2014 exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-PAGE-04",
+      "status": "pass",
+      "duration_ms": 40,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "limit=100000 -> numberMatched/numberReturned 10/10; bbox subset with limit=2 -> 3/2 (numberMatched counts the filtered set, not the page); offset=100000 -> 0 rows via DuckDB; limit=0 -> 400 application/problem+json. Counts and status codes read with httpx.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-FMT-01",
+      "status": "pass",
+      "duration_ms": 51,
+      "measured_count": 10,
+      "measured_delta": 0.0,
+      "notes": "COPY ... TO PARQUET then read_parquet preserved 10 rows, 9 WKB geometries and the anchor within 0.0 degrees. This is the analyst's real export path off a Honua collection.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-FMT-02",
+      "status": "pass",
+      "duration_ms": 66,
+      "measured_count": 9,
+      "measured_delta": 0.0,
+      "notes": "COPY ... (FORMAT GDAL, DRIVER 'GeoJSON') then ST_Read preserved 9 geometries and the anchor within 0.0 degrees of the server's coordinates.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-ERR-02",
+      "status": "pass",
+      "duration_ms": 6,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Unsupported format/CRS/bbox-crs each answered 400 application/problem+json rather than 500 or a hang: {'f=nosuchformat': \"Unsupported format 'nosuchformat'\", 'crs=bogus': \"Unsupported CRS 'bogus-crs'.\", 'bbox-crs=bogus': \"Unsupported CRS 'bogus-crs'.\"}. Read with httpx.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-DDB-ERR-04",
+      "status": "pass",
+      "duration_ms": 4,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Unparseable paging parameters answered structured problem+json 400s: {'limit=abc': (400, 'application/problem+json'), 'limit=1.5': (400, 'application/problem+json'), 'offset=abc': (400, 'application/problem+json')}. Read with httpx.",
+      "evidence_ref": ""
+    }
+  ]
+}

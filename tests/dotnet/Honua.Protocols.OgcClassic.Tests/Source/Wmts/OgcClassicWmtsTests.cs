@@ -426,7 +426,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("<Themes>");
         content.Should().Contain("resourceType=\"FeatureInfo\"");
         content.Should().Contain("/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png");
-        content.Should().Contain("/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png");
+        content.Should().Contain("/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png");
 
         var themesIndex = content.IndexOf("<Themes>", StringComparison.Ordinal);
         var serviceMetadataIndex = content.IndexOf("<ServiceMetadataURL ", StringComparison.Ordinal);
