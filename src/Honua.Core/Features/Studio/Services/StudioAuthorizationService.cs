@@ -38,20 +38,31 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     /// <summary>Denial code: an elevated operation (publish-request/rollback) has no matching operator grant.</summary>
     public const string ElevatedGrantRequiredCode = "studio_authorization/elevated_grant_required";
 
+    /// <summary>
+    /// Denial code: the caller's OAuth access-token scopes do not reach this operation. Distinct
+    /// from the grant-denial codes so an operator can tell a too-narrow token apart from a
+    /// missing grant (honua-server#2851/#3431).
+    /// </summary>
+    public const string ScopeDeniedCode = "studio_authorization/scope_denied";
+
     private readonly IOperatorAuthorizationEvaluator _evaluator;
+    private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions;
 
     /// <summary>Initializes a new Studio authorization service.</summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
+        IOperatorScopeAuthorizer scopeAuthorizer,
         IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
         IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
+        ArgumentNullException.ThrowIfNull(scopeAuthorizer);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(adminRoleOptions);
         _evaluator = evaluator;
+        _scopeAuthorizer = scopeAuthorizer;
         _options = options;
         _adminRoleOptions = adminRoleOptions;
     }
@@ -181,6 +192,30 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        // OAuth 2.1 scope narrowing (honua-server#2851, regression guard honua-server#3431).
+        // The role/grant model below decides what the principal MAY do; when the caller
+        // authenticated with a bearer token its scopes can only narrow that -- never widen it.
+        //
+        // This runs ahead of the admin bypass deliberately. It is the same unconditional
+        // ceiling GeoprocessingJobAuthorizer.EnsureAuthorizedAsync applies (that method has no
+        // admin short-circuit either), so a narrow-scoped token cannot mutate a draft merely
+        // because its principal also carries the admin role. The Studio MCP draft tools used to
+        // reach that authorizer through IGeoprocessingJobService.EnsureCallerAuthorizedAsync;
+        // now that they authorize through this service instead, enforcing the scope ceiling
+        // here is what keeps the MCP surface from losing scope narrowing altogether.
+        //
+        // Non-OAuth principals (X-API-Key, interactive sessions, dev-bypass) report NotGoverned
+        // and pass through untouched.
+        var scopeDecision = _scopeAuthorizer.Evaluate(
+            principal, OperatorResourceType.StudioDraft, MapToScopeOperation(operation));
+        if (!scopeDecision.IsAllowed)
+        {
+            return StudioAuthorizationDecision.Deny(
+                ScopeDeniedCode,
+                scopeDecision.Reason
+                    ?? $"The access token's scopes do not permit '{operation}' on Studio drafts.");
+        }
+
         // Admins always have full, unscoped access -- unchanged before and after #3001, and
         // independent of the feature flag.
         if (IsAdmin(principal))
@@ -273,6 +308,33 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             $"'{operation}' requires a StudioDraft '{operatorOperation}' operator grant.",
             elevated: true);
     }
+
+    /// <summary>
+    /// Maps a Studio lifecycle operation onto the operator operation whose OAuth scope governs
+    /// it. Mutations map to <see cref="OperatorOperation.Create"/> and reads to
+    /// <see cref="OperatorOperation.Read"/> -- the only two operations the Studio MCP tools ever
+    /// passed to the geoprocessing authorizer before this service owned the check, so scope
+    /// coverage is restored exactly rather than widened.
+    /// <para>
+    /// Draft edits deliberately do NOT map to <see cref="OperatorOperation.Update"/> or
+    /// <see cref="OperatorOperation.Delete"/>: <c>OperatorScopeCatalog.ScopeOperations</c> maps
+    /// neither to any scope except the full scope, so routing edits through them would fail
+    /// every normally delegated token -- the same regression honua-server#3046 caught on the
+    /// geoprocessing path.
+    /// </para>
+    /// </summary>
+    private static OperatorOperation MapToScopeOperation(StudioAuthorizationOperation operation)
+        => operation switch
+        {
+            StudioAuthorizationOperation.ReadDraft
+                or StudioAuthorizationOperation.ReadContentItem
+                or StudioAuthorizationOperation.ListOwn
+                or StudioAuthorizationOperation.ValidateDraft => OperatorOperation.Read,
+            StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
+            StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
+            StudioAuthorizationOperation.Rollback => OperatorOperation.Rollback,
+            _ => OperatorOperation.Create,
+        };
 
     private async Task<bool> HasOperatorGrantAsync(
         ClaimsPrincipal principal,

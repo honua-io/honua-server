@@ -502,6 +502,7 @@ public sealed class StudioMcpToolDelegationTests
             .Returns(AccessDecision.Allowed());
         return new StudioAuthorizationService(
             evaluator,
+            new Honua.Core.Features.Authorization.OperatorScopeAuthorizer(),
             new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(
                 new StudioEndUserAuthorizationOptions { Enabled = true }),
             new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions()));

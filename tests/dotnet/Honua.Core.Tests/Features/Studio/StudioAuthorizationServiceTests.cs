@@ -535,6 +535,89 @@ public sealed class StudioAuthorizationServiceTests
             callerId)).IsAllowed.Should().BeTrue();
     }
 
+    // OAuth scope narrowing over the Studio surface (honua-server#3431). Before this guard the
+    // Studio MCP draft tools authorized through IGeoprocessingJobService.EnsureCallerAuthorizedAsync,
+    // which applied IOperatorScopeAuthorizer as an unconditional ceiling. Routing them through
+    // StudioAuthorizationService must not drop that ceiling: a token whose scopes do not reach the
+    // operation is denied even when the principal's ROLE would allow it.
+
+    [UnitTest]
+    public async Task AuthorizeAsync_ScopeNarrowedAdmin_DeniesDraftMutationItHoldsTheRoleFor()
+    {
+        var service = BuildService(enabled: true, out _);
+        // Holds the admin role -- the role tier alone would allow this unconditionally.
+        var principal = ScopeGovernedPrincipal("admin-1", "admin", OperatorScopeCatalog.Read);
+
+        var decision = await service.AuthorizeAsync(
+            principal, "admin-1", StudioAuthorizationOperation.CreateDraft, "admin-1");
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.Code.Should().Be(StudioAuthorizationService.ScopeDeniedCode);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_ScopeNarrowedOwner_DeniesMutationOnOwnDraft()
+    {
+        var service = BuildService(enabled: true, out _);
+        // Owns the draft, so the ownership tier alone would allow the edit.
+        var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Read);
+
+        var decision = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.Code.Should().Be(StudioAuthorizationService.ScopeDeniedCode);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_ScopeGovernedWithCreateScope_AllowsMutationOnOwnDraft()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Create);
+
+        var decision = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_ScopeGovernedRead_StillAllowsReadingOwnDraft()
+    {
+        var service = BuildService(enabled: true, out _);
+        var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Read);
+
+        var decision = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.ReadDraft, Alice);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_NonScopeGovernedPrincipal_IsNeverNarrowed()
+    {
+        var service = BuildService(enabled: true, out _);
+        // X-API-Key / interactive principals carry no scope claims and must pass through.
+        var principal = UserPrincipal(Alice);
+
+        var decision = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    private static ClaimsPrincipal ScopeGovernedPrincipal(string userId, string role, params string[] scopes)
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Role, role),
+                new Claim(
+                    OperatorScopeCatalog.ScopeGovernedClaimType,
+                    OperatorScopeCatalog.ScopeGovernedClaimValue),
+                new Claim(OperatorScopeCatalog.ScopeClaimType, string.Join(' ', scopes)),
+            ],
+            authenticationType: "Bearer"));
+
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,
@@ -543,7 +626,11 @@ public sealed class StudioAuthorizationServiceTests
         evaluator = new FakeOperatorAuthorizationEvaluator();
         var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
         var adminRoleOptions = new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = adminRoles ?? [] });
-        return new StudioAuthorizationService(evaluator, options, adminRoleOptions);
+        return new StudioAuthorizationService(
+            evaluator,
+            new OperatorScopeAuthorizer(),
+            options,
+            adminRoleOptions);
     }
 
     private static ClaimsPrincipal AdminPrincipal()
