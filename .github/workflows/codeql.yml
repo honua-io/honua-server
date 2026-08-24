@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       # The scheduled instrumented build needs more disk than the PR no-build lane.
       - name: Free disk space

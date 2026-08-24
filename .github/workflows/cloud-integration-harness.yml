@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -162,7 +162,7 @@ jobs:
     # gate = the real PostgresDatabaseMigrationRunner over a Testcontainers Postgres. FREE (no cloud
     # secrets), plain ubuntu runner with Docker. Every test [SkippableFact]-skips when Docker is absent.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci

@@ -56,7 +56,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout honua-server
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Validate matrix and capability classification
         shell: bash
@@ -132,7 +132,7 @@ jobs:
 
     steps:
       - name: Checkout compatibility workflow source
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           path: compatibility-source
@@ -148,7 +148,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
 
       - name: Checkout honua-server target
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ matrix.server_checkout_ref }}
           fetch-depth: 0
@@ -212,21 +212,21 @@ jobs:
           Authentication__PortalToken__RequireHttps: 'false'
 
       - name: Checkout honua-sdk-js
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: honua-io/honua-sdk-js
           path: sdk/honua-sdk-js
           ref: ${{ matrix.sdk_js_ref }}
 
       - name: Checkout honua-sdk-python
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: honua-io/honua-sdk-python
           path: sdk/honua-sdk-python
           ref: ${{ matrix.sdk_python_ref }}
 
       - name: Checkout honua-sdk-dotnet
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: honua-io/honua-sdk-dotnet
           path: sdk/honua-sdk-dotnet
@@ -658,7 +658,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout honua-server
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
 

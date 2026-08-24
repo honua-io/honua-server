@@ -106,7 +106,7 @@ jobs:
         lane: ${{ fromJSON(needs.prepare.outputs.lanes) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Configure docker BuildKit
         run: |
@@ -237,7 +237,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Python
         uses: actions/setup-python@v7

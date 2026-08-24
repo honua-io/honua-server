@@ -78,7 +78,7 @@ jobs:
       iterations: ${{ steps.plan.outputs.iterations }}
       expect_shards: ${{ steps.plan.outputs.expect_shards }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - id: plan
         name: Choose this run's selections
@@ -220,7 +220,7 @@ jobs:
       PGUSER: honua
       PGPASSWORD: honua
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Same reclamation the production shards do: the modular test topology
       # pushes some shards past the runner's free-disk limit.
@@ -333,7 +333,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Download shard flake evidence
         uses: actions/download-artifact@v8
