@@ -151,22 +151,22 @@ public sealed class GeoservicesCatalogServiceTypingTests
     private static IRasterStore BuildRasterStoreWithRasters()
     {
         var rasterStore = Substitute.For<IRasterStore>();
+        static RasterInfo Raster(int layerId) => new()
+        {
+            Id = 1,
+            LayerId = layerId,
+            Name = "typing-raster-tile",
+            Width = 256,
+            Height = 256,
+            BandCount = 3,
+            PixelType = "8BUI",
+            Srid = 4326,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(new[]
-            {
-                new RasterInfo
-                {
-                    Id = 1,
-                    LayerId = callInfo.ArgAt<int>(0),
-                    Name = "typing-raster-tile",
-                    Width = 256,
-                    Height = 256,
-                    BandCount = 3,
-                    PixelType = "8BUI",
-                    Srid = 4326,
-                    CreatedAt = DateTimeOffset.UtcNow
-                }
-            }));
+            .Returns(callInfo => new[] { Raster(callInfo.ArgAt<int>(0)) });
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult<RasterInfo?>(Raster(callInfo.ArgAt<int>(0))));
         return rasterStore;
     }
 
@@ -210,6 +210,12 @@ public sealed class GeoservicesCatalogServiceTypingTests
         builder
             .AddResource("res-typing-raster", "Raster Layer", MetadataV2ResourceType.RasterDataset,
                 accessPolicy: anonymous)
+            .AddStorageBinding(
+                "binding-typing-raster",
+                "res-typing-raster",
+                "typing_raster_data",
+                storageType: MetadataV2StorageType.RelationalTable,
+                storageLayerId: 701)
             .AddService("svc-typing-raster", RasterServiceName,
                 protocols: [ServiceProtocols.ImageServer], accessPolicy: anonymous)
             .AddPublication("pub-typing-raster", "svc-typing-raster", "res-typing-raster",

@@ -235,6 +235,30 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTemporaryFileAsync_WithRawSubjectOnly_RemainsOwnerRestricted()
+    {
+        using var service = CreateService(new TemporaryFileOptions
+        {
+            StorageDirectory = _storageDirectory,
+            MaxFileSizeBytes = 1024 * 1024,
+            MaxTotalStorageBytes = 1024 * 1024,
+            MaxFileCount = 10,
+            DefaultExpiration = TimeSpan.FromMinutes(5)
+        });
+        var owner = CreateSubjectPrincipal("owner-subject");
+        var other = CreateSubjectPrincipal("other-subject");
+
+        var url = await service.StoreTemporaryFileAsync(
+            [1, 2, 3],
+            "image/png",
+            principal: owner);
+        var fileId = Path.GetFileName(url);
+
+        (await service.GetTemporaryFileAsync(fileId, principal: owner)).Should().NotBeNull();
+        (await service.GetTemporaryFileAsync(fileId, principal: other)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task StoreTemporaryFileAsync_WithoutExplicitPrincipal_UsesHttpContextAccessorPrincipal()
     {
         var httpContextAccessor = new HttpContextAccessor
@@ -336,6 +360,34 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         ownerResult.Should().NotBeNull();
         otherResult.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndRawSubject_RemainsOwnerRestricted()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
+        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var redis = CreateRedisLeaseMultiplexer();
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            distributedCache,
+            redis: redis);
+        var owner = CreateSubjectPrincipal("owner-subject");
+        var other = CreateSubjectPrincipal("other-subject");
+
+        var url = await service.StoreTemporaryFileAsync(
+            [1, 2, 3],
+            "image/png",
+            principal: owner);
+        var fileId = Path.GetFileName(url);
+
+        (await service.GetTemporaryFileAsync(fileId, owner)).Should().NotBeNull();
+        (await service.GetTemporaryFileAsync(fileId, other)).Should().BeNull();
     }
 
     [Fact]
@@ -782,6 +834,14 @@ public sealed class TemporaryFileServiceTests : IDisposable
         [
             new Claim(ClaimTypes.NameIdentifier, subject)
         ], "test"));
+    }
+
+    private static ClaimsPrincipal CreateSubjectPrincipal(string subject)
+    {
+        return new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", subject)
+        ], "Bearer"));
     }
 
     private sealed class FakeCloudFileStorage : ICloudFileStorage

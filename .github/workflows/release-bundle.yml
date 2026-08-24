@@ -24,10 +24,6 @@ on:
         type: choice
         options: [preview, rc, ga]
         default: preview
-      server_ref:
-        description: 'Server commit/branch for the candidate (default: this ref)'
-        required: false
-        default: ''
       run_integration:
         description: 'Run the integration/conformance evidence lanes'
         type: boolean
@@ -65,6 +61,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     outputs:
       image_ref: ${{ steps.ref.outputs.image_ref }}
       image_tag: ${{ steps.ref.outputs.image_tag }}
@@ -74,13 +72,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.server_ref || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Compute immutable RC tag
         id: ref
         run: |
           set -euo pipefail
           server_sha="$(git rev-parse HEAD)"
+          if [[ "$server_sha" != "${GITHUB_SHA}" ]]; then
+            echo "::error::Checked-out server SHA $server_sha does not match the workflow SHA ${GITHUB_SHA}."
+            exit 1
+          fi
           short="$(git rev-parse --short HEAD)"
           tag="rc-${{ github.event.inputs.release_id }}-${short}"
           echo "server_sha=${server_sha}" >> "$GITHUB_OUTPUT"
@@ -106,11 +108,9 @@ jobs:
           platforms: linux/amd64
           outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           # Immutable deployment identity (#3038): the RC image must be able to advertise
-          # the commit it was built from on the capability manifest. This is the SHA of the
-          # CHECKED-OUT server ref, not github.sha — a dispatch supplying `server_ref` builds
-          # that ref, and stamping the workflow's own revision would bind the integration and
-          # conformance evidence to code the image does not contain. Same value the evidence
-          # publisher passes as --server-ref.
+          # the commit it was built from on the capability manifest. The workflow must be
+          # dispatched on the candidate ref, so the checked-out SHA, workflow provenance,
+          # image label, and evidence publisher all carry the same immutable revision.
           build-args: |
             HONUA_GIT_SHA=${{ steps.ref.outputs.server_sha }}
           provenance: true
@@ -127,6 +127,13 @@ jobs:
           set -euo pipefail
           docker pull "$CANDIDATE"
           python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Attest verified RC AOT candidate
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Publish verified RC AOT tag
         shell: bash
@@ -271,7 +278,7 @@ jobs:
             --release-id '${{ github.event.inputs.release_id }}' \
             --channel '${{ github.event.inputs.channel }}' \
             --server-ref '${{ needs.rc-image.outputs.server_sha }}' \
-            --ref-source '${{ github.event.inputs.server_ref || github.ref_name }}' \
+            --ref-source '${{ github.ref_name }}' \
             --image-repository "${REGISTRY_GHCR}/${IMAGE_NAME}" \
             --image-tag '${{ needs.rc-image.outputs.image_tag }}' \
             --image-digest '${{ needs.rc-image.outputs.image_digest }}' \

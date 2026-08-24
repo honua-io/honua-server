@@ -9,6 +9,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -34,6 +35,8 @@ internal static class ImageServerEndpoints
     /// </summary>
     public static void MapImageServerEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapImageServerSoapEndpoints();
+
         var group = app.MapGroup("/rest/services/{id:int}/ImageServer")
             .WithTags("ImageServer")
             // Read-only Esri ImageServer surface; access is enforced by the
@@ -1504,8 +1507,18 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ExecuteExportImageAsync(resolution.LayerId, request, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteExportImageAsync(
+            resolution.LayerId,
+            request,
+            context,
+            handler,
+            cancellationToken,
+            resolution.PublicationId);
     }
 
     private static async Task<IResult> ExportImagePost(
@@ -1530,7 +1543,11 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
         if (resolution.ErrorResult is not null)
         {
             return resolution.ErrorResult;
@@ -1543,7 +1560,13 @@ internal static class ImageServerEndpoints
         }
 
         var request = CreateExportImageRequest(MergeQueryAndBodyValues(context, bodyValues.Values!));
-        return await ExecuteExportImageAsync(resolution.LayerId, request, context, handler, cancellationToken);
+        return await ExecuteExportImageAsync(
+            resolution.LayerId,
+            request,
+            context,
+            handler,
+            cancellationToken,
+            resolution.PublicationId);
     }
 
     private static async Task<IResult> ExecuteExportImageAsync(
@@ -1551,20 +1574,37 @@ internal static class ImageServerEndpoints
         ExportImageRequest request,
         HttpContext context,
         ImageServerExportHandler handler,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? publicationId = null)
     {
         if (!IsSupportedExportResponseFormat(request.F))
         {
             return CreateUnsupportedExportFormatResult(context);
         }
 
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
+        if (publicationId is null)
         {
-            return layerError;
+            var resolution = await ResolveImageLayerAsync(
+                id,
+                context,
+                cancellationToken,
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+            if (resolution.ErrorResult is not null)
+            {
+                return resolution.ErrorResult;
+            }
+
+            id = resolution.LayerId;
+            publicationId = resolution.PublicationId;
         }
 
-        return await handler.ExportImageAsync(context, id, request, cancellationToken);
+        return await handler.ExportImageAsync(
+            context,
+            id,
+            request,
+            publicationId!,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+            cancellationToken);
     }
 
     /// <summary>
@@ -1771,15 +1811,41 @@ internal static class ImageServerEndpoints
         HttpContext context,
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
+        => await ExecuteRasterItemImageAsync(
+            id, rasterId, context, handler, publicationId: null, cancellationToken);
+
+    private static async Task<IResult> ExecuteRasterItemImageAsync(
+        int id,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        string? publicationId,
+        CancellationToken cancellationToken)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
+        if (publicationId is null)
         {
-            return layerError;
+            var resolution = await ResolveImageLayerAsync(
+                id,
+                context,
+                cancellationToken,
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+            if (resolution.ErrorResult is not null)
+            {
+                return resolution.ErrorResult;
+            }
+
+            id = resolution.LayerId;
+            publicationId = resolution.PublicationId;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        return await handler.ExportImageAsync(context, id, CreateRasterItemImageRequest(values, rasterId), cancellationToken);
+        return await handler.ExportImageAsync(
+            context,
+            id,
+            CreateRasterItemImageRequest(values, rasterId),
+            publicationId!,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+            cancellationToken);
     }
 
     private static async Task<IResult> GetRasterItemImageByService(
@@ -1789,9 +1855,18 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await GetRasterItemImage(
-            resolution.LayerId, rasterId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteRasterItemImageAsync(
+            resolution.LayerId,
+            rasterId,
+            context,
+            handler,
+            resolution.PublicationId,
+            cancellationToken);
     }
 
     private static Task<IResult> GetRasterItemInfo(
@@ -1927,15 +2002,41 @@ internal static class ImageServerEndpoints
         HttpContext context,
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
+        => await ExecuteRasterItemThumbnailAsync(
+            id, rasterId, context, handler, publicationId: null, cancellationToken);
+
+    private static async Task<IResult> ExecuteRasterItemThumbnailAsync(
+        int id,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        string? publicationId,
+        CancellationToken cancellationToken)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
+        if (publicationId is null)
         {
-            return layerError;
+            var resolution = await ResolveImageLayerAsync(
+                id,
+                context,
+                cancellationToken,
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+            if (resolution.ErrorResult is not null)
+            {
+                return resolution.ErrorResult;
+            }
+
+            id = resolution.LayerId;
+            publicationId = resolution.PublicationId;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
-        return await handler.ExportImageAsync(context, id, CreateRasterItemThumbnailRequest(values, rasterId), cancellationToken);
+        return await handler.ExportImageAsync(
+            context,
+            id,
+            CreateRasterItemThumbnailRequest(values, rasterId),
+            publicationId!,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export,
+            cancellationToken);
     }
 
     private static async Task<IResult> GetRasterItemThumbnailByService(
@@ -1945,9 +2046,18 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await GetRasterItemThumbnail(
-            resolution.LayerId, rasterId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteRasterItemThumbnailAsync(
+            resolution.LayerId,
+            rasterId,
+            context,
+            handler,
+            resolution.PublicationId,
+            cancellationToken);
     }
 
     /// <summary>
@@ -2915,19 +3025,38 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
-        {
-            return layerError;
-        }
+        var resolution = await ResolveImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteExportTilesGetAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
+    }
 
+    private static async Task<IResult> ExecuteExportTilesGetAsync(
+        int storageLayerId,
+        string publicationId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken)
+    {
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.ExportTilesAsync(context, id, values, cancellationToken);
+        return await handler.ExportTilesAsync(
+            context,
+            storageLayerId,
+            values,
+            publicationId,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesGetByService(
@@ -2936,8 +3065,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ExportTilesGet(resolution.LayerId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteExportTilesGetAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
     }
 
     /// <summary>
@@ -2949,12 +3087,26 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        if (layerError is not null)
-        {
-            return layerError;
-        }
+        var resolution = await ResolveImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteExportTilesPostAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
+    }
 
+    private static async Task<IResult> ExecuteExportTilesPostAsync(
+        int storageLayerId,
+        string publicationId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken)
+    {
         var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
         if (bodyValues.Error != null)
         {
@@ -2967,7 +3119,12 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.ExportTilesAsync(context, id, merged, cancellationToken);
+        return await handler.ExportTilesAsync(
+            context,
+            storageLayerId,
+            merged,
+            publicationId,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesPostByService(
@@ -2976,8 +3133,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ExportTilesPost(resolution.LayerId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await ExecuteExportTilesPostAsync(
+            resolution.LayerId,
+            resolution.PublicationId!,
+            context,
+            handler,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobStatus(
@@ -2987,8 +3153,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        return layerError ?? await handler.GetJobStatusAsync(context, id, jobId, cancellationToken);
+        var resolution = await ResolveImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await handler.GetJobStatusAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobStatusByService(
@@ -2998,8 +3173,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ExportTilesJobStatus(resolution.LayerId, jobId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await handler.GetJobStatusAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobCancel(
@@ -3009,8 +3193,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        return layerError ?? await handler.CancelJobAsync(context, id, jobId, cancellationToken);
+        var resolution = await ResolveImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await handler.CancelJobAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobCancelByService(
@@ -3020,8 +3213,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ExportTilesJobCancel(resolution.LayerId, jobId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await handler.CancelJobAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobResult(
@@ -3031,8 +3233,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
-        return layerError ?? await handler.GetJobResultAsync(context, id, jobId, cancellationToken);
+        var resolution = await ResolveImageLayerAsync(
+            id,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await handler.GetJobResultAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     private static async Task<IResult> ExportTilesJobResultByService(
@@ -3042,8 +3253,17 @@ internal static class ImageServerEndpoints
         ImageServerExportTilesHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ExportTilesJobResult(resolution.LayerId, jobId, context, handler, cancellationToken);
+        var resolution = await ResolveImageServiceLayerIdAsync(
+            serviceId,
+            context,
+            cancellationToken,
+            AuthorizationOperation.Export);
+        return resolution.ErrorResult ?? await handler.GetJobResultAsync(
+            context,
+            resolution.LayerId,
+            jobId,
+            resolution.PublicationId!,
+            cancellationToken);
     }
 
     /// <summary>
@@ -3644,12 +3864,15 @@ internal static class ImageServerEndpoints
         ResolveImageServiceLayerIdAsync(
         string serviceId,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
     {
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
         var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
             serviceId,
             context,
+            authorizationOperation,
             cancellationToken).ConfigureAwait(false);
         return (
             resolution.LayerId,
@@ -3661,19 +3884,28 @@ internal static class ImageServerEndpoints
     private static async Task<IResult?> ValidateImageLayerAsync(
         int layerId,
         HttpContext context,
-        CancellationToken cancellationToken)
-        => (await ResolveImageLayerAsync(layerId, context, cancellationToken).ConfigureAwait(false))
+        CancellationToken cancellationToken,
+        Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
+        => (await ResolveImageLayerAsync(
+            layerId,
+            context,
+            cancellationToken,
+            authorizationOperation).ConfigureAwait(false))
             .ErrorResult;
 
     private static async Task<ImageServerLayerResolution> ResolveImageLayerAsync(
         int layerId,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
     {
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
         return await resolver.ValidateLayerAsync(
             layerId,
             context,
+            authorizationOperation,
             cancellationToken).ConfigureAwait(false);
     }
 
