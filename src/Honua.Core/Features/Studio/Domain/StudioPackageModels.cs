@@ -321,6 +321,9 @@ public sealed record StudioPackageDraft
     [JsonIgnore]
     public string? ExpectedExistingItemOwnerId { get; init; }
 
+    [JsonIgnore]
+    public bool ExpectedExistingItemPresent { get; init; }
+
     /// <summary>Package family.</summary>
     [JsonPropertyName("family")]
     public required StudioPackageFamily Family { get; init; }

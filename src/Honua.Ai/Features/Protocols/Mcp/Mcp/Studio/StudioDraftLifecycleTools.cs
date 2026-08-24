@@ -136,6 +136,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
                     WorkspaceId = argument.WorkspaceId,
                     OwnerId = ownerId,
                     ExpectedExistingItemOwnerId = existingPointers?.OwnerId,
+                    ExpectedExistingItemPresent = existingPointers is not null,
                     Envelope = envelope,
                     ActorId = actorId,
                     BaseVersionId = argument.BaseVersionId,

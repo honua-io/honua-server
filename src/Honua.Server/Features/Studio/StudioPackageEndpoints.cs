@@ -522,6 +522,7 @@ internal static class StudioPackageEndpoints
                     WorkspaceId = request.WorkspaceId,
                     OwnerId = ownerId,
                     ExpectedExistingItemOwnerId = existingPointers?.OwnerId,
+                    ExpectedExistingItemPresent = existingPointers is not null,
                     Envelope = request.Envelope,
                     ActorId = actor,
                 },

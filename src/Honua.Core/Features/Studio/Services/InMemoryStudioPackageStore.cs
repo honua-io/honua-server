@@ -38,7 +38,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             EnsurePackageKeyAvailable(draft);
             if (_items.TryGetValue(draft.ItemId, out var existingItem)
                 && !string.Equals(existingItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
-                && (draft.ExpectedExistingItemOwnerId is null
+                && (!draft.ExpectedExistingItemPresent
                     || !string.Equals(existingItem.OwnerId, draft.ExpectedExistingItemOwnerId, StringComparison.Ordinal)))
             {
                 // Ownership is immutable. Keep this check inside the same lock as
