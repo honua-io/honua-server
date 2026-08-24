@@ -240,6 +240,22 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
             errors,
         )
 
+    def test_missing_pinned_configuration_method_fails_closed(self) -> None:
+        methods = '<test-method status="PASS" name="testLandingPageRetrieval" />'
+        xml = _complete_testng(methods, total=1, passed=1, failed=0, skipped=0)
+        xml = xml.replace(
+            '<test-method status="PASS" name="verifyTestSubject" is-config="true" />',
+            "",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._files(Path(directory), xml)
+            payload, exit_code = self._parse(paths)
+
+        self.assertEqual(2, exit_code)
+        errors = " ".join(payload["infrastructureErrors"])
+        self.assertIn("omitted pinned configuration methods", errors)
+        self.assertIn("SuitePreconditions#verifyTestSubject", errors)
+
     def test_requested_digest_must_match_inspected_image(self) -> None:
         methods = """
           <test-method status="PASS" name="testLandingPageRetrieval" />

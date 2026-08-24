@@ -181,6 +181,9 @@ MANDATORY_VERDICT_CLASSES = MANDATORY_ETS_CLASSES - {SUITE_PRECONDITIONS_CLASS}
 # presence so a self-consistent but truncated/duplicated TestNG result cannot be
 # treated as complete.
 EXPECTED_METHOD_INVOCATION_COUNTS = {method: 1 for method in METHOD_SCENARIO_FACETS}
+REQUIRED_CONFIGURATION_METHODS = frozenset(
+    {(SUITE_PRECONDITIONS_CLASS, "verifyTestSubject")}
+)
 
 
 @dataclass
@@ -331,6 +334,7 @@ def parse_results(
     class_totals: dict[str, Counts] = defaultdict(Counts)
     seen_ets_classes: set[str] = set()
     seen_ets_methods: set[tuple[str, str]] = set()
+    seen_ets_config_methods: set[tuple[str, str]] = set()
     method_invocation_counts: Counter[tuple[str, str]] = Counter()
     invocation_counts: Counter[tuple[str, str, str]] = Counter()
 
@@ -343,6 +347,7 @@ def parse_results(
             for method in class_node.findall("./test-method"):
                 result = _normalize_status(method.get("status", "UNKNOWN"))
                 if method.get("is-config", "false").lower() == "true":
+                    seen_ets_config_methods.add((class_name, method.get("name", "")))
                     if result != "pass":
                         infrastructure_errors.append(
                             f"configuration method {class_name}#{method.get('name', '')} was {result}"
@@ -447,6 +452,17 @@ def parse_results(
             + ", ".join(
                 f"{class_name}#{method_name}"
                 for class_name, method_name in missing_ets_methods
+            )
+        )
+    missing_config_methods = sorted(
+        REQUIRED_CONFIGURATION_METHODS - seen_ets_config_methods
+    )
+    if missing_config_methods:
+        infrastructure_errors.append(
+            "ETS omitted pinned configuration methods: "
+            + ", ".join(
+                f"{class_name}#{method_name}"
+                for class_name, method_name in missing_config_methods
             )
         )
     invocation_count_drift = sorted(
