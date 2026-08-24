@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.IO.Compression;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Infrastructure.Tiles;
 using Honua.TestKit.Attributes;
@@ -53,6 +54,45 @@ public sealed class TileExportPackagePipelineTests
         archive.GetEntry("tile/L08/R0000C0080.bundle").Should().NotBeNull();
         archive.GetEntry("tile/L08/R0080C0080.bundle").Should().NotBeNull();
         archive.GetEntry("root.json").Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task WriteAsync_TpkxPublicationAliases_EmbedSharedSourceNameAndProduceIdenticalBytes()
+    {
+        var tiles = new[]
+        {
+            new TilePackageWriter.PackagedTile(0, 0, 0, [0x01]),
+            new TilePackageWriter.PackagedTile(1, 0, 0, [0x02]),
+        };
+        var source = new TileExportRasterSourceDescriptor(
+            42,
+            "7",
+            "esriMosaicNone",
+            null,
+            "same-selection");
+        var publicationA = CreatePlan(TileExportPackageFormat.Tpkx) with
+        {
+            SourceKind = TileExportSourceKind.Raster,
+            ResourceId = "publication:a:layer:7",
+            Source = source
+        };
+        var publicationB = publicationA with { ResourceId = "publication:b:layer:7" };
+
+        var first = await WriteAsync(publicationA, tiles);
+        var second = await WriteAsync(publicationB, tiles);
+
+        TileExportArtifactIdentity.Compute(publicationA).Should().Be(
+            TileExportArtifactIdentity.Compute(publicationB));
+        first.Bytes.Should().Equal(second.Bytes,
+            "aliases sharing one artifact identity must generate the same package bytes");
+        using var archive = new ZipArchive(new MemoryStream(first.Bytes), ZipArchiveMode.Read);
+        await using var rootStream = archive.GetEntry("root.json")!.Open();
+        using var root = await JsonDocument.ParseAsync(rootStream);
+        root.RootElement.GetProperty("name").GetString().Should().Be("7");
+        await using var itemInfoStream = archive.GetEntry("iteminfo.json")!.Open();
+        using var itemInfo = await JsonDocument.ParseAsync(itemInfoStream);
+        itemInfo.RootElement.GetProperty("name").GetString().Should().Be("7");
     }
 
     [UnitTest]

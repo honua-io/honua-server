@@ -529,6 +529,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
 
         return principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue("sub")
             ?? principal.Identity.Name;
     }
 

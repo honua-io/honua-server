@@ -5,17 +5,26 @@ using System.Net;
 using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Services;
+using Honua.Core.Features.Security.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -359,6 +368,229 @@ public class ImageServerEndpointsTests
             });
         await fixture.InitializeAsync();
         return fixture;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportImage")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/exportImage")]
+    public async Task ExportImageByService_ResolvesBothRoutesWithExportAuthorization()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ResolveFirstAccessibleLayerAsync(
+                Arg.Any<string>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(TestLayerId, "pub-image-test", TestLayerId, null));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(CreateRasterStoreSubstitute());
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var path = $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportImage";
+            await fixture.Client.GetAsync(path);
+            using var content = new FormUrlEncodedContent([]);
+            await fixture.Client.PostAsync(path, content);
+            await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/1/image");
+            await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/1/thumbnail");
+
+            await resolver.Received(4).ResolveFirstAccessibleLayerAsync(
+                WebAppFixture.TestServiceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+            await resolver.DidNotReceive().ValidateLayerAsync(
+                Arg.Any<int>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImageById_ValidatesLayerWithExportAuthorization()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ValidateLayerAsync(
+                Arg.Any<int>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(CreateRasterStoreSubstitute());
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            await fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer/exportImage");
+
+            await resolver.Received(1).ValidateLayerAsync(
+                TestLayerId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportTiles")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportTiles")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportTiles")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    public async Task ExportTilesSubmissionAndJobs_RequireExportAuthorization()
+    {
+        var resolver = Substitute.For<IImageServerLayerResolver>();
+        resolver.ValidateLayerAsync(
+                Arg.Any<int>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        resolver.ResolveFirstAccessibleLayerAsync(
+                Arg.Any<string>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ImageServerLayerResolution(0, null, null, Results.NotFound()));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(CreateRasterStoreSubstitute());
+            services.AddSingleton(resolver);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var numericBase = $"/rest/services/{TestLayerId}/ImageServer";
+            var serviceBase = $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer";
+            foreach (var routeBase in new[] { numericBase, serviceBase })
+            {
+                await fixture.Client.GetAsync($"{routeBase}/exportTiles");
+                using var exportContent = new FormUrlEncodedContent([]);
+                await fixture.Client.PostAsync($"{routeBase}/exportTiles", exportContent);
+                await fixture.Client.GetAsync($"{routeBase}/jobs/test-job");
+                using var cancelContent = new FormUrlEncodedContent([]);
+                await fixture.Client.PostAsync($"{routeBase}/jobs/test-job/cancel", cancelContent);
+                await fixture.Client.GetAsync($"{routeBase}/jobs/test-job/results/out_service_url");
+            }
+
+            await resolver.Received(5).ValidateLayerAsync(
+                TestLayerId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+            await resolver.Received(5).ResolveFirstAccessibleLayerAsync(
+                WebAppFixture.TestServiceId,
+                Arg.Any<HttpContext>(),
+                AuthorizationOperation.Export,
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/exportTiles")]
+    public async Task ExportTilesByService_UsesResolvedPublicationAndStorageBinding()
+    {
+        const int publicationLayerIndex = 41;
+        const string serviceId = "aliased-image";
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        var provider = new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder()
+                .AddResource(
+                    "aliased-image-resource",
+                    "Aliased image",
+                    MetadataV2ResourceType.RasterDataset,
+                    accessPolicy: anonymous)
+                .AddStorageBinding(
+                    "aliased-image-binding",
+                    "aliased-image-resource",
+                    "raster_data",
+                    storageType: MetadataV2StorageType.RelationalTable,
+                    storageLayerId: TestLayerId)
+                .AddService(
+                    "aliased-image-service",
+                    serviceId,
+                    protocols: [MetadataV2ServiceProtocols.ImageServer],
+                    accessPolicy: anonymous)
+                .AddPublication(
+                    "aliased-image-publication",
+                    "aliased-image-service",
+                    "aliased-image-resource",
+                    layerIndex: publicationLayerIndex,
+                    storageBindingId: "aliased-image-binding",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .Build());
+        var rasterStore = CreateTileExportRasterStoreSubstitute();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
+            services.AddSingleton<IMetadataV2GraphStore>(provider);
+            services.AddSingleton(rasterStore);
+        });
+        await fixture.InitializeAsync();
+        string? fileId = null;
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/exportTiles" +
+                "?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var export = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerExportTilesResponse);
+            AssertExportTilesResponse(export);
+            fileId = export!.ArchiveFileId;
+            await rasterStore.Received().QueryRastersAsync(
+                TestLayerId,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>());
+            await rasterStore.DidNotReceive().QueryRastersAsync(
+                publicationLayerIndex,
+                Arg.Any<RasterSelectionQuery>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(fileId))
+            {
+                await fixture.GetService<ICloudFileStorage>().DeleteAsync(fileId);
+            }
+
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

@@ -788,6 +788,21 @@ public static class HonuaTelemetry
     }
 
     /// <summary>
+    /// Marks a non-exception failure on the activity.
+    /// </summary>
+    /// <param name="activity">The activity to update.</param>
+    public static void SetError(Activity? activity)
+    {
+        if (activity == null)
+        {
+            return;
+        }
+
+        activity.SetStatus(ActivityStatusCode.Error);
+        activity.SetTag(Tags.Error, true);
+    }
+
+    /// <summary>
     /// Adds latency categorization to an activity based on duration.
     /// </summary>
     /// <param name="activity">The activity to categorize.</param>
@@ -884,6 +899,14 @@ public sealed class HonuaTelemetryScope : IDisposable
     public void SetSuccess(int featureCount = 0)
     {
         HonuaTelemetry.SetSuccess(_activity, featureCount);
+    }
+
+    /// <summary>
+    /// Marks a non-exception failure on the underlying activity.
+    /// </summary>
+    public void SetError()
+    {
+        HonuaTelemetry.SetError(_activity);
     }
 
     /// <summary>

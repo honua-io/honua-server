@@ -374,6 +374,11 @@ public static class OidcAuthenticationExtensions
     {
         builder.AddJwtBearer(JwtBearerScheme, options =>
         {
+            // Configure claim mapping on the bearer handler itself. Current ASP.NET Core uses a
+            // JsonWebTokenHandler by default, so clearing JwtSecurityTokenHandler's process-wide
+            // legacy map above does not preserve short OIDC claim names such as `amr` here.
+            options.MapInboundClaims = false;
+
             // Configure token validation parameters
             options.TokenValidationParameters = new TokenValidationParameters
             {
@@ -632,6 +637,18 @@ public static class OidcAuthenticationExtensions
                         bearerIdentity.AddClaim(new Claim(
                             OperatorScopeCatalog.ScopeGovernedClaimType,
                             OperatorScopeCatalog.ScopeGovernedClaimValue));
+                    }
+
+                    // Scope governance proves only that the token is a validated OAuth access
+                    // token; it does not prove that it represents a human session. Strip any
+                    // issuer-supplied reserved marker, then derive it locally only from
+                    // human-specific session evidence. A bare amr/auth_time claim is not enough:
+                    // client-credentials tokens can carry either one.
+                    if (context.Principal is { } validatedPrincipal)
+                    {
+                        StudioAiInteractivePrincipal.ReplaceWithServerDerivedProvenance(
+                            validatedPrincipal,
+                            oidcOptions.ClaimsMapping.UserIdClaimType);
                     }
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&

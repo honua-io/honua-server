@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
+using System.Xml;
+using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -11,7 +14,10 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
@@ -29,6 +35,12 @@ internal static class GeoservicesCatalogEndpoints
     private const string GPServerProtocolName = "GPServer";
     private const string SceneServerProtocolName = "SceneServer";
     private const string VectorTileServerProtocolName = "VectorTileServer";
+    private const string Soap11ContentType = "text/xml; charset=utf-8";
+    private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
+    private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
+    private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
+    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private const int MaxSoapRequestCharacters = 1_048_576;
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -54,8 +66,441 @@ internal static class GeoservicesCatalogEndpoints
             .Produces<RestInfoResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
+        endpoints.MapPost("/services", HandlePostSoapCatalog)
+            .WithDisplayName("ArcGIS SOAP Services Catalog")
+            .WithName("ArcGisSoapServicesCatalog")
+            .WithSummary("Discover SOAP-compatible ImageServer services")
+            .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
+            .WithTags("GeoServices Catalog")
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                operation.RequestBody = new OpenApiRequestBody
+                {
+                    Required = true,
+                    Content = new Dictionary<string, OpenApiMediaType>
+                    {
+                        ["text/xml"] = new(),
+                        ["application/soap+xml"] = new()
+                    }
+                };
+                return Task.CompletedTask;
+            })
+            .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status415UnsupportedMediaType, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status503ServiceUnavailable, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .AllowAnonymous();
+
         return endpoints;
     }
+
+    private static async Task<IResult> HandlePostSoapCatalog(
+        HttpContext context,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IRasterStore rasterStore,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
+        [FromServices] ILogger<GeoservicesCatalogLog> logger)
+    {
+        if (!IsSupportedSoapContentType(context.Request.ContentType))
+        {
+            var requestedSoap = RequestedSoapNamespace(context.Request);
+            return CreateSoapFault(
+                "Content-Type must be text/xml or application/soap+xml.",
+                StatusCodes.Status415UnsupportedMediaType,
+                requestedSoap);
+        }
+
+        XDocument request;
+        try
+        {
+            var settings = new XmlReaderSettings
+            {
+                Async = true,
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaxSoapRequestCharacters
+            };
+            using var reader = XmlReader.Create(context.Request.Body, settings);
+            request = await XDocument.LoadAsync(
+                reader,
+                LoadOptions.None,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.Xml.XmlException)
+        {
+            return CreateSoapFault(
+                "Malformed SOAP request.",
+                StatusCodes.Status400BadRequest,
+                RequestedSoapNamespace(context.Request));
+        }
+
+        var envelopeNamespace = request.Root?.Name.Namespace;
+        if (request.Root?.Name.LocalName != "Envelope" ||
+            (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))
+        {
+            return CreateSoapFault(
+                "Unsupported SOAP envelope namespace.",
+                StatusCodes.Status400BadRequest,
+                RequestedSoapNamespace(context.Request));
+        }
+
+        var contentTypeSoap = RequestedSoapNamespace(context.Request);
+        if (envelopeNamespace != contentTypeSoap)
+        {
+            return CreateSoapFault(
+                "Content-Type does not match the SOAP envelope version.",
+                StatusCodes.Status415UnsupportedMediaType,
+                contentTypeSoap);
+        }
+
+        XNamespace soap = envelopeNamespace;
+        var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
+        if (bodies.Length != 1)
+        {
+            return CreateSoapFault(
+                "SOAP envelope must contain exactly one Body element.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
+        var operations = bodies[0].Elements().Take(2).ToArray();
+        if (operations is not { Length: 1 })
+        {
+            return CreateSoapFault(
+                "SOAP body must contain exactly one catalog operation.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
+        var operation = operations[0];
+
+        var operationNamespace = operation.Name.Namespace;
+        if (operationNamespace != ArcGisSoapNamespace)
+        {
+            return CreateSoapFault(
+                "Unsupported ArcGIS SOAP operation namespace.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
+        var operationName = operation.Name.LocalName;
+        if (!IsSupportedSoapCatalogOperation(operationName))
+        {
+            return CreateSoapFault(
+                $"Unsupported catalog operation '{operationName}'.",
+                StatusCodes.Status400BadRequest,
+                soap);
+        }
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            $"soap-catalog-{operationName}",
+            HonuaTelemetry.Protocols.ImageServer,
+            "*",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.Operation, operationName);
+
+        try
+        {
+            XElement payload;
+            switch (operation.Name.LocalName)
+            {
+                case "GetServiceDescriptions":
+                    payload = new XElement(
+                        operationNamespace + "GetServiceDescriptionsResult",
+                        await BuildSoapImageServerDescriptionsAsync(
+                            context,
+                            operationNamespace,
+                            graphProvider,
+                            rasterStore,
+                            logger,
+                            folderName: null).ConfigureAwait(false));
+                    break;
+                case "GetServiceDescriptionsEx":
+                    var arguments = operation.Elements().ToArray();
+                    if (arguments.Length > 1 ||
+                        arguments.Any(argument =>
+                            argument.Name.Namespace != operationNamespace ||
+                            !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                            "GetServiceDescriptionsEx accepts only one folderName argument.",
+                            StatusCodes.Status400BadRequest,
+                            soap));
+                    }
+
+                    var folderName = arguments.SingleOrDefault()?.Value.Trim();
+                    payload = new XElement(
+                        operationNamespace + "GetServiceDescriptionsExResult",
+                        await BuildSoapImageServerDescriptionsAsync(
+                            context,
+                            operationNamespace,
+                            graphProvider,
+                            rasterStore,
+                            logger,
+                            folderName).ConfigureAwait(false));
+                    break;
+                case "GetFolders":
+                    payload = new XElement(operationNamespace + "GetFoldersResult");
+                    break;
+                case "GetMessageVersion":
+                    payload = new XElement(operationNamespace + "GetMessageVersionResult", "esriArcGISVersion108");
+                    break;
+                case "GetMessageFormats":
+                    payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
+                    break;
+                case "GetTokenServiceURL":
+                    payload = new XElement(
+                        operationNamespace + "GetTokenServiceURLResult",
+                        tokenOptions.Value.Enabled
+                            ? $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/sharing/rest/generateToken"
+                            : string.Empty);
+                    break;
+                case "RequiresTokens":
+                    payload = new XElement(
+                        operationNamespace + "RequiresTokensResult",
+                        tokenOptions.Value.Enabled);
+                    break;
+                default:
+                    return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                        $"Unsupported catalog operation '{operation.Name.LocalName}'.",
+                        StatusCodes.Status400BadRequest,
+                        soap));
+            }
+
+            var response = new XDocument(
+                new XDeclaration("1.0", "utf-8", null),
+                new XElement(
+                    soap + "Envelope",
+                    new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
+                    new XElement(
+                        soap + "Body",
+                        new XElement(
+                            operationNamespace + $"{operation.Name.LocalName}Response",
+                            payload))));
+
+            return CompleteSoapCatalogOperation(scope, Results.Content(
+                response.ToString(SaveOptions.DisableFormatting),
+                contentType: SoapContentTypeFor(soap),
+                contentEncoding: Encoding.UTF8));
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            GeoservicesCatalogEndpointLogging.LogSoapCatalogOperationFailed(
+                logger,
+                operation.Name.LocalName,
+                exception);
+            var result = CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                "The SOAP services catalog is temporarily unavailable.",
+                StatusCodes.Status503ServiceUnavailable,
+                soap));
+            scope.RecordException(exception);
+            return result;
+        }
+    }
+
+    private static bool IsSupportedSoapCatalogOperation(string operationName)
+        => operationName is "GetServiceDescriptions"
+            or "GetServiceDescriptionsEx"
+            or "GetFolders"
+            or "GetMessageVersion"
+            or "GetMessageFormats"
+            or "GetTokenServiceURL"
+            or "RequiresTokens";
+
+    private static IResult CompleteSoapCatalogOperation(HonuaTelemetryScope scope, IResult result)
+    {
+        var statusCode = (result as IStatusCodeHttpResult)?.StatusCode ?? StatusCodes.Status200OK;
+        var succeeded = statusCode < StatusCodes.Status400BadRequest;
+        scope.WithTag("http.response.status_code", statusCode)
+            .WithTag("honua.result", succeeded ? "success" : "error");
+        if (succeeded)
+        {
+            scope.SetSuccess(1);
+        }
+        else
+        {
+            scope.SetError();
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<XElement>> BuildSoapImageServerDescriptionsAsync(
+        HttpContext context,
+        XNamespace operationNamespace,
+        IMetadataV2GraphProvider graphProvider,
+        IRasterStore rasterStore,
+        ILogger logger,
+        string? folderName)
+    {
+        // Honua currently exposes a root-only catalog. IServiceCatalog2 defines
+        // ServiceDescriptionsEx(folderName), so a named folder has no entries.
+        if (!string.IsNullOrWhiteSpace(folderName))
+        {
+            return [];
+        }
+
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var requestedServiceName = context.Request.RouteValues["serviceName"] as string;
+        var services = new List<MetadataV2Service>();
+        var probes = new List<(int ServiceIndex, int LayerIndex)>();
+
+        foreach (var service in snapshot.Graph.Services.OrderBy(static service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!service.IsRoutable() ||
+                !service.Protocols.Contains(ImageServerProtocolName, StringComparer.Ordinal) ||
+                (requestedServiceName is not null &&
+                 !string.Equals(service.Metadata.Name, requestedServiceName, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var layerIndexes = new List<int>();
+            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id).Where(snapshot.IsRoutable))
+            {
+                var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
+                var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+                if (resource is null || storageLayerId is not { } layerIndex)
+                {
+                    continue;
+                }
+
+                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    context,
+                    resource,
+                    AuthorizationOperation.Metadata,
+                    service,
+                    cancellationToken).ConfigureAwait(false);
+                if (accessError is not null)
+                {
+                    continue;
+                }
+
+                layerIndexes.Add(layerIndex);
+            }
+
+            if (layerIndexes.Count == 0)
+            {
+                continue;
+            }
+
+            var serviceIndex = services.Count;
+            services.Add(service);
+            probes.AddRange(layerIndexes.Select(layerIndex => (serviceIndex, layerIndex)));
+        }
+
+        var advertised = new bool[services.Count];
+        var successfulProbes = 0;
+        var failedProbes = 0;
+        await Parallel.ForEachAsync(
+            probes,
+            new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
+            async (probe, ct) =>
+            {
+                if (advertised[probe.ServiceIndex])
+                {
+                    return;
+                }
+
+                try
+                {
+                    var raster = await rasterStore.GetPrimaryRasterInfoAsync(probe.LayerIndex, ct).ConfigureAwait(false);
+                    Interlocked.Increment(ref successfulProbes);
+                    if (raster is not null)
+                    {
+                        advertised[probe.ServiceIndex] = true;
+                    }
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+                {
+                    Interlocked.Increment(ref failedProbes);
+                    GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(
+                        logger,
+                        services[probe.ServiceIndex].Metadata.Name,
+                        exception);
+                }
+            }).ConfigureAwait(false);
+
+        if (probes.Count > 0 && successfulProbes == 0 && failedProbes > 0)
+        {
+            throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
+        }
+
+        var descriptions = new List<XElement>();
+        for (var index = 0; index < services.Count; index++)
+        {
+            if (!advertised[index])
+            {
+                continue;
+            }
+
+            var service = services[index];
+            descriptions.Add(new XElement(
+                operationNamespace + "ServiceDescription",
+                new XElement(operationNamespace + "Name", service.Metadata.Name),
+                new XElement(operationNamespace + "Type", ImageServerProtocolName),
+                new XElement(
+                    operationNamespace + "Url",
+                    $"{baseUrl}/services/{Uri.EscapeDataString(service.Metadata.Name)}/{ImageServerProtocolName}"),
+                new XElement(operationNamespace + "ParentType", string.Empty),
+                new XElement(operationNamespace + "Capabilities", "Image,Metadata"),
+                new XElement(operationNamespace + "Description", string.Empty)));
+        }
+
+        return descriptions;
+    }
+
+    private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
+    {
+        var isServerFault = statusCode >= StatusCodes.Status500InternalServerError;
+        var fault = soap == Soap12EnvelopeNamespace
+            ? new XElement(
+                soap + "Fault",
+                new XElement(
+                    soap + "Code",
+                    new XElement(soap + "Value", isServerFault ? "soap:Receiver" : "soap:Sender")),
+                new XElement(
+                    soap + "Reason",
+                    new XElement(
+                        soap + "Text",
+                        new XAttribute(XNamespace.Xml + "lang", "en"),
+                        message)))
+            : new XElement(
+                soap + "Fault",
+                new XElement("faultcode", isServerFault ? "soap:Server" : "soap:Client"),
+                new XElement("faultstring", message));
+        var response = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement(
+                soap + "Envelope",
+                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
+                new XElement(
+                    soap + "Body",
+                    fault)));
+
+        return Results.Content(
+            response.ToString(SaveOptions.DisableFormatting),
+            contentType: SoapContentTypeFor(soap),
+            contentEncoding: Encoding.UTF8,
+            statusCode: statusCode);
+    }
+
+    private static XNamespace RequestedSoapNamespace(HttpRequest request)
+        => string.Equals(
+            request.ContentType?.Split(';', 2)[0].Trim(),
+            "application/soap+xml",
+            StringComparison.OrdinalIgnoreCase)
+            ? Soap12EnvelopeNamespace
+            : Soap11EnvelopeNamespace;
+
+    private static string SoapContentTypeFor(XNamespace soap)
+        => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
 
     private static async Task<IResult> HandleGetServicesDirectory(
         HttpContext context,
@@ -195,7 +640,7 @@ internal static class GeoservicesCatalogEndpoints
                             };
                         }
                     }
-                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
                     {
                         // Intentional catch-all: one service's raster-store probe failing must not
                         // abort the whole concurrent Parallel.ForEachAsync batch or the directory
@@ -382,13 +827,15 @@ internal static class GeoservicesCatalogEndpoints
     {
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
-            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
+            if (!snapshot.IsRoutable(publication)
+                || publication.LayerIndex is not { } layerIndex
+                || snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId)
             {
                 continue;
             }
 
-            var rasters = await rasterStore.ListRastersAsync(layerIndex, cancellationToken).ConfigureAwait(false);
-            if (rasters.Length > 0)
+            var raster = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+            if (raster is not null)
             {
                 return layerIndex;
             }
@@ -401,6 +848,13 @@ internal static class GeoservicesCatalogEndpoints
         => string.IsNullOrWhiteSpace(format) ||
            string.Equals(format, JsonFormat, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, PrettyJsonFormat, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedSoapContentType(string? contentType)
+    {
+        var mediaType = contentType?.Split(';', 2)[0].Trim();
+        return string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 internal static partial class GeoservicesCatalogEndpointLogging
@@ -412,6 +866,10 @@ internal static partial class GeoservicesCatalogEndpointLogging
     [LoggerMessage(EventId = 9402, Level = LogLevel.Warning,
         Message = "Failed to probe raster availability for service {ServiceName}.")]
     public static partial void LogRasterProbeFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 9403, Level = LogLevel.Error,
+        Message = "ArcGIS SOAP services catalog operation {Operation} failed.")]
+    public static partial void LogSoapCatalogOperationFailed(ILogger logger, string operation, Exception exception);
 }
 
 /// <summary>
