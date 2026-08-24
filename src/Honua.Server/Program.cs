@@ -769,7 +769,10 @@ if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolve
 builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
-builder.Services.AddServerFeatures(builder.Configuration, redisCacheEntitled);
+builder.Services.AddServerFeatures(
+    builder.Configuration,
+    redisCacheEntitled,
+    builder.Environment.EnvironmentName);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration);

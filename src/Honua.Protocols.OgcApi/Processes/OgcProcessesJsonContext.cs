@@ -26,6 +26,9 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 [JsonSerializable(typeof(OgcProcessIoDescription))]
 [JsonSerializable(typeof(OgcProcessIoSchema))]
 [JsonSerializable(typeof(ImmutableDictionary<string, OgcProcessIoDescription>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, OgcProcessIoDescription>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, OgcProcessIoSchema>))]
+[JsonSerializable(typeof(ImmutableArray<OgcProcessIoSchema>))]
 [JsonSerializable(typeof(ImmutableArray<OgcProcessSummary>))]
 [JsonSerializable(typeof(OgcExecuteRequest))]
 [JsonSerializable(typeof(ImmutableDictionary<string, JsonElement>))]
@@ -39,6 +42,7 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 [JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(object))]
 internal sealed partial class OgcProcessesJsonContext : JsonSerializerContext
 {
