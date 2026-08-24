@@ -73,4 +73,30 @@ internal static class McpRegistryCompositionValidator
 
         return problems;
     }
+
+    public static async Task<IReadOnlyList<string>> FindDriftAsync(
+        McpDataAccessSurface surface,
+        ICapabilityRegistry registry,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        ArgumentNullException.ThrowIfNull(registry);
+
+        var problems = new List<string>();
+        var registryToolNames = registry.All
+            .Where(d => d.McpToolName is not null)
+            .Select(d => d.McpToolName!)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var tool in await surface.GetAllToolsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!registryToolNames.Contains(tool.Name))
+            {
+                problems.Add($"served /mcp tool '{tool.Name}' has no capability-registry descriptor");
+            }
+        }
+
+        var staticProblems = FindDrift(surface, registry);
+        problems.AddRange(staticProblems.Where(p => !problems.Contains(p, StringComparer.Ordinal)));
+        return problems;
+    }
 }

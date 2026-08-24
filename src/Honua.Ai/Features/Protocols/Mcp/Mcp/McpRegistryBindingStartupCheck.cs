@@ -33,14 +33,16 @@ internal sealed class McpRegistryBindingStartupCheck : IHostedService
     }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (!_options.RegistryBinding)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        var drift = McpRegistryCompositionValidator.FindDrift(_surface, _registry);
+        var drift = await McpRegistryCompositionValidator
+            .FindDriftAsync(_surface, _registry, cancellationToken)
+            .ConfigureAwait(false);
         if (drift.Count > 0)
         {
             throw new InvalidOperationException(
@@ -50,7 +52,6 @@ internal sealed class McpRegistryBindingStartupCheck : IHostedService
                 + string.Join("; ", drift) + ".");
         }
 
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
