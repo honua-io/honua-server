@@ -92,11 +92,14 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var authorization = RequireAuthorizationService(httpContext);
         var actorId = ActorIdFor(authorization, principal);
+        var requestedOwnerId = !authorization.IsAdmin(principal) && authorization.IsEndUserAuthorizationEnabled
+            ? null
+            : argument.OwnerId;
         await EnsureOwnerAssignmentAuthorizedAsync(
             httpContext,
             authorization,
             principal,
-            argument.OwnerId,
+            requestedOwnerId,
             StudioAuthorizationOperation.CreateDraft,
             argument.ItemId?.ToString("D"),
             OperatorOperation.Create).ConfigureAwait(false);
@@ -120,7 +123,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // A non-admin caller can create only a draft they own. Admins retain
         // the REST surface's ability to assign an explicit owner.
-        var ownerId = argument.OwnerId ?? existingPointers?.OwnerId ?? actorId;
+        var ownerId = requestedOwnerId ?? existingPointers?.OwnerId ?? actorId;
         StudioPackageDraft draft;
         try
         {
@@ -143,6 +146,12 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             // The store performs this ownership check atomically with creation;
             // map the race outcome to the stable MCP permission channel rather
             // than leaking it as an internal error.
+            await RecordAuthorizationDecisionAsync(
+                httpContext,
+                StudioAuthorizationOperation.CreateDraft,
+                argument.ItemId?.ToString("D"),
+                StudioAuthorizationDecision.Deny("studio_authorization/owner_conflict", ex.Message),
+                resourceType: "studio-content-item").ConfigureAwait(false);
             throw new GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
                 message: ex.Message,

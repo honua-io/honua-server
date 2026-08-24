@@ -292,7 +292,7 @@ internal abstract class StudioDraftToolBase
         }
     }
 
-    private static async Task RecordAuthorizationDecisionAsync(
+    protected static async Task RecordAuthorizationDecisionAsync(
         HttpContext httpContext,
         StudioAuthorizationOperation studioOperation,
         string? resourceId,
