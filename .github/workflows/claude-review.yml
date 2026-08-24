@@ -205,12 +205,64 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ steps.target.outputs.pr }}
+          BOUND_HEAD: ${{ steps.target.outputs.head }}
+          # Refuse to stage a diff so large that the reviewer could not judge it
+          # faithfully. Failing here leaves the gate red, which is the correct
+          # outcome: a partial diff reviewed as if it were whole would attest
+          # `clean` over code nobody looked at.
+          MAX_DIFF_LINES: '250000'
         run: |
           set -euo pipefail
           # The diff is pre-fetched by this trusted step so the reviewer needs no
           # `gh` read tools of its own.
-          gh pr diff "${PR}" --patch > review-input/pr.diff
-          gh pr view "${PR}" --json files --jq '.files[].path' > review-input/files.txt
+          #
+          # `gh pr diff` reads the API, which refuses any diff over 20000 lines
+          # with HTTP 406. That is an API ceiling, not a reviewability one, and
+          # it used to fail the whole lane -- so the larger a change was, the
+          # less likely it was to be reviewed at all, and Codex became the only
+          # reviewer that could attest it (honua-server#3481 tripped this at
+          # +36648 lines). Fall back to computing the diff from the refs, which
+          # has no such ceiling.
+          if ! gh pr diff "${PR}" --patch > review-input/pr.diff 2>review-input/diff.err; then
+            if grep -qiE 'exceeded the maximum number of lines|too_large' review-input/diff.err; then
+              echo "::notice::PR #${PR} exceeds the API diff ceiling; staging from git refs instead."
+              base_ref="$(gh pr view "${PR}" --json baseRefName --jq .baseRefName)"
+              rm -rf .pr-diff-src
+              git init -q .pr-diff-src
+              # Unauthenticated: this repository is public, and the two refs are
+              # all that is needed. No token reaches this remote. A full history
+              # fetch is acceptable because only oversized PRs take this path.
+              git -C .pr-diff-src fetch -q --no-tags \
+                "https://github.com/${GITHUB_REPOSITORY}.git" \
+                "refs/pull/${PR}/head:pr-head" \
+                "refs/heads/${base_ref}:base-ref"
+              # The gate is SHA-bound, so prove the ref we fetched is the exact
+              # head it bound. A push landing mid-run must not get an older diff
+              # attested against the newer SHA.
+              fetched_head="$(git -C .pr-diff-src rev-parse pr-head)"
+              if [ "${fetched_head}" != "${BOUND_HEAD}" ]; then
+                echo "::error::refs/pull/${PR}/head is ${fetched_head}, not the bound head ${BOUND_HEAD}; not staging a mismatched diff."
+                exit 1
+              fi
+              merge_base="$(git -C .pr-diff-src merge-base base-ref pr-head)"
+              git -C .pr-diff-src diff --patch "${merge_base}" pr-head > review-input/pr.diff
+              rm -rf .pr-diff-src
+            else
+              cat review-input/diff.err >&2
+              exit 1
+            fi
+          fi
+          rm -f review-input/diff.err
+          diff_lines="$(wc -l < review-input/pr.diff)"
+          if [ "${diff_lines}" -gt "${MAX_DIFF_LINES}" ]; then
+            echo "::error::Staged diff is ${diff_lines} lines, over the ${MAX_DIFF_LINES}-line reviewable ceiling; refusing to stage a diff that cannot be judged in full."
+            exit 1
+          fi
+          # Derive the path list from the staged diff rather than `--json files`,
+          # which the API also caps (at 100 per page). The reviewer must never be
+          # handed a file list that disagrees with the diff it is judging.
+          awk '/^diff --git /{ p = $4; sub(/^b\//, "", p); if (p == "/dev/null") { p = $3; sub(/^a\//, "", p) } print p }' \
+            review-input/pr.diff | sort -u > review-input/files.txt
           wc -l review-input/pr.diff review-input/files.txt
 
       - name: Check out the pull request tree as data
@@ -237,7 +289,7 @@ jobs:
       - name: Review the diff and publish evidence
         id: claude
         if: steps.target.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@459ad358ae43fea66bfefd0a1f8d840b4b9791fb # v1
+        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
         with:
           # Exactly one of these is set; the empty one is ignored. Do NOT add a
           # `github_token` input — the default path mints the Claude App token,
@@ -313,6 +365,38 @@ jobs:
             (each with `path`, `line` and `summary`). The next step re-derives
             what was actually published from GitHub and fails the job if it
             disagrees with this verdict.
+
+      - name: Explain a reviewer failure honestly
+        if: failure() && steps.target.outputs.skip == 'false'
+        run: |
+          set -uo pipefail
+          # The action reports EVERY failed run as "Claude did not return
+          # structured_output", because its guard is
+          # `isSuccess && structured_output`, where
+          # `isSuccess = subtype === "success" && !is_error`. So a model call
+          # that errored -- overload, model access, tool startup -- is announced
+          # as a schema problem, naming the one thing that is demonstrably fine.
+          # That message cost a full debugging session once (#3491); print what
+          # actually happened instead.
+          out=/home/runner/work/_temp/claude-execution-output.json
+          if [ ! -f "${out}" ]; then
+            echo "::warning::No claude-execution-output.json; the reviewer failed before producing a result."
+            exit 0
+          fi
+          echo "--- result message ---"
+          jq -c '[.[] | select(.type == "result")] | last' "${out}" 2>/dev/null || tail -c 2000 "${out}"
+          if jq -e '[.[] | select(.type == "result")] | last | .is_error == true' "${out}" >/dev/null 2>&1; then
+            echo "::error::The reviewer run itself errored (is_error=true). The structured_output message above is a symptom, not the cause."
+          fi
+
+      - name: Preserve the reviewer transcript for diagnosis
+        if: failure() && steps.target.outputs.skip == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: claude-review-execution-${{ steps.target.outputs.pr }}-${{ github.run_attempt }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify the published evidence matches the verdict
         if: always() && steps.target.outputs.skip == 'false'
