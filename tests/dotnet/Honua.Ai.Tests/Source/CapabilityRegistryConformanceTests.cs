@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Text.Json;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -18,6 +20,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Ai.Tests.Capabilities;
@@ -276,6 +279,7 @@ public sealed class CapabilityRegistryConformanceTests
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
+            new AdminServerStatusTool(),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
             new CreateMapPackageTool(
                 jobService,
@@ -370,5 +374,19 @@ public sealed class CapabilityRegistryConformanceTests
             new PromotionSurfaceIndexResource(
                 services, deployments, jobService, NullLogger<PromotionSurfaceIndexResource>.Instance),
         ];
+    }
+
+    private sealed class AdminServerStatusTool : IMcpTool
+    {
+        public string Name => "honua_admin_server_status";
+
+        public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
+
+        public McpToolDescriptor Describe() => new() { Name = Name };
+
+        public Task<McpToolsCallResult> InvokeAsync(
+            HttpContext httpContext,
+            JsonElement? arguments,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }
