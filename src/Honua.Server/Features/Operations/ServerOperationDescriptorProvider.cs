@@ -40,7 +40,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         {
             BlastRadiusClass = OperationBlastRadiusClass.None,
             SideEffectClass = OperationSideEffectClass.ReadOnly,
-            Determinism = OperationDeterminism.Deterministic,
+            Determinism = OperationDeterminism.RuntimeDynamic,
             SupportsDryRun = false
         },
         InputSchema = [],

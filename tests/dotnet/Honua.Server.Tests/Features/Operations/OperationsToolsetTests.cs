@@ -69,7 +69,7 @@ public sealed class OperationsToolsetTests
             .Should().BeEquivalentTo(["status", "version"]);
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
-        descriptor.Policy.Determinism.Should().Be(OperationDeterminism.Deterministic);
+        descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
     }
 
     [UnitTest]
