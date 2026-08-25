@@ -155,6 +155,7 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
     {
         ProposalId = "proposal-1",
         Kind = OperationClass.Deploy,
+        Status = OperationProposalStatus.AwaitingApproval,
         Authority = authority,
         CreatedAt = DateTimeOffset.UtcNow,
         UpdatedAt = DateTimeOffset.UtcNow,
