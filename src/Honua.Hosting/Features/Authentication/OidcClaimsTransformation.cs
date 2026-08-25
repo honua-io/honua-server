@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -81,6 +82,12 @@ internal sealed class OidcClaimsTransformation(
         {
             return Task.FromResult(principal);
         }
+
+        // The `honua:` namespace carries framework-owned request-binding state.
+        // Remove issuer-supplied copies across every identity before any audit or
+        // durable capture can consume them. A safely re-entered transformation
+        // preserves only claims carrying in-memory framework provenance.
+        RemoveUntrustedFrameworkClaims(principal);
 
         // These markers are framework-owned authorization provenance, not issuer claims. An
         // OIDC provider must not be able to choose the fallback roles restored after the live
@@ -324,6 +331,21 @@ internal sealed class OidcClaimsTransformation(
         {
             foreach (var claim in claimsIdentity.Claims
                          .Where(claim => ReservedProvenanceClaimTypes.Contains(claim.Type))
+                         .ToArray())
+            {
+                claimsIdentity.TryRemoveClaim(claim);
+            }
+        }
+    }
+
+    private static void RemoveUntrustedFrameworkClaims(ClaimsPrincipal principal)
+    {
+        foreach (var claimsIdentity in principal.Identities)
+        {
+            foreach (var claim in claimsIdentity.Claims
+                         .Where(static claim =>
+                             claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
+                             && !CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))
                          .ToArray())
             {
                 claimsIdentity.TryRemoveClaim(claim);

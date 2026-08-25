@@ -38,7 +38,9 @@ internal static class AuditContextResolver
             // Tenant resolution stamps the framework-owned, scheme/issuer-qualified
             // actor on the principal. Prefer it so MCP transport, durable jobs,
             // policy context, and audit records name the same immutable actor.
-            var canonicalActor = principal.FindFirst(CanonicalSecurityActor.CanonicalActorClaim)?.Value;
+            var canonicalActor = CanonicalSecurityActor.FindStampedValue(
+                principal,
+                CanonicalSecurityActor.CanonicalActorClaim);
             if (!string.IsNullOrWhiteSpace(canonicalActor))
             {
                 actorType = string.Equals(

@@ -185,7 +185,7 @@ internal static class JobSecurityContextCapture
             : tenantContext.TenantId;
 
         return new JobSecurityContext(
-            principal.FindFirstValue(CanonicalSecurityActor.CanonicalActorClaim)
+            CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim)
                 ?? principal.FindFirstValue(ClaimTypes.NameIdentifier)
                 ?? principal.FindFirstValue("sub")
                 ?? principal.Identity?.Name,

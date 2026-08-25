@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -58,6 +59,29 @@ public sealed class OidcClaimsMappingEntitlementTests
             new Claim("groups", "editors"),
         ],
         "Bearer"));
+
+    [UnitTest]
+    public async Task TransformAsync_RemovesIssuerFrameworkClaims_ButPreservesTrustedStamps()
+    {
+        var transformation = CreateTransformation(HonuaEdition.Enterprise);
+        var identity = new ClaimsIdentity(
+        [
+            new Claim("sub", "user-123"),
+            new Claim(CanonicalSecurityActor.CanonicalActorClaim, "forged-actor"),
+            new Claim(CanonicalSecurityActor.ScopeCeilingClaim, "forged-scope"),
+        ], "Bearer");
+        var trustedTenant = new Claim(CanonicalSecurityActor.EffectiveTenantClaim, "trusted-tenant");
+        trustedTenant.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        identity.AddClaim(trustedTenant);
+
+        var result = await transformation.TransformAsync(new ClaimsPrincipal(identity));
+
+        Assert.Null(result.FindFirst(CanonicalSecurityActor.CanonicalActorClaim));
+        Assert.Null(result.FindFirst(CanonicalSecurityActor.ScopeCeilingClaim));
+        Assert.Equal(
+            "trusted-tenant",
+            CanonicalSecurityActor.FindStampedValue(result, CanonicalSecurityActor.EffectiveTenantClaim));
+    }
 
     [UnitTest]
     public async Task TransformAsync_WithoutClaimsMappingEntitlement_SkipsCustomMappings()
