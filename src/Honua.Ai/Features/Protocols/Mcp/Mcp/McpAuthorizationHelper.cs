@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
@@ -80,8 +82,11 @@ internal static class McpAuthorizationHelper
     /// <summary>
     /// Resolves the immutable MCP session binding from the framework-authenticated
     /// actor, the effective tenant selected by tenant policy, and the OAuth scope
-    /// ceiling. Client-supplied issuer, subject, tenant, and scope values are never
-    /// read from request headers or parameters.
+    /// ceiling. Bearer sessions additionally include a one-way fingerprint of the
+    /// exact credential validated for this request, so every token-derived authority
+    /// dimension remains part of the binding without retaining the credential.
+    /// Client-supplied issuer, subject, tenant, and scope values are never read from
+    /// request headers or parameters.
     /// </summary>
     public static string? ResolveSessionBindingKey(HttpContext context)
     {
@@ -100,19 +105,55 @@ internal static class McpAuthorizationHelper
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
-        if (CanonicalSecurityActor.IsBearerPrincipal(context.User)
-            && (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer)))
+        string? credentialFingerprint = null;
+        if (CanonicalSecurityActor.IsBearerPrincipal(context.User))
         {
-            // Display names are mutable, and a subject without its validated issuer is
-            // not a globally durable OIDC session identifier. Bearers require both.
-            return null;
+            if (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer))
+            {
+                // Display names are mutable, and a subject without its validated issuer is
+                // not a globally durable OIDC session identifier. Bearers require both.
+                return null;
+            }
+
+            credentialFingerprint = ResolveBearerCredentialFingerprint(context);
+            if (credentialFingerprint is null)
+            {
+                // The bearer handler validated the request's Authorization credential.
+                // Requiring and hashing that same credential binds the session to every
+                // authority dimension projected from it (roles, permissions, workspace
+                // scopes, and future claim-based grants) without retaining the secret.
+                return null;
+            }
         }
 
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId
             ?? CanonicalSecurityActor.FindStampedValue(
                 context.User,
                 CanonicalSecurityActor.EffectiveTenantClaim);
-        return CanonicalSecurityActor.BuildBindingKey(actor, tenant, context.User);
+        return CanonicalSecurityActor.BuildBindingKey(
+            actor,
+            tenant,
+            context.User,
+            credentialFingerprint);
+    }
+
+    private static string? ResolveBearerCredentialFingerprint(HttpContext context)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        const string bearerPrefix = "Bearer ";
+        if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var credential = authorization[bearerPrefix.Length..].Trim();
+        if (credential.Length == 0 || credential.Contains(','))
+        {
+            return null;
+        }
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(credential));
+        return $"sha256:{Convert.ToHexStringLower(digest)}";
     }
 
     /// <summary>

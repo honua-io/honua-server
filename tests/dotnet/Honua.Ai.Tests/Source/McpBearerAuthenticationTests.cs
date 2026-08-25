@@ -419,6 +419,63 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete()
+    {
+        var owner = CreateToken("shared-subject", additionalClaims:
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("roles", "admin"),
+            new Claim("groups", "workspace-a"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+        var lowerAuthority = CreateToken("shared-subject", additionalClaims:
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("roles", "user"),
+            new Claim("groups", "workspace-b"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+        using var initialize = BuildInitialize(owner);
+        var initializeResponse = await _client.SendAsync(initialize);
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessionId = initializeResponse.Headers.GetValues("Mcp-Session-Id").Single();
+
+        using var post = BuildRpc(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId,
+            lowerAuthority);
+        var postResponse = await _client.SendAsync(post);
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var postDocument = await ReadJsonAsync(postResponse);
+        postDocument.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
+            .GetString().Should().Be("permission_denied");
+
+        using var stream = new HttpRequestMessage(HttpMethod.Get, "/mcp");
+        stream.Headers.Authorization = new AuthenticationHeaderValue("Bearer", lowerAuthority);
+        stream.Headers.Add("Mcp-Session-Id", sessionId);
+        stream.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        var streamResponse = await _client.SendAsync(stream, HttpCompletionOption.ResponseHeadersRead);
+        streamResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, "/mcp");
+        delete.Headers.Authorization = new AuthenticationHeaderValue("Bearer", lowerAuthority);
+        delete.Headers.Add("Mcp-Session-Id", sessionId);
+        var deleteResponse = await _client.SendAsync(delete);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var ownerDelete = new HttpRequestMessage(HttpMethod.Delete, "/mcp");
+        ownerDelete.Headers.Authorization = new AuthenticationHeaderValue("Bearer", owner);
+        ownerDelete.Headers.Add("Mcp-Session-Id", sessionId);
+        var ownerDeleteResponse = await _client.SendAsync(ownerDelete);
+        ownerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            "a lower-authority credential must not terminate the owner's live session");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
     public async Task Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError()
     {
         // A token signed with the wrong key fails signature validation. A presented
