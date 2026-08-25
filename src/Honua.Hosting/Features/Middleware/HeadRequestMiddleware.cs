@@ -30,17 +30,19 @@ public sealed class LongLivedStreamEndpointMetadata
 }
 
 /// <summary>
-/// Marks an endpoint that originally accepted HEAD but not GET and is exposed as a hidden GET
-/// routing candidate so the shared pre-routing HEAD fallback can still select it.
+/// Marks a hidden GET routing candidate for an endpoint that originally accepted HEAD but not
+/// GET, so the shared pre-routing HEAD fallback can still select the declared HEAD handler.
 /// </summary>
 public sealed class ExplicitHeadOnlyEndpointMetadata
 {
-    private ExplicitHeadOnlyEndpointMetadata()
+    public ExplicitHeadOnlyEndpointMetadata(IReadOnlyList<string> declaredMethods)
     {
+        ArgumentNullException.ThrowIfNull(declaredMethods);
+        DeclaredMethods = [.. declaredMethods];
     }
 
-    /// <summary>The shared marker instance.</summary>
-    public static ExplicitHeadOnlyEndpointMetadata Instance { get; } = new();
+    /// <summary>The methods declared by the real plugin endpoint.</summary>
+    public IReadOnlyList<string> DeclaredMethods { get; }
 }
 
 /// <summary>
@@ -336,17 +338,28 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
     {
         var rewrittenFromHead = HeadRequestSupport.WasRewrittenFromHead(httpContext);
         var hasExplicitHeadCandidate = false;
+        HashSet<string>? declaredMethods = null;
+        var hasOrdinaryGetCandidate = false;
 
-        if (rewrittenFromHead)
+        for (var i = 0; i < candidates.Count; i++)
         {
-            for (var i = 0; i < candidates.Count; i++)
+            if (!candidates.IsValidCandidate(i))
             {
-                if (candidates.IsValidCandidate(i) &&
-                    candidates[i].Endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>() is not null)
-                {
-                    hasExplicitHeadCandidate = true;
-                    break;
-                }
+                continue;
+            }
+
+            var metadata = candidates[i].Endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>();
+            if (metadata is null)
+            {
+                hasOrdinaryGetCandidate = true;
+                continue;
+            }
+
+            hasExplicitHeadCandidate = true;
+            declaredMethods ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var method in metadata.DeclaredMethods)
+            {
+                declaredMethods.Add(method);
             }
         }
 
@@ -367,7 +380,33 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
             }
         }
 
+        if (!rewrittenFromHead &&
+            HttpMethods.IsGet(httpContext.Request.Method) &&
+            hasExplicitHeadCandidate &&
+            !hasOrdinaryGetCandidate)
+        {
+            httpContext.SetEndpoint(CreateMethodNotAllowedEndpoint(declaredMethods));
+            httpContext.Request.RouteValues = null!;
+        }
+
         return Task.CompletedTask;
+    }
+
+    private static Endpoint CreateMethodNotAllowedEndpoint(IEnumerable<string>? methods)
+    {
+        var allow = methods is null
+            ? string.Empty
+            : string.Join(", ", methods.Order(StringComparer.OrdinalIgnoreCase));
+
+        return new Endpoint(
+            context =>
+            {
+                context.Response.Headers.Allow = allow;
+                context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+                return Task.CompletedTask;
+            },
+            EndpointMetadataCollection.Empty,
+            "405 HTTP Method Not Supported (explicit HEAD plugin route)");
     }
 }
 
@@ -509,6 +548,11 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 
     private static bool AdvertisesHead(Endpoint? endpoint)
     {
+        if (endpoint?.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>() is not null)
+        {
+            return true;
+        }
+
         var httpMethods = endpoint?.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
         if (httpMethods is null)
         {

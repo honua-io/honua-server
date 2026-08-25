@@ -18,6 +18,8 @@ using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,6 +64,7 @@ public sealed class PluginCustomEndpointsTests
                             p.Add<UtilityStatusEndpointPlugin>();
                             p.Add<SplitGetEndpointPlugin>();
                             p.Add<SplitHeadEndpointPlugin>();
+                            p.Add<HeadOnlyEndpointPlugin>();
                         });
                     })
                     .Configure(app =>
@@ -147,6 +150,39 @@ public sealed class PluginCustomEndpointsTests
         (await response.Content.ReadAsStringAsync()).Should().Contain("split-get");
     }
 
+    [IntegrationTest]
+    public async Task CustomEndpoint_HeadOnlyRoute_GetReturns405WithDeclaredAllowHeader()
+    {
+        using var server = CreateServer(HonuaEdition.Enterprise);
+        using var client = server.CreateClient();
+
+        using var response = await client.GetAsync("/plugins/head-only");
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().ContainSingle().Which.Should().Be("HEAD");
+    }
+
+    [IntegrationTest]
+    public void CustomEndpoint_HeadOnlyRoute_PublicMetadataRemainsHeadOnly()
+    {
+        using var server = CreateServer(HonuaEdition.Enterprise);
+        var endpoints = server.Services.GetServices<EndpointDataSource>()
+            .SelectMany(static source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(static endpoint => endpoint.RoutePattern.RawText == "/plugins/head-only")
+            .ToArray();
+
+        var publicEndpoint = endpoints.Should().ContainSingle(endpoint =>
+                endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() == null)
+            .Which;
+        publicEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Should().Equal("HEAD");
+
+        var fallbackEndpoint = endpoints.Should().ContainSingle(endpoint =>
+                endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() != null)
+            .Which;
+        fallbackEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Should().Equal("GET");
+    }
+
     [Plugin("split-get", "1.0.0", Capabilities = PluginCapability.CustomEndpoints)]
     public sealed class SplitGetEndpointPlugin : ICustomEndpoint
     {
@@ -168,6 +204,21 @@ public sealed class PluginCustomEndpointsTests
         public IReadOnlyList<string> Methods { get; } = ["HEAD"];
 
         public string Pattern => "split";
+
+        public bool RequiresAuthorization => false;
+
+        public ValueTask<PluginEndpointResponse> HandleAsync(
+            PluginEndpointRequest request,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(PluginEndpointResponse.Status(StatusCodes.Status202Accepted));
+    }
+
+    [Plugin("head-only", "1.0.0", Capabilities = PluginCapability.CustomEndpoints)]
+    public sealed class HeadOnlyEndpointPlugin : ICustomEndpoint
+    {
+        public IReadOnlyList<string> Methods { get; } = ["HEAD"];
+
+        public string Pattern => "head-only";
 
         public bool RequiresAuthorization => false;
 
