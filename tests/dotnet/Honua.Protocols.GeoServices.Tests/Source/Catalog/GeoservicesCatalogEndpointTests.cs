@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -1687,6 +1688,40 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public Task SoapImageServer_DtdPayload_ReturnsClientFault()
         => AssertDtdPayloadRejectedAsync("/services/test/ImageServer");
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services")]
+    public Task SoapCatalog_ExcessiveXmlDepth_ReturnsClientFault()
+        => AssertExcessiveSoapDepthRejectedAsync("/services");
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public Task SoapImageServer_ExcessiveXmlDepth_ReturnsClientFault()
+        => AssertExcessiveSoapDepthRejectedAsync("/services/test/ImageServer");
+
+    private async Task AssertExcessiveSoapDepthRejectedAsync(string route)
+    {
+        var nestedElements = string.Concat(
+            Enumerable.Repeat("<Nested>", SoapXmlDocumentReader.MaxElementDepth));
+        var closingElements = string.Concat(
+            Enumerable.Repeat("</Nested>", SoapXmlDocumentReader.MaxElementDepth));
+        var request = $"""
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  {nestedElements}{closingElements}
+                </GetVersion>
+              </soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        using var response = await _fixture.Client.PostAsync(route, content);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Malformed SOAP request");
+    }
 
     private async Task AssertDtdPayloadRejectedAsync(string route)
     {
