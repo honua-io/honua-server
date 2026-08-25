@@ -572,12 +572,13 @@ internal sealed class WorkflowPackageService(
     /// checks; it is never handed to <c>SubmitJobAsync</c> as one direct-submit job (the workflow
     /// orchestration engine executes each node as its own step). <see cref="DirectSubmitPlanValidator"/>
     /// violations describe direct-submit-only limitations (multi-step, non-Geoprocess-first,
-    /// sync-only processes) that do not apply here — a compiled workflow graph is expected to be
-    /// multi-step (#2806/#2808).
+    /// catalog-declared workflow-only processes) that do not apply here because those nodes are
+    /// submitted through the trusted orchestration boundary. Protocol-only and unavailable
+    /// processes remain blocking because neither has a workflow job executor (#2806/#2808/#3267).
     /// </summary>
     private static bool IsDirectSubmitOnlyValidation(GeoprocessingValidationFailure violation)
         => violation.Code is "MULTI_STEP_NOT_EXECUTABLE" or "GEOPROCESS_STEP_NOT_FIRST"
-            or "NO_EXECUTABLE_STEP" or "SYNC_ONLY_PROCESS";
+            or "NO_EXECUTABLE_STEP" or "WORKFLOW_ONLY_PROCESS";
 
     private static void ValidateTargetEligibility(
         WorkflowGraph graph,

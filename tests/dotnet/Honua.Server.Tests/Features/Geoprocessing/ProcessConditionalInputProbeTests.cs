@@ -89,7 +89,8 @@ public sealed class ProcessConditionalInputProbeTests
             "sink.external-postgis",
             ["input", "connectionId", "table", "targetSrid"]);
 
-        violations.Should().BeEmpty();
+        violations.Should().ContainSingle(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
     }
 
     [UnitTest]
@@ -99,9 +100,11 @@ public sealed class ProcessConditionalInputProbeTests
             "sink.external-postgis",
             ["input", "connectionName", "connectionId", "table", "targetSrid"]);
 
-        violations.Should().ContainSingle();
-        violations[0].Kind.Should().Be(ProcessAdmissibilityViolationKind.Inputs);
-        violations[0].Message.Should().Contain("exactly one of");
+        violations.Should().Contain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.Inputs
+            && violation.Message.Contains("exactly one of", StringComparison.Ordinal));
+        violations.Should().Contain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
     }
 
     // -----------------------------------------------------------------------
