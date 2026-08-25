@@ -110,6 +110,69 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
+    public async Task BearerHeaderOverride_WithoutMultiTenantRole_FailsClosed()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "tenant-home"),
+            roles: ["user"],
+            authenticationType: "Bearer");
+        var client = await CreateAppAsync(principal);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
+        request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task BearerWithoutTenantClaim_DoesNotInheritAnonymousDefault()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-user"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithoutTenantClaim_DoesNotInheritAnonymousDefault()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task BearerTenantClaim_StampsSameEffectiveTenantOnPrincipal()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "tenant-a"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal("tenant-a|tenant-a", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
     public async Task Anonymous_FallsBackToConfiguredDefaultTenant()
     {
         var client = await CreateAppAsync(principal: null);
@@ -182,12 +245,14 @@ public class TenantContextMiddlewareTests
 
     private static ClaimsPrincipal AuthenticatedPrincipal(
         (string Type, string Value) claims,
-        string[]? roles = null)
-        => AuthenticatedPrincipal(new[] { claims }, roles);
+        string[]? roles = null,
+        string authenticationType = "TestAuth")
+        => AuthenticatedPrincipal(new[] { claims }, roles, authenticationType);
 
     private static ClaimsPrincipal AuthenticatedPrincipal(
         IEnumerable<(string Type, string Value)> claims,
-        string[]? roles = null)
+        string[]? roles = null,
+        string authenticationType = "TestAuth")
     {
         var claimList = new List<Claim>
         {
@@ -205,7 +270,7 @@ public class TenantContextMiddlewareTests
             }
         }
 
-        var identity = new ClaimsIdentity(claimList, authenticationType: "TestAuth");
+        var identity = new ClaimsIdentity(claimList, authenticationType);
         return new ClaimsPrincipal(identity);
     }
 
@@ -267,6 +332,12 @@ public class TenantContextMiddlewareTests
             }
 
             return Results.Text(tenantId);
+        });
+
+        app.MapGet("/binding", (HttpContext context, ITenantContext tenant) =>
+        {
+            var effective = context.User.FindFirst("honua:effective_tenant")?.Value ?? "<null>";
+            return Results.Text($"{tenant.TenantId ?? "<null>"}|{effective}");
         });
 
         await app.StartAsync();

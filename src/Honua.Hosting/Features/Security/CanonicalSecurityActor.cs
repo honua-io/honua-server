@@ -14,7 +14,6 @@ namespace Honua.Infrastructure.Security;
 internal static class CanonicalSecurityActor
 {
     private const string ApiKeyIdClaim = "api_key_id";
-    private const string AuthTypeClaim = "auth_type";
     private const string IssuerClaim = "iss";
     private const string SubjectClaim = "sub";
     internal const string EffectiveTenantClaim = "honua:effective_tenant";
@@ -35,7 +34,7 @@ internal static class CanonicalSecurityActor
         }
 
         var apiKeyValue = identity.FindFirst(ApiKeyIdClaim)?.Value;
-        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal)
+        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase)
             && Guid.TryParse(apiKeyValue, out var apiKeyId))
         {
             return new CanonicalSecurityActorIdentity(
@@ -102,6 +101,18 @@ internal static class CanonicalSecurityActor
         Replace(identity, EffectiveTenantClaim, NormalizeValue(effectiveTenant));
         Replace(identity, ScopeCeilingClaim, ResolveScopeCeiling(principal));
     }
+
+    /// <summary>
+    /// Returns whether the principal was authenticated by one of the framework-owned
+    /// bearer handlers. Issuer-supplied claims are deliberately not consulted.
+    /// </summary>
+    internal static bool IsBearerPrincipal(ClaimsPrincipal? principal) =>
+        principal?.Identities.Any(static identity =>
+            identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)) == true;
+
+    private static bool IsBearerScheme(string? scheme) =>
+        string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(scheme, OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase);
 
     private static void Replace(ClaimsIdentity identity, string type, string? value)
     {
