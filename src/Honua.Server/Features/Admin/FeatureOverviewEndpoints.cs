@@ -74,7 +74,7 @@ internal static class FeatureOverviewEndpoints
         var capabilities = ProjectCapabilities(
             capabilityRegistry.All,
             gateContext,
-            publishedOperations.Value.Enabled);
+            publishedOperations.Value);
 
         var response = new FeatureOverviewResponse
         {
@@ -97,20 +97,24 @@ internal static class FeatureOverviewEndpoints
     /// </summary>
     /// <param name="descriptors">The capability descriptors to project.</param>
     /// <param name="context">The edition/environment/flag context to resolve against.</param>
-    /// <param name="publishOperationsEnabled">
-    /// Whether operation descriptors are published onto the live MCP tool surface.
+    /// <param name="publishedOperations">
+    /// Options controlling which operation descriptors are published onto the live MCP tool surface.
     /// </param>
     internal static CapabilityOverviewItem[] ProjectCapabilities(
         IEnumerable<CapabilityDescriptor> descriptors,
         CapabilityGateContext context,
-        bool publishOperationsEnabled = false)
+        McpPublishedOperationOptions? publishedOperations = null)
     {
+        publishedOperations ??= new McpPublishedOperationOptions();
+
         return descriptors.Select(descriptor =>
         {
             var resolution = CapabilityGateResolver.Resolve(descriptor, context);
             var enabled = resolution.Enabled;
             var reasonCode = resolution.ReasonCode;
-            if (enabled && descriptor.IsDynamic && !publishOperationsEnabled)
+            if (enabled
+                && descriptor.IsDynamic
+                && (!publishedOperations.Enabled || publishedOperations.DeterministicOnly))
             {
                 enabled = false;
                 reasonCode = CapabilityReasonCodes.DisabledByConfiguration;
