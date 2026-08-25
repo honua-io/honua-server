@@ -18,6 +18,7 @@ namespace Honua.Server.Features.Console;
 internal static class ConsoleAccessEndpoints
 {
     private const string ConsoleAccessService = "console-access";
+    private const string WorkspaceMembershipOperation = "workspace-membership";
     private const string Granted = "granted";
     private const string NotGranted = "not-granted";
     private const int MaxWorkspaceIdLength = 64;
@@ -74,7 +75,10 @@ internal static class ConsoleAccessEndpoints
             return BadRequest(error);
         }
 
-        var roles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        var roles = allRoles
+            .Where(role => role.IsBuiltIn || IsOwnedByWorkspace(role, normalizedWorkspaceId))
+            .ToArray();
         var users = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
         var roleNames = roles.Select(static role => role.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var projected = roles
@@ -110,9 +114,15 @@ internal static class ConsoleAccessEndpoints
             return BadRequest(error);
         }
 
-        var roles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        var roles = allRoles
+            .Where(role => role.IsBuiltIn || IsOwnedByWorkspace(role, normalizedWorkspaceId))
+            .ToArray();
         var rolesByName = roles.ToDictionary(static role => role.Name, StringComparer.OrdinalIgnoreCase);
-        var users = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
+        var allUsers = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
+        var users = allUsers
+            .Where(user => user.Roles.Any(rolesByName.ContainsKey))
+            .ToArray();
         var members = users
             .OrderBy(static user => user.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Select(user => ToTeamMember(user, rolesByName, normalizedWorkspaceId))
@@ -187,6 +197,11 @@ internal static class ConsoleAccessEndpoints
             return BadRequest("Built-in roles cannot be updated.");
         }
 
+        if (!IsOwnedByWorkspace(existing, normalizedWorkspaceId))
+        {
+            return Results.NotFound(ApiResponse<object>.Failure("Role not found."));
+        }
+
         var updated = await roleStore.UpdateRoleAsync(new RoleDefinition
         {
             RoleId = existing.RoleId,
@@ -232,6 +247,11 @@ internal static class ConsoleAccessEndpoints
         if (existing.IsBuiltIn)
         {
             return BadRequest("Built-in roles cannot be deleted.");
+        }
+
+        if (!IsOwnedByWorkspace(existing, normalizedWorkspaceId))
+        {
+            return Results.NotFound(ApiResponse<object>.Failure("Role not found."));
         }
 
         if (!await roleStore.DeleteRoleAsync(roleId, context.RequestAborted).ConfigureAwait(false))
@@ -305,16 +325,19 @@ internal static class ConsoleAccessEndpoints
         Dictionary<string, RoleDefinition> rolesByName,
         string workspaceId)
     {
-        var primaryRole = user.Roles
+        var assignedRoles = user.Roles
             .Select(roleName => rolesByName.TryGetValue(roleName, out var role) ? role : null)
-            .FirstOrDefault(static role => role is not null);
+            .Where(static role => role is not null)
+            .Select(static role => role!)
+            .ToArray();
+        var primaryRole = assignedRoles.FirstOrDefault();
         return new ConsoleTeamMember
         {
             Id = user.UserId,
             DisplayName = user.DisplayName,
             Identity = user.Email ?? user.ExternalId,
             RoleId = primaryRole?.RoleId.ToString("D"),
-            RoleName = user.Roles.Count == 0 ? "Unassigned" : string.Join(", ", user.Roles),
+            RoleName = string.Join(", ", assignedRoles.Select(static role => role.Name)),
             IsCustomRole = primaryRole is { IsBuiltIn: false },
             Scope = workspaceId,
             LastActive = user.UpdatedAt.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture),
@@ -361,6 +384,12 @@ internal static class ConsoleAccessEndpoints
             && (string.Equals(grant.Layer, "*", StringComparison.Ordinal)
                 || string.Equals(grant.Layer, workspaceId, StringComparison.Ordinal)));
 
+    private static bool IsOwnedByWorkspace(RoleDefinition role, string workspaceId) =>
+        role.Permissions.Any(grant =>
+            string.Equals(grant.Service, ConsoleAccessService, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(grant.Layer, workspaceId, StringComparison.Ordinal)
+            && string.Equals(grant.Operation, WorkspaceMembershipOperation, StringComparison.Ordinal));
+
     private static bool TryValidateWrite(
         string workspaceId,
         ConsoleRoleWriteRequest? request,
@@ -387,7 +416,18 @@ internal static class ConsoleAccessEndpoints
             return false;
         }
 
-        var mapped = new List<PermissionGrant>();
+        var mapped = new List<PermissionGrant>
+        {
+            // RoleDefinition is provider-neutral and has no workspace column. Persist a
+            // reserved Console grant so ownership survives even when every UI permission
+            // is explicitly not granted.
+            new()
+            {
+                Service = ConsoleAccessService,
+                Layer = normalizedWorkspaceId,
+                Operation = WorkspaceMembershipOperation,
+            },
+        };
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var grant in request.Grants ?? [])
         {
