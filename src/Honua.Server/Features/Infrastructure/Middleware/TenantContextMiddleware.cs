@@ -125,7 +125,7 @@ internal sealed class TenantContextMiddleware(
                 && !context.Request.Path.StartsWithSegments(
                     "/mcp",
                     StringComparison.OrdinalIgnoreCase)
-                && !IsTenantIndependentControlPlanePath(context.Request.Path))
+                && !IsTenantIndependentControlPlaneEndpoint(context))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
@@ -246,8 +246,8 @@ internal sealed class TenantContextMiddleware(
             ?? principal.Identity.Name;
     }
 
-    private static bool IsTenantIndependentControlPlanePath(PathString path) =>
-        path.StartsWithSegments("/api/v1/admin", StringComparison.OrdinalIgnoreCase);
+    private static bool IsTenantIndependentControlPlaneEndpoint(HttpContext context) =>
+        context.GetEndpoint()?.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null;
 
     // Tenant ids should be safe to embed in logs and downstream SQL filters. Allow the
     // same character set as correlation ids — letters, digits, hyphen, underscore, dot,
@@ -268,5 +268,19 @@ internal sealed class TenantContextMiddleware(
         }
 
         return true;
+    }
+}
+
+/// <summary>
+/// Marks an explicitly tenant-independent control-plane endpoint that may authenticate an
+/// external OIDC bearer without selecting a tenant. The marker is intentionally opt-in so
+/// tenant-backed admin routes continue to fail before default-schema access.
+/// </summary>
+internal sealed class TenantIndependentControlPlaneMetadata
+{
+    public static TenantIndependentControlPlaneMetadata Instance { get; } = new();
+
+    private TenantIndependentControlPlaneMetadata()
+    {
     }
 }
