@@ -88,6 +88,9 @@ internal sealed class TenantContextMiddleware(
             // to downstream middleware while silently discarding the caller's choice.
             if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
             {
+                // Audit still needs the issuer-qualified actor even though the rejected
+                // override has no accepted effective tenant.
+                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
