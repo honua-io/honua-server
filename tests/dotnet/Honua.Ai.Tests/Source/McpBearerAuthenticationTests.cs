@@ -337,6 +337,24 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Operation(Operations.Security)]
+    public async Task FeatureServerQuery_BearerWithoutTenant_IsRejectedBeforeDefaultSchema()
+    {
+        var token = CreateToken(
+            "tenantless-subject",
+            additionalClaims: [new Claim("scope", "honua.mcp.full")]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/rest/services/tenant-leak-probe/FeatureServer/0/query?where=1%3D1&f=json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task Session_SameSubjectAcrossIssuerOrTenant_CannotPostStreamOrDelete()
