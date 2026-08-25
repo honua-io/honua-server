@@ -76,7 +76,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 draft.UpdatedAt,
                 cancellationToken,
                 draft.ExpectedExistingItemOwnerId,
-                draft.ExpectedExistingItemPresent).ConfigureAwait(false);
+                draft.ExpectedExistingItemPresent,
+                enforceCreationOwnerFence: true).ConfigureAwait(false);
 
             var sql = $"""
                 INSERT INTO {_draftsTable}
@@ -1004,7 +1005,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken,
         string? expectedExistingOwnerId = null,
-        bool expectedExistingItemPresent = false)
+        bool expectedExistingItemPresent = false,
+        bool enforceCreationOwnerFence = false)
     {
         // owner_id is intentionally set only on INSERT and left out of the ON CONFLICT UPDATE
         // clause: ownership is populated once, on create, from the authenticated principal
@@ -1023,6 +1025,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 family = EXCLUDED.family,
                 updated_by = EXCLUDED.updated_by,
                 updated_at = EXCLUDED.updated_at
+            WHERE NOT @enforce_creation_owner_fence
+               OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+               OR (@expected_existing_item_present
+                   AND {_itemsTable}.owner_id IS NOT DISTINCT FROM @expected_existing_owner_id)
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1034,6 +1040,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_owner_id", (object?)expectedExistingOwnerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_item_present", expectedExistingItemPresent);
+        command.Parameters.AddWithValue("@enforce_creation_owner_fence", enforceCreationOwnerFence);
         command.Parameters.AddWithValue("@created_by", (object?)createdBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_by", (object?)updatedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_at", createdAt);
@@ -1041,9 +1048,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         if (affected == 0)
         {
-            // A zero-row result is unexpected because both insert and conflict
-            // paths affect the item. Keep the failure explicit if the schema or
-            // command is changed in a way that violates that invariant.
+            // Keep the immutable owner check atomic with the upsert. In
+            // particular, two callers that both observed an absent item must
+            // not create drafts under different owners for the same item id.
             throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
         }
     }
