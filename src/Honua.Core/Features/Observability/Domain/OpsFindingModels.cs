@@ -144,6 +144,12 @@ public sealed record OpsFinding
     /// </summary>
     public required IReadOnlyList<string> EvidenceRefs { get; init; }
 
+    /// <summary>Gets the exact source posture used to evaluate this finding.</summary>
+    public EvidencePostureEnvelope? EvidencePosture { get; init; }
+
+    /// <summary>Gets the closed source identifiers required before this finding can be proposed.</summary>
+    public IReadOnlyList<string> RequiredSourceIds { get; init; } = Array.Empty<string>();
+
     /// <summary>
     /// Gets the recommended, approval-gated fix, or <c>null</c> when the finding is informational
     /// and has no safe automatic action.
@@ -196,6 +202,9 @@ public enum OpsFindingProposalStatus
 
     /// <summary>The request was canceled after autonomous actuator invocation began.</summary>
     Canceled = 10,
+
+    /// <summary>The finding exists, but its required observation evidence is not actionable.</summary>
+    EvidenceIncomplete = 11,
 }
 
 /// <summary>
