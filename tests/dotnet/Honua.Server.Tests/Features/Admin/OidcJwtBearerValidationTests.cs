@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -82,7 +83,11 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 // This fixture isolates OIDC trust and tenant routing. Keep the
                 // independently tested admin mTLS gate from short-circuiting first.
-                builder.UseSetting("Authentication:ClientCertificates:Mode", "Optional");
+                builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+                    configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Authentication:ClientCertificates:Mode"] = "Optional",
+                    }));
                 // Point the real JwtBearer pipeline at the fake IdP: discovery + JWKS come from
                 // WireMock, so signature/issuer/audience/expiry validation runs against real
                 // RSA-signed tokens rather than a stub.

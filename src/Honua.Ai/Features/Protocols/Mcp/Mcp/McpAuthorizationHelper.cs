@@ -58,7 +58,8 @@ internal static class McpAuthorizationHelper
         }
 
         var scheme = ResolveScheme(identity);
-        var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal.FindFirst("sub")?.Value;
         if (!string.IsNullOrEmpty(subject))
         {
             return $"{scheme}:sub:{subject}";

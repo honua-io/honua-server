@@ -150,24 +150,24 @@ public sealed class ProposalStatusResourceTests
     private static OperationProposal CreateProposal(
         string actor,
         string effectiveTenant = "tenant-1") => new()
-    {
-        ProposalId = "proposal-1",
-        Kind = OperationClass.Deploy,
-        Status = OperationProposalStatus.AwaitingApproval,
-        CreatedAt = new DateTimeOffset(2026, 8, 24, 0, 0, 0, TimeSpan.Zero),
-        UpdatedAt = new DateTimeOffset(2026, 8, 24, 0, 0, 0, TimeSpan.Zero),
-        Authority = new OperationAuthorityContext
         {
-            Issuer = "https://issuer.example",
-            Actor = actor,
-            Scheme = "Bearer",
-            EffectiveTenant = effectiveTenant,
-            ScopeGoverned = true,
-            ResourceType = OperatorResourceType.Deployment,
-            Operation = OperatorOperation.Publish,
-            ResourceId = "target-1",
-        },
-    };
+            ProposalId = "proposal-1",
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.AwaitingApproval,
+            CreatedAt = new DateTimeOffset(2026, 8, 24, 0, 0, 0, TimeSpan.Zero),
+            UpdatedAt = new DateTimeOffset(2026, 8, 24, 0, 0, 0, TimeSpan.Zero),
+            Authority = new OperationAuthorityContext
+            {
+                Issuer = "https://issuer.example",
+                Actor = actor,
+                Scheme = "Bearer",
+                EffectiveTenant = effectiveTenant,
+                ScopeGoverned = true,
+                ResourceType = OperatorResourceType.Deployment,
+                Operation = OperatorOperation.Publish,
+                ResourceId = "target-1",
+            },
+        };
 
     private sealed class TestTenantContext(string? tenantId) : ITenantContext
     {
