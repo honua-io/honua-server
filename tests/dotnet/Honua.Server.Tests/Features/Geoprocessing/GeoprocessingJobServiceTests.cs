@@ -530,6 +530,34 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithoutGeoprocessStep_RejectsBeforeDurablePersistence()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-query-only",
+            IntentId = "intent-query-only",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "query",
+                    Kind = AnalysisPlanStepKind.QueryFeatures,
+                    Inputs = new Dictionary<string, string> { ["layerId"] = "1" },
+                },
+            ],
+        };
+
+        var act = () => _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*NO_EXECUTABLE_STEP*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ProtocolOnlyCapability_RejectsBeforeDurablePersistence()
     {
         var act = () => _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());

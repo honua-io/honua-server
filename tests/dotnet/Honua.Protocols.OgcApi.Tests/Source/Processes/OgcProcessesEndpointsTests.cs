@@ -436,10 +436,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithoutRespondAsync_DefaultsToAsync()
     {
-        var body = """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""";
+        var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
-            "/ogc/processes/processes/honua-geoprocessing/execution", content);
+            "/ogc/processes/processes/geometry.buffer/execution", content);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
@@ -476,9 +476,9 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         // OGC API Processes Part 1 §7.9.4.2: the server SHALL include
         // Preference-Applied: respond-async on every async 201 response.
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/honua-geoprocessing/execution");
+            "/ogc/processes/processes/geometry.buffer/execution");
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -739,12 +739,11 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     public async Task Execute_ResponseModeDocument_IsAccepted()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/honua-geoprocessing/execution");
+            "/ogc/processes/processes/geometry.buffer/execution");
         request.Headers.Add("Prefer", "respond-async");
-        // queryFeatures is a non-geoprocess kind â€” catalog validation skips it,
-        // so this request exercises only response-mode handling, not catalog checks.
+        // Use a real job-callable process so this test isolates response-mode handling.
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}},"response":"document"}""",
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}},\"response\":\"document\"}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -846,13 +845,12 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             var client = approvalFixture.CreateAdminClient();
 
             using var request = new HttpRequestMessage(HttpMethod.Post,
-                "/ogc/processes/processes/honua-geoprocessing/execution");
+                "/ogc/processes/processes/geometry.buffer/execution");
             request.Headers.Add("Prefer", "respond-async");
-            // queryFeatures is a non-geoprocess step kind â€” catalog validation skips it
-            // and the destructive classifier sees no Geoprocess step, so the submission
-            // should not trigger the IsDestructive branch of the evaluator.
+            // geometry.buffer is job-callable and non-destructive, so this isolates the
+            // destructive-only approval policy without bypassing executable-step validation.
             request.Content = new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+                $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
                 Encoding.UTF8, "application/json");
 
             var response = await client.SendAsync(request);
@@ -865,6 +863,25 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         {
             await approvalFixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_PlanWithoutGeoprocessStep_Returns400()
+    {
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("NO_EXECUTABLE_STEP");
     }
 
     [IntegrationTest]

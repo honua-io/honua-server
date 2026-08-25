@@ -1606,7 +1606,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private static bool IsExecutionCapabilityViolation(string code)
-        => code is "SYNC_ONLY_PROCESS"
+        => code is "NO_EXECUTABLE_STEP"
+            or "SYNC_ONLY_PROCESS"
             or "WORKFLOW_ONLY_PROCESS"
             or "PROCESS_UNAVAILABLE"
             or "UNCLASSIFIED_PROCESS"
