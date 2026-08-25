@@ -192,6 +192,7 @@ internal static class ProcessEndpoints
         IProcessCatalog processCatalog)
     {
         EnrichActivity("ExecuteProcess");
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
         // OGC API Processes Part 1 §7.9.4: inspect the Prefer header once so
         // both respond-async and respond-sync can be checked against the same
@@ -206,7 +207,7 @@ internal static class ProcessEndpoints
                 context.User,
                 OperatorResourceType.Process,
                 OperatorOperation.Execute,
-                context.RequestAborted).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
 
             var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
                 ? null
@@ -229,7 +230,7 @@ internal static class ProcessEndpoints
                 var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
                     context,
                     RequestBodySizeGuard.ResolveMaxBodyBytes(context),
-                    context.RequestAborted)
+                    cancellationToken)
                     .ConfigureAwait(false);
                 if (bodyRead.TooLarge)
                 {
@@ -295,7 +296,7 @@ internal static class ProcessEndpoints
                     idempotencyKey: null,
                     context.User,
                     metadata,
-                    context.RequestAborted)
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             OgcProcessesLog.JobCreated(logger, jobRecord.OperationId, processId);
@@ -306,7 +307,7 @@ internal static class ProcessEndpoints
                     jobRecord.OperationId,
                     context.User,
                     TimeSpan.FromSeconds(30),
-                    context.RequestAborted).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 context.Response.Headers["Preference-Applied"] = "respond-sync";
 
                 if (terminal.Outcome is GeoprocessingTerminalResultOutcome.Timeout
@@ -336,7 +337,12 @@ internal static class ProcessEndpoints
                         StatusCodes.Status408RequestTimeout,
                         "Process execution timed out",
                         "Synchronous execution did not complete within the bounded wait window. Use respond-async for long-running execution."),
-                    GeoprocessingTerminalResultOutcome.ClientDisconnected => Results.StatusCode(499),
+                    GeoprocessingTerminalResultOutcome.ClientDisconnected => context.RequestAborted.IsCancellationRequested
+                        ? Results.StatusCode(499)
+                        : OgcProcessesResults.Error(
+                            StatusCodes.Status408RequestTimeout,
+                            "Process execution timed out",
+                            "Synchronous execution exceeded the configured request timeout."),
                     _ => throw new InvalidOperationException($"Unexpected terminal result outcome '{terminal.Outcome}'.")
                 };
             }
@@ -357,7 +363,7 @@ internal static class ProcessEndpoints
                 MediaTypes.Json,
                 StatusCodes.Status201Created);
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
