@@ -248,7 +248,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
         };
 
-        await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistResolutionAsync(
+                resolved,
+                OperationProposalStatus.Executing,
+                cancellationToken)
+            .ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
@@ -300,7 +304,11 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedAt = now
         };
 
-        await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistResolutionAsync(
+                resolved,
+                OperationProposalStatus.AwaitingApproval,
+                cancellationToken)
+            .ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Rejected,
@@ -474,10 +482,15 @@ internal sealed partial class OperationGateway : IOperationGateway
         return $"proposal-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
 
-    private async Task PersistResolutionAsync(OperationProposal proposal, CancellationToken cancellationToken)
+    private async Task PersistResolutionAsync(
+        OperationProposal proposal,
+        OperationProposalStatus expectedStatus,
+        CancellationToken cancellationToken)
     {
         // Refresh-and-retry on optimistic version conflict so concurrent
-        // notifications/reconcilers do not lose the resolution write.
+        // writes that preserve the expected lifecycle state do not lose the
+        // resolution write. A lifecycle transition is a conflicting decision
+        // and must never be overwritten by refreshing only the version token.
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (await _proposalStore.TrySetAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -491,18 +504,16 @@ internal sealed partial class OperationGateway : IOperationGateway
                 throw new InvalidOperationException($"Proposal '{proposal.ProposalId}' disappeared during resolution.");
             }
 
-            // Do not overwrite a terminal resolution. If an operator resolved the proposal
-            // concurrently (or a previous write landed between the CAS failure and this
-            // re-read), stop retrying rather than risk overwriting the recorded resolution.
-            if (IsTerminalStatus(latest.Status))
+            if (latest.Status != expectedStatus)
             {
                 throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' reached terminal status '{latest.Status}' " +
-                    "before the resolution write landed; aborting to avoid overwriting it.");
+                    $"Proposal '{proposal.ProposalId}' transitioned from '{expectedStatus}' to " +
+                    $"'{latest.Status}' before the resolution write landed; aborting to avoid " +
+                    "overwriting the concurrent decision.");
             }
 
-            // Only the version was bumped (e.g. a notification write); the status is still
-            // active so it is safe to retry with the refreshed version.
+            // Only the version was bumped while the lifecycle state stayed unchanged, so it
+            // is safe to retry the same transition with the refreshed version.
             proposal = proposal with { Version = latest.Version };
         }
 
@@ -573,12 +584,6 @@ internal sealed partial class OperationGateway : IOperationGateway
         throw new InvalidOperationException(
             $"Failed to claim proposal '{proposal.ProposalId}' for execution after repeated version conflicts.");
     }
-
-    private static bool IsTerminalStatus(OperationProposalStatus status)
-        => status is OperationProposalStatus.Succeeded
-            or OperationProposalStatus.Failed
-            or OperationProposalStatus.Rejected
-            or OperationProposalStatus.RolledBack;
 
     // Best-effort read of the ops-action name from an AdminConfigChange execution
     // payload ({action, target, params}). Returns null for absent/blank/malformed
