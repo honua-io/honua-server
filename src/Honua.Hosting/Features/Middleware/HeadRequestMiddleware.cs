@@ -155,23 +155,11 @@ internal static class HeadRequestSupport
             return false;
         }
 
-        for (var i = 0; i < metadata.Count; i++)
-        {
-            if (metadata[i] is not IProducesResponseTypeMetadata produces)
-            {
-                continue;
-            }
-
-            foreach (var contentType in produces.ContentTypes)
-            {
-                if (contentType.StartsWith(EventStreamContentType, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return metadata
+            .OfType<IProducesResponseTypeMetadata>()
+            .SelectMany(static produces => produces.ContentTypes)
+            .Any(static contentType =>
+                contentType.StartsWith(EventStreamContentType, StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -217,7 +205,7 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
         context.Request.Method = HttpMethods.Get;
 
         var originalBodyFeature = context.Features.GetRequiredFeature<IHttpResponseBodyFeature>();
-        var discardingBodyFeature = new HeadResponseBodyFeature();
+        using var discardingBodyFeature = new HeadResponseBodyFeature();
         context.Features.Set<IHttpResponseBodyFeature>(discardingBodyFeature);
 
         try
@@ -233,8 +221,6 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
 
             var bytesWritten = await discardingBodyFeature.FinishAsync().ConfigureAwait(false);
             context.Features.Set<IHttpResponseBodyFeature>(originalBodyFeature);
-            discardingBodyFeature.Dispose();
-
             if (!context.Response.HasStarted &&
                 HeadRequestSupport.CanCarryContentLength(context.Response.StatusCode))
             {
