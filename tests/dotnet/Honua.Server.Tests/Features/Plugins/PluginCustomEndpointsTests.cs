@@ -65,6 +65,7 @@ public sealed class PluginCustomEndpointsTests
                             p.Add<SplitGetEndpointPlugin>();
                             p.Add<SplitHeadEndpointPlugin>();
                             p.Add<HeadOnlyEndpointPlugin>();
+                            p.Add<HeadOnlyPostEndpointPlugin>();
                         });
                     })
                     .Configure(app =>
@@ -159,7 +160,7 @@ public sealed class PluginCustomEndpointsTests
         using var response = await client.GetAsync("/plugins/head-only");
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-        response.Content.Headers.Allow.Should().ContainSingle().Which.Should().Be("HEAD");
+        response.Content.Headers.Allow.Should().BeEquivalentTo("HEAD", "POST");
     }
 
     [IntegrationTest]
@@ -172,10 +173,11 @@ public sealed class PluginCustomEndpointsTests
             .Where(static endpoint => endpoint.RoutePattern.RawText == "/plugins/head-only")
             .ToArray();
 
-        var publicEndpoint = endpoints.Should().ContainSingle(endpoint =>
-                endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() == null)
-            .Which;
-        publicEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Should().Equal("HEAD");
+        var publicMethods = endpoints
+            .Where(endpoint => endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() == null)
+            .SelectMany(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods)
+            .ToArray();
+        publicMethods.Should().BeEquivalentTo("HEAD", "POST");
 
         var fallbackEndpoint = endpoints.Should().ContainSingle(endpoint =>
                 endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() != null)
@@ -217,6 +219,21 @@ public sealed class PluginCustomEndpointsTests
     public sealed class HeadOnlyEndpointPlugin : ICustomEndpoint
     {
         public IReadOnlyList<string> Methods { get; } = ["HEAD"];
+
+        public string Pattern => "head-only";
+
+        public bool RequiresAuthorization => false;
+
+        public ValueTask<PluginEndpointResponse> HandleAsync(
+            PluginEndpointRequest request,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(PluginEndpointResponse.Status(StatusCodes.Status202Accepted));
+    }
+
+    [Plugin("head-only-post", "1.0.0", Capabilities = PluginCapability.CustomEndpoints)]
+    public sealed class HeadOnlyPostEndpointPlugin : ICustomEndpoint
+    {
+        public IReadOnlyList<string> Methods { get; } = ["POST"];
 
         public string Pattern => "head-only";
 

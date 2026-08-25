@@ -327,7 +327,7 @@ internal sealed partial class Wfs20Handler
                         writer.WriteStartElement("wfs", "member", Wfs20Utilities.WfsNamespace);
                         if (!string.IsNullOrWhiteSpace(feature.GeometryGml))
                         {
-                            writer.WriteRaw(feature.GeometryGml);
+                            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, queryResult.Plan.Query));
                         }
                         writer.WriteEndElement();
                     }
