@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Formats.Asn1;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication.ClientCertificates;
@@ -604,6 +605,15 @@ internal sealed class ClientCertificateValidator(
         foreach (var scope in mapping.EnvironmentScopes)
         {
             claims.Add(new Claim("honua:environment_scope", scope));
+        }
+
+        // The global claims transformation also processes client-certificate
+        // principals when OIDC is enabled. Mark validator-created framework
+        // claims so its issuer-claim scrubber preserves this trusted mTLS state.
+        foreach (var claim in claims.Where(static claim =>
+                     claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)))
+        {
+            claim.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
         }
 
         var identity = new ClaimsIdentity(

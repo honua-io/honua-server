@@ -5,7 +5,11 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Security;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -42,6 +46,41 @@ public sealed class ClientCertificateValidationTests
         result.Principal.FindAll("honua:environment_scope").Select(static c => c.Value)
             .Should().Contain("prod");
         result.FingerprintSha256.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ValidateAsync_FrameworkClaimsSurviveGlobalOidcTransformation()
+    {
+        using var certificate = CreateCertificate("CN=Honua Native Prod", uri: "spiffe://honua/prod/admin");
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles =
+            [
+                CreateProfile("prod-native", "prod", certificate.Issuer, "spiffe://honua/prod/admin")
+            ]
+        });
+        var validation = await validator.ValidateAsync(certificate);
+        var principal = validation.Principal!;
+        var expectedFrameworkClaims = principal.Claims
+            .Where(static claim => claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase))
+            .Select(static claim => (claim.Type, claim.Value))
+            .ToArray();
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions()),
+            NullLogger<OidcClaimsTransformation>.Instance,
+            new ServiceCollection().BuildServiceProvider());
+
+        var transformed = await transformation.TransformAsync(principal);
+
+        validation.Succeeded.Should().BeTrue(validation.Detail);
+        expectedFrameworkClaims.Should().NotBeEmpty();
+        principal.Claims
+            .Where(static claim => claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase))
+            .Should().OnlyContain(static claim => CanonicalSecurityActor.IsFrameworkOwnedClaim(claim));
+        transformed.Claims.Select(static claim => (claim.Type, claim.Value))
+            .Should().Contain(expectedFrameworkClaims);
     }
 
     [Fact]
