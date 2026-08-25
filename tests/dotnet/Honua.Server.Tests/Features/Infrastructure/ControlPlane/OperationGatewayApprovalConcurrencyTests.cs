@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
@@ -199,6 +200,34 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         executorCallCount.Should().Be(0);
         store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         store.Snapshot.Approval.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_SameApiKeyCannotApproveItsOwnProposal()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim("api_key_id", "api-key-42"),
+                new Claim("api_key_name", "release automation"),
+            ],
+            "ApiKey"));
+        var authority = OperationAuthorityContext.Capture(principal, "tenant-1");
+        var executorCallCount = 0;
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-api-key-self-approval", OperationProposalStatus.AwaitingApproval, authority));
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var act = () => sut.ApplyApprovedProposalAsync(
+            "p-api-key-self-approval",
+            "api-key-42");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*proposer cannot approve its own operation*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
     // ── helpers ───────────��───────────────────────────────���──────────────────
