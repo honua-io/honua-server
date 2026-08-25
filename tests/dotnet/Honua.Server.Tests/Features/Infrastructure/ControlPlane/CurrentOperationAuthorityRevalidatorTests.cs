@@ -170,7 +170,7 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
         secretResolver.CanResolveSecretAsync(secretReference, Arg.Any<CancellationToken>())
             .Returns(true);
         secretResolver.ResolveConnectionStringAsync(secretReference, Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("provider unavailable"));
+            .Returns(Task.FromException<string>(new InvalidOperationException("provider unavailable")));
         var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
         var sut = CreateSut(
             authorization,
