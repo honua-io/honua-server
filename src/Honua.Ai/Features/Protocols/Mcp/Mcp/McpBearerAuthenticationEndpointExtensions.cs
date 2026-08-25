@@ -208,7 +208,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
         path.Equals(McpEndpointExtensions.RoutePath, StringComparison.OrdinalIgnoreCase)
         || path.Equals($"{McpEndpointExtensions.RoutePath}/", StringComparison.OrdinalIgnoreCase);
 
-    private static ClaimsPrincipal? CreateTrustedBearerPrincipal(AuthenticateResult result)
+    internal static ClaimsPrincipal? CreateTrustedBearerPrincipal(AuthenticateResult result)
     {
         var principal = result.Principal;
         if (principal is null)
@@ -228,7 +228,8 @@ internal static class McpBearerAuthenticationEndpointExtensions
 
         var sourceIdentity = principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated);
         var identity = new ClaimsIdentity(
-            principal.Claims,
+            principal.Claims.Where(static claim =>
+                !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)),
             scheme,
             sourceIdentity?.NameClaimType ?? ClaimTypes.Name,
             sourceIdentity?.RoleClaimType ?? ClaimTypes.Role);

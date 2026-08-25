@@ -55,14 +55,28 @@ internal static class McpAuthorizationHelper
     /// ceiling. Client-supplied issuer, subject, tenant, and scope values are never
     /// read from request headers or parameters.
     /// </summary>
-    public static string ResolveSessionBindingKey(HttpContext context)
+    public static string? ResolveSessionBindingKey(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         var actor = CanonicalSecurityActor.Resolve(context.User);
         if (actor is null)
         {
+            if (context.User.Identities.Any(static identity => identity.IsAuthenticated))
+            {
+                // Never collapse an authenticated caller whose validator supplied no
+                // durable actor identity into the anonymous session namespace.
+                return null;
+            }
+
             return McpSessionManager.AnonymousPrincipalKey;
+        }
+
+        if (CanonicalSecurityActor.IsBearerPrincipal(context.User) && !actor.IsDurablyRevalidatable)
+        {
+            // Display names are mutable and are never OIDC session identifiers.
+            // Bearers must resolve to the validated issuer + subject tuple.
+            return null;
         }
 
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId

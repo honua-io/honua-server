@@ -280,6 +280,28 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Post_BearerWithoutDurableActor_IsDeniedWithoutSession()
+    {
+        var token = CreateToken(subject: null, additionalClaims:
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("client_id", "machine-client"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+        using var initialize = BuildInitialize(bearer: token);
+
+        var response = await _client.SendAsync(initialize);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
+            .GetString().Should().Be("permission_denied");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task Session_SameSubjectAcrossIssuerOrTenant_CannotPostStreamOrDelete()
     {
@@ -511,7 +533,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     }
 
     private static string CreateToken(
-        string subject,
+        string? subject,
         string issuer = Issuer,
         string audience = Audience,
         string signingKey = SigningKey,
@@ -523,10 +545,14 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         var claims = new List<Claim>
         {
-            new("sub", subject),
-            new("name", "Bearer Test User"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+        if (!string.IsNullOrWhiteSpace(subject))
+        {
+            claims.Insert(0, new Claim("sub", subject));
+            claims.Add(new Claim("name", "Bearer Test User"));
+        }
+
         if (additionalClaims is not null)
         {
             claims.AddRange(additionalClaims);
