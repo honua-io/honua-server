@@ -8,6 +8,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.ControlPlane;
 
@@ -18,8 +20,15 @@ namespace Honua.ControlPlane;
 internal sealed class CurrentOperationAuthorityRevalidator(
     IOperatorAuthorizationEvaluator authorization,
     IOperatorScopeAuthorizer scopeAuthorizer,
-    IGuardrailLadder ladder) : IOperationAuthorityRevalidator
+    IGuardrailLadder ladder,
+    IPrincipalMembershipSource membershipSource,
+    IAdminApiKeyStore apiKeyStore) : IOperationAuthorityRevalidator
 {
+    private const string ServiceScheme = "Service";
+    private const string TrustedServiceIssuer = "honua-server";
+    private const string TrustedServiceActor = "ops-findings";
+    private const string TrustedServiceTenant = "platform";
+
     public async Task<OperationAuthorityRevalidationResult> RevalidateAsync(
         OperationProposal proposal,
         CancellationToken cancellationToken = default)
@@ -39,6 +48,22 @@ internal sealed class CurrentOperationAuthorityRevalidator(
             return OperationAuthorityRevalidationResult.Denied("the current edition blocks this operation");
         }
 
+        var currentAuthority = await ResolveCurrentAuthorityAsync(authority, cancellationToken)
+            .ConfigureAwait(false);
+        if (!currentAuthority.IsAllowed)
+        {
+            return OperationAuthorityRevalidationResult.Denied(currentAuthority.Reason!);
+        }
+
+        // This is the sole credential-less authority minted by the server itself. It has
+        // no external account or API key to re-resolve, so retain the explicit in-process
+        // trust binding instead of fabricating user roles. Edition and exact resource
+        // evidence were still checked above.
+        if (currentAuthority.IsTrustedService)
+        {
+            return OperationAuthorityRevalidationResult.Allowed();
+        }
+
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, authority.Actor),
@@ -46,9 +71,9 @@ internal sealed class CurrentOperationAuthorityRevalidator(
         };
         claims.AddRange(authority.ScopeCeiling.Select(scope =>
             new Claim(OperatorScopeCatalog.ScopeClaimType, scope)));
-        claims.AddRange(authority.PermissionCeiling.Select(permission =>
+        claims.AddRange(currentAuthority.Permissions.Select(permission =>
             new Claim("permission", permission)));
-        claims.AddRange(authority.RoleCeiling.Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange(currentAuthority.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             claims,
             authority.Scheme,
@@ -73,5 +98,105 @@ internal sealed class CurrentOperationAuthorityRevalidator(
         return scope.IsAllowed
             ? OperationAuthorityRevalidationResult.Allowed()
             : OperationAuthorityRevalidationResult.Denied(scope.Reason ?? "current OAuth scope denied");
+    }
+
+    private async Task<CurrentAuthority> ResolveCurrentAuthorityAsync(
+        OperationAuthorityContext authority,
+        CancellationToken cancellationToken)
+    {
+        if (IsTrustedServiceAuthority(authority))
+        {
+            return CurrentAuthority.TrustedService();
+        }
+
+        if (string.Equals(
+                authority.Scheme,
+                AuthenticationExtensions.ApiKeyScheme,
+                StringComparison.Ordinal))
+        {
+            if (!Guid.TryParse(authority.Actor, out var apiKeyId))
+            {
+                return CurrentAuthority.Denied("the retained API-key identity cannot be resolved");
+            }
+
+            var apiKey = await apiKeyStore.GetAsync(apiKeyId, cancellationToken).ConfigureAwait(false);
+            if (apiKey is null || apiKey.RevokedAt is not null ||
+                apiKey.ExpiresAt is { } expiresAt && expiresAt <= DateTimeOffset.UtcNow)
+            {
+                return CurrentAuthority.Denied("the proposer API key is missing, revoked, or expired");
+            }
+
+            var permissions = IntersectCeiling(apiKey.Permissions, authority.PermissionCeiling);
+            var currentRoles = ResolveApiKeyRoles(apiKey.Permissions);
+            return CurrentAuthority.Allowed(
+                IntersectCeiling(currentRoles, authority.RoleCeiling),
+                permissions);
+        }
+
+        var membership = await membershipSource.ResolveMembershipAsync(
+            authority.Actor,
+            authority.Issuer,
+            cancellationToken).ConfigureAwait(false);
+        if (membership is null)
+        {
+            return CurrentAuthority.Denied("the proposer's current membership cannot be resolved");
+        }
+
+        if (!membership.IsActive)
+        {
+            return CurrentAuthority.Denied("the proposer identity is no longer active");
+        }
+
+        return CurrentAuthority.Allowed(
+            IntersectCeiling(membership.Roles, authority.RoleCeiling),
+            authority.PermissionCeiling);
+    }
+
+    private static bool IsTrustedServiceAuthority(OperationAuthorityContext authority)
+        => string.Equals(authority.Scheme, ServiceScheme, StringComparison.Ordinal) &&
+            string.Equals(authority.Issuer, TrustedServiceIssuer, StringComparison.Ordinal) &&
+            string.Equals(authority.Actor, TrustedServiceActor, StringComparison.Ordinal) &&
+            string.Equals(authority.EffectiveTenant, TrustedServiceTenant, StringComparison.Ordinal);
+
+    private static string[] ResolveApiKeyRoles(IReadOnlyList<string> permissions)
+    {
+        if (LayerScopedWriteKey.IsScopedWriteKey(permissions))
+        {
+            return [LayerScopedWriteKey.Role];
+        }
+
+        return LayerScopedWriteKey.ConfersFullAdmin(permissions)
+            ? ["admin"]
+            : [LayerScopedWriteKey.ScopedKeyRole];
+    }
+
+    private static string[] IntersectCeiling(
+        IReadOnlyList<string> current,
+        IReadOnlyList<string> ceiling)
+    {
+        var currentSet = current.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return ceiling
+            .Where(currentSet.Contains)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private sealed record CurrentAuthority(
+        bool IsAllowed,
+        bool IsTrustedService,
+        IReadOnlyList<string> Roles,
+        IReadOnlyList<string> Permissions,
+        string? Reason)
+    {
+        public static CurrentAuthority Allowed(
+            IReadOnlyList<string> roles,
+            IReadOnlyList<string> permissions)
+            => new(true, false, roles, permissions, null);
+
+        public static CurrentAuthority TrustedService()
+            => new(true, true, [], [], null);
+
+        public static CurrentAuthority Denied(string reason)
+            => new(false, false, [], [], reason);
     }
 }
