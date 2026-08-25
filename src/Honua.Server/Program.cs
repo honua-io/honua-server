@@ -1478,6 +1478,7 @@ app.MapSamlEndpoints();
 
 // Configure Console metadata v2 content + RBAC endpoints (#1162)
 app.MapConsoleSessionEndpoints();
+app.MapConsoleAccessEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)
