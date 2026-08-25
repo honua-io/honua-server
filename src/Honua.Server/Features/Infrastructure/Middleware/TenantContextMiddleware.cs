@@ -126,7 +126,7 @@ internal sealed class TenantContextMiddleware(
                 && !context.Request.Path.StartsWithSegments(
                     "/mcp",
                     StringComparison.OrdinalIgnoreCase)
-                && !IsTenantIndependentControlPlanePath(context.Request.Path))
+                && !IsTenantIndependentControlPlaneEndpoint(context))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
@@ -247,10 +247,8 @@ internal sealed class TenantContextMiddleware(
             ?? principal.Identity.Name;
     }
 
-    private static bool IsTenantIndependentControlPlanePath(PathString path) =>
-        path.StartsWithSegments(
-            "/api/v1/admin/oidc/providers",
-            StringComparison.OrdinalIgnoreCase);
+    private static bool IsTenantIndependentControlPlaneEndpoint(HttpContext context) =>
+        context.GetEndpoint()?.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null;
 
     // Tenant ids should be safe to embed in logs and downstream SQL filters. Allow the
     // same character set as correlation ids — letters, digits, hyphen, underscore, dot,
@@ -271,5 +269,18 @@ internal sealed class TenantContextMiddleware(
         }
 
         return true;
+    }
+}
+
+/// <summary>
+/// Marks a control-plane endpoint whose data is global rather than tenant-scoped, allowing a
+/// validated external bearer to reach endpoint authorization without an effective tenant.
+/// </summary>
+internal sealed class TenantIndependentControlPlaneMetadata
+{
+    internal static TenantIndependentControlPlaneMetadata Instance { get; } = new();
+
+    private TenantIndependentControlPlaneMetadata()
+    {
     }
 }

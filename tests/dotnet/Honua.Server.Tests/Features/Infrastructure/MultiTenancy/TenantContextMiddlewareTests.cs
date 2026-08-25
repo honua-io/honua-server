@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -172,6 +173,27 @@ public class TenantContextMiddlewareTests
 
         var client = await CreateAppAsync(principal);
         var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task BearerWithoutTenantClaim_VersionOnePointZeroAdminControlPlaneContinuesWithNullTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1.0/admin/oidc/providers");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
@@ -399,7 +421,12 @@ public class TenantContextMiddlewareTests
         });
 
         app.MapGet("/api/v1/admin/oidc/providers", (ITenantContext tenant) =>
-            Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
+                Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
+        app.MapGet("/api/v1.0/admin/oidc/providers", (ITenantContext tenant) =>
+                Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         app.MapGet("/api/v1/admin/metadata/layers/{layerId:int}/fields", (ITenantContext tenant) =>
             Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));

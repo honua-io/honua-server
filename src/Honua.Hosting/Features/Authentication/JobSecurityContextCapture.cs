@@ -55,8 +55,8 @@ internal static class JobSecurityContextCapture
     private const string RestoredAuthenticationType = "HonuaJobSecurityContext";
 
     /// <summary>
-    /// Upper bound on captured NON-ROLE claims, so a pathological token cannot bloat every
-    /// durable job record.
+    /// Upper bound on captured NON-ROLE, non-framework-identity claims, so a pathological token
+    /// cannot bloat every durable job record.
     /// </summary>
     /// <remarks>
     /// Role claims are deliberately exempt. Capturing roles first is not enough on its own: a
@@ -114,6 +114,7 @@ internal static class JobSecurityContextCapture
         "refresh_token",
         "client_secret",
         "password",
+        JobSecurityContextClaimTypes.MembershipPrincipalId,
     };
 
     /// <summary>
@@ -178,6 +179,21 @@ internal static class JobSecurityContextCapture
             captured.Add(new JobSecurityClaim(
                 JobSecurityContextClaimTypes.ManagedMembershipMarker,
                 JobSecurityContextClaimTypes.ManagedMembershipMarkerValue));
+        }
+
+        // PrincipalId is durable canonical attribution and can be issuer-qualified. Membership
+        // stores instead key on the raw normalized subject/name accepted at capture time. Persist
+        // that lookup key separately after stripping any input copy of this framework-owned claim,
+        // so deferred revalidation neither queries with the canonical display value nor trusts a
+        // caller-supplied membership identifier.
+        var membershipPrincipalId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue("sub")
+            ?? principal.Identity?.Name;
+        if (!string.IsNullOrWhiteSpace(membershipPrincipalId))
+        {
+            captured.Add(new JobSecurityClaim(
+                JobSecurityContextClaimTypes.MembershipPrincipalId,
+                membershipPrincipalId));
         }
 
         var tenantId = tenantContext is null
@@ -357,6 +373,17 @@ internal static class JobSecurityContextCapture
     private static string? ResolveMembershipPrincipalId(JobSecurityContext context)
     {
         var principalId = context.Claims.FirstOrDefault(claim =>
+            string.Equals(
+                claim.Type,
+                JobSecurityContextClaimTypes.MembershipPrincipalId,
+                StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (principalId is not null)
+        {
+            return principalId;
+        }
+
+        principalId = context.Claims.FirstOrDefault(claim =>
             string.Equals(claim.Type, ClaimTypes.NameIdentifier, StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
         if (principalId is not null)
@@ -366,6 +393,14 @@ internal static class JobSecurityContextCapture
 
         principalId = context.Claims.FirstOrDefault(claim =>
             string.Equals(claim.Type, "sub", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (principalId is not null)
+        {
+            return principalId;
+        }
+
+        principalId = context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, ClaimTypes.Name, StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
         if (principalId is not null)
         {

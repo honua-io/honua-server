@@ -132,6 +132,20 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task AdminEndpoint_VersionOnePointZeroValidJwt_IsAccepted()
+    {
+        var response = await SendWithTokenAsync(
+            CreateToken(),
+            "/api/v1.0/admin/oidc/providers");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "every accepted spelling of API version 1.0 must reach the same explicitly tenant-independent endpoint. Body: {0}",
+            body);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
     public async Task AdminEndpoint_ExpiredJwt_IsRejected()
     {
         var token = CreateToken(
@@ -192,9 +206,9 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
             "an unauthenticated request must not reach the admin endpoint");
     }
 
-    private async Task<HttpResponseMessage> SendWithTokenAsync(string token)
+    private async Task<HttpResponseMessage> SendWithTokenAsync(string token, string route = AdminRoute)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, AdminRoute);
+        using var request = new HttpRequestMessage(HttpMethod.Get, route);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await _fixture.Client.SendAsync(request);
     }
