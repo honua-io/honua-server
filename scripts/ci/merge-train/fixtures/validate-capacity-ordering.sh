@@ -16,7 +16,8 @@
 #      bounded hang rerun) and is read-only;
 #   3. marker detection is ANCHORED, so a job log that merely PRINTS the token
 #      (every CI Router Validation log does) is still ordinary and subtractable;
-#   4. transient evidence-read failures are retried before failing closed;
+#   4. transient evidence-read failures preserve the readable exact-attempt
+#      payload through flake classification, while persistent failures stop;
 #   5. the signature extractor samples real causes, not passing-test noise;
 #   6. a genuine pre-existing failure is still subtracted, exactly as before;
 #   7. train.sh really runs the guard first.
@@ -28,6 +29,8 @@ export TRAIN_APPLY=0
 . "${TRAIN_DIR}/lib.sh"
 # shellcheck source=../classify-timeout.sh
 . "${TRAIN_DIR}/classify-timeout.sh"
+# shellcheck source=../classify-flake.sh
+. "${TRAIN_DIR}/classify-flake.sh"
 # shellcheck source=../preexisting.sh
 . "${TRAIN_DIR}/preexisting.sh"
 
@@ -92,6 +95,11 @@ printf '%s\n' \
   'PASS: shard capacity exhaustion is terminal, not retried and not attributed' \
   '  Error: ci-shards.json coverage check failed for shard Core' \
   >"${work}/router.log"
+printf '%s\n' \
+  'System.IO.DirectoryNotFoundException: compressed static web asset was not found' \
+  '   at Microsoft.AspNetCore.Hosting.StaticWebAssets.StaticWebAssetsLoader.UseStaticWebAssets(IHostEnvironment environment, IConfiguration configuration)' \
+  '   at Honua.Server.Program.Main(String[] args)' \
+  >"${work}/staticwebassets.log"
 
 # One stub serves both the filter (run, job name, job id) and the classifier
 # (job id): lib.sh's REST-first reader is what preexisting.sh now delegates to,
@@ -104,6 +112,7 @@ case "\$1" in
   9103) cat "${work}/killed.log" ;;
   9104) cat "${work}/real-failure.log" ;;
   9105) cat "${work}/router.log" ;;
+  9107) cat "${work}/staticwebassets.log" ;;
   9190) cat "${work}/trunk-shard.log" ;;
   9194) cat "${work}/real-failure.log" ;;
   9195) cat "${work}/router.log" ;;
@@ -120,6 +129,7 @@ case "$1" in
   704) printf '9104\tServer Tests (Core)\n' ;;
   705) printf '9105\tCI Router Validation\n' ;;
   706) printf '9106\tServer Tests (Migration)\n' ;;
+  707) printf '9107\tAdmin & Infrastructure\n' ;;
   790) printf '9190\tServer Tests (Infra and Security)\n' ;;
   794) printf '9194\tServer Tests (Core)\n' ;;
   795) printf '9195\tCI Router Validation\n' ;;
@@ -135,6 +145,25 @@ chmod +x "${work}/reader.sh" "${work}/records.sh" "${work}/no-annotations.sh"
 export TRAIN_FAILING_JOB_RECORDS_FOR_RUN="${work}/records.sh"
 export TRAIN_JOB_LOG_READER="${work}/reader.sh"
 export TRAIN_JOB_ANNOTATION_READER="${work}/no-annotations.sh"
+
+failed_job_snapshot_reader() {
+  local jid name conclusion=failure attempt=1 status=completed
+  case "$1" in
+    701) jid=9101; name="${SHARD}" ;;
+    702) jid=9102; name="${SHARD}" ;;
+    703) jid=9103; name="${SHARD}" ;;
+    704) jid=9104; name='Server Tests (Core)' ;;
+    705) jid=9105; name="${ROUTER}" ;;
+    706) jid=9106; name='Server Tests (Migration)' ;;
+    707) jid=9107; name='Admin & Infrastructure'; attempt=3 ;;
+    *) return 1 ;;
+  esac
+  jq -nc --argjson attempt "${attempt}" --arg status "${status}" \
+    --argjson jid "${jid}" --arg name "${name}" --arg conclusion "${conclusion}" \
+    '{attempt:$attempt,status:$status,jobs:[{databaseId:$jid,name:$name,conclusion:$conclusion}]}'
+}
+export -f failed_job_snapshot_reader
+export TRAIN_FAILED_JOB_SNAPSHOT_READER=failed_job_snapshot_reader
 
 gh() {  # only `gh run view <id> --json jobs` reaches here
   case "$*" in
@@ -242,13 +271,45 @@ TRAIN_JOB_LOG_READER=flaky_reader TRAIN_EVIDENCE_READ_RETRIES=3 run_guard 704 'S
 [[ "${GUARD_RC}" == "0" ]] \
   || fail "a transient evidence read was escalated instead of retried (rc=${GUARD_RC}, attempts=$(cat "${attempts}"))"
 [[ "$(cat "${attempts}")" -ge 2 ]] || fail "the guard did not retry the failed evidence read"
+
+# Reproduce #3473 end to end: the first canonical job-log read is unavailable,
+# the bounded retry returns a configured StaticWebAssetsLoader flake, and the
+# timeout + flake classifiers must consume that SAME attempt-3 payload. A
+# second independent download is deliberately forbidden by the reader count.
+printf '0' >"${attempts}"
+flaky_static_reader() {
+  local n; n=$(( $(cat "${attempts}") + 1 )); printf '%s' "${n}" >"${attempts}"
+  [[ "${n}" -ge 2 ]] || return 1
+  cat "${work}/staticwebassets.log"
+}
+export -f flaky_static_reader
+: >"${side_effects}"
+export TRAIN_JOB_LOG_READER=flaky_static_reader
+train_guard_scan_arm
+GUARD_RC=0; train_classify_capacity_guard 707 'Admin & Infrastructure' || GUARD_RC=$?
+[[ "${GUARD_RC}" == "0" ]] \
+  || fail "a transient StaticWebAssetsLoader evidence read did not recover (rc=${GUARD_RC})"
+[[ "${TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT}" == "3" ]] \
+  || fail "the recovered evidence was not bound to exact run attempt 3"
+rc=0; train_classify_retry_candidate 707 0 0 'Admin & Infrastructure' || rc=$?
+[[ "${rc}" == "0" && "${TRAIN_RETRY_KIND}" == "flake" ]] \
+  || fail "preserved StaticWebAssetsLoader evidence missed the bounded flake rerun (rc=${rc}, kind=${TRAIN_RETRY_KIND})"
+[[ "$(cat "${attempts}")" == "2" ]] \
+  || fail "flake classification re-downloaded evidence instead of reusing the recovered exact-attempt payload"
+grep -Fq 'gh run rerun 707 --failed' "${side_effects}" \
+  || fail "the recovered StaticWebAssetsLoader evidence did not request the failed-job-only rerun"
+
 # Persistently unreadable evidence still fails closed.
+export TRAIN_JOB_LOG_READER="${work}/reader.sh"
+: >"${side_effects}"
 TRAIN_EVIDENCE_READ_RETRIES=2 run_guard 706 'Server Tests (Migration)'
 [[ "${GUARD_RC}" == "8" && "${TRAIN_GUARD_KIND}" == "evidence-unavailable" ]] \
   || fail "persistently unreadable evidence did not fail closed (rc=${GUARD_RC})"
 [[ "$(filter_rc 706 796 'Server Tests (Migration)')" != "11" ]] \
   || fail "a failing job with no readable log was subtracted as pre-existing"
-pass "evidence reads are retried with backoff, and only persistent failure fails closed"
+[[ ! -s "${side_effects}" ]] \
+  || fail "permanently unavailable evidence performed a rerun, attribution, or landing side effect"
+pass "exact-attempt evidence survives transient reads through flake retry, and persistent failure stays fail-closed"
 
 # --- 5. the extractor samples real causes, not passing-test noise ------------
 noisy="$(printf '%s\n' \

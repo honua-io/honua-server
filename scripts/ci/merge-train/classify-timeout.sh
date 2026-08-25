@@ -13,6 +13,14 @@ TRAIN_GUARD_SCAN_ARMED=0
 TRAIN_GUARD_SCAN_KEY=""
 TRAIN_GUARD_SCAN_RC=""
 TRAIN_GUARD_SCAN_KIND=""
+TRAIN_GUARD_SCAN_ATTEMPT=""
+TRAIN_GUARD_SCAN_TEXT=""
+TRAIN_FAILURE_EVIDENCE_RUN_ID=""
+TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT=""
+TRAIN_FAILURE_EVIDENCE_TEXT=""
+TRAIN_FAILURE_EVIDENCE_READY=0
+TRAIN_FLAKE_EVIDENCE_RUN_ID=""
+TRAIN_FLAKE_EVIDENCE_TEXT=""
 
 train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
@@ -217,6 +225,33 @@ train_timeout_kind_is_terminal() {
   [[ "$1" == "capacity" || "$1" == "killed" ]]
 }
 
+# train_failure_evidence_reset: clear the exact-attempt evidence shared by the
+# capacity, timeout and flake classifiers. A caller must never retain a partial
+# or older-attempt log after a failed read.
+train_failure_evidence_reset() {
+  TRAIN_FAILURE_EVIDENCE_RUN_ID=""
+  TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT=""
+  TRAIN_FAILURE_EVIDENCE_TEXT=""
+  TRAIN_FAILURE_EVIDENCE_READY=0
+  TRAIN_FLAKE_EVIDENCE_RUN_ID=""
+  TRAIN_FLAKE_EVIDENCE_TEXT=""
+}
+
+# train_read_failed_job_snapshot <run-id>: return one JSON snapshot containing
+# the current run attempt, terminal run status and its jobs. Reading all three
+# together prevents a rerun transition from pairing one attempt's identity with
+# another attempt's job ids. Tests may inject TRAIN_FAILED_JOB_SNAPSHOT_READER.
+train_read_failed_job_snapshot() {
+  local run_id="$1"
+  if [[ -n "${TRAIN_FAILED_JOB_SNAPSHOT_READER:-}" ]]; then
+    "${TRAIN_FAILED_JOB_SNAPSHOT_READER}" "${run_id}"
+    return
+  fi
+  gh run view "${run_id}" \
+    --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" \
+    --json attempt,status,jobs 2>/dev/null
+}
+
 # train_run_logs_match_timeout <run-id> [failing-job-names]
 # Sets TRAIN_TIMEOUT_KIND to capacity|hang on a match (empty otherwise).
 # Returns 2 when any selected failing job's log is unavailable. Missing failure
@@ -227,19 +262,36 @@ train_timeout_kind_is_terminal() {
 train_run_logs_match_timeout() {
   local run_id="$1" failing_names="${2:-}"
   TRAIN_TIMEOUT_KIND=""
+  train_failure_evidence_reset
   if [[ -n "${TRAIN_RUN_LOG_TEXT:-}" ]]; then
+    TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
+    TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="fixture"
+    TRAIN_FAILURE_EVIDENCE_TEXT="${TRAIN_RUN_LOG_TEXT}"
+    TRAIN_FAILURE_EVIDENCE_READY=1
     train_match_timeout_text "${TRAIN_RUN_LOG_TEXT}"
     return $?
   fi
 
-  local rows jid name conclusion text annotations saw_job=0 saw_timeout=0 logs_complete=1
-  rows="$(gh run view "${run_id}" \
-    --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --json jobs \
-    --jq '.jobs[]
+  local snapshot attempt status rows jid name conclusion text annotations
+  local saw_job=0 saw_timeout=0 logs_complete=1 evidence=""
+  snapshot="$(train_read_failed_job_snapshot "${run_id}" 2>/dev/null || echo "")"
+  if ! train_has_content "${snapshot}" || ! jq -e . >/dev/null 2>&1 <<<"${snapshot}"; then
+    return 2
+  fi
+  attempt="$(jq -r '.attempt // empty' <<<"${snapshot}")"
+  status="$(jq -r '.status // empty' <<<"${snapshot}")"
+  if [[ ! "${attempt}" =~ ^[0-9]+$ || "${status}" != "completed" ]]; then
+    return 2
+  fi
+  if ! rows="$(jq -er '.jobs | arrays | .[]
       | select(.conclusion=="failure" or .conclusion=="cancelled"
                or .conclusion=="timed_out" or .conclusion=="startup_failure")
-      | [.databaseId, .name, .conclusion] | @tsv' \
-    2>/dev/null || echo "")"
+      | [(.databaseId // ""), (.name // ""), (.conclusion // "")] | @tsv' \
+      <<<"${snapshot}")"; then
+    return 2
+  fi
+  TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
+  TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="${attempt}"
   # Scan EVERY selected failing job before deciding the kind. A generic timeout
   # in one job must not shortcut past a capacity-exhausted shard in another, or
   # the caller reruns the very job this change promises never to retry. Capacity
@@ -256,6 +308,8 @@ train_run_logs_match_timeout() {
     # the newer attempt completes with explicit success.
     case "${conclusion}" in
       cancelled|timed_out|startup_failure)
+        printf -v evidence '%s\n[job %s | %s | attempt %s] terminal conclusion: %s' \
+          "${evidence}" "${jid}" "${name}" "${attempt}" "${conclusion}"
         saw_timeout=1
         continue
         ;;
@@ -265,6 +319,10 @@ train_run_logs_match_timeout() {
     # download a 20 MB aggregate log. A complete generic timeout annotation is
     # also sufficient for the existing bounded hang retry.
     if annotations="$(train_read_job_annotations "${jid}")"; then
+      if train_has_content "${annotations}"; then
+        printf -v evidence '%s\n[job %s | %s | attempt %s | annotations]\n%s' \
+          "${evidence}" "${jid}" "${name}" "${attempt}" "${annotations}"
+      fi
       if train_match_timeout_text "${annotations}"; then
         train_timeout_kind_is_terminal "${TRAIN_TIMEOUT_KIND}" && return 0
         saw_timeout=1
@@ -272,6 +330,8 @@ train_run_logs_match_timeout() {
       fi
     fi
     if text="$(train_read_job_log "${jid}")"; then
+      printf -v evidence '%s\n[job %s | %s | attempt %s | log]\n%s' \
+        "${evidence}" "${jid}" "${name}" "${attempt}" "${text}"
       if train_match_timeout_text "${text}"; then
         saw_timeout=1
         train_timeout_kind_is_terminal "${TRAIN_TIMEOUT_KIND}" && return 0
@@ -283,20 +343,19 @@ train_run_logs_match_timeout() {
 
   if [[ "${logs_complete}" != "1" ]]; then
     TRAIN_TIMEOUT_KIND=""
+    train_failure_evidence_reset
     return 2
   fi
+  if [[ "${saw_job}" == "0" ]] || ! train_has_content "${evidence}"; then
+    TRAIN_TIMEOUT_KIND=""
+    train_failure_evidence_reset
+    return 2
+  fi
+  TRAIN_FAILURE_EVIDENCE_TEXT="${evidence}"
+  TRAIN_FAILURE_EVIDENCE_READY=1
   if [[ "${saw_timeout}" == "1" ]]; then
     TRAIN_TIMEOUT_KIND=hang
     return 0
-  fi
-
-  if [[ "${saw_job}" == "0" ]]; then
-    if text="$(gh run view "${run_id}" \
-      --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --log-failed 2>/dev/null)"; then
-      train_match_timeout_text "${text}"
-      return $?
-    fi
-    return 2
   fi
   TRAIN_TIMEOUT_KIND=""
   return 1
@@ -341,6 +400,14 @@ train_classify_capacity_guard() {
     && "${TRAIN_GUARD_SCAN_KEY}" == "${run_id}|${failing_names}" ]]; then
     scan_rc="${TRAIN_GUARD_SCAN_RC}"
     TRAIN_TIMEOUT_KIND="${TRAIN_GUARD_SCAN_KIND}"
+    train_failure_evidence_reset
+    if [[ -n "${TRAIN_GUARD_SCAN_ATTEMPT}" ]] \
+      && train_has_content "${TRAIN_GUARD_SCAN_TEXT}"; then
+      TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
+      TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="${TRAIN_GUARD_SCAN_ATTEMPT}"
+      TRAIN_FAILURE_EVIDENCE_TEXT="${TRAIN_GUARD_SCAN_TEXT}"
+      TRAIN_FAILURE_EVIDENCE_READY=1
+    fi
     train_guard_scan_reset
     train_log "reusing this pass's evidence scan for run ${run_id}"
   else
@@ -356,6 +423,8 @@ train_classify_capacity_guard() {
       TRAIN_GUARD_SCAN_KEY="${run_id}|${failing_names}"
       TRAIN_GUARD_SCAN_RC="${scan_rc}"
       TRAIN_GUARD_SCAN_KIND="${TRAIN_TIMEOUT_KIND}"
+      TRAIN_GUARD_SCAN_ATTEMPT="${TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT}"
+      TRAIN_GUARD_SCAN_TEXT="${TRAIN_FAILURE_EVIDENCE_TEXT}"
     fi
   fi
 
@@ -376,6 +445,8 @@ train_guard_scan_reset() {
   TRAIN_GUARD_SCAN_KEY=""
   TRAIN_GUARD_SCAN_RC=""
   TRAIN_GUARD_SCAN_KIND=""
+  TRAIN_GUARD_SCAN_ATTEMPT=""
+  TRAIN_GUARD_SCAN_TEXT=""
 }
 
 # train_guard_scan_arm: allow ONE downstream reuse of the next guard scan, and
@@ -384,6 +455,7 @@ train_guard_scan_reset() {
 train_guard_scan_arm() {
   TRAIN_GUARD_SCAN_ARMED=1
   train_guard_scan_reset
+  train_failure_evidence_reset
 }
 
 # train_classify_timeout <run-id> <retry-count> [failing-job-names]

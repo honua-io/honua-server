@@ -58,6 +58,23 @@ gh() {
       ;;
   esac
 }
+
+# Existing scenarios vary the `gh` job table inline. Adapt those tables to the
+# atomic attempt/status/jobs snapshot consumed by the production classifier.
+timeout_fixture_snapshot_reader() {
+  local rows
+  rows="$(gh run view "$1" --json jobs --jq '.jobs[]
+    | select(.conclusion=="failure" or .conclusion=="cancelled"
+             or .conclusion=="timed_out" or .conclusion=="startup_failure")
+    | [.databaseId, .name, .conclusion] | @tsv')" || return
+  jq -Rn --argjson attempt 1 --arg status completed --arg rows "${rows}" '
+    {attempt:$attempt,status:$status,jobs:($rows | split("\n")
+      | map(select(length > 0) | split("\t")
+        | select(length == 3)
+        | {databaseId:(.[0] | tonumber),name:.[1],conclusion:.[2]}))}'
+}
+export -f timeout_fixture_snapshot_reader
+export TRAIN_FAILED_JOB_SNAPSHOT_READER=timeout_fixture_snapshot_reader
 now_value=6610
 rc=0
 train_wait_for_run_completion 123 || rc=$?

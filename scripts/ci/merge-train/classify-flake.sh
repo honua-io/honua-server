@@ -15,6 +15,20 @@ train_run_logs_match_flake() {
     train_log_is_flake "${TRAIN_RUN_LOG_TEXT}"
     return $?
   fi
+  # The timeout/capacity ordering guard already read and validated this exact
+  # completed run attempt. Consume that evidence once instead of performing an
+  # independent best-effort download whose empty result could be mistaken for
+  # readable negative evidence (#3473).
+  if [[ "${TRAIN_FAILURE_EVIDENCE_READY:-0}" == "1" \
+    && "${TRAIN_FAILURE_EVIDENCE_RUN_ID:-}" == "${run_id}" ]]; then
+    local preserved="${TRAIN_FAILURE_EVIDENCE_TEXT:-}"
+    TRAIN_FAILURE_EVIDENCE_READY=0
+    TRAIN_FLAKE_EVIDENCE_RUN_ID="${run_id}"
+    TRAIN_FLAKE_EVIDENCE_TEXT="${preserved}"
+    train_log "classifying preserved failed-job evidence for run ${run_id} attempt ${TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT:-unknown}"
+    train_log_is_flake "${preserved}"
+    return $?
+  fi
   # IMPORTANT: `gh run view <id> --log-failed` returns EMPTY (0 bytes) on a large
   # run_all batch CI (too many failed jobs / too much output for the API), so the
   # flake scan silently saw nothing and every flaky batch was mis-classified as a
@@ -118,6 +132,9 @@ train_classify_flake_unknown() {
   local text
   if [[ -n "${TRAIN_RUN_LOG_TEXT:-}" ]]; then
     text="${TRAIN_RUN_LOG_TEXT}"
+  elif [[ "${TRAIN_FLAKE_EVIDENCE_RUN_ID:-}" == "${run_id}" \
+    && -n "${TRAIN_FLAKE_EVIDENCE_TEXT:-}" ]]; then
+    text="${TRAIN_FLAKE_EVIDENCE_TEXT}"
   else
     text="$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
   fi
