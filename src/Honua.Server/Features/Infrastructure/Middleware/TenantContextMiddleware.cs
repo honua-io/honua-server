@@ -113,6 +113,25 @@ internal sealed class TenantContextMiddleware(
         {
             tenantContext.Set(null, TenantContextSource.Anonymous);
             CanonicalSecurityActor.StampRequestBinding(principal!, null);
+
+            // External OIDC bearers are tenant-scoped credentials. Letting one
+            // continue with a null tenant leaves schema/data middleware on the
+            // deployment's configured default and can expose default-tenant data.
+            // Honua's separately validated OperatorBearer remains available for
+            // tenantless operator-only routes; MCP data-bearing operations apply
+            // their own tenant requirement to that scheme.
+            if (CanonicalSecurityActor.IsTenantScopedBearerPrincipal(principal!)
+                && !context.Request.Path.StartsWithSegments(
+                    "/mcp",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            // MCP intentionally keeps tenantless discovery separate from data-bearing
+            // operations. Its shared tool/resource authorization helpers enforce the
+            // tenant requirement before lookup or execution.
             await _next(context).ConfigureAwait(false);
             return;
         }

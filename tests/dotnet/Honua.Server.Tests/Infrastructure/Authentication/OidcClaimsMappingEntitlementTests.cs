@@ -69,10 +69,14 @@ public sealed class OidcClaimsMappingEntitlementTests
             new Claim("sub", "user-123"),
             new Claim(CanonicalSecurityActor.CanonicalActorClaim, "forged-actor"),
             new Claim(CanonicalSecurityActor.ScopeCeilingClaim, "forged-scope"),
+            new Claim(CanonicalSecurityActor.AuthenticationSchemeClaim, "ApiKey"),
         ], "Bearer");
         var trustedTenant = new Claim(CanonicalSecurityActor.EffectiveTenantClaim, "trusted-tenant");
         trustedTenant.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
         identity.AddClaim(trustedTenant);
+        var trustedScheme = new Claim(CanonicalSecurityActor.AuthenticationSchemeClaim, "Bearer");
+        trustedScheme.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        identity.AddClaim(trustedScheme);
 
         var result = await transformation.TransformAsync(new ClaimsPrincipal(identity));
 
@@ -81,6 +85,9 @@ public sealed class OidcClaimsMappingEntitlementTests
         Assert.Equal(
             "trusted-tenant",
             CanonicalSecurityActor.FindStampedValue(result, CanonicalSecurityActor.EffectiveTenantClaim));
+        Assert.Equal(
+            "Bearer",
+            CanonicalSecurityActor.FindStampedValue(result, CanonicalSecurityActor.AuthenticationSchemeClaim));
     }
 
     [UnitTest]
