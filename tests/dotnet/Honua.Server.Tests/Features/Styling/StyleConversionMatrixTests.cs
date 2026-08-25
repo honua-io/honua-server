@@ -950,7 +950,8 @@ public class StyleConversionMatrixTests
               { "value": -1.25e-7, "symbol": { "type": "esriSMS", "color": [0, 255, 0, 255] } },
               { "value": 1e-6, "symbol": { "type": "esriSMS", "color": [0, 0, 255, 255] } },
               { "value": 1e20, "symbol": { "type": "esriSMS", "color": [255, 255, 0, 255] } },
-              { "value": 1e21, "symbol": { "type": "esriSMS", "color": [255, 0, 255, 255] } }
+              { "value": 1e21, "symbol": { "type": "esriSMS", "color": [255, 0, 255, 255] } },
+              { "value": 9007199254740993, "symbol": { "type": "esriSMS", "color": [0, 255, 255, 255] } }
             ]
           }
         }
@@ -969,6 +970,7 @@ public class StyleConversionMatrixTests
         Assert.Equal("0.000001", match[6].GetString());
         Assert.Equal("100000000000000000000", match[8].GetString());
         Assert.Equal("1e+21", match[10].GetString());
+        Assert.Equal("9007199254740992", match[12].GetString());
     }
 
     [Fact]

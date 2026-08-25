@@ -1324,8 +1324,6 @@ internal static class GeoServicesToMapLibreConverter
         return element.ValueKind switch
         {
             JsonValueKind.String => element.GetString() ?? string.Empty,
-            JsonValueKind.Number when element.TryGetInt64(out var longValue) =>
-                longValue.ToString(CultureInfo.InvariantCulture),
             JsonValueKind.Number =>
                 FormatMapLibreNumber(element.GetDouble()),
             JsonValueKind.True => "true",
