@@ -181,6 +181,7 @@ public sealed class McpScopeAuthorizationTests : IAsyncLifetime
         var claims = new List<Claim>
         {
             new("sub", "operator-123"),
+            new("tid", "scope-test-tenant"),
             new("name", "Scope Test User"),
             // Admin role so the operator grant check always passes; this isolates the scope
             // decision so a denial can only come from scope narrowing.

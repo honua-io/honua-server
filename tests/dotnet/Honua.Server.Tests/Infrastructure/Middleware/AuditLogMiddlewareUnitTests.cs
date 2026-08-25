@@ -142,6 +142,27 @@ public sealed class AuditLogMiddlewareUnitTests
     }
 
     [Fact]
+    public async Task PermissionDenied_StampedCanonicalActor_UsesIssuerQualifiedIdentity()
+    {
+        const string canonicalActor = "bearer:subject:https%3A%2F%2Fissuer.example:shared-subject";
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v1/admin/roles/{id}",
+            authenticated: false);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            new Claim("honua:canonical_actor", canonicalActor),
+        ], authenticationType: "Bearer"));
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Actor.Should().Be(canonicalActor);
+        evt.ActorType.Should().Be(AuditActorType.UserId);
+    }
+
+    [Fact]
     public async Task SuccessfulLogin_OnTokenRoute_EmitsAuthLoginSuccess()
     {
         var context = BuildContext(
