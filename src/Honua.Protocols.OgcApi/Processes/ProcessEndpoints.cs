@@ -408,8 +408,7 @@ internal static class ProcessEndpoints
                     inputError ?? "The CITE echo process input is invalid.");
             }
 
-            if ((definition == null || !OgcProcessesCiteEchoFixture.IsDefinition(definition))
-                && request.Outputs is { Count: > 0 })
+            if (definition == null && request.Outputs is { Count: > 0 })
             {
                 return OgcProcessesResults.Error(
                     StatusCodes.Status400BadRequest,
@@ -458,7 +457,17 @@ internal static class ProcessEndpoints
                 }
                 else
                 {
-                    AddOutputBindings(metadata, definition);
+                    if (!TryAddOutputBindings(
+                            metadata,
+                            definition,
+                            request.Outputs,
+                            out var outputError))
+                    {
+                        return OgcProcessesResults.Error(
+                            StatusCodes.Status400BadRequest,
+                            "Invalid output selection",
+                            outputError ?? "The requested output selection is invalid.");
+                    }
                 }
             }
 
@@ -1111,18 +1120,83 @@ internal static class ProcessEndpoints
         };
     }
 
-    private static void AddOutputBindings(
+    private static bool TryAddOutputBindings(
         Dictionary<string, string> metadata,
-        ProcessDefinition definition)
+        ProcessDefinition definition,
+        ImmutableDictionary<string, JsonElement>? requestedOutputs,
+        out string? error)
     {
+        error = null;
+        var available = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
             var outputName = BuildOutputName(
                 definition.OutputArtifactKinds[index],
                 index,
                 definition.OutputArtifactKinds);
-            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputName;
+            available[outputName] = index;
         }
+
+        if (requestedOutputs is { Count: > 0 })
+        {
+            var unknown = requestedOutputs.Keys
+                .Where(outputName => !available.ContainsKey(outputName))
+                .OrderBy(outputName => outputName, StringComparer.Ordinal)
+                .ToArray();
+            if (unknown.Length > 0)
+            {
+                error = $"Unknown output(s) for process '{definition.ProcessId}': {string.Join(", ", unknown)}.";
+                return false;
+            }
+
+            foreach (var requestedOutput in requestedOutputs)
+            {
+                if (requestedOutput.Value.ValueKind != JsonValueKind.Object)
+                {
+                    error = $"Output '{requestedOutput.Key}' must be an object.";
+                    return false;
+                }
+
+                var unsupportedProperties = requestedOutput.Value
+                    .EnumerateObject()
+                    .Where(property => !string.Equals(
+                        property.Name,
+                        "transmissionMode",
+                        StringComparison.Ordinal))
+                    .Select(property => property.Name)
+                    .OrderBy(property => property, StringComparer.Ordinal)
+                    .ToArray();
+                if (unsupportedProperties.Length > 0)
+                {
+                    error = $"Output '{requestedOutput.Key}' contains unsupported field(s): "
+                        + $"{string.Join(", ", unsupportedProperties)}.";
+                    return false;
+                }
+
+                if (requestedOutput.Value.TryGetProperty("transmissionMode", out var transmissionMode)
+                    && (transmissionMode.ValueKind != JsonValueKind.String
+                        || !string.Equals(
+                            transmissionMode.GetString(),
+                            "value",
+                            StringComparison.OrdinalIgnoreCase)))
+                {
+                    error = $"Output '{requestedOutput.Key}' only supports value transmission.";
+                    return false;
+                }
+            }
+        }
+
+        var selected = available.Keys
+            .Where(outputName => requestedOutputs is not { Count: > 0 }
+                || requestedOutputs.ContainsKey(outputName))
+            .OrderBy(outputName => available[outputName])
+            .ToArray();
+        for (var index = 0; index < selected.Length; index++)
+        {
+            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = selected[index];
+        }
+
+        return true;
     }
 
     private static string BuildOutputName(ArtifactKind kind, int index, IReadOnlyList<ArtifactKind> allKinds)

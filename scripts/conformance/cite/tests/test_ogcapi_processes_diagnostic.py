@@ -431,10 +431,11 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            "@sha256:[0-9a-fA-F]{64}$",
+            "@sha256:[0-9a-f]{64}$",
             workflow,
         )
-        self.assertIn("server_image must be an immutable", workflow)
+        self.assertNotIn("[0-9a-fA-F]", workflow)
+        self.assertIn("canonical lowercase immutable", workflow)
         self.assertLess(
             common.index("id: run-suite"),
             common.index("name: Generate SBOM (SPDX JSON) for honua-server:latest"),

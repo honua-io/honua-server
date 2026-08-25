@@ -664,8 +664,14 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public Task Execute_FirstSliceProcessWithValueOutputSelection_Returns400()
-        => ExecuteFirstSliceProcessWithOutputSelectionReturns400("value");
+    public async Task Execute_FirstSliceProcessWithValueOutputSelection_Submits()
+    {
+        using var request = CreateFirstSliceProcessWithOutputSelectionRequest("value");
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
+    }
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -676,7 +682,22 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     private async Task ExecuteFirstSliceProcessWithOutputSelectionReturns400(
         string transmissionMode)
     {
-        using var request = new HttpRequestMessage(
+        using var request = CreateFirstSliceProcessWithOutputSelectionRequest(transmissionMode);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString()
+            .Should().Be("Invalid output selection");
+        error.RootElement.GetProperty("detail").GetString()
+            .Should().Contain("only supports value transmission");
+    }
+
+    private static HttpRequestMessage CreateFirstSliceProcessWithOutputSelectionRequest(
+        string transmissionMode)
+    {
+        var request = new HttpRequestMessage(
             HttpMethod.Post,
             "/ogc/processes/processes/geometry.buffer/execution");
         request.Content = new StringContent(
@@ -696,15 +717,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
               """,
             Encoding.UTF8,
             "application/json");
-
-        using var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        error.RootElement.GetProperty("title").GetString()
-            .Should().Be("Invalid output selection");
-        error.RootElement.GetProperty("detail").GetString()
-            .Should().Contain("does not support explicit output selection");
+        return request;
     }
 
     [IntegrationTest]
