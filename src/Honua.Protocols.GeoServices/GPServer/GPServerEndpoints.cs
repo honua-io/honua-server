@@ -475,7 +475,7 @@ internal static class GPServerEndpoints
                 job.OperationId,
                 context.User,
                 TimeSpan.FromSeconds(30),
-                context.RequestAborted);
+                ct);
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Failed)
             {
@@ -489,8 +489,8 @@ internal static class GPServerEndpoints
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
             {
-                await terminalService.CancelAsync(
-                    job.OperationId, context.User, TimeSpan.FromSeconds(10), CancellationToken.None);
+                await TryCancelOrphanedExecuteJobAsync(
+                    terminalService, job.OperationId, context.User, logger);
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateRequestTimeout(context,
                         "Synchronous GP execution did not complete within the request timeout. " +
@@ -500,9 +500,14 @@ internal static class GPServerEndpoints
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.ClientDisconnected)
             {
-                await terminalService.CancelAsync(
-                    job.OperationId, context.User, TimeSpan.FromSeconds(10), CancellationToken.None);
-                return Results.StatusCode(499);
+                await TryCancelOrphanedExecuteJobAsync(
+                    terminalService, job.OperationId, context.User, logger);
+                return context.RequestAborted.IsCancellationRequested
+                    ? Results.StatusCode(499)
+                    : SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateRequestTimeout(context,
+                            "Synchronous GP execution exceeded the configured request timeout."),
+                        "Synchronous execution timed out");
             }
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.NotFound)
@@ -1131,21 +1136,38 @@ internal static class GPServerEndpoints
                 jobId,
                 context.User,
                 TimeSpan.FromSeconds(30),
-                context.RequestAborted);
+                ct);
             if (cancellation.Outcome == GeoprocessingCancelOutcome.NotFound)
             {
                 throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
             }
 
-            if (cancellation.Outcome is GeoprocessingCancelOutcome.Unsupported
-                or GeoprocessingCancelOutcome.Unconfirmed
-                or GeoprocessingCancelOutcome.AlreadyTerminal)
+            if (cancellation.Outcome == GeoprocessingCancelOutcome.AlreadyTerminal)
+            {
+                var status = cancellation.Job?.Status.ToString() ?? "terminal";
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreatePreconditionFailed(
+                        context,
+                        $"Job '{jobId}' is in terminal state '{status}' and cannot be cancelled."),
+                    "Job is already terminal");
+            }
+
+            if (cancellation.Outcome == GeoprocessingCancelOutcome.Unsupported)
             {
                 return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateBadRequest(
+                    StandardErrorHelpers.CreatePreconditionFailed(
                         context,
-                        $"Job '{jobId}' could not be cancelled ({cancellation.Outcome})."),
-                    $"Cancellation outcome {cancellation.Outcome}");
+                        $"Job '{jobId}' runs on a backend which does not support cancellation."),
+                    "Cancellation is unsupported");
+            }
+
+            if (cancellation.Outcome == GeoprocessingCancelOutcome.Unconfirmed)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreatePreconditionFailed(
+                        context,
+                        $"Job '{jobId}' cancellation could not be confirmed after retries."),
+                    "Cancellation could not be confirmed");
             }
 
             if (cancellation.Outcome == GeoprocessingCancelOutcome.Timeout)
@@ -1157,7 +1179,11 @@ internal static class GPServerEndpoints
 
             if (cancellation.Outcome == GeoprocessingCancelOutcome.ClientDisconnected)
             {
-                return Results.StatusCode(499);
+                return context.RequestAborted.IsCancellationRequested
+                    ? Results.StatusCode(499)
+                    : SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateRequestTimeout(context, $"Job '{jobId}' cancellation timed out."),
+                        "Cancellation timed out");
             }
 
             var job = cancellation.Job;

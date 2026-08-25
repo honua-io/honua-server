@@ -208,6 +208,14 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
             {
                 return new(GeoprocessingCancelOutcome.NotFound);
             }
+            catch (OperationCanceledException) when (clientDisconnect.IsCancellationRequested)
+            {
+                return new(GeoprocessingCancelOutcome.ClientDisconnected);
+            }
+            catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
+            {
+                return new(GeoprocessingCancelOutcome.Timeout);
+            }
         }
         catch (GeoprocessingNotFoundException)
         {

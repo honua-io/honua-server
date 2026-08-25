@@ -102,6 +102,31 @@ public sealed class GeoprocessingJobTerminalServiceTests
         result.Outcome.Should().Be(GeoprocessingCancelOutcome.Unsupported);
     }
 
+    [Fact]
+    public async Task CancelAsync_RaceRereadReachesDeadline_ReturnsTypedTimeout()
+    {
+        using var timeoutSource = new CancellationTokenSource();
+        var running = CreateJob(ExecutionJobStatus.Running);
+        _jobs.GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+            .Returns(
+                _ => Task.FromResult(running),
+                _ => Task.FromCanceled<ExecutionJobRecord>(timeoutSource.Token));
+        _jobs.CancelJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                timeoutSource.Cancel();
+                return Task.FromException(new GeoprocessingPreconditionFailedException(
+                    "The job completed before cancellation could be applied."));
+            });
+        var sut = CreateService(
+            (_, _) => Task.CompletedTask,
+            _ => timeoutSource);
+
+        var result = await sut.CancelAsync("job-1", _principal, TimeSpan.FromSeconds(1));
+
+        result.Outcome.Should().Be(GeoprocessingCancelOutcome.Timeout);
+    }
+
     private GeoprocessingJobTerminalService CreateService(
         Func<TimeSpan, CancellationToken, Task> delay,
         Func<TimeSpan, CancellationTokenSource>? timeoutSourceFactory = null)

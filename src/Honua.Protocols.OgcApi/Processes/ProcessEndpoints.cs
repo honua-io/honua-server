@@ -312,11 +312,11 @@ internal static class ProcessEndpoints
                 if (terminal.Outcome is GeoprocessingTerminalResultOutcome.Timeout
                     or GeoprocessingTerminalResultOutcome.ClientDisconnected)
                 {
-                    await terminalService.CancelAsync(
+                    await TryCancelOrphanedSynchronousJobAsync(
+                        terminalService,
                         jobRecord.OperationId,
                         context.User,
-                        TimeSpan.FromSeconds(10),
-                        CancellationToken.None).ConfigureAwait(false);
+                        logger).ConfigureAwait(false);
                 }
 
                 return terminal.Outcome switch
@@ -420,6 +420,26 @@ internal static class ProcessEndpoints
                 StatusCodes.Status500InternalServerError,
                 "Internal server error",
                 "An error occurred while executing the process.");
+        }
+    }
+
+    private static async Task TryCancelOrphanedSynchronousJobAsync(
+        IGeoprocessingJobTerminalService terminalService,
+        string jobId,
+        System.Security.Claims.ClaimsPrincipal principal,
+        ILogger logger)
+    {
+        try
+        {
+            await terminalService.CancelAsync(
+                jobId,
+                principal,
+                TimeSpan.FromSeconds(10),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            OgcProcessesLog.SyncExecutionCleanupFailed(logger, jobId, ex);
         }
     }
 

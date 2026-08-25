@@ -435,14 +435,16 @@ internal static class JobEndpoints
         }
         catch (GeoprocessingAuthorizationException authEx)
         {
+            OgcProcessesLog.AuthorizationDenied(
+                logger,
+                OperatorResourceType.Job.ToString(),
+                OperatorOperation.Execute.ToString());
             return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
         }
         catch (GeoprocessingApprovalRequiredException approvalEx)
         {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status409Conflict,
-                "Approval required",
-                approvalEx.Message);
+            OgcProcessesLog.DismissRejectedApprovalRequired(logger, jobId, approvalEx.PolicyRef);
+            return ProcessEndpoints.FormatOgcApprovalError(approvalEx.PolicyRef, approvalEx.Message);
         }
         catch (GeoprocessingStoreUnavailableException)
         {

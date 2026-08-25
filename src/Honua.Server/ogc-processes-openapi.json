@@ -566,7 +566,7 @@
           "version": { "type": "string" },
           "jobControlOptions": {
             "type": "array",
-            "items": { "type": "string", "enum": ["async-execute", "dismiss"] }
+            "items": { "type": "string", "enum": ["async-execute", "sync-execute", "dismiss"] }
           },
           "outputTransmission": {
             "type": "array",
