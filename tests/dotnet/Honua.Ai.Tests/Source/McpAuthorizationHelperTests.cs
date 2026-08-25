@@ -197,6 +197,35 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
+    public void ResolveSessionBindingKey_SameClaimsWithDifferentBearerCredentials_DoNotCollide()
+    {
+        var first = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim("roles", "admin"));
+        var second = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim("roles", "admin"));
+        first.Request.Headers.Authorization = "Bearer credential-a";
+        second.Request.Headers.Authorization = "Bearer credential-b";
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(first)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(second));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_BearerWithoutPresentedCredential_FailsClosed()
+    {
+        var context = CreateBearerContext("subject", "https://issuer.example", "tenant-a");
+        context.Request.Headers.Remove("Authorization");
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(context).Should().BeNull();
+    }
+
+    [UnitTest]
     public void CreateTrustedBearerPrincipal_StripsFrameworkOwnedClaims()
     {
         var forged = new ClaimsPrincipal(new ClaimsIdentity(
@@ -368,7 +397,9 @@ public sealed class McpAuthorizationHelperTests
             new("iss", issuer),
         };
         claims.AddRange(additionalClaims);
-        return CreateContext(new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer")), tenant);
+        var context = CreateContext(new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer")), tenant);
+        context.Request.Headers.Authorization = "Bearer unit-test-credential";
+        return context;
     }
 
     private static DefaultHttpContext CreateApiKeyContext(Guid apiKeyId, string? tenant)

@@ -70,12 +70,14 @@ internal static class CanonicalSecurityActor
     internal static string BuildBindingKey(
         CanonicalSecurityActorIdentity actor,
         string? effectiveTenant,
-        ClaimsPrincipal principal)
+        ClaimsPrincipal principal,
+        string? credentialFingerprint)
     {
         var normalizedTenant = NormalizeValue(effectiveTenant);
         var tenant = normalizedTenant is null ? "none" : $"value:{normalizedTenant}";
         var scopeCeiling = ResolveScopeCeiling(principal);
-        return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}";
+        var credential = NormalizeValue(credentialFingerprint) ?? "not-bearer";
+        return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}:credential:{Encode(credential)}";
     }
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
