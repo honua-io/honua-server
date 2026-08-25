@@ -4,7 +4,6 @@
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
-using Honua.Infrastructure.Middleware;
 
 namespace Honua.Infrastructure.Security;
 
@@ -49,16 +48,14 @@ internal sealed class StudioEndpointAuthorization(
             resourceId,
             context.RequestAborted).ConfigureAwait(false);
 
-        if (!decision.IsAllowed || decision.IsElevated)
-        {
-            await RecordAuditAsync(
-                context,
-                operation,
-                resourceType,
-                resourceId,
-                decision.IsAllowed ? AuditOutcome.Success : AuditOutcome.Denied,
-                decision.Code).ConfigureAwait(false);
-        }
+        await StudioAuthorizationAudit.RecordDecisionAsync(
+            context,
+            _auditLog,
+            _timeProvider,
+            operation,
+            resourceType,
+            resourceId,
+            decision).ConfigureAwait(false);
 
         return decision;
     }
@@ -72,62 +69,14 @@ internal sealed class StudioEndpointAuthorization(
         string reason)
     {
         var decision = StudioAuthorizationDecision.Deny(code, reason);
-        await RecordAuditAsync(
+        await StudioAuthorizationAudit.RecordDecisionAsync(
             context,
+            _auditLog,
+            _timeProvider,
             operation,
             resourceType,
             resourceId,
-            AuditOutcome.Denied,
-            code).ConfigureAwait(false);
+            decision).ConfigureAwait(false);
         return decision;
     }
-
-    private async Task RecordAuditAsync(
-        HttpContext context,
-        StudioAuthorizationOperation operation,
-        string resourceType,
-        string? resourceId,
-        AuditOutcome outcome,
-        string? code)
-    {
-        var auditEvent = new AuditEvent
-        {
-            Timestamp = _timeProvider.GetUtcNow(),
-            EventType = AuditEventType.Authorization,
-            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
-            ActorType = actorType,
-            ResourceType = resourceType,
-            ResourceId = resourceId,
-            Action = $"studio.{ToSnakeCase(operation)}",
-            Outcome = outcome,
-            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
-            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
-            UserAgent = AuditContextResolver.ResolveUserAgent(context),
-            Details = code is null ? string.Empty : $"{{\"code\":\"{code}\"}}",
-        };
-
-        await _auditLog.RecordAsync(auditEvent, context.RequestAborted).ConfigureAwait(false);
-
-        if (outcome == AuditOutcome.Denied)
-        {
-            AuditContextResolver.MarkAuthorizationFailureAudited(context);
-        }
-    }
-
-    private static string ToSnakeCase(StudioAuthorizationOperation operation) => operation switch
-    {
-        StudioAuthorizationOperation.CreateDraft => "create_draft",
-        StudioAuthorizationOperation.ReadDraft => "read_draft",
-        StudioAuthorizationOperation.UpdateDraft => "update_draft",
-        StudioAuthorizationOperation.DeleteDraft => "delete_draft",
-        StudioAuthorizationOperation.ValidateDraft => "validate_draft",
-        StudioAuthorizationOperation.CreateVersion => "create_version",
-        StudioAuthorizationOperation.ListOwn => "list_own",
-        StudioAuthorizationOperation.ReadContentItem => "read_content_item",
-        StudioAuthorizationOperation.ReopenVersion => "reopen_version",
-        StudioAuthorizationOperation.PublishRequest => "publish_request",
-        StudioAuthorizationOperation.Rollback => "rollback",
-        StudioAuthorizationOperation.Generate => "generate",
-        _ => operation.ToString(),
-    };
 }
