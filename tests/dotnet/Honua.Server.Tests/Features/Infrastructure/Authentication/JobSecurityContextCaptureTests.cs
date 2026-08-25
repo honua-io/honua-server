@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
@@ -385,11 +386,25 @@ public sealed class JobSecurityContextCaptureTests
             ("sub", "shared-subject"),
             ("iss", "https://issuer.example"),
             ("honua:canonical_actor", canonicalActor));
+        principal.FindFirst("honua:canonical_actor")!
+            .Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
 
         var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
 
         captured.PrincipalId.Should().Be(canonicalActor);
         captured.TenantId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void Capture_UnstampedCanonicalActor_IgnoresIssuerValue()
+    {
+        var principal = BuildPrincipal(
+            ("sub", "validated-subject"),
+            ("honua:canonical_actor", "forged-actor"));
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+
+        captured.PrincipalId.Should().Be("validated-subject");
     }
 
     [UnitTest]
