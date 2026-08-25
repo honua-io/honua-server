@@ -72,10 +72,11 @@ internal static class McpAuthorizationHelper
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
-        if (CanonicalSecurityActor.IsBearerPrincipal(context.User) && !actor.IsDurablyRevalidatable)
+        if (CanonicalSecurityActor.IsBearerPrincipal(context.User)
+            && (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer)))
         {
-            // Display names are mutable and are never OIDC session identifiers.
-            // Bearers must resolve to the validated issuer + subject tuple.
+            // Display names are mutable, and a subject without its validated issuer is
+            // not a globally durable OIDC session identifier. Bearers require both.
             return null;
         }
 
