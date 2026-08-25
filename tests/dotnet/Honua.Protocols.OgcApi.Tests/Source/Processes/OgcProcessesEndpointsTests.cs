@@ -450,20 +450,22 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_PreferRespondSync_UsesCanonicalBoundedResultPath()
     {
-        // The fixture intentionally lacks a durable runtime, so successful admission may\n        // resolve to 503; the regression is that respond-sync reaches the shared lifecycle path.
+        // The fixture intentionally lacks a durable runtime, so successful admission may
+        // resolve to 503; the regression is that respond-sync reaches the shared lifecycle path.
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Headers.Add("Prefer", "respond-sync");
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            $"{{\"inputs\":{{\"plan\":{{\"planId\":\"p1\",\"steps\":[{{\"stepId\":\"s1\",\"kind\":\"geoprocess\",\"processId\":\"geometry.buffer\",\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":\"4326\",\"distance\":\"25.5\"}}}}]}}}}}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.RequestTimeout,
-            HttpStatusCode.ServiceUnavailable);
+            new[] { HttpStatusCode.OK, HttpStatusCode.RequestTimeout, HttpStatusCode.ServiceUnavailable },
+            "the executable plan should reach the bounded synchronous lifecycle path; body: {0}",
+            responseBody);
         response.StatusCode.Should().NotBe(HttpStatusCode.UnprocessableEntity,
             "respond-sync is supported through the canonical bounded terminal/result service");
     }
