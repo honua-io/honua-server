@@ -1206,6 +1206,9 @@ assert_descriptor \
 #      resolved statically are reported as failures, never passed by default.
 # ---------------------------------------------------------------------------
 if [[ -n "${PYTHON_BIN}" ]]; then
+echo "Checking Postgres compatibility coverage contract..."
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-postgres-coverage.py
+
 echo "Checking flake-hunt report contract..."
 # The nightly flake hunt reads the same shard definitions; its summarizer decides
 # what counts as a flake candidate and whether the evidence is complete enough to
