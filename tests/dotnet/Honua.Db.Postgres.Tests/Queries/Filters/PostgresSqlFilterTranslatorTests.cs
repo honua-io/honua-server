@@ -636,6 +636,34 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_ArrayPredicateOnUnknownField_ThrowsUnknownFilterFieldException()
+    {
+        var predicate = new ArrayPredicate(
+            ArrayOperator.Contains,
+            new PropertyReference("collection_specific_tags"),
+            new ArrayLiteral([new Literal("x", LiteralType.Text)]));
+
+        var translate = () => _translator.Translate(predicate, _resource);
+
+        translate.Should().Throw<UnknownFilterFieldException>()
+            .Which.PropertyName.Should().Be("collection_specific_tags");
+    }
+
+    [Fact]
+    public void Translate_ArrayPredicateOnKnownNonJsonField_ThrowsArgumentException()
+    {
+        var predicate = new ArrayPredicate(
+            ArrayOperator.Contains,
+            new PropertyReference("name"),
+            new ArrayLiteral([new Literal("x", LiteralType.Text)]));
+
+        var translate = () => _translator.Translate(predicate, _resource);
+
+        translate.Should().ThrowExactly<ArgumentException>()
+            .WithMessage("*name*not JSON*");
+    }
+
+    [Fact]
     public void Translate_TemporalPredicateOnAttributeBackedTimestampField_UsesAttributesJsonPath()
     {
         // Regression: a schema field literally named "created_at"/"updated_at" is

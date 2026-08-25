@@ -6424,7 +6424,6 @@
         "Honua.Server.Tests.Features.Security.HostValidationMiddlewareTests.Request_WithConfiguredPublicHost_AllowsRequest",
         "Honua.Server.Tests.Features.Security.HostValidationMiddlewareTests.Request_WithForgedHostHeader_ReturnsBadRequest",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_OgcFeaturesLandingPage_MatchesGetStatusWithEmptyBodyAndContentLength",
-        "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_UnknownPath_Returns404NotFound",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetLandingPage_IncludesCorrectBaseUrl",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetLandingPage_ReturnsCacheHeaders",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetLandingPage_ReturnsValidLandingPageWithRequiredLinks"
