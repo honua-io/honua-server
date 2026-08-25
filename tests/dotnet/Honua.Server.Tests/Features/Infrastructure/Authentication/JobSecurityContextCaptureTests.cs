@@ -396,6 +396,38 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public async Task RevalidateRoleMembership_NameOnlyManagedPrincipal_UsesRawMembershipIdentifier()
+    {
+        const string rawName = "managed-name-only";
+        const string canonicalActor = "Federation:name:managed-name-only";
+        var principal = BuildPrincipal(
+            (ClaimTypes.Name, rawName),
+            (ClaimTypes.Role, "viewer"),
+            (JobSecurityContextClaimTypes.MembershipPrincipalId, "forged-membership-id"),
+            (CanonicalSecurityActor.CanonicalActorClaim, canonicalActor));
+        principal.FindFirst(CanonicalSecurityActor.CanonicalActorClaim)!
+            .Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var captured = JobSecurityContextCapture.Capture(
+            principal,
+            new RbacOptions(),
+            membershipManaged: true);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured,
+            source,
+            new RbacOptions());
+
+        captured.PrincipalId.Should().Be(canonicalActor,
+            "durable attribution must retain the framework-stamped canonical actor");
+        source.ResolvedPrincipalId.Should().Be(rawName,
+            "membership revalidation must use the identifier accepted by the membership source");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+        JobSecurityContextCapture.Restore(result.Context).IsInRole("viewer").Should().BeTrue();
+    }
+
+    [UnitTest]
     public void Capture_UnstampedCanonicalActor_IgnoresIssuerValue()
     {
         var principal = BuildPrincipal(
