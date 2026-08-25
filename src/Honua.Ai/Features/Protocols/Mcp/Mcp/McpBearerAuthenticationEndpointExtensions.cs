@@ -61,7 +61,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
         ArgumentNullException.ThrowIfNull(app);
         return app.Use(async (httpContext, next) =>
         {
-            if (!httpContext.Request.Path.Equals(McpEndpointExtensions.RoutePath, StringComparison.OrdinalIgnoreCase)
+            if (!IsMcpTransportPath(httpContext.Request.Path)
                 || !HasBearerCredential(httpContext))
             {
                 await next().ConfigureAwait(false);
@@ -203,6 +203,10 @@ internal static class McpBearerAuthenticationEndpointExtensions
 
         return false;
     }
+
+    private static bool IsMcpTransportPath(PathString path) =>
+        path.Equals(McpEndpointExtensions.RoutePath, StringComparison.OrdinalIgnoreCase)
+        || path.Equals($"{McpEndpointExtensions.RoutePath}/", StringComparison.OrdinalIgnoreCase);
 
     private static ClaimsPrincipal? CreateTrustedBearerPrincipal(AuthenticateResult result)
     {
