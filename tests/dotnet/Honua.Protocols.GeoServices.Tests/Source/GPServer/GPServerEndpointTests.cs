@@ -87,9 +87,27 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         root.TryGetProperty("capabilities", out _).Should().BeTrue();
         root.GetProperty("resultMapServerName").GetString().Should().BeEmpty();
         root.GetProperty("tasks").ValueKind.Should().Be(JsonValueKind.Array);
-        root.GetProperty("tasks").EnumerateArray()
+        var tasks = root.GetProperty("tasks").EnumerateArray()
             .Select(item => item.GetString())
-            .Should().Contain("geometry.buffer");
+            .ToArray();
+        tasks.Should().Contain("geometry.buffer");
+        tasks.Should().NotContain("source.geojson");
+        tasks.Should().NotContain("analytics.cluster");
+        tasks.Should().NotContain("raster.interpolate-kriging");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_NonJobTask_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync(
+            $"/rest/services/{ServiceId}/GPServer/source.geojson");
+
+        // GeoServices preserves HTTP 200 and carries the protocol error code in the body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
     [IntegrationTest]

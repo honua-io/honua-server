@@ -41,13 +41,34 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         var canonicalProcess = document
             .Descendants(wps + "ProcessSummary")
             .Single(summary => summary.Element(ows + "Identifier")?.Value == "geometry.buffer");
+        var advertisedProcessIds = document
+            .Descendants(wps + "ProcessSummary")
+            .Select(summary => summary.Element(ows + "Identifier")?.Value)
+            .ToArray();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         xml.Should().Contain("<wps:Capabilities");
         canonicalProcess.Attribute("jobControlOptions")?.Value.Should().Be("async-execute");
         xml.Should().Contain("processVersion=\"1.0.0\"");
+        advertisedProcessIds.Should().NotContain("source.geojson");
+        advertisedProcessIds.Should().NotContain("analytics.cluster");
+        advertisedProcessIds.Should().NotContain("raster.interpolate-kriging");
         xml.Should().NotContain("Operation name=\"Dismiss\"").And.NotContain("jobControlOptions=\"sync-execute\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "DescribeProcess")]
+    public async Task DescribeProcess_NonJobProcess_ReturnsNoSuchProcess()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=source.geojson");
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, xml);
+        xml.Should().Contain("NoSuchProcess");
     }
 
     [IntegrationTest]

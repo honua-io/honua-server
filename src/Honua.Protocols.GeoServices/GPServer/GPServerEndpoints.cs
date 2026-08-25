@@ -251,7 +251,7 @@ internal static class GPServerEndpoints
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
-        if (definition == null)
+        if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
@@ -1507,6 +1507,11 @@ internal static class GPServerEndpoints
 
         foreach (var process in processes)
         {
+            if (!GPServerExecutionPolicy.IsJobCallable(process))
+            {
+                continue;
+            }
+
             yield return process.ProcessId;
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);

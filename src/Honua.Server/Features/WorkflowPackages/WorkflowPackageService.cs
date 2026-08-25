@@ -539,7 +539,7 @@ internal sealed class WorkflowPackageService(
                 warnings.AddRange(planValidation.Warnings);
                 failures.AddRange(planValidation.Violations
                     .Where(violation => !IsDataBoundInputTypeValidation(violation, dataBoundInputFieldPaths))
-                    .Where(violation => !IsDirectSubmitOnlyValidation(violation))
+                    .Where(violation => !IsDirectSubmitOnlyValidation(violation, target))
                     .Select(violation => new WorkflowPackageValidationFailure
                     {
                         Code = violation.Code,
@@ -568,17 +568,22 @@ internal sealed class WorkflowPackageService(
 
     /// <summary>
     /// A workflow-package graph is compiled into a single multi-step <see cref="AnalysisPlan"/>
-    /// purely so <see cref="IGeoprocessingJobService.ValidatePlan"/> can run its catalog/parameter
-    /// checks; it is never handed to <c>SubmitJobAsync</c> as one direct-submit job (the workflow
-    /// orchestration engine executes each node as its own step). <see cref="DirectSubmitPlanValidator"/>
-    /// violations describe direct-submit-only limitations (multi-step, non-Geoprocess-first,
-    /// catalog-declared workflow-only processes) that do not apply here because those nodes are
-    /// submitted through the trusted orchestration boundary. Protocol-only and unavailable
-    /// processes remain blocking because neither has a workflow job executor (#2806/#2808/#3267).
+    /// so <see cref="IGeoprocessingJobService.ValidatePlan"/> can run its catalog/parameter checks.
+    /// Schedule publications and package validation execute each node through the trusted workflow
+    /// boundary, so their workflow-only diagnostic is suppressed. Job and process-endpoint
+    /// publications later submit the compiled plan as an ordinary job, so that diagnostic remains
+    /// blocking for those direct targets. The other structural direct-submit diagnostics describe
+    /// limitations of the compiled validation plan rather than the workflow graph and remain
+    /// suppressed. Protocol-only and unavailable processes always block because neither has a
+    /// workflow job executor (#2806/#2808/#3267).
     /// </summary>
-    private static bool IsDirectSubmitOnlyValidation(GeoprocessingValidationFailure violation)
+    internal static bool IsDirectSubmitOnlyValidation(
+        GeoprocessingValidationFailure violation,
+        WorkflowPublicationTarget? target)
         => violation.Code is "MULTI_STEP_NOT_EXECUTABLE" or "GEOPROCESS_STEP_NOT_FIRST"
-            or "NO_EXECUTABLE_STEP" or "WORKFLOW_ONLY_PROCESS";
+            or "NO_EXECUTABLE_STEP"
+            || violation.Code == "WORKFLOW_ONLY_PROCESS"
+            && target is null or WorkflowPublicationTarget.Schedule;
 
     private static void ValidateTargetEligibility(
         WorkflowGraph graph,

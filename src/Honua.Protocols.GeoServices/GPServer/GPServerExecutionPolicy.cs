@@ -26,13 +26,17 @@ internal static class GPServerExecutionPolicy
     /// <summary>Esri asynchronous execution-type wire string.</summary>
     public const string AsynchronousExecutionType = "esriExecutionTypeAsynchronous";
 
+    /// <summary>Returns <c>true</c> when the task may use the shared job runtime.</summary>
+    public static bool IsJobCallable(ProcessDefinition definition)
+        => ProcessExecutionEligibility.IsJobCallable(definition);
+
     /// <summary>
     /// Returns <c>true</c> when the task is eligible for synchronous execution.
     /// </summary>
     public static bool IsSynchronous(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        return definition.ExecutionKind == ProcessExecutionKind.Job
+        return IsJobCallable(definition)
             && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0;
     }
 

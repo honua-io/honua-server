@@ -205,8 +205,7 @@ internal static class ProcessExecutionCapabilityCatalog
 
     /// <summary>Whether the process may be submitted through OGC API Processes.</summary>
     public static bool IsOgcCallable(ProcessDefinition definition)
-        => definition.ExecutionKind == ProcessExecutionKind.Job
-            && definition.SupportedExecutionModes.HasFlag(ProcessExecutionModes.Async);
+        => ProcessExecutionEligibility.IsJobCallable(definition);
 
     private static FrozenSet<string> IdSet(params string[] processIds)
         => processIds.ToFrozenSet(StringComparer.Ordinal);

@@ -9962,6 +9962,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_ReadsServiceAndTaskMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_KnownTask_EveryParameterIncludesDefaultValueKey",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_KnownTask_ReturnsTaskMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_NonJobTask_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_ParameterWithAllowedValues_PopulatesChoiceList",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_ProtocolDisabledService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_UnknownTask_ReturnsNotFound",
