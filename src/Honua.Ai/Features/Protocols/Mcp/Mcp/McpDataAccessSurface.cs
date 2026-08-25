@@ -667,6 +667,20 @@ internal sealed class McpDataAccessSurface
             return ErrorResponse(request.Id, McpErrorMapper.Unauthenticated());
         }
 
+        try
+        {
+            McpAuthorizationHelper.EnsureBearerToolTenant(httpContext);
+        }
+        catch (GeoprocessingAuthorizationException ex)
+        {
+            McpTelemetry.ResourceReadCount.Add(
+                1,
+                new KeyValuePair<string, object?>("resource_family", McpTelemetry.ResourceFamily.Unknown),
+                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+            McpLog.AuthorizationDenied(_logger, "resources/read", authenticated: true);
+            return ErrorResponse(request.Id, McpErrorMapper.Map(ex));
+        }
+
         McpResourcesReadParams? parameters;
         try
         {

@@ -19,6 +19,7 @@ internal static class CanonicalSecurityActor
     internal const string EffectiveTenantClaim = "honua:effective_tenant";
     internal const string ScopeCeilingClaim = "honua:scope_ceiling";
     internal const string CanonicalActorClaim = "honua:canonical_actor";
+    internal const string FrameworkOwnedClaimProperty = "honua:framework_owned";
 
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
     {
@@ -103,6 +104,18 @@ internal static class CanonicalSecurityActor
     }
 
     /// <summary>
+    /// Reads a request-binding value only when it carries in-memory framework
+    /// provenance that cannot be supplied by an OIDC token payload.
+    /// </summary>
+    internal static string? FindStampedValue(ClaimsPrincipal principal, string claimType) =>
+        principal.FindAll(claimType)
+            .FirstOrDefault(IsFrameworkOwnedClaim)?.Value;
+
+    internal static bool IsFrameworkOwnedClaim(Claim claim) =>
+        claim.Properties.TryGetValue(FrameworkOwnedClaimProperty, out var value)
+        && string.Equals(value, bool.TrueString, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Returns whether the principal was authenticated by one of the framework-owned
     /// bearer handlers. Issuer-supplied claims are deliberately not consulted.
     /// </summary>
@@ -123,7 +136,9 @@ internal static class CanonicalSecurityActor
 
         if (!string.IsNullOrWhiteSpace(value))
         {
-            identity.AddClaim(new Claim(type, value));
+            var claim = new Claim(type, value);
+            claim.Properties[FrameworkOwnedClaimProperty] = bool.TrueString;
+            identity.AddClaim(claim);
         }
     }
 
