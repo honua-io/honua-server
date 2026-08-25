@@ -73,7 +73,13 @@ public sealed class ProposeOperationToolTests
 
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "Deploy", ResourceId = "target-1", Reason = "ship it" },
+            new McpProposeOperationArgument
+            {
+                Kind = "Deploy",
+                ResourceId = "target-1",
+                Reason = "ship it",
+                ExecutionPayload = """{"targetId":"target-1","desiredRevision":"v2"}""",
+            },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
@@ -91,12 +97,13 @@ public sealed class ProposeOperationToolTests
         gateway.LastRequest.Authority.ResourceType.Should().Be(OperatorResourceType.Deployment);
         gateway.LastRequest.Authority.Operation.Should().Be(OperatorOperation.Publish);
         gateway.LastRequest.Authority.ResourceId.Should().Be("target-1");
+        gateway.LastRequest.ExecutionPayload.Should().Be("""{"targetId":"target-1","desiredRevision":"v2"}""");
     }
 
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_propose_operation")]
-    public async Task ProposeOperation_UsesProposalOnlyGatewayEvenWhenNormalRouteCouldExecute()
+    public async Task ProposeOperation_AdminConfigChange_IsRejectedBeforeGateway()
     {
         var gateway = new FakeGateway(new OperationGatewayResult
         {
@@ -113,7 +120,8 @@ public sealed class ProposeOperationToolTests
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         var content = result.StructuredContent!.Value;
-        gateway.ProposalOnlyCalls.Should().Be(1);
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
+        gateway.ProposalOnlyCalls.Should().Be(0);
         gateway.RouteCalls.Should().Be(0);
     }
 
@@ -162,7 +170,12 @@ public sealed class ProposeOperationToolTests
         });
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "Deploy", ResourceId = "serving-us-west" },
+            new McpProposeOperationArgument
+            {
+                Kind = "Deploy",
+                ResourceId = "serving-us-west",
+                ExecutionPayload = """{"targetId":"serving-us-west","desiredRevision":"v2"}""",
+            },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(
@@ -218,13 +231,107 @@ public sealed class ProposeOperationToolTests
         var result = await tool.InvokeAsync(ContextWithGateway(gateway, catalog), arguments, CancellationToken.None);
 
         var content = result.StructuredContent!.Value;
-        content.GetProperty("outcome").GetString().Should().Be("NotSupported");
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
         var supportedKinds = content.GetProperty("supportedKinds").EnumerateArray()
             .Select(element => element.GetString())
             .ToArray();
-        supportedKinds.Should().BeEquivalentTo(["AdminConfigChange", "Deploy", "MetadataRelease"]);
+        supportedKinds.Should().BeEquivalentTo(["Deploy", "MetadataRelease"]);
+        supportedKinds.Should().NotContain("AdminConfigChange", "the generic MCP surface cannot safely bind an ops-action payload");
         supportedKinds.Should().NotContain("Seed", "Seed has no registered executor and must never be advertised as supported");
+        gateway.LastRequest.Should().BeNull("unsupported kinds must be rejected before proposal persistence");
     }
+
+    [Fact]
+    public async Task ProposeOperation_DeployPayloadTargetMismatch_IsRejectedBeforeGateway()
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = "Deploy",
+                ResourceId = "target-1",
+                ExecutionPayload = """{"targetId":"target-2","desiredRevision":"v2"}""",
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+        gateway.LastRequest.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProposeOperation_MetadataRelease_PreservesValidatedExecutablePayload()
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        const string payload = """{"action":"create","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""";
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = "MetadataRelease",
+                ResourceId = "roads",
+                ExecutionPayload = payload,
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        gateway.LastRequest!.ExecutionPayload.Should().Be(payload);
+        gateway.LastRequest.Authority!.ResourceId.Should().Be("roads");
+    }
+
+    [Fact]
+    public async Task ProposeOperation_MetadataReleaseResourceMismatch_IsRejectedBeforeGateway()
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = "MetadataRelease",
+                ResourceId = "buildings",
+                ExecutionPayload = """{"action":"create","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""",
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+        gateway.LastRequest.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-json")]
+    [InlineData("{\"targetId\":\"target-1\",\"desiredRevision\":\"v2\",\"requestedBy\":\"forged\"}")]
+    public async Task ProposeOperation_InvalidOrAmbiguousDeployPayload_IsRejectedBeforeGateway(string? payload)
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = "Deploy",
+                ResourceId = "target-1",
+                ExecutionPayload = payload,
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+        gateway.LastRequest.Should().BeNull();
+    }
+
+    private static OperationGatewayResult CreateProposalResult() => new()
+    {
+        Outcome = OperationGatewayOutcome.ProposalCreated,
+        Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, default, "test"),
+        ProposalId = "proposal-123",
+    };
 
     private sealed class FakeExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds) : IOperationExecutorCatalog
     {

@@ -55,6 +55,9 @@ internal sealed class McpProposeOperationArgument
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
 
+    [JsonPropertyName("executionPayload")]
+    public string? ExecutionPayload { get; set; }
+
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
 }
