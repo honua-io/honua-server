@@ -158,6 +158,27 @@ public class TenantContextMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task BearerWithoutTenantClaim_AdminControlPlaneContinuesWithNullTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
     public async Task OperatorBearerWithoutTenantClaim_DoesNotInheritAnonymousDefault()
     {
@@ -355,6 +376,9 @@ public class TenantContextMiddlewareTests
             var effective = context.User.FindFirst("honua:effective_tenant")?.Value ?? "<null>";
             return Results.Text($"{tenant.TenantId ?? "<null>"}|{effective}");
         });
+
+        app.MapGet("/api/v1/admin/oidc/providers", (ITenantContext tenant) =>
+            Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
 
         await app.StartAsync();
         return app.GetTestClient();
