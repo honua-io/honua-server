@@ -8,6 +8,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Studio;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -179,6 +180,120 @@ public sealed class StudioMcpToolDelegationTests
         pointers!.CurrentVersionId.Should().BeNull("no honua_studio_* tool ever creates a content version");
         pointers.PublishedVersionId.Should().BeNull(
             "propose-publication must never create a content version or move the published pointer");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_add_layer")]
+    [Endpoint("POST /mcp tools/call honua_studio_remove_layer")]
+    [Endpoint("POST /mcp tools/call honua_studio_set_layer_style")]
+    [Endpoint("POST /mcp tools/call honua_studio_set_layer_visibility")]
+    [Endpoint("POST /mcp tools/call honua_studio_set_view")]
+    [Endpoint("POST /mcp tools/call honua_studio_add_widget")]
+    [Endpoint("POST /mcp tools/call honua_studio_remove_widget")]
+    [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
+    [Endpoint("POST /mcp tools/call honua_studio_remove_interaction")]
+    [Endpoint("POST /mcp tools/call honua_studio_add_control")]
+    [Endpoint("POST /mcp tools/call honua_studio_remove_control")]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task DashboardComposition_AllMutationToolsAndWholeDocumentUpdateUseSharedLifecycle()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycleService = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var validator = provider.GetRequiredService<IStudioPackageValidator>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycleService);
+            services.AddSingleton(validator);
+        });
+
+        var create = await new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance)
+            .InvokeAsync(
+                httpContext,
+                McpTestFactory.ParseJson(
+                    """{"packageKey":"operations-dashboard","family":"dashboard","schemaVersion":"1.0"}"""),
+                CancellationToken.None);
+        create.IsError.Should().BeFalse();
+        var draftId = create.StructuredContent!.Value.GetProperty("draftId").GetGuid();
+        var generation = create.StructuredContent.Value.GetProperty("generation").GetInt64();
+
+        async Task InvokeMutationAsync(IMcpTool tool, Func<long, string> arguments)
+        {
+            var result = await tool.InvokeAsync(
+                httpContext,
+                McpTestFactory.ParseJson(arguments(generation)),
+                CancellationToken.None);
+            result.IsError.Should().BeFalse(tool.Name);
+            generation = result.StructuredContent!.Value.GetProperty("generation").GetInt64();
+        }
+
+        await InvokeMutationAsync(
+            new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"}}""");
+        await InvokeMutationAsync(
+            new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"layerId":"parcels","visible":false}""");
+        await InvokeMutationAsync(
+            new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"layerId":"parcels","styleRef":"style.parcels"}""");
+        await InvokeMutationAsync(
+            new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"view":{"center":[-157.86,21.31],"zoom":10}}""");
+        await InvokeMutationAsync(
+            new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"widget":{"id":"summary","kind":"chart"}}""");
+        await InvokeMutationAsync(
+            new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"interaction":{"id":"select-parcel","on":{"ref":"layer:parcels","event":"featureSelect"},"do":{"ref":"layer:parcels","verb":"setVisibility","args":{"visible":false} } } }""");
+        await InvokeMutationAsync(
+            new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"control":{"id":"navigation","kind":"navigation"}}""");
+        await InvokeMutationAsync(
+            new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"interactionId":"select-parcel"}""");
+        await InvokeMutationAsync(
+            new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"controlId":"navigation"}""");
+        await InvokeMutationAsync(
+            new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"widgetId":"summary"}""");
+        await InvokeMutationAsync(
+            new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
+            g => $$$"""{"draftId":"{{{draftId}}}","generation":{{{g}}},"layerId":"parcels"}""");
+
+        generation.Should().Be(12);
+        var afterMutations = await lifecycleService.GetDraftAsync(draftId);
+        afterMutations!.Family.Should().Be(StudioPackageFamily.Dashboard);
+        var mutationBody = StudioCompositionBodyEditor.ReadBody(afterMutations.Envelope);
+        mutationBody.Layers.Should().BeEmpty();
+        mutationBody.Widgets.Should().BeEmpty();
+        mutationBody.Interactions.Should().BeEmpty();
+        mutationBody.Controls.Should().BeEmpty();
+        mutationBody.View!.Zoom.Should().Be(10);
+
+        var updateTool = new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+        var validUpdate = await updateTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{draftId}}}","generation":{{{generation}}},"packageKey":"operations-dashboard-v2","schemaVersion":"1.0","body":{"layers":[{"id":"roads","type":"line"}],"widgets":[],"interactions":[],"controls":[]}}"""),
+            CancellationToken.None);
+        validUpdate.IsError.Should().BeFalse();
+        generation = validUpdate.StructuredContent!.Value.GetProperty("generation").GetInt64();
+
+        var malformedUpdate = () => updateTool.InvokeAsync(
+            httpContext,
+            McpTestFactory.ParseJson(
+                $$$"""{"draftId":"{{{draftId}}}","generation":{{{generation}}},"packageKey":"operations-dashboard-v3","schemaVersion":"1.0","body":{"interactions":{"id":"not-an-array"} } }"""),
+            CancellationToken.None);
+        await malformedUpdate.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*studio.interactions.array*");
+
+        var afterRejectedUpdate = await lifecycleService.GetDraftAsync(draftId);
+        afterRejectedUpdate!.Generation.Should().Be(generation);
+        afterRejectedUpdate.PackageKey.Should().Be("operations-dashboard-v2");
+        StudioCompositionBodyEditor.ReadBody(afterRejectedUpdate.Envelope).Layers
+            .Should().ContainSingle(layer => layer.Id == "roads");
     }
 
     [UnitTest]

@@ -83,10 +83,14 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         }
 
         var family = ParseFamily(argument.Family);
+        var familyDescriptor = lifecycleService.GetCapabilities().Families
+            .FirstOrDefault(descriptor => descriptor.Family == family)
+            ?? throw new GeoprocessingValidationException($"Studio package family '{family}' is not available.");
         var envelope = new StudioPackageEnvelope
         {
             Family = family,
             SchemaVersion = argument.SchemaVersion,
+            Format = familyDescriptor.Format,
             Body = argument.Body,
         };
 
@@ -338,6 +342,19 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             StudioAuthorizationOperation.UpdateDraft,
             draftId.ToString("D"),
             OperatorOperation.Create).ConfigureAwait(false);
+
+        if (StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(existing.Family))
+        {
+            var validation = RequireValidator(httpContext).Validate(envelope);
+            if (validation.Status == StudioPackageValidationStatus.Invalid)
+            {
+                var diagnostic = validation.Diagnostics.Count > 0 ? validation.Diagnostics[0] : null;
+                var detail = diagnostic is null
+                    ? "The composition body is invalid."
+                    : $"{diagnostic.Code} at {diagnostic.Path}: {diagnostic.Message}";
+                throw new GeoprocessingValidationException(detail);
+            }
+        }
         var updated = await ApplyUpdateAsync(
             lifecycleService,
             draftId,

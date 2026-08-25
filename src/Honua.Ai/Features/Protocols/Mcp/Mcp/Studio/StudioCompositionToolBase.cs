@@ -11,9 +11,9 @@ using Honua.Geoprocessing;
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
 /// <summary>
-/// Shared invocation shape for the six composition-mutation MCP tools
+/// Shared invocation shape for the composition-mutation MCP tools
 /// (honua-server#3002, REQ-002: "a small, bounded set of mutation tools for
-/// map/app-family drafts ... each patching the draft envelope through the
+/// map/app/dashboard-family drafts ... each patching the draft envelope through the
 /// lifecycle service with generation checking"). Every tool: authorizes,
 /// loads the draft, verifies it is a composition-eligible family (map/app —
 /// <see cref="StudioCompositionBodyEditor.EnsureCompositionEligibleFamily"/>),
@@ -34,7 +34,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
 
     /// <summary>
     /// Loads the draft (verifying it exists and is a composition-eligible
-    /// map/app family), applies <paramref name="mutate"/> to its parsed
+    /// map/app/dashboard family), applies <paramref name="mutate"/> to its parsed
     /// composition body, writes the result back onto the envelope, and
     /// persists it through <paramref name="lifecycleService"/> with the
     /// caller-supplied expected generation — the full load→mutate→save round
