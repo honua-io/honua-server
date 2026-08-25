@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
@@ -28,6 +29,7 @@ public sealed class ProposeOperationToolTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(gateway);
+        services.AddSingleton<ITenantContext>(new TestTenantContext());
         if (catalog != null)
         {
             services.AddSingleton(catalog);
@@ -65,6 +67,10 @@ public sealed class ProposeOperationToolTests
         content.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         content.GetProperty("proposalId").GetString().Should().Be("proposal-123");
         content.GetProperty("resourceUri").GetString().Should().Be("honua://proposals/proposal-123");
+        gateway.LastRequest.Should().NotBeNull();
+        gateway.LastRequest!.Authority.Should().NotBeNull();
+        gateway.LastRequest.Authority!.Actor.Should().Be("agent-x");
+        gateway.LastRequest.Authority.EffectiveTenant.Should().Be("tenant-1");
     }
 
     [UnitTest]
@@ -149,10 +155,29 @@ public sealed class ProposeOperationToolTests
         public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
     }
 
+    private sealed class TestTenantContext : ITenantContext
+    {
+        public string? TenantId => "tenant-1";
+
+        public TenantContextSource Source => TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string tenantId, out string? reason)
+        {
+            tenantId = TenantId!;
+            reason = null;
+            return true;
+        }
+    }
+
     private sealed class FakeGateway(OperationGatewayResult result) : IOperationGateway
     {
+        public OperationGatewayRequest? LastRequest { get; private set; }
+
         public Task<OperationGatewayResult> RouteAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(result);
+        {
+            LastRequest = request;
+            return Task.FromResult(result);
+        }
 
         public Task<OperationGatewayResult> CreateApprovalProposalAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(result);

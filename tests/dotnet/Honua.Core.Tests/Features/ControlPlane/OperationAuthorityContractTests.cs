@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
 
@@ -36,6 +38,40 @@ public sealed class OperationAuthorityContractTests
         };
 
         approval.ProposerAuthorityRetained.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Capture_AuthenticatedPrincipal_PinsIssuerActorTenantAndScopes()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "operator-1"),
+                new Claim("iss", "https://issuer.example"),
+                new Claim(OperatorScopeCatalog.ScopeClaimType, "honua.mcp.read honua.mcp.publish"),
+                new Claim(OperatorScopeCatalog.ScpClaimType, "honua.mcp.read"),
+            ],
+            "Bearer"));
+
+        var authority = OperationAuthorityContext.Capture(principal, "tenant-1");
+
+        authority.Issuer.Should().Be("https://issuer.example");
+        authority.Actor.Should().Be("operator-1");
+        authority.Scheme.Should().Be("Bearer");
+        authority.EffectiveTenant.Should().Be("tenant-1");
+        authority.OAuthScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
+        authority.ScopeCeiling.Should().Equal(authority.OAuthScopes);
+    }
+
+    [UnitTest]
+    public void Capture_UnauthenticatedPrincipal_FailsClosed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "operator-1")]));
+
+        var act = () => OperationAuthorityContext.Capture(principal, "tenant-1");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*authenticated principal is required*");
     }
 
     private static OperationAuthorityContext Authority(
