@@ -318,7 +318,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             lifecycleService,
             draftId,
             StudioAuthorizationOperation.UpdateDraft,
-            OperatorOperation.Create,
+            OperatorOperation.Update,
             cancellationToken).ConfigureAwait(false);
         RequireAuthorizedGeneration(existing, generation);
         var envelope = existing.Envelope with
@@ -337,7 +337,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             argument.OwnerId,
             StudioAuthorizationOperation.UpdateDraft,
             draftId.ToString("D"),
-            OperatorOperation.Create).ConfigureAwait(false);
+            OperatorOperation.Update).ConfigureAwait(false);
         var updated = await ApplyUpdateAsync(
             lifecycleService,
             draftId,
