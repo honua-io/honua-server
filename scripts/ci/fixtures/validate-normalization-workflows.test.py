@@ -8,6 +8,7 @@ tree is not a control; these cases pin the shapes it must keep catching.
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -37,18 +38,28 @@ def run(**overrides: str) -> str:
     return MODULE.validate(**sources)
 
 
+def consumer_with_mode(mode: str) -> str:
+    consumer, count = re.subn(
+        r"^(  NORMALIZATION_MODE:) (?:observe|enforce)$",
+        rf"\1 {mode}",
+        SOURCES["consumer"],
+        count=1,
+        flags=re.MULTILINE,
+    )
+    assert count == 1
+    return consumer
+
+
 class NormalizationContractTests(unittest.TestCase):
     def test_current_tree_passes(self) -> None:
         self.assertIn(run(), {"observe", "enforce"})
 
     def test_declared_enforce_mode_passes(self) -> None:
-        consumer = SOURCES["consumer"].replace(
-            "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce")
-        self.assertEqual(run(consumer=consumer), "enforce")
+        self.assertEqual(run(consumer=consumer_with_mode("enforce")), "enforce")
 
     def test_job_level_mode_override_is_rejected(self) -> None:
-        # Shadows the workflow value at runtime while the workflow line still
-        # reads `observe`.
+        # Shadows the workflow value at runtime while the workflow-level
+        # declaration remains present.
         consumer = SOURCES["consumer"].replace(
             "    env:\n      NORMALIZATION_CREDENTIAL_PRESENT:",
             "    env:\n      NORMALIZATION_MODE: enforce\n      NORMALIZATION_CREDENTIAL_PRESENT:",
@@ -67,10 +78,8 @@ class NormalizationContractTests(unittest.TestCase):
             run(consumer=consumer)
 
     def test_unknown_mode_is_rejected(self) -> None:
-        consumer = SOURCES["consumer"].replace(
-            "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce-later")
         with self.assertRaisesRegex(AssertionError, "observe or enforce"):
-            run(consumer=consumer)
+            run(consumer=consumer_with_mode("enforce-later"))
 
     def test_index_form_secret_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
@@ -120,6 +129,33 @@ class NormalizationContractTests(unittest.TestCase):
             "        uses: actions/github-script@v9",
         )
         with self.assertRaisesRegex(AssertionError, "NORMALIZATION_CREDENTIAL_PRESENT"):
+            run(consumer=consumer)
+
+    def test_literal_credential_presence_is_rejected(self) -> None:
+        consumer = SOURCES["consumer"].replace(
+            "      NORMALIZATION_CREDENTIAL_PRESENT: >-\n"
+            "        ${{ secrets.NORMALIZATION_APP_ID != ''\n"
+            "        && secrets.NORMALIZATION_APP_PRIVATE_KEY != '' }}",
+            "      NORMALIZATION_CREDENTIAL_PRESENT: true",
+        )
+        with self.assertRaisesRegex(AssertionError, "declared exactly once at job scope"):
+            run(consumer=consumer)
+
+    def test_partial_credential_presence_is_rejected(self) -> None:
+        consumer = SOURCES["consumer"].replace(
+            "        ${{ secrets.NORMALIZATION_APP_ID != ''\n"
+            "        && secrets.NORMALIZATION_APP_PRIVATE_KEY != '' }}",
+            "        ${{ secrets.NORMALIZATION_APP_ID != '' }}",
+        )
+        with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):
+            run(consumer=consumer)
+
+    def test_credential_presence_must_be_job_scoped(self) -> None:
+        consumer = SOURCES["consumer"].replace(
+            "      NORMALIZATION_CREDENTIAL_PRESENT: >-",
+            "        NORMALIZATION_CREDENTIAL_PRESENT: >-",
+        )
+        with self.assertRaisesRegex(AssertionError, "declared exactly once at job scope"):
             run(consumer=consumer)
 
     def test_github_token_fallback_is_rejected(self) -> None:
