@@ -80,7 +80,9 @@ internal static class McpAuthorizationHelper
         }
 
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId
-            ?? context.User.FindFirstValue(CanonicalSecurityActor.EffectiveTenantClaim);
+            ?? CanonicalSecurityActor.FindStampedValue(
+                context.User,
+                CanonicalSecurityActor.EffectiveTenantClaim);
         return CanonicalSecurityActor.BuildBindingKey(actor, tenant, context.User);
     }
 
