@@ -419,6 +419,45 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [Endpoint("DELETE /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Session_EquivalentRefreshedBearer_CanPostAndDelete()
+    {
+        Claim[] authorityClaims =
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("roles", "admin"),
+            new Claim("groups", "workspace-a"),
+            new Claim("permission", "catalog:write"),
+            new Claim("scope", "honua.mcp.full"),
+        ];
+        var initialToken = CreateToken("refresh-subject", additionalClaims: authorityClaims);
+        var refreshedToken = CreateToken("refresh-subject", additionalClaims: authorityClaims);
+        refreshedToken.Should().NotBe(initialToken, "a refresh produces a new token instance");
+
+        using var initialize = BuildInitialize(initialToken);
+        var initializeResponse = await _client.SendAsync(initialize);
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessionId = initializeResponse.Headers.GetValues("Mcp-Session-Id").Single();
+
+        using var post = BuildRpc(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId,
+            refreshedToken);
+        var postResponse = await _client.SendAsync(post);
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var postDocument = await ReadJsonAsync(postResponse);
+        postDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, "/mcp");
+        delete.Headers.Authorization = new AuthenticationHeaderValue("Bearer", refreshedToken);
+        delete.Headers.Add("Mcp-Session-Id", sessionId);
+        var deleteResponse = await _client.SendAsync(delete);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
     [Endpoint("GET /mcp")]
     [Endpoint("DELETE /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
