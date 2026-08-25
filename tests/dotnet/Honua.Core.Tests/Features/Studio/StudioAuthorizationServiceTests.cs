@@ -126,7 +126,7 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
-    public async Task AuthorizeAsync_FlagOn_LegacyMcpSubjectOwner_AllowsOriginalPrincipal()
+    public async Task AuthorizeAsync_FlagOn_UnmarkedLegacyMcpSubjectOwner_FailsClosed()
     {
         var service = BuildService(enabled: true, out _);
 
@@ -136,7 +136,8 @@ public sealed class StudioAuthorizationServiceTests
             StudioAuthorizationOperation.ReadDraft,
             resourceOwnerId: "Test:sub:alice");
 
-        Assert.True(decision.IsAllowed);
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
     }
 
     [UnitTest]
