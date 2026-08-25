@@ -162,6 +162,48 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_WorkflowOnlyAndUnavailableProcesses_ReportCanonicalCapability()
+    {
+        var workflowPlan = new AnalysisPlan
+        {
+            PlanId = "plan-workflow-only",
+            IntentId = "intent-workflow-only",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "source",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "source.geojson",
+                    Inputs = new Dictionary<string, string> { ["inline"] = "{}" }
+                }
+            ]
+        };
+        var unavailablePlan = new AnalysisPlan
+        {
+            PlanId = "plan-unavailable",
+            IntentId = "intent-unavailable",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "kriging",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.interpolate-kriging",
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        _sut.ValidatePlan(workflowPlan, CreatePrincipal()).Violations
+            .Should().Contain(violation => violation.Code == "WORKFLOW_ONLY_PROCESS");
+        _sut.ValidatePlan(unavailablePlan, CreatePrincipal()).Violations
+            .Should().Contain(violation => violation.Code == "PROCESS_UNAVAILABLE");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_NonGeoprocessStep_WarnsItIsIgnored()
     {
         var plan = new AnalysisPlan

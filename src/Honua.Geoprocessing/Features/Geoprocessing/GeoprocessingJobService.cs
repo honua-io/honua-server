@@ -235,7 +235,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // process ids, ignored non-Geoprocess step kinds) so the read-only pre-flight reports
         // the same limitations the submit path enforces rather than optimistically returning
         // isExecutable=true for a plan that would be rejected or silently under-execute (#2806).
-        var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan);
+        var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan, _processCatalog);
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
 

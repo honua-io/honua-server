@@ -313,6 +313,22 @@ public sealed class McpResourceSerializationTests
         buffer.GetProperty("family").GetString().Should().Be("geometry");
         buffer.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
         buffer.GetProperty("parameters").GetArrayLength().Should().BeGreaterThan(0);
+        buffer.GetProperty("executionKind").GetString().Should().Be("Job");
+        buffer.GetProperty("supportedExecutionModes").EnumerateArray()
+            .Select(mode => mode.GetString()).Should().BeEquivalentTo(["Async", "Sync"]);
+
+        var source = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "source.geojson");
+        source.GetProperty("executionKind").GetString().Should().Be("WorkflowOnly");
+
+        var imagery = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "imagery.classify");
+        imagery.GetProperty("configurationDependency").GetString().Should().Be("Geoprocessing:ImageryInference");
+
+        var kriging = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "raster.interpolate-kriging");
+        kriging.GetProperty("executionKind").GetString().Should().Be("Unavailable");
+        kriging.GetProperty("executionCapabilityReason").GetString().Should().Contain("kriging");
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 

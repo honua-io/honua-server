@@ -399,8 +399,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
     {
-        // analytics.cluster is NOT in GPServerExecutionPolicy.SyncEligibleProcessIds â€”
-        // the synchronous /execute path must surface a capability error rather
+        // analytics.cluster is classified ProtocolOnly in the canonical catalog,
+        // so the synchronous /execute path must surface a capability error rather
         // than try to run a long-running task inline.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -461,16 +461,15 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecutePost_InvalidGPChoice_Returns400()
+    public async Task ExecutePost_ProtocolOnlyTask_Returns400WithCapabilityMessage()
     {
-        // conversion.geometry-format declares AllowedValues=[wkt,geojson,wkb,ewkt]
-        // on its 'target' parameter; an out-of-set value must be rejected before
-        // the canonical pipeline is touched.
+        // conversion.geometry-format is protocol-only: it remains discoverable
+        // through GPServer but is not a synchronous job-capable operation.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["geometry"] = PointWkbBase64,
-            ["target"] = "not-a-real-format"
+            ["target"] = "wkt"
         });
 
         var response = await _client.PostAsync(
@@ -479,8 +478,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("target");
-        body.Should().Contain("not-a-real-format");
+        body.Should().Contain("submitJob");
+        body.Should().Contain("asynchronous");
     }
 
     [IntegrationTest]

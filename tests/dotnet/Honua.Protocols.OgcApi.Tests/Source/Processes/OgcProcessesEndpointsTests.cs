@@ -157,7 +157,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
-        processes.Should().NotBeEmpty();
+        processes.Should().HaveCount(80, "the canonical plan process plus all 79 catalog Job processes are projected once");
 
         var first = processes[0];
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
@@ -166,8 +166,19 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("sync-execute");
         jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
 
-        processes.Select(p => p.GetProperty("id").GetString())
-            .Should().Contain(["geometry.buffer", "geometry.clip", "geometry.intersect", "geometry.project"]);
+        var ids = processes.Select(p => p.GetProperty("id").GetString()).ToArray();
+        ids.Should().Contain([
+            "geometry.buffer",
+            "analytics.spatial-join",
+            "proximity.near",
+            "statistics.summarize",
+            "transform.reproject"]);
+        ids.Should().NotContain([
+            "analytics.cluster",
+            "analytics.density",
+            "source.geojson",
+            "sink.geojson-file",
+            "raster.interpolate-kriging"]);
     }
 
     // -----------------------------------------------------------------------
@@ -210,6 +221,45 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         root.GetProperty("inputs").GetProperty("distance").GetProperty("schema")
             .GetProperty("type").GetString().Should().Be("number");
         root.GetProperty("outputs").TryGetProperty("outputFeatureLayer", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_CatalogJobExamples_AreProjectedDirectly()
+    {
+        string[] processIds =
+        [
+            "analytics.spatial-join",
+            "proximity.near",
+            "statistics.summarize",
+            "transform.reproject",
+        ];
+
+        foreach (var processId in processIds)
+        {
+            var response = await _fixture.Client.GetAsync($"/ogc/processes/processes/{processId}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"catalog Job process '{processId}' must be OGC-callable");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_NonJobCatalogEntries_Return404()
+    {
+        string[] processIds =
+        [
+            "analytics.cluster",
+            "source.geojson",
+            "raster.interpolate-kriging",
+        ];
+
+        foreach (var processId in processIds)
+        {
+            var response = await _fixture.Client.GetAsync($"/ogc/processes/processes/{processId}");
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"'{processId}' is not classified as a direct Job process");
+        }
     }
 
     [IntegrationTest]
@@ -346,6 +396,22 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("detail").GetString().Should().Contain("units");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_NonJobCatalogEntries_Return404()
+    {
+        foreach (var processId in new[] { "analytics.cluster", "source.geojson", "raster.interpolate-kriging" })
+        {
+            using var content = new StringContent("{\"inputs\":{}}", Encoding.UTF8, "application/json");
+            var response = await _fixture.Client.PostAsync(
+                $"/ogc/processes/processes/{processId}/execution",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"'{processId}' is not a directly callable Job process");
+        }
     }
 
     [IntegrationTest]

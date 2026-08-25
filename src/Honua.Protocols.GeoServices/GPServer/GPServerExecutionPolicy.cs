@@ -26,35 +26,14 @@ internal static class GPServerExecutionPolicy
     /// <summary>Esri asynchronous execution-type wire string.</summary>
     public const string AsynchronousExecutionType = "esriExecutionTypeAsynchronous";
 
-    // Deterministic single-geometry processes that execute in-process on the
-    // local backend in bounded time. These are the only tasks for which a stock
-    // ArcGIS client may legitimately call the synchronous execute route.
-    private static readonly HashSet<string> SyncEligibleProcessIds = new(StringComparer.Ordinal)
-    {
-        "geometry.buffer",
-        "geometry.simplify",
-        "geometry.project",
-        "geometry.make-valid",
-        "geometry.union",
-        "geometry.intersect",
-        "geometry.clip",
-        "geometry.difference",
-        "geometry.area",
-        "geometry.length",
-        "geometry.centroid",
-        "geometry.convex-hull",
-        "geometry.dissolve",
-        "geometry.snap",
-        "conversion.geometry-format",
-    };
-
     /// <summary>
     /// Returns <c>true</c> when the task is eligible for synchronous execution.
     /// </summary>
     public static bool IsSynchronous(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        return SyncEligibleProcessIds.Contains(definition.ProcessId);
+        return definition.ExecutionKind == ProcessExecutionKind.Job
+            && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0;
     }
 
     /// <summary>

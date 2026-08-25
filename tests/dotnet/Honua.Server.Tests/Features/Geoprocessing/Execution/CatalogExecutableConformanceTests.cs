@@ -17,296 +17,112 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 /// <summary>
-/// Catalog-honesty conformance, rewritten against the REALITY of #1185 trunk
-/// (this replaces the earlier worldview that assumed an 18-id managed-vector set
-/// and a GeoprocessingExecutionRoutingClassifier that does not hold on trunk).
-///
-/// The premise: the catalog advertises processes that reach execution through
-/// THREE different surfaces, only one of which is the geoprocessing job
-/// dispatcher. A process is dishonest only if it claims job-executability and
-/// has no executor. So this test classifies every advertised process into one of:
-///
-///   - JOB-EXECUTABLE — runs through GeoprocessingDispatchJobExecutor. Every one
-///     of these MUST have an entry in the dispatcher handler map, and the test
-///     FAILS if any is missing. (The historical "catalog advertises it but no
-///     executor exists" gap, e.g. geometry.make-valid / geometry.difference, is
-///     exactly what this guards.)
-///   - PROTOCOL-ONLY — runs synchronously through the layer-scoped PostGIS
-///     SpatialAnalytics protocol or other non-job surfaces, NOT the dispatcher
-///     (analytics.cluster/spatial-join/buffer-aggregate/density, generalization.*,
-///     data-management.*, conversion.feature-project). These are NOT required to
-///     be job-executable and MUST be absent from the dispatcher.
-///   - ROUTED-TO-NATIVE — raster/surface (and the raster conversion idioms) belong
-///     to the GDAL native worker (a later stream). NOT required to be
-///     job-executable in the GDAL-free serving image and MUST be absent here.
-///
-/// The classification below is the source of truth. It is exhaustive: every
-/// advertised process must be listed in exactly one bucket, so a newly added
-/// catalog entry that nobody classified fails the partition check loudly.
+/// Guards agreement between catalog-owned execution capability metadata and the
+/// concrete managed dispatcher. No protocol-local process list participates in
+/// the classification contract.
 /// </summary>
 public sealed class CatalogExecutableConformanceTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();
 
-    // Processes that run through the geoprocessing JOB DISPATCHER. Each MUST have
-    // a handler in GeoprocessingDispatchJobExecutor (the honesty contract).
-    private static readonly string[] JobExecutableProcessIds =
+    [UnitTest]
+    public void Catalog_ClassifiesEveryProcessExactlyOnce()
     {
-        // Deterministic single-geometry vector primitives (managed NTS).
-        "geometry.buffer",
-        "geometry.simplify",
-        "geometry.project",
-        "geometry.make-valid",
-        "geometry.union",
-        "geometry.intersect",
-        "geometry.clip",
-        "geometry.difference",
-        "geometry.area",
-        "geometry.length",
-        "geometry.centroid",
-        "geometry.convex-hull",
-        "geometry.dissolve",
-        "geometry.snap",
-        // Managed spatial-join (distinct from the PostGIS-protocol analytics.spatial-join).
-        "analytics.spatial-join-managed",
-        // Managed analytics counterparts for cluster / buffer-aggregate / density (#1260).
-        // The unsuffixed ids stay in the protocol-only bucket; these -managed ids are
-        // their workflow-reachable, FeatureCollection-in/out, no-Postgres counterparts.
-        "analytics.cluster-managed",
-        "analytics.buffer-aggregate-managed",
-        "analytics.density-managed",
-        // Spatial-statistics tool pack (#2142): Hot Spot Analysis (Getis-Ord Gi*).
-        "analytics.hotspot-managed",
-        // Layer-aware, layer-SOURCED managed ops (#2322, #2325): the job-executable
-        // counterparts of the layer-scoped analytics/generalization/conversion ops.
-        // Each streams a Honua catalog layer through source.honua-layer and runs the
-        // managed op in one dispatched job, so the per-op OGC API - Processes
-        // projections (#1382) that advertise a layerId input reach a terminal state.
-        "analytics.buffer-aggregate",
-        "conversion.feature-project",
-        "generalization.dissolve",
-        "generalization.simplify-layer",
-        // Two-layer analytics.spatial-join (#2322): resolves both the target layerId and
-        // the joinLayerId through source.honua-layer and joins them in one dispatched job.
-        "analytics.spatial-join",
-        // Async batch enrichment (#2283): resolves a managed enrichment dataset by id
-        // and joins a layer-backed or staged inline target set against the dataset's
-        // layer through the shared spatial-join computation.
-        "enrichment.enrich",
-        // Layer-aware overlay tool pack (#2206, #2139): managed NTS, two
-        // FeatureCollections in, one FeatureCollection/table out.
-        "overlay.clip",
-        "overlay.intersect",
-        "overlay.union",
-        "overlay.erase",
-        "overlay.merge",
-        "overlay.split",
-        "data-management.append",
-        // Proximity tool pack (#2139).
-        "proximity.near",
-        "proximity.near-table",
-        // Statistics/summarization tool pack (#2140): table-producing aggregates.
-        "statistics.summarize",
-        "statistics.frequency",
-        "statistics.calculate",
-        // GeoETL transforms (managed NTS, FeatureCollection in/out).
-        "transform.attribute-rename",
-        "transform.attribute-cast",
-        "transform.computed-field",
-        "transform.attribute-filter",
-        "transform.attribute-join",
-        "transform.aggregate",
-        "transform.pivot",
-        "transform.unpivot",
-        "transform.spatial-filter",
-        "transform.clip",
-        "transform.dedup",
-        "transform.reproject",
-        // GeoETL sources.
-        "source.geojson",
-        "source.csv",
-        // First-class remote DAG source connectors: each runs through the dispatcher
-        // via a per-process RemoteSourceExecutor that reuses an existing import reader.
-        "source.honua-layer",
-        "source.esri-featureserver",
-        "source.ogc-features",
-        "source.wfs",
-        "source.postgis",
-        // GeoETL sinks.
-        "sink.geojson-file",
-        "sink.quarantine",
-        "sink.external-postgis",
-        // Managed honua-layer sink: loads a FeatureCollection into a named catalog
-        // layer via the optional IHonuaLayerSink capability. The executor is always
-        // registered (the capability is optional), so it is dispatcher-routable.
-        "sink.honua-layer",
-        // Durable import pipeline (#1630): managed orchestration job that composes
-        // the import / publishing / raster services through an IServiceScopeFactory.
-        "import.dataset",
-        // Imagery/ML delegated inference (#2241): the managed dispatcher executes
-        // the delegation itself (an HTTP exchange with the configured cloud
-        // backend); an unconfigured deployment fails the job with a clear
-        // unavailability message rather than stubbing a result.
-        "imagery.classify",
-    };
+        var definitions = _catalog.ListProcesses();
 
-    // Processes that execute ONLY through the synchronous PostGIS SpatialAnalytics
-    // protocol or another non-dispatcher surface (layer-scoped, Pro-gated, or
-    // destructive edit paths). NOT job-dispatchable; MUST be absent from the
-    // dispatcher. analytics.spatial-join is NO LONGER here: #2322 added a layer-aware
-    // job executor (LayerSpatialJoinExecutor) that resolves both the target and join
-    // layers through source.honua-layer, so it is now job-executable above.
-    private static readonly string[] ProtocolOnlyProcessIds =
-    {
-        "analytics.cluster",
-        "analytics.density",
-        "data-management.copy-features",
-        "data-management.delete-features",
-        "data-management.calculate-field",
-        "conversion.geometry-format",
-    };
-
-    // Processes routed to the GDAL native worker. NOT executable in the GDAL-free
-    // serving image; MUST be absent from the managed dispatcher. The gdal.* family
-    // are the processes the heavyweight worker's executors actually handle
-    // (GdalRasterReprojectJobExecutor / GdalVectorConvertJobExecutor) and are the
-    // only catalog entries that declare RuntimeProfile = native; the raster.* /
-    // surface.* / conversion.raster-* idioms are catalog-advertised native-routed
-    // operations whose canonical execution likewise belongs to the worker, not the
-    // lean dispatcher.
-    private static readonly string[] RoutedToNativeProcessIds =
-    {
-        "surface.slope",
-        "surface.aspect",
-        "surface.hillshade",
-        "surface.rugosity-tri",
-        "surface.rugosity-tpi",
-        "surface.roughness",
-        "raster.clip",
-        "raster.reproject",
-        "raster.statistics",
-        "raster.histogram",
-        "raster.zonal-statistics",
-        // Raster analysis tool pack (#2141): resample / IDW interpolation / mosaic
-        // run out-of-process in the GDAL worker; kriging is advertised but flagged
-        // unsupported (the worker FAILS it with a clear message). All declare the
-        // native runtime profile and have NO lean-dispatcher executor.
-        "raster.resample",
-        "raster.interpolate-idw",
-        "raster.interpolate-kriging",
-        "raster.mosaic",
-        // Raster analysis & terrain GP tool pack (#2239 / #2240): all run
-        // out-of-process in the GDAL worker (gdal_calc.py / gdal_proximity.py /
-        // gdal_contour / gdal_viewshed / gdal_polygonize.py / gdal_rasterize).
-        // proximity.euclidean-allocation runs the custom gdal_euclidean_allocation.py
-        // worker step (#2255). All declare the native runtime profile and have NO
-        // lean-dispatcher executor.
-        "raster.map-algebra",
-        "raster.spectral-index",
-        "raster.reclassify",
-        "proximity.euclidean-distance",
-        "proximity.euclidean-allocation",
-        "surface.contour",
-        "surface.viewshed",
-        "conversion.polygonize",
-        "conversion.rasterize",
-        "conversion.raster-format",
-        "conversion.raster-reproject",
-        // Point-cloud conversion (#1854): LAZ/COPC decompression + optional
-        // reprojection executed out-of-process by the heavyweight GDAL/PDAL worker
-        // (PdalPointCloudConvertJobExecutor) via `pdal translate`. Declares
-        // RuntimeProfile = native and has NO executor in the lean dispatcher.
-        "pcloud.translate",
-        // Native GDAL worker processes (executable in the out-of-process worker,
-        // NOT in the lean dispatcher handler map).
-        "gdal.gdalwarp",
-        "gdal.ogr2ogr",
-        // GDAL/OGR-backed import reader (GdalVectorSourceReadJobExecutor): the
-        // native counterpart to the managed source.geojson / source.csv readers,
-        // canonicalizing the broader OGR format universe (FileGDB, GML, KML, TAB,
-        // Shapefile, GeoPackage, FlatGeobuf) into the standard FeatureCollection
-        // artifact. Declares RuntimeProfile = native; no lean-dispatcher executor.
-        "source.ogr",
-    };
+        definitions.Should().HaveCount(98);
+        definitions.Should().OnlyHaveUniqueItems(process => process.ProcessId);
+        definitions.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(79);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(6);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Unavailable).Should().Be(1);
+    }
 
     [UnitTest]
-    public void Classification_PartitionsEveryAdvertisedProcess_ExactlyOnce()
+    public void EveryManagedJobProcess_HasADispatcherExecutor()
     {
-        // Honesty depends on covering EVERY advertised process. If a new catalog
-        // entry is not classified into one of the three buckets, this fails so
-        // the author must declare which surface executes it.
-        var advertised = _catalog.ListProcesses().Select(p => p.ProcessId).ToHashSet(StringComparer.Ordinal);
-        var classified = JobExecutableProcessIds
-            .Concat(ProtocolOnlyProcessIds)
-            .Concat(RoutedToNativeProcessIds)
+        var executable = DispatcherSupportedProcessIds();
+        var managedJobs = _catalog.ListProcesses()
+            .Where(process => process.ExecutionKind == ProcessExecutionKind.Job)
+            .Where(process => RuntimeProfiles.Normalize(process.RuntimeProfile) == RuntimeProfiles.Managed);
+
+        foreach (var process in managedJobs)
+        {
+            executable.Should().Contain(
+                process.ProcessId,
+                $"catalog classifies managed process '{process.ProcessId}' as a job, so it must have a dispatcher executor");
+        }
+    }
+
+    [UnitTest]
+    public void EveryManagedDispatcherExecutor_HasAJobOrWorkflowClassification()
+    {
+        foreach (var processId in DispatcherSupportedProcessIds())
+        {
+            var process = _catalog.GetProcess(processId);
+            process.Should().NotBeNull($"dispatcher routes '{processId}', so the catalog must advertise it");
+            new[] { ProcessExecutionKind.Job, ProcessExecutionKind.WorkflowOnly }
+                .Should().Contain(
+                    process!.ExecutionKind,
+                    $"dispatcher route '{processId}' must be usable by either direct jobs or workflow composition");
+            RuntimeProfiles.Normalize(process.RuntimeProfile).Should().Be(RuntimeProfiles.Managed);
+        }
+    }
+
+    [UnitTest]
+    public void ProtocolUnavailableAndNativeProcesses_AreAbsentFromTheManagedDispatcher()
+    {
+        var executable = DispatcherSupportedProcessIds();
+        var excluded = _catalog.ListProcesses().Where(process =>
+            process.ExecutionKind is ProcessExecutionKind.ProtocolOnly or ProcessExecutionKind.Unavailable
+            || RuntimeProfiles.Normalize(process.RuntimeProfile) == RuntimeProfiles.Native);
+
+        foreach (var process in excluded)
+        {
+            executable.Should().NotContain(
+                process.ProcessId,
+                $"'{process.ProcessId}' is {process.ExecutionKind} under '{process.RuntimeProfile}', not a managed dispatcher route");
+        }
+    }
+
+    [UnitTest]
+    public void GeometryFamily_IsFullyJobExecutable_AndMatchesTheSyncExecutionPolicy()
+    {
+        var executable = DispatcherSupportedProcessIds();
+        var geometry = _catalog.ListProcesses().Where(process => process.Category == "geometry").ToList();
+
+        geometry.Should().NotBeEmpty();
+        foreach (var process in geometry)
+        {
+            process.ExecutionKind.Should().Be(ProcessExecutionKind.Job);
+            process.SupportedExecutionModes.Should().HaveFlag(ProcessExecutionModes.Async);
+            process.SupportedExecutionModes.Should().HaveFlag(ProcessExecutionModes.Sync);
+            GPServerExecutionPolicy.IsSynchronous(process).Should().BeTrue();
+            executable.Should().Contain(process.ProcessId);
+        }
+    }
+
+    [UnitTest]
+    public void NativeProcesses_DeclareAnExplicitCapabilityAndStayOffTheManagedDispatcher()
+    {
+        var managedExecutable = DispatcherSupportedProcessIds();
+        var native = _catalog.ListProcesses()
+            .Where(process => RuntimeProfiles.Normalize(process.RuntimeProfile) == RuntimeProfiles.Native)
             .ToList();
 
-        classified.Should().OnlyHaveUniqueItems("no process may be claimed by two execution surfaces");
-        classified.Should().BeEquivalentTo(
-            advertised,
-            "every advertised process must be classified into exactly one execution surface, and every classified id must be advertised");
-    }
-
-    [UnitTest]
-    public void EveryJobExecutableProcess_HasADispatcherExecutor()
-    {
-        var executable = DispatcherSupportedProcessIds();
-
-        foreach (var processId in JobExecutableProcessIds)
+        native.Should().NotBeEmpty();
+        native.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
+        foreach (var process in native)
         {
-            _catalog.GetProcess(processId).Should().NotBeNull(
-                $"job-executable process '{processId}' must be advertised in the catalog");
-            executable.Should().Contain(
-                processId,
-                $"catalog advertises '{processId}' as job-executable, so it MUST have an executor in the dispatcher handler map");
-        }
-    }
-
-    [UnitTest]
-    public void EveryDispatcherExecutor_IsAClassifiedJobExecutableProcess()
-    {
-        // No orphan executors: everything the dispatcher routes must be an
-        // advertised, job-executable-classified process.
-        var executable = DispatcherSupportedProcessIds();
-
-        foreach (var processId in executable)
-        {
-            _catalog.GetProcess(processId).Should().NotBeNull(
-                $"dispatcher routes '{processId}', so it must be advertised in the catalog");
-            JobExecutableProcessIds.Should().Contain(
-                processId,
-                $"dispatcher routes '{processId}', so it must be classified job-executable");
-        }
-    }
-
-    [UnitTest]
-    public void ProtocolOnlyAndNativeProcesses_AreAbsentFromTheManagedDispatcher()
-    {
-        var executable = DispatcherSupportedProcessIds();
-
-        foreach (var processId in ProtocolOnlyProcessIds)
-        {
-            executable.Should().NotContain(
-                processId,
-                $"'{processId}' runs through the PostGIS SpatialAnalytics protocol (or another non-job surface), not the job dispatcher");
-        }
-
-        foreach (var processId in RoutedToNativeProcessIds)
-        {
-            executable.Should().NotContain(
-                processId,
-                $"'{processId}' is routed to the GDAL native worker and must not be executable in the GDAL-free managed baseline");
+            process.ConfigurationDependency.Should().NotBeNullOrWhiteSpace();
+            managedExecutable.Should().NotContain(process.ProcessId);
         }
     }
 
     [UnitTest]
     public void EveryAllowedValuesParameter_DeclaresChoicesThatDifferByMoreThanCase()
     {
-        // Protocol adapters match GP choice lists case-insensitively (Esri's GP
-        // framework does) and then normalize to the CATALOG spelling so the
-        // ordinally-comparing canonical validators still accept the value
-        // (honua-server#3053). Two choices differing only by case would make that
-        // normalization target ambiguous, so the catalog must never declare them.
         foreach (var definition in _catalog.ListProcesses())
         {
             foreach (var parameter in definition.Parameters)
@@ -318,27 +134,14 @@ public sealed class CatalogExecutableConformanceTests
 
                 allowed.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(
                     allowed.Count,
-                    $"'{definition.ProcessId}' parameter '{parameter.Name}' must not declare two choices differing only by case");
+                    $"'{definition.ProcessId}' parameter '{parameter.Name}' must not declare choices differing only by case");
             }
         }
     }
 
     [UnitTest]
-    public void EveryAllowedValuesChoice_AcceptedByTheGPServerAdapterInAnyCasing_SurvivesCanonicalPlanValidation()
+    public void EveryAllowedValuesChoice_AcceptedByGPServer_SurvivesCanonicalValidation()
     {
-        // The cross-layer agreement this pins (honua-server#3053): the GPServer
-        // adapter matches GP choice lists case-insensitively (Esri's GP framework
-        // does) and REWRITES the accepted value to its catalog spelling; canonical
-        // plan validation compares against exactly that spelling. So a choice the
-        // adapter accepted is always a choice the validator accepts.
-        //
-        // This is the whole-class guard, not an imagery.classify special case:
-        // before the fix the adapter passed the caller's spelling through, and
-        // ValidateImageryClassifySemantics — which compares ordinally, unlike the
-        // OrdinalIgnoreCase sets used for raster.spectral-index's 'index' and
-        // conversion.geometry-format's 'target' — rejected the very submission the
-        // adapter had accepted. Any future process declaring AllowedValues with an
-        // ordinally-compared canonical validator is covered here automatically.
         foreach (var definition in _catalog.ListProcesses())
         {
             foreach (var parameter in definition.Parameters)
@@ -350,35 +153,17 @@ public sealed class CatalogExecutableConformanceTests
 
                 foreach (var choice in allowed)
                 {
-                    string[] casings =
-                    [
-                        choice,
-                        choice.ToUpperInvariant(),
-                        choice.ToLowerInvariant()
-                    ];
-
-                    foreach (var casing in casings)
+                    foreach (var casing in new[] { choice, choice.ToUpperInvariant(), choice.ToLowerInvariant() })
                     {
                         var translated = GPServerParameterTranslation.TranslateInbound(
-                            new Dictionary<string, string>(StringComparer.Ordinal)
-                            {
-                                [parameter.Name] = casing
-                            },
+                            new Dictionary<string, string>(StringComparer.Ordinal) { [parameter.Name] = casing },
                             definition);
 
-                        translated[parameter.Name].Should().Be(
-                            choice,
-                            $"'{definition.ProcessId}' parameter '{parameter.Name}' must normalize '{casing}' to its catalog spelling");
-
+                        translated[parameter.Name].Should().Be(choice);
                         var plan = SingleStepPlan(definition.ProcessId, translated);
                         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
-
-                        // Other parameters are deliberately absent, so unrelated
-                        // MISSING_REQUIRED_PARAMETER violations are expected; only
-                        // this parameter's own field path must stay clean.
                         violations.Should().NotContain(
-                            v => v.FieldPath == $"steps[s1].inputs.{parameter.Name}",
-                            $"'{casing}' cleared the GPServer adapter for '{definition.ProcessId}', so canonical validation must accept it too");
+                            violation => violation.FieldPath == $"steps[s1].inputs.{parameter.Name}");
                     }
                 }
             }
@@ -402,81 +187,6 @@ public sealed class CatalogExecutableConformanceTests
             ]
         };
 
-    [UnitTest]
-    public void GeometryFamily_IsFullyJobExecutable_AndMatchesTheSyncExecutionPolicy()
-    {
-        // The geometry.* family is the canonical job-executable vector set: every
-        // geometry.* the catalog advertises must have an executor. This is the
-        // regression guard for the make-valid / difference gap specifically — both
-        // were advertised + flagged synchronous on trunk but had no executor.
-        var executable = DispatcherSupportedProcessIds();
-
-        var geometryIds = _catalog.ListProcesses()
-            .Where(p => p.Category == "geometry")
-            .Select(p => p.ProcessId)
-            .ToList();
-
-        geometryIds.Should().NotBeEmpty();
-        foreach (var processId in geometryIds)
-        {
-            executable.Should().Contain(
-                processId,
-                $"every advertised geometry.* process must be job-executable; '{processId}' is missing an executor");
-        }
-    }
-
-    [UnitTest]
-    public void NativeRoutedGdalProcesses_DeclareTheNativeRuntimeProfile_AndAreAbsentFromTheManagedDispatcher()
-    {
-        // The data-driven native-profile contract: every gdal.* / surface.* /
-        // raster.* process declares RuntimeProfile = native so the submit path
-        // stamps the spec native and routes the job to the out-of-process GDAL
-        // worker. The worker's own test project asserts the worker dispatcher
-        // routes these ids; here we lock in the catalog declaration AND that
-        // the lean dispatcher has no executor for them, so the routing decision
-        // and the GDAL-free baseline agree.
-        // Derive the native-profile assertion set from the classification source of
-        // truth so a newly added native-routed id (the #2141 / #2239 / #2240 raster &
-        // terrain GP packs) is covered automatically instead of drifting away from a
-        // hand-maintained list.
-        var nativeExecutableProcessIds = RoutedToNativeProcessIds;
-        var managedExecutable = DispatcherSupportedProcessIds();
-
-        foreach (var processId in nativeExecutableProcessIds)
-        {
-            var definition = _catalog.GetProcess(processId);
-            definition.Should().NotBeNull($"the catalog must advertise native process '{processId}'");
-            definition!.RuntimeProfile.Should().Be(
-                RuntimeProfiles.Native,
-                $"'{processId}' executes out-of-process in the GDAL worker, so it must declare the native runtime profile for the submit path to stamp the spec");
-            RoutedToNativeProcessIds.Should().Contain(processId);
-            managedExecutable.Should().NotContain(
-                processId,
-                $"'{processId}' is native-routed and must NOT have an executor in the GDAL-free managed dispatcher");
-        }
-    }
-
-    [UnitTest]
-    public void EveryManagedClassifiedProcess_DeclaresTheManagedRuntimeProfile()
-    {
-        // Symmetry guard: nothing outside the native-routed bucket may claim the
-        // native profile, so a misclassified native declaration cannot silently
-        // strand a job on the wrong worker.
-        var nativeRouted = RoutedToNativeProcessIds.ToHashSet(StringComparer.Ordinal);
-
-        foreach (var process in _catalog.ListProcesses())
-        {
-            if (nativeRouted.Contains(process.ProcessId))
-            {
-                continue;
-            }
-
-            RuntimeProfiles.Normalize(process.RuntimeProfile).Should().Be(
-                RuntimeProfiles.Managed,
-                $"'{process.ProcessId}' is not routed to the native worker, so it must run under the managed/default profile");
-        }
-    }
-
     private IReadOnlyCollection<string> DispatcherSupportedProcessIds()
     {
         var options = new GeoprocessingExecutorOptions
@@ -489,7 +199,7 @@ public sealed class CatalogExecutableConformanceTests
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
 
         IProcessExecutor[] executors =
-        {
+        [
             new GeometryBufferJobExecutor(monitor, NullLogger<GeometryBufferJobExecutor>.Instance),
             new GeometryClipJobExecutor(monitor, NullLogger<GeometryClipJobExecutor>.Instance),
             new GeometryIntersectJobExecutor(monitor, NullLogger<GeometryIntersectJobExecutor>.Instance),
@@ -554,12 +264,9 @@ public sealed class CatalogExecutableConformanceTests
                 monitor,
                 [],
                 NullLogger<ImageryInferenceJobExecutor>.Instance),
-        };
+        ];
 
-        // Remote DAG source connectors self-register as IProcessExecutor, so they flow
-        // through the same single route-table scan as every other per-process executor.
         var allExecutors = executors.Concat(BuildRemoteSourceExecutors(monitor)).ToArray();
-
         var dispatcher = new GeoprocessingDispatchJobExecutor(
             allExecutors,
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
