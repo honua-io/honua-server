@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -630,13 +631,12 @@ public static class OidcAuthenticationExtensions
                     // OIDC sign-in and not X-API-Key — so the operator scope authorizer knows to
                     // fail closed when a bearer token presents no recognized Honua MCP scope,
                     // while leaving every non-OAuth principal's grant decision untouched.
-                    if (context.Principal?.Identity is ClaimsIdentity bearerIdentity
-                        && !bearerIdentity.HasClaim(
-                            static claim => claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType))
+                    if (context.Principal?.Identity is ClaimsIdentity bearerIdentity)
                     {
-                        bearerIdentity.AddClaim(new Claim(
+                        CanonicalSecurityActor.StampFrameworkClaim(
+                            bearerIdentity,
                             OperatorScopeCatalog.ScopeGovernedClaimType,
-                            OperatorScopeCatalog.ScopeGovernedClaimValue));
+                            OperatorScopeCatalog.ScopeGovernedClaimValue);
                     }
 
                     // Scope governance proves only that the token is a validated OAuth access
