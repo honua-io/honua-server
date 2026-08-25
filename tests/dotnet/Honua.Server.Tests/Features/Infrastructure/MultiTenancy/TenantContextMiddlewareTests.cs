@@ -179,6 +179,27 @@ public class TenantContextMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
+    public async Task BearerWithoutTenantClaim_TenantBoundAdminMetadataIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/metadata/layers/7/fields");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
     public async Task OperatorBearerWithoutTenantClaim_DoesNotInheritAnonymousDefault()
     {
@@ -378,6 +399,9 @@ public class TenantContextMiddlewareTests
         });
 
         app.MapGet("/api/v1/admin/oidc/providers", (ITenantContext tenant) =>
+            Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
+
+        app.MapGet("/api/v1/admin/metadata/layers/{layerId:int}/fields", (ITenantContext tenant) =>
             Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
 
         await app.StartAsync();
