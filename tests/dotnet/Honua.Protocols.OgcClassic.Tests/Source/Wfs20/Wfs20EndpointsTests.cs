@@ -75,6 +75,92 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetCapabilities_AdvertisedCrsAliases_AreAcceptedByGetFeature()
+    {
+        var capabilitiesResponse = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+        var capabilitiesXml = await capabilitiesResponse.Content.ReadAsStringAsync();
+        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.OK, capabilitiesXml);
+
+        var capabilities = XDocument.Parse(capabilitiesXml);
+        var testLayer = capabilities.Descendants()
+            .First(element =>
+                element.Name.LocalName == "FeatureType" &&
+                element.Elements().Any(child =>
+                    child.Name.LocalName == "Name" && child.Value.EndsWith("test_layer", StringComparison.Ordinal)));
+        var advertisedCrs = testLayer.Elements()
+            .Where(element => element.Name.LocalName is "DefaultCRS" or "OtherCRS")
+            .Select(element => element.Value)
+            .ToArray();
+
+        advertisedCrs.Should().Contain("CRS:84");
+        advertisedCrs.Should().Contain("urn:ogc:def:crs:OGC:1.3:CRS84");
+        advertisedCrs.Should().Contain("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        foreach (var crs in advertisedCrs)
+        {
+            var getFeatureResponse = await _fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME={Uri.EscapeDataString(crs)}");
+            var responseBody = await getFeatureResponse.Content.ReadAsStringAsync();
+            getFeatureResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"advertised CRS '{crs}' was rejected: {responseBody}");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
+    public async Task Wfs_DescribeFeatureType_UsesConcreteTypesForEveryScalarField()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IMetadataV2GraphProvider>(BuildTypedSchemaMetadataProvider());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=typed_schema_layer");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+            var schema = XDocument.Parse(content);
+            var fieldTypes = schema.Descendants()
+                .Where(element => element.Name.LocalName == "element")
+                .Where(element => element.Attribute("name") is not null && element.Attribute("type") is not null)
+                .ToDictionary(
+                    element => element.Attribute("name")!.Value,
+                    element => element.Attribute("type")!.Value,
+                    StringComparer.Ordinal);
+
+            fieldTypes.Values.Should().NotContain("xsd:anyType");
+            fieldTypes["unknown_value"].Should().Be("xsd:string");
+            fieldTypes["name"].Should().Be("xsd:string");
+            fieldTypes["count"].Should().Be("xsd:int");
+            fieldTypes["objectid"].Should().Be("xsd:long");
+            fieldTypes["ratio"].Should().Be("xsd:double");
+            fieldTypes["score"].Should().Be("xsd:float");
+            fieldTypes["active"].Should().Be("xsd:boolean");
+            fieldTypes["created_at"].Should().Be("xsd:dateTime");
+            fieldTypes["event_date"].Should().Be("xsd:date");
+            fieldTypes["event_time"].Should().Be("xsd:time");
+            fieldTypes["payload"].Should().Be("xsd:string");
+            fieldTypes["content"].Should().Be("xsd:base64Binary");
+            fieldTypes["uid"].Should().Be("xsd:string");
+            fieldTypes["shape"].Should().Be("gml:PointPropertyType");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_AdvertisesStoredQueryManagementWithoutVersioningConformance()
@@ -265,6 +351,64 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
                 layerIndex: SeededPointStorageLayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: GeometryFromTypeTypeName,
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .Build();
+
+        return new TestMetadataV2GraphProvider(graph);
+    }
+
+    private static TestMetadataV2GraphProvider BuildTypedSchemaMetadataProvider()
+    {
+        const string ResourceId = "res-typed-schema-layer";
+        const string StorageBindingId = "binding-typed-schema-layer";
+        const string ServiceId = "svc-typed-schema-wfs";
+
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                ResourceId,
+                "Typed Schema Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                fields:
+                [
+                    new MetadataV2Field { Name = "unknown_value", Type = MetadataV2FieldType.Unknown },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                    new MetadataV2Field { Name = "count", Type = MetadataV2FieldType.Integer },
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
+                    new MetadataV2Field { Name = "ratio", Type = MetadataV2FieldType.Double },
+                    new MetadataV2Field { Name = "score", Type = MetadataV2FieldType.Float },
+                    new MetadataV2Field { Name = "active", Type = MetadataV2FieldType.Boolean },
+                    new MetadataV2Field { Name = "created_at", Type = MetadataV2FieldType.DateTime },
+                    new MetadataV2Field { Name = "event_date", Type = MetadataV2FieldType.Date },
+                    new MetadataV2Field { Name = "event_time", Type = MetadataV2FieldType.Time },
+                    new MetadataV2Field { Name = "payload", Type = MetadataV2FieldType.Json },
+                    new MetadataV2Field { Name = "content", Type = MetadataV2FieldType.Binary },
+                    new MetadataV2Field { Name = "uid", Type = MetadataV2FieldType.Uuid },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry }
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SupportedCrs = [MetadataV2SpatialReference.Wgs84]
+                })
+            .AddStorageBinding(
+                StorageBindingId,
+                ResourceId,
+                "features",
+                storageLayerId: WebAppFixture.TestLayerId)
+            .AddService(
+                ServiceId,
+                "typed_schema",
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddPublication(
+                "pub-typed-schema-wfs",
+                ServiceId,
+                ResourceId,
+                layerIndex: WebAppFixture.TestLayerId,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: "typed_schema_layer",
                 publicationType: MetadataV2PublicationType.WfsFeatureType)
             .Build();
 
