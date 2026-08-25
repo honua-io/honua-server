@@ -161,8 +161,10 @@ public sealed class PublishedOperationToolTests
             arguments: null,
             CancellationToken.None);
 
-        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
-        result.StructuredContent.Value.GetProperty("deterministic").GetBoolean().Should().BeFalse();
+        result.StructuredContent.Should().NotBeNull();
+        var structuredContent = result.StructuredContent!.Value;
+        structuredContent.GetProperty("status").GetString().Should().Be("Completed");
+        structuredContent.GetProperty("deterministic").GetBoolean().Should().BeFalse();
         invoker.SubmitCount.Should().Be(1);
     }
 

@@ -8,9 +8,12 @@ using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -24,6 +27,14 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Protocol(TestProtocols.Admin)]
 public sealed class OperationsEndpointsTests
 {
+    private const string AdminPassword = "operations-admin-bootstrap-key";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("GET /api/v1/operations")]
@@ -109,6 +120,72 @@ public sealed class OperationsEndpointsTests
 
             await publishing.Received(1).PublishLayerAsync(
                 Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task SubmitOperation_AdminReadKey_UsesDescriptorSemanticMethod()
+    {
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var bootstrap = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var createResponse = await bootstrap.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest
+                {
+                    Name = $"operation-reader-{Guid.NewGuid():N}",
+                    Permissions = ["admin:read"],
+                },
+                JsonOptions);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var created = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+                await createResponse.Content.ReadAsStringAsync(),
+                JsonOptions);
+            created.Should().NotBeNull();
+            created!.Data.Should().NotBeNull();
+
+            using var reader = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", created.Data.Key));
+
+            var ordinaryAdminMutation = await reader.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest
+                {
+                    Name = $"must-not-create-{Guid.NewGuid():N}",
+                    Permissions = ["admin:*"],
+                },
+                JsonOptions);
+            ordinaryAdminMutation.StatusCode.Should().Be(
+                HttpStatusCode.Forbidden,
+                "the fixture key must carry its admin:read claim into authorization");
+
+            var readOnly = await reader.PostAsJsonAsync(
+                "/api/v1/operations/admin.server.status/submit",
+                new { parameters = new Dictionary<string, string>() });
+            readOnly.StatusCode.Should().Be(
+                HttpStatusCode.OK,
+                "the HTTP transport must authorize the read-only descriptor with the same semantic method as MCP");
+
+            var mutating = await reader.PostAsJsonAsync(
+                "/api/v1/operations/service.publish/submit",
+                new { parameters = new Dictionary<string, string>() });
+            mutating.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
         finally
         {
