@@ -18,4 +18,15 @@ public static class ProcessExecutionEligibility
         return definition.ExecutionKind == ProcessExecutionKind.Job
             && (definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0;
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when a process may be submitted by the trusted
+    /// workflow orchestration runtime.
+    /// </summary>
+    public static bool IsWorkflowCallable(ProcessDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        return definition.ExecutionKind == ProcessExecutionKind.WorkflowOnly
+            && (definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0;
+    }
 }

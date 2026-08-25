@@ -3,9 +3,11 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -115,5 +117,31 @@ public sealed class GeoEtlCatalogReconciliationTests
         protocolOnly.SupportsSchedule.Should().BeFalse();
         protocolOnly.SupportsProcessEndpoint.Should().BeFalse();
         protocolOnly.Executable.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task NodeProvider_DoesNotAdvertiseWorkflowOnlyProcessWithoutAsyncMode()
+    {
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.sync-workflow",
+            Title = "Sync workflow process",
+            Description = "Test-only workflow process without async support.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.WorkflowOnly,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.ListProcesses().Returns([definition]);
+        var provider = new ProcessCatalogWorkflowNodeProvider(catalog);
+
+        var node = (await provider.ListNodesAsync()).Should().ContainSingle().Subject;
+
+        node.CapabilityFlags.SupportsJob.Should().BeFalse();
+        node.CapabilityFlags.SupportsSchedule.Should().BeFalse();
+        node.CapabilityFlags.SupportsProcessEndpoint.Should().BeFalse();
+        node.CapabilityFlags.Executable.Should().BeFalse();
     }
 }

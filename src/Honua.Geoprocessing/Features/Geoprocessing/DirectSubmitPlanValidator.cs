@@ -68,7 +68,9 @@ internal static class DirectSubmitPlanValidator
                     {
                         ProcessExecutionKind.Job => "ASYNC_EXECUTION_UNSUPPORTED",
                         ProcessExecutionKind.ProtocolOnly => "SYNC_ONLY_PROCESS",
-                        ProcessExecutionKind.WorkflowOnly => "WORKFLOW_ONLY_PROCESS",
+                        ProcessExecutionKind.WorkflowOnly when
+                            ProcessExecutionEligibility.IsWorkflowCallable(definition) => "WORKFLOW_ONLY_PROCESS",
+                        ProcessExecutionKind.WorkflowOnly => "ASYNC_EXECUTION_UNSUPPORTED",
                         ProcessExecutionKind.Unavailable => "PROCESS_UNAVAILABLE",
                         _ => "UNCLASSIFIED_PROCESS"
                     };

@@ -55,7 +55,7 @@ internal sealed class ProcessCatalogWorkflowNodeProvider(IProcessCatalog process
     private static WorkflowNodeDefinition ToNodeDefinition(ProcessDefinition process)
     {
         var jobCallable = ProcessExecutionEligibility.IsJobCallable(process);
-        var workflowCallable = process.ExecutionKind == ProcessExecutionKind.WorkflowOnly;
+        var workflowCallable = ProcessExecutionEligibility.IsWorkflowCallable(process);
         var executable = jobCallable || workflowCallable;
 
         var parameterSchemas = process.Parameters

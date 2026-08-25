@@ -602,6 +602,60 @@ public sealed class GeoprocessingJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
+    public async Task SubmitJobWithSecurityContext_WorkflowOnlyWithoutAsyncMode_IsRejected()
+    {
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.sync-workflow",
+            Title = "Sync workflow process",
+            Description = "Test-only workflow process without async support.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.WorkflowOnly,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess(definition.ProcessId).Returns(definition);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            catalog,
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-sync-workflow",
+            IntentId = "intent-sync-workflow",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "sync-workflow",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var act = () => sut.SubmitJobWithSecurityContextAsync(
+            plan,
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
+            CreateSubmitterSecurityContext());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*ASYNC_EXECUTION_UNSUPPORTED*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_OversizedInlineRaster_RejectsBeforeDurablePersistence()
     {
