@@ -3,8 +3,8 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.HealthCheck;
 using Honua.Infrastructure.Helpers;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;

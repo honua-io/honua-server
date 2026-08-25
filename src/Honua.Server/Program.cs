@@ -40,6 +40,7 @@ using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Server.Features.Identity;
 using Honua.Server.Features.Identity.Saml;
 using Honua.Server.Features.Identity.Scim;
@@ -632,7 +633,7 @@ builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupCon
 builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
-builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
+builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
