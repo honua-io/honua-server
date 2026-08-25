@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 
@@ -143,9 +144,44 @@ public sealed class ProcessConditionalInputProbeTests
             violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
     }
 
+    [UnitTest]
+    public void FindAdmissibilityViolations_AsyncUnsupportedJob_IsNotJobExecutable()
+    {
+        var definition = _catalog.GetProcess("geometry.buffer")! with
+        {
+            ProcessId = "test.sync-only-job",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var probe = new ProcessConditionalInputProbe(new SingleProcessCatalog(definition));
+
+        var violations = probe.FindAdmissibilityViolations(
+            definition.ProcessId,
+            definition.Parameters.Select(parameter => parameter.Name).ToArray());
+
+        violations.Should().Contain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable
+            && violation.Message.Contains("cannot be submitted", StringComparison.Ordinal));
+    }
+
     // -----------------------------------------------------------------------
     // A fabricated discriminator branch is not an unavoidable violation
     // -----------------------------------------------------------------------
+
+    private sealed class SingleProcessCatalog(ProcessDefinition definition) : IProcessCatalog
+    {
+        public ProcessDefinition? GetProcess(string processId)
+            => string.Equals(processId, definition.ProcessId, StringComparison.Ordinal)
+                ? definition
+                : null;
+
+        public IReadOnlyList<ProcessDefinition> ListProcesses() => [definition];
+
+        public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category)
+            => string.Equals(category, definition.Category, StringComparison.Ordinal)
+                ? [definition]
+                : [];
+    }
 
     [UnitTest]
     public void FindAdmissibilityViolations_MappedDiscriminatorBranch_IsNotReported()

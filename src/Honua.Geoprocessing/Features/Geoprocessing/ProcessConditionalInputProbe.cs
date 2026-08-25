@@ -24,6 +24,8 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 
     private const string UnclassifiedProcessCode = "UNCLASSIFIED_PROCESS";
 
+    private const string AsyncExecutionUnsupportedCode = "ASYNC_EXECUTION_UNSUPPORTED";
+
     /// <summary>Upper bound on probed value assignments, keeping the cross-product cheap.</summary>
     private const int MaxProbeCombinations = 32;
 
@@ -101,7 +103,8 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             if (violation.Code is SyncOnlyProcessCode
                 or WorkflowOnlyProcessCode
                 or ProcessUnavailableCode
-                or UnclassifiedProcessCode)
+                or UnclassifiedProcessCode
+                or AsyncExecutionUnsupportedCode)
             {
                 results.Add(new ProcessAdmissibilityViolation(
                     ProcessAdmissibilityViolationKind.NotJobExecutable, violation.Message));

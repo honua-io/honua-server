@@ -481,8 +481,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_ProtocolOnlyTask_Returns400WithCapabilityMessage()
     {
-        // conversion.geometry-format is protocol-only: it remains discoverable
-        // through GPServer but is not a synchronous job-capable operation.
+        // conversion.geometry-format is protocol-only and cannot use either GPServer
+        // execution route, so the response must not prescribe submitJob as a remedy.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -496,8 +496,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("submitJob");
-        body.Should().Contain("asynchronous");
+        body.Should().Contain("ProtocolOnly");
+        body.Should().NotContain("submitJob");
     }
 
     [IntegrationTest]
@@ -506,16 +506,16 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task TaskInfo_ParameterWithAllowedValues_PopulatesChoiceList()
     {
         var response = await _client.GetAsync(
-            $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format");
+            $"/rest/services/{ServiceId}/GPServer/analytics.cluster-managed");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var target = doc.RootElement.GetProperty("parameters").EnumerateArray()
-            .Single(p => p.GetProperty("name").GetString() == "target");
-        target.TryGetProperty("choiceList", out var choices).Should().BeTrue(
-            "target carries an enum constraint and must surface it as choiceList");
+        var algorithm = doc.RootElement.GetProperty("parameters").EnumerateArray()
+            .Single(p => p.GetProperty("name").GetString() == "algorithm");
+        algorithm.TryGetProperty("choiceList", out var choices).Should().BeTrue(
+            "algorithm carries an enum constraint and must surface it as choiceList");
         choices.EnumerateArray().Select(c => c.GetString()).Should()
-            .BeEquivalentTo(["wkt", "geojson", "wkb", "ewkt"]);
+            .BeEquivalentTo(["dbscan", "kmeans", "k-means"]);
     }
 
     // -----------------------------------------------------------------------

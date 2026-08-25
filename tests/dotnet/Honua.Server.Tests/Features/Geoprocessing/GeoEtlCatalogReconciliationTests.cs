@@ -88,4 +88,32 @@ public sealed class GeoEtlCatalogReconciliationTests
                 $"process '{processId}' must surface as a workflow node");
         }
     }
+
+    [UnitTest]
+    public async Task NodeProvider_ProjectsExecutionClassificationIntoPublicationFlags()
+    {
+        IProcessCatalog catalog = new BuiltInProcessCatalog();
+        var provider = new ProcessCatalogWorkflowNodeProvider(catalog);
+
+        var nodes = (await provider.ListNodesAsync())
+            .ToDictionary(node => node.ProcessId!, StringComparer.Ordinal);
+
+        var job = nodes["geometry.buffer"].CapabilityFlags;
+        job.SupportsJob.Should().BeTrue();
+        job.SupportsSchedule.Should().BeTrue();
+        job.SupportsProcessEndpoint.Should().BeTrue();
+        job.Executable.Should().BeTrue();
+
+        var workflowOnly = nodes["source.geojson"].CapabilityFlags;
+        workflowOnly.SupportsJob.Should().BeFalse();
+        workflowOnly.SupportsSchedule.Should().BeTrue();
+        workflowOnly.SupportsProcessEndpoint.Should().BeFalse();
+        workflowOnly.Executable.Should().BeTrue();
+
+        var protocolOnly = nodes["conversion.geometry-format"].CapabilityFlags;
+        protocolOnly.SupportsJob.Should().BeFalse();
+        protocolOnly.SupportsSchedule.Should().BeFalse();
+        protocolOnly.SupportsProcessEndpoint.Should().BeFalse();
+        protocolOnly.Executable.Should().BeFalse();
+    }
 }

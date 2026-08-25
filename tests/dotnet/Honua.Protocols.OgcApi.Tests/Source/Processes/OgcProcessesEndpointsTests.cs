@@ -812,7 +812,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
                 "/ogc/processes/processes/honua-geoprocessing/execution");
             request.Headers.Add("Prefer", "respond-async");
             request.Content = new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess","processId":"data-management.delete-features","inputs":{"layerId":"0","where":"OBJECTID > 0"}}]}}}""",
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess","processId":"import.dataset","inputs":{"connection":"primary","sourcePath":"/staging/parcels.geojson","fileName":"parcels.geojson","tableName":"imported_parcels","layerName":"Parcels"}}]}}}""",
                 Encoding.UTF8, "application/json");
 
             var response = await client.SendAsync(request);

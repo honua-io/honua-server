@@ -1595,14 +1595,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         var (violations, _) = DirectSubmitPlanValidator.Evaluate(plan, _processCatalog);
         var first = violations.FirstOrDefault(violation =>
-            !trustedWorkflowSubmission
-            || !string.Equals(violation.Code, "WORKFLOW_ONLY_PROCESS", StringComparison.Ordinal));
+            IsExecutionCapabilityViolation(violation.Code)
+            && (!trustedWorkflowSubmission
+                || !string.Equals(violation.Code, "WORKFLOW_ONLY_PROCESS", StringComparison.Ordinal)));
         if (first is not null)
         {
             throw new GeoprocessingValidationException(
                 $"Plan cannot be submitted for execution: {first.Code} — {first.Message}");
         }
     }
+
+    private static bool IsExecutionCapabilityViolation(string code)
+        => code is "SYNC_ONLY_PROCESS"
+            or "WORKFLOW_ONLY_PROCESS"
+            or "PROCESS_UNAVAILABLE"
+            or "UNCLASSIFIED_PROCESS"
+            or "ASYNC_EXECUTION_UNSUPPORTED";
 
     private static bool IsTrustedWorkflowSubmission(
         IReadOnlyDictionary<string, string>? protocolMetadata,

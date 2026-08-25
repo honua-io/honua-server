@@ -22,8 +22,19 @@ public sealed class WorkflowPackageServiceValidationTests
     {
         WorkflowPackageService.IsDirectSubmitOnlyValidation(
                 WorkflowOnlyFailure,
-                WorkflowPublicationTarget.Schedule)
+                WorkflowPublicationTarget.Schedule,
+                orchestrationAvailable: true)
             .Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDirectSubmitOnlyValidation_WorkflowOnlyScheduleWithoutOrchestration_RetainsFailure()
+    {
+        WorkflowPackageService.IsDirectSubmitOnlyValidation(
+                WorkflowOnlyFailure,
+                WorkflowPublicationTarget.Schedule,
+                orchestrationAvailable: false)
+            .Should().BeFalse();
     }
 
     [Theory]
@@ -32,7 +43,20 @@ public sealed class WorkflowPackageServiceValidationTests
     public void IsDirectSubmitOnlyValidation_WorkflowOnlyDirectTarget_RetainsFailure(
         WorkflowPublicationTarget target)
     {
-        WorkflowPackageService.IsDirectSubmitOnlyValidation(WorkflowOnlyFailure, target)
+        WorkflowPackageService.IsDirectSubmitOnlyValidation(
+                WorkflowOnlyFailure,
+                target,
+                orchestrationAvailable: true)
             .Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsDirectSubmitOnlyValidation_WorkflowOnlyPackageValidation_SuppressesFailure()
+    {
+        WorkflowPackageService.IsDirectSubmitOnlyValidation(
+                WorkflowOnlyFailure,
+                target: null,
+                orchestrationAvailable: false)
+            .Should().BeTrue();
     }
 }

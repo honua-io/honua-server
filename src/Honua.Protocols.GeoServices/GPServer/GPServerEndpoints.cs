@@ -435,6 +435,19 @@ internal static class GPServerEndpoints
                     "Task not found");
             }
 
+            if (!GPServerExecutionPolicy.IsJobCallable(definition))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Task '{definition.ProcessId}' cannot execute through GPServer because it is "
+                        + $"classified as {definition.ExecutionKind} with modes "
+                        + $"'{definition.SupportedExecutionModes}'. "
+                        + (definition.ExecutionCapabilityReason
+                            ?? "The catalog does not declare an asynchronous job capability.")),
+                    "Task is not job-callable");
+            }
+
             // Respect the task's ExecutionType: only sync-eligible tasks may run
             // inline. Async-only tasks get a clear, correct capability message
             // pointing at submitJob instead of a faked synchronous result.

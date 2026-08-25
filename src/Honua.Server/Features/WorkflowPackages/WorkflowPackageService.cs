@@ -539,7 +539,10 @@ internal sealed class WorkflowPackageService(
                 warnings.AddRange(planValidation.Warnings);
                 failures.AddRange(planValidation.Violations
                     .Where(violation => !IsDataBoundInputTypeValidation(violation, dataBoundInputFieldPaths))
-                    .Where(violation => !IsDirectSubmitOnlyValidation(violation, target))
+                    .Where(violation => !IsDirectSubmitOnlyValidation(
+                        violation,
+                        target,
+                        orchestrationEngine is not null))
                     .Select(violation => new WorkflowPackageValidationFailure
                     {
                         Code = violation.Code,
@@ -569,8 +572,10 @@ internal sealed class WorkflowPackageService(
     /// <summary>
     /// A workflow-package graph is compiled into a single multi-step <see cref="AnalysisPlan"/>
     /// so <see cref="IGeoprocessingJobService.ValidatePlan"/> can run its catalog/parameter checks.
-    /// Schedule publications and package validation execute each node through the trusted workflow
-    /// boundary, so their workflow-only diagnostic is suppressed. Job and process-endpoint
+    /// Package validation and schedule publications with an available orchestration engine execute
+    /// each node through the trusted workflow boundary, so their workflow-only diagnostic is
+    /// suppressed. A schedule on a host without orchestration falls back to ordinary job submission
+    /// and must retain the diagnostic. Job and process-endpoint
     /// publications later submit the compiled plan as an ordinary job, so that diagnostic remains
     /// blocking for those direct targets. The other structural direct-submit diagnostics describe
     /// limitations of the compiled validation plan rather than the workflow graph and remain
@@ -579,11 +584,13 @@ internal sealed class WorkflowPackageService(
     /// </summary>
     internal static bool IsDirectSubmitOnlyValidation(
         GeoprocessingValidationFailure violation,
-        WorkflowPublicationTarget? target)
+        WorkflowPublicationTarget? target,
+        bool orchestrationAvailable)
         => violation.Code is "MULTI_STEP_NOT_EXECUTABLE" or "GEOPROCESS_STEP_NOT_FIRST"
             or "NO_EXECUTABLE_STEP"
             || violation.Code == "WORKFLOW_ONLY_PROCESS"
-            && target is null or WorkflowPublicationTarget.Schedule;
+            && (target is null
+                || target == WorkflowPublicationTarget.Schedule && orchestrationAvailable);
 
     private static void ValidateTargetEligibility(
         WorkflowGraph graph,
