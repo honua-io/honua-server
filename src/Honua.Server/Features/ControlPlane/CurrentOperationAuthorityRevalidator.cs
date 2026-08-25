@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -24,7 +25,8 @@ internal sealed class CurrentOperationAuthorityRevalidator(
     IGuardrailLadder ladder,
     IPrincipalMembershipSource membershipSource,
     IAdminApiKeyStore apiKeyStore,
-    IOptions<ApiKeyAuthenticationOptions> apiKeyOptions) : IOperationAuthorityRevalidator
+    IOptions<ApiKeyAuthenticationOptions> apiKeyOptions,
+    IConnectionSecretResolver? secretResolver = null) : IOperationAuthorityRevalidator
 {
     private const string ServiceScheme = "Service";
     private const string TrustedServiceIssuer = "honua-server";
@@ -122,14 +124,19 @@ internal sealed class CurrentOperationAuthorityRevalidator(
         {
             if (!Guid.TryParse(authority.Actor, out var apiKeyId))
             {
-                if (IsFrameworkAdminAuthority(authority) && IsFrameworkAdminCurrentlyAvailable())
+                if (!IsFrameworkAdminAuthority(authority))
+                {
+                    return CurrentAuthority.Denied("the retained API-key identity cannot be resolved");
+                }
+
+                if (await IsFrameworkAdminCurrentlyAvailableAsync(cancellationToken).ConfigureAwait(false))
                 {
                     return CurrentAuthority.Allowed(
                         IntersectCeiling(FrameworkAdminRoles, authority.RoleCeiling),
                         []);
                 }
 
-                return CurrentAuthority.Denied("the retained API-key identity cannot be resolved");
+                return CurrentAuthority.Denied("the bootstrap admin credential is unavailable");
             }
 
             var apiKey = await apiKeyStore.GetAsync(apiKeyId, cancellationToken).ConfigureAwait(false);
@@ -184,9 +191,27 @@ internal sealed class CurrentOperationAuthorityRevalidator(
             string.Equals(authority.Roles[0], FrameworkAdminRoles[0], StringComparison.OrdinalIgnoreCase) &&
             string.Equals(authority.RoleCeiling[0], FrameworkAdminRoles[0], StringComparison.OrdinalIgnoreCase);
 
-    private bool IsFrameworkAdminCurrentlyAvailable()
-        => !string.IsNullOrWhiteSpace(_apiKeyOptions.AdminPassword) ||
-            IsDevelopmentBypassActive(_apiKeyOptions);
+    private async Task<bool> IsFrameworkAdminCurrentlyAvailableAsync(
+        CancellationToken cancellationToken)
+    {
+        if (IsDevelopmentBypassActive(_apiKeyOptions))
+        {
+            return true;
+        }
+
+        try
+        {
+            var currentPassword = await AdminPasswordResolver.ResolveAsync(
+                _apiKeyOptions,
+                secretResolver,
+                cancellationToken).ConfigureAwait(false);
+            return !string.IsNullOrWhiteSpace(currentPassword);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return false;
+        }
+    }
 
     private static bool IsDevelopmentBypassActive(ApiKeyAuthenticationOptions options)
         => options.IsTestMode &&
