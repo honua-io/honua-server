@@ -182,6 +182,7 @@ internal static class DeployControlEndpoints
 
         return new DeployPreflightPlatformRelease
         {
+            EvidencePosture = EvidencePostureProjection.ForPlatformRelease(DateTimeOffset.UtcNow),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned,
@@ -369,9 +370,18 @@ internal static class DeployControlEndpoints
                 .ListDeployOperationsAsync(status, kind, page, pageSize, cancellationToken)
                 .ConfigureAwait(false);
 
+            var generatedAt = DateTimeOffset.UtcNow;
+            var items = result.Items.Select(MapOperationResponse).ToArray();
             var response = new DeployOperationListResponse
             {
-                Items = result.Items.Select(MapOperationResponse).ToArray(),
+                EvidencePosture = EvidencePostureProjection.ForDeployOperations(
+                    generatedAt,
+                    result.Page,
+                    result.PageSize,
+                    items.Length,
+                    result.HasMore,
+                    items.Select(item => item.UpdatedAt).ToArray()),
+                Items = items,
                 Page = result.Page,
                 PageSize = result.PageSize,
                 TotalCount = result.TotalCount,

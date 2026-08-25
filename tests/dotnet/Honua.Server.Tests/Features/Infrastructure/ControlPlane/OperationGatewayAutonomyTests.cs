@@ -55,7 +55,8 @@ public sealed class OperationGatewayAutonomyTests
             auditLog,
             CreateOpsNotifier(outbox));
 
-        var result = await sut.RouteAsync(Request());
+        var request = Request();
+        var result = await sut.RouteAsync(request);
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Executed);
         result.ExecutionOperationId.Should().Be(RecordingExecutor.OperationId);
@@ -89,7 +90,8 @@ public sealed class OperationGatewayAutonomyTests
             });
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
 
-        var result = await sut.RouteAsync(Request());
+        var request = Request();
+        var result = await sut.RouteAsync(request);
 
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         result.ProposalId.Should().NotBeNullOrWhiteSpace();
@@ -104,6 +106,8 @@ public sealed class OperationGatewayAutonomyTests
         proposal.AutonomyMetadata.Rule.Should().Be(Rule);
         proposal.AutonomyMetadata.ActionDiscriminator.Should().Be(RedriveAction);
         proposal.AutonomyMetadata.EvidenceRefs.Should().Equal("test");
+        proposal.AutonomyMetadata.RequiredEvidenceSourceIds.Should().Equal(EvidenceSourceIds.AlertDispatch);
+        proposal.AutonomyMetadata.EvidencePosture.Should().BeEquivalentTo(request.AutonomyContext!.EvidencePosture);
         proposal.Plan.ExecutionPayload.Should().NotBeNull();
 
         var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
@@ -438,8 +442,25 @@ public sealed class OperationGatewayAutonomyTests
                 ActionMarkedAutoSafe = true,
                 BlastRadius = 1,
                 EvidenceRefs = ["test"],
+                EvidencePosture = CompleteEvidence(),
+                RequiredEvidenceSourceIds = [EvidenceSourceIds.AlertDispatch],
             },
         };
+
+    private static EvidencePostureEnvelope CompleteEvidence()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return EvidencePosture.Envelope(now,
+        [
+            EvidencePosture.Source(
+                EvidenceSourceIds.AlertDispatch,
+                EvidenceBackendKinds.DurableStore,
+                "alert-dispatch-store",
+                now,
+                now,
+                evaluatedAt: now),
+        ]);
+    }
 
     private static GuardrailDecision RequiresApprovalDecision()
         => new(

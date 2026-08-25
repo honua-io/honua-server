@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Domain;
 
@@ -153,6 +154,12 @@ public sealed record OperationProposalAutonomyMetadata
 
     /// <summary>Gets bounded supporting evidence references.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = Array.Empty<string>();
+
+    /// <summary>Gets the exact bounded source posture used by the finding decision.</summary>
+    public EvidencePostureEnvelope? EvidencePosture { get; init; }
+
+    /// <summary>Gets the source identifiers that must remain actionable during replay.</summary>
+    public IReadOnlyList<string> RequiredEvidenceSourceIds { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>

@@ -105,8 +105,9 @@ internal static class McpPlatformOpsSchemas
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["releaseDeclared", "isCoVersioned", "serving", "execution", "skewedIds"],
+          "required": ["evidencePosture", "releaseDeclared", "isCoVersioned", "serving", "execution", "skewedIds"],
           "properties": {
+            "evidencePosture": { "type": "object", "additionalProperties": true },
             "releaseVersion": { "type": ["string", "null"] },
             "releaseDeclared": { "type": "boolean" },
             "isCoVersioned": { "type": "boolean" },
@@ -131,8 +132,9 @@ internal static class McpPlatformOpsSchemas
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["items", "page", "pageSize", "totalCount", "hasMore"],
+          "required": ["evidencePosture", "items", "page", "pageSize", "totalCount", "hasMore"],
           "properties": {
+            "evidencePosture": { "type": "object", "additionalProperties": true },
             "items": {
               "type": "array",
               "items": { "type": "object", "additionalProperties": true }

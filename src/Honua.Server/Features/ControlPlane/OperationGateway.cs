@@ -554,6 +554,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                 ActionMarkedAutoSafe = proposal.AutonomyMetadata.ActionMarkedAutoSafe,
                 BlastRadius = proposal.AutonomyMetadata.BlastRadius,
                 EvidenceRefs = proposal.AutonomyMetadata.EvidenceRefs,
+                EvidencePosture = proposal.AutonomyMetadata.EvidencePosture,
+                RequiredEvidenceSourceIds = proposal.AutonomyMetadata.RequiredEvidenceSourceIds,
             },
     };
 
@@ -1092,6 +1094,12 @@ internal sealed partial class OperationGateway : IOperationGateway
             BlastRadius = Math.Max(1, context.BlastRadius),
             EvidenceRefs = context.EvidenceRefs
                 .Where(static value => IsBoundedIdentifier(value, 256))
+                .Take(16)
+                .ToArray(),
+            EvidencePosture = context.EvidencePosture,
+            RequiredEvidenceSourceIds = context.RequiredEvidenceSourceIds
+                .Where(EvidencePosture.IsKnownSourceId)
+                .Distinct(StringComparer.Ordinal)
                 .Take(16)
                 .ToArray(),
         };

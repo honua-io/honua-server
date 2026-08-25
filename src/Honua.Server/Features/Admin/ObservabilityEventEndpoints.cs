@@ -45,13 +45,30 @@ internal static class ObservabilityEventEndpoints
         }
 
         var page = await feed.ListAsync(filter, cancellationToken).ConfigureAwait(false);
+        var generatedAt = DateTimeOffset.UtcNow;
+        var failedSources = page.SourceErrors?.Keys
+            .Select(source => source.ToString().ToLowerInvariant())
+            .ToArray() ?? [];
+        var includedSources = page.Items
+            .Select(item => item.Kind.ToString().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         var response = new OperateEventPageResponse
         {
             Items = page.Items.Select(OperateEventResponseMapper.Map).ToArray(),
             PartialResult = page.PartialResult,
             SourceErrors = page.SourceErrors?.ToDictionary(
                 pair => pair.Key.ToString().ToLowerInvariant(),
-                pair => pair.Value)
+                pair => pair.Value),
+            EvidencePosture = EvidencePostureProjection.ForOperateEvents(
+                generatedAt,
+                filter.From,
+                filter.To,
+                filter.PageSize,
+                page.Items.Select(item => item.OccurredAt).ToArray(),
+                page.PartialResult,
+                includedSources,
+                failedSources),
         };
 
         return Results.Json(response, ObservabilityJsonContext.Default.OperateEventPageResponse);

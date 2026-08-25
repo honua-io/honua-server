@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
@@ -150,6 +151,12 @@ public sealed record OperationGatewayAutonomyContext
 
     /// <summary>Gets the supporting evidence references for audit/diagnostic context.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = Array.Empty<string>();
+
+    /// <summary>Gets the exact bounded source posture used by the finding decision.</summary>
+    public EvidencePostureEnvelope? EvidencePosture { get; init; }
+
+    /// <summary>Gets the source identifiers that must remain actionable when the gateway re-evaluates the route.</summary>
+    public IReadOnlyList<string> RequiredEvidenceSourceIds { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>

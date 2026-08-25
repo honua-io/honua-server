@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Observability.Domain;
 using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -37,6 +38,9 @@ namespace Honua.Server.Features.Admin;
 [JsonSerializable(typeof(IReadOnlyList<ObservabilityAuditRecordResponse>))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(EvidencePostureEnvelope))]
+[JsonSerializable(typeof(EvidenceSourcePosture))]
+[JsonSerializable(typeof(EvidenceCoverage))]
 internal sealed partial class ObservabilityJsonContext : JsonSerializerContext
 {
 }

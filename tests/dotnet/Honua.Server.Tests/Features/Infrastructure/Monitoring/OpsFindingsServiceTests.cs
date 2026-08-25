@@ -40,6 +40,7 @@ public sealed class OpsFindingsServiceTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
         };
         var service = CreateService(alertHealth: alertHealth);
@@ -130,6 +131,7 @@ public sealed class OpsFindingsServiceTests
         var alertHealth = new FakeAlertDispatchHealth
         {
             IsDispatcherEnabled = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog
             {
                 PendingCount = 0,
@@ -156,6 +158,29 @@ public sealed class OpsFindingsServiceTests
         Assert.Equal("slack", finding.Subject.Channel);
         Assert.Null(finding.RecommendedAction);
         Assert.Contains("already paused", finding.Explanation, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_AlertFindingWithoutObservationTime_RejectsBeforeGateway()
+    {
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+        };
+        var gateway = CreateProposalGateway(OperationClass.AdminConfigChange, "must-not-route");
+        var service = CreateService(alertHealth: alertHealth, gateway: gateway);
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.EvidenceIncomplete, result.Status);
+        Assert.Contains("evidence", result.Message, StringComparison.OrdinalIgnoreCase);
+        await gateway.DidNotReceive().RouteAsync(
+            Arg.Any<OperationGatewayRequest>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -792,6 +817,7 @@ public sealed class OpsFindingsServiceTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
         };
         var gateway = CreateProposalGateway(OperationClass.AdminConfigChange, "proposal-alert-redrive");
@@ -819,6 +845,7 @@ public sealed class OpsFindingsServiceTests
         var alertHealth = new FakeAlertDispatchHealth
         {
             IsDispatcherEnabled = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog
             {
                 PendingCount = 1,

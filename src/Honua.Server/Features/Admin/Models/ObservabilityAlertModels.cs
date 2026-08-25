@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Observability.Domain;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -76,6 +78,10 @@ internal sealed class ObservabilityAlertEventPageResponse
 
     /// <summary>Cursor for the next page or null when none.</summary>
     public string? NextCursor { get; init; }
+
+    /// <summary>Freshness, completeness, backend, and page coverage for this read.</summary>
+    public EvidencePostureEnvelope EvidencePosture { get; init; } =
+        Honua.Core.Features.Observability.Domain.EvidencePosture.Envelope(DateTimeOffset.UnixEpoch, []);
 }
 
 /// <summary>

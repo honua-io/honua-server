@@ -49,6 +49,7 @@ internal sealed class McpPlatformOpsReader(
         var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
         var response = new DeployPreflightPlatformRelease
         {
+            EvidencePosture = EvidencePostureProjection.ForPlatformRelease(DateTimeOffset.UtcNow),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned,
@@ -74,9 +75,18 @@ internal sealed class McpPlatformOpsReader(
             var operation = await _deployWorkflowService.GetAsync(operationId, cancellationToken).ConfigureAwait(false)
                 ?? throw new GeoprocessingNotFoundException($"Deploy operation '{operationId}' was not found.");
 
+            var generatedAt = DateTimeOffset.UtcNow;
+            var item = DeployControlEndpoints.MapOperationResponse(operation);
             var response = new DeployOperationListResponse
             {
-                Items = [DeployControlEndpoints.MapOperationResponse(operation)],
+                EvidencePosture = EvidencePostureProjection.ForDeployOperations(
+                    generatedAt,
+                    page: 1,
+                    pageSize: 1,
+                    returnedCount: 1,
+                    hasMore: false,
+                    [item.UpdatedAt]),
+                Items = [item],
                 Page = 1,
                 PageSize = 1,
                 TotalCount = 1,
@@ -95,9 +105,18 @@ internal sealed class McpPlatformOpsReader(
             .ListDeployOperationsAsync(status, kind, page, pageSize, cancellationToken)
             .ConfigureAwait(false);
 
+        var listGeneratedAt = DateTimeOffset.UtcNow;
+        var items = result.Items.Select(DeployControlEndpoints.MapOperationResponse).ToArray();
         var list = new DeployOperationListResponse
         {
-            Items = result.Items.Select(DeployControlEndpoints.MapOperationResponse).ToArray(),
+            EvidencePosture = EvidencePostureProjection.ForDeployOperations(
+                listGeneratedAt,
+                result.Page,
+                result.PageSize,
+                items.Length,
+                result.HasMore,
+                items.Select(item => item.UpdatedAt).ToArray()),
+            Items = items,
             Page = result.Page,
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
