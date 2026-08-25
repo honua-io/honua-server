@@ -20,6 +20,7 @@ internal static class CanonicalSecurityActor
     internal const string EffectiveTenantClaim = "honua:effective_tenant";
     internal const string ScopeCeilingClaim = "honua:scope_ceiling";
     internal const string CanonicalActorClaim = "honua:canonical_actor";
+    internal const string AuthenticationSchemeClaim = "honua:auth_scheme";
     internal const string FrameworkOwnedClaimProperty = "honua:framework_owned";
 
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
@@ -29,7 +30,8 @@ internal static class CanonicalSecurityActor
             return null;
         }
 
-        var scheme = NormalizeScheme(identity.AuthenticationType);
+        var scheme = NormalizeScheme(FindStampedValue(principal, AuthenticationSchemeClaim))
+            ?? NormalizeScheme(identity.AuthenticationType);
         if (scheme is null)
         {
             return null;
@@ -98,7 +100,7 @@ internal static class CanonicalSecurityActor
         }
 
         Replace(identity, CanonicalActorClaim, actor.ActorId);
-        Replace(identity, "honua:auth_scheme", actor.AuthenticationScheme);
+        Replace(identity, AuthenticationSchemeClaim, actor.AuthenticationScheme);
         Replace(identity, "honua:issuer", actor.SubjectIssuer);
         Replace(identity, EffectiveTenantClaim, NormalizeValue(effectiveTenant));
         Replace(identity, ScopeCeilingClaim, ResolveScopeCeiling(principal));
@@ -124,8 +126,31 @@ internal static class CanonicalSecurityActor
     /// bearer handlers. Issuer-supplied claims are deliberately not consulted.
     /// </summary>
     internal static bool IsBearerPrincipal(ClaimsPrincipal? principal) =>
-        principal?.Identities.Any(static identity =>
-            identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)) == true;
+        principal is not null
+        && principal.Identities.Any(static identity => identity.IsAuthenticated)
+        && (IsBearerScheme(FindStampedValue(principal, AuthenticationSchemeClaim))
+            || principal.Identities.Any(static identity =>
+                identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)));
+
+    /// <summary>
+    /// Returns whether the principal came from the external OIDC JWT bearer
+    /// validator. Unlike Honua's operator bearer, these callers are tenant-scoped
+    /// and must not reach shared data/control-plane middleware without a validated
+    /// tenant claim or authorized override.
+    /// </summary>
+    internal static bool IsTenantScopedBearerPrincipal(ClaimsPrincipal? principal) =>
+        principal is not null
+        && principal.Identities.Any(static identity => identity.IsAuthenticated)
+        && (string.Equals(
+                FindStampedValue(principal, AuthenticationSchemeClaim),
+                OidcAuthenticationExtensions.JwtBearerScheme,
+                StringComparison.OrdinalIgnoreCase)
+            || principal.Identities.Any(static identity =>
+                identity.IsAuthenticated
+                && string.Equals(
+                    identity.AuthenticationType,
+                    OidcAuthenticationExtensions.JwtBearerScheme,
+                    StringComparison.OrdinalIgnoreCase)));
 
     private static bool IsBearerScheme(string? scheme) =>
         string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
