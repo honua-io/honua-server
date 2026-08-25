@@ -60,7 +60,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
                 lifecycleService,
                 draftId,
                 StudioAuthorizationOperation.UpdateDraft,
-                OperatorOperation.Create,
+                OperatorOperation.Update,
                 cancellationToken).ConfigureAwait(false);
             RequireAuthorizedGeneration(draft, expectedGeneration);
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
