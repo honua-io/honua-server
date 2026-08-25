@@ -34,47 +34,51 @@ internal static class FilterExpressionHelpers
     /// Recursively walks a filter expression tree and resolves property references
     /// against a Metadata v2 resource, normalizing namespace prefixes and field names.
     /// </summary>
-    internal static FilterExpression NormalizeFilterPropertyReferences(FilterExpression expression, MetadataV2Resource resource)
+    internal static FilterExpression NormalizeFilterPropertyReferences(
+        FilterExpression expression,
+        MetadataV2Resource resource,
+        Func<string, string?>? protocolFieldResolver = null)
     {
         return expression switch
         {
             PropertyReference property => new PropertyReference(
+                protocolFieldResolver?.Invoke(property.PropertyName) ??
                 ResolveFieldName(resource, property.PropertyName, allowGeometryAlias: true) ??
                 NormalizeIdentifier(property.PropertyName)),
             BinaryExpression binary => new BinaryExpression(
-                NormalizeFilterPropertyReferences(binary.Left, resource),
+                NormalizeFilterPropertyReferences(binary.Left, resource, protocolFieldResolver),
                 binary.Operator,
-                NormalizeFilterPropertyReferences(binary.Right, resource)),
+                NormalizeFilterPropertyReferences(binary.Right, resource, protocolFieldResolver)),
             UnaryExpression unary => new UnaryExpression(
                 unary.Operator,
-                NormalizeFilterPropertyReferences(unary.Operand, resource)),
+                NormalizeFilterPropertyReferences(unary.Operand, resource, protocolFieldResolver)),
             // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic) that a
             // positional reconstruction would silently reset to their defaults.
             SpatialPredicate spatial => spatial with
             {
-                Left = NormalizeFilterPropertyReferences(spatial.Left, resource),
-                Right = NormalizeFilterPropertyReferences(spatial.Right, resource)
+                Left = NormalizeFilterPropertyReferences(spatial.Left, resource, protocolFieldResolver),
+                Right = NormalizeFilterPropertyReferences(spatial.Right, resource, protocolFieldResolver)
             },
             SpatialDistancePredicate distance => new SpatialDistancePredicate(
                 distance.Operator,
-                NormalizeFilterPropertyReferences(distance.Left, resource),
-                NormalizeFilterPropertyReferences(distance.Right, resource),
-                NormalizeFilterPropertyReferences(distance.Distance, resource)),
+                NormalizeFilterPropertyReferences(distance.Left, resource, protocolFieldResolver),
+                NormalizeFilterPropertyReferences(distance.Right, resource, protocolFieldResolver),
+                NormalizeFilterPropertyReferences(distance.Distance, resource, protocolFieldResolver)),
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
-                NormalizeFilterPropertyReferences(temporal.Left, resource),
-                NormalizeFilterPropertyReferences(temporal.Right, resource)),
+                NormalizeFilterPropertyReferences(temporal.Left, resource, protocolFieldResolver),
+                NormalizeFilterPropertyReferences(temporal.Right, resource, protocolFieldResolver)),
             ArrayPredicate array => new ArrayPredicate(
                 array.Operator,
-                NormalizeFilterPropertyReferences(array.Left, resource),
-                NormalizeFilterPropertyReferences(array.Right, resource)),
+                NormalizeFilterPropertyReferences(array.Left, resource, protocolFieldResolver),
+                NormalizeFilterPropertyReferences(array.Right, resource, protocolFieldResolver)),
             FunctionCall function => new FunctionCall(
                 function.FunctionName,
-                function.Arguments.Select(argument => NormalizeFilterPropertyReferences(argument, resource)).ToArray()),
+                function.Arguments.Select(argument => NormalizeFilterPropertyReferences(argument, resource, protocolFieldResolver)).ToArray()),
             ArrayLiteral arrayLiteral => new ArrayLiteral(
-                arrayLiteral.Elements.Select(element => NormalizeFilterPropertyReferences(element, resource)).ToArray()),
+                arrayLiteral.Elements.Select(element => NormalizeFilterPropertyReferences(element, resource, protocolFieldResolver)).ToArray()),
             ValueList valueList => new ValueList(
-                valueList.Values.Select(value => NormalizeFilterPropertyReferences(value, resource)).ToArray()),
+                valueList.Values.Select(value => NormalizeFilterPropertyReferences(value, resource, protocolFieldResolver)).ToArray()),
             _ => expression
         };
     }

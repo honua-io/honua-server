@@ -295,9 +295,16 @@ internal sealed partial class Wfs20Handler
     {
         var resource = featureType.Resource;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        string[]? otherCrs = srid == 3857
-            ? null
-            : [FormatCrs(3857)];
+        var otherCrs = new List<string>(SpatialReferenceHelpers.Crs84Identifiers.Count + 1);
+        if (srid != 3857)
+        {
+            otherCrs.Add(FormatCrs(3857));
+        }
+
+        // WFS request parsing and capabilities share one alias inventory. Conservative
+        // clients such as ows4R only offer advertised CRS values, so omitting an accepted
+        // CRS84 spelling made a working server capability unreachable (honua-server#3487).
+        otherCrs.AddRange(SpatialReferenceHelpers.Crs84Identifiers);
 
         return new FeatureType
         {
@@ -306,7 +313,7 @@ internal sealed partial class Wfs20Handler
             Abstract = resource.Metadata.Description,
             Keywords = BuildKeywords(resource),
             DefaultCRS = FormatCrs(srid),
-            OtherCRS = otherCrs,
+            OtherCRS = otherCrs.ToArray(),
             OutputFormats = new OutputFormats
             {
                 Formats = Wfs20Utilities.OutputFormats.All.ToArray()

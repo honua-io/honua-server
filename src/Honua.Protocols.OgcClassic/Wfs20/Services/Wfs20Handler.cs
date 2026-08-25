@@ -280,7 +280,10 @@ internal sealed partial class Wfs20Handler
         // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var expression = Fes20Parser.ParseFilter(filter, defaultSrid);
-        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, resource);
+        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
+            expression,
+            resource,
+            propertyName => WfsPropertyNameResolver.Resolve(resource, propertyName, allowGeometryAlias: true));
 
         if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
         {
@@ -390,7 +393,7 @@ internal sealed partial class Wfs20Handler
         var resolved = ImmutableArray.CreateBuilder<string>();
         foreach (var requestedProperty in requestedProperties)
         {
-            var fieldName = FilterExpressionHelpers.ResolveFieldName(resource, requestedProperty, allowGeometryAlias: true)
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true)
                 ?? throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
 
             var geometryField = resource.FindPrimaryGeometryField();
@@ -434,7 +437,7 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
-            var fieldName = FilterExpressionHelpers.ResolveFieldName(resource, tokens[0], allowGeometryAlias: false)
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, tokens[0], allowGeometryAlias: false)
                 ?? throw new ArgumentException($"Unknown sort field '{tokens[0]}' for feature type '{resource.Metadata.Name}'.");
 
             var fieldDefinition = resource.SchemaFields.FirstOrDefault(field =>
@@ -1629,6 +1632,7 @@ internal sealed partial class Wfs20Handler
     {
         return fieldType switch
         {
+            MetadataV2FieldType.Unknown or MetadataV2FieldType.String => "xsd:string",
             MetadataV2FieldType.Integer => "xsd:int",
             MetadataV2FieldType.BigInteger => "xsd:long",
             MetadataV2FieldType.Double => "xsd:double",
@@ -1638,8 +1642,16 @@ internal sealed partial class Wfs20Handler
             MetadataV2FieldType.Date => "xsd:date",
             MetadataV2FieldType.Time => "xsd:time",
             MetadataV2FieldType.Binary => "xsd:base64Binary",
-            MetadataV2FieldType.Json => "xsd:anyType",
-            _ => "xsd:string"
+            // XML Schema has no JSON or UUID primitive. WFS serializes both as their lexical
+            // string representation, so xsd:string is the concrete wire type. Advertising
+            // xsd:anyType for JSON made GDAL abandon schema typing for neighbouring scalar
+            // fields too (honua-server#3488).
+            MetadataV2FieldType.Json or MetadataV2FieldType.Uuid => "xsd:string",
+            // Geometry and geography are emitted separately through MapGeometryPropertyType;
+            // keep this fallback concrete if malformed metadata ever routes one through the
+            // attribute projection instead of poisoning the whole schema with xsd:anyType.
+            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => "xsd:string",
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, "Unsupported WFS field type.")
         };
     }
 
