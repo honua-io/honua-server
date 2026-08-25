@@ -74,6 +74,23 @@ public sealed class OperationAuthorityContractTests
             .WithMessage("*authenticated principal is required*");
     }
 
+    [UnitTest]
+    public void Capture_ApiKeyPrincipal_PrefersUniqueKeyIdOverSharedDisplayName()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim("api_key_id", "api-key-42"),
+                new Claim("api_key_name", "release automation"),
+            ],
+            "ApiKey"));
+
+        var authority = OperationAuthorityContext.Capture(principal, "tenant-1");
+
+        authority.Actor.Should().Be("api-key-42");
+        authority.Scheme.Should().Be("ApiKey");
+    }
+
     private static OperationAuthorityContext Authority(
         IReadOnlyList<string> scopes,
         IReadOnlyList<string> ceiling)
