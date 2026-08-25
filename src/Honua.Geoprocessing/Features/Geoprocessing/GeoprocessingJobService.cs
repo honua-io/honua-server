@@ -1082,15 +1082,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         $"Job '{jobId}' was deleted during cancellation.");
                 case RemoteCancelOutcome.Unconfirmed:
                     GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
-                    throw new GeoprocessingPreconditionFailedException(
+                    throw new GeoprocessingCancellationUnconfirmedException(
                         $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
                 case RemoteCancelOutcome.Unsupported:
                     GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                    throw new GeoprocessingPreconditionFailedException(
+                    throw new GeoprocessingCancellationUnsupportedException(
                         $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
                 case RemoteCancelOutcome.BackendNotFound:
                     GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                    throw new GeoprocessingPreconditionFailedException(
+                    throw new GeoprocessingCancellationUnsupportedException(
                         $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
                 case RemoteCancelOutcome.NotRemote:
                     break;
@@ -1145,7 +1145,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 throw new GeoprocessingNotFoundException(
                     $"Job '{jobId}' was deleted during cancellation.");
             case ExecutionJobCancellationState.Unconfirmed:
-                throw new GeoprocessingPreconditionFailedException(
+                throw new GeoprocessingCancellationUnconfirmedException(
                     $"Job '{jobId}' cancellation could not be confirmed after retries.");
             case ExecutionJobCancellationState.Cancelled:
                 break;

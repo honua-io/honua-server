@@ -382,6 +382,7 @@ internal static class GPServerEndpoints
         GPServerLog.ExecuteRequested(logger, taskName);
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
+        var terminalService = context.RequestServices.GetRequiredService<IGeoprocessingJobTerminalService>();
 
         // Tracks a successfully submitted job so an abandoned synchronous request
         // (timeout / client disconnect) can best-effort cancel it instead of leaving
@@ -470,28 +471,54 @@ internal static class GPServerEndpoints
             // terminal state, then return results inline. Execution itself flows
             // through the same job runtime as submitJob — sync is a protocol
             // projection, not a separate engine.
-            var terminal = await PollUntilTerminalAsync(jobService, job.OperationId, context.User, ct);
+            var terminal = await terminalService.WaitForResultAsync(
+                job.OperationId,
+                context.User,
+                TimeSpan.FromSeconds(30),
+                context.RequestAborted);
 
-            if (terminal.Status == ExecutionJobStatus.Failed)
+            if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Failed)
             {
-                return BuildExecuteFailureResponse(terminal, "esriJobFailed");
+                return BuildExecuteFailureResponse(terminal.Job!, "esriJobFailed");
             }
 
-            if (terminal.Status == ExecutionJobStatus.Cancelled)
+            if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Cancelled)
             {
-                return BuildExecuteFailureResponse(terminal, "esriJobCancelled");
+                return BuildExecuteFailureResponse(terminal.Job!, "esriJobCancelled");
             }
 
-            return await BuildExecuteSuccessResponseAsync(
-                jobService, terminal, context.User, envControls, workingSrid,
+            if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
+            {
+                await terminalService.CancelAsync(
+                    job.OperationId, context.User, TimeSpan.FromSeconds(10), CancellationToken.None);
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateRequestTimeout(context,
+                        "Synchronous GP execution did not complete within the request timeout. " +
+                        "Use submitJob for long-running execution."),
+                    "Synchronous execution timed out");
+            }
+
+            if (terminal.Outcome == GeoprocessingTerminalResultOutcome.ClientDisconnected)
+            {
+                await terminalService.CancelAsync(
+                    job.OperationId, context.User, TimeSpan.FromSeconds(10), CancellationToken.None);
+                return Results.StatusCode(499);
+            }
+
+            if (terminal.Outcome == GeoprocessingTerminalResultOutcome.NotFound)
+            {
+                throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
+            }
+
+            return BuildExecuteSuccessResponse(
+                terminal.ResultPackage!, terminal.Job!, envControls, workingSrid,
                 BaseUrlResolver.GetBaseUrl(context),
                 context.RequestServices
-                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
-                ct);
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>());
         }
         catch (TimeoutException)
         {
-            await TryCancelOrphanedExecuteJobAsync(jobService, submittedJobId, context.User, logger);
+            await TryCancelOrphanedExecuteJobAsync(terminalService, submittedJobId, context.User, logger);
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateRequestTimeout(context,
                     "Synchronous GP execution did not complete within the request timeout. " +
@@ -502,7 +529,7 @@ internal static class GPServerEndpoints
         {
             // Caller disconnected or the limits timeout token tripped while the
             // submitted job was still running; cancel the orphan before mapping.
-            await TryCancelOrphanedExecuteJobAsync(jobService, submittedJobId, context.User, logger);
+            await TryCancelOrphanedExecuteJobAsync(terminalService, submittedJobId, context.User, logger);
             return MapExceptionToResult(context, logger, "Execute", ex);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -521,7 +548,7 @@ internal static class GPServerEndpoints
     /// capacity is a resource leak, not a correctness failure of the response.
     /// </summary>
     private static async Task TryCancelOrphanedExecuteJobAsync(
-        IGeoprocessingJobService jobService,
+        IGeoprocessingJobTerminalService terminalService,
         string? jobId,
         System.Security.Claims.ClaimsPrincipal user,
         ILogger logger)
@@ -534,7 +561,11 @@ internal static class GPServerEndpoints
         try
         {
             GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
-            await jobService.CancelJobAsync(jobId, user, CancellationToken.None);
+            await terminalService.CancelAsync(
+                jobId,
+                user,
+                TimeSpan.FromSeconds(10),
+                CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -542,35 +573,6 @@ internal static class GPServerEndpoints
             // request has already failed/timed out. This must never throw — the orphaned
             // job leaking worker capacity is logged, not surfaced as a new failure.
             GPServerLog.OrphanedExecuteJobCancelFailed(logger, jobId, ex);
-        }
-    }
-
-    /// <summary>
-    /// Polls the job service until the job reaches a terminal state. The
-    /// canonical runtime executes the job out-of-band (worker host); the
-    /// synchronous protocol contract blocks the request thread until completion
-    /// or until the request-scoped cancellation token trips.
-    /// </summary>
-    private static async Task<ExecutionJobRecord> PollUntilTerminalAsync(
-        IGeoprocessingJobService jobService,
-        string jobId,
-        System.Security.Claims.ClaimsPrincipal user,
-        CancellationToken ct)
-    {
-        var delay = TimeSpan.FromMilliseconds(50);
-        var maxDelay = TimeSpan.FromMilliseconds(500);
-
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            var job = await jobService.GetJobAsync(jobId, user, ct);
-            if (GeoprocessingJobService.IsTerminal(job.Status))
-            {
-                return job;
-            }
-
-            await Task.Delay(delay, ct);
-            delay = delay < maxDelay ? delay + delay : maxDelay;
         }
     }
 
@@ -636,15 +638,13 @@ internal static class GPServerEndpoints
             $"Synchronous execution {esriStatus}");
     }
 
-    private static async Task<IResult> BuildExecuteSuccessResponseAsync(
-        IGeoprocessingJobService jobService,
+    private static IResult BuildExecuteSuccessResponse(
+        AnalysisResultPackage resultPackage,
         ExecutionJobRecord job,
-        System.Security.Claims.ClaimsPrincipal user,
         EnvControls envControls,
         int workingSrid,
         string baseUrl,
-        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore,
-        CancellationToken ct)
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore)
     {
         var results = new List<GPResultResponse>();
         var messages = new List<GPJobMessage>();
@@ -652,22 +652,6 @@ internal static class GPServerEndpoints
         foreach (var warning in job.Warnings)
         {
             messages.Add(new GPJobMessage { Type = "esriJobMessageTypeWarning", Description = warning });
-        }
-
-        AnalysisResultPackage? resultPackage = null;
-        try
-        {
-            resultPackage = await jobService.GetJobResultsAsync(job.OperationId, user, ct);
-        }
-        catch (GeoprocessingNotFoundException)
-        {
-            // No persisted result package — return an empty results envelope with
-            // an informative message rather than a fabricated value.
-            messages.Add(new GPJobMessage
-            {
-                Type = "esriJobMessageTypeInformative",
-                Description = "Job succeeded but no result package was available for inline retrieval."
-            });
         }
 
         if (resultPackage != null)
@@ -1066,7 +1050,7 @@ internal static class GPServerEndpoints
 
             // Honor env:outSR on the async path: when the job was submitted with
             // env:outSR, apply the same reprojection the synchronous execute path
-            // applies inline (BuildExecuteSuccessResponseAsync). Without this the
+            // applies inline (BuildExecuteSuccessResponse). Without this the
             // async path accepted env:outSR at submitJob and then silently served an
             // unprojected geometry from results/{param}.
             var outSrError = TryApplyAsyncOutSr(context, job, artifact, ref value);
@@ -1125,6 +1109,7 @@ internal static class GPServerEndpoints
         }
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
+        var terminalService = context.RequestServices.GetRequiredService<IGeoprocessingJobTerminalService>();
 
         try
         {
@@ -1142,19 +1127,40 @@ internal static class GPServerEndpoints
                 return bindingError;
             }
 
-            await jobService.CancelJobAsync(jobId, context.User, ct);
+            var cancellation = await terminalService.CancelAsync(
+                jobId,
+                context.User,
+                TimeSpan.FromSeconds(30),
+                context.RequestAborted);
+            if (cancellation.Outcome == GeoprocessingCancelOutcome.NotFound)
+            {
+                throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
+            }
 
-            // Re-read the job to return the updated status
-            ExecutionJobRecord? job;
-            try
+            if (cancellation.Outcome is GeoprocessingCancelOutcome.Unsupported
+                or GeoprocessingCancelOutcome.Unconfirmed
+                or GeoprocessingCancelOutcome.AlreadyTerminal)
             {
-                job = await jobService.GetJobAsync(jobId, context.User, ct);
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Job '{jobId}' could not be cancelled ({cancellation.Outcome})."),
+                    $"Cancellation outcome {cancellation.Outcome}");
             }
-            catch (GeoprocessingNotFoundException)
+
+            if (cancellation.Outcome == GeoprocessingCancelOutcome.Timeout)
             {
-                // Job may have been cleaned up after cancellation
-                job = null;
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateRequestTimeout(context, $"Job '{jobId}' cancellation timed out."),
+                    "Cancellation timed out");
             }
+
+            if (cancellation.Outcome == GeoprocessingCancelOutcome.ClientDisconnected)
+            {
+                return Results.StatusCode(499);
+            }
+
+            var job = cancellation.Job;
 
             var esriStatus = job != null
                 ? GPServerStatusMapping.ToEsriJobStatus(job.Status)
@@ -1706,7 +1712,7 @@ internal static class GPServerEndpoints
     /// <summary>
     /// Applies the <c>env:outSR</c> reprojection to a completed job's async result
     /// value, mirroring the synchronous <c>execute</c> path
-    /// (<see cref="BuildExecuteSuccessResponseAsync"/>). Reads the requested output
+    /// (<see cref="BuildExecuteSuccessResponse"/>). Reads the requested output
     /// SRID and the submission-time working SRID back from the durable job metadata
     /// and reprojects a reprojectable geometry output through the shared
     /// <see cref="GPServerOutputReprojection"/> helper. Returns <c>null</c> on

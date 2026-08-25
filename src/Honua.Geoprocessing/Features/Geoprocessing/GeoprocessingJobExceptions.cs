@@ -145,9 +145,21 @@ internal sealed class GeoprocessingNotFoundException : Exception
 /// <summary>
 /// Raised when a precondition is not met (e.g., cancelling a terminal job).
 /// </summary>
-internal sealed class GeoprocessingPreconditionFailedException : Exception
+internal class GeoprocessingPreconditionFailedException : Exception
 {
     public GeoprocessingPreconditionFailedException(string message) : base(message) { }
+}
+
+/// <summary>Raised when the selected runtime backend cannot cancel a job.</summary>
+internal sealed class GeoprocessingCancellationUnsupportedException : GeoprocessingPreconditionFailedException
+{
+    public GeoprocessingCancellationUnsupportedException(string message) : base(message) { }
+}
+
+/// <summary>Raised when bounded cancellation retries cannot confirm an outcome.</summary>
+internal sealed class GeoprocessingCancellationUnconfirmedException : GeoprocessingPreconditionFailedException
+{
+    public GeoprocessingCancellationUnconfirmedException(string message) : base(message) { }
 }
 
 /// <summary>

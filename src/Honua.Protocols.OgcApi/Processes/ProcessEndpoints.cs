@@ -36,7 +36,7 @@ internal static class ProcessEndpoints
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime.",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute"),
+        JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
         OutputTransmission = ImmutableArray.Create("value")
     };
 
@@ -54,7 +54,7 @@ internal static class ProcessEndpoints
                       "document-mode results body (empty until the canonical process declares " +
                       "value-typed outputs).",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute"),
+        JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
         OutputTransmission = ImmutableArray.Create("value"),
         Inputs = ImmutableDictionary.CreateRange(new[]
         {
@@ -188,6 +188,7 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IGeoprocessingJobService jobService,
+        IGeoprocessingJobTerminalService terminalService,
         IProcessCatalog processCatalog)
     {
         EnrichActivity("ExecuteProcess");
@@ -198,19 +199,6 @@ internal static class ProcessEndpoints
         var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
         var preferSync = hasPreferHeader
             && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
-
-        // OGC API Processes Part 1 §7.9.4: when the client explicitly requests
-        // synchronous execution but this process only supports async-execute,
-        // respond with 422 Unprocessable Entity (SHALL requirement).
-        if (preferSync)
-        {
-            OgcProcessesLog.SyncExecutionNotSupported(logger, processId);
-            return OgcProcessesResults.Error(
-                StatusCodes.Status422UnprocessableEntity,
-                "Synchronous execution not supported",
-                "This process only supports asynchronous execution. Use 'Prefer: respond-async' or omit the Prefer header.",
-                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/unsupported-execution-mode");
-        }
 
         try
         {
@@ -289,7 +277,7 @@ internal static class ProcessEndpoints
                     parseError ?? "The analysis plan payload is invalid.");
             }
 
-            OgcProcessesLog.ExecutionRequested(logger, processId, true);
+            OgcProcessesLog.ExecutionRequested(logger, processId, !preferSync);
 
             var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -311,6 +299,47 @@ internal static class ProcessEndpoints
                 .ConfigureAwait(false);
 
             OgcProcessesLog.JobCreated(logger, jobRecord.OperationId, processId);
+
+            if (preferSync)
+            {
+                var terminal = await terminalService.WaitForResultAsync(
+                    jobRecord.OperationId,
+                    context.User,
+                    TimeSpan.FromSeconds(30),
+                    context.RequestAborted).ConfigureAwait(false);
+                context.Response.Headers["Preference-Applied"] = "respond-sync";
+
+                if (terminal.Outcome is GeoprocessingTerminalResultOutcome.Timeout
+                    or GeoprocessingTerminalResultOutcome.ClientDisconnected)
+                {
+                    await terminalService.CancelAsync(
+                        jobRecord.OperationId,
+                        context.User,
+                        TimeSpan.FromSeconds(10),
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+
+                return terminal.Outcome switch
+                {
+                    GeoprocessingTerminalResultOutcome.Succeeded => JobEndpoints.BuildResultsResponse(
+                        context, logger, jobRecord.OperationId, terminal.ResultPackage!),
+                    GeoprocessingTerminalResultOutcome.Failed => OgcProcessesResults.Error(
+                        StatusCodes.Status500InternalServerError,
+                        "Process execution failed",
+                        terminal.Job?.ErrorMessage ?? $"Job '{jobRecord.OperationId}' failed."),
+                    GeoprocessingTerminalResultOutcome.Cancelled => OgcProcessesResults.Error(
+                        StatusCodes.Status409Conflict,
+                        "Process execution cancelled",
+                        $"Job '{jobRecord.OperationId}' was cancelled."),
+                    GeoprocessingTerminalResultOutcome.NotFound => OgcProcessesResults.NoSuchJob(jobRecord.OperationId),
+                    GeoprocessingTerminalResultOutcome.Timeout => OgcProcessesResults.Error(
+                        StatusCodes.Status408RequestTimeout,
+                        "Process execution timed out",
+                        "Synchronous execution did not complete within the bounded wait window. Use respond-async for long-running execution."),
+                    GeoprocessingTerminalResultOutcome.ClientDisconnected => Results.StatusCode(499),
+                    _ => throw new InvalidOperationException($"Unexpected terminal result outcome '{terminal.Outcome}'.")
+                };
+            }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(jobRecord, processId, baseUrl);
@@ -545,7 +574,7 @@ internal static class ProcessEndpoints
             Title = definition.Title,
             Description = definition.Description,
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute"),
+            JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
             OutputTransmission = ImmutableArray.Create("value"),
             Links = ImmutableArray.Create(
                 Link.Create(
@@ -560,9 +589,9 @@ internal static class ProcessEndpoints
         {
             Id = definition.ProcessId,
             Title = definition.Title,
-            Description = $"{definition.Description} First-slice migration evidence projection; execution is asynchronous and returns document-mode artifact references when the runtime publishes results.",
+            Description = $"{definition.Description} First-slice migration evidence projection; execution supports bounded synchronous responses and asynchronous document-mode artifact references.",
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute"),
+            JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
             OutputTransmission = ImmutableArray.Create("value"),
             Inputs = definition.Parameters
                 .ToImmutableDictionary(
