@@ -363,7 +363,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -523,7 +523,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -615,7 +615,7 @@ jobs:
     steps:
       - name: Checkout exact merge-tree consumer
         continue-on-error: true
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - id: receipt-artifact
         name: Locate unique trusted build receipt
@@ -889,7 +889,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Validate workflow and shard routing metadata
         run: |
@@ -919,7 +919,7 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -1028,7 +1028,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Reclaim runner disk before the full-solution build + coverage run; the
       # modular topology pushed some runners over the free-disk limit. Best-effort.
@@ -1514,7 +1514,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Reclaim runner disk before building. The modular topology (8 protocol
       # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
@@ -1799,7 +1799,7 @@ jobs:
       # reporting them skipped with a green exit code (#3271).
       HONUA_REQUIRE_GDAL_CLI: "true"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1925,7 +1925,7 @@ jobs:
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1987,7 +1987,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -2055,7 +2055,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -2157,7 +2157,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -2244,7 +2244,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -2348,7 +2348,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -2450,7 +2450,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup Honua MCP environment
         id: setup
@@ -2549,7 +2549,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2618,7 +2618,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2716,7 +2716,7 @@ jobs:
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2782,7 +2782,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Pre-pull BuildKit image with retries
         timeout-minutes: 3
@@ -2941,7 +2941,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Resolve Console image
         id: console_image
@@ -2994,7 +2994,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # Mirror the build job's disk reclaim — the full-solution build can
       # exhaust ubuntu-latest disk once every project writes Release outputs.

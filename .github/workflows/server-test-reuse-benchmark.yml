@@ -40,7 +40,7 @@ jobs:
       producers: ${{ steps.plan.outputs.producers }}
       reused_consumers: ${{ steps.plan.outputs.reused_consumers }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - id: plan
         name: Validate and emit bounded matrices
         env:
@@ -76,7 +76,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -173,7 +173,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -237,7 +237,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -313,7 +313,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Download benchmark plan
         uses: actions/download-artifact@v8
         with:

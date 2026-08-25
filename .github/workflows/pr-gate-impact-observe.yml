@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Checkout trusted observer policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
           path: policy
@@ -283,7 +283,7 @@ jobs:
         if: steps.collect.outputs.metadata_artifact_id != ''
         id: build-source-checkout
         continue-on-error: true
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: refs/pull/${{ steps.collect.outputs.pr }}/merge
           path: source

@@ -87,7 +87,7 @@ jobs:
             echo "skipped=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         if: steps.gate.outputs.skipped != 'true'
 
       - name: Setup .NET

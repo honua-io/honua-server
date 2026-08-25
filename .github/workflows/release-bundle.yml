@@ -70,7 +70,7 @@ jobs:
       server_sha: ${{ steps.ref.outputs.server_sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
 
@@ -155,7 +155,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Run integration lanes against the RC image
         run: |
           set -euo pipefail
@@ -200,7 +200,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Cut SDKs (dry-run) and collect compat evidence vs the RC image
         run: |
           set -euo pipefail
@@ -246,9 +246,9 @@ jobs:
       verdict: ${{ steps.validate.outputs.verdict }}
     steps:
       - name: Checkout honua-server
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Checkout honua-devops (validator)
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           repository: honua-io/honua-devops
           path: .honua-devops
@@ -320,7 +320,7 @@ jobs:
     environment: release-promote
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: Log in to GHCR (retag needs registry write auth)
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:

@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # pull_request defaults to refs/pull/<n>/merge. The envelope is
           # explicitly bound to the contributor's immutable head SHA, so the
@@ -132,7 +132,7 @@ jobs:
       # Packaging is deliberately isolated from the runner that executed PR
       # code. setup-dotnet-ci and generators cannot mutate this checkout,
       # environment, or the envelope builder before provenance is recorded.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
