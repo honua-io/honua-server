@@ -37,7 +37,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         // Arrange: two concurrent approval calls compete on the same AwaitingApproval proposal.
         var executorCallCount = 0;
         var store = new InMemoryProposalStore(CreateProposal("p-concurrent", OperationProposalStatus.AwaitingApproval));
-        var executor = new RecordingExecutor(() => Interlocked.Increment(ref executorCallCount));
+        var executor = new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount));
         var sut = BuildGateway(store, executor);
 
         // Act: fire both tasks from thread-pool threads so the OS can interleave them. Each
@@ -83,7 +83,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         // must be rejected at the initial status gate — not executed again.
         var executorCallCount = 0;
         var store = new InMemoryProposalStore(CreateProposal("p-executing", OperationProposalStatus.Executing));
-        var executor = new RecordingExecutor(() => Interlocked.Increment(ref executorCallCount));
+        var executor = new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount));
         var sut = BuildGateway(store, executor);
 
         var act = () => sut.ApplyApprovedProposalAsync("p-executing", "admin");
@@ -100,7 +100,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         // rejected — not executed a second time.
         var executorCallCount = 0;
         var store = new InMemoryProposalStore(CreateProposal("p-submitted", OperationProposalStatus.Submitted));
-        var executor = new RecordingExecutor(() => Interlocked.Increment(ref executorCallCount));
+        var executor = new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount));
         var sut = BuildGateway(store, executor);
 
         var act = () => sut.ApplyApprovedProposalAsync("p-submitted", "admin");
@@ -129,22 +129,106 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Fact]
+    public async Task ApplyApprovedProposal_PersistsApprovalAndAuthorityBeforeActuation()
+    {
+        var authority = ValidAuthority();
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-evidence-first", OperationProposalStatus.AwaitingApproval, authority));
+        OperationProposal? observedProposal = null;
+        OperationGatewayRequest? observedRequest = null;
+        var executor = new RecordingExecutor(request =>
+        {
+            observedProposal = store.Snapshot;
+            observedRequest = request;
+        });
+        var sut = BuildGateway(store, executor);
+
+        var result = await sut.ApplyApprovedProposalAsync("p-evidence-first", "separate-approver");
+
+        observedProposal.Should().NotBeNull();
+        observedProposal!.Status.Should().Be(OperationProposalStatus.Executing);
+        observedProposal.ResolvedBy.Should().Be("separate-approver");
+        observedProposal.Approval.Should().NotBeNull();
+        observedProposal.Approval!.Approved.Should().BeTrue();
+        observedProposal.Approval.Approver.Should().Be("separate-approver");
+        observedProposal.Approval.ProposerAuthorityRetained.Should().BeTrue();
+        observedProposal.Authority.Should().BeEquivalentTo(authority);
+        observedRequest.Should().NotBeNull();
+        observedRequest!.Authority.Should().BeEquivalentTo(authority);
+        result!.Approval.Should().BeEquivalentTo(observedProposal.Approval);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_WithoutCapturedAuthority_DoesNotAttestRetention()
+    {
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-legacy-authority", OperationProposalStatus.AwaitingApproval));
+        OperationProposal? observedProposal = null;
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => observedProposal = store.Snapshot));
+
+        var result = await sut.ApplyApprovedProposalAsync("p-legacy-authority", "separate-approver");
+
+        observedProposal.Should().NotBeNull();
+        observedProposal!.Approval.Should().NotBeNull();
+        observedProposal.Approval!.ProposerAuthorityRetained.Should().BeFalse();
+        result!.Approval!.ProposerAuthorityRetained.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_WithInvalidPersistedAuthority_FailsBeforeActuation()
+    {
+        var invalidAuthority = ValidAuthority() with { ScopeCeiling = ["service:admin"] };
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-invalid-authority", OperationProposalStatus.AwaitingApproval, invalidAuthority));
+        var executorCallCount = 0;
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-invalid-authority", "separate-approver");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*authority is invalid*scope ceiling*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        store.Snapshot.Approval.Should().BeNull();
+    }
+
     // ── helpers ───────────��───────────────────────────────���──────────────────
 
-    private static OperationProposal CreateProposal(string proposalId, OperationProposalStatus status)
+    private static OperationProposal CreateProposal(
+        string proposalId,
+        OperationProposalStatus status,
+        OperationAuthorityContext? authority = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new OperationProposal
         {
+            OperationInstanceId = $"opinst-{proposalId}",
             ProposalId = proposalId,
             Kind = OperationClass.Deploy,
             Status = status,
+            RequestedBy = "proposer",
+            Authority = authority,
             Plan = new OperationProposalPlan { Summary = "test proposal" },
             Audit = new OperationAuditInfo { Reason = "test" },
             CreatedAt = now,
             UpdatedAt = now,
         };
     }
+
+    private static OperationAuthorityContext ValidAuthority() => new()
+    {
+        Issuer = "https://issuer.example",
+        Actor = "proposer",
+        Scheme = "Bearer",
+        EffectiveTenant = "tenant-1",
+        OAuthScopes = ["service:read", "service:write"],
+        ScopeCeiling = ["service:write"],
+    };
 
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
@@ -176,6 +260,17 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     {
         private OperationProposal _proposal = proposal;
         private readonly Lock _lock = new();
+
+        public OperationProposal Snapshot
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _proposal;
+                }
+            }
+        }
 
         public Task<OperationProposal?> GetAsync(
             string proposalId,
@@ -240,7 +335,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     /// <summary>
     /// Executor that records how many times it was called and invokes an optional callback.
     /// </summary>
-    private sealed class RecordingExecutor(Action? onExecute = null) : IOperationExecutor
+    private sealed class RecordingExecutor(Action<OperationGatewayRequest>? onExecute = null) : IOperationExecutor
     {
         public OperationClass OperationClass => OperationClass.Deploy;
 
@@ -254,7 +349,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             string? executionPayload,
             CancellationToken cancellationToken = default)
         {
-            onExecute?.Invoke();
+            onExecute?.Invoke(request);
             return Task.FromResult<string?>("exec-op-id");
         }
     }
