@@ -114,16 +114,18 @@ internal sealed class TenantContextMiddleware(
             tenantContext.Set(null, TenantContextSource.Anonymous);
             CanonicalSecurityActor.StampRequestBinding(principal!, null);
 
-            // External OIDC bearers are tenant-scoped credentials. Letting one
-            // continue with a null tenant leaves schema/data middleware on the
-            // deployment's configured default and can expose default-tenant data.
-            // Honua's separately validated OperatorBearer remains available for
-            // tenantless operator-only routes; MCP data-bearing operations apply
-            // their own tenant requirement to that scheme.
+            // External OIDC bearers cannot enter tenant-bound routes with a null
+            // tenant: schema/data middleware would otherwise use the deployment's
+            // configured default. The admin control plane is intentionally tenant
+            // independent and remains protected by its endpoint policies. Honua's
+            // separately validated OperatorBearer remains available for tenantless
+            // operator-only routes; MCP data-bearing operations apply their own
+            // tenant requirement to that scheme.
             if (CanonicalSecurityActor.IsTenantScopedBearerPrincipal(principal!)
                 && !context.Request.Path.StartsWithSegments(
                     "/mcp",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+                && !IsTenantIndependentControlPlanePath(context.Request.Path))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
@@ -243,6 +245,9 @@ internal sealed class TenantContextMiddleware(
             ?? principal.FindFirst("sub")?.Value
             ?? principal.Identity.Name;
     }
+
+    private static bool IsTenantIndependentControlPlanePath(PathString path) =>
+        path.StartsWithSegments("/api/v1/admin", StringComparison.OrdinalIgnoreCase);
 
     // Tenant ids should be safe to embed in logs and downstream SQL filters. Allow the
     // same character set as correlation ids — letters, digits, hyphen, underscore, dot,
