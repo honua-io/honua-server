@@ -298,6 +298,16 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           classify_inline_comments: 'false'
+          # Dependabot opens real pull requests that need real review evidence, but
+          # the action refuses a bot-initiated run by default ("Workflow initiated by
+          # non-human actor"). Without this the lane errors on every dependency bump,
+          # leaving those PRs with Codex as their ONLY attesting reviewer -- which is
+          # exactly the single point of failure the second lane exists to remove, and
+          # it stalled the merge train whenever Codex was unavailable or its review
+          # predated a rebase. Scoped to dependabot rather than '*': the trust boundary
+          # is that this workflow always runs the default-branch copy, but there is no
+          # reason to widen the set of identities that can start a paid reviewer run.
+          allowed_bots: 'dependabot[bot]'
           # Read-only analysis tools, plus exactly two append-only publishing
           # tools. No `gh api`, no general Bash, no git: nothing in this set can
           # merge, push, or edit a workflow.
