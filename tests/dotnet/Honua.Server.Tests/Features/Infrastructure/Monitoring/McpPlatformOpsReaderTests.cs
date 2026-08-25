@@ -15,6 +15,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -355,6 +356,7 @@ public sealed class McpPlatformOpsReaderTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new TestTenantContext());
+        services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
         if (gateway is not null)
         {
             services.AddSingleton(gateway);

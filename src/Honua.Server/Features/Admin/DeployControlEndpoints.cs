@@ -782,7 +782,7 @@ internal static class DeployControlEndpoints
         {
             Kind = OperationClass.Deploy,
             RequestedBy = requestedBy,
-            Authority = authority,
+            Authority = authority with { ResourceId = targetId },
             Reason = reason,
             CorrelationId = correlationId,
             // Stable idempotency key so a double-converge folds onto one operation/proposal per target.

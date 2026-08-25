@@ -193,6 +193,7 @@ internal sealed class GeoprocessingJobDispatcher
             {
                 ResourceType = OperatorResourceType.Process,
                 Operation = OperatorOperation.ExecuteMutatingProcess,
+                ResourceId = plan.PlanId,
             },
             Reason = approvalGatedProcessId == null
                 ? "Destructive geoprocessing plan requires approval."

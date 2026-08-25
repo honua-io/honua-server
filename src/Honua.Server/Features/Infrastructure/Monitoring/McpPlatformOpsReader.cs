@@ -170,6 +170,14 @@ internal sealed class McpPlatformOpsReader(
             throw new GeoprocessingValidationException("'targetId' is required.");
         }
 
+        var authorizationGate = _services.GetService<IGeoprocessingJobService>()
+            ?? throw new InvalidOperationException("The authorization service is unavailable.");
+        await authorizationGate.EnsureCallerAuthorizedAsync(
+            principal,
+            OperatorResourceType.Deployment,
+            OperatorOperation.Rollback,
+            cancellationToken).ConfigureAwait(false);
+
         var selection = await ResolveRollbackRevisionAsync(
                 targetId,
                 Clean(argument.ToRevision),
@@ -189,9 +197,10 @@ internal sealed class McpPlatformOpsReader(
         {
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Rollback,
+            ResourceId = targetId,
         };
         var actor = authority.Actor;
-        var result = await gateway.RouteAsync(
+        var result = await gateway.CreateApprovalProposalAsync(
                 new OperationGatewayRequest
                 {
                     Kind = OperationClass.Deploy,

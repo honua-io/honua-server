@@ -43,7 +43,7 @@ public sealed class ProposalStatusResourceTests
     }
 
     [UnitTest]
-    public async Task ReadAsync_DifferentActorCannotPollProposal()
+    public async Task ReadAsync_AuthorizedReviewerCanPollProposal()
     {
         var store = Substitute.For<IOperationProposalStore>();
         var jobService = Substitute.For<IGeoprocessingJobService>();
@@ -51,20 +51,22 @@ public sealed class ProposalStatusResourceTests
         var context = CreateContext("different-subject", store, jobService);
         var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
 
-        var act = () => resource.ReadAsync(
+        var result = await resource.ReadAsync(
             context,
             "honua://proposals/proposal-1",
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
-        await jobService.DidNotReceiveWithAnyArgs().EnsureCallerAuthorizedAsync(
-            default!, default, default, default);
+        result.Contents.Should().ContainSingle();
+        await jobService.Received(1).EnsureCallerAuthorizedAsync(
+            context.User,
+            OperatorResourceType.Deployment,
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
     }
 
     [Theory]
-    [InlineData("https://other-issuer.example", "tenant-1")]
     [InlineData("https://issuer.example", "other-tenant")]
-    public async Task ReadAsync_DifferentIssuerOrTenantCannotPollProposal(
+    public async Task ReadAsync_DifferentTenantCannotPollProposal(
         string issuer,
         string tenant)
     {
@@ -79,7 +81,7 @@ public sealed class ProposalStatusResourceTests
             "honua://proposals/proposal-1",
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await act.Should().ThrowAsync<KeyNotFoundException>();
         await jobService.DidNotReceiveWithAnyArgs().EnsureCallerAuthorizedAsync(
             default!, default, default, default);
     }
@@ -124,6 +126,7 @@ public sealed class ProposalStatusResourceTests
             ScopeGoverned = true,
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Publish,
+            ResourceId = "target-1",
         },
     };
 

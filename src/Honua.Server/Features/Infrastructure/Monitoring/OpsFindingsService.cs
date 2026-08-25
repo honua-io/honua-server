@@ -5,6 +5,7 @@ using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -157,7 +158,12 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             Authority = OperationAuthorityContext.CaptureService(
                 "honua-server",
                 RequestedByAgent,
-                "platform"),
+                "platform") with
+            {
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Update,
+                ResourceId = findingId,
+            },
             Reason = action.Reason,
             ExecutionPayload = action.ExecutionPayload,
             // Idempotency-keyed on the deterministic finding id so re-proposing the same live

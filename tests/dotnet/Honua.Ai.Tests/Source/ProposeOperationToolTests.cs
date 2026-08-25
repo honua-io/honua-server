@@ -62,7 +62,7 @@ public sealed class ProposeOperationToolTests
 
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "Deploy", Reason = "ship it" },
+            new McpProposeOperationArgument { Kind = "Deploy", ResourceId = "target-1", Reason = "ship it" },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
@@ -79,12 +79,13 @@ public sealed class ProposeOperationToolTests
         gateway.LastRequest.Authority.EffectiveTenant.Should().Be("tenant-1");
         gateway.LastRequest.Authority.ResourceType.Should().Be(OperatorResourceType.Deployment);
         gateway.LastRequest.Authority.Operation.Should().Be(OperatorOperation.Publish);
+        gateway.LastRequest.Authority.ResourceId.Should().Be("target-1");
     }
 
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_propose_operation")]
-    public async Task ProposeOperation_WhenDirectExecute_ReturnsExecutionOutcome()
+    public async Task ProposeOperation_UsesProposalOnlyGatewayEvenWhenNormalRouteCouldExecute()
     {
         var gateway = new FakeGateway(new OperationGatewayResult
         {
@@ -95,15 +96,14 @@ public sealed class ProposeOperationToolTests
 
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "AdminConfigChange" },
+            new McpProposeOperationArgument { Kind = "AdminConfigChange", ResourceId = "config-1" },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         var content = result.StructuredContent!.Value;
-        content.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
-        content.GetProperty("outcome").GetString().Should().Be("Executed");
-        content.GetProperty("executionOperationId").GetString().Should().Be("exec-1");
+        gateway.ProposalOnlyCalls.Should().Be(1);
+        gateway.RouteCalls.Should().Be(0);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class ProposeOperationToolTests
             new McpProposeOperationArgument
             {
                 Kind = "Geoprocess",
-                ExecutionPayload = "{\"requestedBy\":\"forged-operator\",\"submitterSecurityContext\":{\"tenantId\":\"victim\"}}",
+                ResourceId = "plan-1",
             },
             McpJsonContext.Default.McpProposeOperationArgument);
 
@@ -177,7 +177,7 @@ public sealed class ProposeOperationToolTests
 
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "Seed" },
+            new McpProposeOperationArgument { Kind = "Seed", ResourceId = "seed-1" },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(ContextWithGateway(gateway, catalog), arguments, CancellationToken.None);
@@ -213,15 +213,22 @@ public sealed class ProposeOperationToolTests
     private sealed class FakeGateway(OperationGatewayResult result) : IOperationGateway
     {
         public OperationGatewayRequest? LastRequest { get; private set; }
+        public int RouteCalls { get; private set; }
+        public int ProposalOnlyCalls { get; private set; }
 
         public Task<OperationGatewayResult> RouteAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
         {
+            RouteCalls++;
             LastRequest = request;
             return Task.FromResult(result);
         }
 
         public Task<OperationGatewayResult> CreateApprovalProposalAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(result);
+        {
+            ProposalOnlyCalls++;
+            LastRequest = request;
+            return Task.FromResult(result);
+        }
 
         public Task<OperationProposal?> ApplyApprovedProposalAsync(string proposalId, string approvedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);

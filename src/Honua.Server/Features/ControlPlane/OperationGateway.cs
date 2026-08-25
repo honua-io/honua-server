@@ -29,6 +29,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProposalNotifier _notifier;
     private readonly ILogger<OperationGateway> _logger;
+    private readonly IReadOnlyList<IOperationAuthorityRevalidator> _authorityRevalidators;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -36,7 +37,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         IEnumerable<IOperationExecutor> executors,
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
-        ILogger<OperationGateway> logger)
+        ILogger<OperationGateway> logger,
+        IEnumerable<IOperationAuthorityRevalidator>? authorityRevalidators = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
@@ -45,6 +47,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _scopeFactory = scopeFactory;
         _notifier = notifier;
         _logger = logger;
+        _authorityRevalidators = authorityRevalidators?.ToArray() ?? [];
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -168,6 +171,16 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
 
         ValidateAuthority(proposal.Authority);
+
+        foreach (var revalidator in _authorityRevalidators)
+        {
+            var current = await revalidator.RevalidateAsync(proposal, cancellationToken).ConfigureAwait(false);
+            if (!current.IsAllowed)
+            {
+                throw new InvalidOperationException(
+                    $"The proposer's current authority no longer permits this operation: {current.Reason ?? "denied"}");
+            }
+        }
 
         // Atomically claim the proposal before invoking the executor.
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
