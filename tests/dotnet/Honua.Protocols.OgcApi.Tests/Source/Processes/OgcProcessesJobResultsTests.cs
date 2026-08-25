@@ -29,6 +29,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobResultsTestsFixture>
 {
     private const string JobId = "ogc-gp-result-job";
+    private const string SelectedJobId = "ogc-gp-selected-result-job";
 
     private readonly WebAppFixture _fixture;
 
@@ -72,6 +73,21 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
         duplicateOutput.GetProperty("href").GetString().Should().Be("https://example.test/ogc-buffer-output-summary.json");
         duplicateOutput.GetProperty("id").GetString().Should().Be("artifact-output-2");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_ExplicitNonLeadingSelection_ReturnsOnlySelectedOutput()
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{SelectedJobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.EnumerateObject().Select(property => property.Name)
+            .Should().Equal("outputTable");
+        doc.RootElement.GetProperty("outputTable").GetProperty("id").GetString()
+            .Should().Be("selected-artifact-2");
+    }
 }
 
 /// <summary>
@@ -84,6 +100,7 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
 public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
 {
     private const string JobId = "ogc-gp-result-job";
+    private const string SelectedJobId = "ogc-gp-selected-result-job";
 
     public WebAppFixture App { get; }
 
@@ -91,6 +108,7 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
     {
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateSucceededJob());
+        jobStore.GetAsync(SelectedJobId, Arg.Any<CancellationToken>()).Returns(CreateSelectedJob());
 
         App = new WebAppFixture()
             .ConfigureServices(services =>
@@ -127,6 +145,37 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
                     [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer",
                     [ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = "FeatureLayer",
                     [$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}0"] = "outputFeatureLayer"
+                }
+            }
+        };
+
+    private static ExecutionJobRecord CreateSelectedJob()
+        => new()
+        {
+            OperationId = SelectedJobId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ArtifactReferences =
+            [
+                "https://example.test/dissolve-features.geojson",
+                "https://example.test/dissolve-summary.json"
+            ],
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "generalization-dissolve",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingPlanId] = "generalization-dissolve-plan",
+                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "generalization.dissolve",
+                    [ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = "FeatureLayer|Table",
+                    [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}1"] = "outputTable",
+                    ["submittedVia"] = "OGC-API-Processes",
+                    ["protocolProcessId"] = "generalization.dissolve"
                 }
             }
         };
@@ -181,6 +230,44 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
                 ExecutedAt = DateTimeOffset.UtcNow
             });
 
+        private static readonly AnalysisResultPackage SelectedResults = AnalysisResultPackage.CreateCompleted(
+            resultPackageId: "ogc-gp-selected-result-job:v1",
+            summary: new ResultSummary
+            {
+                Title = "generalization.dissolve results",
+                Description = "Produced 2 artifacts."
+            },
+            artifacts:
+            [
+                new ArtifactRef
+                {
+                    ArtifactId = "selected-artifact-1",
+                    Kind = ArtifactKind.FeatureLayer,
+                    Label = "featureLayer1",
+                    Uri = "https://example.test/dissolve-features.geojson",
+                    ContentType = "application/geo+json"
+                },
+                new ArtifactRef
+                {
+                    ArtifactId = "selected-artifact-2",
+                    Kind = ArtifactKind.Table,
+                    Label = "outputTable",
+                    Uri = "https://example.test/dissolve-summary.json",
+                    ContentType = "application/json",
+                    Metadata = new Dictionary<string, string>
+                    {
+                        [GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey] = "outputTable"
+                    }
+                }
+            ],
+            workspaceRefs: [],
+            provenance: new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["generalization.dissolve"],
+                ExecutedAt = DateTimeOffset.UtcNow
+            });
+
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
@@ -212,13 +299,17 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateSucceededJob());
+            => Task.FromResult(string.Equals(jobId, SelectedJobId, StringComparison.Ordinal)
+                ? CreateSelectedJob()
+                : CreateSucceededJob());
 
         public Task<AnalysisResultPackage> GetJobResultsAsync(
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(Results);
+            => Task.FromResult(string.Equals(jobId, SelectedJobId, StringComparison.Ordinal)
+                ? SelectedResults
+                : Results);
 
         public Task CancelJobAsync(
             string jobId,
