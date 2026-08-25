@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Middleware;
@@ -34,6 +35,23 @@ internal static class AuditContextResolver
         var identity = principal.Identity;
         if (identity is { IsAuthenticated: true })
         {
+            // Tenant resolution stamps the framework-owned, scheme/issuer-qualified
+            // actor on the principal. Prefer it so MCP transport, durable jobs,
+            // policy context, and audit records name the same immutable actor.
+            var canonicalActor = CanonicalSecurityActor.FindStampedValue(
+                principal,
+                CanonicalSecurityActor.CanonicalActorClaim);
+            if (!string.IsNullOrWhiteSpace(canonicalActor))
+            {
+                actorType = string.Equals(
+                    identity.AuthenticationType,
+                    Honua.Infrastructure.Authentication.AuthenticationExtensions.ApiKeyScheme,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? AuditActorType.ApiKey
+                    : AuditActorType.UserId;
+                return canonicalActor;
+            }
+
             // For API-key authenticated callers the handler attaches an
             // "api_key_id" claim; prefer that as a stable actor identifier so
             // we never log the raw key name.

@@ -2,6 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -41,7 +47,7 @@ internal static class McpAuthorizationHelper
     /// anonymous handshake methods; a session established anonymously stays
     /// anonymous) and never invents a new authentication requirement. For an
     /// authenticated caller the key prefixes the authentication scheme to the
-    /// stable subject/name-identifier claim, falling back to the identity name.
+    /// normalized name-identifier claim, falling back to the identity name.
     /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
@@ -72,4 +78,127 @@ internal static class McpAuthorizationHelper
         string.IsNullOrWhiteSpace(identity.AuthenticationType)
             ? AnonymousPrincipalScheme
             : identity.AuthenticationType;
+
+    /// <summary>
+    /// Resolves the immutable MCP session binding from the framework-authenticated
+    /// actor, the effective tenant selected by tenant policy, and the OAuth scope
+    /// ceiling. Bearer sessions additionally include a one-way fingerprint of the
+    /// exact credential validated for this request, so every token-derived authority
+    /// dimension remains part of the binding without retaining the credential.
+    /// Client-supplied issuer, subject, tenant, and scope values are never read from
+    /// request headers or parameters.
+    /// </summary>
+    public static string? ResolveSessionBindingKey(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var actor = CanonicalSecurityActor.Resolve(context.User);
+        if (actor is null)
+        {
+            if (context.User.Identities.Any(static identity => identity.IsAuthenticated))
+            {
+                // Never collapse an authenticated caller whose validator supplied no
+                // durable actor identity into the anonymous session namespace.
+                return null;
+            }
+
+            return McpSessionManager.AnonymousPrincipalKey;
+        }
+
+        string? credentialFingerprint = null;
+        if (CanonicalSecurityActor.IsBearerPrincipal(context.User))
+        {
+            if (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer))
+            {
+                // Display names are mutable, and a subject without its validated issuer is
+                // not a globally durable OIDC session identifier. Bearers require both.
+                return null;
+            }
+
+            credentialFingerprint = ResolveBearerCredentialFingerprint(context);
+            if (credentialFingerprint is null)
+            {
+                // The bearer handler validated the request's Authorization credential.
+                // Requiring and hashing that same credential binds the session to every
+                // authority dimension projected from it (roles, permissions, workspace
+                // scopes, and future claim-based grants) without retaining the secret.
+                return null;
+            }
+        }
+
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId
+            ?? CanonicalSecurityActor.FindStampedValue(
+                context.User,
+                CanonicalSecurityActor.EffectiveTenantClaim);
+        return CanonicalSecurityActor.BuildBindingKey(
+            actor,
+            tenant,
+            context.User,
+            credentialFingerprint);
+    }
+
+    private static string? ResolveBearerCredentialFingerprint(HttpContext context)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        const string bearerPrefix = "Bearer ";
+        if (!authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var credential = authorization[bearerPrefix.Length..].Trim();
+        if (credential.Length == 0 || credential.Contains(','))
+        {
+            return null;
+        }
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(credential));
+        return $"sha256:{Convert.ToHexStringLower(digest)}";
+    }
+
+    /// <summary>
+    /// Rejects a bearer-authenticated tool call when tenant policy did not resolve
+    /// an effective tenant. Discovery remains available, but no tool implementation
+    /// may observe the deployment's default database/schema in this state.
+    /// </summary>
+    public static async Task EnsureBearerDataTenantAsync(HttpContext context, string target)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        if (!CanonicalSecurityActor.IsBearerPrincipal(context.User))
+        {
+            return;
+        }
+
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        if (string.IsNullOrWhiteSpace(tenant))
+        {
+            var auditLog = context.RequestServices.GetService<IAuditLog>();
+            if (auditLog is not null)
+            {
+                var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+                await auditLog.RecordAsync(
+                    new AuditEvent
+                    {
+                        Timestamp = timeProvider.GetUtcNow(),
+                        EventType = AuditEventType.Authorization,
+                        Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+                        ActorType = actorType,
+                        ResourceType = "mcp",
+                        ResourceId = target,
+                        Action = "mcp.authorization",
+                        Outcome = AuditOutcome.Denied,
+                        CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+                        RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+                        UserAgent = AuditContextResolver.ResolveUserAgent(context),
+                        Details = "{\"code\":\"tenant_required\"}",
+                    },
+                    context.RequestAborted).ConfigureAwait(false);
+            }
+
+            throw new Geoprocessing.GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "A validated tenant is required to invoke MCP tools.");
+        }
+    }
 }
