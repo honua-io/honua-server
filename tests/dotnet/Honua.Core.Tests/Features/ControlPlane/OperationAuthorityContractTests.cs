@@ -25,6 +25,19 @@ public sealed class OperationAuthorityContractTests
         (authority with { }).Should().Be(authority);
     }
 
+    [UnitTest]
+    public void ApprovalRecord_DoesNotDefaultToAuthorityRetention()
+    {
+        var approval = new OperationApprovalRecord
+        {
+            Approver = "approver-1",
+            Approved = true,
+            DecidedAt = DateTimeOffset.UtcNow,
+        };
+
+        approval.ProposerAuthorityRetained.Should().BeFalse();
+    }
+
     private static OperationAuthorityContext Authority(
         IReadOnlyList<string> scopes,
         IReadOnlyList<string> ceiling)

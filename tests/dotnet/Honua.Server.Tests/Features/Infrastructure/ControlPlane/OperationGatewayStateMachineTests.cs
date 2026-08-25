@@ -62,7 +62,33 @@ public sealed class OperationGatewayStateMachineTests
         // Assert: must NOT claim Executed (BH6-032) — nothing ran
         result.Outcome.Should().Be(OperationGatewayOutcome.NotSupported,
             "a kind with no registered executor must not be claimed as Executed");
+        result.OperationInstanceId.Should().StartWith("opinst-");
         result.ExecutionOperationId.Should().BeNull("no operation was performed");
+    }
+
+    [Fact]
+    public async Task RouteAsync_WhenBlocked_ReturnsStableOperationInstanceId()
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(
+                GuardrailTier.Blocked,
+                OperationClass.Deploy,
+                HonuaEdition.Community,
+                "test-policy"));
+        var sut = BuildGateway(
+            store: new InMemoryProposalStore(),
+            executor: new DeployExecutor(),
+            ladder: ladder);
+
+        var result = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "test-user",
+        });
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
+        result.OperationInstanceId.Should().StartWith("opinst-");
     }
 
     [Fact]
@@ -87,6 +113,7 @@ public sealed class OperationGatewayStateMachineTests
         var result = await sut.RouteAsync(request);
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Executed);
+        result.OperationInstanceId.Should().StartWith("opinst-");
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
     }
 

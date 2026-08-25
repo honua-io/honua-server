@@ -81,6 +81,10 @@ public sealed record OperationApprovalRecord
     /// <summary>When the decision was durably recorded.</summary>
     public required DateTimeOffset DecidedAt { get; init; }
 
-    /// <summary>Whether execution retained the original proposer authority.</summary>
-    public bool ProposerAuthorityRetained { get; init; } = true;
+    /// <summary>
+    /// Whether approved execution retained a validated original proposer authority.
+    /// False for legacy proposals without a captured authority and for rejections,
+    /// where no execution occurs.
+    /// </summary>
+    public bool ProposerAuthorityRetained { get; init; }
 }
