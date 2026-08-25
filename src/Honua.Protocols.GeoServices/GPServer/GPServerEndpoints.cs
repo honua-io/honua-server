@@ -489,7 +489,7 @@ internal static class GPServerEndpoints
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
             {
-                await TryCancelOrphanedExecuteJobAsync(
+                DispatchOrphanedExecuteJobCancellation(
                     terminalService, job.OperationId, context.User, logger);
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateRequestTimeout(context,
@@ -500,7 +500,7 @@ internal static class GPServerEndpoints
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.ClientDisconnected)
             {
-                await TryCancelOrphanedExecuteJobAsync(
+                DispatchOrphanedExecuteJobCancellation(
                     terminalService, job.OperationId, context.User, logger);
                 return context.RequestAborted.IsCancellationRequested
                     ? Results.StatusCode(499)
@@ -523,7 +523,7 @@ internal static class GPServerEndpoints
         }
         catch (TimeoutException)
         {
-            await TryCancelOrphanedExecuteJobAsync(terminalService, submittedJobId, context.User, logger);
+            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, context.User, logger);
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateRequestTimeout(context,
                     "Synchronous GP execution did not complete within the request timeout. " +
@@ -534,7 +534,7 @@ internal static class GPServerEndpoints
         {
             // Caller disconnected or the limits timeout token tripped while the
             // submitted job was still running; cancel the orphan before mapping.
-            await TryCancelOrphanedExecuteJobAsync(terminalService, submittedJobId, context.User, logger);
+            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, context.User, logger);
             return MapExceptionToResult(context, logger, "Execute", ex);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -552,7 +552,7 @@ internal static class GPServerEndpoints
     /// token has already tripped — and never throws: the orphaned job consuming worker
     /// capacity is a resource leak, not a correctness failure of the response.
     /// </summary>
-    private static async Task TryCancelOrphanedExecuteJobAsync(
+    private static void DispatchOrphanedExecuteJobCancellation(
         IGeoprocessingJobTerminalService terminalService,
         string? jobId,
         System.Security.Claims.ClaimsPrincipal user,
@@ -563,22 +563,11 @@ internal static class GPServerEndpoints
             return;
         }
 
-        try
-        {
-            GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
-            await terminalService.CancelOrphanedAsync(
-                jobId,
-                user,
-                TimeSpan.FromSeconds(10),
-                CancellationToken.None);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional catch-all: best-effort cleanup on a detached token after the
-            // request has already failed/timed out. This must never throw — the orphaned
-            // job leaking worker capacity is logged, not surfaced as a new failure.
-            GPServerLog.OrphanedExecuteJobCancelFailed(logger, jobId, ex);
-        }
+        GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
+        terminalService.DispatchOrphanedCancellation(
+            jobId,
+            user,
+            TimeSpan.FromSeconds(10));
     }
 
     /// <summary>

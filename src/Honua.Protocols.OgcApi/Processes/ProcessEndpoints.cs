@@ -95,12 +95,15 @@ internal static class ProcessEndpoints
             .WithName("OgcProcessExecute")
             .WithSummary("Execute a process")
             .Accepts<OgcExecuteRequest>(MediaTypes.Json)
+            .Produces<OgcResultsDocument>(StatusCodes.Status200OK)
             .Produces<OgcStatusInfo>(StatusCodes.Status201Created)
             .Produces<OgcProcessError>(StatusCodes.Status400BadRequest)
             .Produces<OgcProcessError>(StatusCodes.Status401Unauthorized)
             .Produces<OgcProcessError>(StatusCodes.Status403Forbidden)
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .Produces<OgcProcessError>(StatusCodes.Status409Conflict)
+            .Produces<OgcProcessError>(StatusCodes.Status408RequestTimeout)
+            .Produces<OgcProcessError>(StatusCodes.Status500InternalServerError)
             .Produces<OgcProcessError>(StatusCodes.Status422UnprocessableEntity)
             .Produces<OgcProcessError>(StatusCodes.Status501NotImplemented)
             .Produces<OgcProcessError>(StatusCodes.Status503ServiceUnavailable)
@@ -313,11 +316,10 @@ internal static class ProcessEndpoints
                 if (terminal.Outcome is GeoprocessingTerminalResultOutcome.Timeout
                     or GeoprocessingTerminalResultOutcome.ClientDisconnected)
                 {
-                    await TryCancelOrphanedSynchronousJobAsync(
-                        terminalService,
+                    terminalService.DispatchOrphanedCancellation(
                         jobRecord.OperationId,
                         context.User,
-                        logger).ConfigureAwait(false);
+                        TimeSpan.FromSeconds(10));
                 }
 
                 return terminal.Outcome switch
@@ -426,26 +428,6 @@ internal static class ProcessEndpoints
                 StatusCodes.Status500InternalServerError,
                 "Internal server error",
                 "An error occurred while executing the process.");
-        }
-    }
-
-    private static async Task TryCancelOrphanedSynchronousJobAsync(
-        IGeoprocessingJobTerminalService terminalService,
-        string jobId,
-        System.Security.Claims.ClaimsPrincipal principal,
-        ILogger logger)
-    {
-        try
-        {
-            await terminalService.CancelOrphanedAsync(
-                jobId,
-                principal,
-                TimeSpan.FromSeconds(10),
-                CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            OgcProcessesLog.SyncExecutionCleanupFailed(logger, jobId, ex);
         }
     }
 

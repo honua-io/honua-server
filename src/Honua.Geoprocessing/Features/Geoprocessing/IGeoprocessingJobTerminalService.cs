@@ -34,6 +34,15 @@ internal interface IGeoprocessingJobTerminalService
         TimeSpan timeout,
         CancellationToken clientDisconnect = default);
 
+    /// <summary>
+    /// Dispatches best-effort cancellation for a job abandoned by a bounded synchronous
+    /// request. Cleanup runs outside the response path.
+    /// </summary>
+    void DispatchOrphanedCancellation(
+        string jobId,
+        ClaimsPrincipal principal,
+        TimeSpan timeout);
+
     /// <summary>Cancels a job orphaned by an abandoned bounded synchronous request.</summary>
     Task<GeoprocessingCancelResult> CancelOrphanedAsync(
         string jobId,

@@ -147,6 +147,47 @@ public sealed class GeoprocessingJobTerminalServiceTests
             Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task DispatchOrphanedCancellation_ReturnsBeforeSlowCleanupCompletes()
+    {
+        var running = CreateJob(ExecutionJobStatus.Running);
+        var cancelled = CreateJob(ExecutionJobStatus.Cancelled);
+        var cleanupStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCleanup = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanupCompleted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var readCount = 0;
+        _jobs.GetJobAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref readCount) == 1)
+                {
+                    return running;
+                }
+
+                cleanupCompleted.TrySetResult();
+                return cancelled;
+            });
+        _jobs.CancelAbandonedJobAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                cleanupStarted.TrySetResult();
+                return releaseCleanup.Task;
+            });
+        var sut = CreateService((_, _) => Task.CompletedTask);
+
+        sut.DispatchOrphanedCancellation("job-1", _principal, TimeSpan.FromSeconds(1));
+
+        await cleanupStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cleanupCompleted.Task.IsCompleted.Should().BeFalse(
+            "the response path must not await slow orphan cancellation");
+
+        releaseCleanup.TrySetResult();
+        await cleanupCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     private GeoprocessingJobTerminalService CreateService(
         Func<TimeSpan, CancellationToken, Task> delay,
         Func<TimeSpan, CancellationTokenSource>? timeoutSourceFactory = null)

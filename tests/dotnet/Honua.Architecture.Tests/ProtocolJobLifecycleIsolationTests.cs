@@ -22,6 +22,7 @@ public sealed class ProtocolJobLifecycleIsolationTests
         "ExecutionJobCancellationHelper",
         "ExecutionJobSubmissionHelper",
         "CancelAbandonedJobAsync",
+        "CancelOrphanedAsync",
     ];
 
     [ArchitectureTest]

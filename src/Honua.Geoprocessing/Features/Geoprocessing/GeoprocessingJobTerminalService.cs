@@ -12,7 +12,7 @@ namespace Honua.Geoprocessing;
 /// Protocol adapters translate these outcomes and never coordinate stores, queues, workers,
 /// notifiers, or remote compute backends directly.
 /// </summary>
-internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTerminalService
+internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJobTerminalService
 {
     private static readonly TimeSpan InitialPollDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan MaximumPollDelay = TimeSpan.FromMilliseconds(500);
@@ -21,16 +21,19 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
     private readonly TimeProvider _timeProvider;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly Func<TimeSpan, CancellationTokenSource> _timeoutSourceFactory;
+    private readonly ILogger<GeoprocessingJobTerminalService> _logger;
 
     /// <summary>Creates the production terminal service.</summary>
     public GeoprocessingJobTerminalService(
         IGeoprocessingJobService jobs,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<GeoprocessingJobTerminalService> logger)
         : this(
             jobs,
             timeProvider,
             (delay, token) => Task.Delay(delay, timeProvider, token),
-            timeout => new CancellationTokenSource(timeout, timeProvider))
+            timeout => new CancellationTokenSource(timeout, timeProvider),
+            logger)
     {
     }
 
@@ -38,12 +41,14 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
         IGeoprocessingJobService jobs,
         TimeProvider timeProvider,
         Func<TimeSpan, CancellationToken, Task> delay,
-        Func<TimeSpan, CancellationTokenSource> timeoutSourceFactory)
+        Func<TimeSpan, CancellationTokenSource> timeoutSourceFactory,
+        ILogger<GeoprocessingJobTerminalService>? logger = null)
     {
         _jobs = jobs;
         _timeProvider = timeProvider;
         _delay = delay;
         _timeoutSourceFactory = timeoutSourceFactory;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobTerminalService>.Instance;
     }
 
     public async Task<GeoprocessingTerminalWaitResult> WaitForTerminalAsync(
@@ -162,12 +167,49 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
         CancellationToken clientDisconnect = default)
         => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect);
 
+    public void DispatchOrphanedCancellation(
+        string jobId,
+        ClaimsPrincipal principal,
+        TimeSpan timeout)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        ArgumentNullException.ThrowIfNull(principal);
+        ValidateTimeout(timeout);
+
+        // This service and its collaborators are singletons. Clone the request principal,
+        // then leave the response path before starting cleanup so a slow cancellation cannot
+        // extend the synchronous request deadline.
+        var principalSnapshot = new ClaimsPrincipal(principal);
+        _ = Task.Run(
+            () => CancelOrphanedInBackgroundAsync(jobId, principalSnapshot, timeout),
+            CancellationToken.None);
+    }
+
     public Task<GeoprocessingCancelResult> CancelOrphanedAsync(
         string jobId,
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default)
         => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: true, clientDisconnect);
+
+    private async Task CancelOrphanedInBackgroundAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        TimeSpan timeout)
+    {
+        try
+        {
+            await CancelOrphanedAsync(
+                jobId,
+                principal,
+                timeout,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.OrphanedCancellationFailed(_logger, jobId, ex);
+        }
+    }
 
     private async Task<GeoprocessingCancelResult> CancelCoreAsync(
         string jobId,
@@ -259,5 +301,17 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
         {
             throw new ArgumentOutOfRangeException(nameof(timeout), "A positive, finite timeout is required.");
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            8037,
+            LogLevel.Warning,
+            "Best-effort cancellation failed for orphaned synchronous geoprocessing job {JobId}")]
+        public static partial void OrphanedCancellationFailed(
+            ILogger logger,
+            string jobId,
+            Exception exception);
     }
 }

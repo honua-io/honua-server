@@ -239,6 +239,34 @@ public sealed class OpenApiDriftTests
     }
 
     [ArchitectureTest]
+    public void OgcProcessesExecute_DocumentsSynchronousExecutionContract()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var execute = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/ogc/processes/processes/{processId}/execution")
+            .GetProperty("post");
+
+        var prefer = execute.GetProperty("parameters").EnumerateArray()
+            .Single(parameter => parameter.GetProperty("name").GetString() == "Prefer");
+        prefer.GetProperty("description").GetString().Should().Contain("respond-sync");
+
+        var responses = execute.GetProperty("responses");
+        foreach (var status in new[] { "200", "201", "408", "409", "500" })
+        {
+            responses.TryGetProperty(status, out _).Should().BeTrue(
+                "the execution operation must document runtime outcome {0}", status);
+        }
+
+        responses.GetProperty("200")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString().Should().Be("#/components/schemas/Results");
+    }
+
+    [ArchitectureTest]
     public void OgcMapsTileSetEndpoints_DescribeRuntimeParameterAndErrorContracts()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-maps-openapi.json")));
