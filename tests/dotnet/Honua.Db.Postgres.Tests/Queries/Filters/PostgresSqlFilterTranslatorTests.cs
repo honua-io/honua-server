@@ -37,6 +37,25 @@ public class PostgresSqlFilterTranslatorTests
                 "existing catch sites filter on ArgumentException and must keep working");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Translate_UnknownPropertyInSpatialPredicate_ThrowsUnknownFilterFieldException(bool geodesic)
+    {
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("collection_specific_field"),
+            new PropertyReference("geometry"))
+        {
+            Geodesic = geodesic,
+        };
+
+        var translate = () => _translator.Translate(spatial, _resource);
+
+        translate.Should().Throw<UnknownFilterFieldException>()
+            .Which.PropertyName.Should().Be("collection_specific_field");
+    }
+
     [Fact]
     public void Translate_PropertyReference_ReturnsFieldName()
     {
