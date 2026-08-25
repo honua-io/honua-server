@@ -20,6 +20,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -320,6 +321,38 @@ public sealed class McpPlatformOpsReaderTests
         payload.CurrentRevision.Should().Be("rev-10");
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeRollback_MultiTenancyDisabled_RoutesWithTenantlessAuthority()
+    {
+        var store = new RecordingWorkflowOperationStore(
+            BuildDeployOperation(
+                "op-latest",
+                targetId: "serving-us-west",
+                desiredRevision: "rev-10",
+                currentRevision: "rev-9",
+                status: WorkflowOperationStatus.Succeeded));
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.Executed,
+            Decision = new GuardrailDecision(
+                GuardrailTier.DirectExecute,
+                OperationClass.Deploy,
+                HonuaEdition.Pro,
+                "test"),
+        });
+
+        using var services = CreateServices(gateway, multiTenancyEnabled: false, tenantId: null);
+        var reader = CreateReader(store: store, services: services);
+
+        await reader.ProposeRollbackAsync(
+            CreatePrincipal(),
+            new McpProposeRollbackArgument { TargetId = "serving-us-west", ToRevision = "rev-9" },
+            CancellationToken.None);
+
+        gateway.LastRequest!.Authority!.EffectiveTenant.Should().Be(OperationAuthorityContext.Tenantless);
+    }
+
     private static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
@@ -352,10 +385,18 @@ public sealed class McpPlatformOpsReaderTests
 
     private static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
-        IOperationExecutorCatalog? catalog = null)
+        IOperationExecutorCatalog? catalog = null,
+        bool multiTenancyEnabled = true,
+        string? tenantId = "tenant-1")
     {
         var services = new ServiceCollection();
-        services.AddSingleton<ITenantContext>(new TestTenantContext());
+        services.AddSingleton<ITenantContext>(new TestTenantContext(tenantId));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MultiTenancy:Enabled"] = multiTenancyEnabled.ToString(),
+            })
+            .Build());
         services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
         if (gateway is not null)
         {
@@ -378,17 +419,17 @@ public sealed class McpPlatformOpsReaderTests
             ],
             "test"));
 
-    private sealed class TestTenantContext : ITenantContext
+    private sealed class TestTenantContext(string? tenantId) : ITenantContext
     {
-        public string? TenantId => "tenant-1";
+        public string? TenantId { get; } = tenantId;
 
         public TenantContextSource Source => TenantContextSource.Claim;
 
         public bool RequireTenantId(out string tenantId, out string? reason)
         {
-            tenantId = TenantId!;
-            reason = null;
-            return true;
+            tenantId = TenantId ?? string.Empty;
+            reason = TenantId is null ? "no tenant claim present" : null;
+            return TenantId is not null;
         }
     }
 

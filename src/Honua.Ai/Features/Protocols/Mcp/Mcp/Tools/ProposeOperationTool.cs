@@ -132,6 +132,8 @@ internal sealed class ProposeOperationTool : IMcpTool
         var authority = BuildAuthority(
             principal,
             httpContext.RequestServices.GetRequiredService<ITenantContext>(),
+            httpContext.RequestServices.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true),
             kind,
             argument.ResourceId);
         var actor = authority.Actor;
@@ -164,6 +166,7 @@ internal sealed class ProposeOperationTool : IMcpTool
     private static OperationAuthorityContext BuildAuthority(
         ClaimsPrincipal principal,
         ITenantContext tenantContext,
+        bool multiTenancyEnabled,
         OperationClass kind,
         string resourceId)
     {
@@ -181,7 +184,7 @@ internal sealed class ProposeOperationTool : IMcpTool
             _ => OperatorResourceType.Catalog,
         };
 
-        return OperationAuthorityContext.Capture(principal, tenantContext) with
+        return OperationAuthorityContext.Capture(principal, tenantContext, multiTenancyEnabled) with
         {
             OAuthScopes = scopes,
             ScopeCeiling = scopes,

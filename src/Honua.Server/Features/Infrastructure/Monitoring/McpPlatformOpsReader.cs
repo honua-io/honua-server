@@ -193,7 +193,9 @@ internal sealed class McpPlatformOpsReader(
 
         var authority = OperationAuthorityContext.Capture(
             principal,
-            _services.GetRequiredService<ITenantContext>()) with
+            _services.GetRequiredService<ITenantContext>(),
+            _services.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true)) with
         {
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Rollback,

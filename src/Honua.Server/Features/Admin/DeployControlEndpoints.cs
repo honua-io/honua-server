@@ -672,7 +672,9 @@ internal static class DeployControlEndpoints
         var requestedBy = ResolveRequestedBy(context);
         var authority = OperationAuthorityContext.Capture(
             context.User,
-            context.RequestServices.GetRequiredService<ITenantContext>()) with
+            context.RequestServices.GetRequiredService<ITenantContext>(),
+            context.RequestServices.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true)) with
         {
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Publish,
