@@ -131,6 +131,87 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     }
 
     [Fact]
+    public async Task ApplyApprovedProposal_ConcurrentRejection_CannotOverwriteExecutionClaim()
+    {
+        var bothInitialReadsCompleted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseInitialReads = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var executionClaimPersisted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var initialReadCount = 0;
+
+        async Task BeforeGetAsync()
+        {
+            var read = Interlocked.Increment(ref initialReadCount);
+            if (read > 2)
+            {
+                return;
+            }
+
+            if (read == 2)
+            {
+                bothInitialReadsCompleted.TrySetResult(true);
+            }
+
+            await releaseInitialReads.Task;
+        }
+
+        async Task BeforeTrySetAsync(OperationProposal candidate)
+        {
+            if (candidate.Status == OperationProposalStatus.Rejected)
+            {
+                await executionClaimPersisted.Task;
+            }
+        }
+
+        void AfterTrySet(OperationProposal persisted)
+        {
+            if (persisted.Status == OperationProposalStatus.Executing)
+            {
+                executionClaimPersisted.TrySetResult(true);
+            }
+        }
+
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-approve-reject-race", OperationProposalStatus.AwaitingApproval),
+            BeforeGetAsync,
+            BeforeTrySetAsync,
+            AfterTrySet);
+        var executor = new BlockingExecutor();
+        var sut = BuildGateway(store, executor);
+
+        var approvalTask = sut.ApplyApprovedProposalAsync("p-approve-reject-race", "approver");
+        var rejectionTask = sut.RejectProposalAsync("p-approve-reject-race", "rejector", "deny");
+
+        await bothInitialReadsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        releaseInitialReads.TrySetResult(true);
+        await executor.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            var reject = async () => await rejectionTask;
+            await reject.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*transitioned from*AwaitingApproval*Executing*concurrent decision*");
+            store.Snapshot.Status.Should().Be(OperationProposalStatus.Executing);
+            store.Snapshot.Approval.Should().Match<OperationApprovalRecord>(approval =>
+                approval.Approved && approval.ProposerAuthorityRetained);
+        }
+        finally
+        {
+            executor.Release.TrySetResult(true);
+        }
+
+        var approved = await approvalTask;
+
+        approved.Should().NotBeNull();
+        approved!.Status.Should().Be(OperationProposalStatus.Submitted);
+        store.Snapshot.Status.Should().Be(OperationProposalStatus.Submitted);
+        store.Snapshot.Approval.Should().Match<OperationApprovalRecord>(approval =>
+            approval.Approved && approval.ProposerAuthorityRetained);
+    }
+
+    [Fact]
     public async Task ApplyApprovedProposal_PersistsApprovalAndAuthorityBeforeActuation()
     {
         var authority = ValidAuthority();
@@ -290,7 +371,11 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     /// <summary>
     /// Thread-safe in-memory proposal store with CAS semantics (matching Redis behaviour).
     /// </summary>
-    private sealed class InMemoryProposalStore(OperationProposal proposal) : IOperationProposalStore
+    private sealed class InMemoryProposalStore(
+        OperationProposal proposal,
+        Func<Task>? beforeGet = null,
+        Func<OperationProposal, Task>? beforeTrySet = null,
+        Action<OperationProposal>? afterTrySet = null) : IOperationProposalStore
     {
         private OperationProposal _proposal = proposal;
         private readonly Lock _lock = new();
@@ -306,32 +391,48 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             }
         }
 
-        public Task<OperationProposal?> GetAsync(
+        public async Task<OperationProposal?> GetAsync(
             string proposalId,
             CancellationToken cancellationToken = default)
         {
+            OperationProposal? snapshot;
             lock (_lock)
             {
-                return Task.FromResult(
-                    _proposal.ProposalId == proposalId ? _proposal : (OperationProposal?)null);
+                snapshot = _proposal.ProposalId == proposalId ? _proposal : null;
             }
+
+            if (beforeGet != null)
+            {
+                await beforeGet();
+            }
+
+            return snapshot;
         }
 
-        public Task<bool> TrySetAsync(
+        public async Task<bool> TrySetAsync(
             OperationProposal proposal,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
         {
+            if (beforeTrySet != null)
+            {
+                await beforeTrySet(proposal);
+            }
+
+            OperationProposal persisted;
             lock (_lock)
             {
                 if (_proposal.ProposalId != proposal.ProposalId || _proposal.Version != proposal.Version)
                 {
-                    return Task.FromResult(false);
+                    return false;
                 }
 
                 _proposal = proposal with { Version = proposal.Version + 1 };
-                return Task.FromResult(true);
+                persisted = _proposal;
             }
+
+            afterTrySet?.Invoke(persisted);
+            return true;
         }
 
         public Task<bool> TryCreateAsync(
@@ -385,6 +486,32 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         {
             onExecute?.Invoke(request);
             return Task.FromResult<string?>("exec-op-id");
+        }
+    }
+
+    private sealed class BlockingExecutor : IOperationExecutor
+    {
+        public TaskCompletionSource<bool> Entered { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> Release { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public OperationClass OperationClass => OperationClass.Deploy;
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<OperationProposalPlan?>(null);
+
+        public async Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+        {
+            Entered.TrySetResult(true);
+            await Release.Task.WaitAsync(cancellationToken);
+            return "exec-op-id";
         }
     }
 }
