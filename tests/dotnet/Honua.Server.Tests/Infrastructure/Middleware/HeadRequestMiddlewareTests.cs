@@ -133,6 +133,24 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             StatusCodes.Status200OK,
             contentTypes: ["text/event-stream"]));
 
+        // Some transport endpoints do not publish MVC response metadata. MCP in particular
+        // commits the SSE response with a flush, then waits for the first notification without
+        // writing a byte. The explicit marker and flush boundary must still release HEAD.
+        _app.MapGet("/marked-flush-stream", async context =>
+        {
+            context.Response.ContentType = "text/event-stream";
+            await context.Response.Body.FlushAsync(context.RequestAborted);
+
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
+            }
+            finally
+            {
+                _streamHandlerExited.TrySetResult(true);
+            }
+        }).WithMetadata(LongLivedStreamEndpointMetadata.Instance);
+
         // The same SSE contract, but the request is rejected before the stream opens. HEAD must
         // report that real status rather than a synthetic 200.
         _app.MapGet("/stream-missing", () => Results.NotFound())
@@ -304,6 +322,26 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         response.Content.Headers.ContentLength.Should().BeNull(
             "the equivalent GET is unbounded and sends no Content-Length, so the few preamble " +
             "bytes this probe observed must not be advertised as the response length");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnExplicitlyMarkedStreamThatOnlyFlushes_CompletesAndReleasesHandler()
+    {
+        using var timeout = new CancellationTokenSource(StreamProbeTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/marked-flush-stream");
+
+        using var response = await _client.SendAsync(request, timeout.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.ToString().Should().Be("text/event-stream");
+        response.Content.Headers.ContentLength.Should().BeNull();
+
+        var exited = await Task.WhenAny(
+            _streamHandlerExited.Task,
+            Task.Delay(StreamProbeTimeout, timeout.Token));
+        exited.Should().BeSameAs(
+            _streamHandlerExited.Task,
+            "a HEAD probe must release a marked stream even when it flushes headers before writing data");
     }
 
     [UnitTest]
