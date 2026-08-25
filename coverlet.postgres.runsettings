@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Provider-scoped Coverlet settings for the Postgres compatibility lane.
+
+  The generic coverlet.runsettings instruments every loaded production assembly.
+  Honua.Postgres.Tests has a broad transitive graph, and instrumenting that entire
+  graph delayed xUnit discovery until the 30-minute job timeout. Compatibility is
+  still exercised by the complete test assembly; only the coverage payload is
+  narrowed to the provider that this lane owns.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <DeterministicReport>true</DeterministicReport>
+          <UseSourceLink>true</UseSourceLink>
+          <Include>[Honua.Postgres]*</Include>
+          <Exclude>[xunit.*]*,[*.Tests]*,[*.TestKit]*</Exclude>
+          <ExcludeByFile>**/*.Designer.cs,**/*.g.cs,**/*.g.i.cs,**/Migrations/*.cs,**/obj/**/*.cs,**/*.AssemblyInfo.cs,**/*GlobalUsings.g.cs</ExcludeByFile>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SingleHit>false</SingleHit>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

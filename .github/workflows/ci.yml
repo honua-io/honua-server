@@ -2585,7 +2585,12 @@ jobs:
             --results-directory ./tests/TestResults
           )
           if [ "${COLLECT_COVERAGE}" = "true" ]; then
-            test_args+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
+            # This lane owns provider coverage. Using the repository-wide
+            # settings instruments the entire transitive assembly graph before
+            # xUnit discovery (about 25 minutes on hosted runners), while the
+            # compatibility suite itself takes under a minute. Keep the full
+            # suite and scope only instrumentation to Honua.Postgres.
+            test_args+=(--collect:"XPlat Code Coverage" --settings coverlet.postgres.runsettings)
           fi
           "${test_args[@]}"
 
