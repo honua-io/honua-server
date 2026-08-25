@@ -61,10 +61,12 @@ internal static class DirectSubmitPlanValidator
                 }
 
                 if (!string.IsNullOrWhiteSpace(step.ProcessId)
-                    && processCatalog.GetProcess(step.ProcessId) is { ExecutionKind: not ProcessExecutionKind.Job } definition)
+                    && processCatalog.GetProcess(step.ProcessId) is { } definition
+                    && !ProcessExecutionEligibility.IsJobCallable(definition))
                 {
                     var code = definition.ExecutionKind switch
                     {
+                        ProcessExecutionKind.Job => "ASYNC_EXECUTION_UNSUPPORTED",
                         ProcessExecutionKind.ProtocolOnly => "SYNC_ONLY_PROCESS",
                         ProcessExecutionKind.WorkflowOnly => "WORKFLOW_ONLY_PROCESS",
                         ProcessExecutionKind.Unavailable => "PROCESS_UNAVAILABLE",
@@ -74,7 +76,8 @@ internal static class DirectSubmitPlanValidator
                     {
                         Code = code,
                         Message = $"Process '{step.ProcessId}' referenced by step '{step.StepId}' is classified "
-                            + $"as {definition.ExecutionKind} and cannot be submitted as a process job. "
+                            + $"as {definition.ExecutionKind} with modes '{definition.SupportedExecutionModes}' "
+                            + "and cannot be submitted as an asynchronous process job. "
                             + (definition.ExecutionCapabilityReason ?? "The catalog does not declare a job execution capability."),
                         FieldPath = $"steps[{step.StepId}].process_id"
                     });

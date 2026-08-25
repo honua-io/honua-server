@@ -204,6 +204,46 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_JobWithoutAsyncMode_ReportsNotExecutable()
+    {
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.sync-job",
+            Title = "Sync job",
+            Description = "Test-only sync job.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess(definition.ProcessId).Returns(definition);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-sync-job",
+            IntentId = "intent-sync-job",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "sync-job",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var (violations, _) = DirectSubmitPlanValidator.Evaluate(plan, catalog);
+
+        violations.Should().ContainSingle(violation =>
+            violation.Code == "ASYNC_EXECUTION_UNSUPPORTED");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_NonGeoprocessStep_WarnsItIsIgnored()
     {
         var plan = new AnalysisPlan
