@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Capabilities;
 using Honua.Server.Features.Admin;
 
@@ -109,9 +110,17 @@ public sealed class FeatureOverviewCapabilityProjectionTests
         var enabled = FeatureOverviewEndpoints.ProjectCapabilities(
             [DynamicDescriptor],
             CapabilityGateContext.Default,
-            publishOperationsEnabled: true);
+            new McpPublishedOperationOptions { Enabled = true });
         var enabledItem = enabled.Should().ContainSingle().Subject;
         enabledItem.Enabled.Should().BeTrue();
         enabledItem.ReasonCode.Should().BeNull();
+
+        var deterministicOnly = FeatureOverviewEndpoints.ProjectCapabilities(
+            [DynamicDescriptor],
+            CapabilityGateContext.Default,
+            new McpPublishedOperationOptions { Enabled = true, DeterministicOnly = true });
+        var deterministicOnlyItem = deterministicOnly.Should().ContainSingle().Subject;
+        deterministicOnlyItem.Enabled.Should().BeFalse();
+        deterministicOnlyItem.ReasonCode.Should().Be(CapabilityReasonCodes.DisabledByConfiguration);
     }
 }
