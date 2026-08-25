@@ -154,6 +154,34 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /mcp/")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_TrailingSlashTenantlessBearerToolCall_IsDeniedBeforeToolExecution()
+    {
+        var token = CreateToken(subject: "operator-123", additionalClaims:
+        [
+            new Claim("roles", "admin"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+        using var request = BuildRpc(
+            """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId: null,
+            bearer: token);
+        request.RequestUri = new Uri("/mcp/", UriKind.Relative);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var result = document.RootElement.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be("permission_denied");
+        result.GetProperty("content")[0].GetProperty("text").GetString()
+            .Should().Contain("validated tenant");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task Post_TenantBoundBearerToolCall_UsesResolvedTenantAndSucceeds()
