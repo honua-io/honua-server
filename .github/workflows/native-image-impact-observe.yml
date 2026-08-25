@@ -259,7 +259,10 @@ jobs:
           EXPECTED_HEAD: ${{ steps.collect.outputs.head_sha }}
         with:
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const {
+              recordObservationSkip,
               resolveTrustedPullRequestWorkflowRun,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
             const { data: repository } = await github.rest.repos.get(context.repo);
@@ -287,10 +290,34 @@ jobs:
                 : '';
             if (moved) {
               core.warning(`Discarding native-image observation: ${moved}.`);
+              recordObservationSkip({
+                core,
+                fs,
+                label: 'native-image-impact',
+                markerPath: path.join(process.env.RUNNER_TEMP, 'observation-skipped.json'),
+                code: resolved.skipped
+                  ? resolved.code
+                  : 'pull-request-identity-moved',
+                reason: moved,
+                source: {
+                  runId: process.env.SOURCE_RUN_ID,
+                  runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+                  runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+                },
+              });
               core.setOutput('retain', 'false');
               return;
             }
             core.setOutput('retain', 'true');
+
+      - name: Retain recheck observation skip marker
+        if: steps.recheck.outputs.skip == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: native-image-impact-skipped-${{ steps.recheck.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
 
       # Published only after the recheck, so a discarded observation is never
       # presented in the job summary as if it were evidence.

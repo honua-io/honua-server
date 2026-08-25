@@ -21,6 +21,7 @@ LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v2"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
 NATIVE_CONTRACT = "honua.ci.native-image-impact-observation/v3"
 REPOSITORY = "honua-io/honua-server"
+RECEIPT_LOSS_ISSUE = "https://github.com/honua-io/honua-server/issues/3343"
 DEFAULT_BRANCH = "trunk"
 PR_GATE_STREAM = "pr_gate"
 NATIVE_STREAM = "native"
@@ -33,6 +34,9 @@ SERVING_WORKFLOW = ".github/workflows/serving-image-boundary.yml"
 WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
 PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-docs-only-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
+)
+PR_GATE_FULL_ARTIFACT = re.compile(
+    r"^pr-gate-impact-full-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
 NATIVE_ARTIFACT = re.compile(
     r"^native-image-impact-observation-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
@@ -191,6 +195,12 @@ def current_blobs(root: Path) -> dict[str, str]:
         "trusted_run_resolver": "scripts/ci/trusted-pr-workflow-run.js",
     }
     blobs = {key: git_blob_sha(root / value) for key, value in paths.items()}
+    blobs["native_policy_inputs_sha256"] = native_policy_inputs_digest(blobs)
+    return blobs
+
+
+def native_policy_inputs_digest(blobs: dict[str, str]) -> str:
+    """Replay the ordered policy manifest embedded by the native observer."""
     manifest = [
         {"path": "scripts/ci/native-image-impact.py", "blob_sha": blobs["native_classifier"]},
         {"path": ".github/native-image-impact.json", "blob_sha": blobs["native_routing_policy"]},
@@ -200,10 +210,9 @@ def current_blobs(root: Path) -> dict[str, str]:
         {"path": "scripts/ci/trusted-pr-workflow-run.js", "blob_sha": blobs["trusted_run_resolver"]},
         {"path": NATIVE_WORKFLOW, "blob_sha": blobs["native_observer"]},
     ]
-    blobs["native_policy_inputs_sha256"] = hashlib.sha256(
+    return hashlib.sha256(
         json.dumps(manifest, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    return blobs
 
 
 def flatten_pages(root: Path, collection: str) -> list[dict[str, Any]]:
@@ -303,6 +312,9 @@ def _discover_stream(
     artifact_pattern: re.Pattern[str],
     cutoff: datetime,
     skip_pattern: re.Pattern[str],
+    noncounted_pattern: re.Pattern[str] | None = None,
+    noncounted_reason: str | None = None,
+    receipt_retention_days: int = 7,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
@@ -343,6 +355,44 @@ def _discover_stream(
             ):
                 matches.append(artifact)
         if not matches:
+            noncounted = [
+                artifact
+                for artifact in by_run.get(run_id, [])
+                for match in [
+                    noncounted_pattern.fullmatch(str(artifact.get("name", "")))
+                    if noncounted_pattern is not None else None
+                ]
+                if match
+                and int(match.group("attempt")) == run["run_attempt"]
+                and artifact.get("expired") is False
+                and parse_time(artifact.get("created_at"), "artifact creation") >= cutoff
+            ]
+            if len(noncounted) == 1 and noncounted_reason is not None:
+                exclusions.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": noncounted_reason,
+                })
+                continue
+            if noncounted:
+                failures.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": "observation-noncounted-artifact-ambiguous",
+                })
+                continue
+            # Producer discovery deliberately starts one hour before the
+            # receipt cutoff so a run that begins just before the boundary can
+            # still contribute an artifact uploaded inside the window. If no
+            # eligible artifact exists, that margin run is outside the cohort,
+            # not a receipt-emission loss.
+            if parse_time(run["created_at"], "observer run creation") < cutoff:
+                exclusions.append({
+                    "stream": stream,
+                    "producer_run_id": run_id,
+                    "reason": "observer-run-before-receipt-window",
+                })
+                continue
             # A deliberate, recorded skip of a superseded source is not a
             # receipt-emission regression; classify it by its own code so the
             # remaining "not emitted" count keeps its diagnostic value.
@@ -372,6 +422,11 @@ def _discover_stream(
                 "stream": stream,
                 "producer_run_id": run_id,
                 "reason": "observation-receipt-not-emitted",
+                "tracking_issue": RECEIPT_LOSS_ISSUE,
+                "expires_at": (
+                    parse_time(run["created_at"], "observer run creation")
+                    + timedelta(days=receipt_retention_days, hours=1)
+                ).isoformat(),
             })
             continue
         if len(matches) != 1:
@@ -439,11 +494,12 @@ def discover(
     streams = (
         (
             PR_GATE_STREAM, pr_gate_runs, pr_gate_artifacts, PR_GATE_WORKFLOW,
-            PR_GATE_ARTIFACT, PR_GATE_SKIP_ARTIFACT,
+            PR_GATE_ARTIFACT, PR_GATE_SKIP_ARTIFACT, PR_GATE_FULL_ARTIFACT,
+            "observation-not-counted:full-impact",
         ),
         (
             NATIVE_STREAM, native_runs, native_artifacts, NATIVE_WORKFLOW,
-            NATIVE_ARTIFACT, NATIVE_SKIP_ARTIFACT,
+            NATIVE_ARTIFACT, NATIVE_SKIP_ARTIFACT, None, None,
         ),
     )
     entries: list[dict[str, Any]] = []
@@ -451,6 +507,7 @@ def discover(
     failures: list[dict[str, Any]] = []
     for (
         stream, runs_root, artifacts_root, workflow, artifact_pattern, skip_pattern,
+        noncounted_pattern, noncounted_reason,
     ) in streams:
         found, omitted, invalid = _discover_stream(
             stream,
@@ -460,6 +517,9 @@ def discover(
             artifact_pattern,
             cutoff,
             skip_pattern,
+            noncounted_pattern,
+            noncounted_reason,
+            policy["receipt_retention_days"],
         )
         entries.extend(found)
         exclusions.extend(omitted)
@@ -543,13 +603,13 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
         raise ValueError("PR Gate receipt trust boundary is invalid")
     if value.get("policy_sha") != entry["producer_head_sha"]:
         raise ValueError("PR Gate receipt policy head differs from producer")
-    if (
-        value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
-        or value.get("gate_workflow_blob_sha") != blobs["pr_gate_workflow"]
-        or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
-        or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
-    ):
-        raise ValueError("PR Gate receipt policy inputs are not current")
+    receipt_blobs = {
+        "pr_gate_classifier": exact_sha(value.get("policy_blob_sha"), "PR Gate classifier blob"),
+        "pr_gate_workflow": exact_sha(value.get("gate_workflow_blob_sha"), "PR Gate workflow blob"),
+        "trusted_run_resolver": exact_sha(value.get("resolver_blob_sha"), "PR Gate resolver blob"),
+        "pr_gate_observer": exact_sha(value.get("observer_workflow_blob_sha"), "PR Gate observer blob"),
+    }
+    policy_current = all(receipt_blobs[name] == blobs[name] for name in receipt_blobs)
     pull_request = positive_int(value.get("pull_request"), "PR Gate pull request")
     head = exact_sha(value.get("head_sha"), "PR Gate head")
     exact_sha(value.get("base_sha"), "PR Gate base")
@@ -569,6 +629,7 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
         "gate_conclusion": value["gate_run_conclusion"],
         "producer_run_id": entry["producer_run_id"],
         "artifact_id": entry["artifact_id"],
+        "policy_current": policy_current,
     }
 
 
@@ -586,19 +647,26 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         raise ValueError("native-image receipt trust boundary is invalid")
     if value.get("policy_sha") != entry["producer_head_sha"]:
         raise ValueError("native-image receipt policy head differs from producer")
-    expected_blobs = {
-        "policy_blob_sha": blobs["native_classifier"],
-        "routing_policy_blob_sha": blobs["native_routing_policy"],
-        "gate_workflow_blob_sha": blobs["pr_gate_workflow"],
-        "serving_workflow_blob_sha": blobs["serving_workflow"],
-        "worker_workflow_blob_sha": blobs["worker_workflow"],
-        "resolver_blob_sha": blobs["trusted_run_resolver"],
-        "observer_workflow_blob_sha": blobs["native_observer"],
+    receipt_blobs = {
+        "native_classifier": exact_sha(value.get("policy_blob_sha"), "native classifier blob"),
+        "native_routing_policy": exact_sha(
+            value.get("routing_policy_blob_sha"), "native routing policy blob"
+        ),
+        "pr_gate_workflow": exact_sha(value.get("gate_workflow_blob_sha"), "PR Gate workflow blob"),
+        "serving_workflow": exact_sha(value.get("serving_workflow_blob_sha"), "serving workflow blob"),
+        "worker_workflow": exact_sha(value.get("worker_workflow_blob_sha"), "worker workflow blob"),
+        "trusted_run_resolver": exact_sha(value.get("resolver_blob_sha"), "native resolver blob"),
+        "native_observer": exact_sha(value.get("observer_workflow_blob_sha"), "native observer blob"),
     }
-    if any(value.get(field) != expected for field, expected in expected_blobs.items()):
-        raise ValueError("native-image receipt policy inputs are not current")
-    if value.get("policy_inputs_sha256") != blobs["native_policy_inputs_sha256"]:
-        raise ValueError("native-image policy manifest digest is not current")
+    manifest_digest = exact_digest(
+        value.get("policy_inputs_sha256"), "native-image policy manifest digest"
+    )
+    if manifest_digest != native_policy_inputs_digest(receipt_blobs):
+        raise ValueError("native-image policy manifest digest does not replay")
+    policy_current = (
+        all(receipt_blobs[name] == blobs[name] for name in receipt_blobs)
+        and manifest_digest == blobs["native_policy_inputs_sha256"]
+    )
     pull_request = positive_int(value.get("pull_request"), "native-image pull request")
     head = exact_sha(value.get("head_sha"), "native-image head")
     base = exact_sha(value.get("base_sha"), "native-image base")
@@ -699,6 +767,7 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         },
         "producer_run_id": entry["producer_run_id"],
         "artifact_id": entry["artifact_id"],
+        "policy_current": policy_current,
     }
 
 
@@ -721,12 +790,13 @@ def _image_outcome(
             for pull in associations
             if isinstance(pull, dict)
             and pull.get("number") == observation["pull_request"]
-            and isinstance(pull.get("base"), dict)
-            and pull["base"].get("sha") == observation["base_sha"]
-            and isinstance(pull.get("head"), dict)
-            and pull["head"].get("sha") == observation["head_sha"]
         ]
-        if len(associations) == 1 and len(identity_matches) == 1:
+        # The workflow-run head is the synthetic pull-request merge SHA while
+        # the association's head is the source-branch SHA. GitHub also removes
+        # associations after a PR merges. The exact top-level head/path/event
+        # remains immutable evidence; when one association is present it must
+        # still identify the receipt's PR.
+        if not associations or (len(associations) == 1 and len(identity_matches) == 1):
             matches.append(run)
         elif isinstance(run.get("id"), int):
             rejected_ids.append(run["id"])
@@ -908,8 +978,27 @@ def summarize(
             zipfile.BadZipFile,
         ) as error:
             failures.append({"producer_run_id": run_id, "reason": str(error)})
-    pr_gate = _deduplicate(observations[PR_GATE_STREAM], failures)
-    native = _deduplicate(observations[NATIVE_STREAM], failures)
+    validated_pr_gate = observations[PR_GATE_STREAM]
+    validated_native = observations[NATIVE_STREAM]
+    current_pr_gate = [item for item in validated_pr_gate if item["policy_current"]]
+    current_native = [item for item in validated_native if item["policy_current"]]
+    noncurrent = sorted(
+        [
+            {
+                "stream": item["stream"],
+                "producer_run_id": item["producer_run_id"],
+                "artifact_id": item["artifact_id"],
+                "pull_request": item["pull_request"],
+                "head_sha": item["head_sha"],
+                "reason": "receipt-policy-inputs-noncurrent",
+            }
+            for item in (*validated_pr_gate, *validated_native)
+            if not item["policy_current"]
+        ],
+        key=lambda item: (item["stream"], item["producer_run_id"]),
+    )
+    pr_gate = _deduplicate(current_pr_gate, failures)
+    native = _deduplicate(current_native, failures)
     docs_only = [item for item in pr_gate if item["mode"] == "docs-only"]
     docs_failures = [item for item in docs_only if item["gate_conclusion"] != "success"]
     docs_success = [item for item in docs_only if item["gate_conclusion"] == "success"]
@@ -918,6 +1007,7 @@ def summarize(
     worker_catalog = flatten_pages(worker_runs, "workflow_runs")
     native_countable: list[dict[str, Any]] = []
     image_failures: list[dict[str, Any]] = []
+    superseded_image_outcomes: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
@@ -931,6 +1021,28 @@ def summarize(
         if worker_required and not worker["success"]:
             missing.append("worker")
         if missing:
+            newer_same_pr = any(
+                other["pull_request"] == item["pull_request"]
+                and other["gate_run_id"] > item["gate_run_id"]
+                for other in native
+            )
+            missing_outcomes = [serving if name == "serving" else worker for name in missing]
+            cancelled_for_supersession = all(
+                outcome["conclusions"]
+                and set(outcome["conclusions"]) <= {"cancelled"}
+                and not outcome["identity_mismatch_run_ids"]
+                for outcome in missing_outcomes
+            )
+            if newer_same_pr and cancelled_for_supersession:
+                superseded_image_outcomes.append({
+                    "head_sha": item["head_sha"],
+                    "pull_request": item["pull_request"],
+                    "missing_successful_outcomes": missing,
+                    "reason": "authoritative-image-outcome-superseded",
+                    "serving": serving,
+                    "worker": worker,
+                })
+                continue
             image_failures.append({
                 "head_sha": item["head_sha"],
                 "pull_request": item["pull_request"],
@@ -992,6 +1104,32 @@ def summarize(
         "authoritative_image_outcomes_clean": not image_failures,
     }
     eligible = all(gates.values())
+    index_exclusions = list(index_value.get("exclusions", []))
+    missing_by_stream = {
+        stream: sum(
+            1 for item in index_exclusions
+            if item.get("stream") == stream
+            and item.get("reason") == "observation-receipt-not-emitted"
+        )
+        for stream in (PR_GATE_STREAM, NATIVE_STREAM)
+    }
+    emitted_by_stream = {
+        stream: sum(1 for item in entries if item.get("stream") == stream)
+        for stream in (PR_GATE_STREAM, NATIVE_STREAM)
+    }
+    receipt_accounting = {
+        stream: {
+            "expected": emitted_by_stream[stream] + missing_by_stream[stream],
+            "missing": missing_by_stream[stream],
+        }
+        for stream in (PR_GATE_STREAM, NATIVE_STREAM)
+    }
+    expected_receipts = sum(item["expected"] for item in receipt_accounting.values())
+    missing_receipts = sum(item["missing"] for item in receipt_accounting.values())
+    receipt_loss_percent = round(
+        (100.0 * missing_receipts / expected_receipts) if expected_receipts else 0.0,
+        2,
+    )
     return {
         "contract": LEDGER_CONTRACT,
         "mode": "report-only",
@@ -1006,8 +1144,16 @@ def summarize(
         "current_policy_blobs": blobs,
         "counts": {
             "discovered_artifacts": len(entries),
-            "validated_pr_gate_receipts": len(pr_gate),
-            "validated_native_receipts": len(native),
+            "validated_pr_gate_receipts": len(validated_pr_gate),
+            "validated_native_receipts": len(validated_native),
+            "current_policy_pr_gate_receipts": len(current_pr_gate),
+            "current_policy_native_receipts": len(current_native),
+            "noncurrent_policy_pr_gate_receipts": sum(
+                1 for item in validated_pr_gate if not item["policy_current"]
+            ),
+            "noncurrent_policy_native_receipts": sum(
+                1 for item in validated_native if not item["policy_current"]
+            ),
             "docs_only_success_heads": len(docs_success),
             "docs_only_failure_heads": len(docs_failures),
             "native_countable_heads": len(native_countable),
@@ -1018,22 +1164,29 @@ def summarize(
             "serving_reuse_eligible_heads": len(serving_reuse),
             "worker_reuse_eligible_heads": len(worker_reuse),
             "authoritative_image_outcome_failures": len(image_failures),
+            "authoritative_image_outcomes_superseded": len(superseded_image_outcomes),
             "integrity_failures": len(failures),
             "observations_skipped": sum(
-                1 for item in index_value.get("exclusions", [])
+                1 for item in index_exclusions
                 if str(item.get("reason", "")).startswith("observation-skipped:")
             ),
-            "observation_receipts_not_emitted": sum(
-                1 for item in index_value.get("exclusions", [])
-                if item.get("reason") == "observation-receipt-not-emitted"
+            "observations_not_counted_full_impact": sum(
+                1 for item in index_exclusions
+                if item.get("reason") == "observation-not-counted:full-impact"
             ),
+            "expected_observation_receipts": expected_receipts,
+            "observation_receipts_not_emitted": missing_receipts,
+            "observation_receipt_loss_percent": receipt_loss_percent,
         },
-        "skipped_observations_by_code": skipped_by_code(index_value.get("exclusions", [])),
+        "skipped_observations_by_code": skipped_by_code(index_exclusions),
+        "receipt_accounting": receipt_accounting,
         "gates": gates,
         "signals": signals,
         "docs_only_failures": docs_failures,
         "image_outcome_failures": image_failures,
+        "superseded_image_outcomes": superseded_image_outcomes,
         "integrity_failures": failures,
+        "noncurrent_policy_receipts": noncurrent,
         "countable": {
             "docs_only": docs_success,
             "native": native_countable,
@@ -1042,7 +1195,7 @@ def summarize(
             "serving": serving_reuse,
             "worker": worker_reuse,
         },
-        "exclusions": index_value.get("exclusions", []),
+        "exclusions": index_exclusions + noncurrent,
     }
 
 
@@ -1078,7 +1231,15 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"worker `{', '.join(ledger['savings_mechanism']['worker']) or 'none'}`",
         f"- Docs-only gate failures: `{counts['docs_only_failure_heads']}`",
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`",
+        "- Superseded native image outcomes (cancelled older push with newer receipt): "
+        f"`{counts['authoritative_image_outcomes_superseded']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
+        "- Current/noncurrent PR Gate receipts: "
+        f"`{counts['current_policy_pr_gate_receipts']}` / "
+        f"`{counts['noncurrent_policy_pr_gate_receipts']}`",
+        "- Current/noncurrent native receipts: "
+        f"`{counts['current_policy_native_receipts']}` / "
+        f"`{counts['noncurrent_policy_native_receipts']}`",
         f"- Observations skipped (superseded source): `{counts['observations_skipped']}`"
         + (
             " — " + ", ".join(
@@ -1087,8 +1248,14 @@ def markdown(ledger: dict[str, Any]) -> str:
             )
             if ledger.get("skipped_observations_by_code") else ""
         ),
+        "- Successful full-impact PR Gate observations outside the docs-only cohort: "
+        f"`{counts['observations_not_counted_full_impact']}`",
         f"- Successful observers with no receipt and no skip marker: "
         f"`{counts['observation_receipts_not_emitted']}`",
+        "- Observation receipt loss: "
+        f"`{counts['observation_receipts_not_emitted']}` / "
+        f"`{counts['expected_observation_receipts']}` "
+        f"(`{counts['observation_receipt_loss_percent']:.2f}%`)",
         "",
         "| Gate | Passed |",
         "|---|---|",

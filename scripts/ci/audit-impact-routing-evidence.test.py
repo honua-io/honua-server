@@ -244,6 +244,8 @@ def image_run(
     base: str = BASE,
     started: str = "2026-08-16T00:00:00Z",
     completed: str = "2026-08-16T00:02:00Z",
+    associated_head: str | None = None,
+    associations: bool = True,
 ) -> dict:
     return {
         "id": run_id,
@@ -260,9 +262,9 @@ def image_run(
             {
                 "number": pr,
                 "base": {"sha": base},
-                "head": {"sha": head},
+                "head": {"sha": associated_head or head},
             }
-        ],
+        ] if associations else [],
     }
 
 
@@ -323,6 +325,58 @@ def test_policy_and_discovery() -> None:
         assert any(
             item["reason"] == "observation-receipt-not-emitted"
             for item in old_name["exclusions"]
+        )
+        missing_receipt = next(
+            item for item in old_name["exclusions"]
+            if item["reason"] == "observation-receipt-not-emitted"
+        )
+        assert missing_receipt["tracking_issue"] == MODULE.RECEIPT_LOSS_ISSUE
+        assert missing_receipt["expires_at"] == "2026-09-15T01:00:00+00:00"
+
+        # A successful full-impact observation is intentionally outside this
+        # docs-only receipt cohort. Its exact attempt-bound artifact must keep
+        # it out of the receipt-loss numerator.
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, "pr-gate-impact-full-v3-attempt-1")
+        ])
+        full_impact = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, tzinfo=timezone.utc),
+        )
+        assert any(
+            item["reason"] == "observation-not-counted:full-impact"
+            for item in full_impact["exclusions"]
+        )
+        assert not any(
+            item["reason"] == "observation-receipt-not-emitted"
+            and item["stream"] == MODULE.PR_GATE_STREAM
+            for item in full_impact["exclusions"]
+        )
+
+        # The run query has a one-hour leading margin so artifacts uploaded
+        # just after the cutoff are not missed. A margin run whose artifacts
+        # are also older than the cutoff is outside the denominator.
+        before_window = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(receipt_retention_days=1),
+            datetime(2026, 8, 17, 0, 30, tzinfo=timezone.utc),
+        )
+        assert any(
+            item["reason"] == "observer-run-before-receipt-window"
+            and item["stream"] == MODULE.PR_GATE_STREAM
+            for item in before_window["exclusions"]
+        )
+        assert not any(
+            item["reason"] == "observation-receipt-not-emitted"
+            and item["stream"] == MODULE.PR_GATE_STREAM
+            for item in before_window["exclusions"]
         )
 
         # A recorded skip of a superseded source must NOT be counted as a
@@ -494,7 +548,7 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert all(ledger["gates"].values())
 
         stale_serving = [
-            image_run(207, MODULE.SERVING_WORKFLOW, HEAD_B, 11, base="f" * 40),
+            image_run(207, MODULE.SERVING_WORKFLOW, HEAD_B, 99),
             image_run(208, MODULE.SERVING_WORKFLOW, HEAD_B, 99),
             serving[1],
             serving[2],
@@ -513,6 +567,46 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert stale["image_outcome_failures"][0]["serving"][
             "identity_mismatch_run_ids"
         ] == [207, 208]
+
+        # GitHub's pull_request workflow run is keyed by the synthetic merge
+        # SHA while its association names the source head. After merge GitHub
+        # can remove the association entirely. Both remain exact-head evidence;
+        # a present association must still identify the expected PR.
+        github_identity_serving = [
+            image_run(
+                209,
+                MODULE.SERVING_WORKFLOW,
+                HEAD_B,
+                11,
+                base="f" * 40,
+                associated_head="1" * 40,
+            ),
+            serving[1],
+            serving[2],
+        ]
+        github_identity_worker = [
+            image_run(
+                210,
+                MODULE.WORKER_WORKFLOW,
+                HEAD_B,
+                11,
+                associations=False,
+            ),
+            worker[1],
+        ]
+        pages(root / "serving", "workflow_runs", github_identity_serving)
+        pages(root / "worker", "workflow_runs", github_identity_worker)
+        reconciled = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert reconciled["counts"]["authoritative_image_outcome_failures"] == 0
+        assert reconciled["countable"]["native"][0]["serving_outcome"]["run_ids"] == [209]
+        assert reconciled["countable"]["native"][0]["worker_outcome"]["run_ids"] == [210]
 
         pages(root / "serving", "workflow_runs", serving)
         pages(root / "worker", "workflow_runs", [worker[0]])
@@ -548,7 +642,7 @@ def test_integrity_failures_do_not_count() -> None:
             "gate_workflow_blob_sha",
         ):
             bad = pr_gate_receipt(blobs)
-            bad[field] = "f" * 40
+            bad[field] = "f" * 39
             archive(archives, 301, MODULE.PR_GATE_STREAM, bad)
             ledger = MODULE.summarize(
                 index,
@@ -572,6 +666,99 @@ def test_integrity_failures_do_not_count() -> None:
             REPOSITORY_ROOT,
         )
         assert "member set" in unsafe["integrity_failures"][0]["reason"]
+
+
+def test_noncurrent_policy_receipts_are_visible_but_not_corruption() -> None:
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    old_blobs = dict(blobs)
+    old_blobs["native_classifier"] = "f" * 40
+    old_blobs["native_policy_inputs_sha256"] = MODULE.native_policy_inputs_digest(old_blobs)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        old = native_receipt(old_blobs, pr=11, head=HEAD_B, worker=True)
+        archive(archives, 401, MODULE.NATIVE_STREAM, old)
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "repository": MODULE.REPOSITORY,
+            "cutoff": "2026-08-15T00:00:00Z",
+            "artifacts": [entry(MODULE.NATIVE_STREAM, 401, 1)],
+            "exclusions": [],
+            "integrity_failures": [],
+        }
+        ledger = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert ledger["counts"]["integrity_failures"] == 0
+        assert ledger["counts"]["validated_native_receipts"] == 1
+        assert ledger["counts"]["current_policy_native_receipts"] == 0
+        assert ledger["counts"]["noncurrent_policy_native_receipts"] == 1
+        assert ledger["counts"]["native_countable_heads"] == 0
+        assert ledger["noncurrent_policy_receipts"][0]["producer_run_id"] == 1
+
+        # A stale receipt is still validated internally. Altering one digest
+        # without replaying the policy manifest remains an integrity failure.
+        old["worker_workflow_blob_sha"] = "e" * 40
+        archive(archives, 401, MODULE.NATIVE_STREAM, old)
+        corrupt = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert corrupt["counts"]["integrity_failures"] == 1
+        assert corrupt["counts"]["validated_native_receipts"] == 0
+
+
+def test_receipt_loss_excludes_deliberate_full_impact_observations() -> None:
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        archive(archives, 501, MODULE.PR_GATE_STREAM, pr_gate_receipt(blobs))
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "repository": MODULE.REPOSITORY,
+            "cutoff": "2026-08-15T00:00:00Z",
+            "artifacts": [entry(MODULE.PR_GATE_STREAM, 501, 1)],
+            "exclusions": [
+                {
+                    "stream": MODULE.PR_GATE_STREAM,
+                    "producer_run_id": 2,
+                    "reason": "observation-not-counted:full-impact",
+                },
+                {
+                    "stream": MODULE.NATIVE_STREAM,
+                    "producer_run_id": 3,
+                    "reason": "observation-receipt-not-emitted",
+                },
+            ],
+            "integrity_failures": [],
+        }
+        ledger = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert ledger["counts"]["expected_observation_receipts"] == 2
+        assert ledger["counts"]["observation_receipts_not_emitted"] == 1
+        assert ledger["counts"]["observation_receipt_loss_percent"] == 50.0
+        assert ledger["receipt_accounting"]["pr_gate"] == {"expected": 1, "missing": 0}
+        assert ledger["receipt_accounting"]["native"] == {"expected": 1, "missing": 1}
 
 
 def test_workflows_are_read_only_and_attempt_bound() -> None:
@@ -598,6 +785,9 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
         "name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}"
         in native
     )
+    assert "recordObservationSkip" in native
+    assert "steps.recheck.outputs.skip == 'true'" in native
+    assert "native-image-impact-skipped-${{ steps.recheck.outputs.skip_code }}-attempt-" in native
 
 
 ALL_VARIANTS = {"generic": True, "lambda": True, "functions": True}
@@ -636,6 +826,66 @@ def reuse_ledger(
     return MODULE.summarize(
         index, archives, root / "serving", root / "worker", policy(), REPOSITORY_ROOT
     )
+
+
+def test_cancelled_image_outcome_requires_newer_same_pr_receipt_to_be_superseded() -> None:
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    first = native_receipt(
+        blobs,
+        pr=11,
+        head=HEAD_B,
+        worker=False,
+        legacy_worker=False,
+        gate_run_id=1000,
+    )
+    later = native_receipt(
+        blobs,
+        pr=11,
+        head=HEAD_C,
+        worker=False,
+        legacy_worker=False,
+        gate_run_id=1001,
+    )
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        ledger = reuse_ledger(
+            [first, later],
+            [
+                image_run(
+                    201,
+                    MODULE.SERVING_WORKFLOW,
+                    HEAD_B,
+                    11,
+                    conclusion="cancelled",
+                ),
+                image_run(202, MODULE.SERVING_WORKFLOW, HEAD_C, 11),
+            ],
+            [],
+            root,
+        )
+        assert ledger["counts"]["authoritative_image_outcome_failures"] == 0
+        assert ledger["counts"]["authoritative_image_outcomes_superseded"] == 1
+        assert ledger["counts"]["native_countable_heads"] == 1
+        assert ledger["superseded_image_outcomes"][0]["head_sha"] == HEAD_B
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        latest_cancelled = reuse_ledger(
+            [first],
+            [
+                image_run(
+                    203,
+                    MODULE.SERVING_WORKFLOW,
+                    HEAD_B,
+                    11,
+                    conclusion="cancelled",
+                )
+            ],
+            [],
+            root,
+        )
+        assert latest_cancelled["counts"]["authoritative_image_outcome_failures"] == 1
+        assert latest_cancelled["counts"]["authoritative_image_outcomes_superseded"] == 0
 
 
 def test_exact_input_reuse_counts_when_routing_never_narrows() -> None:
@@ -864,7 +1114,10 @@ def test_malformed_image_input_evidence_fails_closed() -> None:
 test_policy_and_discovery()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
+test_noncurrent_policy_receipts_are_visible_but_not_corruption()
+test_receipt_loss_excludes_deliberate_full_impact_observations()
 test_workflows_are_read_only_and_attempt_bound()
+test_cancelled_image_outcome_requires_newer_same_pr_receipt_to_be_superseded()
 test_exact_input_reuse_counts_when_routing_never_narrows()
 test_reuse_requires_the_attestation_to_exist_when_the_head_starts()
 test_reuse_ordering_is_independent_of_observer_run_id()

@@ -140,11 +140,29 @@ Routing authority stays with the existing workflows until at least 20 distinct
 PR observations satisfy the machine-readable cohort policy in
 `.github/impact-routing-promotion.json`. The report-only Impact Routing Evidence
 Ledger selects only the producer's current attempt and rejects missing or
-ambiguous artifacts, policy-input drift, duplicate head identities, and missing
-receipts. It queries the authoritative Serving Image Boundary and GDAL Worker
-Image histories and counts an impacted head only when every required image run
-for the receipt's exact PR, base SHA, and head SHA completed successfully.
-Successful observer shells are never evidence by themselves.
+ambiguous artifacts, malformed receipts, duplicate head identities, and missing
+receipts. Structurally valid receipts with older policy inputs are reported as a
+noncurrent cohort and never enter promotion evidence; policy evolution is not
+misreported as receipt corruption. The ledger queries the authoritative Serving
+Image Boundary and GDAL Worker Image histories and binds them to the workflow
+run's exact synthetic merge SHA. When GitHub retains one pull-request
+association, its PR number must also match; an empty association remains usable
+because GitHub removes those associations after merge. The association's source
+head and base are not compared with the synthetic merge SHA.
+
+An impacted head counts only when every required image run completed
+successfully. A cancelled older push is a visible superseded exclusion only when
+a newer trusted receipt exists for the same PR; latest-head cancellation,
+failure, missing execution, and ambiguous identity still fail closed. Successful
+observer shells are never evidence by themselves. If the authoritative image
+workflows later add classifier-only successful runs, the ledger must consume an
+exact heavy-build attestation before treating that workflow success as image or
+reuse evidence.
+
+Receipt loss is reported as missing expected receipts divided by emitted plus
+missing expected receipts. Successful `full` PR Gate observations are outside
+the docs-only receipt cohort, and runs admitted only by the one-hour query margin
+whose artifacts predate the retention cutoff are outside the denominator.
 
 The ledger still requires positive impacted cohorts and a demonstrated savings
 cohort; twenty unrelated negative observations cannot authorize promotion. The
