@@ -13,6 +13,7 @@ using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -84,7 +85,15 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
         var sut = CreateSut(
             authorization,
             Substitute.For<IPrincipalMembershipSource>(),
-            apiKeyStore);
+            apiKeyStore,
+            new ApiKeyAuthenticationOptions
+            {
+                AdminPassword = "configured-bootstrap-password",
+                EnvironmentName = "Test",
+                IsTestMode = true,
+                DevAuthBypass = "true",
+                DevAuthBypassAcknowledged = "true",
+            });
         var authority = CreateAuthority() with
         {
             Actor = apiKeyId.ToString("D"),
@@ -101,6 +110,62 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
         result.IsAllowed.Should().BeFalse();
         result.Reason.Should().Contain("revoked");
         await authorization.DidNotReceiveWithAnyArgs().EvaluateAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task RevalidateAsync_ConfiguredBootstrapAdmin_AllowsCurrentFrameworkAuthority()
+    {
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorization.EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        var apiKeyStore = Substitute.For<IAdminApiKeyStore>();
+        var sut = CreateSut(
+            authorization,
+            membership,
+            apiKeyStore,
+            new ApiKeyAuthenticationOptions { AdminPassword = "configured-bootstrap-password" });
+
+        var result = await sut.RevalidateAsync(CreateProposal(CreateFrameworkAdminAuthority("admin")));
+
+        result.IsAllowed.Should().BeTrue();
+        await membership.DidNotReceiveWithAnyArgs()
+            .ResolveMembershipAsync(default!, default, default);
+        await apiKeyStore.DidNotReceiveWithAnyArgs().GetAsync(default, default);
+    }
+
+    [Fact]
+    public async Task RevalidateAsync_ActiveDevelopmentBypass_AllowsCurrentFrameworkAuthority()
+    {
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorization.EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        var apiKeyStore = Substitute.For<IAdminApiKeyStore>();
+        var sut = CreateSut(
+            authorization,
+            membership,
+            apiKeyStore,
+            new ApiKeyAuthenticationOptions
+            {
+                EnvironmentName = "Test",
+                IsTestMode = true,
+                DevAuthBypass = "true",
+                DevAuthBypassAcknowledged = "true",
+            });
+
+        var result = await sut.RevalidateAsync(CreateProposal(CreateFrameworkAdminAuthority("dev-bypass")));
+
+        result.IsAllowed.Should().BeTrue();
+        await membership.DidNotReceiveWithAnyArgs()
+            .ResolveMembershipAsync(default!, default, default);
+        await apiKeyStore.DidNotReceiveWithAnyArgs().GetAsync(default, default);
     }
 
     [Fact]
@@ -132,7 +197,8 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
     private static CurrentOperationAuthorityRevalidator CreateSut(
         IOperatorAuthorizationEvaluator authorization,
         IPrincipalMembershipSource membership,
-        IAdminApiKeyStore apiKeyStore)
+        IAdminApiKeyStore apiKeyStore,
+        ApiKeyAuthenticationOptions? apiKeyOptions = null)
     {
         var scope = Substitute.For<IOperatorScopeAuthorizer>();
         scope.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
@@ -148,7 +214,8 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
             scope,
             ladder,
             membership,
-            apiKeyStore);
+            apiKeyStore,
+            Options.Create(apiKeyOptions ?? new ApiKeyAuthenticationOptions()));
     }
 
     private static OperationProposal CreateProposal(OperationAuthorityContext authority) => new()
@@ -172,4 +239,21 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
         ResourceId = "target-1",
         Operation = OperatorOperation.Publish,
     };
+
+    private static OperationAuthorityContext CreateFrameworkAdminAuthority(string authenticationType)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "admin"),
+            new Claim(ClaimTypes.Role, "admin"),
+            new Claim("auth_type", authenticationType),
+        ], AuthenticationExtensions.ApiKeyScheme));
+
+        return OperationAuthorityContext.Capture(principal, "tenant-1") with
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            ResourceId = "target-1",
+            Operation = OperatorOperation.Publish,
+        };
+    }
 }
