@@ -587,6 +587,41 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task CreateDraft_AuthorizedMixedOwner_PreservesExistingItemMetadata()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var itemId = Guid.NewGuid();
+
+            await store.CreateDraftAsync(BuildDraft("1=1", "item-owner-query", itemId, owner: "alice"));
+            var foreignOwnerDraft = BuildDraft("1=1", "foreign-draft-query", itemId, owner: "bob") with
+            {
+                WorkspaceId = "foreign-workspace",
+                ExpectedExistingItemOwnerId = "alice",
+                ExpectedExistingItemPresent = true,
+            };
+
+            var created = await store.CreateDraftAsync(foreignOwnerDraft);
+            created.OwnerId.Should().Be("bob");
+
+            var items = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            var item = items.Items.Should().ContainSingle(contentItem => contentItem.ItemId == itemId).Subject;
+            item.OwnerId.Should().Be("alice");
+            item.PackageKey.Should().Be("item-owner-query");
+            item.WorkspaceId.Should().Be("studio");
+            item.Family.Should().Be(StudioPackageFamily.Query);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task Migration090_BackfillsDraftOwnerBeforeCreatorFallback()
     {
         // PR #3018 review, round 6, item 2: an admin could create an item while explicitly

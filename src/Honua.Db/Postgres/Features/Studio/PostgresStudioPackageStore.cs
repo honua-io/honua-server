@@ -1020,11 +1020,26 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 (@item_id, @package_key, @workspace_id, @family, @current_version_id, @published_version_id,
                  @owner_id, @created_by, @updated_by, @created_at, @updated_at)
             ON CONFLICT (item_id) DO UPDATE
-            SET package_key = EXCLUDED.package_key,
-                workspace_id = EXCLUDED.workspace_id,
-                family = EXCLUDED.family,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = EXCLUDED.updated_at
+            SET package_key = CASE
+                    WHEN NOT @enforce_creation_owner_fence
+                         OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+                    THEN EXCLUDED.package_key ELSE {_itemsTable}.package_key END,
+                workspace_id = CASE
+                    WHEN NOT @enforce_creation_owner_fence
+                         OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+                    THEN EXCLUDED.workspace_id ELSE {_itemsTable}.workspace_id END,
+                family = CASE
+                    WHEN NOT @enforce_creation_owner_fence
+                         OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+                    THEN EXCLUDED.family ELSE {_itemsTable}.family END,
+                updated_by = CASE
+                    WHEN NOT @enforce_creation_owner_fence
+                         OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+                    THEN EXCLUDED.updated_by ELSE {_itemsTable}.updated_by END,
+                updated_at = CASE
+                    WHEN NOT @enforce_creation_owner_fence
+                         OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+                    THEN EXCLUDED.updated_at ELSE {_itemsTable}.updated_at END
             WHERE NOT @enforce_creation_owner_fence
                OR {_itemsTable}.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
                OR (@expected_existing_item_present
