@@ -257,7 +257,8 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        [FromServices] IGeoprocessingJobService jobService)
+        [FromServices] IGeoprocessingJobService jobService,
+        [FromServices] IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobresults");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
@@ -394,13 +395,33 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
-        var resultsDocument = ToOgcResultsDocument(
-            resultPackage,
-            BaseUrlResolver.GetBaseUrl(context),
-            jobId,
-            context.RequestServices
-                .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
-            logger);
+        OgcResultsDocument resultsDocument;
+        if (OgcProcessesCiteEchoFixture.IsJob(job))
+        {
+            if (!TryToCiteEchoResultsDocument(
+                    job,
+                    resultPackage,
+                    executorOptions.CurrentValue.MaxArtifactBytes,
+                    out resultsDocument))
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status500InternalServerError,
+                    "Invalid certification result",
+                    "The certification fixture produced invalid result evidence.");
+            }
+        }
+        else
+        {
+            resultsDocument = ToOgcResultsDocument(
+                job,
+                resultPackage,
+                BaseUrlResolver.GetBaseUrl(context),
+                jobId,
+                context.RequestServices
+                    .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>(),
+                logger);
+        }
+
         return Results.Json(
             resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
@@ -898,6 +919,7 @@ internal static class JobEndpoints
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
     private static OgcResultsDocument ToOgcResultsDocument(
+        ExecutionJobRecord job,
         AnalysisResultPackage resultPackage,
         string baseUrl,
         string jobId,
@@ -905,9 +927,27 @@ internal static class JobEndpoints
         ILogger logger)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var selectedOutputNames = job.Spec.Parameters
+            .Where(entry => entry.Key.StartsWith(
+                GeoprocessingProtocolMetadataKeys.OutputNamePrefix,
+                StringComparison.Ordinal))
+            .Select(entry => entry.Value)
+            .Where(outputName => !string.IsNullOrWhiteSpace(outputName))
+            .ToHashSet(StringComparer.Ordinal);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
             var artifact = resultPackage.Artifacts[index];
+            var resolvedOutputName = ResolveOutputName(artifact, index);
+            if (selectedOutputNames.Count > 0 && !selectedOutputNames.Contains(resolvedOutputName))
+            {
+                // Ordinary OGC process submissions persist every advertised name
+                // when no selection is supplied, and only selected names otherwise.
+                // Filtering by those durable bindings keeps execution free to
+                // publish its canonical artifact set without leaking unrequested
+                // outputs into the OGC results document. Canonical/legacy jobs with
+                // no bindings retain their historical all-results behavior.
+                continue;
+            }
 
             // Staged output artifacts (#3089) link through the canonical authenticated
             // content route, so no provider location or expiring URL leaks into result
@@ -936,7 +976,7 @@ internal static class JobEndpoints
                 }
             }
 
-            var outputName = ResolveUniqueOutputName(ResolveOutputName(artifact, outputs.Count), outputs);
+            var outputName = ResolveUniqueOutputName(resolvedOutputName, outputs);
             outputs[outputName] = JsonSerializer.SerializeToElement(
                 new OgcArtifactResult
                 {
@@ -950,6 +990,43 @@ internal static class JobEndpoints
         }
 
         return new OgcResultsDocument { Outputs = outputs };
+    }
+
+    private static bool TryToCiteEchoResultsDocument(
+        ExecutionJobRecord job,
+        AnalysisResultPackage resultPackage,
+        long maxArtifactBytes,
+        out OgcResultsDocument resultsDocument)
+    {
+        if (!OgcProcessesCiteEchoFixture.TryResolveOutputBindings(
+                job.Spec.Parameters,
+                out var outputIds)
+            || resultPackage.Artifacts.Count != outputIds.Length)
+        {
+            resultsDocument = new OgcResultsDocument();
+            return false;
+        }
+
+        var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        for (var index = 0; index < resultPackage.Artifacts.Count; index++)
+        {
+            var artifact = resultPackage.Artifacts[index];
+            var outputName = ResolveOutputName(artifact, index);
+            if (!string.Equals(outputName, outputIds[index], StringComparison.Ordinal)
+                || !OgcProcessesCiteEchoExecutor.TryDecodeArtifact(
+                    artifact.Uri,
+                    maxArtifactBytes,
+                    out var value))
+            {
+                resultsDocument = new OgcResultsDocument();
+                return false;
+            }
+
+            outputs[outputName] = value;
+        }
+
+        resultsDocument = new OgcResultsDocument { Outputs = outputs };
+        return true;
     }
 
     private static string ResolveOutputName(ArtifactRef artifact, int index)

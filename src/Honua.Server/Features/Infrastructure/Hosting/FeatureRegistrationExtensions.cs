@@ -90,7 +90,8 @@ internal static class FeatureRegistrationExtensions
     public static IServiceCollection AddServerFeatures(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool redisCacheEntitled = false)
+        bool redisCacheEntitled = false,
+        string? hostEnvironmentName = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -119,7 +120,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
         services.AddOgcStyles();
-        services.AddOgcProcesses(configuration);
+        services.AddOgcProcesses(configuration, hostEnvironmentName);
         services.AddWfs20(configuration);
         services.AddWps20(configuration);
         services.AddWcs20();

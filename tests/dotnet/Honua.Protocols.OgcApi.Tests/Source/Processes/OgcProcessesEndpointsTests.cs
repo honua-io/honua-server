@@ -87,6 +87,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         json.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.");
         json.RootElement.GetProperty("info").GetProperty("title").GetString().Should()
             .Contain("Processes");
+        json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/processes/processes")
+            .GetProperty("get")
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Select(parameter => parameter.GetProperty("name").GetString())
+            .Should().Contain(["limit", "offset"]);
     }
 
     [IntegrationTest]
@@ -167,6 +174,110 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         processes.Select(p => p.GetProperty("id").GetString())
             .Should().Contain(["geometry.buffer", "geometry.clip", "geometry.intersect", "geometry.project"]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithLimit_ReturnsAtMostRequestedCount()
+    {
+        using var response = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
+        processes.Should().ContainSingle();
+        processes[0].GetProperty("id").GetString().Should().Be("honua-geoprocessing");
+        var selfLink = json.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "self");
+        selfLink.GetProperty("href").GetString().Should()
+            .EndWith("/ogc/processes/processes?limit=1");
+
+        var nextLink = json.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "next");
+        nextLink.GetProperty("href").GetString().Should()
+            .EndWith("/ogc/processes/processes?limit=1&offset=1");
+
+        using var nextResponse = await _fixture.Client.GetAsync(
+            nextLink.GetProperty("href").GetString());
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var nextJson = JsonDocument.Parse(await nextResponse.Content.ReadAsStringAsync());
+        nextJson.RootElement.GetProperty("processes").EnumerateArray().ToArray()
+            .Should().ContainSingle()
+            .Which.GetProperty("id").GetString().Should().NotBe("honua-geoprocessing");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithLimit_CanWalkEveryPublishedProcess()
+    {
+        using var unpagedResponse = await _fixture.Client.GetAsync("/ogc/processes/processes");
+        unpagedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var unpagedJson = JsonDocument.Parse(
+            await unpagedResponse.Content.ReadAsStringAsync());
+        var expectedIds = unpagedJson.RootElement.GetProperty("processes")
+            .EnumerateArray()
+            .Select(process => process.GetProperty("id").GetString())
+            .ToArray();
+
+        var actualIds = new List<string?>();
+        string? pageUrl = "/ogc/processes/processes?limit=1";
+        while (pageUrl != null)
+        {
+            using var pageResponse = await _fixture.Client.GetAsync(pageUrl);
+            pageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var pageJson = JsonDocument.Parse(await pageResponse.Content.ReadAsStringAsync());
+            actualIds.AddRange(pageJson.RootElement.GetProperty("processes")
+                .EnumerateArray()
+                .Select(process => process.GetProperty("id").GetString()));
+            actualIds.Count.Should().BeLessThanOrEqualTo(expectedIds.Length);
+            pageUrl = pageJson.RootElement.GetProperty("links")
+                .EnumerateArray()
+                .Where(link => link.GetProperty("rel").GetString() == "next")
+                .Select(link => link.GetProperty("href").GetString())
+                .SingleOrDefault();
+        }
+
+        actualIds.Should().Equal(expectedIds);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithNonPositiveLimit_Returns400()
+    {
+        using var zero = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=0");
+        using var negative = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=-1");
+        using var malformed = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=abc");
+
+        zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        malformed.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        using var error = JsonDocument.Parse(await malformed.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString().Should().Be("Invalid limit");
+        error.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        error.RootElement.GetProperty("detail").GetString().Should()
+            .Be("The 'limit' parameter must be a positive integer.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_WithInvalidOffset_Returns400()
+    {
+        using var negative = await _fixture.Client.GetAsync(
+            "/ogc/processes/processes?limit=1&offset=-1");
+        using var malformed = await _fixture.Client.GetAsync(
+            "/ogc/processes/processes?limit=1&offset=abc");
+
+        negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var error = JsonDocument.Parse(await malformed.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString().Should().Be("Invalid offset");
+        error.RootElement.GetProperty("detail").GetString().Should()
+            .Be("The 'offset' parameter must be a non-negative integer.");
     }
 
     // -----------------------------------------------------------------------
@@ -295,6 +406,25 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             .Select(p => p.GetProperty("id").GetString())
             .ToArray();
         ids.Should().Contain(["surface.slope", "surface.hillshade", "raster.clip", "raster.zonal-statistics"]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task CiteEchoFixture_DefaultProfile_IsNotDiscoverable()
+    {
+        using var listResponse = await _fixture.Client.GetAsync("/ogc/processes/processes");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var list = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        list.RootElement.GetProperty("processes").EnumerateArray()
+            .Select(process => process.GetProperty("id").GetString())
+            .Should().NotContain("honua-cite-echo");
+
+        using var descriptionResponse = await _fixture.Client.GetAsync(
+            "/ogc/processes/processes/honua-cite-echo");
+        descriptionResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -441,6 +571,65 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_FirstSliceProcessWithValueOutputSelection_Submits()
+    {
+        using var request = CreateFirstSliceProcessWithOutputSelectionRequest("value");
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public Task Execute_FirstSliceProcessWithReferenceOutputSelection_Returns400()
+        => ExecuteFirstSliceProcessWithOutputSelectionReturns400("reference");
+
+    private async Task ExecuteFirstSliceProcessWithOutputSelectionReturns400(
+        string transmissionMode)
+    {
+        using var request = CreateFirstSliceProcessWithOutputSelectionRequest(transmissionMode);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        error.RootElement.GetProperty("title").GetString()
+            .Should().Be("Invalid output selection");
+        error.RootElement.GetProperty("detail").GetString()
+            .Should().Contain("only supports value transmission");
+    }
+
+    private static HttpRequestMessage CreateFirstSliceProcessWithOutputSelectionRequest(
+        string transmissionMode)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Content = new StringContent(
+            $$"""
+              {
+                "inputs": {
+                  "wkb": "{{PointWkbBase64}}",
+                  "srid": 4326,
+                  "distance": 25.5
+                },
+                "outputs": {
+                  "outputFeatureLayer": {
+                    "transmissionMode": "{{transmissionMode}}"
+                  }
+                }
+              }
+              """,
+            Encoding.UTF8,
+            "application/json");
+        return request;
     }
 
     [IntegrationTest]
