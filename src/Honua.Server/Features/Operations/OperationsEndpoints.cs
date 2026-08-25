@@ -27,7 +27,7 @@ internal static class OperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Operations")
-            .RequireAdminAuthorization();
+            .RequireAuthorization();
 
         group.MapGet("/", HandleListOperations)
             .WithName("ListOperations")
@@ -63,6 +63,15 @@ internal static class OperationsEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                OperationSideEffectClass.ReadOnly,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
+
         var snapshot = await catalog.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
         context.Response.Headers.ETag = $"\"{snapshot.CatalogVersion}\"";
         return Results.Json(
@@ -78,6 +87,15 @@ internal static class OperationsEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                OperationSideEffectClass.ReadOnly,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
+
         try
         {
             var validation = await invoker
@@ -112,10 +130,30 @@ internal static class OperationsEndpoints
     {
         SetNoStore(context);
 
+        // Preserve the admin-only discovery boundary before resolving the descriptor.
+        // The second check below applies the descriptor's semantic side-effect class.
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                OperationSideEffectClass.ReadOnly,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
+
         var descriptor = await catalog.GetDescriptorAsync(id, cancellationToken).ConfigureAwait(false);
         if (descriptor is null)
         {
             return NotFound(context, $"Operation '{id}' was not found.");
+        }
+
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                descriptor.Policy.SideEffectClass,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
         }
 
         // Only descriptors that explicitly select the HTTP operator gate enter this
@@ -169,12 +207,22 @@ internal static class OperationsEndpoints
         }
     }
 
-    private static IResult HandleGetHandleStatus(
+    private static async Task<IResult> HandleGetHandleStatus(
         HttpContext context,
         string handleId,
-        OperationHandleStore handleStore)
+        OperationHandleStore handleStore,
+        CancellationToken cancellationToken)
     {
         SetNoStore(context);
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                OperationSideEffectClass.ReadOnly,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
+
         var handle = handleStore.Get(handleId);
         if (handle is null)
         {

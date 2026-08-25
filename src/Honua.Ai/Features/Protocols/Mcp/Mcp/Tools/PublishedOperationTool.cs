@@ -10,7 +10,6 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -230,31 +229,11 @@ internal sealed class PublishedOperationTool : IMcpTool
             return;
         }
 
-        var authorization = httpContext.RequestServices.GetService<IAuthorizationService>();
-        if (authorization is null)
-        {
-            throw new GeoprocessingAuthorizationException(
-                requiresAuthentication: false,
-                message: "Caller is not authorized to invoke admin operations.");
-        }
-
-        // MCP uses POST as its transport for every tool call. Give the shared admin
-        // policy the operation's semantic method so admin:read remains valid only for
-        // read-only descriptors, while any future mutating admin tool requires write.
-        var resource = new DefaultHttpContext
-        {
-            RequestServices = httpContext.RequestServices,
-            RequestAborted = cancellationToken,
-            User = principal,
-        };
-        resource.Request.Method = _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly
-            ? HttpMethods.Get
-            : HttpMethods.Post;
-
-        var result = await authorization
-            .AuthorizeAsync(principal, resource, AuthenticationExtensions.AdminPolicy)
-            .ConfigureAwait(false);
-        if (!result.Succeeded)
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                httpContext,
+                principal,
+                _descriptor.Policy.SideEffectClass,
+                cancellationToken).ConfigureAwait(false))
         {
             throw new GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
