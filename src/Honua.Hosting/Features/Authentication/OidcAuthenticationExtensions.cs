@@ -633,6 +633,15 @@ public static class OidcAuthenticationExtensions
                     // while leaving every non-OAuth principal's grant decision untouched.
                     if (context.Principal?.Identity is ClaimsIdentity bearerIdentity)
                     {
+                        // JsonWebTokenHandler may create a ClaimsIdentity whose
+                        // AuthenticationType is a generic federation value rather than the
+                        // concrete ticket scheme. Retain the scheme selected and validated by
+                        // ASP.NET so shared tenant/audit/data boundaries can identify this as
+                        // JwtBearer without consulting an issuer-supplied claim.
+                        CanonicalSecurityActor.StampFrameworkClaim(
+                            bearerIdentity,
+                            CanonicalSecurityActor.AuthenticationSchemeClaim,
+                            context.Scheme.Name);
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             OperatorScopeCatalog.ScopeGovernedClaimType,
