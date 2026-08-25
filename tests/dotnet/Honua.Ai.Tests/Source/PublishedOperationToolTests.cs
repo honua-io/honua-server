@@ -11,12 +11,15 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -84,6 +87,88 @@ public sealed class PublishedOperationToolTests
     {
         PublishedOperationTool.ProjectName("service.publish").Should().Be("honua_op_service_publish");
         PublishedOperationTool.ProjectName("Geo.Buffer-2").Should().Be("honua_op_geo_buffer_2");
+        PublishedOperationTool.ProjectName("admin.server.status").Should().Be("honua_admin_server_status");
+    }
+
+    [UnitTest]
+    public void AdminServerStatus_UsesResultsFamilyAndLiveMetadata()
+    {
+        var tool = new PublishedOperationTool(
+            AdminServerStatusDescriptor(), "cat-v1", NullLogger.Instance);
+
+        tool.WorkflowFamily.Should().Be(McpTelemetry.WorkflowFamily.Results);
+        tool.IsDeterministic.Should().BeFalse();
+
+        var descriptor = tool.Describe();
+        descriptor.Description.Should().Contain("live runtime status");
+        descriptor.Description.Should().NotContain("param-keyed-cached");
+        descriptor.Description.Should().NotContain("AI-assisted");
+    }
+
+    [UnitTest]
+    public async Task Source_Enabled_PublishesAdminDescriptorWithAdminToolName()
+    {
+        var source = new PublishedOperationToolSource(
+            Catalog(AdminServerStatusDescriptor()),
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        tools.Should().ContainSingle().Which.Name.Should().Be("honua_admin_server_status");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_admin_server_status")]
+    public async Task Invoke_AdminOperation_RequiresSharedAdminPolicyBeforeExecution()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle("admin.server.status"));
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object>(),
+                AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Failed());
+        var tool = new PublishedOperationTool(
+            AdminServerStatusDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var invocation = () => tool.InvokeAsync(
+            Context(invoker, authorization: authorization, roles: ["viewer"]),
+            arguments: null,
+            CancellationToken.None);
+
+        await invocation.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        invoker.SubmitCount.Should().Be(0, "admin authorization must run before the operation dispatcher");
+        await authorization.Received(1).AuthorizeAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<object>(resource => ((HttpContext)resource).Request.Method == HttpMethods.Get),
+            AuthenticationExtensions.AdminPolicy);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_admin_server_status")]
+    public async Task Invoke_AdminOperation_WithAdminPolicyGrant_ExecutesLiveOperation()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle("admin.server.status"));
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object>(),
+                AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+        var tool = new PublishedOperationTool(
+            AdminServerStatusDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var result = await tool.InvokeAsync(
+            Context(invoker, authorization: authorization, roles: ["admin"]),
+            arguments: null,
+            CancellationToken.None);
+
+        result.StructuredContent.Should().NotBeNull();
+        var structuredContent = result.StructuredContent!.Value;
+        structuredContent.GetProperty("status").GetString().Should().Be("Completed");
+        structuredContent.GetProperty("deterministic").GetBoolean().Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1);
     }
 
     // ---- Governance through the policy decision point --------------------------
@@ -434,6 +519,7 @@ public sealed class PublishedOperationToolTests
         IOperationInvoker? invoker,
         IPublishedOperationCache? cache = null,
         ILicenseEntitlementService? license = null,
+        IAuthorizationService? authorization = null,
         string[]? roles = null,
         string principalName = "agent-x")
     {
@@ -447,6 +533,11 @@ public sealed class PublishedOperationToolTests
         if (license is not null)
         {
             services.AddSingleton(license);
+        }
+
+        if (authorization is not null)
+        {
+            services.AddSingleton(authorization);
         }
 
         var claims = new List<Claim> { new(ClaimTypes.Name, principalName) };
@@ -540,6 +631,17 @@ public sealed class PublishedOperationToolTests
     {
         OperationId = PublishServiceTool.PublishOperationId,
         Title = "Publish service",
+    };
+
+    private static OperationDescriptor AdminServerStatusDescriptor() => DeterministicReadOnlyDescriptor() with
+    {
+        OperationId = "admin.server.status",
+        Title = "Read server status",
+        Category = "admin",
+        Policy = DeterministicReadOnlyDescriptor().Policy with
+        {
+            Determinism = OperationDeterminism.RuntimeDynamic,
+        },
     };
 
     private static OperationParameterDescriptor Param(string name, bool required) => new()

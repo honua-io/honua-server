@@ -9,6 +9,8 @@ using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 
+using Honua.Core.Features.Infrastructure.Health;
+
 /// <summary>
 /// Health check endpoints with full AOT compatibility
 /// </summary>

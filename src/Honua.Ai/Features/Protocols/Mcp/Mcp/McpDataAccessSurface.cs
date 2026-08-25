@@ -346,6 +346,14 @@ internal sealed class McpDataAccessSurface
         return merged;
     }
 
+    /// <summary>Returns the exact merged tool catalog served by <c>tools/list</c>.</summary>
+    public async Task<IReadOnlyList<IMcpTool>> GetAllToolsAsync(CancellationToken cancellationToken = default)
+    {
+        var tools = _tools.Values.ToList();
+        tools.AddRange(await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false));
+        return tools;
+    }
+
     private async Task<IMcpTool?> ResolveDynamicToolAsync(string name, CancellationToken cancellationToken)
     {
         var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);

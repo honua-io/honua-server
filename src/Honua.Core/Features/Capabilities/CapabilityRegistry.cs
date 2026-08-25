@@ -106,6 +106,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_propose_operation", "propose_operation", "lifecycle"),
             ("honua_ingest_dataset", "ingest_dataset", "lifecycle"),
             ("honua_publish_service", "publish_service", "lifecycle"),
+            ("honua_admin_server_status", "admin_server_status", "results"),
             ("honua_publish_result", "publish_result", "lifecycle"),
             ("honua_ops_health", "ops_health", "results"),
             ("honua_ops_findings", "ops_findings", "results"),
@@ -171,6 +172,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Maturity = CapabilityMaturity.Implemented,
                 StandardName = standard,
                 McpToolName = advertised,
+                IsDynamic = advertised == "honua_admin_server_status",
                 ConformanceMapping = "tools",
             };
         }

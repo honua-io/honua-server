@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.HealthCheck;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;

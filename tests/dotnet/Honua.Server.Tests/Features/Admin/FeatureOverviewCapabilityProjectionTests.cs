@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Capabilities;
 using Honua.Server.Features.Admin;
 
@@ -29,6 +30,15 @@ public sealed class FeatureOverviewCapabilityProjectionTests
         Category = "test",
         Kind = CapabilityKind.ProtocolOperation,
         Maturity = CapabilityMaturity.Experimental,
+    };
+
+    private static readonly CapabilityDescriptor DynamicDescriptor = new()
+    {
+        Id = "mcp.tool.admin_server_status",
+        Category = "results",
+        Kind = CapabilityKind.ProtocolOperation,
+        Maturity = CapabilityMaturity.Implemented,
+        IsDynamic = true,
     };
 
     [Fact]
@@ -85,5 +95,32 @@ public sealed class FeatureOverviewCapabilityProjectionTests
         items.Should().HaveCount(2);
         items[0].Id.Should().Be(ImplementedDescriptor.Id);
         items[1].Id.Should().Be(ExperimentalDescriptor.Id);
+    }
+
+    [Fact]
+    public void ProjectCapabilities_DynamicToolTracksPublicationConfiguration()
+    {
+        var disabled = FeatureOverviewEndpoints.ProjectCapabilities(
+            [DynamicDescriptor],
+            CapabilityGateContext.Default);
+        var disabledItem = disabled.Should().ContainSingle().Subject;
+        disabledItem.Enabled.Should().BeFalse();
+        disabledItem.ReasonCode.Should().Be(CapabilityReasonCodes.DisabledByConfiguration);
+
+        var enabled = FeatureOverviewEndpoints.ProjectCapabilities(
+            [DynamicDescriptor],
+            CapabilityGateContext.Default,
+            new McpPublishedOperationOptions { Enabled = true });
+        var enabledItem = enabled.Should().ContainSingle().Subject;
+        enabledItem.Enabled.Should().BeTrue();
+        enabledItem.ReasonCode.Should().BeNull();
+
+        var deterministicOnly = FeatureOverviewEndpoints.ProjectCapabilities(
+            [DynamicDescriptor],
+            CapabilityGateContext.Default,
+            new McpPublishedOperationOptions { Enabled = true, DeterministicOnly = true });
+        var deterministicOnlyItem = deterministicOnly.Should().ContainSingle().Subject;
+        deterministicOnlyItem.Enabled.Should().BeFalse();
+        deterministicOnlyItem.ReasonCode.Should().Be(CapabilityReasonCodes.DisabledByConfiguration);
     }
 }

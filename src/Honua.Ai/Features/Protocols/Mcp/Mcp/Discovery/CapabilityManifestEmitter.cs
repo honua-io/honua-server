@@ -225,6 +225,7 @@ internal static class CapabilityManifestEmitter
         ArgumentNullException.ThrowIfNull(registry);
         return registry.All
             .Where(d => d.McpToolName is not null)
+            .Where(d => !d.IsDynamic)
             .Select(d => Tool(d.McpToolName!, d.StandardName ?? d.McpToolName!, TitleCase(d.Category)))
             .ToList();
     }
