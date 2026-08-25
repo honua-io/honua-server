@@ -14,6 +14,9 @@ namespace Honua.Core.Features.ControlPlane.Domain;
 /// </summary>
 public sealed record OperationAuthorityContext
 {
+    private const string ApiKeyIdClaim = "api_key_id";
+    private const string ApiKeyNameClaim = "api_key_name";
+
     /// <summary>Canonical value for a deliberately tenant-less operation context.</summary>
     public const string Tenantless = "$tenantless";
 
@@ -53,9 +56,12 @@ public sealed record OperationAuthorityContext
             ?? throw new InvalidOperationException(
                 "An authenticated principal is required to capture operation authority.");
         var scheme = identity.AuthenticationType;
-        var actor = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? identity.FindFirst("sub")?.Value
-            ?? identity.Name;
+        var actor = FirstNonBlank(
+            identity.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            identity.FindFirst("sub")?.Value,
+            identity.FindFirst(ApiKeyIdClaim)?.Value,
+            identity.FindFirst(ApiKeyNameClaim)?.Value,
+            identity.Name);
         var issuer = identity.FindFirst("iss")?.Value ?? scheme;
         var scopes = identity.Claims
             .Where(claim => claim.Type is OperatorScopeCatalog.ScopeClaimType
@@ -133,6 +139,9 @@ public sealed record OperationAuthorityContext
 
     private static bool IsBounded(string? value, int maxLength)
         => !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength;
+
+    private static string? FirstNonBlank(params string?[] candidates)
+        => candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
 
     private static OperationAuthorityContext CreateValidated(
         string? issuer,
