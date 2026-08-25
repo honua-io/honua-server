@@ -14,6 +14,7 @@
 using System.Globalization;
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
+using NpgsqlTypes;
 
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Admin;
@@ -251,9 +252,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var bases = new List<MaterializeRefreshMetadata>();
         await using (var command = new NpgsqlCommand(sql, connection))
         {
-            command.Parameters.AddWithValue(
-                "@schema",
-                string.IsNullOrWhiteSpace(schema) ? DBNull.Value : schema);
+            // Npgsql cannot infer a type for NULL when the parameter is also used by
+            // an IS NULL branch. The file-import path intentionally passes no schema,
+            // so bind the parameter as text explicitly instead of sending an untyped
+            // DBNull that PostgreSQL rejects with 42P08 (honua-server#3442).
+            command.Parameters.Add("@schema", NpgsqlDbType.Text).Value =
+                string.IsNullOrWhiteSpace(schema) ? DBNull.Value : schema;
             command.Parameters.AddWithValue("@table", table);
             command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
