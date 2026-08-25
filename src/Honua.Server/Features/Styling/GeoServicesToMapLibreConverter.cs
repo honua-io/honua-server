@@ -251,7 +251,10 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var sourceId = StyleDefaults.GetSourceId(layer);
-        var stops = new List<UniqueValueMatchStop>();
+        // GeoServices values and vector-tile attributes are not guaranteed to use
+        // the same JSON scalar type. Normalize both sides to strings so an Esri
+        // numeric category still matches a string-encoded tile attribute.
+        var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
         Dictionary<string, object?>? outlinePaint = null;
         double? size = null;
         double? lineWidth = null;
@@ -282,13 +285,9 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
-            if (!TryConvertUniqueValueToken(valueElement, out var token))
-            {
-                continue;
-            }
-
             anyValues = true;
-            stops.Add(new UniqueValueMatchStop(token, color.ToRgbaString()));
+            matchExpr.Add(ConvertValueTokenAsString(valueElement));
+            matchExpr.Add(color.ToRgbaString());
 
             if (fallbackColor == null)
             {
@@ -314,7 +313,7 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var fallbackStr = fallbackColor?.ToRgbaString() ?? "#2D69A5";
-        var matchExpr = BuildUniqueValueExpression(fieldName, stops, fallbackStr);
+        matchExpr.Add(fallbackStr);
 
         // Guard null/missing values: to-string(null) → "" would silently match
         // an empty-string category instead of falling through to the default.
@@ -659,7 +658,7 @@ internal static class GeoServicesToMapLibreConverter
     {
         style = new Dictionary<string, object?>();
 
-        var stops = new List<(UniqueValueToken Token, PictureMarkerPayload Payload)>();
+        var stops = new List<(string Value, PictureMarkerPayload Payload)>();
         var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
@@ -697,12 +696,7 @@ internal static class GeoServicesToMapLibreConverter
                 return false;
             }
 
-            if (!TryConvertUniqueValueToken(valueElement, out var token))
-            {
-                continue;
-            }
-
-            stops.Add((token, payload));
+            stops.Add((ConvertValueTokenAsString(valueElement), payload));
         }
 
         if (stops.Count == 0)
@@ -751,14 +745,15 @@ internal static class GeoServicesToMapLibreConverter
         RecordPictureMarkerPartialIfNeeded(allPayloads, unsupported);
 
         var images = new List<PictureMarkerImage>();
-        var matchStops = new List<UniqueValueMatchStop>(stops.Count);
+        var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
         var index = 0;
 
         foreach (var stop in stops)
         {
             var imageId = BuildPictureMarkerId(layer.Id, index++);
             images.Add(new PictureMarkerImage(imageId, stop.Payload));
-            matchStops.Add(new UniqueValueMatchStop(stop.Token, imageId));
+            matchExpr.Add(stop.Value);
+            matchExpr.Add(imageId);
         }
 
         var fallbackId = images[0].Id;
@@ -768,7 +763,7 @@ internal static class GeoServicesToMapLibreConverter
             images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
-        var matchExpr = BuildUniqueValueExpression(fieldName, matchStops, fallbackId);
+        matchExpr.Add(fallbackId);
 
         // Guard null/missing values — mirrors the color match guard above.
         var expression = new List<object?> { "case", StyleDefaults.BuildNonNullFieldGuard(fieldName), matchExpr, fallbackId };
@@ -1318,75 +1313,25 @@ internal static class GeoServicesToMapLibreConverter
         return StyleParsingHelpers.TryGetDouble(prop, out var value) ? value : null;
     }
 
-    private static List<object?> BuildUniqueValueExpression(
-        string fieldName,
-        IReadOnlyList<UniqueValueMatchStop> stops,
-        object fallback)
+    /// <summary>
+    /// Converts a GeoServices value token to its string representation, matching
+    /// the output of MapLibre's <c>to-string</c> coercion so that <c>match</c>
+    /// stops agree with the coerced input type.
+    /// </summary>
+    private static string ConvertValueTokenAsString(JsonElement element)
     {
-        var numericStops = stops.Where(stop => stop.Token.IsNumeric).ToArray();
-        var textualStops = stops.Where(stop => !stop.Token.IsNumeric).ToArray();
-
-        if (numericStops.Length == 0)
+        return element.ValueKind switch
         {
-            return BuildUniqueValueMatchExpression(fieldName, textualStops, fallback, coerceToString: true);
-        }
-
-        if (textualStops.Length == 0)
-        {
-            return BuildUniqueValueMatchExpression(fieldName, numericStops, fallback, coerceToString: false);
-        }
-
-        var numericMatch = BuildUniqueValueMatchExpression(fieldName, numericStops, fallback, coerceToString: false);
-        var textualMatch = BuildUniqueValueMatchExpression(fieldName, textualStops, fallback, coerceToString: true);
-        return ["case", StyleDefaults.BuildNumericFieldGuard(fieldName), numericMatch, textualMatch];
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Number when element.TryGetInt64(out var longValue) =>
+                longValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            JsonValueKind.Number =>
+                element.GetDouble().ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => element.ToString() ?? string.Empty
+        };
     }
-
-    private static List<object?> BuildUniqueValueMatchExpression(
-        string fieldName,
-        IReadOnlyList<UniqueValueMatchStop> stops,
-        object fallback,
-        bool coerceToString)
-    {
-        object input = coerceToString
-            ? new object?[] { "to-string", new object?[] { "get", fieldName } }
-            : new object?[] { "get", fieldName };
-        var expression = new List<object?> { "match", input };
-
-        foreach (var stop in stops)
-        {
-            expression.Add(stop.Token.Value);
-            expression.Add(stop.Output);
-        }
-
-        expression.Add(fallback);
-        return expression;
-    }
-
-    private static bool TryConvertUniqueValueToken(JsonElement element, out UniqueValueToken token)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Number when element.TryGetDouble(out var doubleValue) && double.IsFinite(doubleValue):
-                token = new UniqueValueToken(doubleValue, IsNumeric: true);
-                return true;
-            case JsonValueKind.String:
-                token = new UniqueValueToken(element.GetString() ?? string.Empty, IsNumeric: false);
-                return true;
-            case JsonValueKind.True:
-                token = new UniqueValueToken("true", IsNumeric: false);
-                return true;
-            case JsonValueKind.False:
-                token = new UniqueValueToken("false", IsNumeric: false);
-                return true;
-            default:
-                token = default;
-                return false;
-        }
-    }
-
-    private readonly record struct UniqueValueToken(object Value, bool IsNumeric);
-
-    private readonly record struct UniqueValueMatchStop(UniqueValueToken Token, object Output);
 }
 
 /// <summary>
