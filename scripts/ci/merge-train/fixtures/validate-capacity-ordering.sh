@@ -405,6 +405,19 @@ TRAIN_GUARD_SCAN_ARMED=0
 train_guard_scan_reset
 pass "the armed evidence memo is read once, reused exactly once, and never used unarmed"
 
+# Arming a later pass must dispose an evidence bundle that the prior pass never
+# consumed (capacity/killed, timeout-rerun, and pre-existing exits all bypass the
+# flake classifier's normal cleanup).
+train_guard_scan_arm
+GUARD_RC=0; train_classify_capacity_guard 704 'Server Tests (Core)' || GUARD_RC=$?
+[[ "${GUARD_RC}" == "0" ]] || fail "cleanup fixture did not preserve ordinary evidence"
+abandoned_evidence_dir="${TRAIN_GUARD_SCAN_EVIDENCE_DIR}"
+[[ -d "${abandoned_evidence_dir}" ]] || fail "cleanup fixture did not create an evidence bundle"
+train_guard_scan_arm
+[[ ! -e "${abandoned_evidence_dir}" ]] \
+  || fail "arming the next guard pass orphaned the prior unconsumed evidence bundle"
+pass "arming a new guard pass disposes unconsumed exact-attempt evidence"
+
 # --- 6. CONTROL: a genuine pre-existing failure is still subtracted ----------
 run_guard 704 'Server Tests (Core)'
 [[ "${GUARD_RC}" == "0" ]] || fail "the guard hijacked an ordinary comparable failure (rc=${GUARD_RC})"

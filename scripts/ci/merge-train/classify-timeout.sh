@@ -229,6 +229,18 @@ train_timeout_kind_is_terminal() {
 # shared by the capacity, timeout and flake classifiers. A caller must never
 # retain a partial or older-attempt bundle after a failed read.
 train_failure_evidence_reset() {
+  local failure_dir="${TRAIN_FAILURE_EVIDENCE_DIR:-}"
+  local flake_dir="${TRAIN_FLAKE_EVIDENCE_DIR:-}"
+  local guard_dir="${TRAIN_GUARD_SCAN_EVIDENCE_DIR:-}"
+
+  if [[ -n "${failure_dir}" && "${failure_dir}" != "${guard_dir}" ]]; then
+    train_failure_evidence_discard "${failure_dir}"
+  fi
+  if [[ -n "${flake_dir}" && "${flake_dir}" != "${failure_dir}" \
+    && "${flake_dir}" != "${guard_dir}" ]]; then
+    train_failure_evidence_discard "${flake_dir}"
+  fi
+
   TRAIN_FAILURE_EVIDENCE_RUN_ID=""
   TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT=""
   TRAIN_FAILURE_EVIDENCE_DIR=""
@@ -489,6 +501,13 @@ train_classify_capacity_guard() {
 
 # train_guard_scan_reset: drop the memoized guard scan without disarming.
 train_guard_scan_reset() {
+  local evidence_dir="${TRAIN_GUARD_SCAN_EVIDENCE_DIR:-}"
+  if [[ -n "${evidence_dir}" \
+    && "${evidence_dir}" != "${TRAIN_FAILURE_EVIDENCE_DIR:-}" \
+    && "${evidence_dir}" != "${TRAIN_FLAKE_EVIDENCE_DIR:-}" ]]; then
+    train_failure_evidence_discard "${evidence_dir}"
+  fi
+
   TRAIN_GUARD_SCAN_KEY=""
   TRAIN_GUARD_SCAN_RC=""
   TRAIN_GUARD_SCAN_KIND=""
