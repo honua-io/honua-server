@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -184,7 +185,8 @@ internal static class JobSecurityContextCapture
             : tenantContext.TenantId;
 
         return new JobSecurityContext(
-            principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            principal.FindFirstValue(CanonicalSecurityActor.CanonicalActorClaim)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier)
                 ?? principal.FindFirstValue("sub")
                 ?? principal.Identity?.Name,
             tenantId,

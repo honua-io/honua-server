@@ -378,6 +378,21 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public void Capture_StampedCanonicalActor_PreservesIssuerQualifiedPrincipalId()
+    {
+        const string canonicalActor = "bearer:subject:https%3A%2F%2Fissuer.example:shared-subject";
+        var principal = BuildPrincipal(
+            ("sub", "shared-subject"),
+            ("iss", "https://issuer.example"),
+            ("honua:canonical_actor", canonicalActor));
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+
+        captured.PrincipalId.Should().Be(canonicalActor);
+        captured.TenantId.Should().BeNull();
+    }
+
+    [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
         var principal = BuildPrincipal(

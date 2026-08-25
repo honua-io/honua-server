@@ -15,8 +15,6 @@ namespace Honua.Ai.Protocols.Mcp;
 /// </summary>
 internal static class McpAuthorizationHelper
 {
-    private const string AnonymousPrincipalScheme = "anonymous";
-
     /// <summary>
     /// Resolves the caller's <see cref="ClaimsPrincipal"/> from the HTTP context.
     /// Throws <see cref="Geoprocessing.GeoprocessingAuthorizationException"/> when
@@ -42,38 +40,14 @@ internal static class McpAuthorizationHelper
     /// caller — this mirrors the existing endpoint auth posture (the surface allows
     /// anonymous handshake methods; a session established anonymously stays
     /// anonymous) and never invents a new authentication requirement. For an
-    /// authenticated caller the key prefixes the authentication scheme to the
-    /// stable subject/name-identifier claim, falling back to the identity name.
+    /// authenticated caller the key uses the canonical, scheme-qualified actor
+    /// identity (including issuer for bearer subjects and immutable ID for API keys).
     /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
-        var identity = ResolveAuthenticatedIdentity(principal);
-        if (identity is null || !identity.IsAuthenticated)
-        {
-            return McpSessionManager.AnonymousPrincipalKey;
-        }
-
-        var scheme = ResolveScheme(identity);
-        var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrEmpty(subject))
-        {
-            return $"{scheme}:sub:{subject}";
-        }
-
-        return string.IsNullOrEmpty(identity.Name)
-            ? $"{scheme}:authenticated"
-            : $"{scheme}:name:{identity.Name}";
+        return CanonicalSecurityActor.Resolve(principal)?.ActorId
+            ?? McpSessionManager.AnonymousPrincipalKey;
     }
-
-    private static ClaimsIdentity? ResolveAuthenticatedIdentity(ClaimsPrincipal? principal) =>
-        principal?.Identity?.IsAuthenticated == true
-            ? principal.Identity as ClaimsIdentity
-            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
-
-    private static string ResolveScheme(ClaimsIdentity identity) =>
-        string.IsNullOrWhiteSpace(identity.AuthenticationType)
-            ? AnonymousPrincipalScheme
-            : identity.AuthenticationType;
 
     /// <summary>
     /// Resolves the immutable MCP session binding from the framework-authenticated
@@ -94,5 +68,27 @@ internal static class McpAuthorizationHelper
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId
             ?? context.User.FindFirstValue(CanonicalSecurityActor.EffectiveTenantClaim);
         return CanonicalSecurityActor.BuildBindingKey(actor, tenant, context.User);
+    }
+
+    /// <summary>
+    /// Rejects a bearer-authenticated tool call when tenant policy did not resolve
+    /// an effective tenant. Discovery remains available, but no tool implementation
+    /// may observe the deployment's default database/schema in this state.
+    /// </summary>
+    public static void EnsureBearerToolTenant(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (!CanonicalSecurityActor.IsBearerPrincipal(context.User))
+        {
+            return;
+        }
+
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        if (string.IsNullOrWhiteSpace(tenant))
+        {
+            throw new Geoprocessing.GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "A validated tenant is required to invoke MCP tools.");
+        }
     }
 }
