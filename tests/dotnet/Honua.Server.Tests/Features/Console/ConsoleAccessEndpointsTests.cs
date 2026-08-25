@@ -4,12 +4,15 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Console.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Console;
 
@@ -128,6 +131,94 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         using var anonymous = _fixture.CreateClient();
         var response = await anonymous.GetAsync($"/api/v1/console/access/{WorkspaceId}/roles");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    [Endpoint("DELETE /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    public async Task ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary()
+    {
+        const string ownerWorkspace = "mutation-owner";
+        const string otherWorkspace = "mutation-other";
+        var created = await CreateRoleAsync(ownerWorkspace, "owner-only-role");
+        var update = new ConsoleRoleWriteRequest
+        {
+            Name = "cross-workspace-update",
+            Grants = [],
+        };
+
+        var updateResponse = await _client.PutAsJsonAsync(
+            $"/api/v1/console/access/{otherWorkspace}/roles/{created.Id}", update, JsonOptions);
+        Assert.Equal(HttpStatusCode.NotFound, updateResponse.StatusCode);
+
+        var deleteResponse = await _client.DeleteAsync(
+            $"/api/v1/console/access/{otherWorkspace}/roles/{created.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, deleteResponse.StatusCode);
+
+        var ownerOverview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{ownerWorkspace}/roles"));
+        Assert.Contains(ownerOverview.Roles, role => role.Id == created.Id && role.Name == created.Name);
+
+        var otherOverview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{otherWorkspace}/roles"));
+        Assert.DoesNotContain(otherOverview.Roles, role => role.Id == created.Id);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/access/{workspaceId}/members")]
+    public async Task ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedWorkspace()
+    {
+        const string firstWorkspace = "members-first";
+        const string secondWorkspace = "members-second";
+        var firstRole = await CreateRoleAsync(firstWorkspace, "first-workspace-member");
+        var secondRole = await CreateRoleAsync(secondWorkspace, "second-workspace-member");
+        var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        var firstOnly = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "console-first@example.test",
+            DisplayName = "Console First",
+            Roles = [firstRole.Name],
+        }));
+        var secondOnly = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "console-second@example.test",
+            DisplayName = "Console Second",
+            Roles = [secondRole.Name],
+        }));
+        var both = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "console-both@example.test",
+            DisplayName = "Console Both",
+            Roles = [firstRole.Name, secondRole.Name],
+        }));
+
+        var firstMembership = await ReadAsync<ConsoleTeamMembership>(
+            await _client.GetAsync($"/api/v1/console/access/{firstWorkspace}/members"));
+        Assert.Contains(firstMembership.Members, member => member.Id == firstOnly.UserId);
+        Assert.Contains(firstMembership.Members, member =>
+            member.Id == both.UserId && member.RoleName == firstRole.Name);
+        Assert.DoesNotContain(firstMembership.Members, member => member.Id == secondOnly.UserId);
+
+        var secondMembership = await ReadAsync<ConsoleTeamMembership>(
+            await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/members"));
+        Assert.Contains(secondMembership.Members, member => member.Id == secondOnly.UserId);
+        Assert.Contains(secondMembership.Members, member =>
+            member.Id == both.UserId && member.RoleName == secondRole.Name);
+        Assert.DoesNotContain(secondMembership.Members, member => member.Id == firstOnly.UserId);
+    }
+
+    private async Task<ConsoleRbacRole> CreateRoleAsync(string workspaceId, string name)
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/console/access/{workspaceId}/roles",
+            new ConsoleRoleWriteRequest
+            {
+                Name = name,
+                Grants = [],
+            },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return await ReadAsync<ConsoleRbacRole>(response);
     }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response)
