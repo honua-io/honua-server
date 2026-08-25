@@ -459,7 +459,8 @@ internal sealed class McpDataAccessSurface
 
         try
         {
-            McpAuthorizationHelper.EnsureBearerToolTenant(httpContext);
+            await McpAuthorizationHelper.EnsureBearerDataTenantAsync(httpContext, "tools/call")
+                .ConfigureAwait(false);
         }
         catch (GeoprocessingAuthorizationException ex)
         {
@@ -677,7 +678,8 @@ internal sealed class McpDataAccessSurface
 
         try
         {
-            McpAuthorizationHelper.EnsureBearerToolTenant(httpContext);
+            await McpAuthorizationHelper.EnsureBearerDataTenantAsync(httpContext, "resources/read")
+                .ConfigureAwait(false);
         }
         catch (GeoprocessingAuthorizationException ex)
         {
