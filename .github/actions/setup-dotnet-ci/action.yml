@@ -10,21 +10,85 @@ inputs:
     description: 'Restore/save per-project bin/obj across jobs (opt-in; broad binary caches can exhaust hosted runner disk)'
     required: false
     default: 'false'
+  nuget-cache-write:
+    description: >-
+      NuGet cache write policy: auto writes only from trusted default-branch
+      push/schedule/workflow_dispatch runs; false is restore-only. Pull-request
+      and other low-trust events are always restore-only.
+    required: false
+    default: 'auto'
 
 runs:
   using: composite
   steps:
+    - name: Validate .NET cache policy fixtures
+      shell: bash
+      run: |
+        python3 "$GITHUB_ACTION_PATH/../../../scripts/ci/fixtures/validate-dotnet-cache-policy.py"
+        python3 "$GITHUB_ACTION_PATH/../../../scripts/ci/fixtures/validate-dotnet-cache-policy.test.py"
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
 
-    - name: Cache NuGet packages
+    # GitHub cache entries created by pull_request runs are scoped to the
+    # synthetic refs/pull/<n>/merge ref. They consume storage but cannot warm
+    # another PR. More importantly, untrusted PR code must never populate a
+    # cache that a trusted run can restore. Plan one of two mutually-exclusive
+    # paths: restore-only for PR/observer/feature refs, or restore+post-job save
+    # for a trusted default-branch run. Base-branch caches are readable by fork
+    # PRs, so this path must remain dependency-only and must never contain
+    # credentials, generated secrets, or other sensitive material.
+    - name: Plan NuGet cache policy
+      id: nuget-cache-policy
+      shell: bash
+      env:
+        CACHE_WRITE_MODE: ${{ inputs.nuget-cache-write }}
+        EVENT_NAME: ${{ github.event_name }}
+        REF_NAME: ${{ github.ref }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        case "$CACHE_WRITE_MODE" in
+          auto|false) ;;
+          *)
+            echo "nuget-cache-write must be one of: auto, false" >&2
+            exit 2
+            ;;
+        esac
+
+        write=false
+        if [[ "$EVENT_NAME" == "pull_request" ||
+              "$EVENT_NAME" == "pull_request_target" ||
+              "$REF_NAME" == refs/pull/* ]]; then
+          write=false
+        elif [[ "$CACHE_WRITE_MODE" == "auto" &&
+                "$REF_NAME" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+          case "$EVENT_NAME" in
+            push|schedule|workflow_dispatch) write=true ;;
+          esac
+        fi
+
+        echo "write=$write" >> "$GITHUB_OUTPUT"
+
+    - name: Restore NuGet packages
+      if: steps.nuget-cache-policy.outputs.write != 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: ~/.nuget/packages
+        key: ${{ github.repository }}-${{ runner.os }}-nuget-v2-${{ hashFiles('**/*.csproj', '**/*.fsproj', '**/*.vbproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/packages.config', '**/global.json', '**/NuGet.Config', '**/NuGet.config', '**/nuget.config') }}
+        restore-keys: |
+          ${{ github.repository }}-${{ runner.os }}-nuget-v2-
+          ${{ github.repository }}-${{ runner.os }}-nuget-
+
+    - name: Cache NuGet packages on trusted default branch
+      if: steps.nuget-cache-policy.outputs.write == 'true'
       uses: actions/cache@v5
       with:
         path: ~/.nuget/packages
-        key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+        key: ${{ github.repository }}-${{ runner.os }}-nuget-v2-${{ hashFiles('**/*.csproj', '**/*.fsproj', '**/*.vbproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/packages.config', '**/global.json', '**/NuGet.Config', '**/NuGet.config', '**/nuget.config') }}
         restore-keys: |
+          ${{ github.repository }}-${{ runner.os }}-nuget-v2-
           ${{ github.repository }}-${{ runner.os }}-nuget-
 
     # ADR-0043 PR #1 — Cross-job binary cache. Restores bin/ and obj/ keyed on

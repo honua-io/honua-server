@@ -83,13 +83,17 @@ jobs:
           python-version: ${{ inputs.python-version }}
           cache: 'pip'
 
-      - name: Cache NuGet
+      # This reusable workflow is a PR gate. A cache saved here is scoped to
+      # refs/pull/<n>/merge and cannot warm any other PR, so only restore the
+      # caller repository's safe base/default-branch cache.
+      - name: Restore NuGet cache
         if: inputs.dotnet-version != ''
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.nuget/packages
-          key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          key: ${{ github.repository }}-${{ runner.os }}-nuget-v2-${{ hashFiles('**/*.csproj', '**/*.fsproj', '**/*.vbproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/packages.config', '**/global.json', '**/NuGet.Config', '**/NuGet.config', '**/nuget.config') }}
           restore-keys: |
+            ${{ github.repository }}-${{ runner.os }}-nuget-v2-
             ${{ github.repository }}-${{ runner.os }}-nuget-
 
       - name: Configure GitHub Packages
