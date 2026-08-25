@@ -121,9 +121,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// method, so the genuine 405 is preserved.
     /// </summary>
     [IntegrationTest]
-    [Operation(Operations.QueryClusters)]
-    [Protocol(TestProtocols.SpatialAnalytics)]
-    [Endpoint("POST /ogc/features/collections/{collectionId}/clusters")]
     public async Task Head_PostOnlyRoute_Returns405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();
