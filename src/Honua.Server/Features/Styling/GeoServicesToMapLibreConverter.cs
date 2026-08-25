@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
@@ -1324,13 +1325,60 @@ internal static class GeoServicesToMapLibreConverter
         {
             JsonValueKind.String => element.GetString() ?? string.Empty,
             JsonValueKind.Number when element.TryGetInt64(out var longValue) =>
-                longValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                longValue.ToString(CultureInfo.InvariantCulture),
             JsonValueKind.Number =>
-                element.GetDouble().ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+                FormatMapLibreNumber(element.GetDouble()),
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
             _ => element.ToString() ?? string.Empty
         };
+    }
+
+    private static string FormatMapLibreNumber(double value)
+    {
+        // MapLibre GL JS delegates to JavaScript's Number#toString semantics. Modern .NET
+        // emits the same shortest round-trip digits, but its exponent thresholds and spelling
+        // differ (for example 1E-07 instead of 1e-7), so normalize the representation.
+        if (value == 0d)
+        {
+            return "0";
+        }
+
+        var roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
+        var exponentSeparator = roundTrip.IndexOf('E', StringComparison.Ordinal);
+        if (exponentSeparator < 0)
+        {
+            return roundTrip;
+        }
+
+        var isNegative = roundTrip[0] == '-';
+        var mantissaStart = isNegative ? 1 : 0;
+        var digits = roundTrip[mantissaStart..exponentSeparator].Replace(".", string.Empty, StringComparison.Ordinal);
+        var exponent = int.Parse(roundTrip.AsSpan(exponentSeparator + 1), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        var sign = isNegative ? "-" : string.Empty;
+
+        // ECMAScript uses fixed notation for decimal exponents -6 through 20.
+        if (exponent is >= -6 and < 21)
+        {
+            var decimalPosition = exponent + 1;
+            if (decimalPosition <= 0)
+            {
+                return string.Concat(sign, "0.", new string('0', -decimalPosition), digits);
+            }
+
+            if (decimalPosition >= digits.Length)
+            {
+                return string.Concat(sign, digits, new string('0', decimalPosition - digits.Length));
+            }
+
+            return string.Concat(sign, digits[..decimalPosition], ".", digits[decimalPosition..]);
+        }
+
+        var mantissa = digits.Length == 1 ? digits : string.Concat(digits[0], ".", digits[1..]);
+        var normalizedExponent = exponent >= 0
+            ? string.Concat("+", exponent.ToString(CultureInfo.InvariantCulture))
+            : exponent.ToString(CultureInfo.InvariantCulture);
+        return string.Concat(sign, mantissa, "e", normalizedExponent);
     }
 }
 

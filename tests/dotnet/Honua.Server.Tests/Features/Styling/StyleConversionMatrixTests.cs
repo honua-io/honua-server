@@ -930,10 +930,45 @@ public class StyleConversionMatrixTests
             value =>
             {
                 Assert.Equal(JsonValueKind.String, value.ValueKind);
-                Assert.Equal("1E-07", value.GetString());
+                Assert.Equal("1e-7", value.GetString());
             },
             value => Assert.Equal("active", value.GetString()),
             value => Assert.Equal("true", value.GetString()));
+    }
+
+    [Fact]
+    public void GeoServicesToMapLibre_ScientificUniqueValues_MatchMapLibreToStringRepresentation()
+    {
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "measurement",
+            "uniqueValueInfos": [
+              { "value": 1e-7, "symbol": { "type": "esriSMS", "color": [255, 0, 0, 255] } },
+              { "value": -1.25e-7, "symbol": { "type": "esriSMS", "color": [0, 255, 0, 255] } },
+              { "value": 1e-6, "symbol": { "type": "esriSMS", "color": [0, 0, 255, 255] } },
+              { "value": 1e20, "symbol": { "type": "esriSMS", "color": [255, 255, 0, 255] } },
+              { "value": 1e21, "symbol": { "type": "esriSMS", "color": [255, 0, 255, 255] } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var circleLayer = FindLayer(mapLibreDoc.RootElement, "circle");
+        var outerCase = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
+        var match = outerCase[2].EnumerateArray().ToArray();
+
+        Assert.Equal("1e-7", match[2].GetString());
+        Assert.Equal("-1.25e-7", match[4].GetString());
+        Assert.Equal("0.000001", match[6].GetString());
+        Assert.Equal("100000000000000000000", match[8].GetString());
+        Assert.Equal("1e+21", match[10].GetString());
     }
 
     [Fact]
