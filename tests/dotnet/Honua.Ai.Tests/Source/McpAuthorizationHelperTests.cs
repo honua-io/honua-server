@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -137,6 +138,44 @@ public sealed class McpAuthorizationHelperTests
         var act = () => McpAuthorizationHelper.EnsureBearerToolTenant(context);
 
         act.Should().NotThrow();
+    }
+
+    [UnitTest]
+    public async Task BearerWithoutConfiguredAuthority_RemainsAnonymousAndCannotAuthorizeTool()
+    {
+        var services = new ServiceCollection();
+        services.AddOptions<OidcAuthenticationOptions>();
+        await using var provider = services.BuildServiceProvider();
+        var app = new ApplicationBuilder(provider);
+        Exception? authorizationFailure = null;
+        var discoveryReached = false;
+
+        app.UseMcpBearerAuthentication();
+        app.Run(context =>
+        {
+            discoveryReached = true;
+            try
+            {
+                McpAuthorizationHelper.EnsurePrincipal(context);
+            }
+            catch (Exception ex)
+            {
+                authorizationFailure = ex;
+            }
+
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = "Bearer cannot-be-validated";
+
+        await app.Build()(context);
+
+        discoveryReached.Should().BeTrue("anonymous discovery must remain reachable");
+        (context.User.Identity?.IsAuthenticated ?? false).Should().BeFalse();
+        McpBearerAuthenticationEndpointExtensions.HasAuthenticationFailure(context).Should().BeFalse();
+        authorizationFailure.Should().NotBeNull("tool authorization must still reject the anonymous caller");
     }
 
     private static DefaultHttpContext CreateBearerContext(
