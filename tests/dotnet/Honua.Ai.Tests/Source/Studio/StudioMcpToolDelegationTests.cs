@@ -218,6 +218,7 @@ public sealed class StudioMcpToolDelegationTests
         {
             services.AddSingleton(lifecycleService);
             services.AddSingleton(validator);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
         });
 
         var create = await new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance)

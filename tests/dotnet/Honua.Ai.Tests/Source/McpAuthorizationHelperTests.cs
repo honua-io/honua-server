@@ -447,13 +447,13 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [Fact]
-    public void ResolveDistinctPrincipalKey_WithOnlyRawSubject_FailsClosed()
+    public void ResolvePrincipalKey_WithOnlyRawSubject_UsesSchemeQualifiedFallbackIssuer()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
         [
             new Claim("sub", "identity-1"),
         ], "JwtBearer"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("JwtBearer:authenticated");
+        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("jwtbearer:subject:-:identity-1");
     }
 }
