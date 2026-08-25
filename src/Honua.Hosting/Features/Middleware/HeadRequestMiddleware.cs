@@ -282,8 +282,17 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
             if (!context.Response.HasStarted &&
                 HeadRequestSupport.CanCarryContentLength(context.Response.StatusCode))
             {
-                if (context.Response.ContentLength is null &&
-                    !HeadRequestSupport.SuppressesSynthesizedContentLength(context))
+                if (context.Response.Headers.ContainsKey(HeaderNames.TransferEncoding))
+                {
+                    // RFC 9112 section 6.3 forbids sending Content-Length together with
+                    // Transfer-Encoding. Streaming query handlers select chunked framing and
+                    // some hosts infer a length from a completed buffered write, so actively
+                    // remove either a handler- or host-provided length as well as declining to
+                    // synthesize one here.
+                    context.Response.ContentLength = null;
+                }
+                else if (context.Response.ContentLength is null &&
+                         !HeadRequestSupport.SuppressesSynthesizedContentLength(context))
                 {
                     context.Response.ContentLength = bytesWritten;
                 }
