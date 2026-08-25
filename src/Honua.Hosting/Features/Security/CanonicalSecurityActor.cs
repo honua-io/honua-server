@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 
 namespace Honua.Infrastructure.Security;
@@ -69,15 +70,17 @@ internal static class CanonicalSecurityActor
         string? effectiveTenant,
         ClaimsPrincipal principal)
     {
-        var tenant = NormalizeValue(effectiveTenant) ?? "-";
+        var normalizedTenant = NormalizeValue(effectiveTenant);
+        var tenant = normalizedTenant is null ? "none" : $"value:{normalizedTenant}";
         var scopeCeiling = ResolveScopeCeiling(principal);
         return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}";
     }
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
     {
-        var scopes = principal.FindAll("scope")
-            .Concat(principal.FindAll("scp"))
+        var scopes = principal.FindAll(OperatorScopeCatalog.ScopeClaimType)
+            .Concat(principal.FindAll(OperatorScopeCatalog.ScpClaimType))
+            .Concat(principal.FindAll(OperatorScopeCatalog.ScopeClaimUri))
             .SelectMany(static claim => (claim.Value ?? string.Empty)
                 .Split([' ', ',', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
             .Select(static value => value.Trim())
@@ -85,7 +88,7 @@ internal static class CanonicalSecurityActor
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
-        return scopes.Length == 0 ? "-" : string.Join(' ', scopes);
+        return scopes.Length == 0 ? "none" : $"set:{string.Join(' ', scopes)}";
     }
 
     internal static void StampRequestBinding(ClaimsPrincipal principal, string? effectiveTenant)
