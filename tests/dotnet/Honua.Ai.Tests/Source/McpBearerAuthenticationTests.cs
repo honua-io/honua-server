@@ -289,18 +289,29 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
-    public async Task Post_OperatorBearer_UsesCompositeValidatorAndIsAccepted()
+    public async Task Post_OperatorBearer_UsesCompositeValidatorAndCreatesDurableSession()
     {
         // The Honua-issued operator bearer has a different signer/audience than
         // the external IdP token. Re-authenticating it as JwtBearer would return
-        // 401; the composite scheme must preserve its validated operator ticket.
+        // 401; the composite scheme must preserve its validated operator ticket
+        // and the issuer that the concrete validator checked for session binding.
         var token = CreateOperatorToken();
 
         using var initialize = BuildInitialize(bearer: token);
         var response = await _client.SendAsync(initialize);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeTrue();
+        response.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues).Should().BeTrue();
+
+        using var followUp = BuildRpc(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionValues!.Single(),
+            token);
+        using var followUpResponse = await _client.SendAsync(followUp);
+
+        followUpResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(followUpResponse);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

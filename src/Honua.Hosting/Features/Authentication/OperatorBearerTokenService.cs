@@ -49,6 +49,12 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
     public bool Enabled => _options.IsUsable;
 
     /// <summary>
+    /// Gets the issuer that every successfully validated operator bearer was
+    /// cryptographically checked against.
+    /// </summary>
+    internal string ValidatedIssuer => _options.ResolveIssuer();
+
+    /// <summary>
     /// Mints an operator bearer carrying <paramref name="sessionClaims"/>, with an
     /// expiry clamped to the earlier of the configured maximum lifetime and
     /// <paramref name="sessionExpiresAt"/>. Returns <see langword="null"/> when the
