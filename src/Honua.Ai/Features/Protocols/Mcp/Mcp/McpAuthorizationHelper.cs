@@ -17,6 +17,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// </summary>
 internal static class McpAuthorizationHelper
 {
+    private const string AnonymousPrincipalScheme = "anonymous";
+
     /// <summary>
     /// Resolves the caller's <see cref="ClaimsPrincipal"/> from the HTTP context.
     /// Throws <see cref="Geoprocessing.GeoprocessingAuthorizationException"/> when
@@ -42,14 +44,38 @@ internal static class McpAuthorizationHelper
     /// caller — this mirrors the existing endpoint auth posture (the surface allows
     /// anonymous handshake methods; a session established anonymously stays
     /// anonymous) and never invents a new authentication requirement. For an
-    /// authenticated caller the key uses the canonical, scheme-qualified actor
-    /// identity (including issuer for bearer subjects and immutable ID for API keys).
+    /// authenticated caller the key prefixes the authentication scheme to the
+    /// normalized name-identifier claim, falling back to the identity name.
     /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
-        return CanonicalSecurityActor.Resolve(principal)?.ActorId
-            ?? McpSessionManager.AnonymousPrincipalKey;
+        var identity = ResolveAuthenticatedIdentity(principal);
+        if (identity is null || !identity.IsAuthenticated)
+        {
+            return McpSessionManager.AnonymousPrincipalKey;
+        }
+
+        var scheme = ResolveScheme(identity);
+        var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(subject))
+        {
+            return $"{scheme}:sub:{subject}";
+        }
+
+        return string.IsNullOrEmpty(identity.Name)
+            ? $"{scheme}:authenticated"
+            : $"{scheme}:name:{identity.Name}";
     }
+
+    private static ClaimsIdentity? ResolveAuthenticatedIdentity(ClaimsPrincipal? principal) =>
+        principal?.Identity?.IsAuthenticated == true
+            ? principal.Identity as ClaimsIdentity
+            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+
+    private static string ResolveScheme(ClaimsIdentity identity) =>
+        string.IsNullOrWhiteSpace(identity.AuthenticationType)
+            ? AnonymousPrincipalScheme
+            : identity.AuthenticationType;
 
     /// <summary>
     /// Resolves the immutable MCP session binding from the framework-authenticated
