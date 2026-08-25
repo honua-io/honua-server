@@ -31,7 +31,7 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "Operator One")
         ], "JwtBearer"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("jwtbearer:subject:-:operator-123");
+        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("JwtBearer:sub:operator-123");
     }
 
     [UnitTest]
@@ -42,7 +42,7 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "admin")
         ], "ApiKey"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("apikey:name:admin");
+        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("ApiKey:name:admin");
     }
 
     [UnitTest]
@@ -66,8 +66,8 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "identity-1")
         ], "ApiKey"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(bearer).Should().Be("jwtbearer:subject:-:identity-1");
-        McpAuthorizationHelper.ResolvePrincipalKey(apiKey).Should().Be("apikey:subject:-:identity-1");
+        McpAuthorizationHelper.ResolvePrincipalKey(bearer).Should().Be("JwtBearer:sub:identity-1");
+        McpAuthorizationHelper.ResolvePrincipalKey(apiKey).Should().Be("ApiKey:sub:identity-1");
     }
 
     [UnitTest]
