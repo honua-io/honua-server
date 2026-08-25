@@ -555,14 +555,15 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             var bobDraft = BuildDraft("1=1", "bob-concurrent-query", itemId, owner: "bob");
             var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            async Task<(StudioPackageDraft Draft, Exception? Error)> CreateAsync(StudioPackageDraft draft)
+            async Task<(StudioPackageDraft Draft, StudioCompositionConflictException? Error)> CreateAsync(
+                StudioPackageDraft draft)
             {
                 await start.Task;
                 try
                 {
                     return (await store.CreateDraftAsync(draft), null);
                 }
-                catch (Exception ex)
+                catch (StudioCompositionConflictException ex)
                 {
                     return (draft, ex);
                 }
