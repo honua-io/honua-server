@@ -5,7 +5,9 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,6 +119,46 @@ public sealed class McpAuthorizationHelperTests
 
         McpAuthorizationHelper.ResolveSessionBindingKey(bearer)
             .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(apiKey));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_AuthenticatedWithoutDurableActor_DoesNotBecomeAnonymous()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("iss", "https://issuer.example"),
+            new Claim("client_id", "machine-client"),
+            new Claim(ClaimTypes.Name, "Mutable Machine Display Name"),
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var context = CreateContext(principal, "tenant-a");
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(context).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void CreateTrustedBearerPrincipal_StripsFrameworkOwnedClaims()
+    {
+        var forged = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "subject-1"),
+            new Claim("iss", "https://issuer.example"),
+            new Claim(CanonicalSecurityActor.CanonicalActorClaim, "forged-actor"),
+            new Claim(CanonicalSecurityActor.EffectiveTenantClaim, "forged-tenant"),
+            new Claim(CanonicalSecurityActor.ScopeCeilingClaim, "forged-scope"),
+            new Claim("honua:auth_scheme", "ApiKey"),
+            new Claim("honua:issuer", "forged-issuer"),
+        ], "issuer-controlled"));
+        var result = AuthenticateResult.Success(new AuthenticationTicket(
+            forged,
+            OidcAuthenticationExtensions.JwtBearerScheme));
+
+        var promoted = McpBearerAuthenticationEndpointExtensions.CreateTrustedBearerPrincipal(result);
+
+        promoted.Should().NotBeNull();
+        promoted!.Claims.Should().NotContain(claim =>
+            claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase));
+        promoted.FindFirst("sub")?.Value.Should().Be("subject-1");
+        promoted.FindFirst("iss")?.Value.Should().Be("https://issuer.example");
     }
 
     [UnitTest]
