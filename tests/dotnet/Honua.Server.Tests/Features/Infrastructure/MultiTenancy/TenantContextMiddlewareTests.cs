@@ -4,6 +4,7 @@
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
@@ -158,8 +159,8 @@ public class TenantContextMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET /api/v1/admin/oidc/providers")]
-    public async Task BearerWithoutTenantClaim_AdminControlPlaneContinuesWithNullTenant()
+    [Endpoint("GET /api/v{version}/admin/oidc/providers")]
+    public async Task BearerWithoutTenantClaim_MarkedControlPlaneVersionsContinueWithNullTenant()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "bearer-admin"),
@@ -171,10 +172,38 @@ public class TenantContextMiddlewareTests
             "Bearer");
 
         var client = await CreateAppAsync(principal);
-        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+        foreach (var path in new[]
+                 {
+                     "/api/v1/admin/oidc/providers",
+                     "/api/v1.0/admin/oidc/providers",
+                 })
+        {
+            var response = await client.GetAsync(path);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    public async Task BearerWithoutTenantClaim_UnmarkedTenantBackedAdminRouteFailsClosed()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/metadata/layers/1/drawing-info");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -377,7 +406,11 @@ public class TenantContextMiddlewareTests
             return Results.Text($"{tenant.TenantId ?? "<null>"}|{effective}");
         });
 
-        app.MapGet("/api/v1/admin/oidc/providers", (ITenantContext tenant) =>
+        app.MapGet("/api/v{version}/admin/oidc/providers", (ITenantContext tenant) =>
+                Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
+        app.MapGet("/api/v1/admin/metadata/layers/1/drawing-info", (ITenantContext tenant) =>
             Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
 
         await app.StartAsync();
