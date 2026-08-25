@@ -197,32 +197,68 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
-    public void ResolveSessionBindingKey_SameClaimsWithDifferentBearerCredentials_DoNotCollide()
+    public void ResolveSessionBindingKey_EquivalentAuthorizationAcrossBearerRefreshes_Matches()
     {
         var first = CreateBearerContext(
             "same-subject",
             "https://issuer.example",
             "tenant-a",
-            new Claim("roles", "admin"));
+            new Claim("roles", "admin"),
+            new Claim("groups", "workspace-a"),
+            new Claim("permission", "catalog:write"),
+            new Claim("scope", $"{OperatorScopeCatalog.Read} {OperatorScopeCatalog.Update}"),
+            new Claim("jti", "token-instance-a"),
+            new Claim("exp", "1787700000"));
         var second = CreateBearerContext(
             "same-subject",
             "https://issuer.example",
             "tenant-a",
-            new Claim("roles", "admin"));
+            new Claim("scope", $"{OperatorScopeCatalog.Update} {OperatorScopeCatalog.Read}"),
+            new Claim("permission", "catalog:write"),
+            new Claim("groups", "workspace-a"),
+            new Claim("roles", "admin"),
+            new Claim("exp", "1787703600"),
+            new Claim("jti", "token-instance-b"));
         first.Request.Headers.Authorization = "Bearer credential-a";
         second.Request.Headers.Authorization = "Bearer credential-b";
 
         McpAuthorizationHelper.ResolveSessionBindingKey(first)
-            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(second));
+            .Should().Be(McpAuthorizationHelper.ResolveSessionBindingKey(second));
+    }
+
+    [Theory]
+    [InlineData("roles", "viewer", "admin")]
+    [InlineData("groups", "workspace-a", "workspace-b")]
+    [InlineData("permission", "catalog:read", "catalog:write")]
+    [InlineData("department", "east", "west")]
+    public void ResolveSessionBindingKey_AuthorizationClaimChange_DoesNotMatch(
+        string claimType,
+        string originalValue,
+        string changedValue)
+    {
+        var original = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim(claimType, originalValue));
+        var changed = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim(claimType, changedValue));
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(original)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(changed));
     }
 
     [UnitTest]
-    public void ResolveSessionBindingKey_BearerWithoutPresentedCredential_FailsClosed()
+    public void ResolveSessionBindingKey_AuthenticatedBearerDoesNotDependOnCredentialHeader()
     {
         var context = CreateBearerContext("subject", "https://issuer.example", "tenant-a");
+        var withCredential = McpAuthorizationHelper.ResolveSessionBindingKey(context);
         context.Request.Headers.Remove("Authorization");
 
-        McpAuthorizationHelper.ResolveSessionBindingKey(context).Should().BeNull();
+        McpAuthorizationHelper.ResolveSessionBindingKey(context).Should().Be(withCredential);
     }
 
     [UnitTest]

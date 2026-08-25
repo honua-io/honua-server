@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 
@@ -22,6 +25,32 @@ internal static class CanonicalSecurityActor
     internal const string CanonicalActorClaim = "honua:canonical_actor";
     internal const string AuthenticationSchemeClaim = "honua:auth_scheme";
     internal const string FrameworkOwnedClaimProperty = "honua:framework_owned";
+
+    private static readonly HashSet<string> TokenInstanceClaimTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // These values identify one token issuance or its validity window, not the
+        // authorization context that a refreshed token is permitted to retain.
+        "exp",
+        "iat",
+        "nbf",
+        "jti",
+        "nonce",
+        "at_hash",
+        "c_hash",
+        "s_hash",
+        "aio",
+        "rh",
+        "uti",
+        "http://schemas.microsoft.com/ws/2008/06/identity/claims/expiration",
+    };
+
+    private static readonly HashSet<string> ScopeClaimTypes = new(StringComparer.Ordinal)
+    {
+        OperatorScopeCatalog.ScopeClaimType,
+        OperatorScopeCatalog.ScpClaimType,
+        OperatorScopeCatalog.ScopeClaimUri,
+        ScopeCeilingClaim,
+    };
 
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
     {
@@ -70,14 +99,12 @@ internal static class CanonicalSecurityActor
     internal static string BuildBindingKey(
         CanonicalSecurityActorIdentity actor,
         string? effectiveTenant,
-        ClaimsPrincipal principal,
-        string? credentialFingerprint)
+        ClaimsPrincipal principal)
     {
         var normalizedTenant = NormalizeValue(effectiveTenant);
         var tenant = normalizedTenant is null ? "none" : $"value:{normalizedTenant}";
-        var scopeCeiling = ResolveScopeCeiling(principal);
-        var credential = NormalizeValue(credentialFingerprint) ?? "not-bearer";
-        return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}:credential:{Encode(credential)}";
+        var authorityFingerprint = ResolveAuthorityFingerprint(principal);
+        return $"{actor.ActorId}:tenant:{Encode(tenant)}:authority:{authorityFingerprint}";
     }
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
@@ -91,6 +118,54 @@ internal static class CanonicalSecurityActor
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
         return scopes.Length == 0 ? "governed:none" : $"governed:set:{string.Join(' ', scopes)}";
+    }
+
+    private static string ResolveAuthorityFingerprint(ClaimsPrincipal principal)
+    {
+        // RLS policy claim types are deployment-configurable, so an allowlist of today's
+        // role/group/permission names would be incomplete. Hash every normalized claim
+        // except token-instance metadata, replacing raw scope spellings/order with the
+        // canonical recognized scope ceiling. This is conservative for future claims:
+        // a changed claim invalidates the session instead of silently widening it.
+        var claims = principal.Claims
+            .Where(claim => !TokenInstanceClaimTypes.Contains(claim.Type)
+                && !ScopeClaimTypes.Contains(claim.Type))
+            .Select(static claim => (claim.Type, claim.Value))
+            .Distinct()
+            .OrderBy(static claim => claim.Type, StringComparer.Ordinal)
+            .ThenBy(static claim => claim.Value, StringComparer.Ordinal)
+            .ToArray();
+        var roleClaimTypes = principal.Identities
+            .Select(static identity => identity.RoleClaimType)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static claimType => claimType, StringComparer.Ordinal)
+            .ToArray();
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHashComponent(hash, "scope-ceiling");
+        AppendHashComponent(hash, ResolveScopeCeiling(principal));
+        foreach (var roleClaimType in roleClaimTypes)
+        {
+            AppendHashComponent(hash, "role-claim-type");
+            AppendHashComponent(hash, roleClaimType);
+        }
+
+        foreach (var (type, value) in claims)
+        {
+            AppendHashComponent(hash, type);
+            AppendHashComponent(hash, value);
+        }
+
+        return $"sha256:{Convert.ToHexStringLower(hash.GetHashAndReset())}";
+    }
+
+    private static void AppendHashComponent(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(length, bytes.Length);
+        hash.AppendData(length);
+        hash.AppendData(bytes);
     }
 
     internal static void StampRequestBinding(ClaimsPrincipal principal, string? effectiveTenant)
