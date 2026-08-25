@@ -43,6 +43,7 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     public PlatformReleaseConvergeEndpointTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("MultiTenancy:Enabled", "false"))
             .ConfigureServices(services =>
             {
                 ConfigurePlatformRelease(services);
@@ -156,6 +157,10 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
         divergent.TryGetProperty("operationId", out var opId).Should().BeFalse();
         _ = opId;
         _workflowStore.CreatedDeployTargets.Should().NotContain("srv-divergent");
+        _proposalStore.Proposals.Should().NotBeEmpty();
+        _proposalStore.Proposals.Should().OnlyContain(proposal =>
+            proposal.Authority != null &&
+            proposal.Authority.EffectiveTenant == OperationAuthorityContext.Tenantless);
     }
 
     [IntegrationTest]
@@ -324,6 +329,8 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     private sealed class TestProposalStore : IOperationProposalStore
     {
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
+
+        public IReadOnlyCollection<OperationProposal> Proposals => _proposals.Values;
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
             => Task.FromResult(true);

@@ -662,7 +662,9 @@ internal static class DeployControlEndpoints
         var requestedBy = ResolveRequestedBy(context);
         var authority = OperationAuthorityContext.Capture(
             context.User,
-            context.RequestServices.GetRequiredService<ITenantContext>());
+            context.RequestServices.GetRequiredService<ITenantContext>(),
+            context.RequestServices.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true));
         var reason = string.IsNullOrWhiteSpace(request?.Reason)
             ? $"Converge serving targets to platform release {declaredVersion}."
             : request!.Reason!;

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
@@ -98,6 +99,37 @@ public sealed class OperationAuthorityContractTests
     }
 
     [UnitTest]
+    public void Capture_MultiTenancyDisabled_UsesExplicitTenantlessAuthority()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "operator-1")],
+            "Bearer"));
+
+        var authority = OperationAuthorityContext.Capture(
+            principal,
+            new EmptyTenantContext(),
+            multiTenancyEnabled: false);
+
+        authority.EffectiveTenant.Should().Be(OperationAuthorityContext.Tenantless);
+    }
+
+    [UnitTest]
+    public void Capture_MultiTenancyEnabledWithoutResolvedTenant_FailsClosed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "operator-1")],
+            "Bearer"));
+
+        var act = () => OperationAuthorityContext.Capture(
+            principal,
+            new EmptyTenantContext(),
+            multiTenancyEnabled: true);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*effective tenant is required*");
+    }
+
+    [UnitTest]
     public void PermissionCeiling_CannotExceedAuthenticatedPermissions()
     {
         var authority = Authority([], []) with
@@ -122,4 +154,18 @@ public sealed class OperationAuthorityContractTests
             OAuthScopes = scopes,
             ScopeCeiling = ceiling,
         };
+
+    private sealed class EmptyTenantContext : ITenantContext
+    {
+        public string? TenantId => null;
+
+        public TenantContextSource Source => TenantContextSource.Anonymous;
+
+        public bool RequireTenantId(out string tenantId, out string? reason)
+        {
+            tenantId = string.Empty;
+            reason = "no tenant claim present";
+            return false;
+        }
+    }
 }

@@ -172,7 +172,9 @@ internal sealed class McpPlatformOpsReader(
                     RequestedBy = actor,
                     Authority = OperationAuthorityContext.Capture(
                         principal,
-                        _services.GetRequiredService<ITenantContext>()),
+                        _services.GetRequiredService<ITenantContext>(),
+                        _services.GetRequiredService<IConfiguration>()
+                            .GetValue("MultiTenancy:Enabled", true)),
                     Reason = string.IsNullOrWhiteSpace(argument.Reason)
                         ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'."
                         : argument.Reason,

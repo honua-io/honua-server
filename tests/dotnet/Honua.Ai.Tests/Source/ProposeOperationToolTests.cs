@@ -12,6 +12,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -25,11 +26,21 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class ProposeOperationToolTests
 {
-    private static DefaultHttpContext ContextWithGateway(IOperationGateway gateway, IOperationExecutorCatalog? catalog = null)
+    private static DefaultHttpContext ContextWithGateway(
+        IOperationGateway gateway,
+        IOperationExecutorCatalog? catalog = null,
+        bool multiTenancyEnabled = true,
+        string? tenantId = "tenant-1")
     {
         var services = new ServiceCollection();
         services.AddSingleton(gateway);
-        services.AddSingleton<ITenantContext>(new TestTenantContext());
+        services.AddSingleton<ITenantContext>(new TestTenantContext(tenantId));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MultiTenancy:Enabled"] = multiTenancyEnabled.ToString(),
+            })
+            .Build());
         if (catalog != null)
         {
             services.AddSingleton(catalog);
@@ -101,6 +112,30 @@ public sealed class ProposeOperationToolTests
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_propose_operation")]
+    public async Task ProposeOperation_MultiTenancyDisabled_RoutesWithTenantlessAuthority()
+    {
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.Executed,
+            Decision = new GuardrailDecision(GuardrailTier.DirectExecute, OperationClass.Deploy, default, "test"),
+        });
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument { Kind = "Deploy" },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await tool.InvokeAsync(
+            ContextWithGateway(gateway, multiTenancyEnabled: false, tenantId: null),
+            arguments,
+            CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        gateway.LastRequest!.Authority!.EffectiveTenant.Should().Be(OperationAuthorityContext.Tenantless);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_propose_operation")]
     public async Task ProposeOperation_UnknownKind_ReturnsRejected()
     {
         var gateway = new FakeGateway(new OperationGatewayResult
@@ -155,17 +190,17 @@ public sealed class ProposeOperationToolTests
         public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
     }
 
-    private sealed class TestTenantContext : ITenantContext
+    private sealed class TestTenantContext(string? tenantId) : ITenantContext
     {
-        public string? TenantId => "tenant-1";
+        public string? TenantId { get; } = tenantId;
 
         public TenantContextSource Source => TenantContextSource.Claim;
 
         public bool RequireTenantId(out string tenantId, out string? reason)
         {
-            tenantId = TenantId!;
-            reason = null;
-            return true;
+            tenantId = TenantId ?? string.Empty;
+            reason = TenantId is null ? "no tenant claim present" : null;
+            return TenantId is not null;
         }
     }
 

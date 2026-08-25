@@ -112,6 +112,20 @@ public sealed record OperationAuthorityContext
     }
 
     /// <summary>
+    /// Captures authority using the configured tenant-resolution mode. Deployments that
+    /// deliberately disable multi-tenancy retain an explicit tenant-less authority marker;
+    /// tenant-aware deployments continue to fail closed when request middleware did not
+    /// resolve a tenant.
+    /// </summary>
+    public static OperationAuthorityContext Capture(
+        ClaimsPrincipal principal,
+        ITenantContext tenantContext,
+        bool multiTenancyEnabled)
+        => multiTenancyEnabled
+            ? Capture(principal, tenantContext)
+            : Capture(principal, Tenantless);
+
+    /// <summary>
     /// Creates an explicit authority snapshot for a trusted in-process service actor. This is
     /// used only where there is deliberately no ambient request principal (for example the
     /// deterministic ops-findings autonomy loop).

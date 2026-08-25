@@ -110,7 +110,9 @@ internal sealed class ProposeOperationTool : IMcpTool
             ExecutionPayload = argument.ExecutionPayload,
             Authority = OperationAuthorityContext.Capture(
                 principal,
-                httpContext.RequestServices.GetRequiredService<ITenantContext>()),
+                httpContext.RequestServices.GetRequiredService<ITenantContext>(),
+                httpContext.RequestServices.GetRequiredService<IConfiguration>()
+                    .GetValue("MultiTenancy:Enabled", true)),
         };
 
         var result = await gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
