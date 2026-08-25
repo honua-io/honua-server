@@ -30,9 +30,10 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <para>
 /// Validation reuses the multi-authority OIDC stack rather than a parallel config surface:
 /// the token is authenticated through the already-registered
-/// <see cref="OidcAuthenticationExtensions.JwtBearerScheme"/>, which enforces issuer,
-/// audience, signature, and lifetime against every configured authority and normalizes the
-/// claims through the shared <c>OidcClaimsTransformation</c>. Acceptance is gated on the
+/// <see cref="OidcAuthenticationExtensions.CompositeScheme"/>, which selects a
+/// framework-owned bearer validator and enforces issuer, audience, signature, and lifetime
+/// against every configured authority while normalizing claims through the shared
+/// <c>OidcClaimsTransformation</c>. Acceptance is gated on the
 /// same signal that drives the RFC 9728 metadata (honua-server#2849): when no authorization
 /// server is configured there is nothing to validate against, so a presented token is left
 /// unauthenticated and the request keeps its prior anonymous behaviour.
