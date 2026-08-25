@@ -74,9 +74,12 @@ public sealed class OgcProcessesCiteEchoFixtureConfigurationTests
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IProcessCatalog>().Should().BeSameAs(sharedCatalog);
         sharedCatalog.GetProcess(OgcProcessesCiteEchoFixture.ProcessId).Should().BeNull();
-        provider.GetRequiredService<IOgcProcessesCatalog>()
-            .GetProcess(OgcProcessesCiteEchoFixture.ProcessId)
+        var protocolCatalog = provider.GetRequiredService<IOgcProcessesCatalog>();
+        protocolCatalog.GetProcess(OgcProcessesCiteEchoFixture.ProcessId)
             .Should().BeSameAs(OgcProcessesCiteEchoFixture.Definition);
+        protocolCatalog.CanonicalCatalog.Should().BeSameAs(sharedCatalog);
+        protocolCatalog.CanonicalCatalog.GetProcess(OgcProcessesCiteEchoFixture.ProcessId)
+            .Should().BeNull();
     }
 
     [UnitTest]

@@ -380,11 +380,35 @@ internal static class OgcProcessesCiteEchoFixture
 
         if (!input.TryGetProperty("bbox", out var bbox)
             || bbox.ValueKind != JsonValueKind.Array
-            || bbox.GetArrayLength() is not (4 or 6)
-            || bbox.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.Number))
+            || bbox.GetArrayLength() is not (4 or 6))
         {
             error = "CITE echo input 'bbox.bbox' must be an array of 4 or 6 numbers.";
             return false;
+        }
+
+        var coordinates = new double[bbox.GetArrayLength()];
+        var coordinateIndex = 0;
+        foreach (var value in bbox.EnumerateArray())
+        {
+            if (value.ValueKind != JsonValueKind.Number
+                || !value.TryGetDouble(out var coordinate)
+                || !double.IsFinite(coordinate))
+            {
+                error = "CITE echo input 'bbox.bbox' must contain only finite numbers.";
+                return false;
+            }
+
+            coordinates[coordinateIndex++] = coordinate;
+        }
+
+        var dimension = coordinates.Length / 2;
+        for (var ordinate = 0; ordinate < dimension; ordinate++)
+        {
+            if (coordinates[ordinate] > coordinates[ordinate + dimension])
+            {
+                error = "CITE echo input 'bbox.bbox' lower ordinates must not exceed their corresponding upper ordinates.";
+                return false;
+            }
         }
 
         if (input.TryGetProperty("crs", out var crs) && crs.ValueKind != JsonValueKind.String)
