@@ -1,9 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
-using Honua.Core.Features.Infrastructure.Health;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Operations;
 
@@ -41,7 +42,7 @@ internal sealed class AdminServerStatusExecutor : IOperationExecutor
 
         var readiness = await _readiness.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
         var status = readiness.IsReady ? "ready" : "not_ready";
-        var version = typeof(AdminServerStatusExecutor).Assembly.GetName().Version?.ToString() ?? "unknown";
+        var version = HonuaDeploymentIdentity.GetReleaseVersion(typeof(AdminServerStatusExecutor).Assembly);
 
         return new OperationHandle
         {

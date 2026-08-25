@@ -1,12 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -37,6 +38,7 @@ internal static class FeatureOverviewEndpoints
         [FromServices] ILicenseEntitlementService entitlementService,
         [FromServices] ICapabilityRegistry capabilityRegistry,
         [FromServices] IOptions<CapabilityFlagOptions> experimentalFlags,
+        [FromServices] IOptions<McpPublishedOperationOptions> publishedOperations,
         [FromServices] IWebHostEnvironment hostEnvironment,
         [FromServices] ILogger<FeatureOverviewEndpointsLog> logger)
     {
@@ -69,7 +71,10 @@ internal static class FeatureOverviewEndpoints
             ExperimentalFlags = experimentalFlags.Value
         };
 
-        var capabilities = ProjectCapabilities(capabilityRegistry.All, gateContext);
+        var capabilities = ProjectCapabilities(
+            capabilityRegistry.All,
+            gateContext,
+            publishedOperations.Value.Enabled);
 
         var response = new FeatureOverviewResponse
         {
@@ -92,20 +97,32 @@ internal static class FeatureOverviewEndpoints
     /// </summary>
     /// <param name="descriptors">The capability descriptors to project.</param>
     /// <param name="context">The edition/environment/flag context to resolve against.</param>
+    /// <param name="publishOperationsEnabled">
+    /// Whether operation descriptors are published onto the live MCP tool surface.
+    /// </param>
     internal static CapabilityOverviewItem[] ProjectCapabilities(
         IEnumerable<CapabilityDescriptor> descriptors,
-        CapabilityGateContext context)
+        CapabilityGateContext context,
+        bool publishOperationsEnabled = false)
     {
         return descriptors.Select(descriptor =>
         {
             var resolution = CapabilityGateResolver.Resolve(descriptor, context);
+            var enabled = resolution.Enabled;
+            var reasonCode = resolution.ReasonCode;
+            if (enabled && descriptor.IsDynamic && !publishOperationsEnabled)
+            {
+                enabled = false;
+                reasonCode = CapabilityReasonCodes.DisabledByConfiguration;
+            }
+
             return new CapabilityOverviewItem
             {
                 Id = descriptor.Id,
                 Kind = descriptor.Kind.ToString(),
                 Maturity = descriptor.Maturity.ToString(),
-                Enabled = resolution.Enabled,
-                ReasonCode = resolution.ReasonCode
+                Enabled = enabled,
+                ReasonCode = reasonCode
             };
         }).ToArray();
     }
