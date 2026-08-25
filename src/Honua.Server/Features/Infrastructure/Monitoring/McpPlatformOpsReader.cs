@@ -12,6 +12,7 @@ using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
@@ -188,6 +189,9 @@ internal sealed class McpPlatformOpsReader(
                     Kind = OperationClass.Deploy,
                     RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
                     RequestedBy = actor,
+                    Authority = OperationAuthorityContext.Capture(
+                        principal,
+                        _services.GetRequiredService<ITenantContext>()),
                     Reason = string.IsNullOrWhiteSpace(argument.Reason)
                         ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'."
                         : argument.Reason,

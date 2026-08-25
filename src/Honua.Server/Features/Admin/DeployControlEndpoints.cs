@@ -6,6 +6,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
@@ -669,6 +670,9 @@ internal static class DeployControlEndpoints
         }
 
         var requestedBy = ResolveRequestedBy(context);
+        var authority = OperationAuthorityContext.Capture(
+            context.User,
+            context.RequestServices.GetRequiredService<ITenantContext>());
         var reason = string.IsNullOrWhiteSpace(request?.Reason)
             ? $"Converge serving targets to platform release {declaredVersion}."
             : request!.Reason!;
@@ -723,6 +727,7 @@ internal static class DeployControlEndpoints
                     declaredServing,
                     declaredVersion,
                     requestedBy,
+                    authority,
                     reason,
                     request?.CorrelationId,
                     isUnknown,
@@ -756,6 +761,7 @@ internal static class DeployControlEndpoints
         string declaredServing,
         string declaredVersion,
         string? requestedBy,
+        OperationAuthorityContext authority,
         string reason,
         string? correlationId,
         bool isUnknown,
@@ -772,6 +778,7 @@ internal static class DeployControlEndpoints
         {
             Kind = OperationClass.Deploy,
             RequestedBy = requestedBy,
+            Authority = authority,
             Reason = reason,
             CorrelationId = correlationId,
             // Stable idempotency key so a double-converge folds onto one operation/proposal per target.

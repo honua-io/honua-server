@@ -805,6 +805,11 @@ public sealed class OpsFindingsServiceTests
             Arg.Is<OperationGatewayRequest>(r =>
                 r.Kind == OperationClass.Deploy &&
                 r.RequestedByAgent == OpsFindingsService.RequestedByAgent &&
+                r.Authority != null &&
+                r.Authority.Issuer == "honua-server" &&
+                r.Authority.Actor == OpsFindingsService.RequestedByAgent &&
+                r.Authority.Scheme == "Service" &&
+                r.Authority.EffectiveTenant == "platform" &&
                 r.IdempotencyKey == finding.Id),
             Arg.Any<CancellationToken>());
     }

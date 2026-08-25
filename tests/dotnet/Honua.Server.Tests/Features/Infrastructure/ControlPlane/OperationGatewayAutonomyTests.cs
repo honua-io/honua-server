@@ -432,6 +432,10 @@ public sealed class OperationGatewayAutonomyTests
             Kind = OperationClass.AdminConfigChange,
             ActionDiscriminator = RedriveAction,
             RequestedByAgent = "ops-findings-autonomy",
+            Authority = OperationAuthorityContext.CaptureService(
+                "honua-server",
+                "ops-findings-autonomy",
+                "platform"),
             Reason = "Redrive dead-lettered alert dispatches.",
             IdempotencyKey = FindingId,
             ExecutionPayload = "{\"action\":\"alerts.redrive_dead_letters\"}",

@@ -1234,6 +1234,9 @@ public sealed class GeoprocessingJobServiceTests
         captured!.Kind.Should().Be(OperationClass.Geoprocess);
         captured.IdempotencyKey.Should().Be("idem-1");
         captured.ExecutionPayload.Should().NotBeNullOrWhiteSpace();
+        captured.Authority.Should().NotBeNull();
+        captured.Authority!.Actor.Should().Be("test-user");
+        captured.Authority.EffectiveTenant.Should().Be(OperationAuthorityContext.Tenantless);
     }
 
     [UnitTest]

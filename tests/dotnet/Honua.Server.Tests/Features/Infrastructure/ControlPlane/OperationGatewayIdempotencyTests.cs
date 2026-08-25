@@ -38,6 +38,7 @@ public sealed class OperationGatewayIdempotencyTests
         {
             Kind = OperationClass.Deploy,
             RequestedBy = "agent",
+            Authority = ValidAuthority(),
             IdempotencyKey = "idem-123"
         };
 
@@ -66,18 +67,30 @@ public sealed class OperationGatewayIdempotencyTests
         {
             Kind = OperationClass.Deploy,
             RequestedBy = "agent",
+            Authority = ValidAuthority(),
             IdempotencyKey = "idem-a"
         });
         var second = await sut.RouteAsync(new OperationGatewayRequest
         {
             Kind = OperationClass.Deploy,
             RequestedBy = "agent",
+            Authority = ValidAuthority(),
             IdempotencyKey = "idem-b"
         });
 
         second.ProposalId.Should().NotBe(first.ProposalId);
         store.Count.Should().Be(2);
     }
+
+    private static OperationAuthorityContext ValidAuthority() => new()
+    {
+        Issuer = "https://issuer.example",
+        Actor = "agent",
+        Scheme = "Bearer",
+        EffectiveTenant = "tenant-1",
+        OAuthScopes = ["service:write"],
+        ScopeCeiling = ["service:write"],
+    };
 
     private static OperationGateway BuildGateway(IOperationProposalStore store, IGuardrailLadder ladder)
     {
