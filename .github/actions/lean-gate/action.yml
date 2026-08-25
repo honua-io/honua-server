@@ -41,6 +41,13 @@ inputs:
     description: 'Cap for the architecture-enforcement tests.'
     required: false
     default: '10'
+  catalog-drift-timeout-minutes:
+    description: >
+      Cap for the focused generated feature-catalog drift guard. It runs as
+      soon as the build makes the architecture test assembly available so a
+      stale committed catalog fails before the slower format and Fast smokes.
+    required: false
+    default: '3'
   ai-governance-timeout-minutes:
     description: >
       Cap for the focused MCP registry/taxonomy roster drift tests. The full
@@ -105,16 +112,35 @@ runs:
             --configuration Release \
             /p:TreatWarningsAsErrors=true
 
+    - name: Create Test Results Directory
+      shell: bash
+      run: mkdir -p ./tests/TestResults
+
+    # This byte-for-byte generated-artifact guard is one of the most frequent
+    # deterministic PR failures. It needs the architecture test assembly from
+    # the full build, but it does not need the whole-solution format scan or the
+    # Server Fast smoke. Run it at the earliest safe point, then exclude this
+    # exact method from the later architecture invocation so a green gate keeps
+    # the same test union without paying for the guard twice.
+    - name: Generated Feature Catalog Drift
+      shell: bash
+      run: |
+        timeout "${{ inputs.catalog-drift-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName=Honua.Architecture.Tests.FeatureCatalog.FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput" \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-feature-catalog-drift.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
     - name: Format Check
       shell: bash
       # Restore already completed above, and the full build consumed the same
       # assets. Re-evaluating restore here adds network/project work without
       # increasing format coverage.
       run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
-
-    - name: Create Test Results Directory
-      shell: bash
-      run: mkdir -p ./tests/TestResults
 
     # Fast unit smoke. The [UnitTest] tests in Server.Tests use NSubstitute /
     # NullLogger / in-memory caches and do NOT require the PostgreSQL service —
@@ -134,13 +160,12 @@ runs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
-    # Architecture-enforcement tests: cheap (~75s) and high-value. This step is
-    # what makes the gate catch the failure that motivated #2865 —
-    # FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput
-    # fails when docs/gis/data/feature-catalog.json is stale, which previously
-    # only surfaced on trunk AFTER an admin merge. It also catches the BLOCKING
-    # dependency-direction / controller / encapsulation / API-surface-coverage
-    # regressions.
+    # Remaining architecture-enforcement tests are cheap (~75s) and high-value.
+    # The generated feature-catalog guard already ran immediately after build;
+    # the complementary exclusion below prevents duplicate execution while the
+    # union of both invocations still covers the complete architecture suite.
+    # The remaining tests catch BLOCKING dependency-direction / controller /
+    # encapsulation / API-surface-coverage regressions.
     - name: Run .NET Tests (Architecture)
       shell: bash
       run: |
@@ -149,6 +174,7 @@ runs:
             --no-build \
             --no-restore \
             --configuration Release \
+            --filter "FullyQualifiedName!=Honua.Architecture.Tests.FeatureCatalog.FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
