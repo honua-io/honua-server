@@ -50,6 +50,35 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             using var client = fixture.CreateAdminClient();
             client.Timeout = TimeSpan.FromSeconds(30);
 
+            using var canonicalFixtureRequest = new HttpRequestMessage(
+                HttpMethod.Post,
+                "/ogc/processes/processes/honua-geoprocessing/execution");
+            canonicalFixtureRequest.Headers.Add("Prefer", "respond-async");
+            canonicalFixtureRequest.Content = new StringContent(
+                """
+                {
+                  "inputs": {
+                    "plan": {
+                      "planId": "protocol-only-fixture",
+                      "steps": [{
+                        "stepId": "echo",
+                        "kind": "geoprocess",
+                        "processId": "HONUA-CITE-ECHO",
+                        "inputs": { "literal": "teststring" }
+                      }]
+                    }
+                  }
+                }
+                """,
+                Encoding.UTF8,
+                "application/json");
+            using var canonicalFixtureResponse = await client.SendAsync(canonicalFixtureRequest);
+            canonicalFixtureResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var canonicalFixtureError = JsonDocument.Parse(
+                await canonicalFixtureResponse.Content.ReadAsStringAsync());
+            canonicalFixtureError.RootElement.GetProperty("detail").GetString()
+                .Should().Contain("protocol-only process");
+
             using var descriptionResponse = await client.GetAsync(
                 "/ogc/processes/processes/honua-cite-echo");
             descriptionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -143,6 +172,21 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
                 await invalidBinaryString.Content.ReadAsStringAsync());
             invalidBinaryStringError.RootElement.GetProperty("detail").GetString()
                 .Should().Contain("base64");
+
+            using var invertedBoundingBox = await PostExecutionAsync(client, """
+                {
+                  "inputs": {
+                    "literal": "teststring",
+                    "bbox": { "bbox": [0, 10, 1, 0] }
+                  },
+                  "outputs": { "bbox": { "transmissionMode": "value" } }
+                }
+                """);
+            invertedBoundingBox.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var invertedBoundingBoxError = JsonDocument.Parse(
+                await invertedBoundingBox.Content.ReadAsStringAsync());
+            invertedBoundingBoxError.RootElement.GetProperty("detail").GetString()
+                .Should().Contain("lower ordinates");
 
             using var inlineBinarySubmit = await PostExecutionAsync(client, """
                 {
@@ -275,6 +319,9 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,2,3,4,5]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[1,\"bad\"]}}", "bbox")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[10,0,0,1]}}", "bbox")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[0,10,1,0]}}", "bbox")]
+    [InlineData("{\"literal\":\"ok\",\"bbox\":{\"bbox\":[0,0,10,1,1,0]}}", "bbox")]
     [InlineData("{\"literal\":\"ok\",\"pause\":11}", "pause")]
     [InlineData("{\"literal\":\"ok\",\"binary\":{\"href\":\"ftp://example.test/file.tif\"}}", "binary")]
     [InlineData("{\"literal\":\"ok\",\"binary\":{\"value\":\"test\",\"href\":\"https://example.test/file.tif\"}}", "binary")]

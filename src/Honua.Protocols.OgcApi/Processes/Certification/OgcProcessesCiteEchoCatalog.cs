@@ -12,6 +12,11 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 /// </summary>
 internal interface IOgcProcessesCatalog : IProcessCatalog
 {
+    /// <summary>
+    /// Gets the shared process catalog used to validate canonical plans.
+    /// Protocol-only definitions exposed by this adapter are intentionally absent.
+    /// </summary>
+    IProcessCatalog CanonicalCatalog { get; }
 }
 
 /// <summary>
@@ -44,6 +49,8 @@ internal sealed class OgcProcessesCiteEchoCatalog : IOgcProcessesCatalog
             && string.Equals(processId, OgcProcessesCiteEchoFixture.ProcessId, StringComparison.Ordinal)
             ? OgcProcessesCiteEchoFixture.Definition
             : _inner.GetProcess(processId);
+
+    public IProcessCatalog CanonicalCatalog => _inner;
 
     public IReadOnlyList<ProcessDefinition> ListProcesses() => _all;
 

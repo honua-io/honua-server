@@ -462,12 +462,16 @@ internal static class ProcessEndpoints
                 }
             }
 
+            var submissionCatalog = definition != null
+                && OgcProcessesCiteEchoFixture.IsDefinition(definition)
+                    ? processCatalog
+                    : processCatalog.CanonicalCatalog;
             var jobRecord = await jobService
                 .SubmitProtocolJobAsync(
                     analysisPlan!,
                     idempotencyKey: null,
                     context.User,
-                    processCatalog,
+                    submissionCatalog,
                     metadata,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -707,7 +711,7 @@ internal static class ProcessEndpoints
                     string.Equals(
                         step.ProcessId,
                         OgcProcessesCiteEchoFixture.ProcessId,
-                        StringComparison.Ordinal)))
+                        StringComparison.OrdinalIgnoreCase)))
             {
                 error = $"Canonical plans cannot contain protocol-only process '{OgcProcessesCiteEchoFixture.ProcessId}'.";
                 plan = null;
