@@ -72,7 +72,9 @@ internal sealed class ProposalStatusResource : IMcpResource
         var authority = proposal.Authority;
         var callerAuthority = OperationAuthorityContext.Capture(
             principal,
-            httpContext.RequestServices.GetRequiredService<ITenantContext>());
+            httpContext.RequestServices.GetRequiredService<ITenantContext>(),
+            httpContext.RequestServices.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true));
         if (authority?.ResourceType is not { } resourceType ||
             authority.Operation is not { } operation ||
             string.IsNullOrWhiteSpace(authority.ResourceId) ||

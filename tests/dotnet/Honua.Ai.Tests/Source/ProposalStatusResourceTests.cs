@@ -12,6 +12,7 @@ using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -64,6 +65,34 @@ public sealed class ProposalStatusResourceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task ReadAsync_TenantlessModeCanPollTenantlessProposal()
+    {
+        var store = Substitute.For<IOperationProposalStore>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        store.GetAsync("proposal-1", Arg.Any<CancellationToken>())
+            .Returns(CreateProposal("stable-subject", OperationAuthorityContext.Tenantless));
+        var context = CreateContext(
+            "stable-subject",
+            store,
+            jobService,
+            tenant: null,
+            multiTenancyEnabled: false);
+        var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            context,
+            "honua://proposals/proposal-1",
+            CancellationToken.None);
+
+        result.Contents.Should().ContainSingle();
+        await jobService.Received(1).EnsureCallerAuthorizedAsync(
+            context.User,
+            OperatorResourceType.Deployment,
+            OperatorOperation.Publish,
+            Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData("https://issuer.example", "other-tenant")]
     public async Task ReadAsync_DifferentTenantCannotPollProposal(
@@ -91,11 +120,19 @@ public sealed class ProposalStatusResourceTests
         IOperationProposalStore store,
         IGeoprocessingJobService jobService,
         string issuer = "https://issuer.example",
-        string tenant = "tenant-1")
+        string? tenant = "tenant-1",
+        bool multiTenancyEnabled = true)
     {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MultiTenancy:Enabled"] = multiTenancyEnabled.ToString(),
+            })
+            .Build();
         var services = new ServiceCollection()
             .AddSingleton(store)
             .AddSingleton(jobService)
+            .AddSingleton<IConfiguration>(configuration)
             .AddSingleton<ITenantContext>(new TestTenantContext(tenant))
             .BuildServiceProvider();
         return new DefaultHttpContext
@@ -110,7 +147,9 @@ public sealed class ProposalStatusResourceTests
         };
     }
 
-    private static OperationProposal CreateProposal(string actor) => new()
+    private static OperationProposal CreateProposal(
+        string actor,
+        string effectiveTenant = "tenant-1") => new()
     {
         ProposalId = "proposal-1",
         Kind = OperationClass.Deploy,
@@ -122,7 +161,7 @@ public sealed class ProposalStatusResourceTests
             Issuer = "https://issuer.example",
             Actor = actor,
             Scheme = "Bearer",
-            EffectiveTenant = "tenant-1",
+            EffectiveTenant = effectiveTenant,
             ScopeGoverned = true,
             ResourceType = OperatorResourceType.Deployment,
             Operation = OperatorOperation.Publish,
@@ -130,7 +169,7 @@ public sealed class ProposalStatusResourceTests
         },
     };
 
-    private sealed class TestTenantContext(string tenantId) : ITenantContext
+    private sealed class TestTenantContext(string? tenantId) : ITenantContext
     {
         public string? TenantId => tenantId;
 
@@ -138,6 +177,13 @@ public sealed class ProposalStatusResourceTests
 
         public bool RequireTenantId(out string resolvedTenantId, out string? reason)
         {
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                resolvedTenantId = string.Empty;
+                reason = "Tenant context is unavailable.";
+                return false;
+            }
+
             resolvedTenantId = tenantId;
             reason = null;
             return true;
