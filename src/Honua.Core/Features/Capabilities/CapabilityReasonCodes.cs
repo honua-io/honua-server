@@ -24,6 +24,12 @@ public static class CapabilityReasonCodes
     public const string ExperimentalDisabled = "experimental-disabled";
 
     /// <summary>
+    /// The capability is implemented but its publishing surface is disabled by
+    /// the current host configuration.
+    /// </summary>
+    public const string DisabledByConfiguration = "disabled-by-configuration";
+
+    /// <summary>
     /// The active edition does not meet the capability's
     /// <see cref="CapabilityDescriptor.MinimumEdition"/>. Mirrors the existing
     /// license/entitlement reason the <c>/capabilities</c> manifest emits for a

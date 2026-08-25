@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using NSubstitute;
 
@@ -68,6 +70,25 @@ public sealed class OperationsToolsetTests
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
         descriptor.Policy.Determinism.Should().Be(OperationDeterminism.Deterministic);
+    }
+
+    [UnitTest]
+    public async Task AdminStatus_Uses_Canonical_Release_Version()
+    {
+        var readiness = Substitute.For<IReadinessCheckService>();
+        readiness.CheckReadinessAsync(Arg.Any<CancellationToken>())
+            .Returns(ReadinessResult.Ready());
+        var executor = new AdminServerStatusExecutor(readiness, TimeProvider.System);
+        var request = new OperationRequest { OperationId = AdminServerStatusExecutor.OperationName };
+
+        var handle = await executor.SubmitAsync(
+            request,
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Result.Should().NotBeNull();
+        handle.Result!.Details["version"].Should().Be(
+            HonuaDeploymentIdentity.GetReleaseVersion(typeof(AdminServerStatusExecutor).Assembly));
     }
 
     [UnitTest]
