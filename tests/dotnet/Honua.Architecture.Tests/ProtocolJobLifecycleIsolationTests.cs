@@ -21,6 +21,7 @@ public sealed class ProtocolJobLifecycleIsolationTests
         "IBatchComputeBackend",
         "ExecutionJobCancellationHelper",
         "ExecutionJobSubmissionHelper",
+        "CancelAbandonedJobAsync",
     ];
 
     [ArchitectureTest]

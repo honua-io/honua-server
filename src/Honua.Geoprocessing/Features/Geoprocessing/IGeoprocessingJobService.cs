@@ -176,6 +176,17 @@ internal interface IGeoprocessingJobService
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancels a job abandoned by a bounded synchronous protocol request. Implementations
+    /// retain authorization and ownership checks, but may treat server-owned orphan cleanup
+    /// differently from an interactive destructive cancellation request.
+    /// </summary>
+    Task CancelAbandonedJobAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => CancelJobAsync(jobId, principal, cancellationToken);
 }
 
 /// <summary>

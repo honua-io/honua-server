@@ -155,11 +155,26 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
         }
     }
 
-    public async Task<GeoprocessingCancelResult> CancelAsync(
+    public Task<GeoprocessingCancelResult> CancelAsync(
         string jobId,
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default)
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect);
+
+    public Task<GeoprocessingCancelResult> CancelOrphanedAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        TimeSpan timeout,
+        CancellationToken clientDisconnect = default)
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: true, clientDisconnect);
+
+    private async Task<GeoprocessingCancelResult> CancelCoreAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        TimeSpan timeout,
+        bool isOrphanCleanup,
+        CancellationToken clientDisconnect)
     {
         ValidateTimeout(timeout);
         using var timeoutSource = _timeoutSourceFactory(timeout);
@@ -179,7 +194,14 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
             {
                 return new(GeoprocessingCancelOutcome.NotFound);
             }
-            await _jobs.CancelJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+            if (isOrphanCleanup)
+            {
+                await _jobs.CancelAbandonedJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await _jobs.CancelJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+            }
             var latest = await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             return GeoprocessingJobService.IsTerminal(latest.Status) && latest.Status != ExecutionJobStatus.Cancelled
                 ? new(GeoprocessingCancelOutcome.AlreadyTerminal, latest)

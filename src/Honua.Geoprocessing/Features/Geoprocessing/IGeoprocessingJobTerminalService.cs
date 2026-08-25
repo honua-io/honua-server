@@ -33,6 +33,13 @@ internal interface IGeoprocessingJobTerminalService
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default);
+
+    /// <summary>Cancels a job orphaned by an abandoned bounded synchronous request.</summary>
+    Task<GeoprocessingCancelResult> CancelOrphanedAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        TimeSpan timeout,
+        CancellationToken clientDisconnect = default);
 }
 
 /// <summary>Terminal wait outcome.</summary>

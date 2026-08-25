@@ -437,7 +437,7 @@ internal static class ProcessEndpoints
     {
         try
         {
-            await terminalService.CancelAsync(
+            await terminalService.CancelOrphanedAsync(
                 jobId,
                 principal,
                 TimeSpan.FromSeconds(10),

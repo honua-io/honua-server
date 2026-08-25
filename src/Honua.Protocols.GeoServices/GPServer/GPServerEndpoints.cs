@@ -566,7 +566,7 @@ internal static class GPServerEndpoints
         try
         {
             GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
-            await terminalService.CancelAsync(
+            await terminalService.CancelOrphanedAsync(
                 jobId,
                 user,
                 TimeSpan.FromSeconds(10),

@@ -127,6 +127,26 @@ public sealed class GeoprocessingJobTerminalServiceTests
         result.Outcome.Should().Be(GeoprocessingCancelOutcome.Timeout);
     }
 
+    [Fact]
+    public async Task CancelOrphanedAsync_UsesDomainOwnedCleanupIntent()
+    {
+        var running = CreateJob(ExecutionJobStatus.Running);
+        _jobs.GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+            .Returns(running);
+        _jobs.CancelAbandonedJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var sut = CreateService((_, _) => Task.CompletedTask);
+
+        var result = await sut.CancelOrphanedAsync(
+            "job-1", _principal, TimeSpan.FromSeconds(1));
+
+        result.Outcome.Should().Be(GeoprocessingCancelOutcome.Cancelled);
+        await _jobs.Received(1).CancelAbandonedJobAsync(
+            "job-1", _principal, Arg.Any<CancellationToken>());
+        await _jobs.DidNotReceive().CancelJobAsync(
+            Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
+    }
+
     private GeoprocessingJobTerminalService CreateService(
         Func<TimeSpan, CancellationToken, Task> delay,
         Func<TimeSpan, CancellationTokenSource>? timeoutSourceFactory = null)

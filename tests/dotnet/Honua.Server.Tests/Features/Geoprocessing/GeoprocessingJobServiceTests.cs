@@ -2533,6 +2533,55 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    public async Task CancelAbandonedJob_ApprovalRequired_CleansUpOwnedJobWithoutInteractiveApproval()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("destructive-policy", "destructive-action"));
+
+        await _sut.CancelAbandonedJobAsync("job-1", CreatePrincipal());
+
+        _approvalEvaluator.DidNotReceive().Evaluate(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request => request.IsDestructive));
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task CancelAbandonedJob_ForeignOwner_RemainsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, "another-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = () => _sut.CancelAbandonedJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        _cancellationNotifier.DidNotReceive().Cancel(Arg.Any<string>());
+    }
+
+    [UnitTest]
+    public async Task CancelAbandonedJob_UnauthorizedCaller_RemainsForbidden()
+    {
+        _authEvaluator
+            .EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.ResourceType == OperatorResourceType.Job &&
+                    request.Operation == OperatorOperation.Execute),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden("job execution is not authorized"));
+
+        var act = () => _sut.CancelAbandonedJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _cancellationNotifier.DidNotReceive().Cancel(Arg.Any<string>());
+    }
+
+    [UnitTest]
     [Operation(Operations.Delete)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJob_NoActiveWorker_RemovesFromQueue()
