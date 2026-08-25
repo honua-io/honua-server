@@ -16,6 +16,7 @@ public sealed record OperationAuthorityContext
 {
     private const string ApiKeyIdClaim = "api_key_id";
     private const string ApiKeyNameClaim = "api_key_name";
+    private const string ApiKeyPermissionClaim = "permission";
 
     /// <summary>Canonical value for a deliberately tenant-less operation context.</summary>
     public const string Tenantless = "$tenantless";
@@ -32,7 +33,7 @@ public sealed record OperationAuthorityContext
     /// <summary>Tenant selected after authentication and authorization.</summary>
     public required string EffectiveTenant { get; init; }
 
-    /// <summary>OAuth/API-key permissions present on the authenticated request.</summary>
+    /// <summary>OAuth scopes present on the authenticated request.</summary>
     public IReadOnlyList<string> OAuthScopes { get; init; } = Array.Empty<string>();
 
     /// <summary>
@@ -41,9 +42,18 @@ public sealed record OperationAuthorityContext
     /// </summary>
     public IReadOnlyList<string> ScopeCeiling { get; init; } = Array.Empty<string>();
 
+    /// <summary>API-key/RBAC permission grants present on the authenticated request.</summary>
+    public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// The maximum permission-grant set available to this operation. It must be a subset of
+    /// <see cref="Permissions"/> so approved replay cannot gain an API-key permission.
+    /// </summary>
+    public IReadOnlyList<string> PermissionCeiling { get; init; } = Array.Empty<string>();
+
     /// <summary>
     /// Captures a bounded authority snapshot from an already-authenticated principal and the
-    /// effective tenant selected by request middleware. Only identity and scope claims are
+    /// effective tenant selected by request middleware. Only identity, scope, and permission claims are
     /// retained; credentials and token material never enter the durable proposal.
     /// </summary>
     public static OperationAuthorityContext Capture(
@@ -73,8 +83,14 @@ public sealed record OperationAuthorityContext
             .Distinct(StringComparer.Ordinal)
             .OrderBy(scope => scope, StringComparer.Ordinal)
             .ToArray();
+        var permissions = identity.FindAll(ApiKeyPermissionClaim)
+            .Select(claim => claim.Value.Trim())
+            .Where(permission => !string.IsNullOrWhiteSpace(permission))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(permission => permission, StringComparer.Ordinal)
+            .ToArray();
 
-        return CreateValidated(issuer, actor, scheme, effectiveTenant, scopes);
+        return CreateValidated(issuer, actor, scheme, effectiveTenant, scopes, permissions);
     }
 
     /// <summary>
@@ -104,7 +120,13 @@ public sealed record OperationAuthorityContext
         string issuer,
         string actor,
         string effectiveTenant)
-        => CreateValidated(issuer, actor, "Service", effectiveTenant, Array.Empty<string>());
+        => CreateValidated(
+            issuer,
+            actor,
+            "Service",
+            effectiveTenant,
+            Array.Empty<string>(),
+            Array.Empty<string>());
 
     /// <summary>
     /// Validates the bounded, non-secret authority lineage before it is persisted.
@@ -126,10 +148,25 @@ public sealed record OperationAuthorityContext
             return false;
         }
 
+        if (Permissions.Count > 128 || PermissionCeiling.Count > 128 ||
+            Permissions.Any(permission => !IsBounded(permission, 256)) ||
+            PermissionCeiling.Any(permission => !IsBounded(permission, 256)))
+        {
+            error = "Operation authority permissions are missing or exceed their bounds.";
+            return false;
+        }
+
         var granted = OAuthScopes.ToHashSet(StringComparer.Ordinal);
         if (ScopeCeiling.Any(scope => !granted.Contains(scope)))
         {
             error = "Operation scope ceiling exceeds the authenticated scope set.";
+            return false;
+        }
+
+        var permissions = Permissions.ToHashSet(StringComparer.Ordinal);
+        if (PermissionCeiling.Any(permission => !permissions.Contains(permission)))
+        {
+            error = "Operation permission ceiling exceeds the authenticated permission set.";
             return false;
         }
 
@@ -148,7 +185,8 @@ public sealed record OperationAuthorityContext
         string? actor,
         string? scheme,
         string effectiveTenant,
-        IReadOnlyList<string> scopes)
+        IReadOnlyList<string> scopes,
+        IReadOnlyList<string> permissions)
     {
         var authority = new OperationAuthorityContext
         {
@@ -158,6 +196,8 @@ public sealed record OperationAuthorityContext
             EffectiveTenant = effectiveTenant,
             OAuthScopes = scopes,
             ScopeCeiling = scopes,
+            Permissions = permissions,
+            PermissionCeiling = permissions,
         };
 
         if (!authority.TryValidate(out var error))

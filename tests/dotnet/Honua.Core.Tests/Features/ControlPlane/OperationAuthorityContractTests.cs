@@ -82,6 +82,9 @@ public sealed class OperationAuthorityContractTests
                 new Claim(ClaimTypes.Name, "admin"),
                 new Claim("api_key_id", "api-key-42"),
                 new Claim("api_key_name", "release automation"),
+                new Claim("permission", "admin:deploy"),
+                new Claim("permission", "read:services/world"),
+                new Claim("permission", "admin:deploy"),
             ],
             "ApiKey"));
 
@@ -89,6 +92,22 @@ public sealed class OperationAuthorityContractTests
 
         authority.Actor.Should().Be("api-key-42");
         authority.Scheme.Should().Be("ApiKey");
+        authority.OAuthScopes.Should().BeEmpty();
+        authority.Permissions.Should().Equal("admin:deploy", "read:services/world");
+        authority.PermissionCeiling.Should().Equal(authority.Permissions);
+    }
+
+    [UnitTest]
+    public void PermissionCeiling_CannotExceedAuthenticatedPermissions()
+    {
+        var authority = Authority([], []) with
+        {
+            Permissions = ["read:services/world"],
+            PermissionCeiling = ["admin:deploy"],
+        };
+
+        authority.TryValidate(out var error).Should().BeFalse();
+        error.Should().Contain("permission ceiling");
     }
 
     private static OperationAuthorityContext Authority(
