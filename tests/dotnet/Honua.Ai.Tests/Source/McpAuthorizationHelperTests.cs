@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Security;
@@ -233,24 +234,38 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
-    public void EnsureBearerToolTenant_TenantlessBearer_IsRejected()
+    public async Task EnsureBearerDataTenantAsync_TenantlessBearer_IsRejectedAndAudited()
     {
         var context = CreateBearerContext("subject", "https://issuer.example", tenant: null);
+        var auditLog = new CapturingAuditLog();
+        context.RequestServices = new ServiceCollection()
+            .AddSingleton<ITenantContext>(new StubTenantContext(tenantId: null))
+            .AddSingleton<IAuditLog>(auditLog)
+            .BuildServiceProvider();
 
-        var act = () => McpAuthorizationHelper.EnsureBearerToolTenant(context);
+        var act = () => McpAuthorizationHelper.EnsureBearerDataTenantAsync(context, "tools/call");
 
-        act.Should().Throw<Exception>()
+        await act.Should().ThrowAsync<Exception>()
             .WithMessage("A validated tenant is required to invoke MCP tools.");
+        auditLog.Events.Should().ContainSingle();
+        auditLog.Events[0].EventType.Should().Be(AuditEventType.Authorization);
+        auditLog.Events[0].Actor.Should().Be("subject");
+        auditLog.Events[0].ActorType.Should().Be(AuditActorType.UserId);
+        auditLog.Events[0].ResourceType.Should().Be("mcp");
+        auditLog.Events[0].ResourceId.Should().Be("tools/call");
+        auditLog.Events[0].Action.Should().Be("mcp.authorization");
+        auditLog.Events[0].Outcome.Should().Be(AuditOutcome.Denied);
+        auditLog.Events[0].Details.Should().Be("{\"code\":\"tenant_required\"}");
     }
 
     [UnitTest]
-    public void EnsureBearerToolTenant_ApiKeyPath_IsUnchanged()
+    public async Task EnsureBearerDataTenantAsync_ApiKeyPath_IsUnchanged()
     {
         var context = CreateApiKeyContext(Guid.NewGuid(), tenant: null);
 
-        var act = () => McpAuthorizationHelper.EnsureBearerToolTenant(context);
+        var act = () => McpAuthorizationHelper.EnsureBearerDataTenantAsync(context, "tools/call");
 
-        act.Should().NotThrow();
+        await act.Should().NotThrowAsync();
     }
 
     [UnitTest]
@@ -390,6 +405,17 @@ public sealed class McpAuthorizationHelperTests
 
         public Task SignOutAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
             Task.CompletedTask;
+    }
+
+    private sealed class CapturingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            return Task.CompletedTask;
+        }
     }
 
     private static DefaultHttpContext CreateContext(ClaimsPrincipal principal, string? tenant)

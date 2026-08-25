@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
 
 namespace Honua.Ai.Protocols.Mcp;
@@ -92,9 +94,10 @@ internal static class McpAuthorizationHelper
     /// an effective tenant. Discovery remains available, but no tool implementation
     /// may observe the deployment's default database/schema in this state.
     /// </summary>
-    public static void EnsureBearerToolTenant(HttpContext context)
+    public static async Task EnsureBearerDataTenantAsync(HttpContext context, string target)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
         if (!CanonicalSecurityActor.IsBearerPrincipal(context.User))
         {
             return;
@@ -103,6 +106,29 @@ internal static class McpAuthorizationHelper
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
         if (string.IsNullOrWhiteSpace(tenant))
         {
+            var auditLog = context.RequestServices.GetService<IAuditLog>();
+            if (auditLog is not null)
+            {
+                var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+                await auditLog.RecordAsync(
+                    new AuditEvent
+                    {
+                        Timestamp = timeProvider.GetUtcNow(),
+                        EventType = AuditEventType.Authorization,
+                        Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+                        ActorType = actorType,
+                        ResourceType = "mcp",
+                        ResourceId = target,
+                        Action = "mcp.authorization",
+                        Outcome = AuditOutcome.Denied,
+                        CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+                        RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+                        UserAgent = AuditContextResolver.ResolveUserAgent(context),
+                        Details = "{\"code\":\"tenant_required\"}",
+                    },
+                    context.RequestAborted).ConfigureAwait(false);
+            }
+
             throw new Geoprocessing.GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
                 "A validated tenant is required to invoke MCP tools.");
