@@ -418,6 +418,25 @@ train_guard_scan_arm
   || fail "arming the next guard pass orphaned the prior unconsumed evidence bundle"
 pass "arming a new guard pass disposes unconsumed exact-attempt evidence"
 
+# A later classifier in the same armed pass can narrow the failing-name set,
+# intentionally missing the first memo key and replacing it with a fresh scan.
+# The overwritten memo must release its old bundle before losing the path.
+train_guard_scan_arm
+GUARD_RC=0; train_classify_capacity_guard 704 'Server Tests (Core)' || GUARD_RC=$?
+[[ "${GUARD_RC}" == "0" ]] || fail "replacement fixture did not preserve initial evidence"
+superseded_memo_dir="${TRAIN_GUARD_SCAN_EVIDENCE_DIR}"
+[[ -d "${superseded_memo_dir}" ]] || fail "replacement fixture did not create initial evidence"
+GUARD_RC=0; train_classify_capacity_guard 704 '' || GUARD_RC=$?
+[[ "${GUARD_RC}" == "0" ]] || fail "replacement fixture did not complete its narrowed rescan"
+replacement_memo_dir="${TRAIN_GUARD_SCAN_EVIDENCE_DIR}"
+[[ -d "${replacement_memo_dir}" && "${replacement_memo_dir}" != "${superseded_memo_dir}" ]] \
+  || fail "key-miss rescan did not install a distinct replacement bundle"
+[[ ! -e "${superseded_memo_dir}" ]] \
+  || fail "key-miss rescan orphaned the superseded memo evidence bundle"
+train_guard_scan_arm
+TRAIN_GUARD_SCAN_ARMED=0
+pass "a key-miss rescan disposes the superseded memo before replacement"
+
 # --- 6. CONTROL: a genuine pre-existing failure is still subtracted ----------
 run_guard 704 'Server Tests (Core)'
 [[ "${GUARD_RC}" == "0" ]] || fail "the guard hijacked an ordinary comparable failure (rc=${GUARD_RC})"

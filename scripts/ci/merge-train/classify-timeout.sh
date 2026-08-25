@@ -479,6 +479,10 @@ train_classify_capacity_guard() {
       attempt=$(( attempt + 1 )); delay=$(( delay * 2 ))
     done
     if [[ "${TRAIN_GUARD_SCAN_ARMED:-0}" == "1" ]]; then
+      # A narrowed failing-name set can deliberately miss the one-use memo key
+      # and produce a fresh exact-attempt bundle. Release the superseded memo
+      # before replacing its only remaining directory reference.
+      train_guard_scan_reset
       TRAIN_GUARD_SCAN_KEY="${run_id}|${failing_names}"
       TRAIN_GUARD_SCAN_RC="${scan_rc}"
       TRAIN_GUARD_SCAN_KIND="${TRAIN_TIMEOUT_KIND}"
