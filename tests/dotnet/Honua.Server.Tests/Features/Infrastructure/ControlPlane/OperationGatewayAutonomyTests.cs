@@ -220,6 +220,7 @@ public sealed class OperationGatewayAutonomyTests
         var result = await sut.RouteAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.OperationInstanceId.Should().StartWith("opinst-");
         result.Message.Should().Contain("No post-action convergence verifier");
         executor.ExecuteCount.Should().Be(0, "autonomy must fail closed before invoking an unverifiable action");
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
