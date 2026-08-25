@@ -117,6 +117,30 @@ public sealed class OperationGatewayStateMachineTests
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
     }
 
+    [Fact]
+    public async Task CreateApprovalProposal_WithoutAuthority_FailsBeforePersistence()
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(
+                GuardrailTier.RequiresApproval,
+                OperationClass.Deploy,
+                HonuaEdition.Enterprise,
+                "test-policy"));
+        var store = new InMemoryProposalStore();
+        var sut = BuildGateway(store, new DeployExecutor(), ladder);
+
+        var act = () => sut.CreateApprovalProposalAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "legacy-client",
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*captured proposer authority is required*");
+        store.Snapshot.Should().BeNull();
+    }
+
     // ── BH6-033: ApplyApprovedProposalAsync with unregistered operation class ─
 
     [Theory]
@@ -187,14 +211,26 @@ public sealed class OperationGatewayStateMachineTests
         return new OperationProposal
         {
             ProposalId = proposalId,
+            OperationInstanceId = $"opinst-{proposalId}",
             Kind = kind,
             Status = status,
+            Authority = ValidAuthority(),
             Plan = new OperationProposalPlan { Summary = "test proposal" },
             Audit = new OperationAuditInfo { Reason = "test" },
             CreatedAt = now,
             UpdatedAt = now,
         };
     }
+
+    private static OperationAuthorityContext ValidAuthority() => new()
+    {
+        Issuer = "https://issuer.example",
+        Actor = "proposer",
+        Scheme = "Bearer",
+        EffectiveTenant = "tenant-1",
+        OAuthScopes = ["service:write"],
+        ScopeCeiling = ["service:write"],
+    };
 
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
@@ -266,6 +302,17 @@ public sealed class OperationGatewayStateMachineTests
     {
         private OperationProposal? _proposal = initialProposal;
         private readonly Lock _lock = new();
+
+        public OperationProposal? Snapshot
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _proposal;
+                }
+            }
+        }
 
         public Task<OperationProposal?> GetAsync(string proposalId, CancellationToken cancellationToken = default)
         {

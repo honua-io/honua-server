@@ -177,6 +177,15 @@ public sealed class GatewayExecutorCompletenessTests
         {
             Kind = OperationClass.MetadataRelease,
             RequestedBy = "agent:proposer",
+            Authority = new OperationAuthorityContext
+            {
+                Issuer = "https://issuer.example",
+                Actor = "agent:proposer",
+                Scheme = "Bearer",
+                EffectiveTenant = "tenant-1",
+                OAuthScopes = ["service:write"],
+                ScopeCeiling = ["service:write"],
+            },
             ExecutionPayload = payload,
         });
 

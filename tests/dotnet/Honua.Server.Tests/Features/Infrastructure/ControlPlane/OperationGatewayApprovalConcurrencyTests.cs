@@ -160,21 +160,25 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     }
 
     [Fact]
-    public async Task ApplyApprovedProposal_WithoutCapturedAuthority_DoesNotAttestRetention()
+    public async Task ApplyApprovedProposal_LegacyRecordWithoutCapturedAuthority_FailsClosed()
     {
         var store = new InMemoryProposalStore(
-            CreateProposal("p-legacy-authority", OperationProposalStatus.AwaitingApproval));
-        OperationProposal? observedProposal = null;
+            CreateProposal(
+                "p-legacy-authority",
+                OperationProposalStatus.AwaitingApproval,
+                omitAuthority: true));
+        var executorCallCount = 0;
         var sut = BuildGateway(
             store,
-            new RecordingExecutor(_ => observedProposal = store.Snapshot));
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
 
-        var result = await sut.ApplyApprovedProposalAsync("p-legacy-authority", "separate-approver");
+        var act = () => sut.ApplyApprovedProposalAsync("p-legacy-authority", "separate-approver");
 
-        observedProposal.Should().NotBeNull();
-        observedProposal!.Approval.Should().NotBeNull();
-        observedProposal.Approval!.ProposerAuthorityRetained.Should().BeFalse();
-        result!.Approval!.ProposerAuthorityRetained.Should().BeFalse();
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*legacy record without captured proposer authority*cannot be executed*Resubmit*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        store.Snapshot.Approval.Should().BeNull();
     }
 
     [Fact]
@@ -202,7 +206,8 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     private static OperationProposal CreateProposal(
         string proposalId,
         OperationProposalStatus status,
-        OperationAuthorityContext? authority = null)
+        OperationAuthorityContext? authority = null,
+        bool omitAuthority = false)
     {
         var now = DateTimeOffset.UtcNow;
         return new OperationProposal
@@ -212,7 +217,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             Kind = OperationClass.Deploy,
             Status = status,
             RequestedBy = "proposer",
-            Authority = authority,
+            Authority = omitAuthority ? null : authority ?? ValidAuthority(),
             Plan = new OperationProposalPlan { Summary = "test proposal" },
             Audit = new OperationAuditInfo { Reason = "test" },
             CreatedAt = now,

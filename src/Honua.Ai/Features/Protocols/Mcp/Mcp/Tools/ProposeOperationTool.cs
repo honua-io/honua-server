@@ -3,7 +3,9 @@
 
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -106,6 +108,9 @@ internal sealed class ProposeOperationTool : IMcpTool
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,
+            Authority = OperationAuthorityContext.Capture(
+                principal,
+                httpContext.RequestServices.GetRequiredService<ITenantContext>()),
         };
 
         var result = await gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);

@@ -73,6 +73,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         if (decision.Tier == GuardrailTier.RequiresApproval)
         {
+            RequireProposalAuthority(request.Authority);
             var autonomy = await EvaluateAutonomyAsync(
                     request,
                     decision,
@@ -106,7 +107,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     {
         ArgumentNullException.ThrowIfNull(request);
         request = EnsureOperationInstance(request);
-        ValidateAuthority(request.Authority);
+        RequireProposalAuthority(request.Authority);
 
         // The approval requirement was already decided by an upstream domain gate
         // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
@@ -154,6 +155,16 @@ internal sealed partial class OperationGateway : IOperationGateway
             string.Equals(proposal.Authority?.Actor, approvedBy, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The proposer cannot approve its own operation.");
+        }
+
+        if (proposal.Authority is null)
+        {
+            // Compatibility is intentionally read/reject-only. Records written before proposer
+            // authority was introduced remain deserializable, but cannot be upgraded by guessing
+            // authority at approval time or executed under the approver's identity.
+            throw new InvalidOperationException(
+                $"Proposal '{proposalId}' is a legacy record without captured proposer authority " +
+                "and cannot be executed. Resubmit the operation to create a new proposal.");
         }
 
         ValidateAuthority(proposal.Authority);
@@ -511,7 +522,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     Approver = approvedBy,
                     Approved = true,
                     DecidedAt = decidedAt,
-                    ProposerAuthorityRetained = proposal.Authority is not null,
+                    ProposerAuthorityRetained = true,
                 },
             };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
@@ -623,6 +634,17 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             throw new InvalidOperationException($"Operation authority is invalid: {error}");
         }
+    }
+
+    private static void RequireProposalAuthority(OperationAuthorityContext? authority)
+    {
+        if (authority is null)
+        {
+            throw new InvalidOperationException(
+                "A captured proposer authority is required before an approval-gated operation can be persisted or executed.");
+        }
+
+        ValidateAuthority(authority);
     }
 
     private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(

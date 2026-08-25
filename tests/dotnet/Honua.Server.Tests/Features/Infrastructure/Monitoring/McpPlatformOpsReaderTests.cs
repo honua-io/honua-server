@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
@@ -255,6 +256,9 @@ public sealed class McpPlatformOpsReaderTests
         gateway.LastRequest!.Kind.Should().Be(OperationClass.Deploy);
         gateway.LastRequest.RequestedBy.Should().Be("ops-agent");
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:ops-agent");
+        gateway.LastRequest.Authority.Should().NotBeNull();
+        gateway.LastRequest.Authority!.Actor.Should().Be("ops-agent");
+        gateway.LastRequest.Authority.EffectiveTenant.Should().Be("tenant-1");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
 
@@ -350,6 +354,7 @@ public sealed class McpPlatformOpsReaderTests
         IOperationExecutorCatalog? catalog = null)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new TestTenantContext());
         if (gateway is not null)
         {
             services.AddSingleton(gateway);
@@ -370,6 +375,20 @@ public sealed class McpPlatformOpsReaderTests
                 new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
             ],
             "test"));
+
+    private sealed class TestTenantContext : ITenantContext
+    {
+        public string? TenantId => "tenant-1";
+
+        public TenantContextSource Source => TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string tenantId, out string? reason)
+        {
+            tenantId = TenantId!;
+            reason = null;
+            return true;
+        }
+    }
 
     private static bool IsOpsReadResource(object resource, ClaimsPrincipal principal)
         => resource is DefaultHttpContext context &&
