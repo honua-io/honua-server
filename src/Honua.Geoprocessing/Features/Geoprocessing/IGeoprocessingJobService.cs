@@ -150,6 +150,17 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Continues an already-authorized synchronous submission by reading its terminal state.
+    /// Implementations must enforce job ownership without adding a separate Job.Read grant.
+    /// This is an internal lifecycle seam and must not be exposed by protocol adapters.
+    /// </summary>
+    Task<ExecutionJobRecord> GetJobForTerminalAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => GetJobAsync(jobId, principal, cancellationToken);
+
+    /// <summary>
     /// Lists the caller-visible geoprocessing jobs matching the supplied filter,
     /// newest first, with cursor paging. Applies the same per-job ownership check as
     /// <see cref="GetJobAsync"/>; jobs the caller cannot read are omitted from the
@@ -170,12 +181,33 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Resolves results for an already-authorized synchronous submission. Implementations
+    /// must enforce job ownership without adding a separate Job.Read grant.
+    /// </summary>
+    Task<AnalysisResultPackage> GetJobResultsForTerminalAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => GetJobResultsAsync(jobId, principal, cancellationToken);
+
+    /// <summary>
     /// Cancels an in-flight job.
     /// </summary>
     Task CancelJobAsync(
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancels a job abandoned by a bounded synchronous protocol request. Implementations
+    /// retain authorization and ownership checks, but may treat server-owned orphan cleanup
+    /// differently from an interactive destructive cancellation request.
+    /// </summary>
+    Task CancelAbandonedJobAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => CancelJobAsync(jobId, principal, cancellationToken);
 }
 
 /// <summary>
