@@ -1,8 +1,9 @@
 # Native-image impact routing
 
-Status: observation only. Path-based narrowing has now been measured at zero
-savings and is not promoted; exact-input reuse is the measured candidate
-mechanism. Tracking: #3204. Architecture: ADR-0074.
+Status: path routing and exact-input reuse are observation only; review-push
+cadence is enforced. Path-based narrowing measured zero savings and is not
+promoted; exact-input reuse remains a measured candidate mechanism. Tracking:
+#3204. Architecture: ADR-0074.
 
 The legacy pull-request workflows use broad handwritten path filters. A normal
 server edit starts three serial native-AOT builds, while several solution,
@@ -183,21 +184,31 @@ to `honua.impact-routing-promotion-policy/v2` and
 `honua.impact-routing-evidence-ledger/v2` in the same step, because the policy
 gained required reuse minimums and the ledger renamed its savings gates.
 
-### Enforcement proposal (unchanged in shape, redirected in mechanism)
+### Enforced cadence; reuse remains observation-only
 
-The enforcement proposal is separate. It will keep the lightweight router on
-every PR, split serving variants into independent matrix jobs, and retain the
-same boundary verification, worker smoke, Trivy enforcement, SARIF, release,
-and deployment guarantees. A missing or invalid decision selects all variants,
-and a missing or invalid reuse attestation builds. Rollback restores
-all-variant execution without changing any security policy. The existing `ci/full` label (already
-"run everything" in `ci.yml`; `full-ci` is accepted as an alias) is the escape
-hatch: a labelled pull request builds every image variant and never reuses an
-attestation. `workflow_dispatch` already forces all variants and stays that
-way, as do the tag/release publication lanes
-(`deploy-platform-images.yml`, `nightly-container-build.yml`), which this work
-does not touch.
+The measured router is not promoted: it narrowed zero observed heads, and the
+evidence ledger must return to zero integrity failures before any digest can be
+trusted to skip a build. Instead, the heavyweight PR workflows run once when a
+non-draft PR first becomes reviewable (`opened`, `reopened`, or
+`ready_for_review`) and no longer restart on every `synchronize` push. This is a
+cadence decision, not a claim that later heads have exact image evidence.
 
-After enforcement, compare 30 runs with the ADR-0074 baseline. Promotion still
-requires the program-level latency and billed-minute thresholds; otherwise the
-router returns to observation mode.
+The safety boundary is explicit:
+
+- `workflow_dispatch` against the exact branch/ref forces all serving variants
+  and performs the complete worker build/smoke/scan when exact-head evidence is
+  wanted;
+- fork and same-repository PRs receive the same read-only early execution, and
+  candidate workflows cannot publish repository content or packages;
+- generic, Lambda, and Functions production publication lanes independently
+  build and verify their final rootfs before publishing;
+- the GDAL worker workflow publishes no image and retains a weekly independent
+  build, real-entrypoint smoke, fresh enforcing Trivy verdict, and SARIF;
+- a missing/manual serving classification still selects every variant.
+
+The fixture `scripts/ci/fixtures/validate-native-image-pr-cadence.py` binds
+these trigger, permission, manual fail-closed, scheduled worker, and publication
+placement invariants. After 30 post-change runs, compare the result with the
+ADR-0074 baseline. Exact-input reuse can be reconsidered only after its trusted
+ledger is clean; worker vulnerability scanning is always fresh and is never
+reused.

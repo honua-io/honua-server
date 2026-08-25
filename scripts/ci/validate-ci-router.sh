@@ -137,6 +137,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
     -s tests/python/unit \
     -p 'test_native_image_impact.py' \
     -v
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-image-pr-cadence.py
 else
   echo "⚠️  Skipping Actions baseline fixture (no working Python 3: tried python3/python/py)"
 fi

@@ -66,8 +66,8 @@ analysis.
 | `import-fidelity-scorecard-governance.yml` | Import Fidelity Scorecard Governance | `pull_request`, `workflow_dispatch` | Path-scoped to parity/baseline/perf-budget assets; smoke-tests the perf-parity gate (#1249) with pass/fail fixtures. |
 | `capability-impact-comparison.yml` | Capability Impact Comparison | `pull_request`, `workflow_dispatch` | Capability-graph completeness plus a report-only comparison of ADR-0037 shard routing against the capability selector. |
 | `capability-matrix-aggregation.yml` | Capability Matrix Aggregation | `pull_request`, `push` (trunk), weekly `schedule`, `workflow_dispatch` | Joins `feature-catalog.json`, `docs/cite-status.md`, the GeoServices REST parity index, capability crosswalks, and committed client-compat envelopes into `docs/gis/data/capability-matrix.v1.json` (#2892/#2893). |
-| `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Authoritative pre-merge final-rootfs evidence; the same boundary is re-proved by `nightly-container-build.yml`, `deploy.yml`, `deploy-platform-images.yml`, and `release-bundle.yml` before any publication. Deliberately isolated from the required lean `PR Gate`. |
-| `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head; publishes SARIF. Re-proved on the nightly security and release/deploy lanes. |
+| `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (`opened`, `reopened`, `ready_for_review`; base `trunk`, path-filtered), `workflow_dispatch` | For a non-draft PR, builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT images once when the PR first becomes reviewable; review-fix `synchronize` pushes are deliberately deferred. `workflow_dispatch` against the branch/ref is the exact-head rerun escape hatch. Every production publication still rebuilds and verifies its final rootfs in `nightly-container-build.yml`, `deploy.yml`, `deploy-platform-images.yml`, or `release-bundle.yml`. Candidate execution retains read-only contents/packages permissions. |
+| `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (`opened`, `reopened`, `ready_for_review`; base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | For a non-draft PR, builds the GDAL worker, smokes the real entrypoint, and enforces a fresh Trivy verdict once when the PR first becomes reviewable; review-fix pushes are deferred to the weekly backstop unless an exact branch/ref run is dispatched. The workflow publishes scan evidence, not an image, and retains read-only candidate permissions. |
 | `geoarrow-interop-fixture.yml` | GeoArrow Interop Fixture | `pull_request`, `workflow_dispatch` | Produces the GeoArrow 0.2 interop fixture. |
 | `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). |
 | `release-bundle-tooling.yml` | Release Bundle Tooling | `pull_request`, `push` (trunk), `workflow_dispatch` | Verifies the deterministic, locally-runnable core of the release-bundle orchestrator (manifest generator, evidence collector, dispatch helper, suite registry). |
@@ -113,16 +113,28 @@ across 3 distinct input sets. The independent run sample agrees: 19 successful
 serving runs across 11 branches and 22 successful worker runs across 10
 branches.
 
-The worker figure is a build-time bound only: the GDAL worker's Trivy scan is
-enforcing and its verdict depends on the vulnerability database at scan time, so
-it is re-run on every head and is never reusable.
+For content-addressed reuse, the worker figure remains a build-time bound only:
+the GDAL worker's Trivy verdict depends on the vulnerability database at scan
+time and is never reusable. The cadence policy is different and explicit: a
+review-fix head is deferred wholesale, then the weekly or manually dispatched
+lane produces a fresh build, entrypoint smoke, and vulnerability verdict.
 
-Evidence placement therefore stays as-is (pre-merge boundary/worker evidence on
-the PR, re-proved on nightly/release/deploy before publication) and the expected
-savings move to exact-input build reuse rather than path narrowing. The
-observation receipt now carries per-image content digests over the merge tree
-the images are actually built from, so reuse eligibility is measured before
-anything is enforced; see `native-image-impact-routing.md`.
+The enforced first step changes cadence, not the path classifier: a non-draft
+PR is checked on `opened`, `reopened`, or `ready_for_review`, while later
+`synchronize` pushes do not restart either heavyweight workflow. An operator
+can still dispatch either workflow against the exact branch/ref. Fork PRs use
+the same read-only early lane; neither candidate workflow can publish packages
+or repository content. Serving publication lanes independently rebuild and
+verify the final rootfs, and the non-publishing worker lane retains its weekly
+build, entrypoint smoke, fresh Trivy enforcement, and SARIF backstop.
+
+Using the measured repeat-input rates as the conservative savings model, this
+avoids about 60% of completed serving-build spend and 71% of completed worker
+build spend: approximately **471 + 85 = 556 runner-minutes/day** in the
+2026-08-13 to 2026-08-17 cohort. The exact post-change result must be measured
+over 30 runs with the same baseline script before closing #3204. Content-addressed
+reuse remains observation-only; it is not trusted to skip a build until the
+receipt ledger has zero integrity failures. See `native-image-impact-routing.md`.
 
 ## Trusted observers and evidence ledgers (read-only)
 

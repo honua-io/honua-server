@@ -3,6 +3,7 @@ name: GDAL Worker Image
 on:
   pull_request:
     branches: [trunk]
+    types: [opened, reopened, ready_for_review]
     paths:
       - 'docker/worker-gdal/**'
       - 'src/Honua.Worker.Gdal/**'
@@ -41,6 +42,7 @@ concurrency:
 jobs:
   build-and-scan:
     name: Build, verify, and scan GDAL worker
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
