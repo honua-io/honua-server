@@ -1111,10 +1111,11 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = publishedLayer.LayerId;
+        var layerId = publishedLayer.LayerId;
+        _layerId = layerId;
 
         await InsertPostGisFeatureAsync("Reimported Feature", 250, 1.001d, 1.001d);
-        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+        (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(1);
 
         await using var scope = _fixture.Services.CreateAsyncScope();
         var publishingService = scope.ServiceProvider.GetRequiredService<ILayerPublishingService>();
@@ -1124,8 +1125,8 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             _tableName);
 
         refreshed.Should().ContainSingle(result =>
-            result.LayerId == _layerId.Value && result.MaterializedFeatureCount == 2);
-        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(2);
+            result.LayerId == layerId && result.MaterializedFeatureCount == 2);
+        (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
     }
 
     private async Task<int> GetCanonicalSnapshotCountAsync(int layerId)

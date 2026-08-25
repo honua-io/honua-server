@@ -228,8 +228,10 @@ public sealed class StudioMcpToolDelegationTests
                     """{"packageKey":"operations-dashboard","family":"dashboard","schemaVersion":"1.0"}"""),
                 CancellationToken.None);
         create.IsError.Should().BeFalse();
-        var draftId = create.StructuredContent!.Value.GetProperty("draftId").GetGuid();
-        var generation = create.StructuredContent.Value.GetProperty("generation").GetInt64();
+        var createContent = create.StructuredContent;
+        createContent.Should().NotBeNull();
+        var draftId = createContent!.Value.GetProperty("draftId").GetGuid();
+        var generation = createContent.Value.GetProperty("generation").GetInt64();
 
         async Task InvokeMutationAsync(IMcpTool tool, Func<long, string> arguments)
         {
