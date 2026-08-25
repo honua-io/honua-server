@@ -104,14 +104,12 @@ internal static class McpAuthorizationHelper
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
-        if (CanonicalSecurityActor.IsBearerPrincipal(context.User))
+        if (CanonicalSecurityActor.IsBearerPrincipal(context.User) &&
+            (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer)))
         {
-            if (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer))
-            {
-                // Display names are mutable, and a subject without its validated issuer is
-                // not a globally durable OIDC session identifier. Bearers require both.
-                return null;
-            }
+            // Display names are mutable, and a subject without its validated issuer is
+            // not a globally durable OIDC session identifier. Bearers require both.
+            return null;
         }
 
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId
