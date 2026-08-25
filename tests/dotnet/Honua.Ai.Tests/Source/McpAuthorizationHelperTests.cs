@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
@@ -92,6 +93,34 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
+    public void ResolveSessionBindingKey_UriScopeClaims_AreIncludedInCeiling()
+    {
+        var read = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim(OperatorScopeCatalog.ScopeClaimUri, OperatorScopeCatalog.Read));
+        var full = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim(OperatorScopeCatalog.ScopeClaimUri, OperatorScopeCatalog.Full));
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(read)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(full));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_MissingTenant_DoesNotCollideWithLiteralDashTenant()
+    {
+        var missing = CreateBearerContext("same-subject", "https://issuer.example", tenant: null);
+        var literalDash = CreateBearerContext("same-subject", "https://issuer.example", tenant: "-");
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(missing)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(literalDash));
+    }
+
+    [UnitTest]
     public void ResolveSessionBindingKey_ApiKeysUseImmutableKeyId()
     {
         var firstId = Guid.NewGuid();
@@ -130,6 +159,18 @@ public sealed class McpAuthorizationHelperTests
             new Claim("iss", "https://issuer.example"),
             new Claim("client_id", "machine-client"),
             new Claim(ClaimTypes.Name, "Mutable Machine Display Name"),
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var context = CreateContext(principal, "tenant-a");
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(context).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_BearerSubjectWithoutIssuer_IsRejected()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "subject-without-issuer"),
         ], OidcAuthenticationExtensions.JwtBearerScheme));
         var context = CreateContext(principal, "tenant-a");
 
