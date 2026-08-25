@@ -20,23 +20,30 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
     private readonly IGeoprocessingJobService _jobs;
     private readonly TimeProvider _timeProvider;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+    private readonly Func<TimeSpan, CancellationTokenSource> _timeoutSourceFactory;
 
     /// <summary>Creates the production terminal service.</summary>
     public GeoprocessingJobTerminalService(
         IGeoprocessingJobService jobs,
         TimeProvider timeProvider)
-        : this(jobs, timeProvider, (delay, token) => Task.Delay(delay, timeProvider, token))
+        : this(
+            jobs,
+            timeProvider,
+            (delay, token) => Task.Delay(delay, timeProvider, token),
+            timeout => new CancellationTokenSource(timeout, timeProvider))
     {
     }
 
     internal GeoprocessingJobTerminalService(
         IGeoprocessingJobService jobs,
         TimeProvider timeProvider,
-        Func<TimeSpan, CancellationToken, Task> delay)
+        Func<TimeSpan, CancellationToken, Task> delay,
+        Func<TimeSpan, CancellationTokenSource> timeoutSourceFactory)
     {
         _jobs = jobs;
         _timeProvider = timeProvider;
         _delay = delay;
+        _timeoutSourceFactory = timeoutSourceFactory;
     }
 
     public async Task<GeoprocessingTerminalWaitResult> WaitForTerminalAsync(
@@ -46,7 +53,7 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
         CancellationToken clientDisconnect = default)
     {
         ValidateTimeout(timeout);
-        using var timeoutSource = new CancellationTokenSource(timeout, _timeProvider);
+        using var timeoutSource = _timeoutSourceFactory(timeout);
         using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
             clientDisconnect,
             timeoutSource.Token);
@@ -125,7 +132,7 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
             return new(GeoprocessingTerminalResultOutcome.Timeout, job);
         }
 
-        using var timeoutSource = new CancellationTokenSource(remaining, _timeProvider);
+        using var timeoutSource = _timeoutSourceFactory(remaining);
         using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
             clientDisconnect,
             timeoutSource.Token);
@@ -155,7 +162,7 @@ internal sealed class GeoprocessingJobTerminalService : IGeoprocessingJobTermina
         CancellationToken clientDisconnect = default)
     {
         ValidateTimeout(timeout);
-        using var timeoutSource = new CancellationTokenSource(timeout, _timeProvider);
+        using var timeoutSource = _timeoutSourceFactory(timeout);
         using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
             clientDisconnect,
             timeoutSource.Token);

@@ -44,12 +44,16 @@ public sealed class GeoprocessingJobTerminalServiceTests
     {
         _jobs.GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
             .Returns(CreateJob(ExecutionJobStatus.Running));
-        var sut = CreateService((_, token) => Task.Delay(Timeout.InfiniteTimeSpan, token));
+        var sut = CreateService(
+            (_, token) => Task.Delay(Timeout.InfiniteTimeSpan, token),
+            _ => CreateCancelledSource());
 
         var result = await sut.WaitForTerminalAsync(
-            "job-1", _principal, TimeSpan.FromMilliseconds(10));
+            "job-1", _principal, TimeSpan.FromSeconds(1));
 
         result.Outcome.Should().Be(GeoprocessingTerminalWaitOutcome.Timeout);
+        await _jobs.DidNotReceive().GetJobAsync(
+            Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -99,8 +103,20 @@ public sealed class GeoprocessingJobTerminalServiceTests
     }
 
     private GeoprocessingJobTerminalService CreateService(
-        Func<TimeSpan, CancellationToken, Task> delay)
-        => new(_jobs, TimeProvider.System, delay);
+        Func<TimeSpan, CancellationToken, Task> delay,
+        Func<TimeSpan, CancellationTokenSource>? timeoutSourceFactory = null)
+        => new(
+            _jobs,
+            TimeProvider.System,
+            delay,
+            timeoutSourceFactory ?? (timeout => new CancellationTokenSource(timeout)));
+
+    private static CancellationTokenSource CreateCancelledSource()
+    {
+        var source = new CancellationTokenSource();
+        source.Cancel();
+        return source;
+    }
 
     private static ExecutionJobRecord CreateJob(ExecutionJobStatus status) => new()
     {
