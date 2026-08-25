@@ -386,7 +386,7 @@ internal static class JobEndpoints
                 StatusCodes.Status200OK);
         }
 
-        return BuildResultsResponse(context, logger, jobId, resultPackage);
+        return BuildResultsResponse(context, logger, jobId, job, resultPackage);
     }
 
     internal static IResult BuildJobFailedResult(string jobId, string? errorMessage)
@@ -428,9 +428,11 @@ internal static class JobEndpoints
         HttpContext context,
         ILogger logger,
         string jobId,
+        ExecutionJobRecord job,
         AnalysisResultPackage resultPackage)
     {
         var resultsDocument = ToOgcResultsDocument(
+            job,
             resultPackage,
             BaseUrlResolver.GetBaseUrl(context),
             jobId,
@@ -547,6 +549,7 @@ internal static class JobEndpoints
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
     private static OgcResultsDocument ToOgcResultsDocument(
+        ExecutionJobRecord job,
         AnalysisResultPackage resultPackage,
         string baseUrl,
         string jobId,
@@ -554,9 +557,27 @@ internal static class JobEndpoints
         ILogger logger)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var selectedOutputNames = job.Spec.Parameters
+            .Where(entry => entry.Key.StartsWith(
+                GeoprocessingProtocolMetadataKeys.OutputNamePrefix,
+                StringComparison.Ordinal))
+            .Select(entry => entry.Value)
+            .Where(outputName => !string.IsNullOrWhiteSpace(outputName))
+            .ToHashSet(StringComparer.Ordinal);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
             var artifact = resultPackage.Artifacts[index];
+            var resolvedOutputName = ResolveOutputName(artifact, index);
+            if (selectedOutputNames.Count > 0 && !selectedOutputNames.Contains(resolvedOutputName))
+            {
+                // Ordinary OGC process submissions persist every advertised name
+                // when no selection is supplied, and only selected names otherwise.
+                // Filtering by those durable bindings keeps execution free to
+                // publish its canonical artifact set without leaking unrequested
+                // outputs into the OGC results document. Canonical/legacy jobs with
+                // no bindings retain their historical all-results behavior.
+                continue;
+            }
 
             // Staged output artifacts (#3089) link through the canonical authenticated
             // content route, so no provider location or expiring URL leaks into result
@@ -585,7 +606,7 @@ internal static class JobEndpoints
                 }
             }
 
-            var outputName = ResolveUniqueOutputName(ResolveOutputName(artifact, outputs.Count), outputs);
+            var outputName = ResolveUniqueOutputName(resolvedOutputName, outputs);
             outputs[outputName] = JsonSerializer.SerializeToElement(
                 new OgcArtifactResult
                 {

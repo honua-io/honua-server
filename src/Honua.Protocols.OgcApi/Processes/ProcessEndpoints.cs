@@ -508,7 +508,7 @@ internal static class ProcessEndpoints
                     GeoprocessingTerminalResultOutcome.Succeeded => rawResponse
                         ? BuildRawResultsResponse(context, terminal.ResultPackage!)
                         : JobEndpoints.BuildResultsResponse(
-                            context, logger, jobRecord.OperationId, terminal.ResultPackage!),
+                            context, logger, jobRecord.OperationId, terminal.Job ?? jobRecord, terminal.ResultPackage!),
                     GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(
                         jobRecord.OperationId,
                         terminal.Job?.ErrorMessage),
@@ -1120,7 +1120,7 @@ internal static class ProcessEndpoints
         };
     }
 
-    private static bool TryAddOutputBindings(
+    internal static bool TryAddOutputBindings(
         Dictionary<string, string> metadata,
         ProcessDefinition definition,
         ImmutableDictionary<string, JsonElement>? requestedOutputs,
@@ -1191,9 +1191,13 @@ internal static class ProcessEndpoints
                 || requestedOutputs.ContainsKey(outputName))
             .OrderBy(outputName => available[outputName])
             .ToArray();
-        for (var index = 0; index < selected.Length; index++)
+        foreach (var outputName in selected)
         {
-            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = selected[index];
+            // Bind the advertised name to its original artifact slot. The durable
+            // plan retains the process definition's complete output-kind ordering,
+            // so compacting a non-leading selection into slot zero would relabel a
+            // different artifact and make result filtering return the wrong output.
+            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{available[outputName]}"] = outputName;
         }
 
         return true;
