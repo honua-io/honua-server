@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -56,6 +57,15 @@ internal sealed class OperatorBearerAuthenticationHandler(
         try
         {
             var principal = AdminAuthClaimsProjector.CreatePrincipal(claims, Scheme.Name, "operator-bearer");
+            if (principal.Identity is ClaimsIdentity identity)
+            {
+                // Token transport claims are deliberately excluded from the admin-session
+                // projection, but MCP session binding still needs the issuer that this
+                // concrete handler validated. Reintroduce that validator-owned value after
+                // projection; no token/session claim can choose it.
+                identity.AddClaim(new Claim("iss", _tokenService.ValidatedIssuer));
+            }
+
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException)
