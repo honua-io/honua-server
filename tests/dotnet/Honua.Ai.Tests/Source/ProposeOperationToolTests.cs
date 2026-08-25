@@ -162,7 +162,7 @@ public sealed class ProposeOperationToolTests
         });
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "Deploy" },
+            new McpProposeOperationArgument { Kind = "Deploy", ResourceId = "serving-us-west" },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(
