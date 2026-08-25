@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.ControlPlane;
 
@@ -15,6 +16,9 @@ namespace Honua.ControlPlane;
 [JsonSerializable(typeof(OperationProposal))]
 [JsonSerializable(typeof(OperationProposalPlan))]
 [JsonSerializable(typeof(OperationProposalAutonomyMetadata))]
+[JsonSerializable(typeof(EvidencePostureEnvelope))]
+[JsonSerializable(typeof(EvidenceSourcePosture))]
+[JsonSerializable(typeof(EvidenceCoverage))]
 internal sealed partial class OperationProposalJsonContext : JsonSerializerContext
 {
 }

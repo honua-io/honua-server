@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -16,6 +17,11 @@ public sealed class OpsHealthSnapshotResponse
     /// <summary>Gets the UTC time the snapshot was produced.</summary>
     [JsonPropertyName("generatedAt")]
     public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>Gets the per-source freshness, completeness, backend, and coverage posture.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePostureEnvelope EvidencePosture { get; init; } =
+        Honua.Core.Features.Observability.Domain.EvidencePosture.Envelope(DateTimeOffset.UnixEpoch, []);
 
     /// <summary>Gets the overall status roll-up (<c>Healthy</c>/<c>Degraded</c>/<c>Unhealthy</c>) from the health report.</summary>
     [JsonPropertyName("overallStatus")]
@@ -100,6 +106,10 @@ public sealed class OpsServingLatencyView
     /// </summary>
     [JsonPropertyName("clusterReplicaCount")]
     public int? ClusterReplicaCount { get; init; }
+
+    /// <summary>Gets whether an expected cluster rollup query failed while the local view remained available.</summary>
+    [JsonIgnore]
+    public bool EvidencePartial { get; init; }
 }
 
 /// <summary>Per-protocol serving latency entry.</summary>
@@ -143,7 +153,15 @@ public sealed class OpsGpQueueView
 {
     /// <summary>Gets the total active jobs (queued + provisioning + running).</summary>
     [JsonPropertyName("totalActive")]
-    public required int TotalActive { get; init; }
+    public required int? TotalActive { get; init; }
+
+    /// <summary>Gets whether a queue store is configured, independently of query success.</summary>
+    [JsonPropertyName("configured")]
+    public required bool Configured { get; init; }
+
+    /// <summary>Gets the represented queue snapshot time when the store query succeeded.</summary>
+    [JsonIgnore]
+    public DateTimeOffset? EvidenceObservedAt { get; init; }
 
     /// <summary>Gets a value indicating whether GP queue telemetry is available (an execution-job store is registered).</summary>
     [JsonPropertyName("available")]
@@ -475,6 +493,11 @@ public sealed class OpsFindingsListResponse
     [JsonPropertyName("generatedAt")]
     public required DateTimeOffset GeneratedAt { get; init; }
 
+    /// <summary>Gets the aggregate posture of sources used by the returned findings.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePostureEnvelope EvidencePosture { get; init; } =
+        Honua.Core.Features.Observability.Domain.EvidencePosture.Envelope(DateTimeOffset.UnixEpoch, []);
+
     /// <summary>Gets the active findings, ordered by descending severity.</summary>
     [JsonPropertyName("findings")]
     public required IReadOnlyList<OpsFindingView> Findings { get; init; }
@@ -514,6 +537,14 @@ public sealed class OpsFindingView
     /// <summary>Gets the supporting evidence references.</summary>
     [JsonPropertyName("evidenceRefs")]
     public required IReadOnlyList<string> EvidenceRefs { get; init; }
+
+    /// <summary>Gets the exact source posture used to evaluate this finding.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePostureEnvelope? EvidencePosture { get; init; }
+
+    /// <summary>Gets the source ids that must be actionable before proposal.</summary>
+    [JsonPropertyName("requiredSourceIds")]
+    public IReadOnlyList<string> RequiredSourceIds { get; init; } = [];
 
     /// <summary>Gets the recommended action summary, or <c>null</c> when the finding is informational.</summary>
     [JsonPropertyName("recommendedAction")]

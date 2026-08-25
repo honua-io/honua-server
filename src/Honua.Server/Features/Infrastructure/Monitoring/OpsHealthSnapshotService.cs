@@ -5,6 +5,7 @@ using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.ServiceDefaults;
@@ -70,29 +71,171 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         var gpQueue = await BuildGpQueueViewAsync(cancellationToken).ConfigureAwait(false);
         var healthMetrics = _metricsCollector.GetHealthMetrics();
         var servingLatency = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
+        var generatedAt = _timeProvider.GetUtcNow();
+        var alertDispatch = BuildAlertDispatchView();
+        var database = new OpsDatabaseView
+        {
+            ConnectionPoolUtilization = healthMetrics.HasDatabaseConnectionPoolUtilization
+                ? healthMetrics.DatabaseConnectionPoolUtilization
+                : null,
+            HasConnectionPoolData = healthMetrics.HasDatabaseConnectionPoolUtilization,
+            ActiveConnections = healthMetrics.ActiveConnections,
+            ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
+            ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
+            CacheHitRatio = healthMetrics.CacheHitRatio,
+            ErrorRate = healthMetrics.ErrorRate,
+        };
 
         return new OpsHealthSnapshotResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
+            EvidencePosture = BuildEvidencePosture(
+                generatedAt,
+                servingLatency,
+                gpQueue,
+                alertDispatch,
+                database),
             OverallStatus = healthReport.Status.ToString(),
             Health = BuildHealthView(healthReport),
             ServingLatency = servingLatency,
             Geoprocessing = gpQueue,
-            AlertDispatch = BuildAlertDispatchView(),
+            AlertDispatch = alertDispatch,
             Deploy = BuildDeployView(deploySnapshot),
-            Database = new OpsDatabaseView
-            {
-                ConnectionPoolUtilization = healthMetrics.HasDatabaseConnectionPoolUtilization
-                    ? healthMetrics.DatabaseConnectionPoolUtilization
-                    : null,
-                HasConnectionPoolData = healthMetrics.HasDatabaseConnectionPoolUtilization,
-                ActiveConnections = healthMetrics.ActiveConnections,
-                ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
-                ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
-                CacheHitRatio = healthMetrics.CacheHitRatio,
-                ErrorRate = healthMetrics.ErrorRate,
-            },
+            Database = database,
         };
+    }
+
+    private static EvidencePostureEnvelope BuildEvidencePosture(
+        DateTimeOffset generatedAt,
+        OpsServingLatencyView servingLatency,
+        OpsGpQueueView gpQueue,
+        OpsAlertDispatchView alertDispatch,
+        OpsDatabaseView database)
+    {
+        var sources = new List<EvidenceSourcePosture>
+        {
+            EvidencePosture.Source(
+                EvidenceSourceIds.HealthChecks,
+                EvidenceBackendKinds.HealthCheckService,
+                "aspnet-health-checks",
+                generatedAt,
+                generatedAt,
+                evaluatedAt: generatedAt),
+            EvidencePosture.Source(
+                EvidenceSourceIds.ServingLatency,
+                EvidenceBackendKinds.InProcess,
+                "otel-serving-meter",
+                generatedAt,
+                generatedAt,
+                completeness: servingLatency.EvidencePartial
+                    ? EvidenceCompletenessStatuses.Partial
+                    : EvidenceCompletenessStatuses.Complete,
+                coverage: new EvidenceCoverage
+                {
+                    ObservedReplicaCount = servingLatency.ClusterReplicaCount,
+                },
+                reasonCodes: servingLatency.EvidencePartial
+                    ? [EvidenceReasonCodes.SourceUnavailable, EvidenceReasonCodes.ComponentCoverageUnknown]
+                    : null,
+                evaluatedAt: generatedAt),
+            gpQueue.Available
+                ? EvidencePosture.Source(
+                    EvidenceSourceIds.GeoprocessingQueue,
+                    EvidenceBackendKinds.DurableStore,
+                    "execution-job-store",
+                    gpQueue.EvidenceObservedAt,
+                    gpQueue.EvidenceObservedAt,
+                    evaluatedAt: generatedAt)
+                : gpQueue.Configured
+                    ? EvidencePosture.Source(
+                        EvidenceSourceIds.GeoprocessingQueue,
+                        EvidenceBackendKinds.DurableStore,
+                        "execution-job-store",
+                        observedAt: null,
+                        lastSuccessfulAt: null,
+                        completeness: EvidenceCompletenessStatuses.Unavailable,
+                        reasonCodes: [EvidenceReasonCodes.SourceUnavailable, EvidenceReasonCodes.NeverSucceeded],
+                        evaluatedAt: generatedAt)
+                    : EvidencePosture.Source(
+                    EvidenceSourceIds.GeoprocessingQueue,
+                    EvidenceBackendKinds.NotConfigured,
+                    "execution-job-store",
+                    observedAt: null,
+                    lastSuccessfulAt: null,
+                    completeness: EvidenceCompletenessStatuses.NotConfigured,
+                    evaluatedAt: generatedAt),
+            BuildAlertDispatchPosture(generatedAt, alertDispatch),
+            EvidencePosture.Source(
+                EvidenceSourceIds.DeployReadiness,
+                EvidenceBackendKinds.Configuration,
+                "deploy-preflight-probe",
+                generatedAt,
+                generatedAt,
+                evaluatedAt: generatedAt),
+            database.HasConnectionPoolData
+                ? EvidencePosture.Source(
+                    EvidenceSourceIds.Database,
+                    EvidenceBackendKinds.InProcess,
+                    "database-metrics",
+                    generatedAt,
+                    generatedAt,
+                    evaluatedAt: generatedAt)
+                : EvidencePosture.Source(
+                    EvidenceSourceIds.Database,
+                    EvidenceBackendKinds.NotConfigured,
+                    "database-metrics",
+                    observedAt: null,
+                    lastSuccessfulAt: null,
+                    completeness: EvidenceCompletenessStatuses.NotConfigured,
+                    evaluatedAt: generatedAt),
+            EvidencePosture.Source(
+                EvidenceSourceIds.Cache,
+                EvidenceBackendKinds.InProcess,
+                "cache-metrics",
+                generatedAt,
+                generatedAt,
+                evaluatedAt: generatedAt),
+            EvidencePosture.Source(
+                EvidenceSourceIds.PlatformRelease,
+                EvidenceBackendKinds.Configuration,
+                "control-plane-options",
+                generatedAt,
+                generatedAt,
+                evaluatedAt: generatedAt),
+        };
+
+        return EvidencePosture.Envelope(generatedAt, sources);
+    }
+
+    private static EvidenceSourcePosture BuildAlertDispatchPosture(
+        DateTimeOffset generatedAt,
+        OpsAlertDispatchView alertDispatch)
+    {
+        if (!alertDispatch.DispatcherEnabled)
+        {
+            return EvidencePosture.Source(
+                EvidenceSourceIds.AlertDispatch,
+                EvidenceBackendKinds.NotConfigured,
+                "alert-dispatch-store",
+                observedAt: null,
+                lastSuccessfulAt: null,
+                completeness: EvidenceCompletenessStatuses.NotConfigured,
+                evaluatedAt: generatedAt);
+        }
+
+        return EvidencePosture.Source(
+            EvidenceSourceIds.AlertDispatch,
+            EvidenceBackendKinds.DurableStore,
+            "alert-dispatch-store",
+            alertDispatch.LastPollAt,
+            alertDispatch.LastPollAt,
+            completeness: alertDispatch.StoragePollFailing
+                ? EvidenceCompletenessStatuses.Unavailable
+                : EvidenceCompletenessStatuses.Complete,
+            reasonCodes: alertDispatch.StoragePollFailing
+                ? [EvidenceReasonCodes.SourceUnavailable]
+                : null,
+            evaluatedAt: generatedAt);
     }
 
     private static OpsHealthChecksView BuildHealthView(HealthReport report)
@@ -144,6 +287,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         }
 
         var clusterReplicaCount = 1;
+        var evidencePartial = false;
         if (_rollupStore is not null)
         {
             try
@@ -178,6 +322,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             {
                 // Fail-open: report the responding instance only.
                 clusterReplicaCount = 1;
+                evidencePartial = true;
             }
         }
 
@@ -205,6 +350,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             WindowSeconds = snapshot.WindowSeconds,
             Protocols = protocols,
             ClusterReplicaCount = clusterReplicaCount,
+            EvidencePartial = evidencePartial,
         };
     }
 
@@ -212,10 +358,18 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     {
         if (_jobStore is null)
         {
-            return new OpsGpQueueView { TotalActive = 0, Available = false, Buckets = [] };
+            return new OpsGpQueueView { TotalActive = null, Configured = false, Available = false, Buckets = [] };
         }
 
-        var activeJobs = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ExecutionJobRecord> activeJobs;
+        try
+        {
+            activeJobs = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new OpsGpQueueView { TotalActive = null, Configured = true, Available = false, Buckets = [] };
+        }
         var queueDepth = ControlPlaneTelemetry.ComputeQueueDepth(activeJobs);
         var buckets = queueDepth
             .Select(entry => new OpsGpQueueBucketView
@@ -231,7 +385,9 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         return new OpsGpQueueView
         {
             TotalActive = buckets.Sum(bucket => bucket.Count),
+            Configured = true,
             Available = true,
+            EvidenceObservedAt = _timeProvider.GetUtcNow(),
             Buckets = buckets,
         };
     }

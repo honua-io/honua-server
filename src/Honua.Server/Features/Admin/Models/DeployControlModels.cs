@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Admin.Models;
@@ -92,6 +93,11 @@ public sealed class DeployPreflightResponse
 /// </summary>
 public sealed class DeployPreflightPlatformRelease
 {
+    /// <summary>Freshness and configured-backend posture for this release projection.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePostureEnvelope EvidencePosture { get; init; } =
+        Honua.Core.Features.Observability.Domain.EvidencePosture.Envelope(DateTimeOffset.UnixEpoch, []);
+
     /// <summary>
     /// Declared platform release version, or null when no release is configured.
     /// </summary>
@@ -647,6 +653,11 @@ public sealed class DeployOperationResponse
 /// </summary>
 public sealed class DeployOperationListResponse
 {
+    /// <summary>Freshness, durable-backend, and paging posture for this operation read.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePostureEnvelope EvidencePosture { get; init; } =
+        Honua.Core.Features.Observability.Domain.EvidencePosture.Envelope(DateTimeOffset.UnixEpoch, []);
+
     /// <summary>
     /// Operations on this page, ordered newest-first by creation time.
     /// </summary>

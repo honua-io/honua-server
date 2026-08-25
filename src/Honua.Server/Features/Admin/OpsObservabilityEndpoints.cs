@@ -130,9 +130,11 @@ internal static class OpsObservabilityEndpoints
         HttpContext context)
     {
         var findings = await service.EvaluateAsync(context.RequestAborted).ConfigureAwait(false);
+        var generatedAt = DateTimeOffset.UtcNow;
         var response = new OpsFindingsListResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
+            EvidencePosture = EvidencePostureProjection.ForFindings(generatedAt, findings),
             Findings = findings.Select(OpsFindingResponseMapper.Map).ToList(),
         };
 
@@ -167,6 +169,15 @@ internal static class OpsObservabilityEndpoints
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
                 result.Message
                     ?? "The control-plane operation gateway is unavailable; the recommended action cannot be proposed.");
+        }
+
+        if (result.Status is OpsFindingProposalStatus.EvidenceIncomplete)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                result.Message
+                    ?? "Required finding evidence is not actionable; no operation was proposed.");
         }
 
         var response = new OpsFindingProposeResponse

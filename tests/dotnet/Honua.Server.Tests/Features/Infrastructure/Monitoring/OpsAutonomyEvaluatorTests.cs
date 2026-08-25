@@ -282,8 +282,25 @@ public sealed class OpsAutonomyEvaluatorTests
                 ActionMarkedAutoSafe = actionMarkedAutoSafe,
                 BlastRadius = blastRadius,
                 EvidenceRefs = ["test"],
+                EvidencePosture = CompleteEvidence(),
+                RequiredEvidenceSourceIds = [EvidenceSourceIds.AlertDispatch],
             },
         };
+
+    private static EvidencePostureEnvelope CompleteEvidence()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return EvidencePosture.Envelope(now,
+        [
+            EvidencePosture.Source(
+                EvidenceSourceIds.AlertDispatch,
+                EvidenceBackendKinds.DurableStore,
+                "alert-dispatch-store",
+                now,
+                now,
+                evaluatedAt: now),
+        ]);
+    }
 
     private static GuardrailDecision RequiresApproval()
         => new(

@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Observability.Domain;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -97,6 +99,10 @@ internal sealed class OperateEventPageResponse
 
     /// <summary>Per-source diagnostic messages keyed by lower-case kind.</summary>
     public IReadOnlyDictionary<string, string>? SourceErrors { get; init; }
+
+    /// <summary>Freshness, completeness, backend, and source coverage for this read.</summary>
+    public EvidencePostureEnvelope EvidencePosture { get; init; } =
+        Honua.Core.Features.Observability.Domain.EvidencePosture.Envelope(DateTimeOffset.UnixEpoch, []);
 }
 
 /// <summary>

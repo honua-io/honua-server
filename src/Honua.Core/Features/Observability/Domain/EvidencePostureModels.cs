@@ -35,10 +35,11 @@ public static class EvidenceBackendKinds
     public const string DurableStore = "durableStore";
     public const string Composite = "composite";
     public const string NotConfigured = "notConfigured";
+    public const string Unverified = "unverified";
 
     internal static readonly HashSet<string> All = new(StringComparer.Ordinal)
     {
-        InProcess, Configuration, HealthCheckService, DurableStore, Composite, NotConfigured,
+        InProcess, Configuration, HealthCheckService, DurableStore, Composite, NotConfigured, Unverified,
     };
 }
 
@@ -137,6 +138,10 @@ public static class EvidencePosture
     private const int MaximumComponentIds = 64;
     private const int MaximumIdentifierLength = 96;
 
+    /// <summary>Returns whether a source identifier is part of the version 1 closed vocabulary.</summary>
+    public static bool IsKnownSourceId(string? sourceId)
+        => sourceId is not null && EvidenceSourceIds.All.Contains(sourceId);
+
     public static EvidenceSourcePosture Source(
         string sourceId,
         string backendKind,
@@ -150,7 +155,12 @@ public static class EvidencePosture
         DateTimeOffset? evaluatedAt = null)
     {
         var now = (evaluatedAt ?? DateTimeOffset.UtcNow).ToUniversalTime();
-        var reasons = new HashSet<string>(reasonCodes ?? [], StringComparer.Ordinal);
+        var suppliedReasons = (reasonCodes ?? []).ToArray();
+        var reasons = new HashSet<string>(suppliedReasons, StringComparer.Ordinal);
+        if (suppliedReasons.Length > MaximumReasonCodes || suppliedReasons.Any(reason => !EvidenceReasonCodes.All.Contains(reason)))
+        {
+            reasons.Add(EvidenceReasonCodes.MalformedEvidence);
+        }
         var normalizedCompleteness = EvidenceCompletenessStatuses.All.Contains(completeness)
             ? completeness
             : EvidenceCompletenessStatuses.Unavailable;
@@ -158,16 +168,22 @@ public static class EvidencePosture
         if (!EvidenceSourceIds.All.Contains(sourceId))
         {
             reasons.Add(EvidenceReasonCodes.MalformedEvidence);
-            normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+            normalizedCompleteness = Worsen(
+                normalizedCompleteness,
+                EvidenceCompletenessStatuses.Unavailable);
         }
 
-        if (!EvidenceBackendKinds.All.Contains(backendKind)
-            || string.IsNullOrWhiteSpace(backendId)
-            || backendId.Length > MaximumIdentifierLength
-            || backendId.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.')))
+        var normalizedBackendKind = EvidenceBackendKinds.All.Contains(backendKind)
+            ? backendKind
+            : EvidenceBackendKinds.Unverified;
+        var normalizedBackendId = IsSafeIdentifier(backendId) ? backendId : EvidenceBackendKinds.Unverified;
+        if (normalizedBackendKind == EvidenceBackendKinds.Unverified
+            || normalizedBackendId == EvidenceBackendKinds.Unverified)
         {
             reasons.Add(EvidenceReasonCodes.BackendUnverified);
-            normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+            normalizedCompleteness = Worsen(
+                normalizedCompleteness,
+                EvidenceCompletenessStatuses.Unavailable);
         }
 
         var normalizedObservedAt = NormalizeTimestamp(observedAt);
@@ -183,23 +199,31 @@ public static class EvidencePosture
             if (normalizedObservedAt is null)
             {
                 reasons.Add(EvidenceReasonCodes.MissingObservationTime);
-                normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+                normalizedCompleteness = Worsen(
+                    normalizedCompleteness,
+                    EvidenceCompletenessStatuses.Unavailable);
             }
             else if (normalizedObservedAt > now + MaximumFutureSkew)
             {
                 reasons.Add(EvidenceReasonCodes.FutureObservationTime);
-                normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+                normalizedCompleteness = Worsen(
+                    normalizedCompleteness,
+                    EvidenceCompletenessStatuses.Unavailable);
             }
 
             if (normalizedLastSuccessfulAt is null)
             {
                 reasons.Add(EvidenceReasonCodes.NeverSucceeded);
-                normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+                normalizedCompleteness = Worsen(
+                    normalizedCompleteness,
+                    EvidenceCompletenessStatuses.Unavailable);
             }
             else if (normalizedLastSuccessfulAt > now + MaximumFutureSkew)
             {
                 reasons.Add(EvidenceReasonCodes.FutureObservationTime);
-                normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+                normalizedCompleteness = Worsen(
+                    normalizedCompleteness,
+                    EvidenceCompletenessStatuses.Unavailable);
             }
         }
 
@@ -208,20 +232,26 @@ public static class EvidencePosture
         {
             maximumObservationAgeSeconds = null;
             reasons.Add(EvidenceReasonCodes.MalformedEvidence);
-            normalizedCompleteness = EvidenceCompletenessStatuses.Unavailable;
+            normalizedCompleteness = Worsen(
+                normalizedCompleteness,
+                EvidenceCompletenessStatuses.Unavailable);
         }
         else if (maximumObservationAgeSeconds is { } maxAge)
         {
             if (normalizedObservedAt is { } observation && now - observation > TimeSpan.FromSeconds(maxAge))
             {
                 reasons.Add(EvidenceReasonCodes.StaleObservation);
-                normalizedCompleteness = EvidenceCompletenessStatuses.Partial;
+                normalizedCompleteness = Worsen(
+                    normalizedCompleteness,
+                    EvidenceCompletenessStatuses.Partial);
             }
 
             if (normalizedLastSuccessfulAt is { } lastSuccess && now - lastSuccess > TimeSpan.FromSeconds(maxAge))
             {
                 reasons.Add(EvidenceReasonCodes.StaleLastSuccess);
-                normalizedCompleteness = EvidenceCompletenessStatuses.Partial;
+                normalizedCompleteness = Worsen(
+                    normalizedCompleteness,
+                    EvidenceCompletenessStatuses.Partial);
             }
         }
 
@@ -234,8 +264,8 @@ public static class EvidencePosture
         return new EvidenceSourcePosture
         {
             SourceId = sourceId,
-            BackendKind = backendKind,
-            BackendId = backendId,
+            BackendKind = normalizedBackendKind,
+            BackendId = normalizedBackendId,
             ObservedAt = normalizedObservedAt,
             LastSuccessfulAt = normalizedLastSuccessfulAt,
             Completeness = normalizedCompleteness,
@@ -254,15 +284,23 @@ public static class EvidencePosture
             .OrderBy(source => source.SourceId, StringComparer.Ordinal)
             .Take(64)
             .ToArray();
+        var hasDuplicateSourceIds = normalizedSources
+            .GroupBy(source => source.SourceId, StringComparer.Ordinal)
+            .Any(group => group.Skip(1).Any());
         var actionable = normalizedSources.Length > 0
+            && !hasDuplicateSourceIds
             && normalizedSources.All(source => IsSourceActionable(source, normalizedGeneratedAt));
         var completeness = actionable
             ? EvidenceCompletenessStatuses.Complete
-            : normalizedSources.Any(source => source.Completeness == EvidenceCompletenessStatuses.Complete)
-                ? EvidenceCompletenessStatuses.Partial
-                : normalizedSources.Any(source => source.Completeness == EvidenceCompletenessStatuses.NotConfigured)
-                    ? EvidenceCompletenessStatuses.NotConfigured
-                    : EvidenceCompletenessStatuses.Unavailable;
+            : normalizedSources.Any(source => source.Completeness == EvidenceCompletenessStatuses.Unavailable)
+                || hasDuplicateSourceIds
+                ? EvidenceCompletenessStatuses.Unavailable
+                : normalizedSources.Any(source => source.Completeness == EvidenceCompletenessStatuses.Partial)
+                    || normalizedSources.Any(source => source.Completeness == EvidenceCompletenessStatuses.Complete)
+                    ? EvidenceCompletenessStatuses.Partial
+                    : normalizedSources.Any(source => source.Completeness == EvidenceCompletenessStatuses.NotConfigured)
+                        ? EvidenceCompletenessStatuses.NotConfigured
+                        : EvidenceCompletenessStatuses.Unavailable;
 
         return new EvidencePostureEnvelope
         {
@@ -278,16 +316,53 @@ public static class EvidencePosture
         IEnumerable<string> requiredSourceIds,
         DateTimeOffset evaluatedAt)
     {
-        if (envelope is null || envelope.SchemaVersion != EvidencePostureEnvelope.CurrentSchemaVersion)
+        var now = evaluatedAt.ToUniversalTime();
+        if (!IsWellFormed(envelope, now) || envelope!.Actionable is false)
         {
             return false;
         }
 
-        var sources = envelope.Sources.ToDictionary(source => source.SourceId, StringComparer.Ordinal);
+        var sourceGroups = envelope.Sources
+            .GroupBy(source => source.SourceId, StringComparer.Ordinal)
+            .ToArray();
+        if (sourceGroups.Any(group => group.Skip(1).Any()))
+        {
+            return false;
+        }
+
+        var sources = sourceGroups.ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
         var required = requiredSourceIds.Distinct(StringComparer.Ordinal).ToArray();
         return required.Length > 0
+            && required.All(IsKnownSourceId)
             && required.All(sourceId => sources.TryGetValue(sourceId, out var source)
-                && IsSourceActionable(source, evaluatedAt.ToUniversalTime()));
+                && IsSourceActionable(source, now));
+    }
+
+    /// <summary>Validates an envelope received from serialization without trusting its producer.</summary>
+    public static bool IsWellFormed(EvidencePostureEnvelope? envelope, DateTimeOffset evaluatedAt)
+    {
+        var now = evaluatedAt.ToUniversalTime();
+        if (envelope is null
+            || envelope.SchemaVersion != EvidencePostureEnvelope.CurrentSchemaVersion
+            || envelope.GeneratedAt.Offset != TimeSpan.Zero
+            || envelope.GeneratedAt > now + MaximumFutureSkew
+            || !EvidenceCompletenessStatuses.All.Contains(envelope.Completeness)
+            || envelope.Sources is null
+            || envelope.Sources.Count is 0 or > 64)
+        {
+            return false;
+        }
+
+        var sourceGroups = envelope.Sources.GroupBy(source => source.SourceId, StringComparer.Ordinal).ToArray();
+        if (sourceGroups.Any(group => group.Skip(1).Any())
+            || envelope.Sources.Any(source => !IsSourceWellFormed(source)))
+        {
+            return false;
+        }
+
+        var actionableAtGeneration = envelope.Sources.All(source => IsSourceActionable(source, envelope.GeneratedAt));
+        return envelope.Actionable == actionableAtGeneration
+            && (!envelope.Actionable || envelope.Completeness == EvidenceCompletenessStatuses.Complete);
     }
 
     public static IReadOnlyList<string> ToEvidenceReferences(EvidencePostureEnvelope envelope)
@@ -296,7 +371,8 @@ public static class EvidencePosture
             .ToArray();
 
     private static bool IsSourceActionable(EvidenceSourcePosture source, DateTimeOffset now)
-        => source.Completeness == EvidenceCompletenessStatuses.Complete
+        => IsSourceWellFormed(source)
+            && source.Completeness == EvidenceCompletenessStatuses.Complete
             && source.ObservedAt is { } observedAt
             && source.LastSuccessfulAt is { } lastSuccessfulAt
             && observedAt <= now + MaximumFutureSkew
@@ -306,13 +382,86 @@ public static class EvidencePosture
             && now - lastSuccessfulAt <= TimeSpan.FromSeconds(maxAge)
             && source.ReasonCodes.Count == 0;
 
+    private static bool IsSourceWellFormed(EvidenceSourcePosture source)
+    {
+        if (!IsKnownSourceId(source.SourceId)
+            || !EvidenceBackendKinds.All.Contains(source.BackendKind)
+            || !IsSafeIdentifier(source.BackendId)
+            || !EvidenceCompletenessStatuses.All.Contains(source.Completeness)
+            || source.MaximumObservationAgeSeconds is <= 0 or > 604800
+            || source.ReasonCodes is null
+            || source.ReasonCodes.Count > MaximumReasonCodes
+            || source.ReasonCodes.Distinct(StringComparer.Ordinal).Count() != source.ReasonCodes.Count
+            || source.ReasonCodes.Any(reason => !EvidenceReasonCodes.All.Contains(reason))
+            || source.ObservedAt is { Offset: var observedOffset } && observedOffset != TimeSpan.Zero
+            || source.LastSuccessfulAt is { Offset: var successOffset } && successOffset != TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        if (source.Completeness == EvidenceCompletenessStatuses.NotConfigured)
+        {
+            return source.BackendKind == EvidenceBackendKinds.NotConfigured
+                && source.ObservedAt is null
+                && source.LastSuccessfulAt is null
+                && source.ReasonCodes.Contains(EvidenceReasonCodes.SourceNotConfigured, StringComparer.Ordinal)
+                && IsCoverageWellFormed(source.Coverage);
+        }
+
+        return source.BackendKind is not EvidenceBackendKinds.NotConfigured and not EvidenceBackendKinds.Unverified
+            && source.ObservedAt is not null
+            && source.LastSuccessfulAt is not null
+            && IsCoverageWellFormed(source.Coverage);
+    }
+
+    private static bool IsCoverageWellFormed(EvidenceCoverage? coverage)
+    {
+        if (coverage is null
+            || !IsUtc(coverage.RequestedFrom)
+            || !IsUtc(coverage.RequestedTo)
+            || !IsUtc(coverage.ReturnedFrom)
+            || !IsUtc(coverage.ReturnedTo)
+            || IsReversed(coverage.RequestedFrom, coverage.RequestedTo)
+            || IsReversed(coverage.ReturnedFrom, coverage.ReturnedTo)
+            || coverage.RequestedPageSize is <= 0 or > 10000
+            || coverage.ReturnedCount is < 0 or > 10000
+            || coverage.ObservedReplicaCount is < 0 or > 100000
+            || coverage.ExpectedReplicaCount is <= 0 or > 100000
+            || coverage.IncludedComponentIds is null
+            || coverage.ExpectedComponentIds is null
+            || !AreBoundedIdentifiers(coverage.IncludedComponentIds)
+            || !AreBoundedIdentifiers(coverage.ExpectedComponentIds))
+        {
+            return false;
+        }
+
+        return coverage.RequestedPageSize is null
+            || coverage.ReturnedCount is null
+            || coverage.ReturnedCount.Value <= coverage.RequestedPageSize.Value;
+    }
+
+    private static bool IsUtc(DateTimeOffset? value) => value is null || value.Value.Offset == TimeSpan.Zero;
+
+    private static bool IsReversed(DateTimeOffset? from, DateTimeOffset? to)
+        => from is { } start && to is { } end && start > end;
+
+    private static bool AreBoundedIdentifiers(IReadOnlyList<string> values)
+        => values.Count <= MaximumComponentIds
+            && values.Distinct(StringComparer.Ordinal).Count() == values.Count
+            && values.All(IsSafeIdentifier);
+
+    private static bool IsSafeIdentifier(string? value)
+        => !string.IsNullOrWhiteSpace(value)
+            && value.Length <= MaximumIdentifierLength
+            && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.');
+
     private static DateTimeOffset? NormalizeTimestamp(DateTimeOffset? value)
         => value?.ToUniversalTime();
 
     private static EvidenceCoverage NormalizeCoverage(
         EvidenceCoverage coverage,
         DateTimeOffset now,
-        ISet<string> reasons,
+        HashSet<string> reasons,
         ref string completeness)
     {
         var requestedFrom = NormalizeTimestamp(coverage.RequestedFrom);
@@ -324,13 +473,13 @@ public static class EvidencePosture
             || returnedTo > now + MaximumFutureSkew)
         {
             reasons.Add(EvidenceReasonCodes.InvalidTimeWindow);
-            completeness = EvidenceCompletenessStatuses.Unavailable;
+            completeness = Worsen(completeness, EvidenceCompletenessStatuses.Unavailable);
         }
 
         if (coverage.Truncated == true || coverage.HasMore == true)
         {
             reasons.Add(EvidenceReasonCodes.PageTruncated);
-            completeness = EvidenceCompletenessStatuses.Partial;
+            completeness = Worsen(completeness, EvidenceCompletenessStatuses.Partial);
         }
 
         if (coverage.ObservedReplicaCount is { } observedReplicas
@@ -338,15 +487,34 @@ public static class EvidencePosture
             && observedReplicas < expectedReplicas)
         {
             reasons.Add(EvidenceReasonCodes.IncompleteReplicaCoverage);
-            completeness = EvidenceCompletenessStatuses.Partial;
+            completeness = Worsen(completeness, EvidenceCompletenessStatuses.Partial);
         }
 
-        var included = SanitizeComponentIds(coverage.IncludedComponentIds);
-        var expected = SanitizeComponentIds(coverage.ExpectedComponentIds);
-        if (expected.Count > 0 && !expected.All(id => included.Contains(id, StringComparer.Ordinal)))
+        if (coverage.RequestedPageSize is <= 0 or > 10000
+            || coverage.ReturnedCount is < 0 or > 10000
+            || coverage.ReturnedCount is { } returnedCount
+                && coverage.RequestedPageSize is { } requestedPageSize
+                && returnedCount > requestedPageSize
+            || coverage.ObservedReplicaCount is < 0 or > 100000
+            || coverage.ExpectedReplicaCount is <= 0 or > 100000)
+        {
+            reasons.Add(EvidenceReasonCodes.MalformedEvidence);
+            completeness = Worsen(completeness, EvidenceCompletenessStatuses.Unavailable);
+        }
+
+        var suppliedIncluded = coverage.IncludedComponentIds ?? [];
+        var suppliedExpected = coverage.ExpectedComponentIds ?? [];
+        var included = SanitizeComponentIds(suppliedIncluded);
+        var expected = SanitizeComponentIds(suppliedExpected);
+        if (included.Length != suppliedIncluded.Count || expected.Length != suppliedExpected.Count)
+        {
+            reasons.Add(EvidenceReasonCodes.MalformedEvidence);
+            completeness = Worsen(completeness, EvidenceCompletenessStatuses.Unavailable);
+        }
+        if (expected.Length > 0 && !expected.All(id => included.Contains(id, StringComparer.Ordinal)))
         {
             reasons.Add(EvidenceReasonCodes.PartialResult);
-            completeness = EvidenceCompletenessStatuses.Partial;
+            completeness = Worsen(completeness, EvidenceCompletenessStatuses.Partial);
         }
 
         return coverage with
@@ -360,11 +528,24 @@ public static class EvidencePosture
         };
     }
 
-    private static IReadOnlyList<string> SanitizeComponentIds(IEnumerable<string> values)
+    private static string[] SanitizeComponentIds(IEnumerable<string> values)
         => values
-            .Where(value => !string.IsNullOrWhiteSpace(value) && value.Length <= MaximumIdentifierLength)
+            .Where(IsSafeIdentifier)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .Take(MaximumComponentIds)
             .ToArray();
+
+    private static string Worsen(string current, string candidate)
+    {
+        static int Rank(string completeness) => completeness switch
+        {
+            EvidenceCompletenessStatuses.Complete => 0,
+            EvidenceCompletenessStatuses.NotConfigured => 1,
+            EvidenceCompletenessStatuses.Partial => 2,
+            _ => 3,
+        };
+
+        return Rank(candidate) > Rank(current) ? candidate : current;
+    }
 }

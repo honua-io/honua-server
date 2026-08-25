@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -22,6 +23,9 @@ namespace Honua.Infrastructure.Monitoring;
 [JsonSerializable(typeof(OpsAutonomySettingsResponse))]
 [JsonSerializable(typeof(OpsAutonomyPolicyUpdateRequest))]
 [JsonSerializable(typeof(OpsAutonomySettingsUpdateRequest))]
+[JsonSerializable(typeof(EvidencePostureEnvelope))]
+[JsonSerializable(typeof(EvidenceSourcePosture))]
+[JsonSerializable(typeof(EvidenceCoverage))]
 internal sealed partial class OpsObservabilityJsonContext : JsonSerializerContext
 {
 }

@@ -258,6 +258,7 @@ public sealed class McpOpsObservabilityReaderTests
             Geoprocessing = new OpsGpQueueView
             {
                 TotalActive = 0,
+                Configured = true,
                 Available = true,
                 Buckets = [],
             },

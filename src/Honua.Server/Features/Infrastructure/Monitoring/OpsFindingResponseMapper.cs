@@ -32,6 +32,8 @@ internal static class OpsFindingResponseMapper
                 Protocol = finding.Subject.Protocol,
             },
             EvidenceRefs = finding.EvidenceRefs,
+            EvidencePosture = finding.EvidencePosture,
+            RequiredSourceIds = finding.RequiredSourceIds,
             RecommendedAction = finding.RecommendedAction is null
                 ? null
                 : new OpsFindingActionView

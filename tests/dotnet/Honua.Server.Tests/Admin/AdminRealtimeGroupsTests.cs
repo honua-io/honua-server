@@ -252,6 +252,7 @@ public sealed class AdminRealtimeGroupsTests : IClassFixture<RedisFixture>
             Geoprocessing = new OpsGpQueueView
             {
                 TotalActive = 0,
+                Configured = true,
                 Available = true,
                 Buckets = Array.Empty<OpsGpQueueBucketView>(),
             },
