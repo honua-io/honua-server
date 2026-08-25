@@ -100,7 +100,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             // lightweight host that did not register the registry falls back to the
             // live surface unchanged.
             var registry = httpContext.RequestServices.GetService<ICapabilityRegistry>();
-            output.Tools = BuildToolManifest(surface, registry);
+            output.Tools = await BuildToolManifestAsync(surface, registry, cancellationToken).ConfigureAwait(false);
             output.ToolCount = output.Tools.Count;
 
             if (includeResources || includeGroundingResources)
@@ -126,9 +126,10 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         return McpToolHelpers.SuccessResult(output, DiscoveryJsonContext.Default.McpListCapabilitiesOutput);
     }
 
-    private static List<McpCapabilityTool> BuildToolManifest(
+    private static async Task<List<McpCapabilityTool>> BuildToolManifestAsync(
         McpDataAccessSurface surface,
-        ICapabilityRegistry? registry)
+        ICapabilityRegistry? registry,
+        CancellationToken cancellationToken)
     {
         var registryToolNames = registry is null
             ? null
@@ -138,7 +139,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
                 .ToHashSet(StringComparer.Ordinal);
 
         var tools = new List<McpCapabilityTool>();
-        foreach (var tool in surface.ToolHandlers)
+        foreach (var tool in await surface.GetAllToolsAsync(cancellationToken).ConfigureAwait(false))
         {
             // Only advertise tools with capability-registry provenance. The startup
             // composition check (Capabilities:RegistryBinding) fails fast if the

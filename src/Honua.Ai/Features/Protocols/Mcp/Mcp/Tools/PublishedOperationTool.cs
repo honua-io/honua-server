@@ -7,6 +7,8 @@ using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,8 +36,11 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// </remarks>
 internal sealed class PublishedOperationTool : IMcpTool
 {
-    /// <summary>Prefix for the MCP tool name projected from an operation id.</summary>
+    /// <summary>Prefix for non-admin MCP tool names projected from operation ids.</summary>
     public const string NamePrefix = "honua_op_";
+
+    /// <summary>Prefix for MCP tool names projected from <c>admin.*</c> operation ids.</summary>
+    public const string AdminNamePrefix = "honua_admin_";
 
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
@@ -56,30 +61,50 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     public string Name { get; }
 
-    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+    public string WorkflowFamily => _descriptor.Category switch
+    {
+        "planning" => McpTelemetry.WorkflowFamily.Planning,
+        "execution" => McpTelemetry.WorkflowFamily.Execution,
+        "results" or "admin" => McpTelemetry.WorkflowFamily.Results,
+        _ => McpTelemetry.WorkflowFamily.Lifecycle,
+    };
 
     /// <summary>Whether the backing descriptor is deterministic (AI-free).</summary>
-    public bool IsDeterministic => _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
+    public bool IsDeterministic =>
+        _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
+
+    private bool IsRuntimeDynamic =>
+        _descriptor.Policy.Determinism == OperationDeterminism.RuntimeDynamic;
+
+    private bool RequiresAdminAuthorization =>
+        _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
     private bool IsCacheable =>
-        IsDeterministic && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
+        IsDeterministic
+        && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
     /// <summary>
     /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
-    /// tool name (for example <c>honua_op_service_publish</c>).
+    /// tool name (for example <c>honua_op_service_publish</c>, or
+    /// <c>honua_admin_server_status</c> for an <c>admin.*</c> operation).
     /// </summary>
     public static string ProjectName(string operationId)
     {
-        var sanitized = new char[operationId.Length];
-        for (var i = 0; i < operationId.Length; i++)
+        var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
+        var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;
+        var sanitized = new char[operationName.Length];
+        for (var i = 0; i < operationName.Length; i++)
         {
-            var c = operationId[i];
+            var c = operationName[i];
             sanitized[i] = char.IsAsciiLetterOrDigit(c) ? char.ToLowerInvariant(c) : '_';
         }
 
-        return NamePrefix + new string(sanitized);
+        var prefix = isAdminOperation
+            ? AdminNamePrefix
+            : NamePrefix;
+        return prefix + new string(sanitized);
     }
 
     public McpToolDescriptor Describe()
@@ -96,7 +121,9 @@ internal sealed class PublishedOperationTool : IMcpTool
             // destroy state nor reach deployment scope.
             : McpToolAnnotationSets.Write(title, destructive, idempotent: !destructive);
 
-        var determinismNote = IsDeterministic
+        var determinismNote = IsRuntimeDynamic
+            ? " This operation reports live runtime status and is not cacheable."
+            : IsDeterministic
             ? " This operation is deterministic (AI-free); identical inputs return an identical, param-keyed-cached result."
             : " This operation is AI-assisted.";
 
@@ -123,6 +150,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         McpLog.ToolInvoked(_logger, Name, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
         // The policy context is resolved BEFORE the cache is consulted because it is
         // part of the cache key: the cache-hit fast path skips the policy decision
@@ -189,6 +217,28 @@ internal sealed class PublishedOperationTool : IMcpTool
         }
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+    }
+
+    private async Task EnsureOperationAuthorizationAsync(
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (!RequiresAdminAuthorization)
+        {
+            return;
+        }
+
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                httpContext,
+                principal,
+                _descriptor.Policy.SideEffectClass,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to invoke admin operations.");
+        }
     }
 
     private McpOperationToolOutput Project(OperationHandle handle, string? cacheKey) => new()

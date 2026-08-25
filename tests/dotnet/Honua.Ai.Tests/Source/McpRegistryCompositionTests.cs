@@ -123,17 +123,18 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public void EmitterTools_AreProjectedFromRegistry_AndTitleCaseTheWorkflowFamily()
     {
-        // The emitter's advertised-tool roster is exactly the registry's /mcp tool
-        // set (both directions), with the workflow family title-cased from the
+        // The emitter's advertised-tool roster is exactly the registry's static /mcp
+        // tool set (both directions), with the workflow family title-cased from the
         // registry Category — proving the manifest catalog cannot drift from the
         // registry.
         var registryTools = Registry.All
             .Where(d => d.McpToolName is not null)
+            .Where(d => !d.IsDynamic)
             .ToDictionary(d => d.McpToolName!, StringComparer.Ordinal);
 
         var emitted = CapabilityManifestEmitter.Tools;
         emitted.Select(t => t.AdvertisedName).Should().BeEquivalentTo(registryTools.Keys,
-            "the emitted manifest must advertise exactly the registry's /mcp tool roster");
+            "the emitted manifest must advertise exactly the registry's static /mcp tool roster");
 
         foreach (var tool in emitted)
         {
