@@ -100,6 +100,14 @@ printf '%s\n' \
   '   at Microsoft.AspNetCore.Hosting.StaticWebAssets.StaticWebAssetsLoader.UseStaticWebAssets(IHostEnvironment environment, IConfiguration configuration)' \
   '   at Honua.Server.Program.Main(String[] args)' \
   >"${work}/staticwebassets.log"
+printf '%s\n' \
+  'Testcontainers cleanup observed that the Ryuk container could not be reached; skipping reaper cleanup' \
+  'Assert.Equal() Failure: expected 3 actual 4' \
+  >"${work}/ryuk-without-transport.log"
+printf '%s\n' \
+  'Unrelated product request failed because the upstream connection refused the request' \
+  'Assert.True() Failure: callback was not observed' \
+  >"${work}/timeout-without-ryuk.log"
 
 # One stub serves both the filter (run, job name, job id) and the classifier
 # (job id): lib.sh's REST-first reader is what preexisting.sh now delegates to,
@@ -113,6 +121,8 @@ case "\$1" in
   9104) cat "${work}/real-failure.log" ;;
   9105) cat "${work}/router.log" ;;
   9107) cat "${work}/staticwebassets.log" ;;
+  9108) cat "${work}/ryuk-without-transport.log" ;;
+  9109) cat "${work}/timeout-without-ryuk.log" ;;
   9190) cat "${work}/trunk-shard.log" ;;
   9194) cat "${work}/real-failure.log" ;;
   9195) cat "${work}/router.log" ;;
@@ -156,6 +166,13 @@ failed_job_snapshot_reader() {
     705) jid=9105; name="${ROUTER}" ;;
     706) jid=9106; name='Server Tests (Migration)' ;;
     707) jid=9107; name='Admin & Infrastructure'; attempt=3 ;;
+    708)
+      jq -nc '{attempt:4,status:"completed",jobs:[
+        {databaseId:9108,name:"Server Tests (Core)",conclusion:"failure"},
+        {databaseId:9109,name:"Server Tests (Features)",conclusion:"failure"}
+      ]}'
+      return
+      ;;
     *) return 1 ;;
   esac
   jq -nc --argjson attempt "${attempt}" --arg status "${status}" \
@@ -298,6 +315,24 @@ rc=0; train_classify_retry_candidate 707 0 0 'Admin & Infrastructure' || rc=$?
   || fail "flake classification re-downloaded evidence instead of reusing the recovered exact-attempt payload"
 grep -Fq 'gh run rerun 707 --failed' "${side_effects}" \
   || fail "the recovered StaticWebAssetsLoader evidence did not request the failed-job-only rerun"
+
+# Per-job preservation is a safety boundary, not just an optimization. A Ryuk
+# failure-shaped line in one job must not correlate with unrelated timeout text
+# from another job and authorize the optimistic known-flake path.
+: >"${side_effects}"
+export TRAIN_JOB_LOG_READER="${work}/reader.sh"
+split_job_names="$(printf '%s\n' 'Server Tests (Core)' 'Server Tests (Features)')"
+train_guard_scan_arm
+GUARD_RC=0; train_classify_capacity_guard 708 "${split_job_names}" || GUARD_RC=$?
+[[ "${GUARD_RC}" == "0" ]] \
+  || fail "ordinary split-job evidence was not preserved (rc=${GUARD_RC})"
+[[ "${TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT}" == "4" ]] \
+  || fail "split-job evidence was not bound to exact run attempt 4"
+rc=0; train_classify_retry_candidate 708 0 0 "${split_job_names}" || rc=$?
+[[ "${rc}" == "1" ]] \
+  || fail "signals from separate jobs combined into a known flake (rc=${rc})"
+[[ ! -s "${side_effects}" ]] \
+  || fail "cross-job signal union reached a rerun or state-mutating side effect"
 
 # Persistently unreadable evidence still fails closed.
 export TRAIN_JOB_LOG_READER="${work}/reader.sh"

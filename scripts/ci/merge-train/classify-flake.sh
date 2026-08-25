@@ -20,14 +20,24 @@ train_run_logs_match_flake() {
   # independent best-effort download whose empty result could be mistaken for
   # readable negative evidence (#3473).
   if [[ "${TRAIN_FAILURE_EVIDENCE_READY:-0}" == "1" \
-    && "${TRAIN_FAILURE_EVIDENCE_RUN_ID:-}" == "${run_id}" ]]; then
-    local preserved="${TRAIN_FAILURE_EVIDENCE_TEXT:-}"
+    && "${TRAIN_FAILURE_EVIDENCE_RUN_ID:-}" == "${run_id}" \
+    && -n "${TRAIN_FAILURE_EVIDENCE_DIR:-}" ]] \
+    && train_failure_evidence_bundle_has_files "${TRAIN_FAILURE_EVIDENCE_DIR}"; then
+    local preserved_dir="${TRAIN_FAILURE_EVIDENCE_DIR}" preserved_file
     TRAIN_FAILURE_EVIDENCE_READY=0
     TRAIN_FLAKE_EVIDENCE_RUN_ID="${run_id}"
-    TRAIN_FLAKE_EVIDENCE_TEXT="${preserved}"
+    TRAIN_FLAKE_EVIDENCE_DIR="${preserved_dir}"
     train_log "classifying preserved failed-job evidence for run ${run_id} attempt ${TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT:-unknown}"
-    train_log_is_flake "${preserved}"
-    return $?
+    # Preserve the original same-job correlation boundary. In particular, a
+    # Ryuk event in job A and an unrelated timeout in job B must never combine
+    # into one optimistic-land flake decision.
+    for preserved_file in "${preserved_dir}"/job-*.log; do
+      [[ -s "${preserved_file}" ]] || continue
+      if train_log_is_flake "$(cat -- "${preserved_file}")"; then
+        return 0
+      fi
+    done
+    return 1
   fi
   # IMPORTANT: `gh run view <id> --log-failed` returns EMPTY (0 bytes) on a large
   # run_all batch CI (too many failed jobs / too much output for the API), so the
@@ -72,6 +82,32 @@ train_failing_job_logs() {
   printf '%s' "${out}" | tail -c 12000
 }
 
+train_flake_evidence_tail() {
+  local evidence_dir="$1" evidence_file cap="${TRAIN_LLM_LOG_CAP:-6000}"
+  {
+    for evidence_file in "${evidence_dir}"/job-*.log; do
+      [[ -s "${evidence_file}" ]] || continue
+      tail -c "${cap}" -- "${evidence_file}"
+      printf '\n'
+    done
+  } | tail -c "${cap}"
+}
+
+train_flake_evidence_cleanup() {
+  local evidence_dir="${TRAIN_FLAKE_EVIDENCE_DIR:-}"
+  [[ -n "${evidence_dir}" ]] || return 0
+  train_failure_evidence_discard "${evidence_dir}"
+  if [[ "${TRAIN_FAILURE_EVIDENCE_DIR:-}" == "${evidence_dir}" ]]; then
+    TRAIN_FAILURE_EVIDENCE_DIR=""
+    TRAIN_FAILURE_EVIDENCE_READY=0
+  fi
+  if [[ "${TRAIN_GUARD_SCAN_EVIDENCE_DIR:-}" == "${evidence_dir}" ]]; then
+    TRAIN_GUARD_SCAN_EVIDENCE_DIR=""
+  fi
+  TRAIN_FLAKE_EVIDENCE_RUN_ID=""
+  TRAIN_FLAKE_EVIDENCE_DIR=""
+}
+
 # train_classify_flake <run-id> <rerun-count>: if the failure looks like a flake
 # and we are under the rerun cap, issue ONE rerun and return 0 (caller re-polls).
 # Otherwise return 1 (treat as real -> attribute). The rerun is side-effecting
@@ -83,6 +119,7 @@ train_classify_flake() {
     # condition for the Phase-2 unknown-signature gate: optionally ask Bedrock
     # whether it's a transient infra flake or a real failure (and learn a regex).
     if train_classify_flake_unknown "${run_id}"; then
+      train_flake_evidence_cleanup
       if [[ "${rerun_count}" -ge "${TRAIN_FLAKE_RERUN_CAP}" ]]; then
         train_warn "llm-classified flake reproduced (rerun cap ${TRAIN_FLAKE_RERUN_CAP} reached); treating as real"
         return 1
@@ -91,9 +128,11 @@ train_classify_flake() {
       train_side_effect gh run rerun "${run_id}" --failed
       return 0
     fi
+    train_flake_evidence_cleanup
     train_log "no flake signature in failing logs; treating as real failure"
     return 1
   fi
+  train_flake_evidence_cleanup
   if [[ "${rerun_count}" -ge "${TRAIN_FLAKE_RERUN_CAP}" ]]; then
     # A KNOWN flake signature that persists across the rerun is a CONSISTENT
     # environmental failure (e.g. the test-harness schema-setup race where a
@@ -133,8 +172,9 @@ train_classify_flake_unknown() {
   if [[ -n "${TRAIN_RUN_LOG_TEXT:-}" ]]; then
     text="${TRAIN_RUN_LOG_TEXT}"
   elif [[ "${TRAIN_FLAKE_EVIDENCE_RUN_ID:-}" == "${run_id}" \
-    && -n "${TRAIN_FLAKE_EVIDENCE_TEXT:-}" ]]; then
-    text="${TRAIN_FLAKE_EVIDENCE_TEXT}"
+    && -n "${TRAIN_FLAKE_EVIDENCE_DIR:-}" ]] \
+    && train_failure_evidence_bundle_has_files "${TRAIN_FLAKE_EVIDENCE_DIR}"; then
+    text="$(train_flake_evidence_tail "${TRAIN_FLAKE_EVIDENCE_DIR}")"
   else
     text="$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
   fi

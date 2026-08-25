@@ -14,13 +14,13 @@ TRAIN_GUARD_SCAN_KEY=""
 TRAIN_GUARD_SCAN_RC=""
 TRAIN_GUARD_SCAN_KIND=""
 TRAIN_GUARD_SCAN_ATTEMPT=""
-TRAIN_GUARD_SCAN_TEXT=""
+TRAIN_GUARD_SCAN_EVIDENCE_DIR=""
 TRAIN_FAILURE_EVIDENCE_RUN_ID=""
 TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT=""
-TRAIN_FAILURE_EVIDENCE_TEXT=""
+TRAIN_FAILURE_EVIDENCE_DIR=""
 TRAIN_FAILURE_EVIDENCE_READY=0
 TRAIN_FLAKE_EVIDENCE_RUN_ID=""
-TRAIN_FLAKE_EVIDENCE_TEXT=""
+TRAIN_FLAKE_EVIDENCE_DIR=""
 
 train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
@@ -225,16 +225,36 @@ train_timeout_kind_is_terminal() {
   [[ "$1" == "capacity" || "$1" == "killed" ]]
 }
 
-# train_failure_evidence_reset: clear the exact-attempt evidence shared by the
-# capacity, timeout and flake classifiers. A caller must never retain a partial
-# or older-attempt log after a failed read.
+# train_failure_evidence_reset: clear references to the exact-attempt evidence
+# shared by the capacity, timeout and flake classifiers. A caller must never
+# retain a partial or older-attempt bundle after a failed read.
 train_failure_evidence_reset() {
   TRAIN_FAILURE_EVIDENCE_RUN_ID=""
   TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT=""
-  TRAIN_FAILURE_EVIDENCE_TEXT=""
+  TRAIN_FAILURE_EVIDENCE_DIR=""
   TRAIN_FAILURE_EVIDENCE_READY=0
   TRAIN_FLAKE_EVIDENCE_RUN_ID=""
-  TRAIN_FLAKE_EVIDENCE_TEXT=""
+  TRAIN_FLAKE_EVIDENCE_DIR=""
+}
+
+# Evidence bundles are controller-owned temporary directories. Restrict cleanup
+# to the exact mktemp prefix even if a corrupted environment reaches this helper.
+train_failure_evidence_discard() {
+  local evidence_dir="${1:-}"
+  case "${evidence_dir}" in
+    "${RUNNER_TEMP:-/tmp}"/honua-train-failure-evidence.*)
+      [[ -d "${evidence_dir}" ]] && rm -rf -- "${evidence_dir}"
+      ;;
+  esac
+}
+
+train_failure_evidence_bundle_has_files() {
+  local evidence_dir="$1" evidence_file
+  [[ -d "${evidence_dir}" ]] || return 1
+  for evidence_file in "${evidence_dir}"/job-*.log; do
+    [[ -s "${evidence_file}" ]] && return 0
+  done
+  return 1
 }
 
 # train_read_failed_job_snapshot <run-id>: return one JSON snapshot containing
@@ -253,7 +273,7 @@ train_read_failed_job_snapshot() {
 }
 
 # train_run_logs_match_timeout <run-id> [failing-job-names]
-# Sets TRAIN_TIMEOUT_KIND to capacity|hang on a match (empty otherwise).
+# Sets TRAIN_TIMEOUT_KIND to capacity|killed|hang on a match (empty otherwise).
 # Returns 2 when any selected failing job's log is unavailable. Missing failure
 # evidence must never fall through to per-PR attribution: without the log we
 # cannot distinguish product failure, timeout, capacity exhaustion, or runner
@@ -266,14 +286,14 @@ train_run_logs_match_timeout() {
   if [[ -n "${TRAIN_RUN_LOG_TEXT:-}" ]]; then
     TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
     TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="fixture"
-    TRAIN_FAILURE_EVIDENCE_TEXT="${TRAIN_RUN_LOG_TEXT}"
     TRAIN_FAILURE_EVIDENCE_READY=1
     train_match_timeout_text "${TRAIN_RUN_LOG_TEXT}"
     return $?
   fi
 
   local snapshot attempt status rows jid name conclusion text annotations
-  local saw_job=0 saw_timeout=0 logs_complete=1 evidence=""
+  local evidence_dir evidence_file match_kind terminal_kind=""
+  local saw_job=0 saw_evidence=0 saw_timeout=0 logs_complete=1
   snapshot="$(train_read_failed_job_snapshot "${run_id}" 2>/dev/null || echo "")"
   if ! train_has_content "${snapshot}" || ! jq -e . >/dev/null 2>&1 <<<"${snapshot}"; then
     return 2
@@ -290,26 +310,28 @@ train_run_logs_match_timeout() {
       <<<"${snapshot}")"; then
     return 2
   fi
-  TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
-  TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="${attempt}"
+  evidence_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/honua-train-failure-evidence.XXXXXX")" || return 2
   # Scan EVERY selected failing job before deciding the kind. A generic timeout
   # in one job must not shortcut past a capacity-exhausted shard in another, or
   # the caller reruns the very job this change promises never to retry. Capacity
-  # has precedence and is terminal, so it is the only early exit.
+  # has precedence and is terminal. The scan still completes every selected job
+  # so the preserved bundle is complete and each job remains an isolated record.
   while IFS="${TRAIN_TIMEOUT_TAB}" read -r jid name conclusion; do
     [[ -n "${jid}" ]] || continue
     if [[ -n "${failing_names}" ]] && ! grep -Fqx -- "${name}" <<<"${failing_names}"; then
       continue
     fi
-    saw_job=1
+    saw_job=$(( saw_job + 1 ))
+    printf -v evidence_file '%s/job-%06d.log' "${evidence_dir}" "${saw_job}"
     # Actions uses these terminal conclusions for job-level timeout, runner
     # loss, and startup failure. They have no reliable exit-124 log to grep,
     # but a single failed-job rerun is still fail-closed: no code lands unless
     # the newer attempt completes with explicit success.
     case "${conclusion}" in
       cancelled|timed_out|startup_failure)
-        printf -v evidence '%s\n[job %s | %s | attempt %s] terminal conclusion: %s' \
-          "${evidence}" "${jid}" "${name}" "${attempt}" "${conclusion}"
+        printf '[job %s | %s | attempt %s] terminal conclusion: %s\n' \
+          "${jid}" "${name}" "${attempt}" "${conclusion}" >"${evidence_file}"
+        saw_evidence=1
         saw_timeout=1
         continue
         ;;
@@ -320,21 +342,37 @@ train_run_logs_match_timeout() {
     # also sufficient for the existing bounded hang retry.
     if annotations="$(train_read_job_annotations "${jid}")"; then
       if train_has_content "${annotations}"; then
-        printf -v evidence '%s\n[job %s | %s | attempt %s | annotations]\n%s' \
-          "${evidence}" "${jid}" "${name}" "${attempt}" "${annotations}"
+        printf '[job %s | %s | attempt %s | annotations]\n%s\n' \
+          "${jid}" "${name}" "${attempt}" "${annotations}" >>"${evidence_file}"
+        saw_evidence=1
       fi
       if train_match_timeout_text "${annotations}"; then
-        train_timeout_kind_is_terminal "${TRAIN_TIMEOUT_KIND}" && return 0
+        match_kind="${TRAIN_TIMEOUT_KIND}"
+        if train_timeout_kind_is_terminal "${match_kind}"; then
+          if [[ "${match_kind}" == "capacity" || -z "${terminal_kind}" ]]; then
+            terminal_kind="${match_kind}"
+          fi
+        fi
         saw_timeout=1
         continue
       fi
     fi
     if text="$(train_read_job_log "${jid}")"; then
-      printf -v evidence '%s\n[job %s | %s | attempt %s | log]\n%s' \
-        "${evidence}" "${jid}" "${name}" "${attempt}" "${text}"
+      if ! train_has_content "${text}"; then
+        logs_complete=0
+        continue
+      fi
+      printf '[job %s | %s | attempt %s | log]\n%s\n' \
+        "${jid}" "${name}" "${attempt}" "${text}" >>"${evidence_file}"
+      saw_evidence=1
       if train_match_timeout_text "${text}"; then
+        match_kind="${TRAIN_TIMEOUT_KIND}"
         saw_timeout=1
-        train_timeout_kind_is_terminal "${TRAIN_TIMEOUT_KIND}" && return 0
+        if train_timeout_kind_is_terminal "${match_kind}"; then
+          if [[ "${match_kind}" == "capacity" || -z "${terminal_kind}" ]]; then
+            terminal_kind="${match_kind}"
+          fi
+        fi
       fi
     else
       logs_complete=0
@@ -343,16 +381,25 @@ train_run_logs_match_timeout() {
 
   if [[ "${logs_complete}" != "1" ]]; then
     TRAIN_TIMEOUT_KIND=""
+    train_failure_evidence_discard "${evidence_dir}"
     train_failure_evidence_reset
     return 2
   fi
-  if [[ "${saw_job}" == "0" ]] || ! train_has_content "${evidence}"; then
+  if [[ "${saw_job}" == "0" || "${saw_evidence}" == "0" ]] \
+    || ! train_failure_evidence_bundle_has_files "${evidence_dir}"; then
     TRAIN_TIMEOUT_KIND=""
+    train_failure_evidence_discard "${evidence_dir}"
     train_failure_evidence_reset
     return 2
   fi
-  TRAIN_FAILURE_EVIDENCE_TEXT="${evidence}"
+  TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
+  TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="${attempt}"
+  TRAIN_FAILURE_EVIDENCE_DIR="${evidence_dir}"
   TRAIN_FAILURE_EVIDENCE_READY=1
+  if [[ -n "${terminal_kind}" ]]; then
+    TRAIN_TIMEOUT_KIND="${terminal_kind}"
+    return 0
+  fi
   if [[ "${saw_timeout}" == "1" ]]; then
     TRAIN_TIMEOUT_KIND=hang
     return 0
@@ -402,10 +449,10 @@ train_classify_capacity_guard() {
     TRAIN_TIMEOUT_KIND="${TRAIN_GUARD_SCAN_KIND}"
     train_failure_evidence_reset
     if [[ -n "${TRAIN_GUARD_SCAN_ATTEMPT}" ]] \
-      && train_has_content "${TRAIN_GUARD_SCAN_TEXT}"; then
+      && train_failure_evidence_bundle_has_files "${TRAIN_GUARD_SCAN_EVIDENCE_DIR}"; then
       TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
       TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="${TRAIN_GUARD_SCAN_ATTEMPT}"
-      TRAIN_FAILURE_EVIDENCE_TEXT="${TRAIN_GUARD_SCAN_TEXT}"
+      TRAIN_FAILURE_EVIDENCE_DIR="${TRAIN_GUARD_SCAN_EVIDENCE_DIR}"
       TRAIN_FAILURE_EVIDENCE_READY=1
     fi
     train_guard_scan_reset
@@ -424,7 +471,7 @@ train_classify_capacity_guard() {
       TRAIN_GUARD_SCAN_RC="${scan_rc}"
       TRAIN_GUARD_SCAN_KIND="${TRAIN_TIMEOUT_KIND}"
       TRAIN_GUARD_SCAN_ATTEMPT="${TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT}"
-      TRAIN_GUARD_SCAN_TEXT="${TRAIN_FAILURE_EVIDENCE_TEXT}"
+      TRAIN_GUARD_SCAN_EVIDENCE_DIR="${TRAIN_FAILURE_EVIDENCE_DIR}"
     fi
   fi
 
@@ -446,7 +493,7 @@ train_guard_scan_reset() {
   TRAIN_GUARD_SCAN_RC=""
   TRAIN_GUARD_SCAN_KIND=""
   TRAIN_GUARD_SCAN_ATTEMPT=""
-  TRAIN_GUARD_SCAN_TEXT=""
+  TRAIN_GUARD_SCAN_EVIDENCE_DIR=""
 }
 
 # train_guard_scan_arm: allow ONE downstream reuse of the next guard scan, and
