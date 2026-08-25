@@ -154,14 +154,7 @@ public sealed class McpAuthorizationHelperTests
         app.Run(context =>
         {
             discoveryReached = true;
-            try
-            {
-                McpAuthorizationHelper.EnsurePrincipal(context);
-            }
-            catch (Exception ex)
-            {
-                authorizationFailure = ex;
-            }
+            authorizationFailure = Record.Exception(() => McpAuthorizationHelper.EnsurePrincipal(context));
 
             return Task.CompletedTask;
         });
