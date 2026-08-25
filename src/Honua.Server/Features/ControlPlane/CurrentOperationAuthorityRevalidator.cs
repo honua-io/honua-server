@@ -10,6 +10,7 @@ using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
@@ -22,12 +23,17 @@ internal sealed class CurrentOperationAuthorityRevalidator(
     IOperatorScopeAuthorizer scopeAuthorizer,
     IGuardrailLadder ladder,
     IPrincipalMembershipSource membershipSource,
-    IAdminApiKeyStore apiKeyStore) : IOperationAuthorityRevalidator
+    IAdminApiKeyStore apiKeyStore,
+    IOptions<ApiKeyAuthenticationOptions> apiKeyOptions) : IOperationAuthorityRevalidator
 {
     private const string ServiceScheme = "Service";
     private const string TrustedServiceIssuer = "honua-server";
     private const string TrustedServiceActor = "ops-findings";
     private const string TrustedServiceTenant = "platform";
+    private const string FrameworkAdminActor = "admin";
+    private static readonly string[] FrameworkAdminRoles = ["admin"];
+    private readonly ApiKeyAuthenticationOptions _apiKeyOptions =
+        apiKeyOptions?.Value ?? throw new ArgumentNullException(nameof(apiKeyOptions));
 
     public async Task<OperationAuthorityRevalidationResult> RevalidateAsync(
         OperationProposal proposal,
@@ -116,6 +122,13 @@ internal sealed class CurrentOperationAuthorityRevalidator(
         {
             if (!Guid.TryParse(authority.Actor, out var apiKeyId))
             {
+                if (IsFrameworkAdminAuthority(authority) && IsFrameworkAdminCurrentlyAvailable())
+                {
+                    return CurrentAuthority.Allowed(
+                        IntersectCeiling(FrameworkAdminRoles, authority.RoleCeiling),
+                        []);
+                }
+
                 return CurrentAuthority.Denied("the retained API-key identity cannot be resolved");
             }
 
@@ -157,6 +170,29 @@ internal sealed class CurrentOperationAuthorityRevalidator(
             string.Equals(authority.Issuer, TrustedServiceIssuer, StringComparison.Ordinal) &&
             string.Equals(authority.Actor, TrustedServiceActor, StringComparison.Ordinal) &&
             string.Equals(authority.EffectiveTenant, TrustedServiceTenant, StringComparison.Ordinal);
+
+    private static bool IsFrameworkAdminAuthority(OperationAuthorityContext authority)
+        => string.Equals(authority.Issuer, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal) &&
+            string.Equals(authority.Actor, FrameworkAdminActor, StringComparison.Ordinal) &&
+            authority.ScopeGoverned is false &&
+            authority.OAuthScopes.Count == 0 &&
+            authority.ScopeCeiling.Count == 0 &&
+            authority.Permissions.Count == 0 &&
+            authority.PermissionCeiling.Count == 0 &&
+            authority.Roles.Count == 1 &&
+            authority.RoleCeiling.Count == 1 &&
+            string.Equals(authority.Roles[0], FrameworkAdminRoles[0], StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(authority.RoleCeiling[0], FrameworkAdminRoles[0], StringComparison.OrdinalIgnoreCase);
+
+    private bool IsFrameworkAdminCurrentlyAvailable()
+        => !string.IsNullOrWhiteSpace(_apiKeyOptions.AdminPassword) ||
+            IsDevelopmentBypassActive(_apiKeyOptions);
+
+    private static bool IsDevelopmentBypassActive(ApiKeyAuthenticationOptions options)
+        => options.IsTestMode &&
+            string.Equals(options.EnvironmentName, "Test", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(options.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(options.DevAuthBypassAcknowledged, "true", StringComparison.OrdinalIgnoreCase);
 
     private static string[] ResolveApiKeyRoles(IReadOnlyList<string> permissions)
     {
