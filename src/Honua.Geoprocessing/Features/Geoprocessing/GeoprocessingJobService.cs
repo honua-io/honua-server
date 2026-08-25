@@ -1251,6 +1251,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 plan,
                 idempotencyKey,
                 ResolvePrincipalId(principal),
+                OperationAuthorityContext.Capture(
+                    principal,
+                    submitterSecurityContext.TenantId ?? OperationAuthorityContext.Tenantless),
                 protocolMetadata,
                 isCustomCode,
                 approvalGatedProcessId,

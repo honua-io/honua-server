@@ -143,6 +143,10 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             Kind = action.Kind,
             ActionDiscriminator = action.ActionDiscriminator,
             RequestedByAgent = RequestedByAgent,
+            Authority = OperationAuthorityContext.CaptureService(
+                "honua-server",
+                RequestedByAgent,
+                "platform"),
             Reason = action.Reason,
             ExecutionPayload = action.ExecutionPayload,
             // Idempotency-keyed on the deterministic finding id so re-proposing the same live
