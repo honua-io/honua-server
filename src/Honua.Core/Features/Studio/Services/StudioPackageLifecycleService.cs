@@ -83,6 +83,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             PackageKey = command.PackageKey.Trim(),
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? command.ActorId),
+            ExpectedExistingItemOwnerId = NormalizeOptional(command.ExpectedExistingItemOwnerId),
+            ExpectedExistingItemPresent = command.ExpectedExistingItemPresent,
             Family = envelope.Family,
             Envelope = envelope with { Validation = validation },
             Validation = validation,
@@ -513,6 +515,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             return null;
         }
 
+        var pointers = await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
+
         return await CreateDraftAsync(
             new CreateStudioPackageDraftCommand
             {
@@ -520,6 +524,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
                 PackageKey = version.PackageKey,
                 WorkspaceId = version.WorkspaceId,
                 OwnerId = version.OwnerId,
+                ExpectedExistingItemOwnerId = pointers?.OwnerId,
+                ExpectedExistingItemPresent = pointers is not null,
                 Envelope = version.Envelope,
                 ActorId = actorId,
                 BaseVersionId = versionId,

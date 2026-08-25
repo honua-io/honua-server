@@ -7,6 +7,7 @@ using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Prompts;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp;
@@ -419,6 +420,19 @@ internal sealed class McpDataAccessSurface
         // already use so MCP clients can drive a single reauth flow.
         if (httpContext.User.Identity is null || !httpContext.User.Identity.IsAuthenticated)
         {
+            // Keep the authentication gate ahead of argument validation and
+            // unknown-tool errors (anti-enumeration), while preserving the
+            // Studio tool contract's denial audit for a known registered call.
+            // Do not include the resolved name in the response; anonymous
+            // callers must receive the same generic reauthentication payload.
+            if (TryResolveRegisteredToolName(request.Params, out var requestedToolName)
+                && _tools.TryGetValue(requestedToolName, out var requestedTool)
+                && requestedTool is StudioDraftToolBase)
+            {
+                StudioDraftToolBase.RecordAnonymousAuthorizationDenied(
+                    _logger, httpContext, requestedTool.Name);
+            }
+
             // Emit the same honua.mcp.tool.call counter sample and
             // McpLog.AuthorizationDenied entry that concrete tool handlers emit
             // on failure, using `unknown` sentinels for tool name and workflow
@@ -513,6 +527,26 @@ internal sealed class McpDataAccessSurface
         }
 
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
+    }
+
+    /// <summary>
+    /// Reads only the tools/call name so the anonymous authentication gate can
+    /// identify a registered Studio tool for denial auditing. This intentionally
+    /// does not deserialize the full params object: malformed payloads and
+    /// unknown names must remain indistinguishable to anonymous callers.
+    /// </summary>
+    private static bool TryResolveRegisteredToolName(JsonElement? parameters, out string toolName)
+    {
+        toolName = string.Empty;
+        if (parameters is not { ValueKind: JsonValueKind.Object } value
+            || !value.TryGetProperty("name", out var name)
+            || name.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        toolName = name.GetString() ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(toolName);
     }
 
     private McpJsonRpcResponse ListResources(McpJsonRpcRequest request)

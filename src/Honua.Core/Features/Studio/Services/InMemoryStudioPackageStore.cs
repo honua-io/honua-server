@@ -36,15 +36,29 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         lock (_gate)
         {
             EnsurePackageKeyAvailable(draft);
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
-            _items[draft.ItemId] = item with
+            if (_items.TryGetValue(draft.ItemId, out var existingItem)
+                && !string.Equals(existingItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
+                && (!draft.ExpectedExistingItemPresent
+                    || !string.Equals(existingItem.OwnerId, draft.ExpectedExistingItemOwnerId, StringComparison.Ordinal)))
             {
-                PackageKey = draft.PackageKey,
-                WorkspaceId = draft.WorkspaceId,
-                Family = draft.Family,
-                UpdatedBy = draft.UpdatedBy,
-                UpdatedAt = draft.UpdatedAt,
-            };
+                // Ownership is immutable. Keep this check inside the same lock as
+                // the item upsert so a pointer lookup followed by draft creation
+                // cannot authorize against a stale, ownerless snapshot.
+                throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
+            }
+
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
+            _items[draft.ItemId] = existingItem is { } existingOwnerItem
+                && !string.Equals(existingOwnerItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
+                ? item
+                : item with
+                {
+                    PackageKey = draft.PackageKey,
+                    WorkspaceId = draft.WorkspaceId,
+                    Family = draft.Family,
+                    UpdatedBy = draft.UpdatedBy,
+                    UpdatedAt = draft.UpdatedAt,
+                };
             _drafts.Add(draft.DraftId, draft);
             return Task.FromResult(draft);
         }

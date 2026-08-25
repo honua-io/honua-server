@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -533,6 +534,87 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 
             var itemsAfterVersion = await store.ListContentItemsAsync(new StudioContentItemQuery());
             itemsAfterVersion.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task CreateDraft_ConcurrentDifferentOwnersForAbsentItem_AllowsOnlyWinningOwner()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var itemId = Guid.NewGuid();
+            var aliceDraft = BuildDraft("1=1", "alice-concurrent-query", itemId, owner: "alice");
+            var bobDraft = BuildDraft("1=1", "bob-concurrent-query", itemId, owner: "bob");
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            async Task<(StudioPackageDraft Draft, StudioCompositionConflictException? Error)> CreateAsync(
+                StudioPackageDraft draft)
+            {
+                await start.Task;
+                try
+                {
+                    return (await store.CreateDraftAsync(draft), null);
+                }
+                catch (StudioCompositionConflictException ex)
+                {
+                    return (draft, ex);
+                }
+            }
+
+            var attempts = new[] { CreateAsync(aliceDraft), CreateAsync(bobDraft) };
+            start.SetResult();
+            var outcomes = await Task.WhenAll(attempts);
+
+            outcomes.Count(outcome => outcome.Error is null).Should().Be(1);
+            outcomes.Count(outcome => outcome.Error is StudioCompositionConflictException).Should().Be(1);
+            var winner = outcomes.Single(outcome => outcome.Error is null).Draft;
+            (await ReadContentItemOwnerAsync(schema, itemId)).Should().Be(winner.OwnerId);
+
+            var drafts = await store.ListDraftsAsync(new StudioPackageDraftQuery { Limit = 10 });
+            drafts.Items.Should().ContainSingle(draft => draft.ItemId == itemId && draft.OwnerId == winner.OwnerId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task CreateDraft_AuthorizedMixedOwner_PreservesExistingItemMetadata()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var itemId = Guid.NewGuid();
+
+            await store.CreateDraftAsync(BuildDraft("1=1", "item-owner-query", itemId, owner: "alice"));
+            var foreignOwnerDraft = BuildDraft("1=1", "foreign-draft-query", itemId, owner: "bob") with
+            {
+                WorkspaceId = "foreign-workspace",
+                ExpectedExistingItemOwnerId = "alice",
+                ExpectedExistingItemPresent = true,
+            };
+
+            var created = await store.CreateDraftAsync(foreignOwnerDraft);
+            created.OwnerId.Should().Be("bob");
+
+            var items = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            var item = items.Items.Should().ContainSingle(contentItem => contentItem.ItemId == itemId).Subject;
+            item.OwnerId.Should().Be("alice");
+            item.PackageKey.Should().Be("item-owner-query");
+            item.WorkspaceId.Should().Be("studio");
+            item.Family.Should().Be(StudioPackageFamily.Query);
         }
         finally
         {

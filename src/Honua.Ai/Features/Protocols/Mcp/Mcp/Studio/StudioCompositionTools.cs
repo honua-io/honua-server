@@ -57,7 +57,8 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioAddLayer");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -82,6 +83,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -142,7 +144,8 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         McpTelemetry.EnrichActivity("StudioRemoveLayer");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -155,6 +158,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -213,7 +217,8 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         McpTelemetry.EnrichActivity("StudioSetLayerStyle");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -226,6 +231,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -292,7 +298,8 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
         McpTelemetry.EnrichActivity("StudioSetLayerVisibility");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -312,6 +319,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
             ?? throw new GeoprocessingValidationException("'visible' is required and must be a JSON boolean.");
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -368,7 +376,8 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioSetView");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -388,6 +397,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -443,7 +453,8 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioAddWidget");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -471,6 +482,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         };
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -526,7 +538,8 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         McpTelemetry.EnrichActivity("StudioRemoveWidget");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -539,6 +552,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -607,7 +621,8 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         McpTelemetry.EnrichActivity("StudioBindInteraction");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -617,6 +632,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         var interaction = BuildInteraction(argument.Interaction);
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -748,7 +764,8 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         McpTelemetry.EnrichActivity("StudioRemoveInteraction");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -767,6 +784,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         }
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -835,7 +853,8 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         McpTelemetry.EnrichActivity("StudioAddControl");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -845,6 +864,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         var control = BuildControl(argument.Control);
 
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,
@@ -963,7 +983,8 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
         McpTelemetry.EnrichActivity("StudioRemoveControl");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -983,6 +1004,7 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
 
         var cascade = argument.CascadeInteractions ?? false;
         var updated = await MutateCompositionAsync(
+            httpContext,
             principal,
             ToolName,
             lifecycleService,

@@ -45,17 +45,13 @@ internal static class McpAuthorizationHelper
     /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
-        var identity = principal?.Identity?.IsAuthenticated == true
-            ? principal.Identity
-            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+        var identity = ResolveAuthenticatedIdentity(principal);
         if (identity is null || !identity.IsAuthenticated)
         {
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
-        var scheme = string.IsNullOrWhiteSpace(identity.AuthenticationType)
-            ? AnonymousPrincipalScheme
-            : identity.AuthenticationType;
+        var scheme = ResolveScheme(identity);
         var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrEmpty(subject))
         {
@@ -66,4 +62,14 @@ internal static class McpAuthorizationHelper
             ? $"{scheme}:authenticated"
             : $"{scheme}:name:{identity.Name}";
     }
+
+    private static ClaimsIdentity? ResolveAuthenticatedIdentity(ClaimsPrincipal? principal) =>
+        principal?.Identity?.IsAuthenticated == true
+            ? principal.Identity as ClaimsIdentity
+            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
+
+    private static string ResolveScheme(ClaimsIdentity identity) =>
+        string.IsNullOrWhiteSpace(identity.AuthenticationType)
+            ? AnonymousPrincipalScheme
+            : identity.AuthenticationType;
 }

@@ -73,7 +73,11 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         McpTelemetry.EnrichActivity("StudioProposePublication");
         McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
 
-        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+        var principal = await EnsureAuthorizedAsync(
+                httpContext,
+                OperatorOperation.Create,
+                StudioAuthorizationOperation.UpdateDraft,
+                cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
 
@@ -81,8 +85,19 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
         var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
 
-        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
-        var actorId = ActorIdFor(principal);
+        // This remains an ordinary owner-scoped draft mutation. Deliberately
+        // use UpdateDraft rather than the elevated PublishRequest operation:
+        // the tool records intent only and cannot execute publication.
+        var draft = await RequireAuthorizedDraftAsync(
+            httpContext,
+            principal,
+            lifecycleService,
+            draftId,
+            StudioAuthorizationOperation.UpdateDraft,
+            OperatorOperation.Create,
+            cancellationToken).ConfigureAwait(false);
+        RequireAuthorizedGeneration(draft, generation);
+        var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);
 
         var intent = new StudioPublicationIntent
         {

@@ -41,6 +41,7 @@ public sealed class StudioMcpToolDelegationTests
         {
             services.AddSingleton(lifecycleService);
             services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            McpTestFactory.AddAllowingStudioAuthorization(services);
         });
 
         // 1. Create a map-family draft.
@@ -192,6 +193,7 @@ public sealed class StudioMcpToolDelegationTests
         {
             services.AddSingleton(lifecycleService);
             services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            McpTestFactory.AddAllowingStudioAuthorization(services);
         });
 
         var createTool = new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance);
