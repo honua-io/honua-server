@@ -142,6 +142,45 @@ The metrics record already distinguishes the three cases an auditor needs —
 CI with no qualifying failure" from a real observation — so no additional
 telemetry was added.
 
+## Follow-up audit 2026-08-25
+
+The retained-artifact audit was repeated over the latest 100
+`workflow_dispatch` merge-train runs. Fifty-two metrics artifacts were still
+downloadable; 51 contained a parseable `merge-train-metrics.json`. Of those,
+45 were live dispatches, 35 dispatched batch CI, and one contained an
+`early_failure_observation`. The live batch-CI sample comprised 20 one-shard
+runs and 15 multi-shard runs (3, 7, 8, 9, 22, or 67 selected shards).
+
+The single observation came from train run `32692118010` and batch CI run
+`32692469051`. `Server Tests (Operator Eval Harness)` failed at
+2026-08-24T05:33:37Z, but the observer could not read and classify the exact
+failed-job evidence until 05:56:04Z, after the workflow had completed at
+05:55:02Z. It conservatively classified the early result as `known-flake`, so
+`would_cancel` was false. The ordinary terminal path later exhausted its
+controlled retry and classified the batch `real-blocking`; the resulting sample
+is countable and remained a real blocking failure, but is correctly recorded as
+`not-a-cancellation-candidate`. Although 6,646 runner-seconds overlapped the
+post-failure interval, actionable avoidable runner time is zero because the
+observer never produced a deterministic cancellation candidate while the run
+was active.
+
+| Measure | Result |
+|---|---:|
+| Parseable retained metrics artifacts | 51 |
+| Live dispatches | 45 |
+| Live dispatches that dispatched batch CI | 35 |
+| Runs with a non-null `early_failure_observation` | **1** |
+| Countable promotion samples (of the 20 required) | **1** |
+| Deterministic cancellation candidates | **0** |
+| Contradictions | 0 |
+
+**Cancellation remains disabled.** One countable observation is not the
+required 20-run sample, and it provides no measured deterministic-cancellation
+savings. The result also exposes a measurement limitation worth retaining:
+exact failed-job logs may not become readable until the workflow is terminal.
+That is an observational miss, not permission to weaken the classifier or infer
+determinism from a job name.
+
 Even in enforcement, early evidence may only stop a doomed run. A canceled or
 otherwise incomplete workflow can never become merge evidence and can never
 authorize landing.
