@@ -20,6 +20,13 @@ public static partial class EndpointRegistry
         new("DELETE", "/api/v1/console/content/{id}"),
         new("GET", "/api/v1/console/content/{id}/provenance"),
         new("POST", "/api/v1/console/actions/check"),
+        // v1 Console Access role/member management (#3355)
+        new("GET", "/api/v1/console/access/{workspaceId}/roles"),
+        new("GET", "/api/v1/console/access/{workspaceId}/members"),
+        new("POST", "/api/v1/console/access/{workspaceId}/roles"),
+        new("PUT", "/api/v1/console/access/{workspaceId}/roles/{roleId}"),
+        new("DELETE", "/api/v1/console/access/{workspaceId}/roles/{roleId}"),
+        new("GET", "/api/v1/console/access/{workspaceId}/roles/audit"),
         // v1 Console Share access public-link + embed API (#1215)
         new("GET", "/api/v1/console/content/{id}/share"),
         new("PUT", "/api/v1/console/content/{id}/share/access"),
