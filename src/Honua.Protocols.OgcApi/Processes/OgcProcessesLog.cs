@@ -45,6 +45,9 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8125, LogLevel.Warning, "OGC Process unsupported response mode: ProcessId={ProcessId}, Response={ResponseMode}")]
     public static partial void UnsupportedResponseMode(ILogger logger, string processId, string responseMode);
 
+    [LoggerMessage(8126, LogLevel.Warning, "OGC synchronous execution cleanup failed: JobId={JobId}")]
+    public static partial void SyncExecutionCleanupFailed(ILogger logger, string jobId, Exception exception);
+
     // 8130-8139: Job lifecycle
     [LoggerMessage(8130, LogLevel.Information, "OGC Job status requested: JobId={JobId}")]
     public static partial void JobStatusRequested(ILogger logger, string jobId);

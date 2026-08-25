@@ -4,7 +4,7 @@ Discover a server-side process, submit it as an asynchronous job, poll its statu
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and an API key — process execution requires an authenticated caller with the process-execute grant ([authentication](../secure/authentication.md)). Analytic built-ins require `Process.Execute`; imports, catalog mutations, and durable sinks additionally require `Process.ExecuteMutatingProcess`; operator-supplied code additionally requires `Process.ExecuteCustomCode`.
 
-Process discovery is open; execution is always asynchronous (`jobControlOptions: ["async-execute"]`). The full operation catalog with every parameter is in the [geoprocessing operations reference](../../reference/geoprocessing-operations.md).
+Process discovery is open. Omit `Prefer` or send `Prefer: respond-async` for durable asynchronous execution; send `Prefer: respond-sync` for a bounded synchronous response (`jobControlOptions: ["async-execute", "sync-execute"]`). The full operation catalog with every parameter is in the [geoprocessing operations reference](../../reference/geoprocessing-operations.md).
 
 ## Steps
 

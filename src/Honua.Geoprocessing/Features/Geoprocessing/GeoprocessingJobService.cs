@@ -833,6 +833,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             OperatorOperation.Read,
             cancellationToken).ConfigureAwait(false);
 
+        return await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExecutionJobRecord> GetJobForTerminalAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");
@@ -953,6 +963,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             OperatorOperation.Read,
             cancellationToken).ConfigureAwait(false);
 
+        return await GetJobResultsForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AnalysisResultPackage> GetJobResultsForTerminalAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");
@@ -977,10 +997,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return await _artifacts.GetOrSynthesizeResultPackageAsync(job, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task CancelJobAsync(
+    public Task CancelJobAsync(
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
+        => CancelJobCoreAsync(jobId, principal, requireApproval: true, cancellationToken);
+
+    public Task CancelAbandonedJobAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => CancelJobCoreAsync(jobId, principal, requireApproval: false, cancellationToken);
+
+    private async Task CancelJobCoreAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        bool requireApproval,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(jobId))
         {
@@ -1028,23 +1061,28 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
         }
 
-        // Cancelling a running job is a destructive action — require approval.
-        // Evaluated after state checks so idempotent and terminal paths remain reachable.
-        var approval = _authorizer.EvaluateApproval(
-            principal,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Job,
-                Operation = OperatorOperation.Execute,
-                IsDestructive = true
-            });
-
-        if (approval.IsRequired)
+        // Interactive cancellation is destructive and requires approval. Cleanup of a
+        // job abandoned by this same principal's bounded synchronous request is a
+        // server-owned lifecycle action; authorization and ownership were still enforced
+        // above, but requiring a new interactive approval would make cleanup impossible.
+        if (requireApproval)
         {
-            GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
-            throw new GeoprocessingApprovalRequiredException(
-                approval.PolicyRef ?? "unknown",
-                "Job cancellation requires approval.");
+            var approval = _authorizer.EvaluateApproval(
+                principal,
+                new OperatorAuthorizationRequest
+                {
+                    ResourceType = OperatorResourceType.Job,
+                    Operation = OperatorOperation.Execute,
+                    IsDestructive = true
+                });
+
+            if (approval.IsRequired)
+            {
+                GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
+                throw new GeoprocessingApprovalRequiredException(
+                    approval.PolicyRef ?? "unknown",
+                    "Job cancellation requires approval.");
+            }
         }
 
         var workerOwnsTerminalState = _cancellationNotifiers.CancelAny(jobId);
@@ -1082,15 +1120,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         $"Job '{jobId}' was deleted during cancellation.");
                 case RemoteCancelOutcome.Unconfirmed:
                     GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
-                    throw new GeoprocessingPreconditionFailedException(
+                    throw new GeoprocessingCancellationUnconfirmedException(
                         $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
                 case RemoteCancelOutcome.Unsupported:
                     GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                    throw new GeoprocessingPreconditionFailedException(
+                    throw new GeoprocessingCancellationUnsupportedException(
                         $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
                 case RemoteCancelOutcome.BackendNotFound:
                     GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                    throw new GeoprocessingPreconditionFailedException(
+                    throw new GeoprocessingCancellationUnsupportedException(
                         $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
                 case RemoteCancelOutcome.NotRemote:
                     break;
@@ -1145,7 +1183,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 throw new GeoprocessingNotFoundException(
                     $"Job '{jobId}' was deleted during cancellation.");
             case ExecutionJobCancellationState.Unconfirmed:
-                throw new GeoprocessingPreconditionFailedException(
+                throw new GeoprocessingCancellationUnconfirmedException(
                     $"Job '{jobId}' cancellation could not be confirmed after retries.");
             case ExecutionJobCancellationState.Cancelled:
                 break;

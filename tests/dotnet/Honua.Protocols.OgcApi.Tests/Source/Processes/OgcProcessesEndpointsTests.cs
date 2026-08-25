@@ -163,6 +163,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
         first.TryGetProperty("jobControlOptions", out var jco).Should().BeTrue();
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("async-execute");
+        jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("sync-execute");
         jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
 
         processes.Select(p => p.GetProperty("id").GetString())
@@ -187,6 +188,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         json.RootElement.TryGetProperty("outputs", out _).Should().BeTrue();
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
             .Select(e => e.GetString()).Should().Contain("async-execute");
+        json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
+            .Select(e => e.GetString()).Should().Contain("sync-execute");
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
             .Select(e => e.GetString()).Should().NotContain("dismiss");
     }
@@ -379,11 +382,9 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_PreferRespondSync_Returns422WithOgcExceptionType()
+    public async Task Execute_PreferRespondSync_UsesCanonicalBoundedResultPath()
     {
-        // OGC API Processes Part 1 §7.9.4: when the client sends Prefer: respond-sync
-        // but the process only supports async-execute, the server SHALL return 422
-        // Unprocessable Entity with a registered OGC exception type URI.
+        // The fixture intentionally lacks a durable runtime, so successful admission may\n        // resolve to 503; the regression is that respond-sync reaches the shared lifecycle path.
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Headers.Add("Prefer", "respond-sync");
@@ -393,11 +394,12 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        json.RootElement.GetProperty("type").GetString().Should()
-            .Contain("unsupported-execution-mode",
-                "OGC API Processes requires a registered exception type URI for 422 responses");
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.OK,
+            HttpStatusCode.RequestTimeout,
+            HttpStatusCode.ServiceUnavailable);
+        response.StatusCode.Should().NotBe(HttpStatusCode.UnprocessableEntity,
+            "respond-sync is supported through the canonical bounded terminal/result service");
     }
 
     [IntegrationTest]

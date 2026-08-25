@@ -159,6 +159,7 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
+        services.TryAddSingleton<IGeoprocessingJobTerminalService, GeoprocessingJobTerminalService>();
 
         // Workflow orchestration substrate (#724) — exposes geoprocessing as the
         // canonical job executor consumed by the orchestration engine.

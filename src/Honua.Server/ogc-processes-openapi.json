@@ -141,7 +141,7 @@
           {
             "name": "Prefer",
             "in": "header",
-            "description": "Optional preference hint. Async execution is the default for this process; 'respond-async' is accepted and echoed via Preference-Applied when supplied.",
+            "description": "Optional execution preference. Use 'respond-sync' for a bounded synchronous result or 'respond-async' for an asynchronous job. Async execution is the default when omitted.",
             "schema": { "type": "string" }
           }
         ],
@@ -157,6 +157,20 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Synchronous execution completed successfully",
+            "headers": {
+              "Preference-Applied": {
+                "description": "Confirms that the requested 'respond-sync' preference was applied.",
+                "schema": { "type": "string", "enum": ["respond-sync"] }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Results" }
+              }
+            }
+          },
           "201": {
             "description": "Async job created",
             "headers": {
@@ -201,6 +215,30 @@
           },
           "403": {
             "description": "Permission denied or approval required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "408": {
+            "description": "Synchronous execution exceeded its bounded wait or configured request timeout",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "409": {
+            "description": "Synchronous execution was cancelled or conflicts with an existing execution",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "500": {
+            "description": "Synchronous process execution failed",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -566,7 +604,7 @@
           "version": { "type": "string" },
           "jobControlOptions": {
             "type": "array",
-            "items": { "type": "string", "enum": ["async-execute", "dismiss"] }
+            "items": { "type": "string", "enum": ["async-execute", "sync-execute", "dismiss"] }
           },
           "outputTransmission": {
             "type": "array",
