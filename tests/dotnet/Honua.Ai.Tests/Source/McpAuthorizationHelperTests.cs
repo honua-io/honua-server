@@ -4,7 +4,10 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -22,7 +25,7 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "Operator One")
         ], "JwtBearer"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("JwtBearer:sub:operator-123");
+        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("jwtbearer:subject:-:operator-123");
     }
 
     [UnitTest]
@@ -33,7 +36,7 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "admin")
         ], "ApiKey"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("ApiKey:name:admin");
+        McpAuthorizationHelper.ResolvePrincipalKey(principal).Should().Be("apikey:name:admin");
     }
 
     [UnitTest]
@@ -57,8 +60,136 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "identity-1")
         ], "ApiKey"));
 
-        McpAuthorizationHelper.ResolvePrincipalKey(bearer).Should().Be("JwtBearer:sub:identity-1");
-        McpAuthorizationHelper.ResolvePrincipalKey(apiKey).Should().Be("ApiKey:sub:identity-1");
+        McpAuthorizationHelper.ResolvePrincipalKey(bearer).Should().Be("jwtbearer:subject:-:identity-1");
+        McpAuthorizationHelper.ResolvePrincipalKey(apiKey).Should().Be("apikey:subject:-:identity-1");
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_SameSubjectAcrossIssuersAndTenants_DoesNotCollide()
+    {
+        var issuerA = CreateBearerContext("same-subject", "https://issuer-a.example", "tenant-a");
+        var issuerB = CreateBearerContext("same-subject", "https://issuer-b.example", "tenant-a");
+        var tenantB = CreateBearerContext("same-subject", "https://issuer-a.example", "tenant-b");
+
+        var first = McpAuthorizationHelper.ResolveSessionBindingKey(issuerA);
+
+        first.Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(issuerB));
+        first.Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(tenantB));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_DelimiterBearingComponents_AreCollisionFree()
+    {
+        var first = CreateBearerContext("alice:tenant:a", "https://issuer.example", "b");
+        var second = CreateBearerContext("alice", "https://issuer.example", "a:tenant:b");
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(first)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(second));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_ApiKeysUseImmutableKeyId()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var first = CreateApiKeyContext(firstId, "tenant-a");
+        var second = CreateApiKeyContext(secondId, "tenant-a");
+
+        var firstBinding = McpAuthorizationHelper.ResolveSessionBindingKey(first);
+        var secondBinding = McpAuthorizationHelper.ResolveSessionBindingKey(second);
+
+        firstBinding.Should().NotBe(secondBinding);
+        firstBinding.Should().Contain(firstId.ToString("D"));
+        secondBinding.Should().Contain(secondId.ToString("D"));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_BearerCannotForgeApiKeyIdentity()
+    {
+        var apiKeyId = Guid.NewGuid();
+        var apiKey = CreateApiKeyContext(apiKeyId, "tenant-a");
+        var bearer = CreateBearerContext(
+            "bearer-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim("api_key_id", apiKeyId.ToString("D")));
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(bearer)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(apiKey));
+    }
+
+    [UnitTest]
+    public void EnsureBearerToolTenant_TenantlessBearer_IsRejected()
+    {
+        var context = CreateBearerContext("subject", "https://issuer.example", tenant: null);
+
+        var act = () => McpAuthorizationHelper.EnsureBearerToolTenant(context);
+
+        act.Should().Throw<Exception>()
+            .WithMessage("A validated tenant is required to invoke MCP tools.");
+    }
+
+    [UnitTest]
+    public void EnsureBearerToolTenant_ApiKeyPath_IsUnchanged()
+    {
+        var context = CreateApiKeyContext(Guid.NewGuid(), tenant: null);
+
+        var act = () => McpAuthorizationHelper.EnsureBearerToolTenant(context);
+
+        act.Should().NotThrow();
+    }
+
+    private static DefaultHttpContext CreateBearerContext(
+        string subject,
+        string issuer,
+        string? tenant,
+        params Claim[] additionalClaims)
+    {
+        var claims = new List<Claim>
+        {
+            new("sub", subject),
+            new("iss", issuer),
+        };
+        claims.AddRange(additionalClaims);
+        return CreateContext(new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer")), tenant);
+    }
+
+    private static DefaultHttpContext CreateApiKeyContext(Guid apiKeyId, string? tenant)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("api_key_id", apiKeyId.ToString("D")),
+            new Claim(ClaimTypes.Name, "admin"),
+        ], "ApiKey"));
+        return CreateContext(principal, tenant);
+    }
+
+    private static DefaultHttpContext CreateContext(ClaimsPrincipal principal, string? tenant)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new StubTenantContext(tenant));
+
+        return new DefaultHttpContext
+        {
+            User = principal,
+            RequestServices = services.BuildServiceProvider(),
+        };
+    }
+
+    private sealed class StubTenantContext(string? tenantId) : ITenantContext
+    {
+        public string? TenantId => tenantId;
+
+        public TenantContextSource Source => tenantId is null
+            ? TenantContextSource.Anonymous
+            : TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string tenantIdValue, out string? reason)
+        {
+            tenantIdValue = tenantId ?? string.Empty;
+            reason = tenantId is null ? "Tenant required." : null;
+            return tenantId is not null;
+        }
     }
 
     [Fact]

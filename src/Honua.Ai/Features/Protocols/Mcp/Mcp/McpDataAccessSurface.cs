@@ -457,6 +457,24 @@ internal sealed class McpDataAccessSurface
             return SuccessResponse(request.Id, authResult, McpJsonContext.Default.McpToolsCallResult);
         }
 
+        try
+        {
+            McpAuthorizationHelper.EnsureBearerToolTenant(httpContext);
+        }
+        catch (GeoprocessingAuthorizationException ex)
+        {
+            McpTelemetry.ToolCallCount.Add(
+                1,
+                new KeyValuePair<string, object?>("tool_name", McpTelemetry.UnknownToolName),
+                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
+                new KeyValuePair<string, object?>("workflow_family", McpTelemetry.WorkflowFamily.Unknown));
+            McpLog.AuthorizationDenied(_logger, "tools/call", authenticated: true);
+            return SuccessResponse(
+                request.Id,
+                McpToolHelpers.ErrorResult(ex),
+                McpJsonContext.Default.McpToolsCallResult);
+        }
+
         McpToolsCallParams? parameters;
         try
         {
