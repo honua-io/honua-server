@@ -139,16 +139,21 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
-    public async Task BearerWithoutTenantClaim_DoesNotInheritAnonymousDefault()
+    public async Task BearerWithoutTenantClaim_FailsClosedBeforeAnonymousDefault()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "bearer-user"),
-            authenticationType: "Bearer");
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
 
         var client = await CreateAppAsync(principal);
         var response = await client.GetAsync("/tenant");
 
-        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
