@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
@@ -113,7 +114,11 @@ public class TenantContextMiddlewareTests
     public async Task BearerHeaderOverride_WithoutMultiTenantRole_FailsClosed()
     {
         var principal = AuthenticatedPrincipal(
-            claims: ("tid", "tenant-home"),
+            claims:
+            [
+                ("tid", "tenant-home"),
+                ("iss", "https://issuer-a.example"),
+            ],
             roles: ["user"],
             authenticationType: "Bearer");
         var client = await CreateAppAsync(principal);
@@ -123,6 +128,12 @@ public class TenantContextMiddlewareTests
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            "bearer:subject:https%3A%2F%2Fissuer-a.example:user-1",
+            CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim));
+        Assert.Null(CanonicalSecurityActor.FindStampedValue(
+            principal,
+            CanonicalSecurityActor.EffectiveTenantClaim));
     }
 
     [IntegrationTest]

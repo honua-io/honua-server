@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
@@ -246,7 +247,9 @@ internal static class McpBearerAuthenticationEndpointExtensions
         var sourceIdentity = principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated);
         var identity = new ClaimsIdentity(
             principal.Claims.Where(static claim =>
-                !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)),
+                !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
+                || (claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType
+                    && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))),
             scheme,
             sourceIdentity?.NameClaimType ?? ClaimTypes.Name,
             sourceIdentity?.RoleClaimType ?? ClaimTypes.Role);

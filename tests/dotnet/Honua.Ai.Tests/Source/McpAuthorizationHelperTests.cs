@@ -111,6 +111,24 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
+    public void ResolveSessionBindingKey_CommaDelimitedScopes_DoNotMatchAuthorizedWhitespaceSet()
+    {
+        var rejectedCommaValue = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim("scope", $"{OperatorScopeCatalog.Read},{OperatorScopeCatalog.Execute}"));
+        var recognizedWhitespaceValue = CreateBearerContext(
+            "same-subject",
+            "https://issuer.example",
+            "tenant-a",
+            new Claim("scope", $"{OperatorScopeCatalog.Read} {OperatorScopeCatalog.Execute}"));
+
+        McpAuthorizationHelper.ResolveSessionBindingKey(rejectedCommaValue)
+            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(recognizedWhitespaceValue));
+    }
+
+    [UnitTest]
     public void ResolveSessionBindingKey_MissingTenant_DoesNotCollideWithLiteralDashTenant()
     {
         var missing = CreateBearerContext("same-subject", "https://issuer.example", tenant: null);
@@ -189,7 +207,13 @@ public sealed class McpAuthorizationHelperTests
             new Claim(CanonicalSecurityActor.ScopeCeilingClaim, "forged-scope"),
             new Claim("honua:auth_scheme", "ApiKey"),
             new Claim("honua:issuer", "forged-issuer"),
+            new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, "forged-marker"),
         ], "issuer-controlled"));
+        var trustedMarker = new Claim(
+            OperatorScopeCatalog.ScopeGovernedClaimType,
+            OperatorScopeCatalog.ScopeGovernedClaimValue);
+        trustedMarker.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        forged.AddIdentity(new ClaimsIdentity([trustedMarker]));
         var result = AuthenticateResult.Success(new AuthenticationTicket(
             forged,
             OidcAuthenticationExtensions.JwtBearerScheme));
@@ -198,7 +222,12 @@ public sealed class McpAuthorizationHelperTests
 
         promoted.Should().NotBeNull();
         promoted!.Claims.Should().NotContain(claim =>
-            claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase));
+            claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
+            && claim.Type != OperatorScopeCatalog.ScopeGovernedClaimType);
+        promoted.FindAll(OperatorScopeCatalog.ScopeGovernedClaimType)
+            .Should().ContainSingle(claim =>
+                claim.Value == OperatorScopeCatalog.ScopeGovernedClaimValue
+                && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim));
         promoted.FindFirst("sub")?.Value.Should().Be("subject-1");
         promoted.FindFirst("iss")?.Value.Should().Be("https://issuer.example");
     }

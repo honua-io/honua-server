@@ -78,17 +78,15 @@ internal static class CanonicalSecurityActor
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
     {
-        var scopes = principal.FindAll(OperatorScopeCatalog.ScopeClaimType)
-            .Concat(principal.FindAll(OperatorScopeCatalog.ScpClaimType))
-            .Concat(principal.FindAll(OperatorScopeCatalog.ScopeClaimUri))
-            .SelectMany(static claim => (claim.Value ?? string.Empty)
-                .Split([' ', ',', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-            .Select(static value => value.Trim())
-            .Where(static value => value.Length > 0)
-            .Distinct(StringComparer.Ordinal)
+        if (!OperatorScopeCatalog.IsScopeGoverned(principal))
+        {
+            return "not-governed";
+        }
+
+        var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
-        return scopes.Length == 0 ? "none" : $"set:{string.Join(' ', scopes)}";
+        return scopes.Length == 0 ? "governed:none" : $"governed:set:{string.Join(' ', scopes)}";
     }
 
     internal static void StampRequestBinding(ClaimsPrincipal principal, string? effectiveTenant)
@@ -117,6 +115,9 @@ internal static class CanonicalSecurityActor
     internal static bool IsFrameworkOwnedClaim(Claim claim) =>
         claim.Properties.TryGetValue(FrameworkOwnedClaimProperty, out var value)
         && string.Equals(value, bool.TrueString, StringComparison.OrdinalIgnoreCase);
+
+    internal static void StampFrameworkClaim(ClaimsIdentity identity, string type, string? value) =>
+        Replace(identity, type, value);
 
     /// <summary>
     /// Returns whether the principal was authenticated by one of the framework-owned
