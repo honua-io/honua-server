@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -213,6 +214,63 @@ public sealed class McpAuthorizationHelperTests
         authorizationFailure.Should().NotBeNull("tool authorization must still reject the anonymous caller");
     }
 
+    [UnitTest]
+    public async Task EndpointFilter_PreservesEarlyValidatedTenantStampedPrincipal()
+    {
+        var sourcePrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            new Claim("iss", "https://issuer-a.example"),
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var authentication = new CountingAuthenticationService(AuthenticateResult.Success(
+            new AuthenticationTicket(sourcePrincipal, OidcAuthenticationExtensions.JwtBearerScheme)));
+        var oidc = new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            Generic = new GenericOidcProviderOptions
+            {
+                Enabled = true,
+                Authority = "https://issuer-a.example",
+                ClientId = "mcp-client",
+            },
+        };
+        var services = new ServiceCollection()
+            .AddSingleton<IAuthenticationService>(authentication)
+            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc))
+            .BuildServiceProvider();
+        await using var provider = services;
+        var app = new ApplicationBuilder(provider);
+        ClaimsPrincipal? principalSeenByEndpoint = null;
+
+        app.UseMcpBearerAuthentication();
+        app.Run(async httpContext =>
+        {
+            CanonicalSecurityActor.StampRequestBinding(httpContext.User, "tenant-a");
+            await McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync(
+                EndpointFilterInvocationContext.Create(httpContext),
+                invocation =>
+                {
+                    principalSeenByEndpoint = invocation.HttpContext.User;
+                    return ValueTask.FromResult<object?>(null);
+                });
+        });
+
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = "Bearer validated-token";
+
+        await app.Build()(context);
+
+        authentication.AuthenticateCount.Should().Be(1, "the endpoint filter must reuse early validation");
+        principalSeenByEndpoint.Should().BeSameAs(context.User);
+        CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.CanonicalActorClaim)
+            .Should().Be(
+                $"{OidcAuthenticationExtensions.JwtBearerScheme.ToLowerInvariant()}:" +
+                "subject:https%3A%2F%2Fissuer-a.example:shared-subject");
+        CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.EffectiveTenantClaim)
+            .Should().Be("tenant-a");
+    }
+
     private static DefaultHttpContext CreateBearerContext(
         string subject,
         string issuer,
@@ -236,6 +294,32 @@ public sealed class McpAuthorizationHelperTests
             new Claim(ClaimTypes.Name, "admin"),
         ], "ApiKey"));
         return CreateContext(principal, tenant);
+    }
+
+    private sealed class CountingAuthenticationService(AuthenticateResult result) : IAuthenticationService
+    {
+        public int AuthenticateCount { get; private set; }
+
+        public Task<AuthenticateResult> AuthenticateAsync(HttpContext context, string? scheme)
+        {
+            AuthenticateCount++;
+            return Task.FromResult(result);
+        }
+
+        public Task ChallengeAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
+
+        public Task ForbidAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
+
+        public Task SignInAsync(
+            HttpContext context,
+            string? scheme,
+            ClaimsPrincipal principal,
+            AuthenticationProperties? properties) => Task.CompletedTask;
+
+        public Task SignOutAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
     }
 
     private static DefaultHttpContext CreateContext(ClaimsPrincipal principal, string? tenant)

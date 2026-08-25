@@ -3,6 +3,7 @@
 
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Builder;
@@ -51,6 +52,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
 {
     private const string BearerPrefix = "Bearer ";
     private static readonly object AuthenticationFailureKey = new();
+    private static readonly object ValidatedPrincipalKey = new();
 
     /// <summary>
     /// Validates MCP bearer credentials before tenant resolution. Endpoint filters
@@ -86,6 +88,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
                 if (trustedPrincipal is not null)
                 {
                     httpContext.User = trustedPrincipal;
+                    httpContext.Items[ValidatedPrincipalKey] = trustedPrincipal;
                     await next().ConfigureAwait(false);
                     return;
                 }
@@ -161,6 +164,15 @@ internal static class McpBearerAuthenticationEndpointExtensions
             return await next(context).ConfigureAwait(false);
         }
 
+        // The application middleware already validated this exact principal before
+        // tenant resolution. Tenant middleware stamps that same instance with the
+        // canonical actor/effective tenant, so preserve it rather than authenticating
+        // again and discarding framework-owned request-binding provenance.
+        if (HasEarlyValidatedBearerPrincipal(httpContext))
+        {
+            return await next(context).ConfigureAwait(false);
+        }
+
         var result = await httpContext
             .AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme)
             .ConfigureAwait(false);
@@ -183,6 +195,11 @@ internal static class McpBearerAuthenticationEndpointExtensions
         // stamped by the response hook the transport arms on every MCP route.
         return BuildInvalidTokenResult();
     }
+
+    internal static bool HasEarlyValidatedBearerPrincipal(HttpContext context) =>
+        context.Items.TryGetValue(ValidatedPrincipalKey, out var principal)
+        && ReferenceEquals(principal, context.User)
+        && CanonicalSecurityActor.IsBearerPrincipal(context.User);
 
     private static bool HasBearerCredential(HttpContext context)
     {
