@@ -3151,12 +3151,14 @@
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_NoToken_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_TamperedSignature_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_ValidJwt_IsAccepted",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_VersionOnePointZeroValidJwt_IsAccepted",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_WrongAudience_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_WrongIssuer_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.ListProviders_Empty_ReturnsEmptyList",
         "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.ListProviders_WithoutEntitlement_Returns402WithEntitlementDetail",
         "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond",
-        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantContextMiddlewareTests.BearerWithoutTenantClaim_AdminControlPlaneContinuesWithNullTenant"
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantContextMiddlewareTests.BearerWithoutTenantClaim_AdminControlPlaneContinuesWithNullTenant",
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantContextMiddlewareTests.BearerWithoutTenantClaim_VersionOnePointZeroAdminControlPlaneContinuesWithNullTenant"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
