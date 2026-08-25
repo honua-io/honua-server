@@ -131,7 +131,7 @@ public sealed class GeoprocessingJobTerminalServiceTests
     public async Task CancelOrphanedAsync_UsesDomainOwnedCleanupIntent()
     {
         var running = CreateJob(ExecutionJobStatus.Running);
-        _jobs.GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+        _jobs.GetJobForTerminalAsync("job-1", _principal, Arg.Any<CancellationToken>())
             .Returns(running);
         _jobs.CancelAbandonedJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -144,6 +144,8 @@ public sealed class GeoprocessingJobTerminalServiceTests
         await _jobs.Received(1).CancelAbandonedJobAsync(
             "job-1", _principal, Arg.Any<CancellationToken>());
         await _jobs.DidNotReceive().CancelJobAsync(
+            Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
+        await _jobs.DidNotReceive().GetJobAsync(
             Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
     }
 
@@ -159,7 +161,7 @@ public sealed class GeoprocessingJobTerminalServiceTests
         var cleanupCompleted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var readCount = 0;
-        _jobs.GetJobAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+        _jobs.GetJobForTerminalAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (Interlocked.Increment(ref readCount) == 1)

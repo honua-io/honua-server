@@ -231,7 +231,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
                 OperatorResourceType.Job,
                 OperatorOperation.Execute,
                 linkedSource.Token).ConfigureAwait(false);
-            var current = await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+            var current = isOrphanCleanup
+                ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
+                : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             if (current.Spec.Kind != ExecutionJobKind.Geoprocessing)
             {
                 return new(GeoprocessingCancelOutcome.NotFound);
@@ -244,7 +246,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             {
                 await _jobs.CancelJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             }
-            var latest = await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+            var latest = isOrphanCleanup
+                ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
+                : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             return GeoprocessingJobService.IsTerminal(latest.Status) && latest.Status != ExecutionJobStatus.Cancelled
                 ? new(GeoprocessingCancelOutcome.AlreadyTerminal, latest)
                 : new(GeoprocessingCancelOutcome.Cancelled, latest);
@@ -263,7 +267,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             // ownership-enforcing service so adapters receive the winner without probing infra.
             try
             {
-                var winner = await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+                var winner = isOrphanCleanup
+                    ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
+                    : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
                 return GeoprocessingJobService.IsTerminal(winner.Status)
                     ? new(GeoprocessingCancelOutcome.AlreadyTerminal, winner)
                     : new(GeoprocessingCancelOutcome.Unconfirmed, winner);
