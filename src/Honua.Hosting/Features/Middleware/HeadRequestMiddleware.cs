@@ -159,6 +159,17 @@ internal static class HeadRequestSupport
         => context.Items.ContainsKey(SuppressSynthesizedContentLengthKey);
 
     /// <summary>
+    /// Retains the original discarding body feature even when downstream middleware decorates
+    /// <see cref="IHttpResponseBodyFeature"/> (for example, response compression).
+    /// </summary>
+    internal static readonly object ResponseBodyFeatureKey = new();
+
+    internal static HeadResponseBodyFeature? GetResponseBodyFeature(HttpContext context)
+        => context.Items.TryGetValue(ResponseBodyFeatureKey, out var feature)
+            ? feature as HeadResponseBodyFeature
+            : null;
+
+    /// <summary>
     /// True when the endpoint is explicitly marked as a long-lived stream or declares that it
     /// produces <c>text/event-stream</c>.
     /// </summary>
@@ -231,6 +242,7 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
 
         var originalBodyFeature = context.Features.GetRequiredFeature<IHttpResponseBodyFeature>();
         using var discardingBodyFeature = new HeadResponseBodyFeature();
+        context.Items[HeadRequestSupport.ResponseBodyFeatureKey] = discardingBodyFeature;
         context.Features.Set<IHttpResponseBodyFeature>(discardingBodyFeature);
 
         try
@@ -246,6 +258,7 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
 
             var bytesWritten = await discardingBodyFeature.FinishAsync().ConfigureAwait(false);
             context.Features.Set<IHttpResponseBodyFeature>(originalBodyFeature);
+            context.Items.Remove(HeadRequestSupport.ResponseBodyFeatureKey);
             if (!context.Response.HasStarted &&
                 HeadRequestSupport.CanCarryContentLength(context.Response.StatusCode))
             {
@@ -383,7 +396,10 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 
         var clientToken = context.RequestAborted;
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(clientToken);
-        var headBody = context.Features.Get<IHttpResponseBodyFeature>() as HeadResponseBodyFeature;
+        // Response compression and similar middleware decorate IHttpResponseBodyFeature before
+        // this stage runs. Retrieve the original feature retained by the rewrite middleware so
+        // response activity still releases a bounded stream through any wrapper chain.
+        var headBody = HeadRequestSupport.GetResponseBodyFeature(context);
 
         if (headBody is not null)
         {
