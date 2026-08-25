@@ -13,6 +13,8 @@ using System.Diagnostics;
 
 namespace Honua.Server.Features.HealthCheck;
 
+using Honua.Core.Features.Infrastructure.Health;
+
 /// <summary>
 /// Service for orchestrating readiness health checks
 /// </summary>

@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.HealthCheck;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;

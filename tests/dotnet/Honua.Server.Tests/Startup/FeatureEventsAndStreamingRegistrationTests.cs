@@ -6,6 +6,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.HealthCheck;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
 using Honua.Server.Tests.Infrastructure;

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
-using Honua.Server.Features.HealthCheck;
+using Honua.Core.Features.Infrastructure.Health;
 
 namespace Honua.Server.Features.Operations;
 

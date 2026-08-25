@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.HealthCheck;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Streaming;
