@@ -2163,6 +2163,41 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    public async Task GetJobForTerminal_OwnerDoesNotRequireIndependentJobReadGrant()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "test-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _authEvaluator.EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.ResourceType == OperatorResourceType.Job &&
+                    request.Operation == OperatorOperation.Read),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden());
+
+        var result = await _sut.GetJobForTerminalAsync("job-1", CreatePrincipal());
+
+        result.Should().BeSameAs(record);
+        await _authEvaluator.DidNotReceive().EvaluateAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.ResourceType == OperatorResourceType.Job &&
+                request.Operation == OperatorOperation.Read),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task GetJobForTerminal_ForeignOwnerRemainsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "other-user");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.GetJobForTerminalAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/processes/jobs/{jobId}")]
     public async Task GetJob_StableSubjectMatchesOwner_ReturnsRecord()
@@ -2343,6 +2378,37 @@ public sealed class GeoprocessingJobServiceTests
         var result = await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
 
         result.Should().BeSameAs(package);
+    }
+
+    [UnitTest]
+    public async Task GetJobResultsForTerminal_OwnerDoesNotRequireIndependentJobReadGrant()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Succeeded, owner: "test-user");
+        var package = AnalysisResultPackage.CreateCompleted(
+            GeoprocessingResultPackageFactory.CreateResultPackageId(record),
+            new ResultSummary { Title = "Owned synchronous result" },
+            [],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = ["geometry.buffer"] });
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(package);
+        _authEvaluator.EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.ResourceType == OperatorResourceType.Job &&
+                    request.Operation == OperatorOperation.Read),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden());
+
+        var result = await _sut.GetJobResultsForTerminalAsync("job-1", CreatePrincipal());
+
+        result.Should().BeSameAs(package);
+        await _authEvaluator.DidNotReceive().EvaluateAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.ResourceType == OperatorResourceType.Job &&
+                request.Operation == OperatorOperation.Read),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

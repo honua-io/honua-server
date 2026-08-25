@@ -69,7 +69,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             while (true)
             {
                 linkedSource.Token.ThrowIfCancellationRequested();
-                var job = await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+                var job = await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
                 if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
                 {
                     return new(GeoprocessingTerminalWaitOutcome.NotFound);
@@ -143,7 +143,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             timeoutSource.Token);
         try
         {
-            var package = await _jobs.GetJobResultsAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
+            var package = await _jobs.GetJobResultsForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             return new(GeoprocessingTerminalResultOutcome.Succeeded, job, package);
         }
         catch (GeoprocessingNotFoundException)

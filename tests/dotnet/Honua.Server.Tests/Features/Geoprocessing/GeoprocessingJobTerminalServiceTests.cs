@@ -24,9 +24,9 @@ public sealed class GeoprocessingJobTerminalServiceTests
         var queued = CreateJob(ExecutionJobStatus.Queued);
         var succeeded = CreateJob(ExecutionJobStatus.Succeeded);
         var package = CreatePackage();
-        _jobs.GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+        _jobs.GetJobForTerminalAsync("job-1", _principal, Arg.Any<CancellationToken>())
             .Returns(queued, succeeded);
-        _jobs.GetJobResultsAsync("job-1", _principal, Arg.Any<CancellationToken>())
+        _jobs.GetJobResultsForTerminalAsync("job-1", _principal, Arg.Any<CancellationToken>())
             .Returns(package);
         var sut = CreateService((_, _) => Task.CompletedTask);
 
@@ -36,13 +36,13 @@ public sealed class GeoprocessingJobTerminalServiceTests
         result.Outcome.Should().Be(GeoprocessingTerminalResultOutcome.Succeeded);
         result.Job.Should().BeSameAs(succeeded);
         result.ResultPackage.Should().BeSameAs(package);
-        await _jobs.Received(2).GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>());
+        await _jobs.Received(2).GetJobForTerminalAsync("job-1", _principal, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task WaitForTerminalAsync_Timeout_ReturnsTypedOutcome()
     {
-        _jobs.GetJobAsync("job-1", _principal, Arg.Any<CancellationToken>())
+        _jobs.GetJobForTerminalAsync("job-1", _principal, Arg.Any<CancellationToken>())
             .Returns(CreateJob(ExecutionJobStatus.Running));
         var sut = CreateService(
             (_, token) => Task.Delay(Timeout.InfiniteTimeSpan, token),
@@ -52,7 +52,7 @@ public sealed class GeoprocessingJobTerminalServiceTests
             "job-1", _principal, TimeSpan.FromSeconds(1));
 
         result.Outcome.Should().Be(GeoprocessingTerminalWaitOutcome.Timeout);
-        await _jobs.DidNotReceive().GetJobAsync(
+        await _jobs.DidNotReceive().GetJobForTerminalAsync(
             Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
     }
 

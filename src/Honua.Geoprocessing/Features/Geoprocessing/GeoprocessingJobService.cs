@@ -833,6 +833,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             OperatorOperation.Read,
             cancellationToken).ConfigureAwait(false);
 
+        return await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExecutionJobRecord> GetJobForTerminalAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");
@@ -952,6 +962,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             OperatorResourceType.Job,
             OperatorOperation.Read,
             cancellationToken).ConfigureAwait(false);
+
+        return await GetJobResultsForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AnalysisResultPackage> GetJobResultsForTerminalAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
 
         if (string.IsNullOrWhiteSpace(jobId))
         {

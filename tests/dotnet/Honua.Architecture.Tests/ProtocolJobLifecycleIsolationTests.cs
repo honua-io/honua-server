@@ -23,6 +23,8 @@ public sealed class ProtocolJobLifecycleIsolationTests
         "ExecutionJobSubmissionHelper",
         "CancelAbandonedJobAsync",
         "CancelOrphanedAsync",
+        "GetJobForTerminalAsync",
+        "GetJobResultsForTerminalAsync",
     ];
 
     [ArchitectureTest]
