@@ -199,11 +199,16 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
     {
         try
         {
-            await CancelOrphanedAsync(
+            var result = await CancelOrphanedAsync(
                 jobId,
                 principal,
                 timeout,
                 CancellationToken.None).ConfigureAwait(false);
+            if (result.Outcome is not GeoprocessingCancelOutcome.Cancelled
+                and not GeoprocessingCancelOutcome.AlreadyTerminal)
+            {
+                Log.OrphanedCancellationUnsuccessful(_logger, jobId, result.Outcome);
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -319,5 +324,14 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             ILogger logger,
             string jobId,
             Exception exception);
+
+        [LoggerMessage(
+            8038,
+            LogLevel.Warning,
+            "Best-effort cancellation for orphaned synchronous geoprocessing job {JobId} completed with {Outcome}")]
+        public static partial void OrphanedCancellationUnsuccessful(
+            ILogger logger,
+            string jobId,
+            GeoprocessingCancelOutcome outcome);
     }
 }

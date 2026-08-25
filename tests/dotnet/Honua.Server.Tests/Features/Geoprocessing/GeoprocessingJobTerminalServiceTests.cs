@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Xunit;
 
@@ -190,14 +191,33 @@ public sealed class GeoprocessingJobTerminalServiceTests
         await cleanupCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Fact]
+    public async Task DispatchOrphanedCancellation_UnsuccessfulTypedOutcome_IsLogged()
+    {
+        _jobs.GetJobForTerminalAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CreateJob(ExecutionJobStatus.Running));
+        _jobs.CancelAbandonedJobAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new GeoprocessingCancellationUnsupportedException(
+                "The backend does not support cancellation.")));
+        var logger = new RecordingLogger<GeoprocessingJobTerminalService>();
+        var sut = CreateService((_, _) => Task.CompletedTask, logger: logger);
+
+        sut.DispatchOrphanedCancellation("job-1", _principal, TimeSpan.FromSeconds(1));
+
+        var message = await logger.FirstWarning.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        message.Should().Contain("job-1").And.Contain(nameof(GeoprocessingCancelOutcome.Unsupported));
+    }
+
     private GeoprocessingJobTerminalService CreateService(
         Func<TimeSpan, CancellationToken, Task> delay,
-        Func<TimeSpan, CancellationTokenSource>? timeoutSourceFactory = null)
+        Func<TimeSpan, CancellationTokenSource>? timeoutSourceFactory = null,
+        ILogger<GeoprocessingJobTerminalService>? logger = null)
         => new(
             _jobs,
             TimeProvider.System,
             delay,
-            timeoutSourceFactory ?? (timeout => new CancellationTokenSource(timeout)));
+            timeoutSourceFactory ?? (timeout => new CancellationTokenSource(timeout)),
+            logger);
 
     private static CancellationTokenSource CreateCancelledSource()
     {
@@ -228,4 +248,27 @@ public sealed class GeoprocessingJobTerminalServiceTests
         [],
         [],
         new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public TaskCompletionSource<string> FirstWarning { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+            {
+                FirstWarning.TrySetResult(formatter(state, exception));
+            }
+        }
+    }
 }
