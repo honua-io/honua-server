@@ -68,12 +68,12 @@ internal static class McpToolSchemas
     private const string ProposeOperationArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["kind", "resourceId"],
+          "required": ["kind", "resourceId", "executionPayload"],
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"],
-              "description": "In-scope mutating control-plane operation class to propose."
+              "enum": ["Deploy", "MetadataRelease"],
+              "description": "Mutating control-plane operation class safely representable by this generic proposal tool."
             },
             "resourceId": {
               "type": "string",
@@ -83,6 +83,11 @@ internal static class McpToolSchemas
             "reason": {
               "type": "string",
               "description": "Operator-facing reason or change note for the proposal."
+            },
+            "executionPayload": {
+              "type": "string",
+              "minLength": 2,
+              "description": "Class-specific JSON execution specification. Deploy requires targetId matching resourceId and desiredRevision. MetadataRelease requires action=create, packageId, targetEnvironment, resourceSemanticId matching resourceId, and newFieldName."
             },
             "idempotencyKey": {
               "type": "string",

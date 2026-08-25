@@ -4,8 +4,9 @@
   "validates": "inputs",
   "inputs": {
     "kind": "MetadataRelease",
-    "resourceId": "metadata-release:v2",
+    "resourceId": "roads",
     "reason": "Promote v2 metadata snapshot after analyst review.",
+    "executionPayload": "{\"action\":\"create\",\"packageId\":\"metadata-release:v2\",\"targetEnvironment\":\"prod\",\"resourceSemanticId\":\"roads\",\"newFieldName\":\"status\"}",
     "idempotencyKey": "mr-2026-06-21"
   },
   "expected": "tool_result",
