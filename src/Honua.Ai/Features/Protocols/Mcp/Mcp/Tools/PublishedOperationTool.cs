@@ -7,7 +7,10 @@ using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -69,18 +72,19 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     /// <summary>Whether the backing descriptor is deterministic (AI-free).</summary>
     public bool IsDeterministic =>
-        !IsRuntimeDynamic
-        && _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
+        _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
 
     private bool IsRuntimeDynamic =>
-        string.Equals(_descriptor.OperationId, "admin.server.status", StringComparison.Ordinal);
+        _descriptor.Policy.Determinism == OperationDeterminism.RuntimeDynamic;
+
+    private bool RequiresAdminAuthorization =>
+        _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
     private bool IsCacheable =>
         IsDeterministic
-        && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly
-        && !string.Equals(_descriptor.OperationId, "admin.server.status", StringComparison.Ordinal);
+        && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
     /// <summary>
     /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
@@ -147,6 +151,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         McpLog.ToolInvoked(_logger, Name, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
         // The policy context is resolved BEFORE the cache is consulted because it is
         // part of the cache key: the cache-hit fast path skips the policy decision
@@ -213,6 +218,48 @@ internal sealed class PublishedOperationTool : IMcpTool
         }
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+    }
+
+    private async Task EnsureOperationAuthorizationAsync(
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (!RequiresAdminAuthorization)
+        {
+            return;
+        }
+
+        var authorization = httpContext.RequestServices.GetService<IAuthorizationService>();
+        if (authorization is null)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to invoke admin operations.");
+        }
+
+        // MCP uses POST as its transport for every tool call. Give the shared admin
+        // policy the operation's semantic method so admin:read remains valid only for
+        // read-only descriptors, while any future mutating admin tool requires write.
+        var resource = new DefaultHttpContext
+        {
+            RequestServices = httpContext.RequestServices,
+            RequestAborted = cancellationToken,
+            User = principal,
+        };
+        resource.Request.Method = _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly
+            ? HttpMethods.Get
+            : HttpMethods.Post;
+
+        var result = await authorization
+            .AuthorizeAsync(principal, resource, AuthenticationExtensions.AdminPolicy)
+            .ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to invoke admin operations.");
+        }
     }
 
     private McpOperationToolOutput Project(OperationHandle handle, string? cacheKey) => new()

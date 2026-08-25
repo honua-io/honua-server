@@ -24,7 +24,7 @@ public sealed record OperationPolicyMetadata
     public required OperationSideEffectClass SideEffectClass { get; init; }
 
     /// <summary>
-    /// Whether the operation is deterministic or AI-assisted.
+    /// Whether the operation is deterministic, runtime-dynamic, or AI-assisted.
     /// </summary>
     public required OperationDeterminism Determinism { get; init; }
 

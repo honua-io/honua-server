@@ -117,9 +117,9 @@ public enum OperationSideEffectClass
 }
 
 /// <summary>
-/// Whether an operation's behavior is deterministic or AI-assisted. Deterministic mode
-/// is "the same operations with AI off"; this flag lets the policy seam and audit treat
-/// AI-assisted operations differently from deterministic ones.
+/// Whether an operation's behavior is deterministic, runtime-dynamic, or AI-assisted.
+/// Deterministic mode is "the same operations with AI off"; this flag lets the policy
+/// seam and audit distinguish reproducible results from live state and AI output.
 /// </summary>
 public enum OperationDeterminism
 {
@@ -127,6 +127,12 @@ public enum OperationDeterminism
     /// Fully deterministic given its inputs.
     /// </summary>
     Deterministic,
+
+    /// <summary>
+    /// Reads live runtime state, so identical inputs may produce different results
+    /// without involving AI.
+    /// </summary>
+    RuntimeDynamic,
 
     /// <summary>
     /// Uses AI assistance and may produce non-deterministic output.
