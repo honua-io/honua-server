@@ -91,6 +91,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 Outcome = OperationGatewayOutcome.Blocked,
                 Decision = decision,
+                OperationInstanceId = request.OperationInstanceId,
                 Message = $"Operation '{request.Kind}' is not permitted at the {decision.Edition} edition."
             },
             GuardrailTier.RequiresApproval => await CreateProposalAsync(request, decision, cancellationToken)
@@ -155,11 +156,21 @@ internal sealed partial class OperationGateway : IOperationGateway
             throw new InvalidOperationException("The proposer cannot approve its own operation.");
         }
 
+        ValidateAuthority(proposal.Authority);
+
         // Atomically claim the proposal before invoking the executor.
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
+        // Persist the approval evidence in the same CAS write that claims execution,
+        // before the actuator can mutate state.
+        var approvalDecidedAt = DateTimeOffset.UtcNow;
+        proposal = await ClaimForExecutionAsync(
+                proposal,
+                approvedBy,
+                approvalDecidedAt,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         var request = RebuildRequest(proposal);
         string? executionOperationId = null;
@@ -208,13 +219,6 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedBy = approvedBy,
             ResolvedAt = now,
             ExecutionOperationId = executionOperationId,
-            Approval = new OperationApprovalRecord
-            {
-                Approver = approvedBy,
-                Approved = true,
-                DecidedAt = now,
-                ProposerAuthorityRetained = true,
-            },
             Plan = failureMessage == null
                 ? proposal.Plan
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
@@ -267,7 +271,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Approver = rejectedBy,
                 Approved = false,
                 DecidedAt = now,
-                ProposerAuthorityRetained = true,
+                ProposerAuthorityRetained = false,
             },
             ResolvedAt = now
         };
@@ -298,6 +302,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 Outcome = OperationGatewayOutcome.NotSupported,
                 Decision = decision,
+                OperationInstanceId = request.OperationInstanceId,
                 Message = $"No executor is registered for operation kind '{request.Kind}'; the operation was not performed."
             };
         }
@@ -483,18 +488,32 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     /// <summary>
     /// Atomically transitions a proposal from <see cref="OperationProposalStatus.AwaitingApproval"/>
-    /// to <see cref="OperationProposalStatus.Executing"/> via a CAS write.
+    /// to <see cref="OperationProposalStatus.Executing"/> and records the approval
+    /// principal, timestamp, and authority-retention evidence via one CAS write.
     /// Returns the updated proposal (with its incremented version token) on success.
     /// Throws when another caller already claimed or resolved the proposal, or when the
     /// claim cannot be won after retries due to persistent version conflicts.
     /// </summary>
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
+        string approvedBy,
+        DateTimeOffset decidedAt,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var claiming = proposal with { Status = OperationProposalStatus.Executing };
+            var claiming = proposal with
+            {
+                Status = OperationProposalStatus.Executing,
+                ResolvedBy = approvedBy,
+                Approval = new OperationApprovalRecord
+                {
+                    Approver = approvedBy,
+                    Approved = true,
+                    DecidedAt = decidedAt,
+                    ProposerAuthorityRetained = proposal.Authority is not null,
+                },
+            };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
             {
@@ -902,6 +921,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = gatewayOutcome,
             Decision = decision,
+            OperationInstanceId = request.OperationInstanceId,
             ExecutionOperationId = operationId,
             Message = message,
         };
