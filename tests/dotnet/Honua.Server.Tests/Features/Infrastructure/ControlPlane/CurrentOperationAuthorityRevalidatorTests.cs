@@ -11,6 +11,7 @@ using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
@@ -138,6 +139,54 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
     }
 
     [Fact]
+    public async Task RevalidateAsync_MissingRefreshableBootstrapSecret_DeniesFrameworkAuthority()
+    {
+        const string secretReference = "aws:secretsmanager:missing-admin-password";
+        var secretResolver = Substitute.For<IConnectionSecretResolver>();
+        secretResolver.CanResolveSecretAsync(secretReference, Arg.Any<CancellationToken>())
+            .Returns(true);
+        secretResolver.ResolveConnectionStringAsync(secretReference, Arg.Any<CancellationToken>())
+            .Returns(string.Empty);
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        var sut = CreateSut(
+            authorization,
+            Substitute.For<IPrincipalMembershipSource>(),
+            Substitute.For<IAdminApiKeyStore>(),
+            new ApiKeyAuthenticationOptions { AdminPassword = secretReference },
+            secretResolver);
+
+        var result = await sut.RevalidateAsync(CreateProposal(CreateFrameworkAdminAuthority("admin")));
+
+        result.IsAllowed.Should().BeFalse();
+        result.Reason.Should().Contain("unavailable");
+        await authorization.DidNotReceiveWithAnyArgs().EvaluateAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task RevalidateAsync_UnavailableRefreshableBootstrapSecret_DeniesFrameworkAuthority()
+    {
+        const string secretReference = "aws:secretsmanager:unavailable-admin-password";
+        var secretResolver = Substitute.For<IConnectionSecretResolver>();
+        secretResolver.CanResolveSecretAsync(secretReference, Arg.Any<CancellationToken>())
+            .Returns(true);
+        secretResolver.ResolveConnectionStringAsync(secretReference, Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("provider unavailable"));
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        var sut = CreateSut(
+            authorization,
+            Substitute.For<IPrincipalMembershipSource>(),
+            Substitute.For<IAdminApiKeyStore>(),
+            new ApiKeyAuthenticationOptions { AdminPassword = secretReference },
+            secretResolver);
+
+        var result = await sut.RevalidateAsync(CreateProposal(CreateFrameworkAdminAuthority("admin")));
+
+        result.IsAllowed.Should().BeFalse();
+        result.Reason.Should().Contain("unavailable");
+        await authorization.DidNotReceiveWithAnyArgs().EvaluateAsync(default!, default!, default);
+    }
+
+    [Fact]
     public async Task RevalidateAsync_ActiveDevelopmentBypass_AllowsCurrentFrameworkAuthority()
     {
         var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
@@ -198,7 +247,8 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
         IOperatorAuthorizationEvaluator authorization,
         IPrincipalMembershipSource membership,
         IAdminApiKeyStore apiKeyStore,
-        ApiKeyAuthenticationOptions? apiKeyOptions = null)
+        ApiKeyAuthenticationOptions? apiKeyOptions = null,
+        IConnectionSecretResolver? secretResolver = null)
     {
         var scope = Substitute.For<IOperatorScopeAuthorizer>();
         scope.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
@@ -215,7 +265,8 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
             ladder,
             membership,
             apiKeyStore,
-            Options.Create(apiKeyOptions ?? new ApiKeyAuthenticationOptions()));
+            Options.Create(apiKeyOptions ?? new ApiKeyAuthenticationOptions()),
+            secretResolver);
     }
 
     private static OperationProposal CreateProposal(OperationAuthorityContext authority) => new()
