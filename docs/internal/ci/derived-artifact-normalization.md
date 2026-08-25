@@ -68,7 +68,7 @@ replace the declared generation steps.
 
 ## Observe mode
 
-The initial `NORMALIZATION_MODE` is `observe`. The consumer has no
+The initial `NORMALIZATION_MODE` was `observe`. The consumer has no
 write permission and no App/PAT secret. It compares the validated prospective
 blobs with the exact PR Git tree and publishes only a job summary saying which
 files would change. It deliberately publishes no commit status: even a
@@ -147,6 +147,11 @@ per-PR failure cause, each paid for after minutes of build time.
 The audit therefore satisfies the documented promotion criteria: at least 20
 independently corroborated heads, every would-change candidate byte-identical
 to canonical output, and every no-op empty.
+
+The reviewed workflow transition was promoted to `enforce` on 2026-08-25. The
+mode and credential switches remain independent: until the repository-scoped
+App is provisioned, the producer and consumer continue to collect read-only
+evidence and no branch mutation is attempted.
 
 ## Enforce mode
 

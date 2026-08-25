@@ -22,11 +22,12 @@ concurrency:
   cancel-in-progress: false
 
 # The #3219 shadow audit (docs/internal/ci/derived-artifact-normalization.md)
-# passed on 2026-08-16. Enforcement is implemented and credential-gated; the
-# mode stays `observe` until the scoped normalization App credential is
-# provisioned. Rollback is the inverse one-value change back to `observe`.
+# passed on 2026-08-16 with 29 independently corroborated exact heads.
+# Enforcement remains independently credential-gated, so an absent App
+# credential is a quiet read-only no-op. Rollback is the inverse one-value
+# change back to `observe`.
 env:
-  NORMALIZATION_MODE: observe
+  NORMALIZATION_MODE: enforce
 
 jobs:
   validate:

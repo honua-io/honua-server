@@ -140,6 +140,16 @@ def validate(
     for expression in secret_expressions:
         if expression not in allowed_expressions:
             raise AssertionError(f"unexpected secret expression in the consumer: {expression!r}")
+    credential_declarations = re.findall(
+        r"^      NORMALIZATION_CREDENTIAL_PRESENT:\s*>-\s*\n"
+        r"        \$\{\{ secrets\.NORMALIZATION_APP_ID != ''\s*\n"
+        r"        && secrets\.NORMALIZATION_APP_PRIVATE_KEY != '' \}\}\s*$",
+        consumer,
+        re.MULTILINE,
+    )
+    if len(credential_declarations) != 1:
+        raise AssertionError(
+            "NORMALIZATION_CREDENTIAL_PRESENT must be declared exactly once at job scope and require both App secrets")
     outside = re.sub(r"\$\{\{.*?\}\}", "", consumer, flags=re.DOTALL)
     if re.search(r"secrets\s*[.\[]", outside, re.IGNORECASE) or re.search(
             r"(?:to|from)JSON\s*\(\s*secrets", outside, re.IGNORECASE):
