@@ -46,11 +46,17 @@ public sealed record OperationAuthorityContext
     /// <summary>API-key/RBAC permission grants present on the authenticated request.</summary>
     public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
 
+    /// <summary>Role evidence present when the proposal was submitted.</summary>
+    public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
+
     /// <summary>
     /// The maximum permission-grant set available to this operation. It must be a subset of
     /// <see cref="Permissions"/> so approved replay cannot gain an API-key permission.
     /// </summary>
     public IReadOnlyList<string> PermissionCeiling { get; init; } = Array.Empty<string>();
+
+    /// <summary>Maximum retained role set used only to re-query current grants at replay.</summary>
+    public IReadOnlyList<string> RoleCeiling { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Whether this authority was established from an OAuth bearer token. A missing value marks
@@ -63,6 +69,9 @@ public sealed record OperationAuthorityContext
 
     /// <summary>Canonical operation bound to the authority, when applicable.</summary>
     public OperatorOperation? Operation { get; init; }
+
+    /// <summary>Exact resource identifier bound to the authority, when applicable.</summary>
+    public string? ResourceId { get; init; }
 
     /// <summary>
     /// Captures a bounded authority snapshot from an already-authenticated principal and the
@@ -90,6 +99,12 @@ public sealed record OperationAuthorityContext
             .Distinct(StringComparer.Ordinal)
             .OrderBy(permission => permission, StringComparer.Ordinal)
             .ToArray();
+        var roles = identity.FindAll(identity.RoleClaimType)
+            .Select(claim => claim.Value.Trim())
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(role => role, StringComparer.Ordinal)
+            .ToArray();
 
         return CreateValidated(
             issuer,
@@ -98,6 +113,7 @@ public sealed record OperationAuthorityContext
             effectiveTenant,
             scopes,
             permissions,
+            roles,
             OperatorScopeCatalog.IsScopeGoverned(principal));
     }
 
@@ -135,6 +151,7 @@ public sealed record OperationAuthorityContext
             effectiveTenant,
             Array.Empty<string>(),
             Array.Empty<string>(),
+            Array.Empty<string>(),
             scopeGoverned: false);
 
     /// <summary>
@@ -159,6 +176,12 @@ public sealed record OperationAuthorityContext
             return false;
         }
 
+        if (ResourceId is not null && !IsBounded(ResourceId, 512))
+        {
+            error = "Operation authority resource identifier exceeds its bounds.";
+            return false;
+        }
+
         if (OAuthScopes.Count > 128 || ScopeCeiling.Count > 128 ||
             OAuthScopes.Any(scope => !IsBounded(scope, 256)) ||
             ScopeCeiling.Any(scope => !IsBounded(scope, 256)))
@@ -175,6 +198,14 @@ public sealed record OperationAuthorityContext
             return false;
         }
 
+        if (Roles.Count > 128 || RoleCeiling.Count > 128 ||
+            Roles.Any(role => !IsBounded(role, 256)) ||
+            RoleCeiling.Any(role => !IsBounded(role, 256)))
+        {
+            error = "Operation authority roles are missing or exceed their bounds.";
+            return false;
+        }
+
         var granted = OAuthScopes.ToHashSet(StringComparer.Ordinal);
         if (ScopeCeiling.Any(scope => !granted.Contains(scope)))
         {
@@ -186,6 +217,14 @@ public sealed record OperationAuthorityContext
         if (PermissionCeiling.Any(permission => !permissions.Contains(permission)))
         {
             error = "Operation permission ceiling exceeds the authenticated permission set.";
+            return false;
+        }
+
+
+        var roles = Roles.ToHashSet(StringComparer.Ordinal);
+        if (RoleCeiling.Any(role => !roles.Contains(role)))
+        {
+            error = "Operation role ceiling exceeds the authenticated role set.";
             return false;
         }
 
@@ -242,6 +281,7 @@ public sealed record OperationAuthorityContext
         string effectiveTenant,
         IReadOnlyList<string> scopes,
         IReadOnlyList<string> permissions,
+        IReadOnlyList<string> roles,
         bool scopeGoverned)
     {
         var authority = new OperationAuthorityContext
@@ -254,6 +294,8 @@ public sealed record OperationAuthorityContext
             ScopeCeiling = scopes,
             Permissions = permissions,
             PermissionCeiling = permissions,
+            Roles = roles,
+            RoleCeiling = roles,
             ScopeGoverned = scopeGoverned,
         };
 

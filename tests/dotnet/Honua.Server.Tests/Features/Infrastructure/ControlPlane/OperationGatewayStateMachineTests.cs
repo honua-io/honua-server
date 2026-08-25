@@ -186,6 +186,26 @@ public sealed class OperationGatewayStateMachineTests
     }
 
     [Fact]
+    public async Task ApplyApprovedProposal_WhenCurrentAuthorityIsDenied_DoesNotClaimOrExecute()
+    {
+        var proposal = CreateProposal("p-revoked", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationClass.Returns(OperationClass.Deploy);
+        var revalidator = Substitute.For<IOperationAuthorityRevalidator>();
+        revalidator.RevalidateAsync(proposal, Arg.Any<CancellationToken>())
+            .Returns(OperationAuthorityRevalidationResult.Denied("grant revoked"));
+        var sut = BuildGateway(store, executor, authorityRevalidators: [revalidator]);
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-revoked", "admin");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*current authority*grant revoked*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        await executor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default, default);
+    }
+
+    [Fact]
     public async Task ApplyApprovedProposal_WhenPersistedScopeCeilingNoLongerPermitsOperation_FailsBeforeClaim()
     {
         var proposal = CreateProposal("p-stale-scope", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
@@ -339,7 +359,8 @@ public sealed class OperationGatewayStateMachineTests
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IOperationExecutor? executor = null,
-        IGuardrailLadder? ladder = null)
+        IGuardrailLadder? ladder = null,
+        IEnumerable<IOperationAuthorityRevalidator>? authorityRevalidators = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
@@ -357,7 +378,8 @@ public sealed class OperationGatewayStateMachineTests
             executors,
             scopeFactory,
             notifier,
-            NullLogger<OperationGateway>.Instance);
+            NullLogger<OperationGateway>.Instance,
+            authorityRevalidators);
     }
 
     /// <summary>

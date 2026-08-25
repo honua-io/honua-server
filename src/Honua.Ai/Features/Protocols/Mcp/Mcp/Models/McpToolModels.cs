@@ -49,11 +49,11 @@ internal sealed class McpProposeOperationArgument
     [JsonPropertyName("kind")]
     public string? Kind { get; set; }
 
+    [JsonPropertyName("resourceId")]
+    public string? ResourceId { get; set; }
+
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
-
-    [JsonPropertyName("executionPayload")]
-    public string? ExecutionPayload { get; set; }
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }

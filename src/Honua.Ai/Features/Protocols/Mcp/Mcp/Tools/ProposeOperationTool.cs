@@ -15,8 +15,9 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// MCP tool that proposes an in-scope mutating control-plane operation through the
-/// shared <see cref="IOperationGateway"/>. When the guardrail tier is
-/// <c>RequiresApproval</c> the tool returns a structured result carrying a
+/// shared <see cref="IOperationGateway"/>. The model-facing contract always
+/// creates an approval proposal and never selects a direct-execution route. The tool
+/// returns a structured result carrying a
 /// <c>proposalId</c> and the <c>honua://proposals/{id}</c> resource URI so the
 /// agent can poll until a human resolves it, rather than failing (#1696).
 /// </summary>
@@ -42,7 +43,7 @@ internal sealed class ProposeOperationTool : IMcpTool
         Name = ToolName,
         Title = "Propose operation",
         Description = "Propose an in-scope mutating control-plane operation (admin config change, deploy, metadata release, or seed). "
-            + "Returns the execution result directly when the edition permits, or a proposalId plus honua://proposals/{id} resource URI when human approval is required.",
+            + "Always returns an approval proposal; this model-facing tool never executes an operation directly.",
         InputSchema = McpToolSchemas.ProposeOperationArgumentSchema,
         OutputSchema = McpToolOutputSchemas.ProposeOperationOutputSchema,
         // Write tool: it routes a mutating control-plane operation through the
@@ -101,6 +102,19 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
+        if (string.IsNullOrWhiteSpace(argument.ResourceId))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "rejected",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = "A non-empty 'resourceId' is required so authority is bound to an exact target."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
         var gateway = httpContext.RequestServices.GetService<IOperationGateway>();
         if (gateway is null)
         {
@@ -118,7 +132,8 @@ internal sealed class ProposeOperationTool : IMcpTool
         var authority = BuildAuthority(
             principal,
             httpContext.RequestServices.GetRequiredService<ITenantContext>(),
-            kind);
+            kind,
+            argument.ResourceId);
         var actor = authority.Actor;
         var request = new OperationGatewayRequest
         {
@@ -127,11 +142,10 @@ internal sealed class ProposeOperationTool : IMcpTool
             RequestedBy = actor,
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
-            ExecutionPayload = argument.ExecutionPayload,
             Authority = authority,
         };
 
-        var result = await gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
+        var result = await gateway.CreateApprovalProposalAsync(request, cancellationToken).ConfigureAwait(false);
 
         var output = new McpProposeOperationOutput
         {
@@ -150,7 +164,8 @@ internal sealed class ProposeOperationTool : IMcpTool
     private static OperationAuthorityContext BuildAuthority(
         ClaimsPrincipal principal,
         ITenantContext tenantContext,
-        OperationClass kind)
+        OperationClass kind,
+        string resourceId)
     {
         var governed = OperatorScopeCatalog.IsScopeGoverned(principal);
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).ToArray();
@@ -173,6 +188,7 @@ internal sealed class ProposeOperationTool : IMcpTool
             ScopeGoverned = governed,
             ResourceType = resourceType,
             Operation = operation,
+            ResourceId = resourceId,
         };
     }
 }

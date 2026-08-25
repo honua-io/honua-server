@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
@@ -74,23 +75,50 @@ internal sealed class ProposalStatusResource : IMcpResource
             httpContext.RequestServices.GetRequiredService<ITenantContext>());
         if (authority?.ResourceType is not { } resourceType ||
             authority.Operation is not { } operation ||
-            !string.Equals(authority.Actor, callerAuthority.Actor, StringComparison.Ordinal) ||
-            !string.Equals(authority.Issuer, callerAuthority.Issuer, StringComparison.Ordinal) ||
-            !string.Equals(authority.Scheme, callerAuthority.Scheme, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(authority.ResourceId) ||
             !string.Equals(authority.EffectiveTenant, callerAuthority.EffectiveTenant, StringComparison.Ordinal))
         {
-            throw new GeoprocessingAuthorizationException(
-                requiresAuthentication: false,
-                "Proposal status is available only to its retained proposer authority.");
+            throw ProposalNotFound(proposalId);
         }
+
+        var isRetainedProposer =
+            string.Equals(authority.Actor, callerAuthority.Actor, StringComparison.Ordinal) &&
+            string.Equals(authority.Issuer, callerAuthority.Issuer, StringComparison.Ordinal) &&
+            string.Equals(authority.Scheme, callerAuthority.Scheme, StringComparison.Ordinal);
+        var readOperation = isRetainedProposer ? operation : OperatorOperation.Read;
 
         var jobService = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
             ?? throw new InvalidOperationException("The authorization service is unavailable.");
-        await jobService.EnsureCallerAuthorizedAsync(
-            principal,
-            resourceType,
-            operation,
-            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await jobService.EnsureCallerAuthorizedAsync(
+                principal,
+                resourceType,
+                readOperation,
+                cancellationToken).ConfigureAwait(false);
+
+            var evaluator = httpContext.RequestServices.GetService<IOperatorAuthorizationEvaluator>();
+            if (evaluator is not null)
+            {
+                var exact = await evaluator.EvaluateAsync(
+                    principal,
+                    new OperatorAuthorizationRequest
+                    {
+                        ResourceType = resourceType,
+                        ResourceId = authority.ResourceId,
+                        Operation = readOperation,
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                if (!exact.IsAllowed)
+                {
+                    throw ProposalNotFound(proposalId);
+                }
+            }
+        }
+        catch (GeoprocessingAuthorizationException)
+        {
+            throw ProposalNotFound(proposalId);
+        }
 
         var resource = new McpProposalResource
         {
@@ -112,4 +140,7 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         return McpResourceHelpers.SingleJsonContent(uri, resource, McpJsonContext.Default.McpProposalResource);
     }
+
+    private static KeyNotFoundException ProposalNotFound(string proposalId)
+        => new($"Proposal '{proposalId}' was not found.");
 }

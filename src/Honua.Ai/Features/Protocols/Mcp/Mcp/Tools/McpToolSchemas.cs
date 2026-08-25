@@ -68,26 +68,28 @@ internal static class McpToolSchemas
     private const string ProposeOperationArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["kind"],
+          "required": ["kind", "resourceId"],
           "properties": {
             "kind": {
               "type": "string",
               "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"],
               "description": "In-scope mutating control-plane operation class to propose."
             },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact tenant-scoped target resource identifier bound to the proposal."
+            },
             "reason": {
               "type": "string",
               "description": "Operator-facing reason or change note for the proposal."
-            },
-            "executionPayload": {
-              "type": "string",
-              "description": "Opaque, class-specific JSON execution payload replayed when the proposal is approved."
             },
             "idempotencyKey": {
               "type": "string",
               "description": "Stable idempotency key for the underlying operation."
             }
-          }
+          },
+          "additionalProperties": false
         }
         """;
 
