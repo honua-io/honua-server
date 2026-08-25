@@ -76,11 +76,11 @@ internal static class ConsoleAccessEndpoints
         }
 
         var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        var workspaceRoleNames = GetWorkspaceRoleNames(allRoles, normalizedWorkspaceId);
         var roles = allRoles
             .Where(role => role.IsBuiltIn || IsOwnedByWorkspace(role, normalizedWorkspaceId))
             .ToArray();
         var users = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
-        var roleNames = roles.Select(static role => role.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var projected = roles
             .OrderByDescending(static role => role.IsBuiltIn)
             .ThenBy(static role => role.Name, StringComparer.OrdinalIgnoreCase)
@@ -96,7 +96,7 @@ internal static class ConsoleAccessEndpoints
             Roles = projected,
             BuiltInRoleCount = roles.Count(static role => role.IsBuiltIn),
             CustomRoleCount = roles.Count(static role => !role.IsBuiltIn),
-            MembersAffected = users.Count(user => user.IsActive && user.Roles.Any(roleNames.Contains)),
+            MembersAffected = users.Count(user => user.IsActive && user.Roles.Any(workspaceRoleNames.Contains)),
             CanManageRoles = true,
         };
 
@@ -115,13 +115,14 @@ internal static class ConsoleAccessEndpoints
         }
 
         var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        var workspaceRoleNames = GetWorkspaceRoleNames(allRoles, normalizedWorkspaceId);
         var roles = allRoles
             .Where(role => role.IsBuiltIn || IsOwnedByWorkspace(role, normalizedWorkspaceId))
             .ToArray();
         var rolesByName = roles.ToDictionary(static role => role.Name, StringComparer.OrdinalIgnoreCase);
         var allUsers = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
         var users = allUsers
-            .Where(user => user.Roles.Any(rolesByName.ContainsKey))
+            .Where(user => user.Roles.Any(workspaceRoleNames.Contains))
             .ToArray();
         var members = users
             .OrderBy(static user => user.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -389,6 +390,14 @@ internal static class ConsoleAccessEndpoints
             string.Equals(grant.Service, ConsoleAccessService, StringComparison.OrdinalIgnoreCase)
             && string.Equals(grant.Layer, workspaceId, StringComparison.Ordinal)
             && string.Equals(grant.Operation, WorkspaceMembershipOperation, StringComparison.Ordinal));
+
+    private static HashSet<string> GetWorkspaceRoleNames(
+        IReadOnlyList<RoleDefinition> roles,
+        string workspaceId) =>
+        roles
+            .Where(role => !role.IsBuiltIn && IsOwnedByWorkspace(role, workspaceId))
+            .Select(static role => role.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static bool TryValidateWrite(
         string workspaceId,

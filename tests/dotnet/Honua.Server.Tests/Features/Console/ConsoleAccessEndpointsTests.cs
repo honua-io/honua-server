@@ -191,6 +191,12 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             DisplayName = "Console Both",
             Roles = [firstRole.Name, secondRole.Name],
         }));
+        var builtInOnly = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "console-global-admin@example.test",
+            DisplayName = "Console Global Admin",
+            Roles = ["admin"],
+        }));
 
         var firstMembership = await ReadAsync<ConsoleTeamMembership>(
             await _client.GetAsync($"/api/v1/console/access/{firstWorkspace}/members"));
@@ -198,6 +204,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Contains(firstMembership.Members, member =>
             member.Id == both.UserId && member.RoleName == firstRole.Name);
         Assert.DoesNotContain(firstMembership.Members, member => member.Id == secondOnly.UserId);
+        Assert.DoesNotContain(firstMembership.Members, member => member.Id == builtInOnly.UserId);
 
         var secondMembership = await ReadAsync<ConsoleTeamMembership>(
             await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/members"));
@@ -205,6 +212,14 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Contains(secondMembership.Members, member =>
             member.Id == both.UserId && member.RoleName == secondRole.Name);
         Assert.DoesNotContain(secondMembership.Members, member => member.Id == firstOnly.UserId);
+        Assert.DoesNotContain(secondMembership.Members, member => member.Id == builtInOnly.UserId);
+
+        var firstOverview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{firstWorkspace}/roles"));
+        var secondOverview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/roles"));
+        Assert.Equal(2, firstOverview.MembersAffected);
+        Assert.Equal(2, secondOverview.MembersAffected);
     }
 
     private async Task<ConsoleRbacRole> CreateRoleAsync(string workspaceId, string name)
