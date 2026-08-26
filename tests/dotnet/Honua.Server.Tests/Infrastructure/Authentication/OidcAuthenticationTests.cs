@@ -724,6 +724,15 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/openapi.json")]
     [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
     [Endpoint("GET /docs/protocols.openapi.json")]
+    [Endpoint("GET /openapi.json")]
+    [Endpoint("GET /ogc/features/api")]
+    [Endpoint("GET /ogc/coverages/api")]
+    [Endpoint("GET /ogc/coverages/openapi.json")]
+    [Endpoint("GET /ogc/tiles/openapi.json")]
+    [Endpoint("GET /ogc/maps/openapi.json")]
+    [Endpoint("GET /ogc/styles/openapi.json")]
+    [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /stac/openapi.json")]
     public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
     {
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
@@ -745,7 +754,16 @@ public class OidcAuthenticationTests
             "/api/v{version:apiVersion}/admin/capabilities",
             "/api/v{version:apiVersion}/admin/openapi.json",
             "/.well-known/oauth-protected-resource/mcp",
-            "/docs/protocols.openapi.json"
+            "/docs/protocols.openapi.json",
+            "/openapi.json",
+            "/ogc/features/api",
+            "/ogc/coverages/api",
+            "/ogc/coverages/openapi.json",
+            "/ogc/tiles/openapi.json",
+            "/ogc/maps/openapi.json",
+            "/ogc/styles/openapi.json",
+            "/ogc/processes/openapi.json",
+            "/stac/openapi.json"
         })
         {
             var endpoint = Assert.Single(endpointsByRoute[route], endpoint =>
@@ -787,6 +805,53 @@ public class OidcAuthenticationTests
             }
 
             Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /openapi.json")]
+    [Endpoint("GET /ogc/features/api")]
+    [Endpoint("GET /ogc/coverages/api")]
+    [Endpoint("GET /ogc/coverages/openapi.json")]
+    [Endpoint("GET /ogc/tiles/openapi.json")]
+    [Endpoint("GET /ogc/maps/openapi.json")]
+    [Endpoint("GET /ogc/styles/openapi.json")]
+    [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /stac/openapi.json")]
+    public async Task OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        foreach (var route in new[]
+        {
+            "/openapi.json",
+            "/ogc/features/api",
+            "/ogc/coverages/api",
+            "/ogc/coverages/openapi.json",
+            "/ogc/tiles/openapi.json",
+            "/ogc/maps/openapi.json",
+            "/ogc/styles/openapi.json",
+            "/ogc/processes/openapi.json",
+            "/stac/openapi.json"
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var response = await client.SendAsync(request);
+
+            if (response.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                _output.WriteLine($"{route} returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            }
+
+            Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.NotEqual(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
         }
     }
 

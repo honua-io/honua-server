@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -77,6 +78,7 @@ internal static class CoreEndpoints
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")
             .WithDescription("The OpenAPI specification describes all available endpoints and their parameters")
             .WithTags("OGC API Features")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcOpenApi")
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
@@ -88,6 +90,7 @@ internal static class CoreEndpoints
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")
             .WithDescription("Alias for the OpenAPI specification at /openapi.json")
             .WithTags("OGC API Features")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcOpenApi")
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);

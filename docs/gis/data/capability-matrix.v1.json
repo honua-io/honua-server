@@ -1232,7 +1232,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 136,
+      "provingTestCount": 138,
       "maturity": {
         "implemented": 10
       },
@@ -1781,7 +1781,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 8,
-      "provingTestCount": 33,
+      "provingTestCount": 37,
       "maturity": {
         "implemented": 8
       },
@@ -1815,7 +1815,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 252,
+      "provingTestCount": 256,
       "maturity": {
         "implemented": 21
       },
@@ -1881,7 +1881,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 129,
+      "provingTestCount": 131,
       "maturity": {
         "implemented": 10
       },
@@ -1934,7 +1934,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 13,
-      "provingTestCount": 65,
+      "provingTestCount": 67,
       "maturity": {
         "implemented": 13
       },
@@ -1986,7 +1986,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 12,
-      "provingTestCount": 111,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 12
       },
@@ -2358,7 +2358,7 @@
       "category": "Styling",
       "edition": "Community",
       "entryCount": 8,
-      "provingTestCount": 66,
+      "provingTestCount": 68,
       "maturity": {
         "implemented": 8
       },
