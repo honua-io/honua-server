@@ -4,23 +4,39 @@ name: Serving Image Boundary
 # lean PR Gate. Release, deploy, and nightly workflows also enforce this same
 # final-rootfs boundary; this path-filtered PR workflow supplies earlier image
 # feedback without lengthening the required merge-train floor.
+#
+# ROUTING CONTRACT (#3204). The `pull_request` trigger below is deliberately
+# limited to inputs that DEFINE the image: the three production AOT Dockerfiles,
+# the Azure Functions host assets they copy, the build context filter, the
+# in-image restore helper, the boundary verifier, its fixture harness, and this
+# workflow. Managed-source inputs (`src/**`, `eng/**`, the solution, the build
+# props, the embedded catalogs/fixtures) are NOT triggers, because they change on
+# nearly every pull request and invalidate all three variants at once - three
+# serial native builds, a ~140-minute median critical path, on every review-fix
+# push. Their evidence is placed elsewhere, and every class still has a named
+# owner before the image is published:
+#
+#   * AOT compile risk (`src/**`, `eng/**`, props, solution) -> the merge train's
+#     batch CI `aot-build` job, pre-merge, on the exact batch that lands. That
+#     job was gated on `full_ci`, which an ordinary selective batch reports as
+#     false, so it never ran on the landing path; #3204 rescoped it to the
+#     change classes it depends on. Compile risk is now paid once per batch
+#     instead of three container builds per review-fix push.
+#   * Boundary DETECTOR correctness -> `pr-gate.yml`, per PR, per push, on every
+#     clean and injected-rootfs fixture (no container build required).
+#   * Final-rootfs boundary for all three production variants -> post-merge
+#     `nightly-container-build.yml` (daily), and again in `deploy.yml`,
+#     `deploy-platform-images.yml`, and `release-bundle.yml` before any
+#     publication - each verifying the exact digest it is about to promote.
+#
+# #3204 warns that simply deleting the PR triggers would trade cost for delayed
+# defects, so nothing is deleted here: source-driven final-rootfs verification
+# moves from "every push" to "at most one night", and the pre-merge lanes above
+# keep compile and detector risk on the PR itself.
 on:
   pull_request:
     branches: [trunk]
     paths:
-      - 'src/**'
-      - 'eng/**'
-      - 'samples/Honua.StacOpsDemo/**'
-      - 'docs/gis/data/feature-catalog.json'
-      - 'docs/developer/api-specs/admin-api.json'
-      - 'tests/fixtures/ai-builder/**'
-      - 'Honua.sln'
-      - 'global.json'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'NuGet.config'
-      - '.editorconfig'
       - '.dockerignore'
       - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.lambda.aot'
@@ -30,10 +46,6 @@ on:
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/ci/fixtures/validate-serving-image-boundary.py'
       - '.github/workflows/serving-image-boundary.yml'
-      - '.github/workflows/release-bundle.yml'
-      - '.github/workflows/deploy.yml'
-      - '.github/workflows/deploy-platform-images.yml'
-      - '.github/workflows/nightly-container-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -76,11 +88,13 @@ jobs:
           functions=false
 
           # Each production AOT image publishes the same Honua.Server graph, so
-          # common source/build inputs invalidate all variants. Dockerfile-only
-          # changes retain variant-level selectivity.
+          # shared image inputs invalidate all variants. Dockerfile-only changes
+          # retain variant-level selectivity. These arms must stay identical to
+          # the trigger paths above: `scripts/ci/native-image-impact.py` parses
+          # both and fails closed when they diverge.
           while IFS= read -r path; do
             case "$path" in
-              src/*|eng/*|samples/Honua.StacOpsDemo/*|docs/gis/data/feature-catalog.json|docs/developer/api-specs/admin-api.json|tests/fixtures/ai-builder/*|Honua.sln|global.json|Directory.Build.props|Directory.Build.targets|Directory.Packages.props|NuGet.config|.editorconfig|.dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml|.github/workflows/release-bundle.yml|.github/workflows/deploy.yml|.github/workflows/deploy-platform-images.yml|.github/workflows/nightly-container-build.yml)
+              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
                 functions=true

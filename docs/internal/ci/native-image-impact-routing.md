@@ -79,11 +79,38 @@ successful run). Grouping impacted heads by their selected input set shows
 input set already built on the same pull request**; one review-heavy pull
 request produced 21 serving builds across 3 distinct input sets.
 
-Exact-input reuse, not path narrowing, is the mechanism that can recover those
-minutes. The v3 receipt carries the per-image content digests required to
-measure it, and the ledger counts a head as reuse-eligible only when an
-attestation for byte-identical inputs already existed when that head's own
-image work started.
+Exact-input reuse is the mechanism that can recover those minutes *while keeping
+the evidence on the pull request*. It remains the answer for the GDAL worker
+lane, whose Trivy verdict depends on the vulnerability database at scan time and
+is never reusable across days. The v3 receipt carries the per-image content
+digests required to measure it, and the ledger counts a head as reuse-eligible
+only when an attestation for byte-identical inputs already existed when that
+head's own image work started.
+
+### The serving trigger was narrowed instead (2026-08-25, #3204)
+
+The serving lane took the other exit. Rather than reuse per-push evidence,
+`serving-image-boundary.yml` stopped asking for it: its `pull_request` trigger
+now carries only image-DEFINING inputs, and managed source moved to the batch
+train's `aot-build` (compile risk, pre-merge), `pr-gate.yml`'s detector fixtures
+(per push), and the nightly/release/deploy lanes (final rootfs). See
+`workflow-inventory.md` for the placement table.
+
+Two consequences for this observer:
+
+- **The legacy replay policy changed.** `.github/native-image-impact.json`'s
+  `legacy.serving_*` patterns were narrowed in lockstep with the workflow, as
+  the fail-closed case-arm cross-check requires. Receipts emitted before that
+  change replayed a different legacy policy and are bound to a different policy
+  blob SHA; they are not comparable to later ones and must not be pooled with
+  them in a promotion count.
+- **The cohorts invert.** Managed-source heads now report
+  `serving_candidate_only`, not `serving_legacy_only`: the graph-derived
+  candidate would re-add exactly the per-push image builds the narrowing
+  removed. The candidate router as written is therefore no longer a narrowing of
+  the authoritative trigger and cannot be promoted on a "narrows nothing, so it
+  is safe" argument. Its promotion criteria need restating against the new
+  baseline before any enforcement decision.
 
 #### What the digest addresses, exactly
 
