@@ -959,6 +959,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/bearer")]
     [Endpoint("GET /api/v1/admin/config")]
+    [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi()
     {
         using var stubFactory = CreateStubFactory();
@@ -994,6 +995,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
             var adminResponse = await bearerClient.GetAsync("/api/v1/admin/config");
             adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var authConfigResponse = await bearerClient.GetAsync("/api/v1/admin/auth/config");
+            authConfigResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
