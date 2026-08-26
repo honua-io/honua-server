@@ -292,10 +292,43 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/serving-image-boundary.yml"));
 
-        workflow.Should().Contain("file: docker/Dockerfile.aot");
-        workflow.Should().Contain("file: docker/Dockerfile.lambda.aot");
-        workflow.Should().Contain("file: docker/Dockerfile.functions.aot");
-        workflow.Should().Contain(VerifierCommand, Exactly.Thrice());
+        // The three variants build as parallel matrix legs, not three serial
+        // step pairs in one job: they share no artifact, cache scope, or step
+        // output, and the serial arrangement cost a ~140-minute critical path
+        // where the bound should be the slowest single build. The proof that
+        // every production variant is covered is therefore the matrix table
+        // plus one parameterised build/verify pair, asserted together here.
+        foreach (var productionVariant in new[]
+                 {
+                     "docker/Dockerfile.aot",
+                     "docker/Dockerfile.lambda.aot",
+                     "docker/Dockerfile.functions.aot"
+                 })
+        {
+            workflow.Should().Contain($"dockerfile: {productionVariant}",
+                "every production AOT variant needs its own matrix leg");
+        }
+
+        workflow.Should().Contain("file: ${{ matrix.dockerfile }}",
+            "the shared build step must build the Dockerfile its own leg names");
+        workflow.Should().Contain(VerifierCommand + " ${{ matrix.tag }}", Exactly.Once(),
+            "the shared verify step must inspect the image its own leg just built");
+        workflow.Should().Contain("fail-fast: false",
+            "one variant's failure must not cancel and hide the evidence for the others");
+
+        // Warm per-variant caches must survive the serial-to-matrix refactor; a
+        // renamed scope would silently make every leg cold for a build that
+        // takes tens of minutes cold and roughly a minute warm.
+        foreach (var cacheScope in new[]
+                 {
+                     "pr-aot-boundary",
+                     "pr-lambda-aot-boundary",
+                     "pr-functions-aot-boundary"
+                 })
+        {
+            workflow.Should().Contain($"cache_scope: {cacheScope}");
+        }
+
         workflow.Should().Contain("http://localhost:8080/healthz/live");
         workflow.Should().Contain("pull_request:");
         workflow.Should().Contain("paths:");
