@@ -882,6 +882,7 @@ internal static class ProcessEndpoints
                         new OgcProcessIoSchema
                         {
                             Type = "string",
+                            Format = "byte",
                             ContentMediaType = "application/wkb"
                         },
                         new OgcProcessIoSchema
