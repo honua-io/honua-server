@@ -92,6 +92,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         var queriedSources = new List<OperateEventKind>();
         Dictionary<OperateEventKind, string>? sourceErrors = null;
         var partial = false;
+        var scanTruncated = false;
 
         var queryAlerts = Wanted(OperateEventKind.Alert) && _alertQuery is not null;
         if (queryAlerts)
@@ -101,7 +102,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var alertTask = queryAlerts
             ? LoadAlertsAsync(filter, probeSize, cancellationToken)
-            : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
+            : Task.FromResult(SourceLoadResult.Empty);
 
         var queryAudit = Wanted(OperateEventKind.Audit) && _auditReader is not null;
         if (queryAudit)
@@ -111,7 +112,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var auditTask = queryAudit
             ? LoadAuditAsync(filter, probeSize, cancellationToken)
-            : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
+            : Task.FromResult(SourceLoadResult.Empty);
 
         var queryJobs = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null);
         if (queryJobs)
@@ -121,7 +122,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var jobTask = queryJobs
             ? LoadJobsAsync(filter, probeSize, cancellationToken)
-            : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
+            : Task.FromResult(SourceLoadResult.Empty);
 
         var queryReleases = Wanted(OperateEventKind.Release) &&
             _releaseTimeline is not null &&
@@ -133,11 +134,23 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var releaseTask = queryReleases
             ? LoadReleasesAsync(filter, probeSize)
-            : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
+            : Task.FromResult(SourceLoadResult.Empty);
 
         try
         {
-            collected.AddRange(await alertTask.ConfigureAwait(false));
+            var result = await alertTask.ConfigureAwait(false);
+            collected.AddRange(result.Items);
+            scanTruncated |= result.ScanTruncated;
+            if (result.PartialResult)
+            {
+                partial = true;
+                sourceErrors ??= new();
+                sourceErrors[OperateEventKind.Alert] = "alert source incomplete";
+                if (result.Exception is not null)
+                {
+                    ObservabilityFeedLog.AlertSourceFailed(_logger, result.Exception);
+                }
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -149,7 +162,19 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await auditTask.ConfigureAwait(false));
+            var result = await auditTask.ConfigureAwait(false);
+            collected.AddRange(result.Items);
+            scanTruncated |= result.ScanTruncated;
+            if (result.PartialResult)
+            {
+                partial = true;
+                sourceErrors ??= new();
+                sourceErrors[OperateEventKind.Audit] = "audit source incomplete";
+                if (result.Exception is not null)
+                {
+                    ObservabilityFeedLog.AuditSourceFailed(_logger, result.Exception);
+                }
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -161,7 +186,19 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await jobTask.ConfigureAwait(false));
+            var result = await jobTask.ConfigureAwait(false);
+            collected.AddRange(result.Items);
+            scanTruncated |= result.ScanTruncated;
+            if (result.PartialResult)
+            {
+                partial = true;
+                sourceErrors ??= new();
+                sourceErrors[OperateEventKind.Job] = "job source incomplete";
+                if (result.Exception is not null)
+                {
+                    ObservabilityFeedLog.JobSourceFailed(_logger, result.Exception);
+                }
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -173,7 +210,19 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await releaseTask.ConfigureAwait(false));
+            var result = await releaseTask.ConfigureAwait(false);
+            collected.AddRange(result.Items);
+            scanTruncated |= result.ScanTruncated;
+            if (result.PartialResult)
+            {
+                partial = true;
+                sourceErrors ??= new();
+                sourceErrors[OperateEventKind.Release] = "release source incomplete";
+                if (result.Exception is not null)
+                {
+                    ObservabilityFeedLog.ReleaseSourceFailed(_logger, result.Exception);
+                }
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -193,13 +242,14 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         {
             Items = trimmed,
             HasMore = hasMore,
+            Truncated = hasMore || scanTruncated,
             QueriedSources = queriedSources,
             PartialResult = partial,
             SourceErrors = sourceErrors
         };
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadAlertsAsync(
+    private async Task<SourceLoadResult> LoadAlertsAsync(
         OperateEventFilter filter,
         int pageSize,
         CancellationToken cancellationToken)
@@ -208,24 +258,26 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         if (!AlertSourceCanMatch(filter))
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
         {
             if (!TryParseAlertResourceRef(filter.ResourceRef, out var eventId))
             {
-                return Array.Empty<OperateEvent>();
+                return SourceLoadResult.Empty;
             }
 
             var item = await _alertQuery!.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
             if (item is null)
             {
-                return Array.Empty<OperateEvent>();
+                return SourceLoadResult.Empty;
             }
 
             var value = MapAlertEvent(item);
-            return MatchesFilter(filter, value) ? new[] { value } : Array.Empty<OperateEvent>();
+            return new SourceLoadResult(
+                MatchesFilter(filter, value) ? new[] { value } : Array.Empty<OperateEvent>(),
+                ScanTruncated: false);
         }
 
         var alertFilter = new AlertEventFilter
@@ -240,9 +292,29 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var results = new List<OperateEvent>(pageSize);
         string? cursor = null;
+        var hasRemainingPage = false;
+        var cursorCycleDetected = false;
+        var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+        var scannedPages = 0;
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
-            var page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            AlertEventPage page;
+            try
+            {
+                page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                results.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+                var preserved = results.Count <= pageSize ? results : results.GetRange(0, pageSize);
+                return new SourceLoadResult(
+                    preserved,
+                    ScanTruncated: true,
+                    PartialResult: true,
+                    Exception: ex);
+            }
+
+            scannedPages++;
             var itemIndex = 0;
             while (itemIndex < page.Items.Count && results.Count < pageSize)
             {
@@ -255,19 +327,26 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
                 itemIndex++;
             }
 
-            if (string.IsNullOrEmpty(page.NextCursor) ||
-                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            hasRemainingPage = !string.IsNullOrEmpty(page.NextCursor);
+            if (!hasRemainingPage)
             {
+                break;
+            }
+
+            if (!seenCursors.Add(page.NextCursor!))
+            {
+                cursorCycleDetected = true;
                 break;
             }
 
             cursor = page.NextCursor;
         }
 
-        return results;
+        var scanTruncated = cursorCycleDetected || (scannedPages == MaxSourceScanPages && hasRemainingPage);
+        return new SourceLoadResult(results, scanTruncated, PartialResult: scanTruncated);
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadAuditAsync(
+    private async Task<SourceLoadResult> LoadAuditAsync(
         OperateEventFilter filter,
         int pageSize,
         CancellationToken cancellationToken)
@@ -276,19 +355,19 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         if (!AuditSourceCanMatch(filter))
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         var outcomes = ToAuditOutcomes(filter.MinimumSeverity);
         if (outcomes is { Length: 0 })
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         var resourceFilter = ParseAuditResourceRef(filter.ResourceRef);
         if (!string.IsNullOrWhiteSpace(filter.ResourceRef) && resourceFilter is null)
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         var auditFilter = new AuditLogFilter
@@ -305,9 +384,27 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var results = new List<OperateEvent>(pageSize);
         string? cursor = null;
+        var hasRemainingPage = false;
+        var cursorCycleDetected = false;
+        var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+        var scannedPages = 0;
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
-            var page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            AuditEventPage page;
+            try
+            {
+                page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return new SourceLoadResult(
+                    results,
+                    ScanTruncated: true,
+                    PartialResult: true,
+                    Exception: ex);
+            }
+
+            scannedPages++;
             var itemIndex = 0;
             while (itemIndex < page.Items.Count && results.Count < pageSize)
             {
@@ -321,16 +418,23 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
                 itemIndex++;
             }
 
-            if (string.IsNullOrEmpty(page.NextCursor) ||
-                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            hasRemainingPage = !string.IsNullOrEmpty(page.NextCursor);
+            if (!hasRemainingPage)
             {
+                break;
+            }
+
+            if (!seenCursors.Add(page.NextCursor!))
+            {
+                cursorCycleDetected = true;
                 break;
             }
 
             cursor = page.NextCursor;
         }
 
-        return results;
+        var scanTruncated = cursorCycleDetected || (scannedPages == MaxSourceScanPages && hasRemainingPage);
+        return new SourceLoadResult(results, scanTruncated, PartialResult: scanTruncated);
     }
 
     private static bool MatchesAuditResourceFilter(
@@ -354,7 +458,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             (resourceRef?.StartsWith(filter.ResourceType + "/", StringComparison.Ordinal) ?? false);
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadJobsAsync(
+    private async Task<SourceLoadResult> LoadJobsAsync(
         OperateEventFilter filter,
         int pageSize,
         CancellationToken cancellationToken)
@@ -367,57 +471,59 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         var results = new List<OperateEvent>(pageSize * 2);
         var seenOperationIds = new HashSet<string>(StringComparer.Ordinal);
         var seenEventIds = new HashSet<string>(StringComparer.Ordinal);
+        var scanTruncated = false;
+        var partialResult = false;
+        Exception? firstException = null;
 
         if (_jobStore is not null)
         {
+            var durable = await LoadDurableJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false);
             AddUniqueJobEvents(
                 results,
-                await LoadDurableJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false),
+                durable.Items,
                 seenOperationIds,
                 seenEventIds);
+            scanTruncated |= durable.ScanTruncated;
+            partialResult |= durable.PartialResult;
+            firstException ??= durable.Exception;
         }
 
         if (_progressStore is not null)
         {
+            var progress = await LoadProgressJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false);
             AddUniqueJobEvents(
                 results,
-                await LoadProgressJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false),
+                progress.Items,
                 seenOperationIds,
                 seenEventIds);
+            scanTruncated |= progress.ScanTruncated;
+            partialResult |= progress.PartialResult;
+            firstException ??= progress.Exception;
         }
 
         results.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
         if (results.Count <= pageSize)
         {
-            return results;
+            return new SourceLoadResult(results, scanTruncated, partialResult, firstException);
         }
 
-        return results.GetRange(0, pageSize);
+        return new SourceLoadResult(results.GetRange(0, pageSize), scanTruncated, partialResult, firstException);
     }
 
-    private Task<IReadOnlyList<OperateEvent>> LoadReleasesAsync(OperateEventFilter filter, int pageSize)
+    private Task<SourceLoadResult> LoadReleasesAsync(OperateEventFilter filter, int pageSize)
     {
         Debug.Assert(_releaseTimeline is not null);
 
-        var results = new List<OperateEvent>(pageSize);
-        foreach (var value in _releaseTimeline!.Snapshot())
-        {
-            if (!MatchesFilter(filter, value))
-            {
-                continue;
-            }
+        var results = _releaseTimeline!.Snapshot()
+            .Where(value => MatchesFilter(filter, value))
+            .OrderByDescending(static value => value.OccurredAt)
+            .Take(pageSize)
+            .ToArray();
 
-            results.Add(value);
-            if (results.Count == pageSize)
-            {
-                break;
-            }
-        }
-
-        return Task.FromResult<IReadOnlyList<OperateEvent>>(results);
+        return Task.FromResult(new SourceLoadResult(results, ScanTruncated: false));
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadProgressJobsAsync(
+    private async Task<SourceLoadResult> LoadProgressJobsAsync(
         OperateEventFilter filter,
         int pageSize,
         CancellationToken cancellationToken)
@@ -426,24 +532,38 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         if (!ProgressJobSourceCanMatch(filter))
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
-        var ids = await _progressStore!.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> ids;
+        try
+        {
+            ids = await _progressStore!.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new SourceLoadResult(
+                Array.Empty<OperateEvent>(),
+                ScanTruncated: false,
+                PartialResult: true,
+                Exception: ex);
+        }
+
         if (ids.Count == 0)
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         // GetActiveOperationIdsAsync returns IDs in undefined order; we must
         // load and order everything before truncating so the newest jobs are
         // not silently dropped when ids.Count > pageSize.
         var mapped = new List<OperateEvent>(ids.Count);
+        var partialResult = false;
         foreach (var id in ids)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -454,6 +574,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                partialResult = true;
                 ObservabilityFeedLog.ProgressFetchFailed(_logger, id, ex);
                 continue;
             }
@@ -475,33 +596,61 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         mapped.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
         if (mapped.Count <= pageSize)
         {
-            return mapped;
+            return new SourceLoadResult(mapped, ScanTruncated: false, partialResult);
         }
 
-        return mapped.GetRange(0, pageSize);
+        return new SourceLoadResult(mapped.GetRange(0, pageSize), ScanTruncated: false, partialResult);
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadSingleJobAsync(
+    private async Task<SourceLoadResult> LoadSingleJobAsync(
         OperateEventFilter filter,
         string operationId,
         CancellationToken cancellationToken)
     {
+        var partialResult = false;
+        Exception? firstException = null;
         if (_jobStore is not null)
         {
-            var job = await _jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            ExecutionJobRecord? job = null;
+            try
+            {
+                job = await _jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                partialResult = true;
+                firstException = ex;
+            }
+
             if (job is not null)
             {
                 var durable = MapExecutionJob(job);
-                return MatchesDurableJobFilter(filter, job, durable) ? new[] { durable } : Array.Empty<OperateEvent>();
+                return new SourceLoadResult(
+                    MatchesDurableJobFilter(filter, job, durable) ? new[] { durable } : Array.Empty<OperateEvent>(),
+                    ScanTruncated: false,
+                    partialResult,
+                    firstException);
             }
         }
 
-        return _progressStore is null
-            ? Array.Empty<OperateEvent>()
-            : await LoadSingleProgressJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
+        if (_progressStore is null)
+        {
+            return new SourceLoadResult(
+                Array.Empty<OperateEvent>(),
+                ScanTruncated: false,
+                partialResult,
+                firstException);
+        }
+
+        var progress = await LoadSingleProgressJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
+        return progress with
+        {
+            PartialResult = partialResult || progress.PartialResult,
+            Exception = firstException ?? progress.Exception,
+        };
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadSingleProgressJobAsync(
+    private async Task<SourceLoadResult> LoadSingleProgressJobAsync(
         OperateEventFilter filter,
         string operationId,
         CancellationToken cancellationToken)
@@ -516,24 +665,27 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ObservabilityFeedLog.ProgressFetchFailed(_logger, operationId, ex);
-            return Array.Empty<OperateEvent>();
+            return new SourceLoadResult(
+                Array.Empty<OperateEvent>(),
+                ScanTruncated: false,
+                PartialResult: true);
         }
 
         if (progress is null)
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
         var value = MapProgress(progress);
         if (!MatchesFilter(filter, value))
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
-        return new[] { value };
+        return new SourceLoadResult(new[] { value }, ScanTruncated: false);
     }
 
-    private async Task<IReadOnlyList<OperateEvent>> LoadDurableJobsAsync(
+    private async Task<SourceLoadResult> LoadDurableJobsAsync(
         OperateEventFilter filter,
         int pageSize,
         CancellationToken cancellationToken)
@@ -542,34 +694,51 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         if (!DurableJobSourceCanMatch(filter))
         {
-            return Array.Empty<OperateEvent>();
+            return SourceLoadResult.Empty;
         }
 
-        var results = new List<OperateEvent>(pageSize);
         var scanLimit = Math.Min(MaxPageSize, Math.Max(pageSize, DurableJobScanPageSize));
+        var results = new List<OperateEvent>(MaxSourceScanPages * scanLimit);
         var statuses = ToExecutionJobStatuses(filter.MinimumSeverity);
         string? cursor = null;
-        for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
+        var hasRemainingPage = false;
+        var cursorCycleDetected = false;
+        var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+        for (var scanPage = 0; scanPage < MaxSourceScanPages; scanPage++)
         {
-            var page = await _jobStore.QueryAsync(
-                    new ExecutionJobQuery
-                    {
-                        Statuses = statuses,
-                        RequestedBy = filter.Actor,
-                        CorrelationId = filter.CorrelationId,
-                        TraceId = filter.TraceId,
-                        ResourceRef = filter.ResourceRef,
-                        ReleaseId = filter.ReleaseId,
-                        ChangeSetId = filter.ChangeSetId,
-                        // Lower time bounds are event-time filters because durable
-                        // job events emit UpdatedAt/CompletedAt, not CreatedAt.
-                        // CreatedTo is still safe: a job cannot emit before creation.
-                        CreatedTo = filter.To,
-                        Cursor = cursor,
-                        Limit = scanLimit
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
+            ExecutionJobPage page;
+            try
+            {
+                page = await _jobStore.QueryAsync(
+                        new ExecutionJobQuery
+                        {
+                            Statuses = statuses,
+                            RequestedBy = filter.Actor,
+                            CorrelationId = filter.CorrelationId,
+                            TraceId = filter.TraceId,
+                            ResourceRef = filter.ResourceRef,
+                            ReleaseId = filter.ReleaseId,
+                            ChangeSetId = filter.ChangeSetId,
+                            // Lower time bounds are event-time filters because durable
+                            // job events emit UpdatedAt/CompletedAt, not CreatedAt.
+                            // CreatedTo is still safe: a job cannot emit before creation.
+                            CreatedTo = filter.To,
+                            Cursor = cursor,
+                            Limit = scanLimit
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                results.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+                var preserved = results.Count <= pageSize ? results : results.GetRange(0, pageSize);
+                return new SourceLoadResult(
+                    preserved,
+                    ScanTruncated: true,
+                    PartialResult: true,
+                    Exception: ex);
+            }
 
             foreach (var job in page.Items)
             {
@@ -580,22 +749,30 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
                 }
 
                 results.Add(value);
-                if (results.Count == pageSize)
-                {
-                    break;
-                }
             }
 
-            if (string.IsNullOrEmpty(page.NextCursor) ||
-                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            hasRemainingPage = !string.IsNullOrEmpty(page.NextCursor);
+            if (!hasRemainingPage)
             {
+                break;
+            }
+
+            if (!seenCursors.Add(page.NextCursor!))
+            {
+                cursorCycleDetected = true;
                 break;
             }
 
             cursor = page.NextCursor;
         }
 
-        return results;
+        results.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+        var trimmed = results.Count <= pageSize ? results : results.GetRange(0, pageSize);
+        var scanTruncated = cursorCycleDetected || hasRemainingPage;
+        return new SourceLoadResult(
+            trimmed,
+            ScanTruncated: scanTruncated,
+            PartialResult: scanTruncated);
     }
 
     private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value, bool matchResourceRef = true)
@@ -968,6 +1145,15 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private sealed record SourceLoadResult(
+        IReadOnlyList<OperateEvent> Items,
+        bool ScanTruncated,
+        bool PartialResult = false,
+        Exception? Exception = null)
+    {
+        public static SourceLoadResult Empty { get; } = new(Array.Empty<OperateEvent>(), ScanTruncated: false);
     }
 
     private sealed record AuditResourceFilter(string ResourceType, string? ResourceId);

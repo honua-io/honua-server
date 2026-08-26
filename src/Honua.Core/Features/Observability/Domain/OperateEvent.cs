@@ -300,6 +300,12 @@ public sealed record OperateEventPage
     public bool HasMore { get; init; }
 
     /// <summary>
+    /// Set to true when the page may omit matching events because a source scan
+    /// ended before its upstream cursor was exhausted.
+    /// </summary>
+    public bool Truncated { get; init; }
+
+    /// <summary>
     /// Event-feed components selected for this request, including components that
     /// succeeded with zero rows or failed while being queried.
     /// </summary>

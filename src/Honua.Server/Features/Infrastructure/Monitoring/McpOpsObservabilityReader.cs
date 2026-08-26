@@ -181,6 +181,7 @@ internal sealed class McpOpsObservabilityReader(
                 page.Items.Select(item => item.OccurredAt).ToArray(),
                 page.PartialResult,
                 page.HasMore,
+                page.Truncated,
                 includedSources,
                 failedSources),
         };
