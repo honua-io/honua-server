@@ -45,12 +45,6 @@ internal sealed class ProposeOperationTool : IMcpTool
         "dataPopulateWorkloadId",
         "scriptId",
     ];
-    private static readonly OperationClass[] ModelFacingOperationKinds =
-    [
-        OperationClass.Deploy,
-        OperationClass.MetadataRelease,
-    ];
-
     private readonly ILogger<ProposeOperationTool> _logger;
 
     public ProposeOperationTool(ILogger<ProposeOperationTool> logger)
@@ -93,7 +87,7 @@ internal sealed class ProposeOperationTool : IMcpTool
         // Dedicated surfaces own AdminConfigChange, Geoprocess, and Seed.
         var catalog = httpContext.RequestServices.GetService<IOperationExecutorCatalog>();
         var supportedKinds = catalog?.SupportedKinds
-            .Where(ModelFacingOperationKinds.Contains)
+            .Where(McpProposableOperationKinds.Contains)
             .Select(supportedKind => supportedKind.ToString())
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
@@ -113,7 +107,7 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
-        if (!ModelFacingOperationKinds.Contains(kind))
+        if (!McpProposableOperationKinds.Contains(kind))
         {
             return McpToolHelpers.SuccessResult(
                 new McpProposeOperationOutput

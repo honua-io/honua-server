@@ -292,7 +292,7 @@ internal static class McpToolOutputSchemas
             "supportedKinds": {
               "type": ["array", "null"],
               "items": { "type": "string" },
-              "description": "Operation classes with a genuinely registered executor (routable through the gateway); reported on every response, including rejections, so proposing an unsupported kind is never a silent dead end (#2563)."
+              "description": "Operation classes with a genuinely registered executor that are safely representable by this MCP proposal contract; reported on every response, including rejections, so proposing an unsupported kind is never a silent dead end (#2563)."
             },
             "message": { "type": ["string", "null"] }
           }

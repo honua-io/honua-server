@@ -138,6 +138,7 @@ internal sealed class McpPlatformOpsReader(
         return new McpSupportedOperationKindsOutput
         {
             SupportedKinds = catalog?.SupportedKinds
+                .Where(McpProposableOperationKinds.Contains)
                 .Select(kind => kind.ToString())
                 .OrderBy(name => name, StringComparer.Ordinal)
                 .ToArray() ?? []

@@ -298,7 +298,7 @@
       "family": "Platform operations (reference shape)",
       "schema": "tools/supported_operation_kinds.schema.json",
       "implementationStatus": "implemented",
-      "notes": "Read-only live executor-catalog discovery for least-privilege observe-diagnose-propose loops. Returns only stable OperationClass identifiers backed by registered executors; unsupported kinds remain fail-closed. Response in tools/supported_operation_kinds.result.schema.json. Reference surface lands via honua-server#2628."
+      "notes": "Read-only live executor-catalog discovery for least-privilege observe-diagnose-propose loops. Returns only stable OperationClass identifiers both backed by registered executors and safely representable by the validated generic MCP proposal contract; dedicated or unsupported kinds remain fail-closed. Response in tools/supported_operation_kinds.result.schema.json. Reference surface lands via honua-server#2628."
     },
     {
       "standardName": "propose_rollback",

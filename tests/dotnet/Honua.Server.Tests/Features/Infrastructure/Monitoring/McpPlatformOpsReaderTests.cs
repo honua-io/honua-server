@@ -84,7 +84,7 @@ public sealed class McpPlatformOpsReaderTests
 
         var result = await reader.GetSupportedOperationKindsAsync(principal, CancellationToken.None);
 
-        result.SupportedKinds.Should().Equal("AdminConfigChange", "Deploy", "MetadataRelease");
+        result.SupportedKinds.Should().Equal("Deploy", "MetadataRelease");
         await authorization.Received(1).AuthorizeAsync(
             principal,
             Arg.Is<object>(resource => IsOpsReadResource(resource, principal)),
@@ -116,7 +116,7 @@ public sealed class McpPlatformOpsReaderTests
         var changed = await reader.GetSupportedOperationKindsAsync(CreatePrincipal(), CancellationToken.None);
 
         initial.SupportedKinds.Should().Equal("Deploy");
-        changed.SupportedKinds.Should().Equal("AdminConfigChange", "MetadataRelease");
+        changed.SupportedKinds.Should().Equal("MetadataRelease");
     }
 
     [UnitTest]

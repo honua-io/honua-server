@@ -3,8 +3,8 @@
   "schemaRef": "tools/supported_operation_kinds.result.schema.json",
   "validates": "inputs",
   "inputs": {
-    "supportedKinds": ["AdminConfigChange", "Deploy", "MetadataRelease"]
+    "supportedKinds": ["Deploy", "MetadataRelease"]
   },
   "expected": "tool_result",
-  "canonicalRefs": ["IOperationExecutorCatalog"]
+  "canonicalRefs": ["IOperationExecutorCatalog", "McpProposableOperationKinds"]
 }

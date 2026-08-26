@@ -158,7 +158,7 @@ internal static class McpPlatformOpsSchemas
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+                "enum": ["Deploy", "MetadataRelease"]
               },
               "uniqueItems": true
             }
