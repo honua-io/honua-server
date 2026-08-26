@@ -15,10 +15,11 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <summary>
 /// OAuth 2.1 resource-server acceptance of <c>Authorization: Bearer</c> tokens on the
 /// <c>/mcp</c> transport (honua-server#2850). Applied as an endpoint filter so a bearer
-/// token is validated against the host's configured OIDC authorities and, on success,
-/// projected onto <see cref="HttpContext.User"/> before the JSON-RPC handler runs — the
-/// per-tool <c>EnsureCallerAuthorizedAsync</c> grant model then decides authorization on
-/// the resulting principal exactly as it does for the X-API-Key path.
+/// token is routed either to the independently configured OperatorBearer validator or
+/// to the host's external OIDC authorities. On success it is projected onto
+/// <see cref="HttpContext.User"/> before the JSON-RPC handler runs — the per-tool
+/// <c>EnsureCallerAuthorizedAsync</c> grant model then decides authorization on the
+/// resulting principal exactly as it does for the X-API-Key path.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,18 +31,17 @@ namespace Honua.Ai.Protocols.Mcp;
 /// here.
 /// </para>
 /// <para>
-/// Validation reuses the multi-authority OIDC stack rather than a parallel config surface:
-/// the token is authenticated through the already-registered
-/// <see cref="OidcAuthenticationExtensions.CompositeScheme"/>, which selects a
-/// framework-owned bearer validator and enforces issuer, audience, signature, and lifetime
-/// against every configured authority while normalizing claims through the shared
-/// <c>OidcClaimsTransformation</c>. Acceptance is gated on the
+/// External bearer validation reuses the multi-authority OIDC stack through
+/// <see cref="OidcAuthenticationExtensions.CompositeScheme"/>, enforcing issuer, audience,
+/// signature, and lifetime against every configured authority while normalizing claims
+/// through the shared <c>OidcClaimsTransformation</c>. External acceptance is gated on the
 /// same signal that drives the RFC 9728 metadata (honua-server#2849): when no authorization
-/// server is configured there is nothing to validate against, so a presented token is left
-/// unauthenticated and the request keeps its prior anonymous behaviour.
+/// server is configured, a non-operator bearer remains anonymous. OperatorBearer candidates
+/// instead route directly to their independently registered concrete scheme and fail closed
+/// when signature, issuer, audience, or lifetime validation fails.
 /// </para>
 /// <para>
-/// A token that is presented but fails validation — bad signature, expired, wrong issuer,
+/// A token selected for validation that fails — bad signature, expired, wrong issuer,
 /// or an audience minted for another resource — is a resource-server rejection (RFC 6750
 /// <c>invalid_token</c>): the filter short-circuits with HTTP 401 and an MCP-structured
 /// error envelope. The 401 is paired with the RFC 9728 <c>WWW-Authenticate</c> challenge by
@@ -71,17 +71,16 @@ internal static class McpBearerAuthenticationEndpointExtensions
                 return;
             }
 
-            var options = httpContext.RequestServices
-                .GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
-            if (McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count == 0)
+            var authenticationScheme = ResolveBearerAuthenticationScheme(httpContext);
+            if (authenticationScheme is null)
             {
-                // No authority means no bearer identity. Anonymous discovery remains
-                // available, while tool handlers still require an authenticated principal.
+                // No matching operator credential and no external authority means no
+                // bearer identity. Preserve the documented anonymous discovery behavior.
                 await next().ConfigureAwait(false);
                 return;
             }
 
-            var result = await httpContext.AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme)
+            var result = await httpContext.AuthenticateAsync(authenticationScheme)
                 .ConfigureAwait(false);
             if (result.Succeeded && result.Principal is not null)
             {
@@ -132,8 +131,8 @@ internal static class McpBearerAuthenticationEndpointExtensions
     }
 
     /// <summary>
-    /// Endpoint filter that validates a presented bearer token and authenticates the caller
-    /// against the configured OIDC authorities, or rejects an invalid token with a 401.
+    /// Endpoint filter that validates a presented operator or external OIDC bearer against
+    /// its selected concrete scheme, or rejects an invalid selected token with a 401.
     /// </summary>
     public static async ValueTask<object?> AuthenticateBearerAsync(
         EndpointFilterInvocationContext context,
@@ -152,19 +151,6 @@ internal static class McpBearerAuthenticationEndpointExtensions
             return await next(context).ConfigureAwait(false);
         }
 
-        // Resource-server validation is only meaningful when an authorization server is
-        // configured. This is the same gate the RFC 9728 metadata uses (#2849): with no
-        // authority there is nothing to validate the token against, so leave the request
-        // anonymous and preserve prior behaviour. The JwtBearer scheme is registered
-        // whenever this returns a non-empty set, so AuthenticateAsync below cannot fault on
-        // a missing scheme.
-        var options = httpContext.RequestServices
-            .GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
-        if (McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count == 0)
-        {
-            return await next(context).ConfigureAwait(false);
-        }
-
         // The application middleware already validated this exact principal before
         // tenant resolution. Tenant middleware stamps that same instance with the
         // canonical actor/effective tenant, so preserve it rather than authenticating
@@ -174,8 +160,14 @@ internal static class McpBearerAuthenticationEndpointExtensions
             return await next(context).ConfigureAwait(false);
         }
 
+        var authenticationScheme = ResolveBearerAuthenticationScheme(httpContext);
+        if (authenticationScheme is null)
+        {
+            return await next(context).ConfigureAwait(false);
+        }
+
         var result = await httpContext
-            .AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme)
+            .AuthenticateAsync(authenticationScheme)
             .ConfigureAwait(false);
 
         if (result.Succeeded && result.Principal is not null)
@@ -203,6 +195,9 @@ internal static class McpBearerAuthenticationEndpointExtensions
         && CanonicalSecurityActor.IsBearerPrincipal(context.User);
 
     private static bool HasBearerCredential(HttpContext context)
+        => GetBearerCredential(context) is not null;
+
+    private static string? GetBearerCredential(HttpContext context)
     {
         var authorization = context.Request.Headers.Authorization;
         var index = 0;
@@ -213,13 +208,29 @@ internal static class McpBearerAuthenticationEndpointExtensions
                 value.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase) &&
                 value.Length > BearerPrefix.Length)
             {
-                return true;
+                return value[BearerPrefix.Length..].Trim();
             }
 
             index++;
         }
 
-        return false;
+        return null;
+    }
+
+    private static string? ResolveBearerAuthenticationScheme(HttpContext context)
+    {
+        var token = GetBearerCredential(context);
+        var operatorBearer = context.RequestServices.GetService<OperatorBearerTokenService>();
+        if (operatorBearer?.IsOperatorBearerCandidate(token) == true)
+        {
+            return OidcAuthenticationExtensions.OperatorBearerScheme;
+        }
+
+        var options = context.RequestServices
+            .GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
+        return McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count > 0
+            ? OidcAuthenticationExtensions.CompositeScheme
+            : null;
     }
 
     private static bool IsMcpTransportPath(PathString path) =>

@@ -87,6 +87,14 @@ public static class OidcAuthenticationExtensions
         var oidcOptions = new OidcAuthenticationOptions();
         configuration.GetSection(OidcAuthenticationOptions.SectionName).Bind(oidcOptions);
 
+        // Operator bearers are independently signed and validated. Register their
+        // concrete scheme even when external OIDC is disabled; MCP can select it
+        // directly without enabling the OIDC composite/JWT surface.
+        services.AddAuthentication()
+            .AddScheme<AuthenticationSchemeOptions, OperatorBearerAuthenticationHandler>(
+                OperatorBearerScheme,
+                static _ => { });
+
         if (!oidcOptions.Enabled)
         {
             return services;
@@ -106,14 +114,6 @@ public static class OidcAuthenticationExtensions
 
         authBuilder.AddScheme<AuthenticationSchemeOptions, AdminAuthSessionAuthenticationHandler>(
             AdminSessionScheme,
-            static _ => { });
-
-        // Console-consumable operator bearer (#2258, Option C): validates a
-        // Honua-signed forwardable bearer on the admin request path. Issuance and
-        // validation are fail-closed and gated on a configured signing key; routing
-        // to this scheme happens in the composite selector below.
-        authBuilder.AddScheme<AuthenticationSchemeOptions, OperatorBearerAuthenticationHandler>(
-            OperatorBearerScheme,
             static _ => { });
 
         // Add JWT Bearer authentication for API access

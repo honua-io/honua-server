@@ -63,10 +63,10 @@ internal static class AuthenticationOptionsRegistration
         services.Configure<OidcAuthenticationOptions>(
             configuration.GetSection(OidcAuthenticationOptions.SectionName));
 
-        // Console-consumable operator bearer (#2258, Option C). Registered
-        // unconditionally so the issue endpoint can report a fail-closed 503 when the
-        // feature is not configured; the request-path scheme is only wired when OIDC
-        // is enabled (operator login itself requires OIDC).
+        // Console-consumable operator bearer (#2258, Option C). Options and validation
+        // service are registered unconditionally so issuance can report a fail-closed
+        // 503 when the feature is not configured. Its concrete request-path scheme is
+        // also registered independently of external OIDC provider availability.
         services.Configure<OperatorBearerOptions>(
             configuration.GetSection(OperatorBearerOptions.SectionName));
         services.AddSingleton<OperatorBearerTokenService>();

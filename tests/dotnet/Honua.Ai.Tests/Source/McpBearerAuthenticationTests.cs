@@ -8,10 +8,12 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -312,6 +314,80 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         followUpResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = await ReadJsonAsync(followUpResponse);
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public Task Post_OperatorBearer_WithoutExternalOidcProvider_RemainsAuthenticated_WhenOidcEnabled()
+        => AssertOperatorBearerWithoutExternalOidcProviderAsync(oidcEnabled: true);
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public Task Post_OperatorBearer_WithoutExternalOidcProvider_RemainsAuthenticated_WhenOidcDisabled()
+        => AssertOperatorBearerWithoutExternalOidcProviderAsync(oidcEnabled: false);
+
+    private static async Task AssertOperatorBearerWithoutExternalOidcProviderAsync(bool oidcEnabled)
+    {
+        var fixture = CreateOperatorOnlyFixture(oidcEnabled);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            var operatorToken = CreateOperatorToken();
+
+            using var initialize = BuildInitialize(operatorToken);
+            using var initializeResponse = await client.SendAsync(initialize);
+
+            initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            initializeResponse.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues).Should().BeTrue();
+
+            using var anonymousFollowUp = BuildRpc(
+                """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+                sessionValues!.Single(),
+                bearer: null);
+            using var anonymousFollowUpResponse = await client.SendAsync(anonymousFollowUp);
+            using var anonymousFollowUpDocument = await ReadJsonAsync(anonymousFollowUpResponse);
+            anonymousFollowUpDocument.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
+                .GetString().Should().Be("permission_denied",
+                    "the operator bearer must bind the session even without an external OIDC provider");
+
+            using var invalidExternal = BuildInitialize(CreateToken(subject: "external-user"));
+            using var invalidExternalResponse = await client.SendAsync(invalidExternal);
+            invalidExternalResponse.StatusCode.Should().Be(HttpStatusCode.OK,
+                "an external bearer remains anonymous when no external authority can validate it");
+            var externalSessionId = invalidExternalResponse.Headers.GetValues("Mcp-Session-Id").Single();
+
+            using var externalAnonymousFollowUp = BuildRpc(
+                """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""",
+                externalSessionId,
+                bearer: null);
+            using var externalAnonymousFollowUpResponse = await client.SendAsync(externalAnonymousFollowUp);
+            using var externalAnonymousFollowUpDocument = await ReadJsonAsync(externalAnonymousFollowUpResponse);
+            externalAnonymousFollowUpDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+
+            async Task AssertOperatorCandidateRejectedAsync(string token)
+            {
+                using var rejected = BuildInitialize(token);
+                using var rejectedResponse = await client.SendAsync(rejected);
+                rejectedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a token claiming the operator issuer must fail closed when operator validation fails");
+            }
+
+            await AssertOperatorCandidateRejectedAsync(CreateOperatorToken(
+                signingKey: "different-operator-signing-key-at-least-32-bytes-long"));
+            await AssertOperatorCandidateRejectedAsync(CreateOperatorToken(expiresInMinutes: -10));
+
+            using var anonymousInitialize = BuildInitialize(bearer: null);
+            using var anonymousInitializeResponse = await client.SendAsync(anonymousInitialize);
+            anonymousInitializeResponse.StatusCode.Should().Be(HttpStatusCode.OK,
+                "no-credential MCP discovery remains available");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -682,10 +758,12 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static string CreateOperatorToken()
+    private static string CreateOperatorToken(
+        string signingKey = OperatorSigningKey,
+        int expiresInMinutes = 10)
     {
         var credentials = new SigningCredentials(
-            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(OperatorSigningKey)),
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
             SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
             issuer: OperatorIssuer,
@@ -697,10 +775,40 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
                 new Claim("roles", "admin"),
                 new Claim("scope", "honua.mcp.full"),
             ],
-            notBefore: DateTime.UtcNow.AddMinutes(-1),
-            expires: DateTime.UtcNow.AddMinutes(10),
+            expires: DateTime.UtcNow.AddMinutes(expiresInMinutes),
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static WebAppFixture CreateOperatorOnlyFixture(bool oidcEnabled)
+    {
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
+                builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+                builder.UseSetting("Oidc:Enabled", oidcEnabled ? "true" : "false");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:Generic:Enabled", oidcEnabled ? "true" : "false");
+                builder.UseSetting("Oidc:Generic:Authority", Issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", Audience);
+                builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
+                builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+                builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorSigningKey);
+                builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
+            });
+
+        if (oidcEnabled)
+        {
+            fixture.ReplaceService<IOptions<OidcAuthenticationOptions>>(
+                Options.Create(new OidcAuthenticationOptions { Enabled = true }));
+        }
+
+        return fixture;
     }
 
     private static HttpRequestMessage BuildInitialize(string? bearer, string? apiKey = null) => BuildRpc(
