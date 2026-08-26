@@ -84,6 +84,54 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task UpdateRole_RenameIsRejectedWithoutChangingDescriptionOrPermissions()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRoleStoreTests));
+        try
+        {
+            await EnsureRbacTablesAsync(schema);
+            var store = CreateStore(schema);
+            var role = new RoleDefinition
+            {
+                RoleId = Guid.NewGuid(),
+                Name = "assigned-reviewer",
+                Description = "Original description",
+                IsBuiltIn = false,
+                Permissions =
+                [
+                    new PermissionGrant { Service = "maps", Layer = "*", Operation = "query" },
+                ],
+            };
+            await store.CreateRoleAsync(role);
+
+            var renamed = new RoleDefinition
+            {
+                RoleId = role.RoleId,
+                Name = "renamed-reviewer",
+                Description = "Changed description",
+                IsBuiltIn = false,
+                Permissions = [],
+                CreatedAt = role.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            var act = () => store.UpdateRoleAsync(renamed);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*Role names cannot be changed*");
+            var fetched = await store.GetRoleAsync(role.RoleId);
+            fetched.Should().NotBeNull();
+            fetched!.Name.Should().Be(role.Name);
+            fetched.Description.Should().Be(role.Description);
+            fetched.Permissions.Should().BeEquivalentTo(role.Permissions);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeleteRole_BuiltIn_IsRejected_NonBuiltIn_Succeeds()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRoleStoreTests));

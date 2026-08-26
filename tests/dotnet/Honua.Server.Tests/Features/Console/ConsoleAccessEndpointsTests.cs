@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -221,6 +222,38 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
         Assert.Contains(overview.Roles, candidate => candidate.Id == role.Id && candidate.Name == role.Name);
         Assert.DoesNotContain(overview.Roles, static candidate => candidate.Name == "renamed-reviewer");
+
+        var membership = await ReadAsync<ConsoleTeamMembership>(
+            await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));
+        Assert.Contains(membership.Members, member =>
+            member.Id == assignedUser.UserId && member.RoleId == role.Id && member.RoleName == role.Name);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/roles/{id}")]
+    public async Task AdminRoleUpdate_RenameAssignedConsoleRole_ReturnsBadRequestWithoutOrphaningMember()
+    {
+        const string workspace = "admin-immutable-role-name";
+        var role = await CreateRoleAsync(workspace, "admin-assigned-reviewer");
+        var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        var assignedUser = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "admin-assigned-reviewer@example.test",
+            DisplayName = "Admin Assigned Reviewer",
+            Roles = [role.Name],
+        }));
+
+        var renameResponse = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/roles/{role.Id}",
+            new UpdateRoleRequest { Name = "admin-renamed-reviewer" },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, renameResponse.StatusCode);
+        var error = JsonSerializer.Deserialize<ApiResponse<object>>(
+            await renameResponse.Content.ReadAsStringAsync(), JsonOptions);
+        Assert.NotNull(error);
+        Assert.False(error.Success);
+        Assert.Contains("cannot be changed", Assert.IsType<string>(error.Message), StringComparison.OrdinalIgnoreCase);
 
         var membership = await ReadAsync<ConsoleTeamMembership>(
             await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));

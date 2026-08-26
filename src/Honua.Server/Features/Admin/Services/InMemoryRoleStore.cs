@@ -70,9 +70,14 @@ internal sealed class InMemoryRoleStore : IRoleStore
 
     public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
     {
-        if (!_roles.ContainsKey(role.RoleId))
+        if (!_roles.TryGetValue(role.RoleId, out var existing))
         {
             return Task.FromResult<RoleDefinition?>(null);
+        }
+
+        if (!string.Equals(role.Name, existing.Name, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Role names cannot be changed after creation.");
         }
 
         _roles[role.RoleId] = role;
