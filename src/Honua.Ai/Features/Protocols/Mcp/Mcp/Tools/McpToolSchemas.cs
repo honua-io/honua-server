@@ -45,6 +45,19 @@ internal static class McpToolSchemas
             .OrderBy(processId => processId, StringComparer.Ordinal)
             .ToArray();
 
+    /// <summary>
+    /// Closed set of process ids that the MCP execute tool may submit to the
+    /// job runtime. Validation and dry-run schemas retain the complete catalog
+    /// so they can diagnose plans that use protocol- or workflow-only entries.
+    /// </summary>
+    public static readonly IReadOnlyList<string> JobCallableProcessIdNames =
+        new BuiltInProcessCatalog()
+            .ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .Select(process => process.ProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
+
     private const string CancelJobArgumentSchemaJson = """
         {
           "type": "object",
@@ -467,7 +480,8 @@ internal static class McpToolSchemas
         var stepKindExamples = string.Join(", ", PlanStepKindNames);
         var artifactKindEnum = JsonStringArray(ArtifactKindNames);
         var artifactKindExamples = string.Join(", ", ArtifactKindNames);
-        var processIdExamples = JsonStringArray(ProcessIdNames);
+        var processIdExamples = JsonStringArray(
+            requireExecutableShape ? JobCallableProcessIdNames : ProcessIdNames);
 
         // Validate/dry-run tools must accept partial plans so the server can
         // report EMPTY_PLAN_ID/EMPTY_STEPS as structured violations; execute
