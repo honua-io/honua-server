@@ -4163,7 +4163,8 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.RequiredForAdmin_WithApiKeyButMissingCertificate_ReturnsMachineReadableProblem",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_MtlsCapabilityDisabled_ValidBearerToken_ReturnsCleanOk",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled"
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminVersionEndpoint_IsMarkedTenantIndependent"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
