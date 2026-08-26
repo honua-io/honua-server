@@ -231,7 +231,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
 
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return Task.CompletedTask;
-        });
+        }).WithMetadata(WebSocketEndpointMetadata.Instance);
 
         // Streaming query handlers explicitly select chunked framing. Their HEAD equivalent
         // must not gain a counted Content-Length alongside Transfer-Encoding.
@@ -451,6 +451,21 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.GetValues("X-Method-Seen").Should().ContainSingle().Which.Should().Be("HEAD");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadWithUpgradeShapedHeadersOnOrdinaryGet_StillUsesGetSemantics()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/text");
+        request.Headers.Connection.Add("Upgrade");
+        request.Headers.TryAddWithoutValidation("Upgrade", "websocket");
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("X-Method-Seen").Should().ContainSingle().Which.Should().Be("GET");
+        response.Content.Headers.ContentLength.Should().Be("hello head".Length);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
     [UnitTest]
