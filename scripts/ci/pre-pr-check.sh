@@ -114,7 +114,17 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 if ! command -v jq >/dev/null 2>&1; then
-    echo "❌ jq is required to read .github/ci-shards.json"
+    # Hard requirement, not a soft one: jq reads .github/ci-shards.json and
+    # composes the build set's solution filter, so there is no degraded mode
+    # that still produces a trustworthy result. Fail loudly with the fix rather
+    # than let anyone conclude the local gate "does not work here" — AGENTS.md
+    # asks every PR to run this, and it is not preinstalled everywhere.
+    echo "❌ jq is required (it reads .github/ci-shards.json and builds the .slnf build set)."
+    echo "   Install it, then re-run:"
+    echo "     Debian/Ubuntu/WSL : sudo apt-get install -y jq"
+    echo "     macOS             : brew install jq"
+    echo "     no sudo           : download a static binary from https://jqlang.github.io/jq/download/"
+    echo "                         into a directory on your PATH"
     exit 1
 fi
 
@@ -277,6 +287,11 @@ if [[ "${FULL}" != "1" ]]; then
     if [[ -n "${cross_cutting_hit}" ]]; then
         echo "⚠️  Cross-cutting path changed (${cross_cutting_hit}) — forcing FULL mode; the"
         echo "    scoped selectors themselves (or shared test infra) are not trustworthy mid-edit."
+        echo "    (Deliberate. '.github/workflows/' stays on this list because the shard"
+        echo "     selectors — the 'changes' and 'targeted-shards' jobs — live INSIDE"
+        echo "     ci.yml, so a path-based 'it is only a workflow file' exemption would"
+        echo "     exempt the file that hosts the selectors. Use --fast for a quick loop"
+        echo "     while iterating on workflow YAML.)"
         FULL=1
     fi
 fi
@@ -659,7 +674,20 @@ if [[ "${DRY_RUN}" == "1" ]]; then
     echo "5. [dry-run] Would pre-pull Docker images and run .NET tests (see selection below)."
 else
     echo "5. Pre-pulling Docker images for faster tests..."
-    docker pull postgis/postgis:16-3.4-alpine > /dev/null 2>&1 || echo "   ⚠️ Could not pre-pull PostGIS image"
+    # Resolve the tag from PostgresFixture rather than hardcoding it. This step
+    # used to pull postgis/postgis:16-3.4-alpine, which NO Testcontainers
+    # fixture has ever requested — the `-alpine` tag belongs to
+    # nightly-slow-tier.yml's `services:` block. So every local pre-PR run
+    # downloaded an image nothing used and then let Testcontainers pull the real
+    # one cold anyway. Reading the fixture keeps the two from drifting again.
+    PREPULL_IMAGE="$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' \
+        tests/dotnet/Honua.TestKit/PostgresFixture.cs 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${PREPULL_IMAGE}" ]]; then
+        echo "   ⚠️ Could not resolve the PostGIS image from PostgresFixture.cs; skipping pre-pull"
+    else
+        docker pull "${PREPULL_IMAGE}" > /dev/null 2>&1 \
+            || echo "   ⚠️ Could not pre-pull ${PREPULL_IMAGE}"
+    fi
 fi
 
 echo "6. Running .NET tests..."
