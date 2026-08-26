@@ -30,6 +30,9 @@ def policy(**overrides: object) -> dict:
         "observation_started_at": "2026-08-15T00:00:00Z",
         "receipt_retention_days": 30,
         "image_outcome_lookback_hours": 24,
+        "receipt_index_grace_minutes": 90,
+        "maximum_receipt_loss_ratio": 0.05,
+        "promotion_green_days": 7,
         "maximum_pages_per_query": 3,
         "maximum_producer_run_catalogs": 40,
         "maximum_receipt_downloads": 20,
@@ -101,6 +104,18 @@ def artifact_catalog(root: Path, run_value: dict, values: list[dict]) -> None:
         json.dumps({"total_count": len(values), "artifacts": values}),
         encoding="utf-8",
     )
+
+
+def emission(indexed: int = 1, missing: int = 0, pending: int = 0, skipped: int = 0) -> dict:
+    return MODULE.receipt_emission({
+        MODULE.NATIVE_STREAM: {
+            "observer_runs_successful": indexed + missing + pending + skipped,
+            "receipts_indexed": indexed,
+            "receipts_skipped": skipped,
+            "receipts_pending_index": pending,
+            "receipts_missing": missing,
+        },
+    })
 
 
 def entry(stream: str, artifact_id: int, producer_id: int) -> dict:
@@ -244,7 +259,17 @@ def image_run(
     base: str = BASE,
     started: str = "2026-08-16T00:00:00Z",
     completed: str = "2026-08-16T00:02:00Z",
+    live_head: str | None = None,
+    associations: list[dict] | None = None,
 ) -> dict:
+    if associations is None:
+        associations = [
+            {
+                "number": pr,
+                "base": {"sha": base},
+                "head": {"sha": live_head if live_head is not None else head},
+            }
+        ]
     return {
         "id": run_id,
         "run_attempt": 1,
@@ -256,13 +281,7 @@ def image_run(
         "created_at": started,
         "run_started_at": started,
         "updated_at": completed,
-        "pull_requests": [
-            {
-                "number": pr,
-                "base": {"sha": base},
-                "head": {"sha": head},
-            }
-        ],
+        "pull_requests": associations,
     }
 
 
@@ -271,12 +290,20 @@ def test_policy_and_discovery() -> None:
     for invalid in (
         policy(receipt_retention_days=91),
         policy(maximum_pages_per_query=11),
-        policy(maximum_producer_run_catalogs=1201),
+        policy(maximum_producer_run_catalogs=1601),
+        policy(maximum_receipt_downloads=1001, maximum_producer_run_catalogs=1500),
         # The catalog bound must never be tighter than the download bound, or
         # it silently becomes the binding cap on window size again.
         policy(maximum_producer_run_catalogs=19),
         policy(image_outcome_lookback_hours=49),
         policy(require_zero_integrity_failures=False),
+        # The promotion gate is "<5% loss"; a policy may not redefine it by
+        # loosening its own budget, and an unbounded indexing grace would let
+        # every missing receipt hide as "pending".
+        policy(maximum_receipt_loss_ratio=0.06),
+        policy(maximum_receipt_loss_ratio=0),
+        policy(receipt_index_grace_minutes=361),
+        policy(promotion_green_days=31),
     ):
         try:
             MODULE.load_policy(invalid)
@@ -303,7 +330,7 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert [item["artifact_id"] for item in result["artifacts"]] == [12, 11]
         assert result["integrity_failures"] == []
@@ -317,11 +344,11 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert old_name["integrity_failures"] == []
         assert any(
-            item["reason"] == "observation-receipt-not-emitted"
+            item["reason"] == "observation-receipt-missing"
             for item in old_name["exclusions"]
         )
 
@@ -337,12 +364,12 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert skipped["integrity_failures"] == []
         reasons = [item["reason"] for item in skipped["exclusions"]]
         assert "observation-skipped:pull-request-moved" in reasons
-        assert "observation-receipt-not-emitted" not in reasons
+        assert "observation-receipt-missing" not in reasons
         assert MODULE.skipped_by_code(skipped["exclusions"]) == {"pull-request-moved": 1}
 
         # Two different skip codes on one attempt is producer ambiguity.
@@ -356,7 +383,7 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert any(
             item["reason"] == "observation-skip-marker-ambiguous"
@@ -373,10 +400,10 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert any(
-            item["reason"] == "observation-receipt-not-emitted"
+            item["reason"] == "observation-receipt-missing"
             for item in stale_skip["exclusions"]
         )
 
@@ -394,7 +421,7 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert any(
             item["reason"] == "observation-artifact-ambiguous"
@@ -413,7 +440,7 @@ def test_policy_and_discovery() -> None:
             root / "pr-artifacts",
             root / "native-artifacts",
             policy(),
-            datetime(2026, 8, 16, tzinfo=timezone.utc),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
         )
         assert [
             item["artifact_id"] for item in current_attempt["artifacts"]
@@ -471,6 +498,7 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             "cutoff": "2026-08-15T00:00:00Z",
             "artifacts": entries,
             "exclusions": [],
+            "receipt_emission": emission(),
             "integrity_failures": [],
         }
         ledger = MODULE.summarize(
@@ -493,14 +521,41 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert ledger["counts"]["worker_avoided_heads"] == 1
         assert all(ledger["gates"].values())
 
-        stale_serving = [
-            image_run(207, MODULE.SERVING_WORKFLOW, HEAD_B, 11, base="f" * 40),
+        # #3343: `pull_requests` on a workflow run is a LIVE view of the pull
+        # request. Once a later push moves the PR, every earlier head's run
+        # reports the PR's CURRENT base/head — and GitHub often reports no
+        # association at all. Neither says anything about the run, whose own
+        # head_sha is the authoritative binding, so neither may reject it.
+        # Rejecting them was the sole cause of all 19 authoritative-outcome
+        # failures in run 32038145537.
+        for label, moved in (
+            ("moved live pointer", image_run(
+                207, MODULE.SERVING_WORKFLOW, HEAD_B, 11, base="f" * 40, live_head="f" * 40,
+            )),
+            ("absent association", image_run(
+                207, MODULE.SERVING_WORKFLOW, HEAD_B, 11, associations=[],
+            )),
+        ):
+            pages(root / "serving", "workflow_runs", [moved, serving[1], serving[2]])
+            tolerant = MODULE.summarize(
+                index,
+                archives,
+                root / "serving",
+                root / "worker",
+                policy(),
+                REPOSITORY_ROOT,
+            )
+            assert tolerant["counts"]["authoritative_image_outcome_failures"] == 0, label
+            assert tolerant["recommendation"] == "eligible-for-human-promotion-review", label
+
+        # An association naming a DIFFERENT pull request is the one thing the
+        # field can still soundly prove, so it still rejects the run.
+        pages(root / "serving", "workflow_runs", [
             image_run(208, MODULE.SERVING_WORKFLOW, HEAD_B, 99),
             serving[1],
             serving[2],
-        ]
-        pages(root / "serving", "workflow_runs", stale_serving)
-        stale = MODULE.summarize(
+        ])
+        foreign = MODULE.summarize(
             index,
             archives,
             root / "serving",
@@ -508,11 +563,117 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             policy(),
             REPOSITORY_ROOT,
         )
-        assert stale["recommendation"] == "observe-more"
-        assert stale["counts"]["authoritative_image_outcome_failures"] == 1
-        assert stale["image_outcome_failures"][0]["serving"][
-            "identity_mismatch_run_ids"
-        ] == [207, 208]
+        assert foreign["recommendation"] == "observe-more"
+        assert foreign["counts"]["authoritative_image_outcome_failures"] == 1
+        assert foreign["image_outcome_failures"][0]["reason"] == "no-exact-head-image-run"
+        assert foreign["image_outcome_failures"][0]["serving"][
+            "foreign_pull_request_run_ids"
+        ] == [208]
+
+        # A head whose image work was CANCELLED BY A LATER PUSH can never
+        # acquire a successful outcome, so it is an excluded head rather than a
+        # permanent failure. Supersession must be WITNESSED: a later run of the
+        # same workflow, associated with the same pull request, at a different
+        # head. `cancelled` on its own does not say who cancelled it.
+        cancelled = image_run(
+            209, MODULE.SERVING_WORKFLOW, HEAD_B, 11, conclusion="cancelled",
+            started="2026-08-16T00:00:00Z",
+        )
+        witness = image_run(
+            210, MODULE.SERVING_WORKFLOW, HEAD_D, 11,
+            started="2026-08-16T00:05:00Z", completed="2026-08-16T00:07:00Z",
+        )
+        pages(root / "serving", "workflow_runs", [
+            cancelled, witness, serving[1], serving[2],
+        ])
+        superseded = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert superseded["counts"]["authoritative_image_outcome_failures"] == 0
+        assert superseded["counts"]["image_outcome_superseded_heads"] == 1
+        assert superseded["image_outcome_superseded_heads"][0]["serving"][
+            "superseded_by_run_ids"
+        ] == [210]
+        assert superseded["gates"]["authoritative_image_outcomes_clean"]
+
+        # An operator cancel or an infrastructure abort produces the SAME
+        # conclusion with no later head behind it. That is a real missing
+        # outcome and must stay a failure.
+        pages(root / "serving", "workflow_runs", [cancelled, serving[1], serving[2]])
+        unwitnessed = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert unwitnessed["counts"]["image_outcome_superseded_heads"] == 0
+        assert unwitnessed["counts"]["authoritative_image_outcome_failures"] == 1
+        assert unwitnessed["image_outcome_failures"][0]["reason"] == (
+            "no-successful-image-outcome"
+        )
+
+        # A later run for a DIFFERENT pull request is not a witness either.
+        other_pr = image_run(
+            211, MODULE.SERVING_WORKFLOW, HEAD_D, 99,
+            started="2026-08-16T00:05:00Z", completed="2026-08-16T00:07:00Z",
+        )
+        pages(root / "serving", "workflow_runs", [
+            cancelled, other_pr, serving[1], serving[2],
+        ])
+        foreign_witness = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert foreign_witness["counts"]["image_outcome_superseded_heads"] == 0
+        assert foreign_witness["counts"]["authoritative_image_outcome_failures"] == 1
+
+        # A head pushed shortly before the audit still has its image work
+        # RUNNING. The image catalogs carry no completed filter, so the run is
+        # visible with a null conclusion: an undetermined outcome, not an
+        # absent one. The next audit sees how it ended.
+        building = image_run(210, MODULE.SERVING_WORKFLOW, HEAD_B, 11)
+        building["status"] = "in_progress"
+        building["conclusion"] = None
+        pages(root / "serving", "workflow_runs", [building, serving[1], serving[2]])
+        in_flight = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert in_flight["counts"]["authoritative_image_outcome_failures"] == 0
+        assert in_flight["counts"]["image_outcome_pending_heads"] == 1
+        assert in_flight["gates"]["authoritative_image_outcomes_clean"]
+
+        # ...but a run that COMPLETED without success is a real failure.
+        failed = image_run(211, MODULE.SERVING_WORKFLOW, HEAD_B, 11, conclusion="failure")
+        pages(root / "serving", "workflow_runs", [failed, serving[1], serving[2]])
+        unsuccessful = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert unsuccessful["counts"]["authoritative_image_outcome_failures"] == 1
+        assert unsuccessful["counts"]["image_outcome_pending_heads"] == 0
+        assert unsuccessful["image_outcome_failures"][0]["reason"] == (
+            "no-successful-image-outcome"
+        )
 
         pages(root / "serving", "workflow_runs", serving)
         pages(root / "worker", "workflow_runs", [worker[0]])
@@ -538,10 +699,18 @@ def test_integrity_failures_do_not_count() -> None:
             "contract": MODULE.INDEX_CONTRACT,
             "artifacts": [entry(MODULE.PR_GATE_STREAM, 301, 1)],
             "exclusions": [],
+            "receipt_emission": emission(),
             "integrity_failures": [],
         }
         pages(root / "serving", "workflow_runs", [])
         pages(root / "worker", "workflow_runs", [])
+        # #3343: a stale policy input is COHORT DRIFT, not an integrity
+        # violation. Any commit touching one of the nine pinned inputs — the
+        # `actions/checkout` bump 741f0d7b5 did exactly this — moves the policy
+        # generation, and every receipt already in the retention window then
+        # describes the previous one. Treating that as an integrity failure is
+        # what made all 209 native receipts fail at once and left the ledger
+        # permanently red on routine repository maintenance.
         for field in (
             "observer_workflow_blob_sha",
             "resolver_blob_sha",
@@ -558,9 +727,47 @@ def test_integrity_failures_do_not_count() -> None:
                 policy(),
                 REPOSITORY_ROOT,
             )
-            assert ledger["counts"]["validated_pr_gate_receipts"] == 0
-            assert ledger["counts"]["integrity_failures"] == 1
-            assert ledger["gates"]["integrity_clean"] is False
+            assert ledger["counts"]["validated_pr_gate_receipts"] == 0, field
+            assert ledger["counts"]["integrity_failures"] == 0, field
+            assert ledger["counts"]["receipts_superseded_policy_generation"] == 1, field
+            assert ledger["gates"]["integrity_clean"] is True, field
+
+            # ...but when the receipt's OWN declared policy head is the head the
+            # ledger checked out, the two are directly comparable and a mismatch
+            # is a real contradiction. Fail closed there.
+            contradiction = MODULE.summarize(
+                index,
+                archives,
+                root / "serving",
+                root / "worker",
+                policy(),
+                REPOSITORY_ROOT,
+                policy_head_sha=bad["policy_sha"],
+            )
+            assert contradiction["counts"]["integrity_failures"] == 1, field
+            assert "contradicts its own declared policy head" in (
+                contradiction["integrity_failures"][0]["reason"]
+            ), field
+
+        # A trust-boundary violation is never drift, whatever its policy head.
+        for field, value in (
+            ("trusted_execution", "unverified"),
+            ("rollout", "enforce"),
+            ("gate_run_head_sha", "f" * 40),
+        ):
+            tampered = pr_gate_receipt(blobs)
+            tampered[field] = value
+            archive(archives, 301, MODULE.PR_GATE_STREAM, tampered)
+            strict = MODULE.summarize(
+                index,
+                archives,
+                root / "serving",
+                root / "worker",
+                policy(),
+                REPOSITORY_ROOT,
+            )
+            assert strict["counts"]["integrity_failures"] == 1, field
+            assert strict["gates"]["integrity_clean"] is False, field
 
         archive(archives, 301, MODULE.PR_GATE_STREAM, {}, unsafe=True)
         unsafe = MODULE.summarize(
@@ -631,6 +838,7 @@ def reuse_ledger(
         "cutoff": "2026-08-15T00:00:00Z",
         "artifacts": entries,
         "exclusions": [],
+        "receipt_emission": emission(),
         "integrity_failures": [],
     }
     return MODULE.summarize(
@@ -837,6 +1045,70 @@ def test_head_tree_receipts_are_never_reuse_evidence() -> None:
         assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
 
 
+def test_supersession_can_be_witnessed_by_a_later_receipt() -> None:
+    """A later validated receipt is a witness when the run association is absent.
+
+    GitHub leaves `pull_requests` empty on a large share of these runs, so
+    requiring an ASSOCIATED later run as the only witness would miss most real
+    supersessions and turn them back into permanent failures. `gate_run_id` is
+    push-monotone and comes from a validated receipt rather than a live API
+    field, so a higher one on the same pull request proves the head was pushed
+    past. Still fail closed when no witness of either kind exists.
+    """
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    ALL = {"generic": True, "lambda": True, "functions": True}
+
+    def receipt(head: str, gate: int) -> dict:
+        return native_receipt(
+            blobs, pr=11, head=head, worker=False, serving=ALL,
+            legacy_serving=ALL, legacy_worker=False, gate_run_id=gate,
+        )
+
+    def serving(run_id: int, head: str, conclusion: str, started: str) -> dict:
+        return image_run(
+            run_id, MODULE.SERVING_WORKFLOW, head, 11, conclusion=conclusion,
+            started=started, associations=[],
+        )
+
+    cancelled = serving(201, HEAD_B, "cancelled", "2026-08-16T00:00:00Z")
+    later = serving(202, HEAD_C, "success", "2026-08-16T01:00:00Z")
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        witnessed = reuse_ledger(
+            [receipt(HEAD_B, 1000), receipt(HEAD_C, 1001)],
+            [cancelled, later],
+            [],
+            root,
+        )
+        assert witnessed["counts"]["authoritative_image_outcome_failures"] == 0
+        assert witnessed["counts"]["image_outcome_superseded_heads"] == 1
+        excluded = witnessed["image_outcome_superseded_heads"][0]
+        assert excluded["head_sha"] == HEAD_B
+        assert excluded["serving"]["superseded_by_run_ids"] == []
+        assert excluded["serving"]["superseded_by_later_receipt"] is True
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        # The same cancelled run with NO later push behind it, by either
+        # witness, is an operator cancel or an infrastructure abort.
+        alone = reuse_ledger([receipt(HEAD_B, 1000)], [cancelled], [], root)
+        assert alone["counts"]["image_outcome_superseded_heads"] == 0
+        assert alone["counts"]["authoritative_image_outcome_failures"] == 1
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        # An EARLIER receipt is not a later push either.
+        backwards = reuse_ledger(
+            [receipt(HEAD_B, 1000), receipt(HEAD_C, 999)],
+            [cancelled, later],
+            [],
+            root,
+        )
+        assert backwards["counts"]["image_outcome_superseded_heads"] == 0
+        assert backwards["counts"]["authoritative_image_outcome_failures"] == 1
+
+
 def test_malformed_image_input_evidence_fails_closed() -> None:
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     broken_receipts = []
@@ -861,6 +1133,362 @@ def test_malformed_image_input_evidence_fails_closed() -> None:
             assert expected in ledger["integrity_failures"][0]["reason"], expected
 
 
+def test_full_mode_pr_gate_receipts_are_not_receipt_loss() -> None:
+    """#3343: the >50% receipt loss was the reader, not the producer.
+
+    `pr-gate-impact-observe.yml` names its receipt after the mode it classified,
+    so a non-docs-only observation uploads `pr-gate-impact-full-v3-attempt-N`.
+    The index only ever matched `docs-only`, so every `full` receipt — 222 of
+    222 successful PR Gate observers in the 7-day window of run 32859724842 —
+    was reported as a receipt that had never been emitted: a producer
+    regression that had never happened.
+    """
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        pr_run = run(1, MODULE.PR_GATE_WORKFLOW)
+        pages(root / "pr-runs", "workflow_runs", [pr_run])
+        pages(root / "native-runs", "workflow_runs", [])
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, "pr-gate-impact-full-v3-attempt-1")
+        ])
+        (root / "native-artifacts").mkdir(parents=True, exist_ok=True)
+        index = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
+        )
+        assert [item["artifact_id"] for item in index["artifacts"]] == [11]
+        assert index["integrity_failures"] == []
+        assert index["exclusions"] == []
+        loss = index["receipt_emission"]["all"]
+        assert loss["receipts_missing"] == 0
+        assert loss["receipts_indexed"] == 1
+        assert loss["loss_ratio"] == 0.0
+
+        # It validates as a real receipt, and it does NOT join the docs-only
+        # promotion sample — indexing it restores the loss metric, it does not
+        # inflate the cohort.
+        archives = root / "archives"
+        full = pr_gate_receipt(blobs)
+        full["mode"] = "full"
+        full["reason"] = "source-change"
+        entries = [entry(MODULE.PR_GATE_STREAM, 11, 1)]
+        entries[0]["artifact_name"] = "pr-gate-impact-full-v3-attempt-1"
+        archive(archives, 11, MODULE.PR_GATE_STREAM, full)
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        ledger = MODULE.summarize(
+            {**index, "artifacts": entries},
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert ledger["counts"]["integrity_failures"] == 0
+        assert ledger["counts"]["validated_pr_gate_receipts"] == 1
+        assert ledger["counts"]["docs_only_success_heads"] == 0
+        assert ledger["receipt_loss_regression"] is False
+
+        # The artifact name and the receipt body must agree about the mode:
+        # evidence stored under a name that misdescribes it is not addressable.
+        mislabelled = pr_gate_receipt(blobs)
+        mislabelled["mode"] = "docs-only"
+        archive(archives, 11, MODULE.PR_GATE_STREAM, mislabelled)
+        mismatch = MODULE.summarize(
+            {**index, "artifacts": entries},
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert mismatch["counts"]["integrity_failures"] == 1
+        assert "differs from its artifact name" in (
+            mismatch["integrity_failures"][0]["reason"]
+        )
+
+
+def test_loss_separates_missing_from_not_yet_indexed() -> None:
+    """#3343: "lost" and "not indexed yet" are different facts.
+
+    GitHub finalises a run's artifact catalog after the run completes, so an
+    observer that finished moments ago can legitimately list nothing. Counting
+    those as loss puts a floor under the ratio that no producer fix can remove.
+    """
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        now = datetime(2026, 8, 16, 12, tzinfo=timezone.utc)
+        fresh = run(1, MODULE.PR_GATE_WORKFLOW)
+        fresh["created_at"] = "2026-08-16T11:50:00Z"
+        fresh["updated_at"] = "2026-08-16T11:55:00Z"
+        stale = run(2, MODULE.PR_GATE_WORKFLOW)
+        pages(root / "pr-runs", "workflow_runs", [fresh, stale])
+        pages(root / "native-runs", "workflow_runs", [])
+        artifact_catalog(root / "pr-artifacts", fresh, [])
+        artifact_catalog(root / "pr-artifacts", stale, [])
+        (root / "native-artifacts").mkdir(parents=True, exist_ok=True)
+        index = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            now,
+        )
+        reasons = sorted(item["reason"] for item in index["exclusions"])
+        assert reasons == [
+            "observation-receipt-missing",
+            "observation-receipt-pending-index",
+        ]
+        loss = index["receipt_emission"]["all"]
+        # One owed, one still pending: pending is removed from the denominator
+        # rather than counted as delivered.
+        assert loss["receipts_pending_index"] == 1
+        assert loss["receipts_missing"] == 1
+        assert loss["receipts_owed"] == 1
+        assert loss["loss_ratio"] == 1.0
+        assert loss["measured"] is True
+
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        ledger = MODULE.summarize(
+            index,
+            root / "archives",
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert ledger["receipt_loss_regression"] is True
+        assert ledger["gates"]["receipt_loss_within_budget"] is False
+        assert ledger["counts"]["observation_receipts_pending_index"] == 1
+        assert ledger["counts"]["observation_receipts_missing"] == 1
+
+        # A window that owed nothing is UNMEASURED. It blocks promotion without
+        # being a regression to go red over.
+        quiet = {**index, "receipt_emission": emission(indexed=0, pending=2)}
+        idle = MODULE.summarize(
+            quiet,
+            root / "archives",
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert idle["receipt_loss_regression"] is False
+        assert idle["gates"]["receipt_loss_within_budget"] is False
+
+
+def test_tombstones_quarantine_explicitly_and_expire() -> None:
+    """#3343: unverifiable past evidence is named and dated, never widened away."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    issue = f"https://github.com/{MODULE.REPOSITORY}/issues/3343"
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        broken = pr_gate_receipt(blobs)
+        broken["trusted_execution"] = "unverified"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, broken)
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "artifacts": [entry(MODULE.PR_GATE_STREAM, 301, 1)],
+            "exclusions": [],
+            "receipt_emission": emission(),
+            "integrity_failures": [],
+        }
+
+        def summarized(tombstones: object, now: datetime) -> dict:
+            return MODULE.summarize(
+                index,
+                archives,
+                root / "serving",
+                root / "worker",
+                policy(),
+                REPOSITORY_ROOT,
+                tombstone_value=tombstones,
+                now=now,
+            )
+
+        live = {
+            "contract": MODULE.TOMBSTONE_CONTRACT,
+            "tombstones": [{
+                "kind": "receipt",
+                "producer_run_id": 1,
+                "reason": "producer run artifacts were deleted before the audit",
+                "issue": issue,
+                "expires_at": "2026-12-01T00:00:00Z",
+            }],
+        }
+        quarantined = summarized(live, datetime(2026, 8, 16, 12, tzinfo=timezone.utc))
+        assert quarantined["counts"]["integrity_failures"] == 0
+        assert quarantined["counts"]["quarantined_by_tombstone"] == 1
+        assert quarantined["gates"]["integrity_clean"] is True
+        assert quarantined["quarantined"][0]["tombstone"]["issue"] == issue
+
+        # Past its expiry the quarantine stops working. That is the whole point:
+        # it cannot become permanent by neglect.
+        expired = summarized(live, datetime(2026, 12, 2, tzinfo=timezone.utc))
+        assert expired["gates"]["integrity_clean"] is False
+        assert any(
+            "tombstone expired" in item["reason"]
+            for item in expired["integrity_failures"]
+        )
+
+        # A tombstone matching nothing is reported so it can be removed.
+        unused = summarized(
+            {
+                "contract": MODULE.TOMBSTONE_CONTRACT,
+                "tombstones": [{**live["tombstones"][0], "producer_run_id": 99}],
+            },
+            datetime(2026, 8, 16, 12, tzinfo=timezone.utc),
+        )
+        assert unused["counts"]["stale_tombstones"] == 1
+        assert unused["counts"]["integrity_failures"] == 1
+
+    # A quarantine without an owner or an expiry is not a quarantine.
+    for invalid in (
+        {"kind": "receipt", "producer_run_id": 1, "reason": "x", "issue": issue},
+        {"kind": "receipt", "producer_run_id": 1, "reason": "x",
+         "issue": "https://example.invalid/3343", "expires_at": "2026-12-01T00:00:00Z"},
+        {"kind": "receipt", "producer_run_id": 1, "reason": "",
+         "issue": issue, "expires_at": "2026-12-01T00:00:00Z"},
+        {"kind": "image-outcome", "reason": "x", "issue": issue,
+         "expires_at": "2026-12-01T00:00:00Z"},
+    ):
+        try:
+            MODULE.load_tombstones(
+                {"contract": MODULE.TOMBSTONE_CONTRACT, "tombstones": [invalid]},
+                datetime(2026, 8, 16, tzinfo=timezone.utc),
+            )
+        except ValueError:
+            continue
+        raise AssertionError("an unowned or undated tombstone must fail closed")
+
+
+def test_repeated_audits_are_idempotent_and_retries_do_not_double_count() -> None:
+    """The receipt store is append-only; reading it must be a pure function.
+
+    Two properties the ledger depends on and nothing else was checking:
+    re-auditing unchanged evidence produces an identical ledger, and a
+    re-attempted observer that emits a second receipt for the SAME head
+    collapses to one countable head instead of inflating the sample.
+    """
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        shared = {
+            name: hashlib.sha256(f"{name}:shared".encode("utf-8")).hexdigest()
+            for name in MODULE.IMAGE_INPUT_CLASSES
+        }
+        entries = []
+        for artifact_id, producer, gate in ((401, 41, 5001), (402, 42, 5002)):
+            entries.append(entry(MODULE.NATIVE_STREAM, artifact_id, producer))
+            archive(archives, artifact_id, MODULE.NATIVE_STREAM, native_receipt(
+                blobs, pr=11, head=HEAD_B, worker=True,
+                image_inputs=shared, gate_run_id=gate,
+            ))
+        pages(root / "serving", "workflow_runs", [
+            image_run(501, MODULE.SERVING_WORKFLOW, HEAD_B, 11)
+        ])
+        pages(root / "worker", "workflow_runs", [
+            image_run(502, MODULE.WORKER_WORKFLOW, HEAD_B, 11)
+        ])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "repository": MODULE.REPOSITORY,
+            "cutoff": "2026-08-15T00:00:00Z",
+            "artifacts": entries,
+            "exclusions": [],
+            "receipt_emission": emission(indexed=2),
+            "integrity_failures": [],
+        }
+        now = datetime(2026, 8, 16, 12, tzinfo=timezone.utc)
+        first = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT, now=now,
+        )
+        second = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT, now=now,
+        )
+        assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+        assert first["counts"]["validated_native_receipts"] == 1
+        assert first["counts"]["native_countable_heads"] == 1
+        assert first["counts"]["integrity_failures"] == 0
+
+        # Reversing the index order must not change the ledger either: the
+        # store has no inherent order and neither may its reading.
+        reversed_index = {**index, "artifacts": list(reversed(entries))}
+        flipped = MODULE.summarize(
+            reversed_index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT, now=now,
+        )
+        assert json.dumps(flipped, sort_keys=True) == json.dumps(first, sort_keys=True)
+
+        # The step summary is the only surface most readers ever see, and it is
+        # rendered outside every other assertion here. Render it, so a count
+        # renamed in the ledger cannot pass the suite and then crash the job.
+        rendered = MODULE.markdown(first)
+        assert "## CI impact-routing evidence ledger" in rendered
+        assert "Receipt loss:" in rendered
+        assert "policy generation" in rendered
+
+
+def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
+    """#3343: "green >=7 days with <5% loss" must be readable from the auditor."""
+    def daily(day: int, *, green: bool = True, loss: float = 0.0) -> dict:
+        return {
+            "contract": MODULE.LEDGER_CONTRACT,
+            "generated_at": f"2026-08-{day:02d}T14:00:00Z",
+            "gates": {
+                "integrity_clean": green,
+                "receipt_loss_within_budget": green,
+            },
+            "counts": {"integrity_failures": 0 if green else 3},
+            "receipt_emission": {"all": {"loss_ratio": loss, "measured": True}},
+        }
+
+    now = datetime(2026, 8, 25, 20, tzinfo=timezone.utc)
+    ready = MODULE.trend(
+        [daily(day, loss=0.01) for day in range(19, 26)], policy(), now
+    )
+    assert ready["consecutive_green_days"] == 7
+    assert ready["promotion_gate_ready"] is True
+    assert ready["maximum_loss_ratio_in_streak"] == 0.01
+
+    # A red day breaks the streak rather than being averaged away.
+    broken = MODULE.trend(
+        [daily(day, green=day != 22) for day in range(19, 26)], policy(), now
+    )
+    assert broken["consecutive_green_days"] == 3
+    assert broken["promotion_gate_ready"] is False
+
+    # A day with NO ledger is a missing measurement, not a passing one.
+    gap = MODULE.trend(
+        [daily(day) for day in (19, 20, 21, 23, 24, 25)], policy(), now
+    )
+    assert gap["consecutive_green_days"] == 3
+    assert gap["promotion_gate_ready"] is False
+
+    # Two ledgers on one day: the worse one decides.
+    conflicted = MODULE.trend(
+        [daily(day) for day in range(19, 26)] + [daily(24, green=False)],
+        policy(),
+        now,
+    )
+    assert conflicted["consecutive_green_days"] == 1
+    assert MODULE.trend_markdown(conflicted).startswith(
+        "## Impact-routing ledger promotion trend"
+    )
+
 test_policy_and_discovery()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
@@ -871,5 +1499,11 @@ test_reuse_ordering_is_independent_of_observer_run_id()
 test_reuse_only_credits_variants_the_workflow_actually_built()
 test_reuse_keys_are_scoped_per_variant()
 test_head_tree_receipts_are_never_reuse_evidence()
+test_supersession_can_be_witnessed_by_a_later_receipt()
 test_malformed_image_input_evidence_fails_closed()
+test_full_mode_pr_gate_receipts_are_not_receipt_loss()
+test_loss_separates_missing_from_not_yet_indexed()
+test_tombstones_quarantine_explicitly_and_expire()
+test_repeated_audits_are_idempotent_and_retries_do_not_double_count()
+test_trend_measures_the_consecutive_green_promotion_gate()
 print("impact-routing-evidence-ledger=ok mode=report-only")
