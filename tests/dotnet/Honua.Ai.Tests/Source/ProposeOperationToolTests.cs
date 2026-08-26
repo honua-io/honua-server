@@ -333,11 +333,13 @@ public sealed class ProposeOperationToolTests
         gateway.LastRequest!.Authority!.ResourceId.Should().Be(resourceId);
     }
 
-    [Fact]
-    public async Task ProposeOperation_MetadataRelease_PreservesValidatedExecutablePayload()
+    [Theory]
+    [InlineData("create")]
+    [InlineData("CREATE")]
+    public async Task ProposeOperation_MetadataRelease_ValidCreateActionPreservesExecutablePayload(string action)
     {
         var gateway = new FakeGateway(CreateProposalResult());
-        const string payload = """{"action":"create","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""";
+        var payload = $$"""{"action":"{{action}}","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""";
         var arguments = McpTestFactory.ToArguments(
             new McpProposeOperationArgument
             {
@@ -353,6 +355,34 @@ public sealed class ProposeOperationToolTests
         result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         gateway.LastRequest!.ExecutionPayload.Should().Be(payload);
         gateway.LastRequest.Authority!.ResourceId.Should().Be("roads");
+    }
+
+    [Theory]
+    [InlineData("""{"packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""")]
+    [InlineData("""{"action":null,"packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""")]
+    [InlineData("""{"action":1,"packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""")]
+    [InlineData("""{"action":"rollback","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"roads","newFieldName":"status"}""")]
+    public async Task ProposeOperation_MetadataRelease_InvalidCreateAction_IsRejectedBeforeGateway(string payload)
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = "MetadataRelease",
+                ResourceId = "roads",
+                ExecutionPayload = payload,
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+        result.StructuredContent.Value.GetProperty("message").GetString()
+            .Should().Be("MetadataRelease executionPayload requires action 'create'.");
+        gateway.ProposalOnlyCalls.Should().Be(0);
+        gateway.LastRequest.Should().BeNull();
     }
 
     [Fact]

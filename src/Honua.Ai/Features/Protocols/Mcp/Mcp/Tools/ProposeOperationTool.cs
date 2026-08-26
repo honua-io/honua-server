@@ -297,11 +297,11 @@ internal sealed class ProposeOperationTool : IMcpTool
                     return false;
                 }
 
-                if (root.TryGetProperty("action", out var action) &&
-                    (action.ValueKind != JsonValueKind.String ||
-                     !string.Equals(action.GetString(), "create", StringComparison.OrdinalIgnoreCase)))
+                if (!root.TryGetProperty("action", out var action) ||
+                    action.ValueKind != JsonValueKind.String ||
+                    !string.Equals(action.GetString(), "create", StringComparison.OrdinalIgnoreCase))
                 {
-                    error = "MetadataRelease executionPayload supports only action 'create'.";
+                    error = "MetadataRelease executionPayload requires action 'create'.";
                     return false;
                 }
 
