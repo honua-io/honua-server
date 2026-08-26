@@ -43,8 +43,8 @@ public sealed class WebSocketEndpointMetadata
 }
 
 /// <summary>
-/// Marks a hidden GET routing candidate for an endpoint that originally accepted HEAD but not
-/// GET, so the shared pre-routing HEAD fallback can still select the declared HEAD handler.
+/// Marks a hidden routing candidate for an endpoint that originally accepted HEAD but not GET,
+/// so the shared pre-routing HEAD fallback can still select the declared HEAD handler.
 /// </summary>
 public sealed class ExplicitHeadOnlyEndpointMetadata
 {
@@ -365,7 +365,7 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
         var rewrittenFromHead = HeadRequestSupport.WasRewrittenFromHead(httpContext);
         var hasExplicitHeadCandidate = false;
         HashSet<string>? allowedMethods = null;
-        var hasOrdinaryGetCandidate = false;
+        var hasOrdinaryValidCandidate = false;
 
         for (var i = 0; i < candidates.Count; i++)
         {
@@ -397,7 +397,7 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
 
             if (metadata is null)
             {
-                hasOrdinaryGetCandidate = true;
+                hasOrdinaryValidCandidate = true;
                 continue;
             }
 
@@ -415,16 +415,15 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
                 candidates[i].Endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>() is not null;
 
             if ((rewrittenFromHead && hasExplicitHeadCandidate && !isExplicitHeadOnly) ||
-                (!rewrittenFromHead && HttpMethods.IsGet(httpContext.Request.Method) && isExplicitHeadOnly))
+                (!rewrittenFromHead && isExplicitHeadOnly))
             {
                 candidates.SetValidity(i, false);
             }
         }
 
         if (!rewrittenFromHead &&
-            HttpMethods.IsGet(httpContext.Request.Method) &&
             hasExplicitHeadCandidate &&
-            !hasOrdinaryGetCandidate)
+            !hasOrdinaryValidCandidate)
         {
             httpContext.SetEndpoint(CreateMethodNotAllowedEndpoint(allowedMethods));
         }
