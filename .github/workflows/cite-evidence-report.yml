@@ -57,8 +57,8 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=cite-evidence
-          cache-to: type=gha,mode=max,scope=cite-evidence
+          cache-from: type=gha,scope=honua-jit-amd64
+          cache-to: type=gha,mode=max,scope=honua-jit-amd64
           # buildx defaults to attaching provenance/SBOM attestations, which
           # produce an OCI image index (manifest list). The docker exporter
           # used by `load: true` cannot export a manifest list, so the build
