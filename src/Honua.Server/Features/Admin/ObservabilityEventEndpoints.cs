@@ -5,6 +5,7 @@ using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +31,8 @@ internal static class ObservabilityEventEndpoints
 
         group.MapGet("/logs", HandleListLogs)
             .WithDisplayName("List Recent Server Logs")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
     }
 
     private static async Task<IResult> HandleListEvents(

@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -24,6 +25,7 @@ internal static partial class OAuthClientEndpoints
     public static void MapOAuthClientEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var clients = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oauth-clients")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OAuth Clients")
@@ -46,6 +48,7 @@ internal static partial class OAuthClientEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         var scopes = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oauth-scopes")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OAuth Scopes")

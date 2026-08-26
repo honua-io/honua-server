@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 368,
-      "provingTestCount": 1048,
+      "provingTestCount": 1074,
       "maturity": {
         "implemented": 368
       },
@@ -820,7 +820,7 @@
       "category": "FieldOps",
       "edition": "Pro",
       "entryCount": 18,
-      "provingTestCount": 146,
+      "provingTestCount": 149,
       "maturity": {
         "implemented": 18
       },
@@ -875,7 +875,7 @@
       "category": "Geocoding",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 57,
+      "provingTestCount": 61,
       "maturity": {
         "implemented": 10
       },
@@ -987,7 +987,7 @@
       "category": "Identity",
       "edition": "Community",
       "entryCount": 18,
-      "provingTestCount": 58,
+      "provingTestCount": 61,
       "maturity": {
         "implemented": 18
       },
@@ -1029,7 +1029,7 @@
       "category": "Identity",
       "edition": "Enterprise",
       "entryCount": 3,
-      "provingTestCount": 13,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 3
       },
@@ -1114,7 +1114,7 @@
       "category": "Ops",
       "edition": "Community",
       "entryCount": 15,
-      "provingTestCount": 55,
+      "provingTestCount": 61,
       "maturity": {
         "implemented": 15
       },
@@ -1131,7 +1131,7 @@
       "category": "Ops",
       "edition": "Community",
       "entryCount": 16,
-      "provingTestCount": 38,
+      "provingTestCount": 44,
       "maturity": {
         "implemented": 16
       },
@@ -1547,7 +1547,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 48,
-      "provingTestCount": 115,
+      "provingTestCount": 117,
       "maturity": {
         "implemented": 48
       },

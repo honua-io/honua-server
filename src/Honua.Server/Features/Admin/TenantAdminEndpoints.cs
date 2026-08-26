@@ -7,6 +7,7 @@ using Honua.Core.Features.MultiTenancy.Billing;
 using Honua.Core.Features.MultiTenancy.Domain;
 using Honua.Core.Features.MultiTenancy.Lifecycle;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -38,6 +39,7 @@ internal static partial class TenantAdminEndpoints
     public static void MapTenantAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/tenants")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tenants")

@@ -1143,7 +1143,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateAndListApiKeys_ReturnsPlaintextOnlyAtCreation",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminApiKey_PassesAdminEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint",
-        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CanReadAdminSurface"
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CanReadAdminSurface",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1176,7 +1177,9 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_NoOidcConfigured_ReturnsEmptyProviders",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_WithAzureAdConfigured_ReturnsSelectionMetadataOnly",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_WithMultipleProviders_ReturnsProviderKeysAndNames",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1322,6 +1325,7 @@
         "Honua.Server.Tests.AdminEndpointTests.GetConfiguration_SensitiveValuesMasked",
         "Honua.Server.Tests.AdminEndpointTests.GetConfiguration_WhenPublicBaseUrlProvidedViaAlias_UsesEnvironmentSourceAndCurrentValue",
         "Honua.Server.Tests.AdminEndpointTests.GetConfiguration_WorkspaceEnvVarsHaveDefaults",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetConfig_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_WithInvalidApiKey_ShouldReturn401",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_WithoutApiKey_ShouldReturn401",
@@ -1367,7 +1371,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ConfigurationDiscoveryEndpointsTests.DiscoverConfiguration_WithAdminAuth_ReturnsMaskedConfigurationOverview"
+        "Honua.Server.Tests.Features.Admin.ConfigurationDiscoveryEndpointsTests.DiscoverConfiguration_WithAdminAuth_ReturnsMaskedConfigurationOverview",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1669,7 +1674,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetFeatureOverview_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ProEdition_ShowsUpgradeMessagesForEnterprise",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsCapabilityRegistryProjection",
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsEditionAndFeatures"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsEditionAndFeatures",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1683,7 +1689,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.Federation.FederationEndpointsTests.ListSources_ReturnsConfiguredSourcesWithoutCredentials"
+        "Honua.Server.Tests.Features.Admin.Federation.FederationEndpointsTests.ListSources_ReturnsConfiguredSourcesWithoutCredentials",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1841,7 +1848,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetGeocodingProviders_WithoutAuth_Returns401",
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetGeocodingProviders_ReturnsProviderList"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetGeocodingProviders_ReturnsProviderList",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1858,7 +1866,8 @@
         "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_AfterRecordingInvocations_RanksMostInvokedFirst",
         "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithLimit_TruncatesToRequestedCount",
         "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithNonPositiveLimit_Returns400",
-        "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithoutAdminAuth_IsUnauthorized"
+        "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithoutAdminAuth_IsUnauthorized",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -1873,7 +1882,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetIdentityProviders_WithoutAuth_Returns401",
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetIdentityProviders_ReturnsProviderList"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetIdentityProviders_ReturnsProviderList",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2368,7 +2378,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetEntitlements_WithAdminAuth_ReturnsEntitlementList"
+        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetEntitlements_WithAdminAuth_ReturnsEntitlementList",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2399,7 +2410,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetLicenseStatus_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold",
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetLicenseStatus_ReturnsValidResponse"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetLicenseStatus_ReturnsValidResponse",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.DeploymentGlobalAdministration_PreservesAdminAuthorization",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2851,7 +2865,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.ManagementSurface_RequiresAdminAuthorization",
-        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterAndListClient_ReturnsSecretOnlyAtCreation"
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterAndListClient_ReturnsSecretOnlyAtCreation",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2879,7 +2894,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3014,6 +3030,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetRecentErrors_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetRecentErrors_WhenEmpty_ReturnsEmptyList",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Monitoring.RecentErrorsEndpointTests.RecentErrorsEndpoint_CapsBuffer",
         "Honua.Server.Tests.Infrastructure.Monitoring.RecentErrorsEndpointTests.RecentErrorsEndpoint_RecordsClientErrorsWhenExplicitlyRequested",
         "Honua.Server.Tests.Infrastructure.Monitoring.RecentErrorsEndpointTests.RecentErrorsEndpoint_RedactsSensitiveInfo"
@@ -3067,7 +3084,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListLogs_ReturnsInstanceMetadataAndItems"
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListLogs_ReturnsInstanceMetadataAndItems",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3290,7 +3308,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetGeocodingOperationsProviders_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.GeocodingOperationsEndpointsTests.GetProviders_ReturnsHealthAndCapabilities",
-        "Honua.Server.Tests.Features.Admin.GeocodingOperationsEndpointsTests.GetProviders_WhenCoordinatorThrows_ReturnsSanitizedError"
+        "Honua.Server.Tests.Features.Admin.GeocodingOperationsEndpointsTests.GetProviders_WhenCoordinatorThrows_ReturnsSanitizedError",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3322,7 +3341,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetStreamingOperationsSubscribers_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_WhenNone_ReturnsEmptyList",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3369,7 +3389,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.GetQueryCacheStatistics_ReturnsOkOrUnauthorized"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.GetQueryCacheStatistics_ReturnsOkOrUnauthorized",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3481,7 +3503,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetEnhancedPerformanceEndpoints_ReturnOk"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetEnhancedPerformanceEndpoints_ReturnOk",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4030,7 +4054,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.DeploymentGlobalAdministration_PreservesAdminAuthorization",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4954,7 +4981,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.MetricsEndpointsTests.GetHealthMetrics_ShouldReturnBasicHealthData",
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.MetricsEndpointsTests.GetHealthMetrics_WhenMigrationFails_DoesNotExposeRawFailureText"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.MetricsEndpointsTests.GetHealthMetrics_WhenMigrationFails_DoesNotExposeRawFailureText",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "versioned-metrics",
       "maturity": "implemented",
@@ -5712,6 +5741,7 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestInfrastructure_Quality_MeetsHighStandards",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestQualityMetrics_AllCriteria_AchievesPerfectScore",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.Health_GetLiveness_ShouldReturnHealthy",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Security.HostValidationMiddlewareTests.HealthRequest_WithForgedHostHeader_AllowsRequest",
         "Honua.Server.Tests.HealthEndpointTests.LivenessEndpoint_MultipleRequests_AllSucceed",
@@ -5721,6 +5751,7 @@
         "Honua.Server.Tests.HealthEndpointsTests.LivenessProbe_ResponseTime_IsUnder200Ms",
         "Honua.Server.Tests.Infrastructure.Authentication.ApiKeyAuthenticationTests.HealthEndpoint_NoAuth_AlwaysAccessible",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.HealthEndpoint_OidcEnabled_StillAccessible",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_HealthEndpoints_AlwaysIncludeCorrelationId",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_IntegrationWithOpenTelemetry_WorksWithActivity",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_MultipleRequests_GeneratesDifferentIds",
@@ -5749,7 +5780,9 @@
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.HealthEndpoints_AllVariations_ReturnCorrectStatus",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.HealthEndpointsTests.PerformanceMetricsEndpoint_WithHealthyReadiness_ReturnsHealthyPayload",
-        "Honua.Server.Tests.HealthEndpointsTests.PerformanceMetricsEndpoint_WithUnhealthyReadiness_ReturnsServiceUnavailable"
+        "Honua.Server.Tests.HealthEndpointsTests.PerformanceMetricsEndpoint_WithUnhealthyReadiness_ReturnsServiceUnavailable",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
@@ -5766,6 +5799,7 @@
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.HealthEndpoints_AllVariations_ReturnCorrectStatus",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.Health_GetReadiness_ShouldReturnReady",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.HTTPS_Redirection_ShouldBeEnforced",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.SecurityHeaders_ShouldBePresent",
         "Honua.Server.Tests.HealthEndpointTests.ReadinessEndpoint_ReturnsReady",
@@ -5773,6 +5807,7 @@
         "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_WithHealthyDatabase_ResponseTime_IsUnder200Ms",
         "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_WithHealthyDatabase_Returns200AndReady",
         "Honua.Server.Tests.HealthEndpointsTests.ReadinessProbe_WithUnhealthyDatabase_Returns503",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_HealthEndpoints_AlwaysIncludeCorrelationId",
         "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_MultipleRequests_ConsistentlyAppliesHeaders"
       ],
@@ -5815,7 +5850,9 @@
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_ExportsEverySeriesNamedByTheSloMetricContract",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.ServingDenominator_ExcludesHealthProbesAndTheMetricsScrape",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_ReturnsPrometheusTextExposition",
-        "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_WithoutAuthentication_ReturnsUnauthorized"
+        "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_WithoutAuthentication_ReturnsUnauthorized",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
@@ -5860,7 +5897,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenWithKnownPoolUtilization",
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ProductionHealthMetrics_ReflectLiveHttpRequestTelemetry"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ProductionHealthMetrics_ReflectLiveHttpRequestTelemetry",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "detailed-monitoring",
       "maturity": "implemented",
@@ -11589,7 +11628,9 @@
         "Honua.Server.Tests.Features.Identity.IdentityEntitlementGateTests.SamlMetadata_WithProEntitlement_StillReturns402",
         "Honua.Server.Tests.Features.Identity.IdentityEntitlementGateTests.SamlMetadata_WithoutEntitlement_Returns402WithEntitlementDetail",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenConfigured_ReturnsSpMetadata",
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenSloConfigured_AdvertisesSingleLogoutService"
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenSloConfigured_AdvertisesSingleLogoutService",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "saml-sso",
       "maturity": "implemented",
@@ -12028,7 +12069,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2CallbackE2ETests.Authorize_MissingPkceChallenge_RedirectsErrorToClient",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2CallbackE2ETests.Authorize_NonAllowListedRedirectUri_RejectsWithoutRedirect",
-        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Authorize_WhenNoOidcProviderConfigured_Returns404"
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Authorize_WhenNoOidcProviderConfigured_Returns404",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented",
@@ -13301,7 +13344,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.ExceptionUpload_WithApiKey_ReturnsAccepted",
-        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.ExceptionUpload_WithoutApiKey_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.ExceptionUpload_WithoutApiKey_ReturnsUnauthorized",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
       "maturity": "implemented",
@@ -13966,7 +14010,8 @@
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithArcGisFeatureServerFixture_ReturnsCandidates",
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithMissingUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithOgcApiFeaturesFixture_ReturnsCollectionCandidates",
-        "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithWfsGetCapabilitiesFixture_ReturnsFeatureTypeCandidates"
+        "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithWfsGetCapabilitiesFixture_ReturnsFeatureTypeCandidates",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -14121,7 +14166,9 @@
         "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_ReferenceCsv_ServesGeocodeServerRoundTrip",
         "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_ReferenceDataWithoutCoordinateColumns_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_ReplaceWithNoImportableRows_Returns400AndPreservesData",
-        "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_WithoutAdminCredentials_IsRejected"
+        "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_WithoutAdminCredentials_IsRejected",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -17068,8 +17115,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_WithDevelopmentRefreshToken_ReturnsBearerRefreshPayload",
-        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_WithInvalidRefreshToken_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_WithInvalidRefreshToken_ReturnsUnauthorized",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
       "maturity": "implemented",
@@ -17697,6 +17746,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_BatchGeometries_ReturnsAll",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_InvalidSrid_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithLatestWkid_ParsesCorrectly",
@@ -17705,7 +17755,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_Wgs84ToWebMercator_ReturnsCorrectCoordinates",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithDatumTransformationWkid_AppliesSelectedPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithMalformedDatumTransformation_Returns400",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithUnsupportedDatumTransformationWkid_Returns400"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithUnsupportedDatumTransformationWkid_Returns400",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "geometry-service",
       "maturity": "implemented",
@@ -20375,7 +20426,8 @@
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_ValidJwtAccessToken_ReturnsActiveTrue",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_WhenDisabled_Returns404",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenDisabled_Returns404",
-        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenEnabledForUnknownToken_ReturnsActiveFalse"
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenEnabledForUnknownToken_ReturnsActiveFalse",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented",
