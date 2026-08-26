@@ -29,7 +29,9 @@ description: >
   the same single runner (NOT a `services:` block, NOT the provider matrix),
   measured at ~1.5 min warm / ~3-4 min cold. Fidelity was chosen over a
   Postgres-free variant that would validate a synthetic route set and risk
-  false-positive REDs on this required gate.
+  false-positive REDs on this required gate. The step does not move; the first
+  step of this action pre-pulls its image in the background so the cold case
+  stops costing the gate ~2.5 min of pure `docker pull`.
 
 inputs:
   trx-prefix:
@@ -60,16 +62,20 @@ inputs:
     default: '10'
   ai-governance-timeout-minutes:
     description: >
-      Cap for the focused MCP registry/taxonomy roster drift tests. The full
-      solution build already produced this test assembly, so the smoke adds no
-      restore or compilation work.
+      Cap for the focused MCP registry/taxonomy roster drift tests. The build
+      step already produced this test assembly (Honua.Ai.Tests is one of the
+      projects an affected-scope build is always seeded with), so the smoke adds
+      no restore or compilation work.
     required: false
     default: '2'
   governance-timeout-minutes:
     description: >
       Cap for the Server-project governance/drift tests
       (EndpointRegistryDriftTests + Category=Architecture siblings). Higher than
-      the others because this step brings up a Testcontainers PostgreSQL cold.
+      the others because this step brings up a Testcontainers PostgreSQL. The
+      first step of this action pre-pulls that image in the background, so the
+      cold case should now cost about what the warm one does — but the cap stays
+      generous, because a pre-pull that fails is a deliberate no-op.
     required: false
     default: '15'
 
