@@ -102,7 +102,9 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOff_AuthenticatedNonAdminBearerReturns403()
     {
-        using var client = CreateBearerClient(_fixture, CreateToken("studio-user-disabled"));
+        using var client = CreateBearerClient(
+            _fixture,
+            CreateToken("studio-user-disabled", tenantId: "studio-tenant"));
 
         using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
         using var chatResponse = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
@@ -173,7 +175,10 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     {
         var audit = new CapturingAuditLog();
         await using var fixture = await CreateEndUserFixtureAsync(audit);
-        var token = CreateToken("studio-machine", isClientCredentials: true);
+        var token = CreateToken(
+            "studio-machine",
+            isClientCredentials: true,
+            tenantId: "studio-tenant");
         using var client = CreateBearerClient(fixture, token);
 
         using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
