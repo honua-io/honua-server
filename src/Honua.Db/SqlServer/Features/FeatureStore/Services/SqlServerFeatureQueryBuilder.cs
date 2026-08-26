@@ -186,8 +186,7 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         foreach (var column in columns)
         {
-            SqlServerIdentifier.EnsureValid(column, "attribute column");
-            sb.Append(", ").Append(SqlServerIdentifier.Quote(column));
+            sb.Append(", ").Append(SqlServerIdentifier.QuoteAttribute(column));
         }
     }
 
@@ -365,9 +364,8 @@ internal static partial class SqlServerFeatureQueryBuilder
         var clauses = new List<string>(query.OrderBy.Value.Length);
         foreach (var orderBy in query.OrderBy.Value)
         {
-            SqlServerIdentifier.EnsureValid(orderBy.Field, "order-by column");
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{SqlServerIdentifier.Quote(orderBy.Field)} {direction}");
+            clauses.Add($"{SqlServerIdentifier.QuoteAttribute(orderBy.Field)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
