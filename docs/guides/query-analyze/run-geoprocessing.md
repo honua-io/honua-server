@@ -32,7 +32,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
    }
    ```
 
-   The `wkb` value above is `POINT(-122.4194 37.7749)`. Only `"response": "document"` mode is supported; omit `response` or set it to `document`.
+   The `wkb` value above is `POINT(-122.4194 37.7749)`. This asynchronous example requires document mode, so omit `response` or set it to `document`. For a process advertising `sync-execute`, omit `Prefer` to run synchronously; a synchronous request with exactly one inline output may set `"response": "raw"`.
 
 4. Poll the job until `status` reaches `successful` (or `failed`/`dismissed`). Take `JOB` from the `Location` header or the `jobID` field:
 
