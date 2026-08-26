@@ -133,6 +133,25 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          # Cross-job bin/obj cache (ADR-0043 PR #1), behind a repo variable so
+          # promotion is a variable flip and rollback is instant — no PR, no
+          # merge train, no wait on the very gate being changed.
+          #
+          # HONUA_PR_GATE_BUILD_CACHE STARTS UNSET, i.e. OFF. Merging this
+          # changes nothing observable; it only installs the switch.
+          #
+          # PROMOTION CRITERION IS `PR Gate` p90 STRICTLY BETTER OVER ONE WEEK OF
+          # RUNS — never cache-hit rate. That is the #2708 lesson: the 150 MiB
+          # shared server-test producer had a fine hit rate and still regressed
+          # time-to-first-test, which is why #2735 replaced it. A cache that hits
+          # 90% of the time and adds restore/save to every run is a regression.
+          # Watch the restore/save cost on MISSES too, the `**/bin` + `**/obj`
+          # payload against the disk budget the `Free disk space` step above
+          # already fights for, and key thrash — the key hashes every `.cs`, so
+          # any source change invalidates the entry and falls to `restore-keys`.
+          # If p90 is not strictly better, the variable stays unset. That is a
+          # successful measurement, not a failed change.
+          enable-build-cache: ${{ vars.HONUA_PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
       - name: Lean gate (build + format + fast unit/architecture smoke)
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
