@@ -43,6 +43,36 @@ public sealed class WebSocketEndpointMetadata
 }
 
 /// <summary>
+/// Marks a GET endpoint whose handler has side effects and therefore must not be executed
+/// by the shared HEAD-to-GET fallback.
+/// </summary>
+/// <remarks>
+/// GET routes should normally be safe, but compatibility surfaces can expose a mutating
+/// operation through GET. The declared methods are returned in the synthetic 405 response's
+/// <c>Allow</c> header when HEAD selects the marked GET candidate.
+/// </remarks>
+internal sealed class HeadRequestRejectedEndpointMetadata
+{
+    /// <summary>
+    /// Creates metadata for a side-effecting GET endpoint that rejects HEAD.
+    /// </summary>
+    /// <param name="allowedMethods">Methods clients may use for the operation.</param>
+    public HeadRequestRejectedEndpointMetadata(IReadOnlyList<string> allowedMethods)
+    {
+        ArgumentNullException.ThrowIfNull(allowedMethods);
+        if (allowedMethods.Count == 0 || allowedMethods.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("At least one non-empty allowed method is required.", nameof(allowedMethods));
+        }
+
+        AllowedMethods = [.. allowedMethods];
+    }
+
+    /// <summary>Methods advertised in the synthetic 405 response's <c>Allow</c> header.</summary>
+    public IReadOnlyList<string> AllowedMethods { get; }
+}
+
+/// <summary>
 /// Marks a hidden routing candidate for an endpoint that originally accepted HEAD but not GET,
 /// so the shared pre-routing HEAD fallback can still select the declared HEAD handler.
 /// </summary>
@@ -109,8 +139,10 @@ public sealed class ExplicitHeadOnlyEndpointMetadata
 /// execution, and hands the *handler* whichever method it was written for: <c>HEAD</c> when
 /// the matched endpoint advertises HEAD itself (the PMTiles range proxy and the scene
 /// endpoints map <c>["GET", "HEAD"]</c> and short-circuit on it to avoid streaming a
-/// payload), otherwise <c>GET</c>. A GET-only handler has, by definition, no HEAD code path,
-/// and several of them read the request body whenever the method is not GET
+/// payload), otherwise <c>GET</c>. A compatibility GET that has side effects is marked with
+/// <see cref="HeadRequestRejectedEndpointMetadata"/> and returns 405 without executing.
+/// An ordinary GET-only handler has, by definition, no HEAD code path, and several of them
+/// read the request body whenever the method is not GET
 /// (<c>GeoServicesRequestValueHelpers.TryReadRequestValuesAsync</c>,
 /// <c>FeatureServer/MapServer generateRenderer</c>, the import endpoints); showing them
 /// <c>HEAD</c> would answer 400/415 where GET answers 200. Response-cache decisions
@@ -145,8 +177,9 @@ public sealed class ExplicitHeadOnlyEndpointMetadata
 /// What is intentionally unchanged: genuine 405s (HEAD on a POST-only route still fails
 /// method matching, because the rewritten GET does not match either), 404s for unknown
 /// paths, and the explicit "method not allowed" routes that answer POST/PUT/DELETE/PATCH.
-/// A HEAD request does execute the GET handler in full (its output is discarded), which is
-/// what makes <c>Content-Length</c> exact; handlers with an expensive body can still opt
+/// A HEAD request executes an ordinary GET handler in full (its output is discarded), which
+/// makes <c>Content-Length</c> exact. Side-effecting compatibility GETs opt out through
+/// <see cref="HeadRequestRejectedEndpointMetadata"/>; expensive safe handlers can still opt
 /// out by mapping HEAD themselves and short-circuiting, as the PMTiles proxy does.
 /// </para>
 /// <para>
@@ -515,8 +548,8 @@ internal sealed class HeadRequestMethodRestorationMiddleware(RequestDelegate nex
 
 /// <summary>
 /// Final stage of HEAD support: gives the matched endpoint the method its handler was written
-/// for. Endpoints that advertise HEAD keep seeing <c>HEAD</c>; every other endpoint sees the
-/// <c>GET</c> it maps, so a HEAD request takes exactly the GET code path. See
+/// for. Endpoints that advertise HEAD keep seeing <c>HEAD</c>; marked side-effecting GETs are
+/// rejected, and every other endpoint sees the <c>GET</c> it maps. See
 /// <see cref="HeadRequestSupport"/>.
 /// </summary>
 internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
@@ -529,8 +562,21 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 
         var endpoint = context.GetEndpoint();
 
-        if (!HeadRequestSupport.WasRewrittenFromHead(context) ||
-            AdvertisesHead(endpoint))
+        if (!HeadRequestSupport.WasRewrittenFromHead(context))
+        {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        if (endpoint?.Metadata.GetMetadata<HeadRequestRejectedEndpointMetadata>() is { } rejected)
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            context.Response.Headers.Allow = string.Join(", ", rejected.AllowedMethods);
+            await context.Response.StartAsync(context.RequestAborted).ConfigureAwait(false);
+            return;
+        }
+
+        if (AdvertisesHead(endpoint))
         {
             await _next(context).ConfigureAwait(false);
             return;

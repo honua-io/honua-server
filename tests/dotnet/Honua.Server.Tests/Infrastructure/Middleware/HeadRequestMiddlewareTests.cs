@@ -47,6 +47,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     private bool _upstreamRouteValuesAccessibleOnUnwind;
     private bool? _midstreamHandlerObservedResponseStarted;
     private bool _webSocketHandlerInvoked;
+    private bool _sideEffectingGetHandlerInvoked;
 
     /// <summary>
     /// Completed by the streaming route when its loop unwinds, so a test can prove the handler
@@ -149,6 +150,12 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             .WithMetadata(new ExplicitHeadOnlyEndpointMetadata(["HEAD"]));
 
         _app.MapPost("/post-only", () => Results.Ok(new { ok = true }));
+        _app.MapGet("/side-effecting-get", () =>
+        {
+            _sideEffectingGetHandlerInvoked = true;
+            return Results.Ok();
+        }).WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]));
+        _app.MapPost("/side-effecting-get", () => Results.Ok());
         _app.MapGet("/no-content", () => Results.NoContent());
 
         // A long-lived Server-Sent Events route: commits headers, writes a preamble, then loops
@@ -386,6 +393,16 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         response.StatusCode.Should().Be(
             HttpStatusCode.MethodNotAllowed,
             "the rewritten GET does not match a POST-only route either, so the genuine 405 survives");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnSideEffectingGetRoute_Returns405WithoutExecutingHandler()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/side-effecting-get");
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+        _sideEffectingGetHandlerInvoked.Should().BeFalse();
     }
 
     [UnitTest]
