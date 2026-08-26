@@ -66,6 +66,49 @@ public sealed class ProposalStatusResourceTests
     }
 
     [UnitTest]
+    public async Task ReadAsync_SameOperatorSubjectFromDifferentMembershipIssuer_RequiresReadAuthority()
+    {
+        var store = Substitute.For<IOperationProposalStore>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        store.GetAsync("proposal-1", Arg.Any<CancellationToken>()).Returns(CreateProposal(
+            "stable-subject",
+            membershipIssuer: "https://idp-a.example",
+            issuer: "honua-operator",
+            scheme: "OperatorBearer"));
+        jobService.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Deployment,
+                OperatorOperation.Read,
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new GeoprocessingAuthorizationException(requiresAuthentication: false)));
+        var context = CreateContext(
+            "stable-subject",
+            store,
+            jobService,
+            issuer: "honua-operator",
+            authenticationScheme: "OperatorBearer",
+            membershipIssuer: "https://idp-b.example");
+        var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
+
+        var act = () => resource.ReadAsync(
+            context,
+            "honua://proposals/proposal-1",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await jobService.Received(1).EnsureCallerAuthorizedAsync(
+            context.User,
+            OperatorResourceType.Deployment,
+            OperatorOperation.Read,
+            Arg.Any<CancellationToken>());
+        await jobService.DidNotReceive().EnsureCallerAuthorizedAsync(
+            context.User,
+            OperatorResourceType.Deployment,
+            OperatorOperation.Publish,
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task ReadAsync_TenantlessModeCanPollTenantlessProposal()
     {
         var store = Substitute.For<IOperationProposalStore>();
@@ -121,7 +164,9 @@ public sealed class ProposalStatusResourceTests
         IGeoprocessingJobService jobService,
         string issuer = "https://issuer.example",
         string? tenant = "tenant-1",
-        bool multiTenancyEnabled = true)
+        bool multiTenancyEnabled = true,
+        string authenticationScheme = "Bearer",
+        string? membershipIssuer = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -135,21 +180,30 @@ public sealed class ProposalStatusResourceTests
             .AddSingleton<IConfiguration>(configuration)
             .AddSingleton<ITenantContext>(new TestTenantContext(tenant))
             .BuildServiceProvider();
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, subject),
+            new(ClaimTypes.Name, "Mutable Display Name"),
+            new("iss", issuer),
+        };
+        if (membershipIssuer is not null)
+        {
+            claims.Add(new Claim(OperationAuthorityContext.MembershipIssuerClaimType, membershipIssuer));
+        }
+
         return new DefaultHttpContext
         {
             RequestServices = services,
-            User = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.NameIdentifier, subject),
-                new Claim(ClaimTypes.Name, "Mutable Display Name"),
-                new Claim("iss", issuer),
-            ], "Bearer")),
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationScheme)),
         };
     }
 
     private static OperationProposal CreateProposal(
         string actor,
-        string effectiveTenant = "tenant-1") => new()
+        string effectiveTenant = "tenant-1",
+        string? membershipIssuer = null,
+        string issuer = "https://issuer.example",
+        string scheme = "Bearer") => new()
         {
             ProposalId = "proposal-1",
             Kind = OperationClass.Deploy,
@@ -158,9 +212,10 @@ public sealed class ProposalStatusResourceTests
             UpdatedAt = new DateTimeOffset(2026, 8, 24, 0, 0, 0, TimeSpan.Zero),
             Authority = new OperationAuthorityContext
             {
-                Issuer = "https://issuer.example",
+                Issuer = issuer,
+                MembershipIssuer = membershipIssuer,
                 Actor = actor,
-                Scheme = "Bearer",
+                Scheme = scheme,
                 EffectiveTenant = effectiveTenant,
                 ScopeGoverned = true,
                 ResourceType = OperatorResourceType.Deployment,
