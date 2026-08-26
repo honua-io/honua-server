@@ -71,7 +71,7 @@ See the [OGC API Coverages Coverage](../../reference/protocols/ogc-apis.md) docu
 - List, poll, and dismiss jobs (`GET /jobs`, `GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`)
 - Retrieve results when available (`GET /jobs/{jobId}/results`)
 
-> **V1 notes**: The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omission selects bounded synchronous execution for processes advertising `sync-execute`; async-only processes remain asynchronous, and `Prefer: respond-async` explicitly requests a durable job. Job lifecycle routes and asynchronous execution require Redis-backed durable storage (`503` when unavailable). Results endpoints return `200 OK` with a document-mode JSON body on success; synchronous single-output values may instead request `"response": "raw"`. See the [OGC API Processes Coverage](../../reference/protocols/ogc-apis.md) for conformance classes, endpoint details, and V1 limitations.
+> **V1 notes**: The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omission selects bounded synchronous execution for processes advertising `sync-execute`; async-only processes remain asynchronous, and `Prefer: respond-async` explicitly requests a durable job. All current execution modes and job lifecycle routes require Redis-backed durable storage (`503` when unavailable). Results endpoints return `200 OK` with a document-mode JSON body on success; synchronous single-output values may instead request `"response": "raw"`. See the [OGC API Processes Coverage](../../reference/protocols/ogc-apis.md) for conformance classes, endpoint details, and V1 limitations.
 
 ---
 
