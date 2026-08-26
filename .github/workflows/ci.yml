@@ -144,6 +144,7 @@ jobs:
     # the batched commit has no PR body and the lean gate does not template-check.
     if: ${{ github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       pull-requests: write
       issues: read
@@ -301,6 +302,7 @@ jobs:
     # enforces up-to-date-ness itself).
     if: ${{ github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
@@ -355,6 +357,7 @@ jobs:
     if: ${{ github.event_name != 'merge_group' }}
     needs: pr-readiness
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       non_test_changes: ${{ steps.filter.outputs.non_test_changes }}
       build_changes: ${{ steps.filter.outputs.build_changes }}
@@ -519,6 +522,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
@@ -918,6 +922,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
     needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -2011,6 +2016,7 @@ jobs:
     # the heavy test lane is fully dormant on a batched commit.
     if: ${{ github.event_name != 'merge_group' && always() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs:
       - dotnet-foundation-tests
       - server-tests
@@ -3031,6 +3037,7 @@ jobs:
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
     needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check required job results
         run: |

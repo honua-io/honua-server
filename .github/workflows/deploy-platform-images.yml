@@ -32,6 +32,7 @@ jobs:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 140
     strategy:
       fail-fast: false
       matrix:
@@ -472,6 +473,7 @@ jobs:
     if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || (github.ref == 'refs/heads/trunk' && inputs.scan_only != true)) && needs.build-and-push.result == 'success' }}
     needs: build-and-push
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
