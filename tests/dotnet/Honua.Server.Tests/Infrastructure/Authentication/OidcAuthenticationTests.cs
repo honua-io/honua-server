@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Tests;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -19,6 +20,7 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
@@ -264,7 +266,8 @@ public class OidcAuthenticationTests
         string[]? roles = null,
         string issuer = TestIssuer,
         string audience = TestAudience,
-        int expiresInMinutes = 60)
+        int expiresInMinutes = 60,
+        string? tenantId = null)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -284,6 +287,11 @@ public class OidcAuthenticationTests
                 claims.Add(new Claim("roles", role));
                 claims.Add(new Claim(ClaimTypes.Role, role));
             }
+        }
+
+        if (tenantId is not null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
         }
 
         var token = new JwtSecurityToken(
@@ -650,7 +658,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"]);
+        var token = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -708,6 +716,22 @@ public class OidcAuthenticationTests
         }
 
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/version")]
+    public void AdminVersionEndpoint_IsMarkedTenantIndependent()
+    {
+        using var factory = CreateOidcTestFactory();
+        using var client = factory.CreateClient();
+
+        var versionEndpoint = factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(endpoint => endpoint.RoutePattern.RawText == "/api/v{version:apiVersion}/admin/version");
+
+        Assert.NotNull(versionEndpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
     }
 
     [IntegrationTest]
@@ -871,7 +895,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var validBearer = GenerateTestJwtToken(roles: ["admin"]);
+        var validBearer = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act - invalid API key is present, valid bearer should still succeed
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -921,7 +945,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"]);
+        var token = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
@@ -1501,7 +1525,7 @@ public class OidcAuthenticationTests
 
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"], issuer: oktaIssuer);
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: oktaIssuer, tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -1531,7 +1555,7 @@ public class OidcAuthenticationTests
 
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer);
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer, tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -1563,7 +1587,11 @@ public class OidcAuthenticationTests
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
         // Token uses the API audience (not the ClientId) as the audience claim
-        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer, audience: apiAudience);
+        var token = GenerateTestJwtToken(
+            roles: ["admin"],
+            issuer: auth0Issuer,
+            audience: apiAudience,
+            tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");

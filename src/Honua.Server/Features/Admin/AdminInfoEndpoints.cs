@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -28,6 +29,7 @@ internal static class AdminInfoEndpoints
             .WithName("GetAdminVersion")
             .WithSummary("Get admin API version info")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<AdminVersionResponse>>();
 
         // Anonymous by design (#1633): this is the SDK compatibility handshake
