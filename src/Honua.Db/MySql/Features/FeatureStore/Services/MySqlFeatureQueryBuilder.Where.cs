@@ -81,7 +81,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
             var clauses = new List<string>(orderBy.Length);
             foreach (var clause in orderBy)
             {
-                MySqlIdentifier.ValidateFieldName(clause.Field);
+                MySqlIdentifier.ValidateAttributeName(clause.Field);
                 var direction = clause.Ascending ? "ASC" : "DESC";
                 clauses.Add($"{MySqlIdentifier.Quote(clause.Field)} {direction}");
             }
