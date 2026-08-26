@@ -115,14 +115,33 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertTrue(result["candidate"]["worker_build"])
         self.assertTrue(result["comparison"]["worker_candidate_only"])
 
-    def test_solution_and_test_fixture_changes_expose_legacy_waste(self) -> None:
+    def test_solution_and_test_fixture_changes_no_longer_trigger_serving_images(self) -> None:
+        # #3204 narrowed the authoritative serving trigger to image-DEFINING
+        # inputs, so the solution file and test-only fixtures now agree with the
+        # graph-derived candidate: neither selects a serving image on the pull
+        # request. The worker trigger was not touched and still fires.
         solution = report("Honua.sln")
-        self.assertTrue(solution["legacy"]["serving_trigger"])
+        self.assertFalse(solution["legacy"]["serving_trigger"])
         self.assertTrue(solution["legacy"]["worker_trigger"])
         self.assertFalse(any(solution["candidate"]["serving_variants"].values()))
         self.assertFalse(solution["candidate"]["worker_build"])
         fixture = report("tests/fixtures/ai-builder/example.json")
-        self.assertTrue(fixture["comparison"]["serving_legacy_only"])
+        self.assertFalse(fixture["legacy"]["serving_trigger"])
+        self.assertFalse(fixture["comparison"]["serving_legacy_only"])
+
+    def test_source_change_defers_serving_images_to_post_merge_lanes(self) -> None:
+        # The narrowed pull_request trigger no longer fires the serving image
+        # workflow for managed source. The graph-derived candidate still
+        # classifies the change as serving-impacted, so the comparison now
+        # reports `serving_candidate_only`: promoting the candidate router as
+        # written would RE-ADD per-push image builds rather than narrow them.
+        # Placement, not routing, is what preserves this evidence - batch-CI
+        # `aot-build` pre-merge, then the nightly/release/deploy final-rootfs
+        # lanes before publication.
+        result = report("src/Honua.Server/Program.cs")
+        self.assertFalse(result["legacy"]["serving_trigger"])
+        self.assertTrue(all(result["candidate"]["serving_variants"].values()))
+        self.assertTrue(result["comparison"]["serving_candidate_only"])
 
     def test_embedded_catalog_is_discovered_as_serving_input(self) -> None:
         result = report("docs/gis/data/feature-catalog.json")
@@ -133,7 +152,8 @@ class NativeImageImpactTests(unittest.TestCase):
         embedded = report("tests/fixtures/ai-builder/spatial-query-contract-v1.json")
         unrelated = report("tests/fixtures/ai-builder/new-test-only-fixture.json")
         self.assertTrue(embedded["candidate"]["risk_classes"]["server_aot_compile"])
-        self.assertTrue(unrelated["comparison"]["serving_legacy_only"])
+        self.assertFalse(unrelated["candidate"]["risk_classes"]["server_aot_compile"])
+        self.assertFalse(unrelated["legacy"]["serving_trigger"])
 
     def test_pack_only_readme_does_not_select_runtime_images(self) -> None:
         result = report("README.md")

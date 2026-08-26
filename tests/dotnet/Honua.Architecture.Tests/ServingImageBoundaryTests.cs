@@ -52,10 +52,13 @@ public sealed class ServingImageBoundaryTests
         }
 
         var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
-        nightly.Should().Contain(VerifierCommand, Exactly.Twice(),
-            "both generic and Lambda AOT digests must be inspected before their manifests are published");
+        nightly.Should().Contain(VerifierCommand, Exactly.Thrice(),
+            "the generic and Lambda AOT digests must be inspected before their manifests are "
+            + "published, and the Azure Functions AOT rootfs is boundary-verified nightly too "
+            + "(#3204) even though this workflow does not publish that variant");
         nightly.Should().Contain("id: build", Exactly.Twice(),
-            "both AOT builds expose the immutable digest consumed by their verifier");
+            "exactly the two PUBLISHED AOT builds expose the immutable digest consumed by their "
+            + "verifier; the Azure Functions job verifies a locally loaded image and promotes nothing");
         nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
     }
@@ -313,22 +316,79 @@ public sealed class ServingImageBoundaryTests
             functionsDockerfile.Should().Contain($"COPY src/{project}/*.csproj src/{project}/");
         }
 
-        foreach (var transitiveInput in new[]
+        // #3204 routing contract. The pull_request trigger carries the inputs
+        // that DEFINE the image and nothing else. Managed-source inputs are
+        // deliberately absent: they invalidate all three variants on nearly
+        // every pull request, which is what made this workflow a ~140-minute
+        // serial native build on every review-fix push. Their evidence is
+        // placed on named lanes instead, asserted below.
+        var pathsIndex = workflow.IndexOf("    paths:", StringComparison.Ordinal);
+        pathsIndex.Should().BeGreaterThan(-1, "the workflow must stay path-filtered");
+        var dispatchIndex = workflow.IndexOf("  workflow_dispatch:", pathsIndex, StringComparison.Ordinal);
+        dispatchIndex.Should().BeGreaterThan(pathsIndex);
+        var triggerPaths = workflow[pathsIndex..dispatchIndex];
+
+        foreach (var imageDefiningInput in new[]
                  {
-                     "src/**",
-                     "docs/gis/data/feature-catalog.json",
-                     "docs/developer/api-specs/admin-api.json",
-                     "tests/fixtures/ai-builder/**",
-                     "Directory.Build.props",
-                     "Directory.Build.targets",
-                     "Directory.Packages.props",
-                     "eng/**",
-                     "scripts/docker/restore-dotnet-with-github-packages.sh",
-                     ".dockerignore"
+                     "'.dockerignore'",
+                     "'docker/Dockerfile.aot'",
+                     "'docker/Dockerfile.lambda.aot'",
+                     "'docker/Dockerfile.functions.aot'",
+                     "'docker/cloud/azure-functions/**'",
+                     "'scripts/docker/restore-dotnet-with-github-packages.sh'",
+                     "'scripts/ci/verify-serving-image-boundary.py'",
+                     "'scripts/ci/fixtures/validate-serving-image-boundary.py'",
+                     "'.github/workflows/serving-image-boundary.yml'"
                  })
         {
-            workflow.Should().Contain(transitiveInput);
+            triggerPaths.Should().Contain(imageDefiningInput,
+                "every input that changes the produced image must still fire this workflow");
         }
+
+        foreach (var deferredInput in new[]
+                 {
+                     "'src/**'",
+                     "'eng/**'",
+                     "'samples/Honua.StacOpsDemo/**'",
+                     "'docs/gis/data/feature-catalog.json'",
+                     "'docs/developer/api-specs/admin-api.json'",
+                     "'tests/fixtures/ai-builder/**'",
+                     "'Honua.sln'",
+                     "'global.json'",
+                     "'Directory.Build.props'",
+                     "'Directory.Build.targets'",
+                     "'Directory.Packages.props'",
+                     "'NuGet.config'",
+                     "'.editorconfig'"
+                 })
+        {
+            triggerPaths.Should().NotContain(deferredInput,
+                "managed-source inputs are verified by the batch train's AOT compile job pre-merge "
+                + "and by the nightly/release/deploy final-rootfs lanes, not by three serial native "
+                + "builds on every push (#3204)");
+        }
+
+        // The deferral is only safe while those lanes really do build and
+        // boundary-verify every production variant post-merge.
+        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
+        foreach (var productionVariant in new[]
+                 {
+                     "docker/Dockerfile.aot",
+                     "docker/Dockerfile.lambda.aot",
+                     "docker/Dockerfile.functions.aot"
+                 })
+        {
+            nightly.Should().Contain($"file: {productionVariant}",
+                "a variant with no nightly rootfs verification would lose coverage outright");
+        }
+
+        var batchCi = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/ci.yml"));
+        batchCi.Should().Contain("aot-build:",
+            "the batch train keeps native-AOT compile risk pre-merge for source changes");
+
+        var prGate = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
+        prGate.Should().Contain("validate-serving-image-boundary.py",
+            "boundary detector correctness stays on every pull request");
     }
 
     [ArchitectureTest]

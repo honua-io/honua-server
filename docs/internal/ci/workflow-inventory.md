@@ -66,7 +66,7 @@ analysis.
 | `import-fidelity-scorecard-governance.yml` | Import Fidelity Scorecard Governance | `pull_request`, `workflow_dispatch` | Path-scoped to parity/baseline/perf-budget assets; smoke-tests the perf-parity gate (#1249) with pass/fail fixtures. |
 | `capability-impact-comparison.yml` | Capability Impact Comparison | `pull_request`, `workflow_dispatch` | Capability-graph completeness plus a report-only comparison of ADR-0037 shard routing against the capability selector. |
 | `capability-matrix-aggregation.yml` | Capability Matrix Aggregation | `pull_request`, `push` (trunk), weekly `schedule`, `workflow_dispatch` | Joins `feature-catalog.json`, `docs/cite-status.md`, the GeoServices REST parity index, capability crosswalks, and committed client-compat envelopes into `docs/gis/data/capability-matrix.v1.json` (#2892/#2893). |
-| `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (base `trunk`, path-filtered), `workflow_dispatch` | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Authoritative pre-merge final-rootfs evidence; the same boundary is re-proved by `nightly-container-build.yml`, `deploy.yml`, `deploy-platform-images.yml`, and `release-bundle.yml` before any publication. Deliberately isolated from the required lean `PR Gate`. |
+| `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (base `trunk`, **image-defining paths only**), `workflow_dispatch` | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Since #3204 the trigger carries only inputs that DEFINE the image (the three AOT Dockerfiles, `docker/cloud/azure-functions/**`, `.dockerignore`, the in-image restore helper, the boundary verifier and its fixture harness, this workflow); managed source (`src/**`, `eng/**`, solution, build props) is deliberately not a trigger and is placed on the lanes in the table below. The trigger paths and the in-workflow variant `case` arms are parsed and cross-checked by `scripts/ci/native-image-impact.py`, which fails closed on drift from `.github/native-image-impact.json`. Deliberately isolated from the required lean `PR Gate`. |
 | `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head; publishes SARIF. Re-proved on the nightly security and release/deploy lanes. |
 | `geoarrow-interop-fixture.yml` | GeoArrow Interop Fixture | `pull_request`, `workflow_dispatch` | Produces the GeoArrow 0.2 interop fixture. |
 | `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). |
@@ -117,12 +117,55 @@ The worker figure is a build-time bound only: the GDAL worker's Trivy scan is
 enforcing and its verdict depends on the vulnerability database at scan time, so
 it is re-run on every head and is never reusable.
 
-Evidence placement therefore stays as-is (pre-merge boundary/worker evidence on
-the PR, re-proved on nightly/release/deploy before publication) and the expected
-savings move to exact-input build reuse rather than path narrowing. The
-observation receipt now carries per-image content digests over the merge tree
-the images are actually built from, so reuse eligibility is measured before
-anything is enforced; see `native-image-impact-routing.md`.
+#### Serving-image evidence placement moved (2026-08-25)
+
+The two findings above are the same fact seen from opposite ends. A
+graph-derived *router* cannot narrow this trigger, because `src/**` genuinely is
+in the serving closure — and that is also why 60% of serving-impacted heads
+rebuild an input set already built on the same pull request: the trigger is
+keyed on managed source, which changes on essentially every review-fix push and
+invalidates all three variants at once. Routing accuracy was never the lever;
+*placement* is.
+
+`serving-image-boundary.yml` therefore now fires only on inputs that DEFINE the
+image — the three production AOT Dockerfiles, `docker/cloud/azure-functions/**`,
+`.dockerignore`, the in-image restore helper, the boundary verifier and its
+fixture harness, and the workflow itself. Managed source keeps its evidence, on
+lanes that already existed or were extended here:
+
+| Risk class | Proved by | When |
+|---|---|---|
+| Native-AOT compile (`src/**`, `eng/**`, build props, solution) | `ci.yml` `aot-build` | pre-merge, on the batch that lands |
+| Boundary detector correctness (all clean and injected-rootfs fixtures) | `pr-gate.yml` | every push on every pull request |
+| Final rootfs — generic AOT, Lambda AOT | `nightly-container-build.yml` | daily, on the exact digest, before its manifest publishes |
+| Final rootfs — Azure Functions AOT | `nightly-container-build.yml` `verify-functions-aot` (added with this change) | daily, verification only; publishes nothing |
+| Final rootfs — every published variant | `deploy.yml`, `deploy-platform-images.yml`, `release-bundle.yml` | on the exact digest, before promotion |
+
+The Azure Functions row is the one that had to be added: before this change the
+only lane that BUILT that variant post-merge was `deploy-platform-images.yml`
+(release tags plus one weekly scan-only schedule), so deferring source-driven
+runs without it would have widened that variant's detection window from a push
+to a week. #3204's warning that deleting the PR triggers would trade cost for
+delayed defects is honoured by keeping compile risk pre-merge, detector risk
+per-push, and rootfs risk nightly — not by removing a class of evidence.
+
+Expected effect: the workflow fires only on pull requests that touch an
+image-defining file. The baseline sample does not break its 40 serving-impacted
+heads down by trigger class, so the ~785 completed-build runner-minutes per day
+is the **ceiling** on the saving, not a prediction of it; AC#7's post-change
+30-run comparison must measure the realised figure. Note also that the
+observation receipt's cohorts invert: managed-source heads now report
+`serving_candidate_only`, because the graph-derived candidate would re-add the
+per-push builds this change removes. Promoting that candidate router as written
+would undo the narrowing, so its promotion criteria need restating before any
+enforcement decision.
+
+Exact-input build reuse (follow-on #3) is still worth doing — it is what would
+recover the remaining repeat-push cost on the GDAL worker lane, whose Trivy
+verdict depends on the vulnerability database at scan time and is never
+reusable. The observation receipt already carries per-image content digests over
+the merge tree the images are actually built from, so reuse eligibility is
+measured before anything is enforced; see `native-image-impact-routing.md`.
 
 ## Trusted observers and evidence ledgers (read-only)
 
@@ -146,7 +189,7 @@ anything is enforced; see `native-image-impact-routing.md`.
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
 | `load-soak-nightly.yml` | Load/Soak Nightly | daily `schedule` (03:00 UTC), `workflow_dispatch` | Scheduled load/soak tests. |
 | `security-nightly.yml` | Security Nightly | daily `schedule` (02:00 UTC), `workflow_dispatch` | Consolidated NuGet vulnerability scan, Trivy filesystem scan, and container security scan (Hadolint, Trivy, structure tests, runtime constraints). |
-| `nightly-container-build.yml` | Nightly Container Build | daily `schedule` (06:00 UTC), `workflow_dispatch` | Scheduled container build. |
+| `nightly-container-build.yml` | Nightly Container Build | daily `schedule` (06:00 UTC), `workflow_dispatch` | Scheduled container build. Publishes the generic AOT, Lambda AOT, and JIT images, boundary-verifying each AOT digest before its manifest. `verify-functions-aot` additionally builds and boundary-verifies the Azure Functions AOT rootfs and publishes nothing — it is the daily source-driven proof for the one production variant `deploy-platform-images.yml` alone publishes (#3204). |
 | `nightly-migration-evidence.yml` | Nightly Migration Evidence Pack | daily `schedule` (07:15 UTC), `workflow_dispatch` | Drives the fixture-based GeoServer migration apply path end-to-end (#1015) and uploads the deterministic evidence pack. |
 | `protocol-harness-certification.yml` | Protocol Harness Certification | daily `schedule` (10:41 UTC), `workflow_dispatch` | Executes the exact governed server integration-test roster outside PR CI. Separately checks out the producer contract and candidate source, binds a SHA-labeled immutable image identity, rejects incomplete TRX, and emits digest-bound operation receipts with exact `test_ids` for nightly/release aggregation. |
 | `provider-http-smoke.yml` | Provider HTTP-Stack Smoke | daily `schedule` (06:30 UTC), `workflow_dispatch` | Interface-level smoke that boots a real host per secondary provider (DuckDB in-process; MySQL and SQL Server via Testcontainers) over FeatureServer/OGC API Features/OData/tiles, plus the gated Oracle real-database lane (#2947). |
