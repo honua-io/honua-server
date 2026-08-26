@@ -161,7 +161,12 @@
             "description": "Synchronous execution completed successfully. Document mode returns a results document; raw mode returns the single inline output with its artifact media type.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Results" }
+                "schema": {
+                  "anyOf": [
+                    { "$ref": "#/components/schemas/Results" },
+                    { "$ref": "#/components/schemas/RawJsonValue" }
+                  ]
+                }
               },
               "application/geo+json": {
                 "schema": { "type": "object" }
@@ -808,6 +813,9 @@
         "type": "object",
         "description": "Document-mode results map keyed by output identifier (OGC API Processes Part 1 §7.11.1). V1 canonical process declares no value-typed outputs, so the map is empty.",
         "additionalProperties": true
+      },
+      "RawJsonValue": {
+        "description": "An arbitrary JSON object, array, string, number, boolean, or null returned by raw-mode synchronous execution."
       }
     }
   }

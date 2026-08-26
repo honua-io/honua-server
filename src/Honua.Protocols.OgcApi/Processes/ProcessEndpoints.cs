@@ -39,7 +39,7 @@ internal static class ProcessEndpoints
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime.",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
+        JobControlOptions = ImmutableArray.Create("async-execute"),
         OutputTransmission = ImmutableArray.Create("value")
     };
 
@@ -57,7 +57,7 @@ internal static class ProcessEndpoints
                       "document-mode results body (empty until the canonical process declares " +
                       "value-typed outputs).",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
+        JobControlOptions = ImmutableArray.Create("async-execute"),
         OutputTransmission = ImmutableArray.Create("value"),
         Inputs = ImmutableDictionary.CreateRange(new[]
         {
@@ -227,8 +227,12 @@ internal static class ProcessEndpoints
                 return OgcProcessesResults.NoSuchProcess(processId);
             }
 
-            var supportsSync = definition == null
-                || (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0;
+            // The canonical process accepts arbitrary multi-step plans whose inner
+            // processes may be async-only. Keep that plan surface asynchronous;
+            // synchronous execution is safe only for a concrete catalog definition
+            // that explicitly advertises the capability.
+            var supportsSync = definition != null
+                && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0;
             var executeSynchronously = supportsSync && !preferAsync;
 
             OgcExecuteRequest? request;

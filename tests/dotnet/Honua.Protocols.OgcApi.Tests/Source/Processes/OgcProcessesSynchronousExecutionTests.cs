@@ -75,12 +75,28 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     public async Task Execute_OmittedPreferForAsyncOnlyProcess_ReturnsAsyncWithoutAcknowledgement()
     {
         using var content = new StringContent(
-            """{"inputs":{"source":"AAAA","units":"degrees"}}""",
+            """
+            {
+              "inputs": {
+                "plan": {
+                  "planId": "async-plan",
+                  "steps": [
+                    {
+                      "stepId": "s1",
+                      "kind": "geoprocess",
+                      "processId": "surface.slope",
+                      "inputs": { "source": "AAAA", "units": "degrees" }
+                    }
+                  ]
+                }
+              }
+            }
+            """,
             Encoding.UTF8,
             "application/json");
 
         using var response = await _fixture.App.Client.PostAsync(
-            "/ogc/processes/processes/surface.slope/execution",
+            "/ogc/processes/processes/honua-geoprocessing/execution",
             content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);

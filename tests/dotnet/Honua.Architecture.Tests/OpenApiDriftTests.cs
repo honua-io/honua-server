@@ -282,12 +282,20 @@ public sealed class OpenApiDriftTests
         var success = responses.GetProperty("200");
         success.TryGetProperty("headers", out _).Should().BeFalse(
             "synchronous-by-omission execution does not apply a Prefer token");
-        success
+        var jsonAlternatives = success
             .GetProperty("content")
             .GetProperty("application/json")
             .GetProperty("schema")
-            .GetProperty("$ref")
-            .GetString().Should().Be("#/components/schemas/Results");
+            .GetProperty("anyOf")
+            .EnumerateArray()
+            .Select(alternative => alternative.GetProperty("$ref").GetString())
+            .ToArray();
+        jsonAlternatives.Should().BeEquivalentTo(
+            ["#/components/schemas/Results", "#/components/schemas/RawJsonValue"],
+            "application/json can carry either a document-mode results map or an arbitrary raw JSON value");
+        document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("RawJsonValue").TryGetProperty("type", out _).Should().BeFalse(
+                "raw JSON can be an object, array, string, number, boolean, or null");
         success.GetProperty("content").TryGetProperty("application/geo+json", out _).Should().BeTrue(
             "raw synchronous geometry outputs retain their artifact media type");
         success.GetProperty("content").TryGetProperty("application/wkb", out _).Should().BeTrue(
