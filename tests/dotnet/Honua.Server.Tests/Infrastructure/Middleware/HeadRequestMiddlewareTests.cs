@@ -44,6 +44,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     /// cross-test synchronisation.
     /// </summary>
     private string? _upstreamMethodOnUnwind;
+    private bool _upstreamRouteValuesAccessibleOnUnwind;
     private bool? _midstreamHandlerObservedResponseStarted;
     private bool _webSocketHandlerInvoked;
 
@@ -83,6 +84,8 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             context.Response.Headers["X-Upstream-Method"] = context.Request.Method;
             await next(context);
             _upstreamMethodOnUnwind = context.Request.Method;
+            _ = context.Request.RouteValues.TryGetValue("id", out _);
+            _upstreamRouteValuesAccessibleOnUnwind = true;
         });
 
         // Production installs response compression between method restoration and final HEAD
@@ -371,6 +374,8 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
 
         getResponse.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         getResponse.Content.Headers.Allow.Should().ContainSingle().Which.Should().Be("HEAD");
+        _upstreamRouteValuesAccessibleOnUnwind.Should().BeTrue(
+            "production correlation and logging middleware access route values after the synthetic 405 unwinds");
     }
 
     [UnitTest]

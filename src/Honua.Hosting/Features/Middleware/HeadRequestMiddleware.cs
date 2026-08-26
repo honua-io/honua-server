@@ -427,7 +427,6 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
             !hasOrdinaryGetCandidate)
         {
             httpContext.SetEndpoint(CreateMethodNotAllowedEndpoint(allowedMethods));
-            httpContext.Request.RouteValues = null!;
         }
 
         return Task.CompletedTask;
