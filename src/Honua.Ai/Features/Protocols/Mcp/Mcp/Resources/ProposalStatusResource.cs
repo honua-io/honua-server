@@ -86,6 +86,7 @@ internal sealed class ProposalStatusResource : IMcpResource
         var isRetainedProposer =
             string.Equals(authority.Actor, callerAuthority.Actor, StringComparison.Ordinal) &&
             string.Equals(authority.Issuer, callerAuthority.Issuer, StringComparison.Ordinal) &&
+            string.Equals(authority.MembershipIssuer, callerAuthority.MembershipIssuer, StringComparison.Ordinal) &&
             string.Equals(authority.Scheme, callerAuthority.Scheme, StringComparison.Ordinal);
         var readOperation = isRetainedProposer ? operation : OperatorOperation.Read;
 
