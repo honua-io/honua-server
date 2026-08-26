@@ -692,9 +692,9 @@
           },
           "response": {
             "type": "string",
-            "enum": ["document"],
+            "enum": ["document", "raw"],
             "default": "document",
-            "description": "Response mode. V1 only supports 'document'."
+            "description": "Response mode. 'raw' is supported for synchronous single-value results; asynchronous execution requires 'document'."
           }
         }
       },

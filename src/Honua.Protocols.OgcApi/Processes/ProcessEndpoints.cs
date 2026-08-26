@@ -642,7 +642,10 @@ internal static class ProcessEndpoints
         normalized = null;
         error = null;
         var geoJson = input;
-        if (input.TryGetProperty("value", out var value))
+        var isDirectGeoJson = input.ValueKind == JsonValueKind.Object
+            && input.TryGetProperty("type", out var type)
+            && type.ValueKind == JsonValueKind.String;
+        if (!isDirectGeoJson && input.TryGetProperty("value", out var value))
         {
             if (input.TryGetProperty("mediaType", out var mediaType)
                 && (mediaType.ValueKind != JsonValueKind.String
@@ -663,7 +666,10 @@ internal static class ProcessEndpoints
 
         try
         {
-            var wkb = geometryService.ConvertGeoJsonToWkb(geoJson.GetRawText(), srid);
+            var wkb = geometryService.ConvertGeoJsonToWkb(
+                geoJson.GetRawText(),
+                srid,
+                allowContainers: true);
             if (wkb == null || wkb.Length == 0)
             {
                 error = $"Input '{inputName}' must contain a GeoJSON geometry.";

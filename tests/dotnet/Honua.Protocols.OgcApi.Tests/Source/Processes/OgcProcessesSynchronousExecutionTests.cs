@@ -40,6 +40,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
               "inputs": {
                 "wkb": {
                   "type": "Feature",
+                  "value": "foreign-metadata",
                   "geometry": { "type": "Point", "coordinates": [1, 2] },
                   "properties": {}
                 },

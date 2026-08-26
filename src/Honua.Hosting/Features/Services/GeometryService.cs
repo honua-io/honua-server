@@ -121,7 +121,7 @@ internal sealed class GeometryService : IGeometryService
     }
 
     /// <inheritdoc />
-    public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null)
+    public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null, bool allowContainers = false)
     {
         if (string.IsNullOrWhiteSpace(geoJson))
         {
@@ -132,7 +132,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = ReadGeoJsonGeometry(geoJson, srid);
+            var geometry = ReadGeoJsonGeometry(geoJson, srid, allowContainers);
             ValidateInputGeometryComplexity(geometry);
             if (geometry == null)
             {
@@ -159,7 +159,7 @@ internal sealed class GeometryService : IGeometryService
         }
     }
 
-    private static Geometry? ReadGeoJsonGeometry(string geoJson, int? srid)
+    private static Geometry? ReadGeoJsonGeometry(string geoJson, int? srid, bool allowContainers)
     {
         using var document = JsonDocument.Parse(geoJson);
         var root = document.RootElement;
@@ -173,8 +173,10 @@ internal sealed class GeometryService : IGeometryService
         var reader = NewGeoJsonReader();
         return typeElement.GetString() switch
         {
-            "Feature" => ReadFeatureGeometry(root, reader),
-            "FeatureCollection" => ReadFeatureCollectionGeometry(root, reader, srid),
+            "Feature" when allowContainers => ReadFeatureGeometry(root, reader),
+            "FeatureCollection" when allowContainers => ReadFeatureCollectionGeometry(root, reader, srid),
+            "Feature" or "FeatureCollection" => throw new JsonException(
+                "GeoJSON containers are not valid for this geometry-only field."),
             _ => reader.Read<Geometry>(root.GetRawText())
         };
     }

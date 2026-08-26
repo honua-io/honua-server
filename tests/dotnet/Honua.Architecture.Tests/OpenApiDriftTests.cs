@@ -255,6 +255,18 @@ public sealed class OpenApiDriftTests
         preferDescription.Should().Contain("sync-execute");
         preferDescription.Should().NotContain("respond-sync");
 
+        var responseMode = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("Execute")
+            .GetProperty("properties")
+            .GetProperty("response");
+        responseMode.GetProperty("enum").EnumerateArray().Select(value => value.GetString())
+            .Should().BeEquivalentTo(["document", "raw"],
+                "the execute schema must advertise every response mode accepted by the runtime");
+        responseMode.GetProperty("description").GetString().Should().Contain("synchronous single-value",
+            "raw mode is limited to the synchronous single-output execution path");
+
         var responses = execute.GetProperty("responses");
         foreach (var status in new[] { "200", "201", "408", "409", "413", "499", "500" })
         {
