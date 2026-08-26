@@ -87,7 +87,12 @@ while IFS= read -r file; do
   done
 done <<< "${changed_files}"
 
-if [[ ${#affected[@]} -eq 0 ]]; then
+# `${#affected[@]}` on an EMPTY associative array is an unbound-variable error
+# under `set -u` (still true in bash 5.2, the hosted-runner shell), so a
+# docs-only diff crashed here with "affected: unbound variable" instead of
+# reporting "nothing to build" — the exact case where scoping the build pays
+# most. `${affected[*]:-}` is the expansion that tolerates the empty array.
+if [[ -z "${affected[*]:-}" ]]; then
   # Diff touched only files outside any csproj (docs / images / non-managed code).
   exit 0
 fi

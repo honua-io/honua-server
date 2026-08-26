@@ -35,12 +35,87 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission tier: every tracked text blob must decode as UTF-8 (#3321). Then one runner: full-solution warnings-as-errors build, `dotnet format --verify-no-changes`, `Tier=Fast` unit smoke, architecture-enforcement tests (incl. the `feature-catalog.json` drift guard). Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. | None — a required context must never be path-filtered, or non-matching PRs block forever waiting for a status that will not report |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission tier: every tracked text blob must decode as UTF-8 (#3321). Then one runner: affected-scope warnings-as-errors build, solution-wide `dotnet format --verify-no-changes`, `Tier=Fast` unit smoke, architecture-enforcement tests (incl. the `feature-catalog.json` drift guard). Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`; the only input that differs is `build-scope` (`affected` here, `full` there — see [Affected-scope gate build](#affected-scope-gate-build)). | None — a required context must never be path-filtered, or non-matching PRs block forever waiting for a status that will not report |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger** (deliberate — see the header comment). PR template compliance, CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility all run on the train's `train/batch/*` `workflow_dispatch` and the nightly schedule. Its aggregator context `CI Gate` is produced by the batch CI only and never appears on a PR. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `import-fidelity-scorecard-governance.yml` | Import-fidelity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
+
+### Affected-scope gate build
+
+`PR Gate` is the only gate a change must clear before a human looks at it, so its
+wall-clock is the tax on every PR in the repo. On the 2026-08-26 baseline the
+shared lean gate was 18m09s, split roughly:
+
+| Step | Duration |
+|---|---:|
+| Build (warnings as errors), full solution | 6m30s |
+| `dotnet format Honua.sln --verify-no-changes` | 5m51s |
+| Server Fast tier | 2m05s |
+| Architecture tests | 1m31s |
+| Governance/Drift (Testcontainers PostGIS, warm) | 1m15s |
+| Fixtures, policy checks, restore | ~1m |
+
+Two of those are addressed here.
+
+**Build scope.** `.github/actions/lean-gate` takes a `build-scope` input.
+`PR Gate` passes `affected`; `Merge Queue Gate` keeps `full`.
+`scripts/ci/compute-lean-gate-build-scope.sh` writes a solution filter (`.slnf`)
+holding the union of
+
+1. `scripts/ci/compute-affected-projects.sh` — the changed projects plus their
+   reverse-dependency (consumer) closure, and
+2. the leaf test projects the gate's own `dotnet test --no-build` steps execute
+   (`Honua.Server.Tests`, `Honua.Architecture.Tests`, `Honua.Ai.Tests`), which
+   must be compiled even for a docs-only diff.
+
+MSBuild resolves each listed project's `<ProjectReference>` graph itself, so
+forward dependencies are built without being enumerated. A filter is used rather
+than a project list because `dotnet build a.csproj b.csproj` is rejected outright
+(MSB1008); the filter also keeps the build to a single MSBuild invocation with
+full cross-project parallelism.
+
+The floor is the forward closure of those three test projects: 53 of the 83
+`.csproj` in the tree. The ~30 projects a narrowed gate stops compiling are
+sibling test assemblies (`Honua.Core.Tests`, the provider test projects,
+`Honua.LoadTests`, …) plus `Honua.AppHost`, `Honua.Analyzers`,
+`Honua.ControlPlane.Lambda`, the geoprocessing CLI and the custom-code harness —
+none of which any step of this gate consumes. **Expect a meaningful but bounded
+saving, not a step change**: the gate still compiles `Honua.Server` and its whole
+dependency graph on every PR, because its own tests need them.
+
+*Miss-risk contract.* Anything that could invalidate the closure forces a full
+build: `compute-affected-projects.sh` force-fulls on `Directory.*.props`,
+`Honua.sln`, `global.json`, `NuGet.config`, `.github/` and `scripts/ci/`, and the
+scope script force-fulls on any event without a trustworthy diff base, any
+checkout too shallow to hold the base commit, and any failure of the underlying
+script. A residual miss is caught by the merge train's full-solution build
+**before the change lands** — it is fixed forward from the train and never
+reaches trunk unverified. This is why `Merge Queue Gate` and the train's `build`
+job must stay full-solution; do not "align" them with `PR Gate`.
+
+`pr-gate.yml` must check out with `fetch-depth: 2`. The checked-out ref is
+`refs/pull/N/merge` and its first parent is the current `trunk` tip, which is the
+diff base. At the default depth 1 those parent commits are absent, the scope
+computation force-fulls, and the optimization silently never fires.
+
+**Format scope.** `dotnet format` is deliberately left solution-wide even though
+it is co-dominant with the build. It takes exactly one workspace — a project or a
+solution, never a list — and most of its cost is loading that workspace rather
+than analysing documents, so narrowing it is a separate, measured change rather
+than a free win.
+
+**PostGIS pre-pull.** `scripts/ci/prepull-testcontainers-postgis.sh` starts a
+background `docker pull` of the image `Honua.TestKit/PostgresFixture.cs` names,
+as the gate's first step, and a later step waits for it immediately before the
+Governance/Drift test. That step is ~1.5 min warm and ~3-4 min cold, and the
+delta is almost entirely the pull; overlapping it with the fixtures/restore/build
+makes the cold case look like the warm one. The tag is read out of the fixture
+rather than hardcoded, so bumping `PostgresFixture` cannot leave CI warming a
+stale image. The drift test itself does not move (#2882). Every failure path in
+the script is a no-op — composite steps cannot set `continue-on-error`, so it
+must never be able to fail the required gate.
 
 ### Import-fidelity gates: correctness and performance
 

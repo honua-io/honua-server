@@ -43,7 +43,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      # fetch-depth 2, not the default 1: the checked-out ref is
+      # refs/pull/N/merge, whose FIRST PARENT is the current tip of `trunk`. That
+      # parent is what the lean gate's affected-scope computation diffs against,
+      # and at depth 1 the parent commits are not in the object store, so the
+      # computation force-fulls and the optimization silently never fires. Two
+      # commits is a couple of extra seconds of fetch; do not lower it, and do
+      # not raise it to 0 (full history on this repo is minutes).
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
 
       # Admission tier: ~3 seconds over every tracked text blob, so a branch that
       # saved documentation as Windows-1252 (#3320) is named here instead of
@@ -139,6 +148,13 @@ jobs:
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
+          # Per-PR only. The gate compiles the diff's reverse-dependency closure
+          # plus every project its own --no-build test steps consume, and falls
+          # back to the full solution whenever the diff base is untrustworthy or
+          # shared build infrastructure changed. A closure miss fails the merge
+          # train's full-solution build before landing, so it is fixed forward
+          # and never reaches trunk unverified.
+          build-scope: affected
 
       # The lean gate has already paid for a full Release solution build. In
       # shadow mode, retain only test projects used by two or more selected

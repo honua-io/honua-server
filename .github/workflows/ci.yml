@@ -990,7 +990,11 @@ jobs:
           fi
 
       - name: Format Check
-        run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
+        # --no-restore: the `Restore` step above already restored Honua.sln and
+        # the build consumed those exact assets, so letting `dotnet format`
+        # re-evaluate restore is pure repeated network/project work with no gain
+        # in format coverage. Identical to the lean gate's own format line.
+        run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
   dotnet-foundation-tests:
     name: .NET Foundation Tests
@@ -3015,6 +3019,12 @@ jobs:
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: merge-queue
+          # Stays FULL while `PR Gate` narrows to `affected`. A batched
+          # merge_group commit's diff base is the queue base rather than a single
+          # PR, so an affected-projects computation here is not trustworthy — and
+          # this full-solution compile is precisely the backstop that makes the
+          # per-PR narrowing safe. Do not "align" the two callers.
+          build-scope: full
 
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
