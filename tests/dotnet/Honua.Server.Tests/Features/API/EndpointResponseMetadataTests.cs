@@ -108,6 +108,9 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         using var _ = _factory.CreateClient();
 
         const string path = "/ogc/processes/processes/{processId}/execution";
+        GetSuccessContentTypes("POST", path).Should().BeEquivalentTo(
+            ["application/json", "application/geo+json", "application/wkb", "image/tiff", "application/octet-stream"],
+            "execute metadata must advertise exactly document mode and every supported raw representation");
         GetResponseMetadata("POST", path, StatusCodes.Status409Conflict).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status410Gone).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status413PayloadTooLarge).Should().NotBeEmpty();

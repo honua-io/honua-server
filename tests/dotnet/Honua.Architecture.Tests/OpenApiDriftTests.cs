@@ -307,6 +307,8 @@ public sealed class OpenApiDriftTests
             "raw synchronous geometry outputs retain their artifact media type");
         success.GetProperty("content").TryGetProperty("application/wkb", out _).Should().BeTrue(
             "raw synchronous WKB outputs retain their artifact media type");
+        success.GetProperty("content").TryGetProperty("image/tiff", out _).Should().BeTrue(
+            "raw synchronous raster outputs retain their artifact media type");
     }
 
     [ArchitectureTest]
