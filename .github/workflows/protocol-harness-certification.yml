@@ -83,8 +83,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
-          key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('producer/Directory.Packages.props', 'producer/NuGet.config', 'producer/global.json') }}
+          key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('producer/Directory.Packages.props', 'producer/NuGet.config', 'producer/global.json') }}-${{ hashFiles('producer/**/*.csproj') }}
           restore-keys: |
+            ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('producer/Directory.Packages.props', 'producer/NuGet.config', 'producer/global.json') }}-
             ${{ github.repository }}-${{ runner.os }}-nuget-
 
       - name: Authenticate the pinned private package feed

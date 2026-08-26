@@ -76,19 +76,12 @@ jobs:
         # reusable workflow (honua-sdk-js / honua-sdk-dotnet / honua-sdk-python call
         # it), and the checkout above is the CALLER's repo — a `./.github/actions/...`
         # path would resolve there, where the composite does not exist, breaking every
-        # SDK PR gate. The NuGet cache is wired inline with a caller-agnostic key.
+        # SDK PR gate. This workflow already wires its own caller-agnostic NuGet cache
+        # and GitHub Packages auth in the `Cache NuGet` / `Configure GitHub Packages`
+        # steps below, so nothing here is missing.
         uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
-
-      - name: Cache NuGet packages
-        if: inputs.dotnet-version != ''
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/packages.lock.json') }}
-          restore-keys: |
-            ${{ github.repository }}-${{ runner.os }}-nuget-
 
       - name: Setup Python
         if: inputs.python-version != ''
