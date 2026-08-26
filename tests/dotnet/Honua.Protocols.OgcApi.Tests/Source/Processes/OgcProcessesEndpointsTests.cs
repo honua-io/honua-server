@@ -164,7 +164,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
         first.TryGetProperty("jobControlOptions", out var jco).Should().BeTrue();
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("async-execute");
-        jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("sync-execute");
+        jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("sync-execute");
         jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
 
         var ids = processes.Select(p => p.GetProperty("id").GetString()).ToArray();
@@ -201,7 +201,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
             .Select(e => e.GetString()).Should().Contain("async-execute");
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
-            .Select(e => e.GetString()).Should().Contain("sync-execute");
+            .Select(e => e.GetString()).Should().NotContain("sync-execute");
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
             .Select(e => e.GetString()).Should().NotContain("dismiss");
     }
@@ -457,10 +457,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_UnknownRespondSyncPreference_DefaultsToCanonicalSynchronousPath()
+    public async Task Execute_UnknownRespondSyncPreference_DefaultsToCanonicalAsyncPath()
     {
-        // The fixture intentionally lacks a durable runtime, so successful admission may
-        // resolve to 503; the unknown preference follows omission's synchronous default.
+        // The canonical plan runner remains async-only because its inner processes can
+        // include async-only work. An unknown preference therefore follows its async mode.
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Headers.Add("Prefer", "respond-sync");
@@ -472,8 +472,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         var responseBody = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().BeOneOf(
-            new[] { HttpStatusCode.OK, HttpStatusCode.RequestTimeout, HttpStatusCode.ServiceUnavailable },
-            "the executable plan should reach the bounded synchronous lifecycle path; body: {0}",
+            new[] { HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable },
+            "the executable plan should reach asynchronous admission; body: {0}",
             responseBody);
         response.Headers.Contains("Preference-Applied").Should().BeFalse(
             "respond-sync is not a registered preference and must not be acknowledged");
