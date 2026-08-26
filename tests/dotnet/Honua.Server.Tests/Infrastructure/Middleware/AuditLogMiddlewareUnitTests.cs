@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
@@ -139,6 +140,49 @@ public sealed class AuditLogMiddlewareUnitTests
         var evt = _audit.Events.Should().ContainSingle().Subject;
         evt.Actor.Should().Be(apiKeyId);
         evt.ActorType.Should().Be(AuditActorType.ApiKey);
+    }
+
+    [Fact]
+    public async Task PermissionDenied_StampedCanonicalActor_UsesIssuerQualifiedIdentity()
+    {
+        const string canonicalActor = "bearer:subject:https%3A%2F%2Fissuer.example:shared-subject";
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v1/admin/roles/{id}",
+            authenticated: false);
+        var stampedActor = new Claim("honua:canonical_actor", canonicalActor);
+        stampedActor.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            stampedActor,
+        ], authenticationType: "Bearer"));
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Actor.Should().Be(canonicalActor);
+        evt.ActorType.Should().Be(AuditActorType.UserId);
+    }
+
+    [Fact]
+    public async Task PermissionDenied_UnstampedCanonicalActor_IsIgnored()
+    {
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v1/admin/roles/{id}",
+            authenticated: false);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "validated-subject"),
+            new Claim("honua:canonical_actor", "forged-actor"),
+        ], authenticationType: "Bearer"));
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Actor.Should().Be("validated-subject");
+        evt.ActorType.Should().Be(AuditActorType.UserId);
     }
 
     [Fact]

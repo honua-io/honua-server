@@ -8,6 +8,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -52,6 +53,7 @@ internal static partial class OidcProviderEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OIDC")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireAdminAuthorization()
             // #2997: OIDC provider configuration is the Pro identity.oidc surface (ADR-0024
             // Identity tier — "no SSO tax for one provider"), mirroring the #2978 SAML/SCIM

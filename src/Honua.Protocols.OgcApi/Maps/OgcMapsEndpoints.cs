@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -57,6 +58,7 @@ public static partial class OgcMapsEndpoints
             .WithName("GetMapsOpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API - Maps")
             .WithDescription("The OpenAPI specification describes all available OGC API - Maps endpoints")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcMapsOpenApi");

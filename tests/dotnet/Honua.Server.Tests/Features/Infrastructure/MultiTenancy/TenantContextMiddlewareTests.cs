@@ -5,6 +5,8 @@ using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
@@ -110,6 +112,188 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
+    public async Task BearerHeaderOverride_WithoutMultiTenantRole_FailsClosed()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims:
+            [
+                ("tid", "tenant-home"),
+                ("iss", "https://issuer-a.example"),
+            ],
+            roles: ["user"],
+            authenticationType: "Bearer");
+        var client = await CreateAppAsync(principal);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
+        request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            "bearer:subject:https%3A%2F%2Fissuer-a.example:user-1",
+            CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim));
+        Assert.Null(CanonicalSecurityActor.FindStampedValue(
+            principal,
+            CanonicalSecurityActor.EffectiveTenantClaim));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task BearerWithoutTenantClaim_FailsClosedBeforeAnonymousDefault()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-user"),
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task BearerWithoutTenantClaim_AdminControlPlaneContinuesWithNullTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task BearerWithoutTenantClaim_VersionOnePointZeroAdminControlPlaneContinuesWithNullTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1.0/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
+    public async Task BearerWithoutTenantClaim_TenantBoundAdminMetadataIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "bearer-admin"),
+            roles: ["admin"],
+            authenticationType: "Federation");
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/metadata/layers/7/fields");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithoutTenantClaim_TenantBoundRouteIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task OperatorBearerWithoutTenantClaim_ExplicitControlPlaneRouteContinues()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task BearerWithTenantResolutionDisabled_StampsIssuerQualifiedActor()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("iss", "https://issuer.example"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal, options => options.Enabled = false);
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "bearer:subject:https%3A%2F%2Fissuer.example:user-1",
+            CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim));
+        Assert.Equal(
+            "https://issuer.example",
+            CanonicalSecurityActor.FindStampedValue(principal, "honua:issuer"));
+        Assert.Null(CanonicalSecurityActor.FindStampedValue(
+            principal,
+            CanonicalSecurityActor.EffectiveTenantClaim));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task BearerTenantClaim_StampsSameEffectiveTenantOnPrincipal()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "tenant-a"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal("tenant-a|tenant-a", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
     public async Task Anonymous_FallsBackToConfiguredDefaultTenant()
     {
         var client = await CreateAppAsync(principal: null);
@@ -182,12 +366,14 @@ public class TenantContextMiddlewareTests
 
     private static ClaimsPrincipal AuthenticatedPrincipal(
         (string Type, string Value) claims,
-        string[]? roles = null)
-        => AuthenticatedPrincipal(new[] { claims }, roles);
+        string[]? roles = null,
+        string authenticationType = "TestAuth")
+        => AuthenticatedPrincipal(new[] { claims }, roles, authenticationType);
 
     private static ClaimsPrincipal AuthenticatedPrincipal(
         IEnumerable<(string Type, string Value)> claims,
-        string[]? roles = null)
+        string[]? roles = null,
+        string authenticationType = "TestAuth")
     {
         var claimList = new List<Claim>
         {
@@ -205,7 +391,7 @@ public class TenantContextMiddlewareTests
             }
         }
 
-        var identity = new ClaimsIdentity(claimList, authenticationType: "TestAuth");
+        var identity = new ClaimsIdentity(claimList, authenticationType);
         return new ClaimsPrincipal(identity);
     }
 
@@ -268,6 +454,23 @@ public class TenantContextMiddlewareTests
 
             return Results.Text(tenantId);
         });
+
+        app.MapGet("/binding", (HttpContext context, ITenantContext tenant) =>
+        {
+            var effective = context.User.FindFirst("honua:effective_tenant")?.Value ?? "<null>";
+            return Results.Text($"{tenant.TenantId ?? "<null>"}|{effective}");
+        });
+
+        app.MapGet("/api/v1/admin/oidc/providers", (ITenantContext tenant) =>
+                Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
+        app.MapGet("/api/v1.0/admin/oidc/providers", (ITenantContext tenant) =>
+                Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
+        app.MapGet("/api/v1/admin/metadata/layers/{layerId:int}/fields", (ITenantContext tenant) =>
+            Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
 
         await app.StartAsync();
         return app.GetTestClient();

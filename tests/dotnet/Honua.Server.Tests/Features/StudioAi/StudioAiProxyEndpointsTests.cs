@@ -102,7 +102,9 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOff_AuthenticatedNonAdminBearerReturns403()
     {
-        using var client = CreateBearerClient(_fixture, CreateToken("studio-user-disabled"));
+        using var client = CreateBearerClient(
+            _fixture,
+            CreateToken("studio-user-disabled", tenantId: "studio-tenant"));
 
         using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
         using var chatResponse = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
@@ -127,7 +129,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     {
         var audit = new CapturingAuditLog();
         await using var fixture = await CreateEndUserFixtureAsync(audit);
-        var token = CreateToken("studio-user-enabled");
+        var token = CreateToken("studio-user-enabled", tenantId: "studio-tenant");
         using var client = CreateBearerClient(fixture, token);
 
         using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
@@ -158,7 +160,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         toolsDocument.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength().Should().BeGreaterThan(0);
 
         var chatAudit = audit.Recorded.Should().ContainSingle(e => e.Action == "studio_ai.chat").Subject;
-        chatAudit.Actor.Should().Be("studio-user-enabled");
+        chatAudit.Actor.Should().Be(
+            "bearer:subject:https%3A%2F%2Fstudio-idp.example.com:studio-user-enabled");
         chatAudit.ActorType.Should().Be(AuditActorType.UserId);
         chatAudit.Details.Should().Contain("\"model\":\"test-model\"");
         chatAudit.Details.Should().NotContain("unapproved-model",
@@ -172,7 +175,10 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     {
         var audit = new CapturingAuditLog();
         await using var fixture = await CreateEndUserFixtureAsync(audit);
-        var token = CreateToken("studio-machine", isClientCredentials: true);
+        var token = CreateToken(
+            "studio-machine",
+            isClientCredentials: true,
+            tenantId: "studio-tenant");
         using var client = CreateBearerClient(fixture, token);
 
         using var capabilitiesResponse = await client.GetAsync("/api/v1/studio/ai/capabilities");
@@ -376,7 +382,10 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         => fixture.CreateClient(client =>
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token));
 
-    private static string CreateToken(string subject, bool isClientCredentials = false)
+    private static string CreateToken(
+        string subject,
+        bool isClientCredentials = false,
+        string? tenantId = null)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -386,6 +395,11 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
             new("name", "Studio Test User"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+        if (tenantId is not null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
+        }
+
         if (isClientCredentials)
         {
             // Some external IdPs omit nonstandard grant markers from client-credentials

@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 368,
-      "provingTestCount": 1042,
+      "provingTestCount": 1048,
       "maturity": {
         "implemented": 368
       },
@@ -115,7 +115,7 @@
       "category": "AI",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 88,
+      "provingTestCount": 102,
       "maturity": {
         "implemented": 4
       },
@@ -641,7 +641,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 17,
+      "provingTestCount": 19,
       "maturity": {
         "implemented": 2
       },
@@ -949,7 +949,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 20,
+      "provingTestCount": 24,
       "maturity": {
         "implemented": 6
       },
@@ -1232,7 +1232,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 136,
+      "provingTestCount": 138,
       "maturity": {
         "implemented": 10
       },
@@ -1450,7 +1450,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 49,
-      "provingTestCount": 417,
+      "provingTestCount": 418,
       "maturity": {
         "implemented": 49
       },
@@ -1781,7 +1781,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 8,
-      "provingTestCount": 33,
+      "provingTestCount": 37,
       "maturity": {
         "implemented": 8
       },
@@ -1815,7 +1815,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 252,
+      "provingTestCount": 256,
       "maturity": {
         "implemented": 21
       },
@@ -1881,7 +1881,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 129,
+      "provingTestCount": 131,
       "maturity": {
         "implemented": 10
       },
@@ -1934,7 +1934,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 13,
-      "provingTestCount": 65,
+      "provingTestCount": 67,
       "maturity": {
         "implemented": 13
       },
@@ -1986,7 +1986,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 12,
-      "provingTestCount": 111,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 12
       },
@@ -2358,7 +2358,7 @@
       "category": "Styling",
       "edition": "Community",
       "entryCount": 8,
-      "provingTestCount": 66,
+      "provingTestCount": 68,
       "maturity": {
         "implemented": 8
       },

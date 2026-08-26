@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Styles.Handlers;
 using Honua.Protocols.Ogc.Api.Styles.Models;
@@ -69,6 +70,7 @@ public static class OgcStylesEndpoints
             .WithName("GetStylesOpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API - Styles")
             .WithDescription("The OpenAPI specification describes all available OGC API - Styles endpoints")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcStylesOpenApi");
