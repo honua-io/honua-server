@@ -6,13 +6,14 @@ using Honua.TestKit;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api;
 
 /// <summary>
-/// Collection definition for the OGC API Processes durable-runtime tests that
-/// share a Redis container. xUnit discovers <c>[CollectionDefinition]</c> per
-/// test assembly, so this must live in <c>Honua.Protocols.OgcApi.Tests</c>
-/// (it previously resolved from <c>Honua.Server.Tests</c> before the OGC API
-/// Processes tests were split into this assembly).
+/// Per-assembly collection definition for tests that share a Redis fixture.
 /// </summary>
-[CollectionDefinition("Redis", DisableParallelization = true)]
+/// <remarks>
+/// xUnit discovers collection definitions per test assembly, so each consuming assembly
+/// requires this definition. Keep this canonical pattern aligned across test assemblies;
+/// the shared collection name and fixture live in <see cref="RedisFixture"/>.
+/// </remarks>
+[CollectionDefinition(RedisFixture.CollectionName, DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class RedisCollection : ICollectionFixture<RedisFixture>
 {
