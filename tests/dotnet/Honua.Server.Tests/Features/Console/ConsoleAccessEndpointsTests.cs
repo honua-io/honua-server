@@ -193,6 +193,31 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    public async Task ConsoleAccess_ConcurrentDuplicateRoleCreates_ReturnOneCreatedAndOneConflict()
+    {
+        const string workspace = "concurrent-role-name";
+        const string roleName = "concurrent-dashboard-reviewer";
+        var requests = new[] { roleName, roleName.ToUpperInvariant() }
+            .Select(name => _client.PostAsJsonAsync(
+                $"/api/v1/console/access/{workspace}/roles",
+                new ConsoleRoleWriteRequest { Name = name, Grants = [] },
+                JsonOptions))
+            .ToArray();
+
+        var responses = await Task.WhenAll(requests);
+
+        Assert.Contains(responses, static response => response.StatusCode == HttpStatusCode.Created);
+        var conflict = Assert.Single(responses, static response => response.StatusCode == HttpStatusCode.Conflict);
+        await AssertRoleNameConflictAsync(conflict);
+
+        var overview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
+        Assert.Single(overview.Roles, role =>
+            string.Equals(role.Name, roleName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
     public async Task ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember()
     {
