@@ -85,6 +85,18 @@ public sealed class GeometryServiceTests
     }
 
     [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"point\"")]
+    public void ConvertGeoJsonToWkb_WithNonObjectRoot_ReturnsSanitizedError(string geoJson)
+    {
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
+    [Theory]
     [InlineData("""{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""", 1)]
     [InlineData("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}},{"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{}}]}""", 2)]
     public void ConvertGeoJsonToWkb_WithGeoJsonContainer_ExtractsAllGeometries(string geoJson, int expectedCount)
