@@ -133,11 +133,17 @@ internal sealed class GeometryService : IGeometryService
         try
         {
             var geometry = ReadGeoJsonGeometry(geoJson, srid, allowContainers);
-            ValidateInputGeometryComplexity(geometry);
             if (geometry == null)
             {
                 return null;
             }
+
+            if (geometry.IsEmpty)
+            {
+                throw new JsonException("GeoJSON geometry cannot be empty.");
+            }
+
+            ValidateInputGeometryComplexity(geometry);
 
             if (srid.HasValue && srid.Value > 0)
             {

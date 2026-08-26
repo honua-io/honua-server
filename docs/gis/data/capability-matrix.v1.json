@@ -1232,7 +1232,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 142,
+      "provingTestCount": 143,
       "maturity": {
         "implemented": 10
       },

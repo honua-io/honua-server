@@ -162,6 +162,41 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_EmptyFeatureCollection_ReturnsSanitizedValidationErrorWithoutSubmittingJob()
+    {
+        foreach (var preferAsync in new[] { false, true })
+        {
+            var submissionsBeforeRequest = _fixture.SubmissionCount;
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                "/ogc/processes/processes/geometry.buffer/execution");
+            if (preferAsync)
+            {
+                request.Headers.Add("Prefer", "respond-async");
+            }
+
+            request.Content = new StringContent(
+                """{"inputs":{"wkb":{"type":"FeatureCollection","features":[]},"srid":4326,"distance":25.5}}""",
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await _fixture.App.Client.SendAsync(request);
+
+            response.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest,
+                "an empty FeatureCollection must be rejected before {0} submission",
+                preferAsync ? "asynchronous" : "synchronous");
+            using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            error.RootElement.GetProperty("title").GetString().Should().Be("Invalid analysis plan");
+            error.RootElement.GetProperty("detail").GetString().Should().Contain("valid GeoJSON geometry");
+            error.RootElement.GetProperty("detail").GetString().Should().NotContain("FeatureCollection");
+            _fixture.SubmissionCount.Should().Be(submissionsBeforeRequest);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_SynchronousFailure_ReturnsRegisteredJobFailedException()
     {
         _fixture.SetTerminalFailure("Worker rejected the input.");
@@ -227,6 +262,8 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public AnalysisPlan? SubmittedPlan { get; private set; }
 
+    public int SubmissionCount { get; private set; }
+
     public OgcProcessesSynchronousExecutionFixture()
     {
         var job = CreateJob();
@@ -247,6 +284,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             .Returns(callInfo =>
             {
                 SubmittedPlan = callInfo.ArgAt<AnalysisPlan>(0);
+                SubmissionCount++;
                 return Task.FromResult(job);
             });
 

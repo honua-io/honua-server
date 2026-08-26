@@ -132,6 +132,22 @@ public sealed class GeometryServiceTests
         ex.Message.Should().Be("Invalid GeoJSON format.");
     }
 
+    [Theory]
+    [InlineData("""{"type":"FeatureCollection","features":[]}""", true)]
+    [InlineData("""{"type":"GeometryCollection","geometries":[]}""", false)]
+    [InlineData("""{"type":"Polygon","coordinates":[]}""", false)]
+    [InlineData("""{"type":"MultiPoint","coordinates":[]}""", false)]
+    [InlineData("""{"type":"MultiLineString","coordinates":[]}""", false)]
+    [InlineData("""{"type":"MultiPolygon","coordinates":[]}""", false)]
+    [InlineData("""{"type":"Feature","geometry":{"type":"GeometryCollection","geometries":[]},"properties":{}}""", true)]
+    public void ConvertGeoJsonToWkb_WithEmptyGeometry_ReturnsSanitizedError(string geoJson, bool allowContainers)
+    {
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson, 4326, allowContainers);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
 
     [Fact]
     public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
