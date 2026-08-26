@@ -14,6 +14,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,6 +78,7 @@ public static class SharingRestEndpoints
                 "default) this endpoint rejects plaintext HTTP requests that carry " +
                 "credentials in the URL.")
             .WithTags("GeoServices Sharing")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .AllowAnonymous()
             .Produces<GenerateTokenResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)

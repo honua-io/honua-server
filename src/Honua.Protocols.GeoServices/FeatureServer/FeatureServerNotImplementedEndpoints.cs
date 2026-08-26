@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -128,6 +129,7 @@ internal static partial class FeatureServerEndpoints
             .WithName("CleanupAssets")
             .WithSummary("Clean up orphaned assets for the layer")
             .WithDescription("No-op cleanup; this server does not provide a layer asset store, so no orphaned assets exist.")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<CleanupAssetsResponse>(200, "application/json")
@@ -139,6 +141,7 @@ internal static partial class FeatureServerEndpoints
             .WithName("UploadAssets")
             .WithSummary("Upload assets to the layer")
             .WithDescription("Honestly rejects uploads; this server does not provide a layer asset store.")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces(400)
