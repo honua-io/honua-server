@@ -49,6 +49,44 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
     }
 
     [Fact]
+    public async Task RevalidateAsync_OperatorBearer_UsesUpstreamMembershipIssuer()
+    {
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        membership.ResolveMembershipAsync(
+                "proposer",
+                "https://idp.example.com",
+                Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["admin"]));
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorization.EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var sut = CreateSut(authorization, membership, Substitute.For<IAdminApiKeyStore>());
+        var authority = CreateAuthority() with
+        {
+            Issuer = "honua-operator-bearer",
+            MembershipIssuer = "https://idp.example.com",
+            Scheme = "OperatorBearer",
+            Roles = ["admin"],
+            RoleCeiling = ["admin"],
+        };
+
+        var result = await sut.RevalidateAsync(CreateProposal(authority));
+
+        result.IsAllowed.Should().BeTrue();
+        await membership.Received(1).ResolveMembershipAsync(
+            "proposer",
+            "https://idp.example.com",
+            Arg.Any<CancellationToken>());
+        await membership.DidNotReceive().ResolveMembershipAsync(
+            "proposer",
+            "honua-operator-bearer",
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RevalidateAsync_InactiveMembershipFailsBeforeGrantEvaluation()
     {
         var membership = Substitute.For<IPrincipalMembershipSource>();

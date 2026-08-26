@@ -64,6 +64,39 @@ public sealed class OperationAuthorityContractTests
     }
 
     [UnitTest]
+    public void Capture_OperatorBearer_PreservesSeparateMembershipIssuer()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "operator-1"),
+                new Claim("iss", "honua-operator-bearer"),
+                new Claim(OperationAuthorityContext.MembershipIssuerClaimType, "https://idp.example.com"),
+            ],
+            "OperatorBearer"));
+
+        var authority = OperationAuthorityContext.Capture(principal, "tenant-1");
+
+        authority.Issuer.Should().Be("honua-operator-bearer");
+        authority.MembershipIssuer.Should().Be("https://idp.example.com");
+    }
+
+    [UnitTest]
+    public void Capture_ExternalBearer_IgnoresUntrustedMembershipIssuerClaim()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "operator-1"),
+                new Claim("iss", "https://idp.example.com"),
+                new Claim(OperationAuthorityContext.MembershipIssuerClaimType, "https://forged.example.com"),
+            ],
+            "Bearer"));
+
+        var authority = OperationAuthorityContext.Capture(principal, "tenant-1");
+
+        authority.MembershipIssuer.Should().BeNull();
+    }
+
+    [UnitTest]
     public void Capture_UnauthenticatedPrincipal_FailsClosed()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity(

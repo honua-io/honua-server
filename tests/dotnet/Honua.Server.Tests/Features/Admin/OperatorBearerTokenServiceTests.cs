@@ -2,9 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Encodings.Web;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -19,7 +26,8 @@ public sealed class OperatorBearerTokenServiceTests
     [
         new AdminAuthSessionClaim { Type = "name", Value = "Operator Admin" },
         new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "operator-1" },
-        new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" }
+        new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" },
+        new AdminAuthSessionClaim { Type = "iss", Value = "https://idp.example.com" },
     ];
 
     [Fact]
@@ -30,12 +38,100 @@ public sealed class OperatorBearerTokenServiceTests
         var issuance = service.Issue(SampleClaims, DateTimeOffset.UtcNow.AddMinutes(10));
 
         issuance.Should().NotBeNull();
-        var claims = await service.TryValidateAsync(issuance!.Token);
+        var validation = await service.TryValidateAsync(issuance!.Token);
 
-        claims.Should().NotBeNull();
-        claims!.Should().Contain(c => c.Type == "name" && c.Value == "Operator Admin");
-        claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
-        claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "operator-1");
+        validation.Should().NotBeNull();
+        validation!.Claims.Should().Contain(c => c.Type == "name" && c.Value == "Operator Admin");
+        validation.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
+        validation.Claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "operator-1");
+        validation.Claims.Should().NotContain(c => c.Type == "iss");
+        validation.Claims.Should().NotContain(c => c.Type == OperationAuthorityContext.MembershipIssuerClaimType);
+        validation.MembershipIssuer.Should().Be("https://idp.example.com");
+    }
+
+    [Fact]
+    public async Task Issue_DerivesMembershipIssuerFromValidatedSessionIssuer_NotPrivateInputClaim()
+    {
+        var service = CreateService();
+        var claims = SampleClaims.Append(new AdminAuthSessionClaim
+        {
+            Type = OperationAuthorityContext.MembershipIssuerClaimType,
+            Value = "https://forged.example.com",
+        }).ToArray();
+
+        var issuance = service.Issue(claims, DateTimeOffset.UtcNow.AddMinutes(10));
+        var validation = await service.TryValidateAsync(issuance!.Token);
+
+        validation.Should().NotBeNull();
+        validation!.MembershipIssuer.Should().Be("https://idp.example.com");
+    }
+
+    [Fact]
+    public void Issue_WithMultipleUpstreamIssuers_ReturnsNull()
+    {
+        var service = CreateService();
+        var claims = SampleClaims.Append(new AdminAuthSessionClaim
+        {
+            Type = "iss",
+            Value = "https://another-idp.example.com",
+        }).ToArray();
+
+        service.Issue(claims, DateTimeOffset.UtcNow.AddMinutes(10)).Should().BeNull();
+    }
+
+    [Fact]
+    public void Issue_WithOversizedUpstreamIssuer_ReturnsNull()
+    {
+        var service = CreateService();
+        var claims = SampleClaims
+            .Where(static claim => claim.Type != "iss")
+            .Append(new AdminAuthSessionClaim { Type = "iss", Value = new string('x', 513) })
+            .ToArray();
+
+        service.Issue(claims, DateTimeOffset.UtcNow.AddMinutes(10)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Issue_WithoutUpstreamIssuer_RemainsValidForLegacySessions()
+    {
+        var service = CreateService();
+        var claims = SampleClaims.Where(static claim => claim.Type != "iss").ToArray();
+
+        var issuance = service.Issue(claims, DateTimeOffset.UtcNow.AddMinutes(10));
+        var validation = await service.TryValidateAsync(issuance!.Token);
+
+        validation.Should().NotBeNull();
+        validation!.MembershipIssuer.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AuthenticationHandler_PreservesTransportIssuerAndStampsMembershipIssuer()
+    {
+        var service = CreateService();
+        var issuance = service.Issue(SampleClaims, DateTimeOffset.UtcNow.AddMinutes(10));
+        var schemeOptions = Substitute.For<IOptionsMonitor<AuthenticationSchemeOptions>>();
+        schemeOptions.Get(Arg.Any<string>()).Returns(new AuthenticationSchemeOptions());
+        var handler = new OperatorBearerAuthenticationHandler(
+            schemeOptions,
+            NullLoggerFactory.Instance,
+            UrlEncoder.Default,
+            service);
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {issuance!.Token}";
+        await handler.InitializeAsync(
+            new AuthenticationScheme("OperatorBearer", null, typeof(OperatorBearerAuthenticationHandler)),
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Principal.Should().NotBeNull();
+        var principal = result.Principal!;
+        principal.FindFirstValue("iss").Should().Be("honua-operator-bearer");
+        CanonicalSecurityActor.FindStampedValue(
+                principal,
+                OperationAuthorityContext.MembershipIssuerClaimType)
+            .Should().Be("https://idp.example.com");
     }
 
     [Fact]

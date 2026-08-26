@@ -155,7 +155,7 @@ internal sealed class CurrentOperationAuthorityRevalidator(
 
         var membership = await membershipSource.ResolveMembershipAsync(
             authority.Actor,
-            authority.Issuer,
+            authority.MembershipIssuer ?? authority.Issuer,
             cancellationToken).ConfigureAwait(false);
         if (membership is null)
         {

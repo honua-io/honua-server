@@ -62,6 +62,12 @@ public sealed record JobSecurityContext(
 public static class JobSecurityContextClaimTypes
 {
     /// <summary>
+    /// Framework-derived upstream issuer used only to re-query managed membership after an
+    /// operator session has been exchanged for a server-issued bearer credential.
+    /// </summary>
+    public const string MembershipIssuer = "honua:membership_issuer";
+
+    /// <summary>
     /// Framework-derived identifier used only to re-query the configured live membership source.
     /// This remains separate from <see cref="JobSecurityContext.PrincipalId"/>, which may carry an
     /// issuer-qualified canonical actor for durable attribution and cross-request identity checks.

@@ -15,6 +15,13 @@ namespace Honua.Core.Features.ControlPlane.Domain;
 /// </summary>
 public sealed record OperationAuthorityContext
 {
+    /// <summary>
+    /// Private claim carrying the upstream identity-provider issuer used for live membership
+    /// lookup after Honua exchanges an admin session for an operator bearer.
+    /// </summary>
+    public const string MembershipIssuerClaimType = JobSecurityContextClaimTypes.MembershipIssuer;
+
+    private const string OperatorBearerScheme = "OperatorBearer";
     private const string ApiKeyIdClaim = "api_key_id";
     private const string ApiKeyNameClaim = "api_key_name";
     private const string ApiKeyPermissionClaim = "permission";
@@ -24,6 +31,12 @@ public sealed record OperationAuthorityContext
 
     /// <summary>Canonical token issuer or API-key provider.</summary>
     public required string Issuer { get; init; }
+
+    /// <summary>
+    /// Upstream identity-provider issuer used only to re-query managed membership. This differs
+    /// from <see cref="Issuer"/> when a server-minted operator bearer is the transport credential.
+    /// </summary>
+    public string? MembershipIssuer { get; init; }
 
     /// <summary>Canonical authenticated actor identifier.</summary>
     public required string Actor { get; init; }
@@ -90,6 +103,9 @@ public sealed record OperationAuthorityContext
         var scheme = identity.AuthenticationType;
         var actor = ResolveActor(identity);
         var issuer = identity.FindFirst("iss")?.Value ?? scheme;
+        var membershipIssuer = string.Equals(scheme, OperatorBearerScheme, StringComparison.Ordinal)
+            ? identity.FindFirst(MembershipIssuerClaimType)?.Value
+            : null;
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
             .OrderBy(scope => scope, StringComparer.Ordinal)
             .ToArray();
@@ -108,6 +124,7 @@ public sealed record OperationAuthorityContext
 
         return CreateValidated(
             issuer,
+            membershipIssuer,
             actor,
             scheme,
             effectiveTenant,
@@ -160,6 +177,7 @@ public sealed record OperationAuthorityContext
         string effectiveTenant)
         => CreateValidated(
             issuer,
+            membershipIssuer: null,
             actor,
             "Service",
             effectiveTenant,
@@ -187,6 +205,14 @@ public sealed record OperationAuthorityContext
             !IsBounded(Scheme, 64) || !IsBounded(EffectiveTenant, 256))
         {
             error = "Operation authority identifiers are missing or exceed their bounds.";
+            return false;
+        }
+
+        if (MembershipIssuer is not null &&
+            (!IsBounded(MembershipIssuer, 512) ||
+             !string.Equals(Scheme, OperatorBearerScheme, StringComparison.Ordinal)))
+        {
+            error = "Operation membership issuer is invalid for the authentication scheme.";
             return false;
         }
 
@@ -290,6 +316,7 @@ public sealed record OperationAuthorityContext
 
     private static OperationAuthorityContext CreateValidated(
         string? issuer,
+        string? membershipIssuer,
         string? actor,
         string? scheme,
         string effectiveTenant,
@@ -301,6 +328,7 @@ public sealed record OperationAuthorityContext
         var authority = new OperationAuthorityContext
         {
             Issuer = issuer ?? string.Empty,
+            MembershipIssuer = membershipIssuer,
             Actor = actor ?? string.Empty,
             Scheme = scheme ?? string.Empty,
             EffectiveTenant = effectiveTenant,

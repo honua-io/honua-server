@@ -37,6 +37,8 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal static class JobSecurityContextCapture
 {
+    private const int MaxMembershipIssuerLength = 512;
+
     /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
     private const string TenantClaimType = "tenant_id";
 
@@ -101,6 +103,7 @@ internal static class JobSecurityContextCapture
         // unresolved revalidation would fall back to the captured roles (fail OPEN) instead of
         // failing closed. Truncation must never be able to relax a restriction (honua-server#3081).
         JobSecurityContextClaimTypes.ManagedMembershipMarker,
+        JobSecurityContextClaimTypes.MembershipIssuer,
     };
 
     /// <summary>
@@ -115,6 +118,7 @@ internal static class JobSecurityContextCapture
         "client_secret",
         "password",
         JobSecurityContextClaimTypes.MembershipPrincipalId,
+        JobSecurityContextClaimTypes.MembershipIssuer,
     };
 
     /// <summary>
@@ -194,6 +198,21 @@ internal static class JobSecurityContextCapture
             captured.Add(new JobSecurityClaim(
                 JobSecurityContextClaimTypes.MembershipPrincipalId,
                 membershipPrincipalId));
+        }
+
+        // The operator-bearer handler framework-stamps the upstream IdP issuer after validating
+        // the server-signed token. Strip every input copy above and persist only that trusted
+        // value, outside the descriptive-claim budget, so deferred membership lookup uses the
+        // same exact (subject, issuer) key as the original OIDC session.
+        var membershipIssuer = CanonicalSecurityActor.FindStampedValue(
+            principal,
+            JobSecurityContextClaimTypes.MembershipIssuer);
+        if (!string.IsNullOrWhiteSpace(membershipIssuer) &&
+            membershipIssuer.Length <= MaxMembershipIssuerLength)
+        {
+            captured.Add(new JobSecurityClaim(
+                JobSecurityContextClaimTypes.MembershipIssuer,
+                membershipIssuer));
         }
 
         var tenantId = tenantContext is null
@@ -411,9 +430,19 @@ internal static class JobSecurityContextCapture
     }
 
     private static string? ResolveMembershipIssuer(JobSecurityContext context)
-        => context.Claims.FirstOrDefault(claim =>
+    {
+        var membershipIssuer = context.Claims.FirstOrDefault(claim =>
+            string.Equals(
+                claim.Type,
+                JobSecurityContextClaimTypes.MembershipIssuer,
+                StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value)
+            && claim.Value.Length <= MaxMembershipIssuerLength)?.Value;
+
+        return membershipIssuer ?? context.Claims.FirstOrDefault(claim =>
             string.Equals(claim.Type, "iss", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+    }
 
     /// <summary>
     /// Whether the snapshot was captured for a principal whose role membership is authoritatively
@@ -450,7 +479,10 @@ internal static class JobSecurityContextCapture
 
         try
         {
-            var issuer = principal.FindFirstValue("iss");
+            var issuer = CanonicalSecurityActor.FindStampedValue(
+                    principal,
+                    JobSecurityContextClaimTypes.MembershipIssuer)
+                ?? principal.FindFirstValue("iss");
             return await source.ResolveMembershipAsync(principalId, issuer, cancellationToken).ConfigureAwait(false)
                 is not null;
         }

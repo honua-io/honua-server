@@ -428,6 +428,67 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public async Task OperatorBearerMembership_UsesStampedUpstreamIssuerAcrossCaptureAndReplay()
+    {
+        const string upstreamIssuer = "https://idp.example.com";
+        var claims = Enumerable.Range(0, 400)
+            .Select(index => ($"filler-{index}", index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .Append((ClaimTypes.NameIdentifier, "managed-operator"))
+            .Append((ClaimTypes.Role, "viewer"))
+            .Append(("iss", "honua-operator-bearer"))
+            .Append((JobSecurityContextClaimTypes.MembershipIssuer, "https://forged.example.com"))
+            .ToArray();
+        var principal = BuildPrincipal(claims);
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            JobSecurityContextClaimTypes.MembershipIssuer,
+            upstreamIssuer);
+        var source = new FixedMembershipSource(new PrincipalMembership(true, ["viewer"]));
+
+        var membershipManaged = await JobSecurityContextCapture.IsManagedMembershipAsync(principal, source);
+        var captured = JobSecurityContextCapture.Capture(
+            principal,
+            new RbacOptions(),
+            membershipManaged: membershipManaged);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured,
+            source,
+            new RbacOptions());
+
+        membershipManaged.Should().BeTrue();
+        source.ResolvedIssuers.Should().Equal(upstreamIssuer, upstreamIssuer);
+        captured.Claims.Should().ContainSingle(claim =>
+            claim.Type == JobSecurityContextClaimTypes.MembershipIssuer
+            && claim.Value == upstreamIssuer);
+        captured.Claims.Should().NotContain(claim => claim.Value == "https://forged.example.com");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+    }
+
+    [UnitTest]
+    public async Task UnstampedMembershipIssuer_IsIgnoredInFavorOfTransportIssuer()
+    {
+        var principal = BuildPrincipal(
+            (ClaimTypes.NameIdentifier, "managed-operator"),
+            (ClaimTypes.Role, "viewer"),
+            ("iss", "https://validated-idp.example.com"),
+            (JobSecurityContextClaimTypes.MembershipIssuer, "https://forged.example.com"));
+        var source = new FixedMembershipSource(new PrincipalMembership(true, ["viewer"]));
+
+        var captured = JobSecurityContextCapture.Capture(
+            principal,
+            new RbacOptions(),
+            membershipManaged: true);
+        await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured,
+            source,
+            new RbacOptions());
+
+        captured.Claims.Should().NotContain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.MembershipIssuer);
+        source.ResolvedIssuer.Should().Be("https://validated-idp.example.com");
+    }
+
+    [UnitTest]
     public void Capture_UnstampedCanonicalActor_IgnoresIssuerValue()
     {
         var principal = BuildPrincipal(
@@ -719,6 +780,8 @@ public sealed class JobSecurityContextCaptureTests
 
         public string? ResolvedIssuer { get; private set; }
 
+        public List<string?> ResolvedIssuers { get; } = [];
+
         public Task<PrincipalMembership?> ResolveMembershipAsync(
             string principalId,
             CancellationToken cancellationToken = default)
@@ -734,6 +797,7 @@ public sealed class JobSecurityContextCaptureTests
         {
             ResolvedPrincipalId = principalId;
             ResolvedIssuer = issuer;
+            ResolvedIssuers.Add(issuer);
             return Task.FromResult(membership);
         }
     }
