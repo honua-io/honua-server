@@ -338,22 +338,7 @@ internal static class JobEndpoints
         // geoprocessing result package into OGC output members.
         if (job.Status == ExecutionJobStatus.Failed)
         {
-            // OGC API Processes Part 1 (OGC 18-062r2): use a registered OGC
-            // exception type URI so clients can distinguish job failure from a
-            // server fault. "about:blank" conveys no semantic information and
-            // prevents OGC CITE test runners from mapping the exception to the
-            // correct conformance class.
-            return Results.Json(
-                new OgcProcessError
-                {
-                    Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-failed",
-                    Title = "Job failed",
-                    Status = StatusCodes.Status500InternalServerError,
-                    Detail = job.ErrorMessage ?? $"Job '{jobId}' failed."
-                },
-                OgcProcessesJsonContext.Default.OgcProcessError,
-                MediaTypes.Json,
-                StatusCodes.Status500InternalServerError);
+            return BuildJobFailedResult(jobId, job.ErrorMessage);
         }
 
         if (job.Status == ExecutionJobStatus.Cancelled)
@@ -390,6 +375,24 @@ internal static class JobEndpoints
         }
 
         return BuildResultsResponse(context, logger, jobId, resultPackage);
+    }
+
+    internal static IResult BuildJobFailedResult(string jobId, string? errorMessage)
+    {
+        // OGC API Processes Part 1 (OGC 18-062r2): use a registered OGC
+        // exception type URI so clients can distinguish job failure from a
+        // server fault. Both inline and polled execution share this mapping.
+        return Results.Json(
+            new OgcProcessError
+            {
+                Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-failed",
+                Title = "Job failed",
+                Status = StatusCodes.Status500InternalServerError,
+                Detail = errorMessage ?? $"Job '{jobId}' failed."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status500InternalServerError);
     }
 
     internal static IResult BuildResultsResponse(

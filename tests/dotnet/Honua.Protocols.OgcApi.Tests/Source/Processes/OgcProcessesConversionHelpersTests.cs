@@ -23,20 +23,26 @@ public sealed class OgcProcessesConversionHelpersTests
     private const string ResultsRelation = "http://www.opengis.net/def/rel/ogc/1.0/results";
 
     [Theory]
-    [InlineData(ArtifactKind.Scalar, "application/json")]
-    [InlineData(ArtifactKind.FeatureLayer, "application/geo+json")]
-    [InlineData(ArtifactKind.Table, "application/json")]
-    [InlineData(ArtifactKind.Raster, "image/tiff")]
-    [InlineData(ArtifactKind.File, "application/octet-stream")]
-    [InlineData(ArtifactKind.Report, "application/json")]
-    [InlineData(ArtifactKind.Map, "application/json")]
-    [InlineData(ArtifactKind.AppBundle, "application/octet-stream")]
+    [InlineData(ArtifactKind.Scalar, "application/json", "object", null)]
+    [InlineData(ArtifactKind.FeatureLayer, "application/geo+json", "object", null)]
+    [InlineData(ArtifactKind.Table, "application/json", "object", null)]
+    [InlineData(ArtifactKind.Raster, "image/tiff", "string", "binary")]
+    [InlineData(ArtifactKind.File, "application/octet-stream", "string", "binary")]
+    [InlineData(ArtifactKind.Report, "application/json", "object", null)]
+    [InlineData(ArtifactKind.Map, "application/json", "object", null)]
+    [InlineData(ArtifactKind.AppBundle, "application/octet-stream", "string", "binary")]
     [Operation(Operations.ProcessDiscovery)]
-    public void GetDefaultOutputContentMediaType_MapsEveryArtifactKind(
+    public void GetDefaultOutputSchema_MapsEveryArtifactKind(
         ArtifactKind kind,
-        string expectedMediaType)
+        string expectedMediaType,
+        string expectedType,
+        string? expectedFormat)
     {
-        ProcessEndpoints.GetDefaultOutputContentMediaType(kind).Should().Be(expectedMediaType);
+        var schema = ProcessEndpoints.GetDefaultOutputSchema(kind);
+
+        schema.ContentMediaType.Should().Be(expectedMediaType);
+        schema.Type.Should().Be(expectedType);
+        schema.Format.Should().Be(expectedFormat);
     }
 
     [Fact]

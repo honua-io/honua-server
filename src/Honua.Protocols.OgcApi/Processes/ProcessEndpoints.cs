@@ -351,10 +351,9 @@ internal static class ProcessEndpoints
                         ? BuildRawResultsResponse(context, terminal.ResultPackage!)
                         : JobEndpoints.BuildResultsResponse(
                             context, logger, jobRecord.OperationId, terminal.ResultPackage!),
-                    GeoprocessingTerminalResultOutcome.Failed => OgcProcessesResults.Error(
-                        StatusCodes.Status500InternalServerError,
-                        "Process execution failed",
-                        terminal.Job?.ErrorMessage ?? $"Job '{jobRecord.OperationId}' failed."),
+                    GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(
+                        jobRecord.OperationId,
+                        terminal.Job?.ErrorMessage),
                     GeoprocessingTerminalResultOutcome.Cancelled => OgcProcessesResults.Error(
                         StatusCodes.Status409Conflict,
                         "Process execution cancelled",
@@ -906,11 +905,7 @@ internal static class ProcessEndpoints
             {
                 Title = name,
                 Description = $"Artifact result of type {kind}.",
-                Schema = new OgcProcessIoSchema
-                {
-                    Type = "object",
-                    ContentMediaType = GetDefaultOutputContentMediaType(kind)
-                }
+                Schema = GetDefaultOutputSchema(kind)
             };
         }
 
@@ -926,6 +921,17 @@ internal static class ProcessEndpoints
             ArtifactKind.File or ArtifactKind.AppBundle => "application/octet-stream",
             _ => "application/octet-stream"
         };
+
+    internal static OgcProcessIoSchema GetDefaultOutputSchema(ArtifactKind kind)
+    {
+        var isBinary = kind is ArtifactKind.Raster or ArtifactKind.File or ArtifactKind.AppBundle;
+        return new OgcProcessIoSchema
+        {
+            Type = isBinary ? "string" : "object",
+            Format = isBinary ? "binary" : null,
+            ContentMediaType = GetDefaultOutputContentMediaType(kind)
+        };
+    }
 
     private static void AddOutputBindings(
         Dictionary<string, string> metadata,

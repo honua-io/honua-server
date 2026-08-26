@@ -677,6 +677,10 @@
             "type": "string",
             "description": "JSON Schema type (string, number, object, array, etc.)."
           },
+          "format": {
+            "type": "string",
+            "description": "Optional JSON Schema format hint such as binary."
+          },
           "contentMediaType": {
             "type": "string",
             "description": "Content media type hint for complex inputs."
