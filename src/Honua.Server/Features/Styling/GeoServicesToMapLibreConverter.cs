@@ -286,8 +286,13 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            if (!TryConvertValueTokenAsString(valueElement, out var value))
+            {
+                continue;
+            }
+
             anyValues = true;
-            matchExpr.Add(ConvertValueTokenAsString(valueElement));
+            matchExpr.Add(value);
             matchExpr.Add(color.ToRgbaString());
 
             if (fallbackColor == null)
@@ -697,7 +702,12 @@ internal static class GeoServicesToMapLibreConverter
                 return false;
             }
 
-            stops.Add((ConvertValueTokenAsString(valueElement), payload));
+            if (!TryConvertValueTokenAsString(valueElement, out var value))
+            {
+                continue;
+            }
+
+            stops.Add((value, payload));
         }
 
         if (stops.Count == 0)
@@ -1319,17 +1329,30 @@ internal static class GeoServicesToMapLibreConverter
     /// the output of MapLibre's <c>to-string</c> coercion so that <c>match</c>
     /// stops agree with the coerced input type.
     /// </summary>
-    private static string ConvertValueTokenAsString(JsonElement element)
+    private static bool TryConvertValueTokenAsString(JsonElement element, out string value)
     {
-        return element.ValueKind switch
+        switch (element.ValueKind)
         {
-            JsonValueKind.String => element.GetString() ?? string.Empty,
-            JsonValueKind.Number =>
-                FormatMapLibreNumber(element.GetDouble()),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            _ => element.ToString() ?? string.Empty
-        };
+            case JsonValueKind.String:
+                value = element.GetString() ?? string.Empty;
+                return true;
+            case JsonValueKind.Number when element.TryGetDouble(out var numericValue)
+                && double.IsFinite(numericValue):
+                value = FormatMapLibreNumber(numericValue);
+                return true;
+            case JsonValueKind.True:
+                value = "true";
+                return true;
+            case JsonValueKind.False:
+                value = "false";
+                return true;
+            default:
+                // Unique-value entries with unsupported scalar shapes or numbers that
+                // cannot be represented by MapLibre's finite Number domain are skipped,
+                // matching the converter's handling of other unparseable entries.
+                value = string.Empty;
+                return false;
+        }
     }
 
     private static string FormatMapLibreNumber(double value)

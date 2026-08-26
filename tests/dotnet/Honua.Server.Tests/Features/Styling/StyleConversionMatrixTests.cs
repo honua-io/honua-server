@@ -855,6 +855,36 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
+    public void GeoServicesToMapLibre_ExtremeNumericUniqueValue_SkipsInvalidStopAndRetainsFiniteStop()
+    {
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "measurement",
+            "uniqueValueInfos": [
+              { "value": 1e400, "symbol": { "type": "esriSMS", "color": [255, 0, 0, 255], "size": 8 } },
+              { "value": 42.5, "symbol": { "type": "esriSMS", "color": [0, 255, 0, 255], "size": 8 } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var conversion = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(conversion.MapLibreStyleJson);
+
+        var circleLayer = FindLayer(mapLibreDoc.RootElement, "circle");
+        var outerCase = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
+        var match = outerCase[2].EnumerateArray().ToArray();
+
+        Assert.Equal(5, match.Length);
+        Assert.Equal("42.5", match[2].GetString());
+        Assert.Equal("rgba(0,255,0,1)", match[3].GetString());
+    }
+
+    [Fact]
     public void GeoServicesToMapLibre_BooleanUniqueValues_EmitsStringStops()
     {
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
