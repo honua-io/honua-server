@@ -248,7 +248,8 @@ internal static class McpBearerAuthenticationEndpointExtensions
         var identity = new ClaimsIdentity(
             principal.Claims.Where(static claim =>
                 !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
-                || (claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType
+                || ((claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType
+                        || claim.Type == JobSecurityContextClaimTypes.MembershipIssuer)
                     && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))),
             scheme,
             sourceIdentity?.NameClaimType ?? ClaimTypes.Name,

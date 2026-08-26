@@ -273,6 +273,7 @@ public sealed class McpAuthorizationHelperTests
             new Claim(CanonicalSecurityActor.ScopeCeilingClaim, "forged-scope"),
             new Claim("honua:auth_scheme", "ApiKey"),
             new Claim("honua:issuer", "forged-issuer"),
+            new Claim(JobSecurityContextClaimTypes.MembershipIssuer, "https://forged.example"),
             new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, "forged-marker"),
         ], "issuer-controlled"));
         var trustedMarker = new Claim(
@@ -296,6 +297,35 @@ public sealed class McpAuthorizationHelperTests
                 && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim));
         promoted.FindFirst("sub")?.Value.Should().Be("subject-1");
         promoted.FindFirst("iss")?.Value.Should().Be("https://issuer.example");
+    }
+
+    [UnitTest]
+    public void CreateTrustedBearerPrincipal_OperatorBearer_PreservesOnlyStampedMembershipIssuer()
+    {
+        var source = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "subject-1"),
+            new Claim("iss", "honua-operator-bearer"),
+            new Claim(JobSecurityContextClaimTypes.MembershipIssuer, "https://forged.example"),
+        ], OidcAuthenticationExtensions.OperatorBearerScheme));
+        var trustedMembershipIssuer = new Claim(
+            JobSecurityContextClaimTypes.MembershipIssuer,
+            "https://idp.example");
+        trustedMembershipIssuer.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        source.AddIdentity(new ClaimsIdentity([trustedMembershipIssuer]));
+        var result = AuthenticateResult.Success(new AuthenticationTicket(
+            source,
+            OidcAuthenticationExtensions.OperatorBearerScheme));
+
+        var promoted = McpBearerAuthenticationEndpointExtensions.CreateTrustedBearerPrincipal(result);
+
+        promoted.Should().NotBeNull();
+        promoted!.FindAll(JobSecurityContextClaimTypes.MembershipIssuer)
+            .Should().ContainSingle(claim =>
+                claim.Value == "https://idp.example"
+                && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim));
+        promoted.Claims.Should().NotContain(claim => claim.Value == "https://forged.example");
+        promoted.FindFirstValue("iss").Should().Be("honua-operator-bearer");
     }
 
     [UnitTest]
