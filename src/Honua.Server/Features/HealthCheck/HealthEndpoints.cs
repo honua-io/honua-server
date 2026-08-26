@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -31,14 +32,18 @@ internal static class HealthEndpoints
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         _ = endpoints.MapMethods("/healthz/live", [HttpMethods.Get], HandleLivenessProbe)
-            .WithDisplayName("Liveness Probe");
+            .WithDisplayName("Liveness Probe")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
         _ = endpoints.MapMethods("/healthz/live", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithDisplayName("Liveness Probe Method Not Allowed");
+            .WithDisplayName("Liveness Probe Method Not Allowed")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         _ = endpoints.MapMethods("/healthz/ready", [HttpMethods.Get], HandleReadinessProbe)
-            .WithDisplayName("Readiness Probe");
+            .WithDisplayName("Readiness Probe")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
         _ = endpoints.MapMethods("/healthz/ready", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithDisplayName("Readiness Probe Method Not Allowed");
+            .WithDisplayName("Readiness Probe Method Not Allowed")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
         var metricsEndpoint = endpoints.MapMethods("/healthz/metrics", [HttpMethods.Get], HandlePerformanceMetrics)
