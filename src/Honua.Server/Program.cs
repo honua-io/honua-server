@@ -100,6 +100,15 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 // - Server (composition): Registers IDatabaseHealthChecker → PostgresDatabaseHealthChecker
 // Dependency flow: Server → (Core + Infrastructure), Infrastructure → Core
 
+// In the Development environment ASP.NET Core loads the static-web-assets runtime manifest
+// implicitly, inside WebApplication.CreateBuilder, and eagerly opens every content root it
+// declares as a PhysicalFileProvider — which throws DirectoryNotFoundException for a root that
+// is not materialized on disk. That aborts host construction before any application code (or
+// any test assertion) runs. The explicit hosted-Blazor loader below is already hardened against
+// this, but it never runs in Development, so the guard has to happen here, ahead of the builder
+// (honua-server#2904).
+StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
+
 var builder = WebApplication.CreateBuilder(args);
 
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
