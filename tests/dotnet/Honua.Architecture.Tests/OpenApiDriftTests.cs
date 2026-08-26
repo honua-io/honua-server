@@ -195,6 +195,11 @@ public sealed class OpenApiDriftTests
             .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
         ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
             .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+        var oneOf = ioSchemaProps.GetProperty("oneOf");
+        oneOf.GetProperty("type").GetString().Should().Be("array");
+        oneOf.GetProperty("items").GetProperty("$ref").GetString().Should()
+            .Be("#/components/schemas/ProcessIoSchema",
+                "ProcessIoSchema.oneOf recursively emits alternative WKB-string and GeoJSON-object schemas");
 
         // InputDescription and OutputDescription must reference ProcessIoSchema.
         foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })

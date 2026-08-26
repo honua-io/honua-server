@@ -46,9 +46,10 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   all-pass CITE evidence.
 - **WMTS scope is WebMercatorQuad only** on the GeoServices `MapServer/WMTS` alias
   and the `/ogc` classic surface.
-- **OGC API Processes is async-only.** Synchronous execution returns `501`; results
-  are document-mode JSON; a Redis-backed job store is required for execution and
-  job routes.
+- **OGC API Processes negotiates sync and async execution.** Omission runs a process
+  synchronously when it advertises `sync-execute`; `Prefer: respond-async` requests a
+  durable job. Document-mode JSON is the default, while synchronous single-output
+  values may request raw mode. A Redis-backed job store is required for async and job routes.
 - **OGC API Maps does not claim the styled-map conformance class**, and temporal
   raster mosaics use newest-batch semantics — layers with mixed-date scenes can show
   coverage gaps under a `datetime` filter until per-pixel temporal mosaicking lands.
