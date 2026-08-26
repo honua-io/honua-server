@@ -106,13 +106,19 @@ public sealed record OgcProcessIoSchema
     /// JSON Schema type (string, number, object, array, etc.).
     /// </summary>
     [JsonPropertyName("type")]
-    public required string Type { get; init; }
+    public string? Type { get; init; }
 
     /// <summary>
     /// Content media type hint for complex inputs.
     /// </summary>
     [JsonPropertyName("contentMediaType")]
     public string? ContentMediaType { get; init; }
+
+    /// <summary>
+    /// Alternative JSON Schema representations accepted for this value.
+    /// </summary>
+    [JsonPropertyName("oneOf")]
+    public ImmutableArray<OgcProcessIoSchema>? OneOf { get; init; }
 }
 
 /// <summary>
@@ -187,7 +193,7 @@ public sealed record OgcExecuteRequest
     public ImmutableDictionary<string, JsonElement>? Inputs { get; init; }
 
     /// <summary>
-    /// Desired response mode (document or raw). V1 supports document only.
+    /// Desired response mode (document or raw). Raw is limited to synchronous single-value results.
     /// </summary>
     [JsonPropertyName("response")]
     public string? Response { get; init; }

@@ -23,6 +23,7 @@ internal static class CoreEndpoints
     private static readonly ImmutableArray<string> ConformanceClasses = ImmutableArray.Create(
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json",
+        "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/ogc-process-description",
         // conf/job-list intentionally omitted: the V1 /jobs endpoint lists jobs
         // but does not yet implement the full conf/job-list requirements
         // (filtering, paging semantics, links shape). Declare it only when
