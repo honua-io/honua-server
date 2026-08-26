@@ -254,7 +254,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         {
             Kind = OperationClass.AdminConfigChange,
             RequestedBy = "agent:proposer",
-            Reason = "tighten setting"
+            Reason = "tighten setting",
+            Authority = CreateAuthority("agent:proposer"),
         });
 
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
