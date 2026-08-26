@@ -44,6 +44,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IProposalNotifier>();
                 services.RemoveAll<IOperationGateway>();
                 services.RemoveAll<IOperationExecutor>();
+                services.RemoveAll<IOperationAuthorityRevalidator>();
 
                 services.AddSingleton<IOperationProposalStore>(_proposalStore);
                 services.AddSingleton<IGuardrailLadder>(_ladder);
@@ -65,7 +66,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         OperationProposalStatus status = OperationProposalStatus.AwaitingApproval,
         string? requestedBy = "agent:test",
         OperationProposalAutonomyMetadata? autonomyMetadata = null,
-        string? executionPayload = null)
+        string? executionPayload = null,
+        OperationAuthorityContext? authority = null)
     {
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
@@ -74,6 +76,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             Kind = OperationClass.AdminConfigChange,
             Status = status,
             RequestedBy = requestedBy,
+            Authority = authority ?? CreateAuthority(requestedBy ?? "agent:test"),
             AutonomyMetadata = autonomyMetadata,
             Plan = new OperationProposalPlan
             {
@@ -173,11 +176,31 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     {
         // The admin client authenticates as the "admin" principal; seeding the
         // proposal with that same requester must trip the separation-of-duties guard.
-        var proposal = await SeedProposalAsync(requestedBy: "admin");
+        var proposal = await SeedProposalAsync(
+            requestedBy: "admin",
+            authority: CreateAuthority("admin", issuer: "ApiKey", scheme: "ApiKey"));
 
         var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_SameActorFromDifferentIssuer_IsAllowed()
+    {
+        var proposal = await SeedProposalAsync(
+            requestedBy: "admin",
+            authority: CreateAuthority("admin", issuer: "https://idp-a.example", scheme: "Bearer"));
+
+        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _executor.Executed.Should().BeTrue();
+        var stored = await _proposalStore.GetAsync(proposal.ProposalId);
+        stored!.Approval!.Approver.Should().Be("admin");
+        stored.Approval.ApproverIdentity.Should().NotBeNull();
+        stored.Approval.ApproverIdentity!.Issuer.Should().Be("ApiKey");
     }
 
     [IntegrationTest]
@@ -272,6 +295,18 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
     }
+
+    private static OperationAuthorityContext CreateAuthority(
+        string actor,
+        string issuer = "test-proposer",
+        string scheme = "Service") => new()
+        {
+            Issuer = issuer,
+            Actor = actor,
+            Scheme = scheme,
+            EffectiveTenant = "tenant-1",
+            ScopeGoverned = false,
+        };
 
     private sealed class StubGuardrailLadder : IGuardrailLadder
     {

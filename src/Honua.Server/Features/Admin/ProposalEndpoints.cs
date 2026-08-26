@@ -119,16 +119,17 @@ internal static class ProposalEndpoints
         [FromServices] IOperationProposalStore proposalStore,
         HttpContext context)
     {
-        var actor = ConsolePrincipal.ResolveActorId(context.User);
-        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context).ConfigureAwait(false);
-        if (denied != null)
-        {
-            return denied;
-        }
-
         try
         {
-            var resolved = await gateway.ApplyApprovedProposalAsync(id, actor!, context.RequestAborted)
+            var approver = OperationApproverIdentity.Capture(context.User);
+            var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, approver, context)
+                .ConfigureAwait(false);
+            if (denied != null)
+            {
+                return denied;
+            }
+
+            var resolved = await gateway.ApplyApprovedProposalAsync(id, approver, context.RequestAborted)
                 .ConfigureAwait(false);
             return resolved == null
                 ? Results.NotFound()
@@ -177,27 +178,28 @@ internal static class ProposalEndpoints
         IPermissionResolver permissionResolver,
         IOperationProposalStore proposalStore,
         string proposalId,
-        string? actor,
+        OperationApproverIdentity approver,
         HttpContext context)
     {
-        var denied = await EnsureApprovePermissionAsync(permissionResolver, actor, context).ConfigureAwait(false);
+        var denied = await EnsureApprovePermissionAsync(permissionResolver, approver.Actor, context)
+            .ConfigureAwait(false);
         if (denied != null)
         {
             return denied;
         }
 
-        // Separation of duties: the proposer cannot approve their own proposal.
         var proposal = await proposalStore.GetAsync(proposalId, context.RequestAborted).ConfigureAwait(false);
-        if (proposal != null &&
-            !string.IsNullOrWhiteSpace(actor) &&
-            string.Equals(proposal.RequestedBy, actor, StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.Problem(
+        var isSelfApproval = proposal?.Authority is { } authority
+            ? approver.Matches(authority)
+            : proposal is not null && string.Equals(
+                proposal.RequestedBy,
+                approver.Actor,
+                StringComparison.Ordinal);
+        return isSelfApproval
+            ? Results.Problem(
                 detail: "Separation of duties: the requester of a proposal cannot approve it.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
-        return null;
+                statusCode: StatusCodes.Status403Forbidden)
+            : null;
     }
 
     private static async Task<IResult?> EnsureApprovePermissionAsync(

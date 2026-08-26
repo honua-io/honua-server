@@ -311,7 +311,131 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
-    // ── helpers ───────────��───────────────────────────────���──────────────────
+    [Fact]
+    public async Task ApplyApprovedProposal_SameOperatorSubjectFromDifferentMembershipIssuer_CanApprove()
+    {
+        var proposer = CreateOperatorPrincipal("shared-subject", "https://idp-a.example");
+        var approver = CreateOperatorPrincipal("shared-subject", "https://idp-b.example");
+        var authority = OperationAuthorityContext.Capture(proposer, "tenant-1");
+        var approverIdentity = OperationApproverIdentity.Capture(approver);
+        var executorCallCount = 0;
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-multi-provider-approval", OperationProposalStatus.AwaitingApproval, authority));
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var result = await sut.ApplyApprovedProposalAsync(
+            "p-multi-provider-approval",
+            approverIdentity);
+
+        result.Should().NotBeNull();
+        result!.Status.Should().Be(OperationProposalStatus.Submitted);
+        result.ResolvedBy.Should().Be("shared-subject");
+        result.Approval!.Approver.Should().Be("shared-subject");
+        result.Approval.ApproverIdentity.Should().BeEquivalentTo(approverIdentity);
+        executorCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_SameIssuerQualifiedOperatorIdentity_RemainsForbidden()
+    {
+        var principal = CreateOperatorPrincipal("shared-subject", "https://idp-a.example");
+        var authority = OperationAuthorityContext.Capture(principal, "tenant-1");
+        var approverIdentity = OperationApproverIdentity.Capture(principal);
+        var executorCallCount = 0;
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-qualified-self-approval", OperationProposalStatus.AwaitingApproval, authority));
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var act = () => sut.ApplyApprovedProposalAsync(
+            "p-qualified-self-approval",
+            approverIdentity);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*proposer cannot approve its own operation*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        store.Snapshot.Approval.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_SameUpstreamIdentityAcrossBearerTransports_RemainsForbidden()
+    {
+        var proposer = CreateOperatorPrincipal(
+            "shared-subject",
+            membershipIssuer: null,
+            scheme: "Bearer",
+            issuer: "https://idp-a.example");
+        var approver = CreateOperatorPrincipal("shared-subject", "https://idp-a.example");
+        var authority = OperationAuthorityContext.Capture(proposer, "tenant-1");
+        var approverIdentity = OperationApproverIdentity.Capture(approver);
+        var executorCallCount = 0;
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-cross-transport-self-approval", OperationProposalStatus.AwaitingApproval, authority));
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var act = () => sut.ApplyApprovedProposalAsync(
+            "p-cross-transport-self-approval",
+            approverIdentity);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*proposer cannot approve its own operation*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Approval.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_LegacyOperatorIssuerProvenance_RejectsSameActorConservatively()
+    {
+        var proposer = CreateOperatorPrincipal("shared-subject", membershipIssuer: null);
+        var approver = CreateOperatorPrincipal("shared-subject", "https://idp-b.example");
+        var authority = OperationAuthorityContext.Capture(proposer, "tenant-1");
+        var approverIdentity = OperationApproverIdentity.Capture(approver);
+        var executorCallCount = 0;
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-legacy-membership-issuer", OperationProposalStatus.AwaitingApproval, authority));
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var act = () => sut.ApplyApprovedProposalAsync(
+            "p-legacy-membership-issuer",
+            approverIdentity);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*proposer cannot approve its own operation*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Approval.Should().BeNull();
+    }
+
+    // Helpers
+
+    private static ClaimsPrincipal CreateOperatorPrincipal(
+        string subject,
+        string? membershipIssuer,
+        string scheme = "OperatorBearer",
+        string issuer = "honua-operator-bearer")
+        => new(new ClaimsIdentity(
+            CreateIdentityClaims(subject, issuer, membershipIssuer),
+            scheme));
+
+    private static IEnumerable<Claim> CreateIdentityClaims(
+        string subject,
+        string issuer,
+        string? membershipIssuer)
+    {
+        yield return new Claim(ClaimTypes.NameIdentifier, subject);
+        yield return new Claim("iss", issuer);
+        if (membershipIssuer is not null)
+        {
+            yield return new Claim(OperationAuthorityContext.MembershipIssuerClaimType, membershipIssuer);
+        }
+    }
 
     private static OperationProposal CreateProposal(
         string proposalId,

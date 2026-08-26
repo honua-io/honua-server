@@ -233,7 +233,8 @@ public interface IOperationGateway
     /// <c>operation.proposed</c> audit, pending notification, and idempotency handling
     /// as the ladder-routed approval path, so the resulting proposal is surfaced and
     /// resolved through the same <c>honua://proposals/{id}</c> resource and
-    /// <see cref="ApplyApprovedProposalAsync"/> / <see cref="RejectProposalAsync"/>
+    /// <see cref="ApplyApprovedProposalAsync(string, OperationApproverIdentity, CancellationToken)"/> /
+    /// <see cref="RejectProposalAsync"/>
     /// path. Used when the caller has already determined the operation must be gated
     /// and only needs it persisted for human resolution (ADR-0064, #2814).
     /// </summary>
@@ -260,6 +261,20 @@ public interface IOperationGateway
         string proposalId,
         string approvedBy,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies a previously created proposal using issuer-qualified approver identity
+    /// for the separation-of-duties decision.
+    /// </summary>
+    /// <param name="proposalId">Proposal identifier.</param>
+    /// <param name="approver">Canonical authenticated identity that approved the proposal.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated proposal, or null when the proposal is not found.</returns>
+    Task<OperationProposal?> ApplyApprovedProposalAsync(
+        string proposalId,
+        OperationApproverIdentity approver,
+        CancellationToken cancellationToken = default)
+        => ApplyApprovedProposalAsync(proposalId, approver.Actor, cancellationToken);
 
     /// <summary>
     /// Rejects a previously created proposal with a required reason.

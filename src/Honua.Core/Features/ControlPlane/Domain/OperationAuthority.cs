@@ -351,6 +351,111 @@ public sealed record OperationAuthorityContext
 }
 
 /// <summary>
+/// Canonical authenticated identity for a proposal approval decision. The upstream
+/// membership issuer distinguishes identities transported by the same server-minted
+/// operator bearer scheme.
+/// </summary>
+public sealed record OperationApproverIdentity
+{
+    private const string OperatorBearerScheme = "OperatorBearer";
+
+    /// <summary>Canonical authenticated actor identifier.</summary>
+    public required string Actor { get; init; }
+
+    /// <summary>Canonical token issuer or API-key provider.</summary>
+    public required string Issuer { get; init; }
+
+    /// <summary>Upstream identity-provider issuer for a server-minted operator bearer.</summary>
+    public string? MembershipIssuer { get; init; }
+
+    /// <summary>Authentication scheme used to establish the actor.</summary>
+    public required string Scheme { get; init; }
+
+    /// <summary>Captures the canonical identity of an authenticated approver.</summary>
+    public static OperationApproverIdentity Capture(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var identity = principal.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated)
+            ?? throw new InvalidOperationException(
+                "An authenticated principal is required to capture approver identity.");
+        var scheme = identity.AuthenticationType;
+        var approver = new OperationApproverIdentity
+        {
+            Actor = OperationAuthorityContext.ResolveActor(principal) ?? string.Empty,
+            Issuer = identity.FindFirst("iss")?.Value ?? scheme ?? string.Empty,
+            MembershipIssuer = string.Equals(scheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase)
+                ? identity.FindFirst(OperationAuthorityContext.MembershipIssuerClaimType)?.Value
+                : null,
+            Scheme = scheme ?? string.Empty,
+        };
+
+        if (!approver.TryValidate(out var error))
+        {
+            throw new InvalidOperationException($"Operation approver identity is invalid: {error}");
+        }
+
+        return approver;
+    }
+
+    /// <summary>Validates the bounded, non-secret approver identity.</summary>
+    public bool TryValidate(out string? error)
+    {
+        if (!IsBounded(Actor, 256) || !IsBounded(Issuer, 512) || !IsBounded(Scheme, 64))
+        {
+            error = "Operation approver identity fields are missing or exceed their bounds.";
+            return false;
+        }
+
+        if (MembershipIssuer is not null &&
+            (!IsBounded(MembershipIssuer, 512) ||
+             !string.Equals(Scheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "Operation approver membership issuer is invalid for the authentication scheme.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether this represents the same human identity that proposed an operation.
+    /// Transport schemes are deliberately not an identity boundary: an external bearer and
+    /// its exchanged operator bearer identify the same actor when their upstream issuer matches.
+    /// </summary>
+    public bool Matches(OperationAuthorityContext proposerAuthority)
+    {
+        ArgumentNullException.ThrowIfNull(proposerAuthority);
+        if (!string.Equals(Actor, proposerAuthority.Actor, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // An old operator bearer without upstream issuer provenance cannot safely prove
+        // that the same subject came from another provider, so retain the conservative
+        // actor-only self-approval rejection for that legacy shape.
+        if (HasAmbiguousOperatorIssuer(Scheme, MembershipIssuer) ||
+            HasAmbiguousOperatorIssuer(proposerAuthority.Scheme, proposerAuthority.MembershipIssuer))
+        {
+            return true;
+        }
+
+        return string.Equals(
+            MembershipIssuer ?? Issuer,
+            proposerAuthority.MembershipIssuer ?? proposerAuthority.Issuer,
+            StringComparison.Ordinal);
+    }
+
+    private static bool HasAmbiguousOperatorIssuer(string scheme, string? membershipIssuer)
+        => string.Equals(scheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(membershipIssuer);
+
+    private static bool IsBounded(string? value, int maxLength)
+        => !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength;
+}
+
+/// <summary>
 /// Durable approval decision metadata. The proposer authority is intentionally
 /// not replaced by this record when an approved proposal is replayed.
 /// </summary>
@@ -358,6 +463,12 @@ public sealed record OperationApprovalRecord
 {
     /// <summary>Principal that approved or rejected the proposal.</summary>
     public required string Approver { get; init; }
+
+    /// <summary>
+    /// Issuer-qualified approval identity. Absent on legacy approval records and rejection
+    /// decisions that predate qualified approver provenance.
+    /// </summary>
+    public OperationApproverIdentity? ApproverIdentity { get; init; }
 
     /// <summary>Whether this record represents approval rather than rejection.</summary>
     public required bool Approved { get; init; }
