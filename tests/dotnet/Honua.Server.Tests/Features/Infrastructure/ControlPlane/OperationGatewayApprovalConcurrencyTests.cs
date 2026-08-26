@@ -19,7 +19,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 /// <summary>
 /// Regression coverage for BH4-031: concurrent calls to
-/// <see cref="OperationGateway.ApplyApprovedProposalAsync"/> must execute the
+/// <see cref="OperationGateway.ApplyApprovedProposalAsync(string, OperationApproverIdentity, CancellationToken)"/>
+/// must execute the
 /// underlying operation exactly once, even when two callers both read
 /// <see cref="OperationProposalStatus.AwaitingApproval"/> before either claims.
 ///
@@ -45,8 +46,8 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         // call's outcome is captured independently (not into a shared success/failure variable
         // overwritten per iteration) so a real double-success or double-failure regression can
         // never be silently masked by one outcome overwriting the other.
-        var t1 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-1"));
-        var t2 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-2"));
+        var t1 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", Approver("admin-1")));
+        var t2 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", Approver("admin-2")));
         var outcomes = await Task.WhenAll(t1, t2);
 
         // Assert
@@ -121,7 +122,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         var sut = BuildGateway(store, new RecordingExecutor());
 
         // First call: approve
-        var result = await sut.ApplyApprovedProposalAsync("p-seq", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-seq", Approver("admin"));
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
 
@@ -181,7 +182,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         var executor = new BlockingExecutor();
         var sut = BuildGateway(store, executor);
 
-        var approvalTask = sut.ApplyApprovedProposalAsync("p-approve-reject-race", "approver");
+        var approvalTask = sut.ApplyApprovedProposalAsync("p-approve-reject-race", Approver("approver"));
         var rejectionTask = sut.RejectProposalAsync("p-approve-reject-race", "rejector", "deny");
 
         await bothInitialReadsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -226,7 +227,8 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         });
         var sut = BuildGateway(store, executor);
 
-        var result = await sut.ApplyApprovedProposalAsync("p-evidence-first", "separate-approver");
+        var approver = Approver("separate-approver");
+        var result = await sut.ApplyApprovedProposalAsync("p-evidence-first", approver);
 
         observedProposal.Should().NotBeNull();
         observedProposal!.Status.Should().Be(OperationProposalStatus.Executing);
@@ -234,6 +236,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         observedProposal.Approval.Should().NotBeNull();
         observedProposal.Approval!.Approved.Should().BeTrue();
         observedProposal.Approval.Approver.Should().Be("separate-approver");
+        observedProposal.Approval.ApproverIdentity.Should().BeEquivalentTo(approver);
         observedProposal.Approval.ProposerAuthorityRetained.Should().BeTrue();
         observedProposal.Authority.Should().BeEquivalentTo(authority);
         observedRequest.Should().NotBeNull();
@@ -264,6 +267,37 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     }
 
     [Fact]
+    public async Task ApplyApprovedProposal_LegacyStringIdentityWithCapturedAuthority_FailsClosed()
+    {
+        var store = new InMemoryProposalStore(
+            CreateProposal("p-raw-approver", OperationProposalStatus.AwaitingApproval));
+        var executorCallCount = 0;
+        var sut = BuildGateway(
+            store,
+            new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-raw-approver", "separate-approver");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*issuer-qualified approver identity is required*");
+        executorCallCount.Should().Be(0);
+        store.Snapshot.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        store.Snapshot.Approval.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_QualifiedIdentityAgainstLegacyGateway_FailsClosed()
+    {
+        IOperationGateway gateway = new LegacyStringOnlyGateway();
+
+        var act = () => gateway.ApplyApprovedProposalAsync("proposal-1", Approver("approver"));
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*issuer-qualified proposal approval*");
+        ((LegacyStringOnlyGateway)gateway).StringApprovalCalled.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ApplyApprovedProposal_WithInvalidPersistedAuthority_FailsBeforeActuation()
     {
         var invalidAuthority = ValidAuthority() with { ScopeCeiling = ["service:admin"] };
@@ -274,7 +308,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             store,
             new RecordingExecutor(_ => Interlocked.Increment(ref executorCallCount)));
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-invalid-authority", "separate-approver");
+        var act = () => sut.ApplyApprovedProposalAsync("p-invalid-authority", Approver("separate-approver"));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*authority is invalid*scope ceiling*");
@@ -303,7 +337,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
 
         var act = () => sut.ApplyApprovedProposalAsync(
             "p-api-key-self-approval",
-            "api-key-42");
+            OperationApproverIdentity.Capture(principal));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*proposer cannot approve its own operation*");
@@ -415,6 +449,13 @@ public sealed class OperationGatewayApprovalConcurrencyTests
 
     // Helpers
 
+    private static OperationApproverIdentity Approver(string actor) => new()
+    {
+        Actor = actor,
+        Issuer = "https://approver.example",
+        Scheme = "Bearer",
+    };
+
     private static ClaimsPrincipal CreateOperatorPrincipal(
         string subject,
         string? membershipIssuer,
@@ -489,6 +530,37 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             scopeFactory,
             notifier,
             NullLogger<OperationGateway>.Instance);
+    }
+
+    private sealed class LegacyStringOnlyGateway : IOperationGateway
+    {
+        public bool StringApprovalCalled { get; private set; }
+
+        public Task<OperationGatewayResult> RouteAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<OperationGatewayResult> CreateApprovalProposalAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<OperationProposal?> ApplyApprovedProposalAsync(
+            string proposalId,
+            string approvedBy,
+            CancellationToken cancellationToken = default)
+        {
+            StringApprovalCalled = true;
+            return Task.FromResult<OperationProposal?>(null);
+        }
+
+        public Task<OperationProposal?> RejectProposalAsync(
+            string proposalId,
+            string rejectedBy,
+            string reason,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     /// <summary>

@@ -156,7 +156,7 @@ public sealed class OperationGatewayStateMachineTests
         var sut = BuildGateway(store: store, executor: new DeployExecutor());
 
         // Act
-        var result = await sut.ApplyApprovedProposalAsync("p-no-executor", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-no-executor", Approver("admin"));
 
         // Assert BH6-033: must transition to terminal Failed, not stay Submitted
         result.Should().NotBeNull();
@@ -178,7 +178,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new DeployExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-deploy", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-deploy", Approver("admin"));
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
@@ -197,7 +197,7 @@ public sealed class OperationGatewayStateMachineTests
             .Returns(OperationAuthorityRevalidationResult.Denied("grant revoked"));
         var sut = BuildGateway(store, executor, authorityRevalidators: [revalidator]);
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-revoked", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-revoked", Approver("admin"));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*current authority*grant revoked*");
@@ -222,7 +222,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store, new DeployExecutor());
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-stale-scope", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-stale-scope", Approver("admin"));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*OAuth scope ceiling no longer permits*");
@@ -246,7 +246,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store, new DeployExecutor());
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-missing-binding", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-missing-binding", Approver("admin"));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*OAuth scope ceiling no longer permits*");
@@ -277,7 +277,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store, new DeployExecutor());
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bearer", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bearer", Approver("admin"));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*OAuth scope ceiling no longer permits*");
@@ -302,7 +302,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store, new DeployExecutor());
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bound", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bound", Approver("admin"));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*OAuth scope ceiling no longer permits*");
@@ -318,7 +318,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new ThrowingExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-throws", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-throws", Approver("admin"));
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed);
@@ -354,6 +354,13 @@ public sealed class OperationGatewayStateMachineTests
         Scheme = "Service",
         EffectiveTenant = "tenant-1",
         ScopeGoverned = false,
+    };
+
+    private static OperationApproverIdentity Approver(string actor) => new()
+    {
+        Actor = actor,
+        Issuer = "https://approver.example",
+        Scheme = "Bearer",
     };
 
     private static OperationGateway BuildGateway(

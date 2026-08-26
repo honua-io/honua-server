@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -12,6 +13,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -45,12 +47,15 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IOperationGateway>();
                 services.RemoveAll<IOperationExecutor>();
                 services.RemoveAll<IOperationAuthorityRevalidator>();
+                services.RemoveAll<IClaimsTransformation>();
 
                 services.AddSingleton<IOperationProposalStore>(_proposalStore);
                 services.AddSingleton<IGuardrailLadder>(_ladder);
                 services.AddSingleton<IProposalNotifier>(_notifier);
                 services.AddSingleton<IOperationExecutor>(_executor);
                 services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
+                services.AddHttpContextAccessor();
+                services.AddTransient<IClaimsTransformation, MissingApproverActorClaimsTransformation>();
             });
     }
 
@@ -201,6 +206,22 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         stored!.Approval!.Approver.Should().Be("admin");
         stored.Approval.ApproverIdentity.Should().NotBeNull();
         stored.Approval.ApproverIdentity!.Issuer.Should().Be("ApiKey");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_AuthenticatedAdminWithoutStableActor_ReturnsUnauthorized()
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var client = _fixture.CreateAdminClient();
+        client.DefaultRequestHeaders.Add(MissingApproverActorClaimsTransformation.HeaderName, "true");
+
+        var response = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _executor.Executed.Should().BeFalse();
+        (await _proposalStore.GetAsync(proposal.ProposalId))!.Status
+            .Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
     [IntegrationTest]
@@ -368,6 +389,34 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         {
             ResolvedCount++;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class MissingApproverActorClaimsTransformation(IHttpContextAccessor httpContextAccessor)
+        : IClaimsTransformation
+    {
+        public const string HeaderName = "X-Test-Missing-Approver-Actor";
+
+        public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+        {
+            if (httpContextAccessor.HttpContext?.Request.Headers.ContainsKey(HeaderName) != true)
+            {
+                return Task.FromResult(principal);
+            }
+
+            foreach (var identity in principal.Identities.OfType<ClaimsIdentity>())
+            {
+                var actorClaims = identity.Claims
+                    .Where(claim => claim.Type is ClaimTypes.NameIdentifier or ClaimTypes.Name or
+                        "sub" or "api_key_id" or "api_key_name")
+                    .ToArray();
+                foreach (var claim in actorClaims)
+                {
+                    identity.RemoveClaim(claim);
+                }
+            }
+
+            return Task.FromResult(principal);
         }
     }
 
