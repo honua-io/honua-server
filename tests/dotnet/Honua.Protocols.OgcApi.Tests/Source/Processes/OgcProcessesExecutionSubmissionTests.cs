@@ -59,7 +59,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_AsyncOnlyProcess_IgnoresRespondSyncPreference()
+    public async Task Execute_AsyncOnlyProcess_TreatsRespondSyncAsUnknownPreference()
     {
         _jobQueue.EnqueueAsync(
                 Arg.Any<string>(),
@@ -85,7 +85,8 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
         var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        response.Headers.GetValues("Preference-Applied").Should().Contain("respond-async");
+        response.Headers.Contains("Preference-Applied").Should().BeFalse(
+            "respond-sync is not a registered preference and was not applied");
         await _terminalService.DidNotReceiveWithAnyArgs().WaitForResultAsync(
             default!,
             default!,
