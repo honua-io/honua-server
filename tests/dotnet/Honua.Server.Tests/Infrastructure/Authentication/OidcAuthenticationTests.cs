@@ -856,7 +856,9 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: [$"non-admin-{Guid.NewGuid():N}"]);
+        var token = GenerateTestJwtToken(
+            roles: [$"non-admin-{Guid.NewGuid():N}"],
+            tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
