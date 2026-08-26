@@ -35,7 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
-      group: review-resolve-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.event.client_payload.pr || github.run_id }}-${{ github.event.pull_request.head.sha || github.event.workflow_run.pull_requests[0].head.sha || github.event.workflow_run.head_sha || github.event.client_payload.head_sha || github.run_id }}
+      # workflow_run.head_sha is the canonical subject for both fork and
+      # non-fork completions; pull_requests may be empty for fork runs.
+      group: review-resolve-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || github.run_id }}-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.event.pull_request['head']['sha'] || github.event.client_payload.head_sha || github.run_id }}
       cancel-in-progress: true
     permissions:
       contents: read
@@ -54,10 +56,8 @@ jobs:
               context.payload.workflow_run?.pull_requests?.[0]?.number ||
               context.payload.client_payload?.pr
             );
-            const eventHead =
+            const eventHead = context.payload.workflow_run?.head_sha ||
               context.payload.pull_request?.head?.sha ||
-              context.payload.workflow_run?.pull_requests?.[0]?.head?.sha ||
-              context.payload.workflow_run?.head_sha ||
               context.payload.client_payload?.head_sha;
             if (!eventHead) {
               core.info('Event has no subject SHA; continuing to pull request resolution.');
