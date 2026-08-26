@@ -1007,6 +1007,138 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle().Which.EventId.Should().Be("release:newest");
         page.HasMore.Should().BeTrue();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue("the release timeline is per-instance");
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_PerInstanceSnapshotIsPartialAndTruncated()
+    {
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("local-only", DateTimeOffset.UtcNow));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("release:local-only");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_EmptyFreshBufferIsPartialAndTruncated()
+    {
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: new ReleaseTimelineBuffer());
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_EvictedFilteredHistoryIsPartialAndTruncated()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var releases = new ReleaseTimelineBuffer(capacity: 2);
+        releases.Append(NewRelease("evicted-match", now.AddHours(-3)));
+        releases.Append(NewRelease("retained-match", now.AddHours(-2)));
+        releases.Append(NewRelease("filtered-newer", now));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            To = now.AddHours(-1),
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("release:retained-match");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_MixedReleaseAndDurableSource_RemainsPartialAndTruncated()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now) }
+        };
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("local", now.AddMinutes(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery: alertQuery,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert, OperateEventKind.Release],
+            PageSize = 10
+        });
+
+        page.Items.Should().HaveCount(2);
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ExcludedReleaseSource_DoesNotDegradeCompleteSource()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now) }
+        };
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("excluded", now.AddMinutes(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery: alertQuery,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.Kind.Should().Be(OperateEventKind.Alert);
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
     }
 
     [UnitTest]

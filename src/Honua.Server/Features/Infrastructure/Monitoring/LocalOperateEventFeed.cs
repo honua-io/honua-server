@@ -520,7 +520,13 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             .Take(pageSize)
             .ToArray();
 
-        return Task.FromResult(new SourceLoadResult(results, ScanTruncated: false));
+        // This buffer is per-instance and non-durable, so it cannot prove cross-replica
+        // completeness, retention across restarts, or delivery of every local transition.
+        // Report incomplete coverage without claiming a known next matching row.
+        return Task.FromResult(new SourceLoadResult(
+            results,
+            ScanTruncated: true,
+            PartialResult: true));
     }
 
     private async Task<SourceLoadResult> LoadProgressJobsAsync(

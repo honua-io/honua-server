@@ -300,8 +300,8 @@ public sealed record OperateEventPage
     public bool HasMore { get; init; }
 
     /// <summary>
-    /// Set to true when the page may omit matching events because a source scan
-    /// ended before its upstream cursor was exhausted.
+    /// Set to true when the page may omit matching events because of the requested
+    /// page size or because a selected source cannot prove complete coverage.
     /// </summary>
     public bool Truncated { get; init; }
 
@@ -312,9 +312,9 @@ public sealed record OperateEventPage
     public IReadOnlyCollection<OperateEventKind> QueriedSources { get; init; } = Array.Empty<OperateEventKind>();
 
     /// <summary>
-    /// Set to true when at least one upstream source returned a partial result
-    /// (typically because the source threw or timed out). The available items
-    /// from other sources are still returned.
+    /// Set to true when at least one upstream source returned a partial result,
+    /// such as when the source threw, timed out, or is local and non-durable. The
+    /// available items from all sources are still returned.
     /// </summary>
     public bool PartialResult { get; init; }
 
