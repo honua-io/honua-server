@@ -131,10 +131,31 @@ internal sealed partial class OperationGateway : IOperationGateway
         return await CreateProposalAsync(request, decision, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<OperationProposal?> ApplyApprovedProposalAsync(
+    public Task<OperationProposal?> ApplyApprovedProposalAsync(
         string proposalId,
         string approvedBy,
         CancellationToken cancellationToken = default)
+        => ApplyApprovedProposalCoreAsync(proposalId, approvedBy, approverIdentity: null, cancellationToken);
+
+    public Task<OperationProposal?> ApplyApprovedProposalAsync(
+        string proposalId,
+        OperationApproverIdentity approver,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(approver);
+        if (!approver.TryValidate(out var error))
+        {
+            throw new InvalidOperationException($"Operation approver identity is invalid: {error}");
+        }
+
+        return ApplyApprovedProposalCoreAsync(proposalId, approver.Actor, approver, cancellationToken);
+    }
+
+    private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
+        string proposalId,
+        string approvedBy,
+        OperationApproverIdentity? approverIdentity,
+        CancellationToken cancellationToken)
     {
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
         if (proposal == null)
@@ -154,8 +175,12 @@ internal sealed partial class OperationGateway : IOperationGateway
             throw new InvalidOperationException("An identified approver is required.");
         }
 
-        if (string.Equals(proposal.RequestedBy, approvedBy, StringComparison.Ordinal) ||
-            string.Equals(proposal.Authority?.Actor, approvedBy, StringComparison.Ordinal))
+        var isSelfApproval = proposal.Authority is { } proposerAuthority
+            ? approverIdentity is not null
+                ? approverIdentity.Matches(proposerAuthority)
+                : string.Equals(proposerAuthority.Actor, approvedBy, StringComparison.Ordinal)
+            : string.Equals(proposal.RequestedBy, approvedBy, StringComparison.Ordinal);
+        if (isSelfApproval)
         {
             throw new InvalidOperationException("The proposer cannot approve its own operation.");
         }
@@ -192,6 +217,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         proposal = await ClaimForExecutionAsync(
                 proposal,
                 approvedBy,
+                approverIdentity,
                 approvalDecidedAt,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -532,6 +558,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
         string approvedBy,
+        OperationApproverIdentity? approverIdentity,
         DateTimeOffset decidedAt,
         CancellationToken cancellationToken)
     {
@@ -544,6 +571,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Approval = new OperationApprovalRecord
                 {
                     Approver = approvedBy,
+                    ApproverIdentity = approverIdentity,
                     Approved = true,
                     DecidedAt = decidedAt,
                     ProposerAuthorityRetained = true,
