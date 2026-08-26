@@ -962,6 +962,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/config")]
     [Endpoint("GET /healthz/live")]
     [Endpoint("GET /healthz/ready")]
+    [Endpoint("POST /oauth/token")]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi()
     {
@@ -1007,6 +1008,13 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
             var readinessResponse = await bearerClient.GetAsync("/healthz/ready");
             readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var refreshContent = new StringContent(
+                """{"refreshToken":"refresh-token"}""",
+                Encoding.UTF8,
+                "application/json");
+            var refreshResponse = await bearerClient.PostAsync("/oauth/token", refreshContent);
+            refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var geometryContent = new StringContent(
                 """
