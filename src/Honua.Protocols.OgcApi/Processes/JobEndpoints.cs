@@ -343,17 +343,7 @@ internal static class JobEndpoints
 
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
-            return Results.Json(
-                new OgcProcessError
-                {
-                    Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-dismissed",
-                    Title = "Job dismissed",
-                    Status = StatusCodes.Status410Gone,
-                    Detail = $"Job '{jobId}' has been dismissed."
-                },
-                OgcProcessesJsonContext.Default.OgcProcessError,
-                MediaTypes.Json,
-                StatusCodes.Status410Gone);
+            return BuildJobDismissedResult(jobId);
         }
 
         AnalysisResultPackage resultPackage;
@@ -393,6 +383,23 @@ internal static class JobEndpoints
             OgcProcessesJsonContext.Default.OgcProcessError,
             MediaTypes.Json,
             StatusCodes.Status500InternalServerError);
+    }
+
+    internal static IResult BuildJobDismissedResult(string jobId)
+    {
+        // Both inline and polled execution expose the same registered terminal-state
+        // exception so clients can handle cancellation independently of observation path.
+        return Results.Json(
+            new OgcProcessError
+            {
+                Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-dismissed",
+                Title = "Job dismissed",
+                Status = StatusCodes.Status410Gone,
+                Detail = $"Job '{jobId}' has been dismissed."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status410Gone);
     }
 
     internal static IResult BuildResultsResponse(
