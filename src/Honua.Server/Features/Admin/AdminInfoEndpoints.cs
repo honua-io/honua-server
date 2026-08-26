@@ -42,6 +42,7 @@ internal static class AdminInfoEndpoints
             .WithName("GetAdminCapabilities")
             .WithSummary("Get admin API capabilities")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<AdminCapabilitiesResponse>>()
             .AllowAnonymous();
     }

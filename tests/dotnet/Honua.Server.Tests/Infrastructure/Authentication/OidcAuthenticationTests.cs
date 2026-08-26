@@ -720,18 +720,52 @@ public class OidcAuthenticationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/version")]
-    public void AdminVersionEndpoint_IsMarkedTenantIndependent()
+    [Endpoint("GET /api/v1/admin/capabilities")]
+    [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
     {
-        using var factory = CreateOidcTestFactory();
+        using var factory = CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings());
         using var client = factory.CreateClient();
 
-        var versionEndpoint = factory.Services
+        var endpointsByRoute = factory.Services
             .GetServices<EndpointDataSource>()
             .SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>()
-            .Single(endpoint => endpoint.RoutePattern.RawText == "/api/v{version:apiVersion}/admin/version");
+            .ToLookup(endpoint => endpoint.RoutePattern.RawText);
 
-        Assert.NotNull(versionEndpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
+        foreach (var route in new[]
+        {
+            "/api/v{version:apiVersion}/admin/version",
+            "/api/v{version:apiVersion}/admin/capabilities",
+            "/.well-known/oauth-protected-resource/mcp"
+        })
+        {
+            var endpoint = Assert.Single(endpointsByRoute[route]);
+            Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/capabilities")]
+    [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    public async Task GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk()
+    {
+        using var factory = CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings());
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        foreach (var route in new[]
+        {
+            "/api/v1/admin/capabilities",
+            "/.well-known/oauth-protected-resource/mcp"
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var response = await client.SendAsync(request);
+
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
     }
 
     [IntegrationTest]
