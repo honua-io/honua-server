@@ -220,12 +220,18 @@ public sealed class McpToolDescriptionTeachingTests
         AssertPlanStepDocumentsCatalog(McpToolSchemas.ExecutePlanArgumentSchema, jobCallableIds);
         ExtractProcessIdExamples(McpToolSchemas.ExecutePlanArgumentSchema)
             .Should().NotContain(["analytics.cluster", "source.geojson", "raster.interpolate-kriging"]);
+        ExtractProcessIdDescription(McpToolSchemas.ExecutePlanArgumentSchema)
+            .Should().Contain("executionKind=Job")
+            .And.Contain("supportedExecutionModes includes Async");
     }
 
     [UnitTest]
     public void PlanArgumentSchema_ProcessIdAndInputs_DocumentCatalogDiscovery()
     {
         AssertPlanStepDocumentsCatalog(McpToolSchemas.PlanArgumentSchema, McpToolSchemas.ProcessIdNames);
+        ExtractProcessIdDescription(McpToolSchemas.PlanArgumentSchema)
+            .Should().Contain("closed set advertised by the honua://catalog/processes resource")
+            .And.NotContain("executionKind=Job");
     }
 
     private static void AssertPlanStepDocumentsCatalog(
@@ -259,4 +265,12 @@ public sealed class McpToolDescriptionTeachingTests
             .EnumerateArray()
             .Select(x => x.GetString())
             .ToArray();
+
+    private static string ExtractProcessIdDescription(JsonElement planSchema)
+        => planSchema
+            .GetProperty("properties").GetProperty("plan")
+            .GetProperty("properties").GetProperty("steps")
+            .GetProperty("items").GetProperty("properties")
+            .GetProperty("processId").GetProperty("description")
+            .GetString()!;
 }
