@@ -1,12 +1,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.API;
 
@@ -108,9 +113,62 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         using var _ = _factory.CreateClient();
 
         const string path = "/ogc/processes/processes/{processId}/execution";
-        GetSuccessContentTypes("POST", path).Should().BeEquivalentTo(
-            ["application/json", "application/geo+json", "application/wkb", "image/tiff", "application/octet-stream"],
-            "execute metadata must advertise exactly document mode and every supported raw representation");
+        var processCatalog = _factory.Services.GetRequiredService<IProcessCatalog>();
+        var synchronousProcesses = processCatalog.ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .Where(process => process.SupportedExecutionModes.HasFlag(ProcessExecutionModes.Sync))
+            .OrderBy(process => process.ProcessId, StringComparer.Ordinal)
+            .ToArray();
+
+        synchronousProcesses
+            .Select(process => $"{process.ProcessId}:{string.Join(',', process.OutputArtifactKinds)}")
+            .Should().Equal(
+            [
+                "geometry.area:Scalar",
+                "geometry.buffer:FeatureLayer",
+                "geometry.centroid:FeatureLayer",
+                "geometry.clip:FeatureLayer",
+                "geometry.convex-hull:FeatureLayer",
+                "geometry.difference:FeatureLayer",
+                "geometry.dissolve:FeatureLayer",
+                "geometry.intersect:FeatureLayer",
+                "geometry.length:Scalar",
+                "geometry.make-valid:FeatureLayer",
+                "geometry.project:FeatureLayer",
+                "geometry.simplify:FeatureLayer",
+                "geometry.snap:FeatureLayer",
+                "geometry.union:FeatureLayer"
+            ], "the catalog-owned synchronous execution policy determines reachable raw outputs");
+
+        var reachableRawContentTypes = synchronousProcesses
+            .SelectMany(process => process.OutputArtifactKinds)
+            .Select(ProcessEndpoints.GetDefaultOutputContentMediaType)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        reachableRawContentTypes.Should().BeEquivalentTo(["application/json", "application/geo+json"]);
+
+        var expectedSuccessContentTypes = new HashSet<string>(reachableRawContentTypes, StringComparer.OrdinalIgnoreCase)
+        {
+            "application/json"
+        };
+        GetSuccessContentTypes("POST", path).Should().BeEquivalentTo(expectedSuccessContentTypes,
+            "execute metadata must advertise document mode and only reachable raw representations");
+
+        var environment = _factory.Services.GetRequiredService<IHostEnvironment>();
+        using var openApi = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            environment.ContentRootPath,
+            "ogc-processes-openapi.json")));
+        var staticSuccessContentTypes = openApi.RootElement
+            .GetProperty("paths")
+            .GetProperty(path)
+            .GetProperty("post")
+            .GetProperty("responses")
+            .GetProperty("200")
+            .GetProperty("content")
+            .EnumerateObject()
+            .Select(property => property.Name);
+        staticSuccessContentTypes.Should().BeEquivalentTo(expectedSuccessContentTypes,
+            "the static OpenAPI success map must match reachable endpoint metadata");
+
         GetResponseMetadata("POST", path, StatusCodes.Status409Conflict).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status410Gone).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status413PayloadTooLarge).Should().NotBeEmpty();

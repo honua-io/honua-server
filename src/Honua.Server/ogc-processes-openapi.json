@@ -170,15 +170,6 @@
               },
               "application/geo+json": {
                 "schema": { "type": "object" }
-              },
-              "application/wkb": {
-                "schema": { "type": "string", "format": "binary" }
-              },
-              "image/tiff": {
-                "schema": { "type": "string", "format": "binary" }
-              },
-              "application/octet-stream": {
-                "schema": { "type": "string", "format": "binary" }
               }
             }
           },
