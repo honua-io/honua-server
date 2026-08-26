@@ -249,21 +249,32 @@ public sealed class OpenApiDriftTests
 
         var prefer = execute.GetProperty("parameters").EnumerateArray()
             .Single(parameter => parameter.GetProperty("name").GetString() == "Prefer");
-        prefer.GetProperty("description").GetString().Should().Contain("respond-sync");
+        var preferDescription = prefer.GetProperty("description").GetString();
+        preferDescription.Should().Contain("respond-async");
+        preferDescription.Should().Contain("When omitted");
+        preferDescription.Should().Contain("sync-execute");
+        preferDescription.Should().NotContain("respond-sync");
 
         var responses = execute.GetProperty("responses");
-        foreach (var status in new[] { "200", "201", "408", "409", "500" })
+        foreach (var status in new[] { "200", "201", "408", "409", "413", "499", "500" })
         {
             responses.TryGetProperty(status, out _).Should().BeTrue(
                 "the execution operation must document runtime outcome {0}", status);
         }
 
-        responses.GetProperty("200")
+        var success = responses.GetProperty("200");
+        success.TryGetProperty("headers", out _).Should().BeFalse(
+            "synchronous-by-omission execution does not apply a Prefer token");
+        success
             .GetProperty("content")
             .GetProperty("application/json")
             .GetProperty("schema")
             .GetProperty("$ref")
             .GetString().Should().Be("#/components/schemas/Results");
+        success.GetProperty("content").TryGetProperty("application/geo+json", out _).Should().BeTrue(
+            "raw synchronous geometry outputs retain their artifact media type");
+        success.GetProperty("content").TryGetProperty("application/wkb", out _).Should().BeTrue(
+            "raw synchronous WKB outputs retain their artifact media type");
     }
 
     [ArchitectureTest]
