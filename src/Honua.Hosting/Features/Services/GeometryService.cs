@@ -163,7 +163,8 @@ internal sealed class GeometryService : IGeometryService
     {
         using var document = JsonDocument.Parse(geoJson);
         var root = document.RootElement;
-        if (!root.TryGetProperty("type", out var typeElement)
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("type", out var typeElement)
             || typeElement.ValueKind != JsonValueKind.String)
         {
             throw new JsonException("GeoJSON must declare a string type.");
