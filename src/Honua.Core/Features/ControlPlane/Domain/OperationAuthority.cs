@@ -15,6 +15,9 @@ namespace Honua.Core.Features.ControlPlane.Domain;
 /// </summary>
 public sealed record OperationAuthorityContext
 {
+    /// <summary>Maximum length of an authority-bound resource identifier.</summary>
+    public const int MaxResourceIdLength = 512;
+
     /// <summary>
     /// Private claim carrying the upstream identity-provider issuer used for live membership
     /// lookup after Honua exchanges an admin session for an operator bearer.
@@ -216,7 +219,7 @@ public sealed record OperationAuthorityContext
             return false;
         }
 
-        if (ResourceId is not null && !IsBounded(ResourceId, 512))
+        if (ResourceId is not null && !IsBounded(ResourceId, MaxResourceIdLength))
         {
             error = "Operation authority resource identifier exceeds its bounds.";
             return false;

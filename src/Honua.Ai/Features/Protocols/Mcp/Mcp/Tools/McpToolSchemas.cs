@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 
@@ -78,7 +79,7 @@ internal static class McpToolSchemas
         }
         """;
 
-    private const string ProposeOperationArgumentSchemaJson = """
+    private static readonly string ProposeOperationArgumentSchemaJson = $$"""
         {
           "type": "object",
           "required": ["kind", "resourceId", "executionPayload"],
@@ -91,6 +92,7 @@ internal static class McpToolSchemas
             "resourceId": {
               "type": "string",
               "minLength": 1,
+              "maxLength": {{OperationAuthorityContext.MaxResourceIdLength}},
               "description": "Exact tenant-scoped target resource identifier bound to the proposal."
             },
             "reason": {

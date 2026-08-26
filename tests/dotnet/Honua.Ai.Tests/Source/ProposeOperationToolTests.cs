@@ -58,6 +58,21 @@ public sealed class ProposeOperationToolTests
         };
     }
 
+    [Fact]
+    public void ProposeOperation_ResourceIdSchema_AdvertisesAuthorityBound()
+    {
+        var schema = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .Describe()
+            .InputSchema;
+
+        schema.GetProperty("properties")
+            .GetProperty("resourceId")
+            .GetProperty("maxLength")
+            .GetInt32()
+            .Should()
+            .Be(OperationAuthorityContext.MaxResourceIdLength);
+    }
+
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_propose_operation")]
@@ -259,6 +274,63 @@ public sealed class ProposeOperationToolTests
 
         result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
         gateway.LastRequest.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Deploy")]
+    [InlineData("MetadataRelease")]
+    public async Task ProposeOperation_MatchingAuthorityTargetBeyondBound_IsStructurallyRejectedBeforeGateway(
+        string kind)
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        var overlongTarget = new string('x', OperationAuthorityContext.MaxResourceIdLength + 1);
+        var payload = kind == "Deploy"
+            ? $$"""{"targetId":"{{overlongTarget}}","desiredRevision":"v2"}"""
+            : $$"""{"action":"create","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"{{overlongTarget}}","newFieldName":"status"}""";
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = kind,
+                ResourceId = overlongTarget,
+                ExecutionPayload = payload,
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+        result.StructuredContent.Value.GetProperty("message").GetString()
+            .Should().Be($"The authority-bound 'resourceId' must not exceed {OperationAuthorityContext.MaxResourceIdLength} characters.");
+        gateway.LastRequest.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Deploy")]
+    [InlineData("MetadataRelease")]
+    public async Task ProposeOperation_MatchingAuthorityTargetAtBound_ReachesGateway(string kind)
+    {
+        var gateway = new FakeGateway(CreateProposalResult());
+        var resourceId = new string('x', OperationAuthorityContext.MaxResourceIdLength);
+        var payload = kind == "Deploy"
+            ? $$"""{"targetId":"{{resourceId}}","desiredRevision":"v2"}"""
+            : $$"""{"action":"create","packageId":"pkg-1","targetEnvironment":"prod","resourceSemanticId":"{{resourceId}}","newFieldName":"status"}""";
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument
+            {
+                Kind = kind,
+                ResourceId = resourceId,
+                ExecutionPayload = payload,
+            },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance)
+            .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        gateway.LastRequest!.Authority!.ResourceId.Should().Be(resourceId);
     }
 
     [Fact]

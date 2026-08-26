@@ -146,6 +146,19 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
+        if (argument.ResourceId.Length > OperationAuthorityContext.MaxResourceIdLength)
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "rejected",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = $"The authority-bound 'resourceId' must not exceed {OperationAuthorityContext.MaxResourceIdLength} characters."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
         if (!TryValidateExecutionSpecification(
                 kind,
                 argument.ResourceId,
