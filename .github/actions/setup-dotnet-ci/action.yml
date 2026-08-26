@@ -15,15 +15,28 @@ runs:
   using: composite
   steps:
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6.0.0
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
 
+    # The restore graph is defined centrally, not per project. Directory.Packages.props
+    # sets ManagePackageVersionsCentrally=true and no .csproj carries a Version=
+    # attribute on a PackageReference, so package identities and versions can only
+    # change there; NuGet.config decides which feeds they come from; global.json pins
+    # the SDK band that resolves them. Keying on '**/*.csproj' instead threw the whole
+    # ~/.nuget/packages cache away on any csproj edit — a Compile Remove, a new
+    # ProjectReference, an InternalsVisibleTo — none of which can change what gets
+    # restored. ('**/packages.lock.json' matched nothing: this repo has no lock files.
+    # global.json does not exist yet either; it is listed so that adding one later
+    # participates in the key automatically.)
+    #
+    # The coarse restore-key prefix is what makes this safe: a genuinely new package
+    # still warm-starts from the most recent cache and downloads only the delta.
     - name: Cache NuGet packages
       uses: actions/cache@v5
       with:
         path: ~/.nuget/packages
-        key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+        key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'NuGet.config', 'global.json') }}
         restore-keys: |
           ${{ github.repository }}-${{ runner.os }}-nuget-
 
