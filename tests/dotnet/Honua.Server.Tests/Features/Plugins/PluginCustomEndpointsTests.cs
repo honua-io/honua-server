@@ -127,6 +127,8 @@ public sealed class PluginCustomEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("HEAD /plugins/split")]
     public async Task CustomEndpoint_SeparateExplicitHeadRoute_SelectsHeadPlugin()
     {
         using var server = CreateServer(HonuaEdition.Enterprise);
@@ -140,6 +142,8 @@ public sealed class PluginCustomEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /plugins/split")]
     public async Task CustomEndpoint_SeparateExplicitHeadRoute_DoesNotCaptureGet()
     {
         using var server = CreateServer(HonuaEdition.Enterprise);
@@ -152,6 +156,8 @@ public sealed class PluginCustomEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /plugins/head-only")]
     public async Task CustomEndpoint_HeadOnlyRoute_GetReturns405WithDeclaredAllowHeader()
     {
         using var server = CreateServer(HonuaEdition.Enterprise);
@@ -164,6 +170,10 @@ public sealed class PluginCustomEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /plugins/head-only")]
+    [Endpoint("PATCH /plugins/head-only")]
+    [Endpoint("DELETE /plugins/head-only")]
     public async Task CustomEndpoint_HeadOnlyRoute_UnsupportedMethodsDoNotAdvertiseSyntheticGet()
     {
         using var server = CreateServer(HonuaEdition.Enterprise);
@@ -180,6 +190,9 @@ public sealed class PluginCustomEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("HEAD /plugins/head-only")]
+    [Endpoint("POST /plugins/head-only")]
     public void CustomEndpoint_HeadOnlyRoute_PublicMetadataRemainsHeadOnly()
     {
         using var server = CreateServer(HonuaEdition.Enterprise);
