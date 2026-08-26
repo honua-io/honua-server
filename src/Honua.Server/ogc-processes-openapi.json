@@ -675,6 +675,11 @@
           "contentMediaType": {
             "type": "string",
             "description": "Content media type hint for complex inputs."
+          },
+          "oneOf": {
+            "type": "array",
+            "description": "Alternative schemas accepted for this value.",
+            "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
           }
         }
       },
