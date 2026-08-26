@@ -1096,8 +1096,10 @@ if (serveStacOpsDemo)
 {
     HostedBlazorAssetHelpers.ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
     app.MapGet("/samples/stac-ops", () => Results.Redirect("/samples/stac-ops/index.html"))
+        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
         .ExcludeFromDescription();
-    HostedBlazorAssetHelpers.MapHostedBlazorFallback(app, stacOpsDemoPathPrefix);
+    HostedBlazorAssetHelpers.MapHostedBlazorFallback(app, stacOpsDemoPathPrefix)
+        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 }
 else
 {

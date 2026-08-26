@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,6 +28,7 @@ internal static class ClientCertificateAdminEndpoints
     public static void MapClientCertificateAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/security/client-certificates")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             // #2431 promoted native mTLS / client-certificate authentication from experimental
             // to GA; #2958 DEMOTED it back to experimental (release-safety follow-up): the
             // always-on client-certificate scheme/RBAC layer interposed on admin requests

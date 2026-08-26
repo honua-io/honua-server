@@ -1225,7 +1225,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetCacheStatus_WithoutAuth_Returns401",
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetCacheStatus_ReturnsHealthInfo"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetCacheStatus_ReturnsHealthInfo",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3249,7 +3251,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetCacheOperationsHealth_WithoutAuth_Returns401",
-        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetCacheHealth_ReturnsHealthStatus"
+        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetCacheHealth_ReturnsHealthStatus",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3263,7 +3267,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetRedisMetrics_WhenRedisNotConfigured_ReturnsCommunitySafeStatus"
+        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetRedisMetrics_WhenRedisNotConfigured_ReturnsCommunitySafeStatus",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3277,7 +3283,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetCacheStatistics_ReturnsHitMissRatiosAndKeyCounts"
+        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetCacheStatistics_ReturnsHitMissRatiosAndKeyCounts",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3578,7 +3586,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.RateLimitEndpointsTests.GetStatus_ForKnownPolicyKey_ReturnsStatusEnvelope",
-        "Honua.Server.Tests.Features.Admin.RateLimitEndpointsTests.GetStatus_MissingKey_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Admin.RateLimitEndpointsTests.GetStatus_MissingKey_ReturnsBadRequest",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3726,7 +3736,9 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithProEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalEnabled_IsNotExperimentalGated"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalEnabled_IsNotExperimentalGated",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
@@ -11644,7 +11656,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests.GetStacOpsDemo_ServesHostedSampleShell"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests.GetStacOpsDemo_ServesHostedSampleShell",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",

@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -34,16 +35,19 @@ internal static class CacheOperationsEndpoints
         group.MapGet("/health", HandleGetCacheHealth)
             .WithDisplayName("Get Cache Health")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheHealthResponse>>();
 
         group.MapGet("/statistics", HandleGetCacheStatistics)
             .WithDisplayName("Get Cache Statistics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheStatisticsResponse>>();
 
         group.MapGet("/redis", HandleGetRedisMetrics)
             .WithDisplayName("Get Redis Cache Metrics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<RedisConnectionMetricsResponse>>();
 
         group.MapPost("/invalidate", HandleInvalidateCache)

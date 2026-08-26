@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -31,6 +32,7 @@ internal static class CacheAdminEndpoints
         group.MapGet("/status", HandleGetCacheStatus)
             .WithDisplayName("Get Cache Status")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheStatusResponse>>();
 
         group.MapPost("/invalidate", HandleInvalidateCache)

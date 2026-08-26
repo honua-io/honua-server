@@ -806,10 +806,20 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/api-keys")]
     [Endpoint("GET /api/v1/admin/oauth-clients")]
     [Endpoint("GET /api/v1/admin/oauth-scopes")]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("GET /api/v1/admin/rate-limits/status")]
+    [Endpoint("GET /api/v1/admin/cache/status")]
+    [Endpoint("GET /api/v1/admin/operations/cache/health")]
+    [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
+    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
+    [Endpoint("GET /samples/stac-ops")]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
     {
-        var settings = CreateEnabledOidcSettings();
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeStacOpsDemo"] = "true",
+        });
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
 
@@ -845,7 +855,10 @@ public class OidcAuthenticationTests
             ("admin API keys", route => route.StartsWith("/api/v{version:apiVersion}/admin/api-keys", StringComparison.Ordinal)),
             ("OAuth clients", route => route.StartsWith("/api/v{version:apiVersion}/admin/oauth-clients", StringComparison.Ordinal)),
             ("OAuth scopes", route => route.StartsWith("/api/v{version:apiVersion}/admin/oauth-scopes", StringComparison.Ordinal)),
+            ("client-certificate trust", route => route.StartsWith("/api/v{version:apiVersion}/admin/security/client-certificates", StringComparison.Ordinal)),
+            ("rate-limit policy administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/rate-limits", StringComparison.Ordinal)),
             ("admin realtime hub", route => route.Equals("/hubs/admin", StringComparison.Ordinal)),
+            ("hosted STAC demo", route => route.StartsWith("/samples/stac-ops", StringComparison.Ordinal)),
             ("stateless GeometryServer", route => route.StartsWith("/rest/services/Utilities/Geometry/GeometryServer/", StringComparison.Ordinal))
         };
 
@@ -867,7 +880,11 @@ public class OidcAuthenticationTests
             "Get Recent Errors",
             "Get Telemetry Status",
             "Get Migration Status",
-            "List Recent Server Logs"
+            "List Recent Server Logs",
+            "Get Cache Status",
+            "Get Cache Health",
+            "Get Cache Statistics",
+            "Get Redis Cache Metrics"
         }.Select(displayName =>
             Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
         Assert.All(deploymentGlobalMixedEndpoints, endpoint =>
@@ -881,6 +898,15 @@ public class OidcAuthenticationTests
             .Select(displayName =>
                 Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
         Assert.All(tenantBackedMixedEndpoints, endpoint =>
+            Assert.Null(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+
+        var tenantBackedCacheInvalidations = new[]
+        {
+            "/api/v{version:apiVersion}/admin/cache/invalidate",
+            "/api/v{version:apiVersion}/admin/operations/cache/invalidate"
+        }.Select(route =>
+            Assert.Single(routeEndpoints, endpoint => endpoint.RoutePattern.RawText == route));
+        Assert.All(tenantBackedCacheInvalidations, endpoint =>
             Assert.Null(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
 
         var markedAdminEndpoints = routeEndpoints.Where(endpoint =>
@@ -927,9 +953,20 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/license/status")]
     [Endpoint("GET /api/v1/admin/license/entitlements")]
     [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("GET /api/v1/admin/rate-limits/status")]
+    [Endpoint("GET /api/v1/admin/cache/status")]
+    [Endpoint("GET /api/v1/admin/operations/cache/health")]
+    [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
+    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
+    [Endpoint("GET /samples/stac-ops")]
+    [Endpoint("GET /samples/stac-ops/")]
     public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
     {
-        var settings = CreateEnabledOidcSettings();
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeStacOpsDemo"] = "true",
+        });
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
@@ -946,7 +983,15 @@ public class OidcAuthenticationTests
             "/api/v1/admin/performance/enhanced/resources/tracking",
             "/api/v1/admin/tenants",
             "/api/v1/admin/license/status",
-            "/api/v1/admin/license/entitlements"
+            "/api/v1/admin/license/entitlements",
+            "/api/v1/admin/security/client-certificates/profiles",
+            "/api/v1/admin/rate-limits/status",
+            "/api/v1/admin/cache/status",
+            "/api/v1/admin/operations/cache/health",
+            "/api/v1/admin/operations/cache/statistics",
+            "/api/v1/admin/operations/cache/redis",
+            "/samples/stac-ops",
+            "/samples/stac-ops/"
         }.Select(route => new HttpRequestMessage(HttpMethod.Get, route)))
         {
             using (request)
@@ -979,20 +1024,20 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["viewer"]);
 
-        foreach (var (route, request) in new[] { "/api/v1/admin/tenants", "/api/v1/admin/license/status" }
-                     .Select(route => (route, new HttpRequestMessage(HttpMethod.Get, route))))
+        async Task AssertAdminAuthorizationAsync(string route)
         {
             var unauthenticatedResponse = await client.GetAsync(route);
             Assert.Equal(System.Net.HttpStatusCode.Unauthorized, unauthenticatedResponse.StatusCode);
 
-            using (request)
-            {
-                request.Headers.Add("Authorization", $"Bearer {token}");
-                var nonAdminResponse = await client.SendAsync(request);
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var nonAdminResponse = await client.SendAsync(request);
 
-                Assert.Equal(System.Net.HttpStatusCode.Forbidden, nonAdminResponse.StatusCode);
-            }
+            Assert.Equal(System.Net.HttpStatusCode.Forbidden, nonAdminResponse.StatusCode);
         }
+
+        await AssertAdminAuthorizationAsync("/api/v1/admin/tenants");
+        await AssertAdminAuthorizationAsync("/api/v1/admin/license/status");
     }
 
     [IntegrationTest]
