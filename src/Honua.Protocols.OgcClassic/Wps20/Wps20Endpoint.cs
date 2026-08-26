@@ -131,7 +131,9 @@ internal static partial class Wps20Endpoint
     private static IResult GetCapabilities(HttpContext context, IProcessCatalog catalog, Wps20ConformanceEcho echo)
     {
         var endpoint = OgcClassicRequestHelpers.EscapeXml(echo.BuildPublicUrl(context, "/wps"));
-        var offerings = string.Join(string.Empty, catalog.ListProcesses().OrderBy(p => p.ProcessId, StringComparer.Ordinal).Select(p =>
+        var offerings = string.Join(string.Empty, catalog.ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .OrderBy(p => p.ProcessId, StringComparer.Ordinal).Select(p =>
             $"<wps:ProcessSummary processVersion=\"1.0.0\" jobControlOptions=\"async-execute\" outputTransmission=\"value\"><ows:Title>{X(p.Title)}</ows:Title><ows:Identifier>{X(p.ProcessId)}</ows:Identifier></wps:ProcessSummary>"));
         if (echo.Enabled)
         {
@@ -159,7 +161,9 @@ internal static partial class Wps20Endpoint
         var descriptions = new StringBuilder();
         if (string.Equals(identifier, "ALL", StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var process in catalog.ListProcesses().OrderBy(process => process.ProcessId, StringComparer.Ordinal))
+            foreach (var process in catalog.ListProcesses()
+                         .Where(ProcessExecutionEligibility.IsJobCallable)
+                         .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
             {
                 descriptions.Append(DescribeCanonicalProcess(process));
             }
@@ -172,7 +176,8 @@ internal static partial class Wps20Endpoint
         {
             descriptions.Append(DescribeEchoProcess(identifier));
         }
-        else if (catalog.GetProcess(identifier) is { } process)
+        else if (catalog.GetProcess(identifier) is { } process
+                 && ProcessExecutionEligibility.IsJobCallable(process))
         {
             descriptions.Append(DescribeCanonicalProcess(process));
         }

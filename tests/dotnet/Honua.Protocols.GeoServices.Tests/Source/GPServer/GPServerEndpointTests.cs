@@ -87,9 +87,27 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         root.TryGetProperty("capabilities", out _).Should().BeTrue();
         root.GetProperty("resultMapServerName").GetString().Should().BeEmpty();
         root.GetProperty("tasks").ValueKind.Should().Be(JsonValueKind.Array);
-        root.GetProperty("tasks").EnumerateArray()
+        var tasks = root.GetProperty("tasks").EnumerateArray()
             .Select(item => item.GetString())
-            .Should().Contain("geometry.buffer");
+            .ToArray();
+        tasks.Should().Contain("geometry.buffer");
+        tasks.Should().NotContain("source.geojson");
+        tasks.Should().NotContain("analytics.cluster");
+        tasks.Should().NotContain("raster.interpolate-kriging");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_NonJobTask_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync(
+            $"/rest/services/{ServiceId}/GPServer/source.geojson");
+
+        // GeoServices preserves HTTP 200 and carries the protocol error code in the body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
     [IntegrationTest]
@@ -399,8 +417,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
     {
-        // analytics.cluster is NOT in GPServerExecutionPolicy.SyncEligibleProcessIds â€”
-        // the synchronous /execute path must surface a capability error rather
+        // analytics.cluster is classified ProtocolOnly in the canonical catalog,
+        // so the synchronous /execute path must surface a capability error rather
         // than try to run a long-running task inline.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -461,16 +479,15 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecutePost_InvalidGPChoice_Returns400()
+    public async Task ExecutePost_ProtocolOnlyTask_Returns400WithCapabilityMessage()
     {
-        // conversion.geometry-format declares AllowedValues=[wkt,geojson,wkb,ewkt]
-        // on its 'target' parameter; an out-of-set value must be rejected before
-        // the canonical pipeline is touched.
+        // conversion.geometry-format is protocol-only and cannot use either GPServer
+        // execution route, so the response must not prescribe submitJob as a remedy.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["geometry"] = PointWkbBase64,
-            ["target"] = "not-a-real-format"
+            ["target"] = "wkt"
         });
 
         var response = await _client.PostAsync(
@@ -479,8 +496,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("target");
-        body.Should().Contain("not-a-real-format");
+        body.Should().Contain("ProtocolOnly");
+        body.Should().NotContain("submitJob");
     }
 
     [IntegrationTest]
@@ -489,16 +506,16 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task TaskInfo_ParameterWithAllowedValues_PopulatesChoiceList()
     {
         var response = await _client.GetAsync(
-            $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format");
+            $"/rest/services/{ServiceId}/GPServer/analytics.cluster-managed");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var target = doc.RootElement.GetProperty("parameters").EnumerateArray()
-            .Single(p => p.GetProperty("name").GetString() == "target");
-        target.TryGetProperty("choiceList", out var choices).Should().BeTrue(
-            "target carries an enum constraint and must surface it as choiceList");
+        var algorithm = doc.RootElement.GetProperty("parameters").EnumerateArray()
+            .Single(p => p.GetProperty("name").GetString() == "algorithm");
+        algorithm.TryGetProperty("choiceList", out var choices).Should().BeTrue(
+            "algorithm carries an enum constraint and must surface it as choiceList");
         choices.EnumerateArray().Select(c => c.GetString()).Should()
-            .BeEquivalentTo(["wkt", "geojson", "wkb", "ewkt"]);
+            .BeEquivalentTo(["dbscan", "kmeans", "k-means"]);
     }
 
     // -----------------------------------------------------------------------

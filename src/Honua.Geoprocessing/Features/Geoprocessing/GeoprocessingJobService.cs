@@ -235,7 +235,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // process ids, ignored non-Geoprocess step kinds) so the read-only pre-flight reports
         // the same limitations the submit path enforces rather than optimistically returning
         // isExecutable=true for a plan that would be rejected or silently under-execute (#2806).
-        var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan);
+        var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan, _processCatalog);
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
 
@@ -554,6 +554,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
+
+        // Custom-code submissions are parameter-driven: the catalog step is only a
+        // resource-scope carrier and is not dispatched as the job's executable process.
+        // Keep the capability gate on every catalog-executed submission, including the
+        // trusted workflow lane, while preserving that explicit custom-code boundary.
+        var isCustomCode = CustomCodeSubmitValidator.IsCustomCodeSubmission(protocolMetadata);
+        if (!isCustomCode)
+        {
+            EnsureProcessExecutionCapability(plan, IsTrustedWorkflowSubmission(
+                protocolMetadata,
+                inheritsSubmitterSecurityContext));
+        }
         _artifacts.ValidateRasterSources(plan, cancellationToken);
 
         // Refuse client-supplied durable raster descriptors before any further processing.
@@ -571,7 +583,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // catalog process to validate; the customcode.* parameters are validated by
         // the custom-code submit gate below instead. Ordinary jobs still go through
         // the catalog validator.
-        var isCustomCode = CustomCodeSubmitValidator.IsCustomCodeSubmission(protocolMetadata);
         if (isCustomCode)
         {
             // #2752: a custom-code submission runs operator-supplied code and therefore
@@ -1579,6 +1590,35 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 "job, or use the workflow orchestration engine to execute a multi-step DAG.");
         }
     }
+
+    private void EnsureProcessExecutionCapability(AnalysisPlan plan, bool trustedWorkflowSubmission)
+    {
+        var (violations, _) = DirectSubmitPlanValidator.Evaluate(plan, _processCatalog);
+        var first = violations.FirstOrDefault(violation =>
+            IsExecutionCapabilityViolation(violation.Code)
+            && (!trustedWorkflowSubmission
+                || !string.Equals(violation.Code, "WORKFLOW_ONLY_PROCESS", StringComparison.Ordinal)));
+        if (first is not null)
+        {
+            throw new GeoprocessingValidationException(
+                $"Plan cannot be submitted for execution: {first.Code} — {first.Message}");
+        }
+    }
+
+    private static bool IsExecutionCapabilityViolation(string code)
+        => code is "NO_EXECUTABLE_STEP"
+            or "SYNC_ONLY_PROCESS"
+            or "WORKFLOW_ONLY_PROCESS"
+            or "PROCESS_UNAVAILABLE"
+            or "UNCLASSIFIED_PROCESS"
+            or "ASYNC_EXECUTION_UNSUPPORTED";
+
+    private static bool IsTrustedWorkflowSubmission(
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        bool inheritsSubmitterSecurityContext)
+        => inheritsSubmitterSecurityContext
+            && protocolMetadata?.TryGetValue("orchestration.runId", out var workflowRunId) == true
+            && !string.IsNullOrWhiteSpace(workflowRunId);
 
     private void EnsurePlanCatalogValid(AnalysisPlan plan)
     {

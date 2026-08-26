@@ -6,8 +6,9 @@ using System.Text;
 namespace Honua.Geoprocessing.Cli;
 
 /// <summary>
-/// Injects the one-line DI registration and the catalog <c>ProcessDefinition</c> for a
-/// scaffolded process into the existing source files (GP Devkit P4, issue #2125). Keeping
+/// Injects the DI registration, catalog <c>ProcessDefinition</c>, and job-capability
+/// classification for a scaffolded process into the existing source files (GP Devkit P4,
+/// issue #2125). Keeping
 /// these as anchored, idempotent text transforms — rather than editing by hand — is what
 /// makes <c>honua gp new</c> a single command that yields a REGISTERED, runnable process.
 /// All methods are pure string transforms so they are unit-testable offline.
@@ -131,6 +132,69 @@ public static class GpScaffoldInjector
 
         var entry = RenderCatalogEntry(processId, kind);
         result = source.Insert(closeIndex, "\n" + entry);
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Inserts a scaffolded process id into the exhaustive <c>JobProcessIds</c>
+    /// classification used by the built-in catalog. Idempotent when the job set already
+    /// contains the exact id.
+    /// </summary>
+    /// <param name="source">The full text of <c>ProcessExecutionCapabilityCatalog.cs</c>.</param>
+    /// <param name="processId">The scaffolded process id.</param>
+    /// <param name="result">On success, the transformed source.</param>
+    /// <param name="error">On failure, the reason the job-set anchor could not be found.</param>
+    /// <returns><see langword="true"/> when the classification was inserted or already present.</returns>
+    public static bool TryInsertJobClassification(
+        string source,
+        string processId,
+        out string result,
+        out string error)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processId);
+
+        const string jobSetMarker = "JobProcessIds = IdSet(";
+        var jobSetStart = source.IndexOf(jobSetMarker, StringComparison.Ordinal);
+        if (jobSetStart < 0)
+        {
+            result = source;
+            error = "could not find the JobProcessIds classification set.";
+            return false;
+        }
+
+        var closeIndex = source.IndexOf(");", jobSetStart, StringComparison.Ordinal);
+        if (closeIndex < 0)
+        {
+            result = source;
+            error = "could not find the closing parenthesis of JobProcessIds.";
+            return false;
+        }
+
+        var jobSet = source[jobSetStart..closeIndex];
+        if (jobSet.Contains($"\"{processId}\"", StringComparison.Ordinal))
+        {
+            result = source;
+            error = string.Empty;
+            return true;
+        }
+
+        var lastContentIndex = closeIndex - 1;
+        while (lastContentIndex >= jobSetStart && char.IsWhiteSpace(source[lastContentIndex]))
+        {
+            lastContentIndex--;
+        }
+
+        if (lastContentIndex < jobSetStart)
+        {
+            result = source;
+            error = "JobProcessIds does not contain an insertion anchor.";
+            return false;
+        }
+
+        var separator = source[lastContentIndex] == ',' ? "\n" : ",\n";
+        result = source.Insert(closeIndex, separator + $"        \"{processId}\"");
         error = string.Empty;
         return true;
     }

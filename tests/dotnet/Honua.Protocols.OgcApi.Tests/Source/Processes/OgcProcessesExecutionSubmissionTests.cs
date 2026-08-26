@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Geoprocessing;
 using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -22,6 +23,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     private readonly IExecutionJobStore _jobStore;
     private readonly IJobQueue _jobQueue;
     private readonly IUniversalProgressStore _progressStore;
+    private readonly IGeoprocessingJobTerminalService _terminalService;
     private readonly WebAppFixture _fixture;
 
     public OgcProcessesExecutionSubmissionTests()
@@ -29,6 +31,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
         _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         _jobQueue = Substitute.For<IJobQueue>();
         _progressStore = Substitute.For<IUniversalProgressStore>();
+        _terminalService = Substitute.For<IGeoprocessingJobTerminalService>();
 
         ExecutionJobRecord? createdJob = null;
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -45,12 +48,50 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
         _fixture = new WebAppFixture()
             .ReplaceService(_jobStore)
             .ReplaceService(_jobQueue)
-            .ReplaceService(_progressStore);
+            .ReplaceService(_progressStore)
+            .ReplaceService(_terminalService);
     }
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_AsyncOnlyProcess_IgnoresRespondSyncPreference()
+    {
+        _jobQueue.EnqueueAsync(
+                Arg.Any<string>(),
+                Arg.Any<OperationPriority>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        _terminalService.WaitForResultAsync(
+                Arg.Any<string>(),
+                Arg.Any<System.Security.Claims.ClaimsPrincipal>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new GeoprocessingTerminalResult(GeoprocessingTerminalResultOutcome.Timeout));
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-sync");
+        request.Content = new StringContent(
+            """{"inputs":{"source":"AAAA","units":"degrees"}}""",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.Headers.GetValues("Preference-Applied").Should().Contain("respond-async");
+        await _terminalService.DidNotReceiveWithAnyArgs().WaitForResultAsync(
+            default!,
+            default!,
+            default,
+            default);
+    }
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -168,7 +209,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
             HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"plan-create-fail","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            """{"inputs":{"plan":{"planId":"plan-create-fail","steps":[{"stepId":"s1","kind":"geoprocess","processId":"geometry.buffer","inputs":{"wkb":"AAAA","srid":"4326","distance":"100"}}]}}}""",
             Encoding.UTF8,
             "application/json");
 

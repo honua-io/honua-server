@@ -18,6 +18,14 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 
     private const string SyncOnlyProcessCode = "SYNC_ONLY_PROCESS";
 
+    private const string WorkflowOnlyProcessCode = "WORKFLOW_ONLY_PROCESS";
+
+    private const string ProcessUnavailableCode = "PROCESS_UNAVAILABLE";
+
+    private const string UnclassifiedProcessCode = "UNCLASSIFIED_PROCESS";
+
+    private const string AsyncExecutionUnsupportedCode = "ASYNC_EXECUTION_UNSUPPORTED";
+
     /// <summary>Upper bound on probed value assignments, keeping the cross-product cheap.</summary>
     private const int MaxProbeCombinations = 32;
 
@@ -88,22 +96,15 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 
         var results = new List<ProcessAdmissibilityViolation>();
 
-        // Some processes are advertised for discoverability but have no working executor in
-        // this build, so no parameter set makes them run. The submit path deliberately admits
-        // them (the limitation surfaces as an explicit job failure), but certifying one here
-        // would tell a migrating user a tool works when it can only fail.
-        if (BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses.TryGetValue(
-                definition.ProcessId, out var notExecutableReason))
-        {
-            results.Add(new ProcessAdmissibilityViolation(
-                ProcessAdmissibilityViolationKind.NotJobExecutable, notExecutableReason));
-        }
-
         foreach (var violation in violations)
         {
-            // A sync-only process is undispatchable whatever the parameters are, so it is
-            // reported verbatim rather than run through the presence analysis below.
-            if (string.Equals(violation.Code, SyncOnlyProcessCode, StringComparison.Ordinal))
+            // A non-Job catalog process is undispatchable whatever the parameters are, so it
+            // is reported verbatim rather than run through the presence analysis below.
+            if (violation.Code is SyncOnlyProcessCode
+                or WorkflowOnlyProcessCode
+                or ProcessUnavailableCode
+                or UnclassifiedProcessCode
+                or AsyncExecutionUnsupportedCode)
             {
                 results.Add(new ProcessAdmissibilityViolation(
                     ProcessAdmissibilityViolationKind.NotJobExecutable, violation.Message));
@@ -810,9 +811,9 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
         // The submit path runs the direct-submit guards too, so a translation that only
-        // satisfies ProcessPlanValidator could still be rejected - notably the sync-only
-        // process ids that are not job-dispatchable at all.
-        var (directSubmitViolations, _) = DirectSubmitPlanValidator.Evaluate(plan);
+        // satisfies ProcessPlanValidator could still be rejected, notably ProtocolOnly,
+        // WorkflowOnly, and Unavailable process ids.
+        var (directSubmitViolations, _) = DirectSubmitPlanValidator.Evaluate(plan, _catalog);
         violations.AddRange(directSubmitViolations.Where(candidate =>
             !violations.Any(existing =>
                 string.Equals(existing.Code, candidate.Code, StringComparison.Ordinal)

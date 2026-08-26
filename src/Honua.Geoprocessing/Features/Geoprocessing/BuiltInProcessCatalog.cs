@@ -19,31 +19,11 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     public const string CatalogVersion = "honua.process_catalog.builtin.v1";
 
     /// <summary>
-    /// Processes the catalog advertises for discoverability but whose executor fails EVERY job
-    /// unconditionally in this build, keyed by process id with the reason as the value.
-    /// <para>
-    /// The plan validator deliberately admits these at submit time so the limitation surfaces
-    /// as an explicit job failure rather than a silent absence from the catalog (see the
-    /// <c>raster.interpolate-kriging</c> case in <see cref="ProcessPlanValidator"/> and
-    /// <c>GdalRasterInterpolateJobExecutor.KrigingUnsupportedMessage</c>). That posture is
-    /// right for submit, but tooling that <em>certifies</em> executability — the toolbox
-    /// translation report, migration evidence — must not tell a migrating user a tool works
-    /// when its executor can only fail, so it consults this set.
-    /// </para>
-    /// <para>
-    /// Membership requires an UNCONDITIONAL failure. Processes that fail only because a
-    /// deployment has not configured a backend (<c>imagery.classify</c>) are deliberately
-    /// absent: a configured deployment runs them, and a static catalog cannot see that.
-    /// </para>
+    /// Compatibility view of processes classified as <see cref="ProcessExecutionKind.Unavailable"/>,
+    /// keyed by process id with the canonical operator-facing reason.
     /// </summary>
     internal static readonly FrozenDictionary<string, string> AdvertisedButNotExecutableProcesses =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["raster.interpolate-kriging"] =
-                "Process 'raster.interpolate-kriging' is advertised for discoverability only: no "
-                + "kriging-capable numerical backend is bundled in this build, so every submitted "
-                + "job fails. Use 'raster.interpolate-idw' for inverse-distance-weighted interpolation.",
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+        ProcessExecutionCapabilityCatalog.UnavailableReasons;
 
     private readonly FrozenDictionary<string, ProcessDefinition> _processes;
     private readonly ImmutableArray<ProcessDefinition> _all;
@@ -51,7 +31,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
     public BuiltInProcessCatalog(ILogger<BuiltInProcessCatalog>? logger = null)
     {
-        var definitions = BuildDefinitions();
+        var definitions = BuildDefinitions()
+            .Select(ProcessExecutionCapabilityCatalog.Classify)
+            .ToArray();
         _all = definitions.ToImmutableArray();
         _processes = definitions.ToFrozenDictionary(d => d.ProcessId, StringComparer.Ordinal);
         _byCategory = definitions
@@ -59,6 +41,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             .ToFrozenDictionary(g => g.Key, g => g.ToImmutableArray(), StringComparer.Ordinal);
 
         GeoprocessingServiceLog.ProcessCatalogLoaded(logger ?? NullLogger<BuiltInProcessCatalog>.Instance, _all.Length);
+        GeoprocessingServiceLog.OgcProjectedProcessCount(
+            logger ?? NullLogger<BuiltInProcessCatalog>.Instance,
+            _all.Count(ProcessExecutionCapabilityCatalog.IsOgcCallable));
     }
 
     public ProcessDefinition? GetProcess(string processId)

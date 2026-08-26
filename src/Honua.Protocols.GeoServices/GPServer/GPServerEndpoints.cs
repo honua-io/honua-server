@@ -251,7 +251,7 @@ internal static class GPServerEndpoints
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
-        if (definition == null)
+        if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
@@ -433,6 +433,19 @@ internal static class GPServerEndpoints
                         context,
                         $"Task '{taskName}' on service '{serviceId}' was not found."),
                     "Task not found");
+            }
+
+            if (!GPServerExecutionPolicy.IsJobCallable(definition))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Task '{definition.ProcessId}' cannot execute through GPServer because it is "
+                        + $"classified as {definition.ExecutionKind} with modes "
+                        + $"'{definition.SupportedExecutionModes}'. "
+                        + (definition.ExecutionCapabilityReason
+                            ?? "The catalog does not declare an asynchronous job capability.")),
+                    "Task is not job-callable");
             }
 
             // Respect the task's ExecutionType: only sync-eligible tasks may run
@@ -1507,6 +1520,11 @@ internal static class GPServerEndpoints
 
         foreach (var process in processes)
         {
+            if (!GPServerExecutionPolicy.IsJobCallable(process))
+            {
+                continue;
+            }
+
             yield return process.ProcessId;
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);

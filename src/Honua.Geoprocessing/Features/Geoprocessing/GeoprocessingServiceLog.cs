@@ -240,4 +240,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void SubmitterMembershipNoLongerAuthorizes(
         ILogger logger,
         string principalId);
+
+    [LoggerMessage(8040, LogLevel.Information, "honua.gp.ogc_projected_processes={Count}")]
+    public static partial void OgcProjectedProcessCount(
+        ILogger logger,
+        int count);
 }

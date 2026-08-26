@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Xunit;
 
@@ -20,6 +21,21 @@ namespace Honua.Architecture.Tests;
 public sealed class GeoprocessingCatalogDocParityTests
 {
     private const string DocRelativePath = "docs/reference/geoprocessing-operations.md";
+
+    [Fact]
+    public void EveryCatalogProcess_HasACanonicalExecutionClassification()
+    {
+        var processes = new BuiltInProcessCatalog().ListProcesses();
+
+        processes.Should().HaveCount(98);
+        processes.Should().NotContain(
+            process => process.ExecutionKind == ProcessExecutionKind.Unclassified,
+            "protocol adapters must not guess whether a catalog process is directly callable");
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(79);
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(6);
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Unavailable).Should().Be(1);
+    }
 
     [Fact]
     public void EveryCatalogProcessId_IsDocumentedInReference()
