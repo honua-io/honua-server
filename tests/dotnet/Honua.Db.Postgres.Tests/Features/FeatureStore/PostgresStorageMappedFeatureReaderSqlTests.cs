@@ -279,7 +279,26 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().Contain("\"plain_field\"");
     }
 
-    private static MetadataV2Resource CreatePrefixedFieldResource()
+    [Fact]
+    public void BuildEncodedBinarySelect_WithOverlongJsonbAlias_RejectsInsteadOfTruncating()
+    {
+        var resource = CreatePrefixedFieldResource(
+            new MetadataV2Field { Name = new string('a', 64), Type = MetadataV2FieldType.String });
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildEncodedBinarySelect",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+
+        var build = () => method!.Invoke(reader, ["ST_AsFlatGeobuf", true, new FeatureQuery()]);
+
+        build.Should().Throw<TargetInvocationException>()
+            .Which.InnerException.Should().BeOfType<ArgumentException>()
+            .Which.Message.Should().Contain("Invalid PostGIS encoded projection alias");
+    }
+
+    private static MetadataV2Resource CreatePrefixedFieldResource(params MetadataV2Field[] additionalFields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-stac", Name = "Stac" },
@@ -288,6 +307,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             [
                 new MetadataV2Field { Name = "plain_field", Type = MetadataV2FieldType.String },
                 new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double },
+                .. additionalFields,
             ],
         };
 
