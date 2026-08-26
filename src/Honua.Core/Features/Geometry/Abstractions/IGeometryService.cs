@@ -57,9 +57,13 @@ public interface IGeometryService
     /// </summary>
     /// <param name="geoJson">The GeoJSON string.</param>
     /// <param name="srid">Optional SRID to assign to the geometry.</param>
+    /// <param name="allowContainers">
+    /// Whether GeoJSON Feature and FeatureCollection containers may be unwrapped to their geometries.
+    /// Geometry-only protocol fields should retain the default value of <see langword="false"/>.
+    /// </param>
     /// <returns>WKB bytes, or null for null/empty input.</returns>
     /// <exception cref="ArgumentException">Thrown when GeoJSON format is invalid.</exception>
-    byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null);
+    byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null, bool allowContainers = false);
 
     /// <summary>
     /// Converts WKT (Well-Known Text) to WKB format.

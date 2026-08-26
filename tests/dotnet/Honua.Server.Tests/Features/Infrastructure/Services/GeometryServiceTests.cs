@@ -97,11 +97,22 @@ public sealed class GeometryServiceTests
     }
 
     [Theory]
+    [InlineData("""{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""")]
+    [InlineData("""{"type":"FeatureCollection","features":[]}""")]
+    public void ConvertGeoJsonToWkb_WithContainerWithoutOptIn_ReturnsSanitizedError(string geoJson)
+    {
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
+    [Theory]
     [InlineData("""{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""", 1)]
     [InlineData("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}},{"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{}}]}""", 2)]
     public void ConvertGeoJsonToWkb_WithGeoJsonContainer_ExtractsAllGeometries(string geoJson, int expectedCount)
     {
-        var wkb = _service.ConvertGeoJsonToWkb(geoJson, 4326);
+        var wkb = _service.ConvertGeoJsonToWkb(geoJson, 4326, allowContainers: true);
 
         wkb.Should().NotBeNull();
         var geometry = new WKBReader().Read(wkb!);

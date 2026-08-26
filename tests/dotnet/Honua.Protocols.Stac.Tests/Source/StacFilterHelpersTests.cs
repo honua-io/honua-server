@@ -3,15 +3,18 @@
 
 using System.Globalization;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -23,6 +26,30 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 [Protocol(TestProtocols.Stac)]
 public sealed class StacFilterHelpersTests
 {
+    [UnitTest]
+    public void TryCreateIntersectsSpatialFilter_WithGeoJsonContainer_RejectsGeometry()
+    {
+        var geometryService = new GeometryService(Options.Create(new LimitsOptions()));
+        var containers = new[]
+        {
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]}}",
+            "{\"type\":\"FeatureCollection\",\"features\":[]}"
+        };
+
+        foreach (var geoJson in containers)
+        {
+            var accepted = StacFilterHelpers.TryCreateIntersectsSpatialFilter(
+                geoJson,
+                geometryService,
+                out var spatialFilter,
+                out var error);
+
+            accepted.Should().BeFalse();
+            spatialFilter.Should().BeNull();
+            error.Should().Be("Invalid intersects geometry.");
+        }
+    }
+
     [UnitTest]
     public async Task ResolveVisibleStacPublicationsAsync_WithOutOfOrderPublications_IsDeterministic()
     {
