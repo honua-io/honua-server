@@ -958,6 +958,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/bearer")]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi()
     {
         using var stubFactory = CreateStubFactory();
@@ -979,11 +980,14 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             bearer!.AccessToken.Should().NotBeNullOrWhiteSpace();
             bearer.TokenType.Should().Be("Bearer");
             bearer.ExpiresIn.Should().BeGreaterThan(0);
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(bearer.AccessToken);
+            jwt.Claims.Should().NotContain(claim =>
+                claim.Type == "tid" || claim.Type == "tenant_id");
             // The bearer never outlives the issuing session (with a small clock-skew margin).
             bearer.ExpiresAt.Should().BeOnOrBefore(sessionExpiry.AddSeconds(1));
 
-            // The forwardable bearer resolves to the same RBAC as the cookie session:
-            // an admin-gated control-plane read succeeds when it is presented as a Bearer.
+            // A tenantless forwardable bearer resolves to the same RBAC as the cookie
+            // session on this explicitly tenant-independent control-plane document.
             var bearerClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Authorization =
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer.AccessToken));
