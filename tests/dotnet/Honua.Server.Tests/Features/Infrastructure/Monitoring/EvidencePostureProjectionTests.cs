@@ -62,6 +62,7 @@ public sealed class EvidencePostureProjectionTests
             100,
             [Now.AddMinutes(-1)],
             partialResult: true,
+            hasMore: false,
             includedSources: ["alert"],
             failedSources: ["audit"]);
 
@@ -70,6 +71,29 @@ public sealed class EvidencePostureProjectionTests
         Assert.Equal(["alert"], source.Coverage.IncludedComponentIds);
         Assert.Equal(["alert", "audit"], source.Coverage.ExpectedComponentIds);
         Assert.Contains(EvidenceReasonCodes.PartialResult, source.ReasonCodes);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void OperateEvents_TruncatedPage_FailsClosed()
+    {
+        var posture = EvidencePostureProjection.ForOperateEvents(
+            Now,
+            Now.AddHours(-1),
+            Now,
+            1,
+            [Now.AddMinutes(-1)],
+            partialResult: false,
+            hasMore: true,
+            includedSources: ["alert", "audit"],
+            failedSources: []);
+
+        var source = Assert.Single(posture.Sources);
+        Assert.True(source.Coverage.HasMore);
+        Assert.True(source.Coverage.Truncated);
+        Assert.Equal(EvidenceCompletenessStatuses.Partial, source.Completeness);
+        Assert.Contains(EvidenceReasonCodes.PageTruncated, source.ReasonCodes);
+        Assert.False(posture.Actionable);
     }
 
     [UnitTest]

@@ -77,6 +77,69 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].Kind.Should().Be(OperateEventKind.Audit);
         page.Items[1].Kind.Should().Be(OperateEventKind.Alert);
         page.PartialResult.Should().BeFalse();
+        page.HasMore.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_SingleSourceExceedsPageSize_ReportsHasMore()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items =
+            {
+                NewSummary(1, AlertSeverity.Warning, now),
+                NewSummary(2, AlertSeverity.Warning, now.AddMinutes(-1))
+            }
+        };
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, alertQuery);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("alert:1");
+        page.HasMore.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_MultipleSourcesExceedMergedPageSize_ReportsHasMore()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now.AddMinutes(-1)) }
+        };
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 1,
+                    Timestamp = now,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "alice",
+                    ActorType = AuditActorType.UserId,
+                    ResourceType = "service",
+                    ResourceId = "svc",
+                    Action = "service.update",
+                    Outcome = AuditOutcome.Success,
+                    CorrelationId = "corr-1"
+                }
+            }
+        };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery,
+            auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { PageSize = 1 });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("audit:1");
+        page.HasMore.Should().BeTrue();
     }
 
     [UnitTest]
