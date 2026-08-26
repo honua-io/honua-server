@@ -4,13 +4,17 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
+using Honua.Geoprocessing;
 using Honua.Infrastructure.Models;
 using Honua.PackageReview;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.PackageReview;
 
@@ -18,7 +22,13 @@ namespace Honua.Server.Tests.Features.PackageReview;
 [Protocol(TestProtocols.Admin)]
 public sealed class PackageReviewEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureServices(services =>
+        {
+            services.RemoveAll<IProcessCatalog>();
+            services.AddSingleton<IProcessCatalog>(
+                new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "data-management.delete-features"));
+        });
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()

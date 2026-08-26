@@ -417,8 +417,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
     {
-        // analytics.cluster is classified ProtocolOnly in the canonical catalog,
-        // so the synchronous /execute path must surface a capability error rather
+        // analytics.cluster-managed is an asynchronous job in the canonical catalog,
+        // so the synchronous /execute path must direct callers to submitJob rather
         // than try to run a long-running task inline.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -430,7 +430,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         });
 
         var response = await _client.PostAsync(
-            $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
+            $"/rest/services/{ServiceId}/GPServer/analytics.cluster-managed/execute", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);

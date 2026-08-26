@@ -6,6 +6,9 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Geoprocessing;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -33,7 +36,11 @@ public sealed class OgcProcessesMutatingTierAuthorizationTests
     public async Task Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden()
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(
-            configureServices: SeedProcessExecuteOnlyRole);
+            configureServices: services =>
+            {
+                SeedProcessExecuteOnlyRole(services);
+                MakeDeleteFeaturesJobCallable(services);
+            });
         using var client = ServiceRbacTestFixture.CreateClient(factory, ProcessRunnerRole);
 
         using var request = BuildExecutionRequest(
@@ -81,6 +88,13 @@ public sealed class OgcProcessesMutatingTierAuthorizationTests
     {
         services.RemoveAll<IRoleStore>();
         services.AddSingleton<IRoleStore>(new ProcessExecuteOnlyRoleStore());
+    }
+
+    private static void MakeDeleteFeaturesJobCallable(IServiceCollection services)
+    {
+        services.RemoveAll<IProcessCatalog>();
+        services.AddSingleton<IProcessCatalog>(
+            new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "data-management.delete-features"));
     }
 
     /// <summary>
