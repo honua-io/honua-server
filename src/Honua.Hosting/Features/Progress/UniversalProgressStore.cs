@@ -73,6 +73,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
     internal bool IsUsingFallback => _isUsingFallback;
 
+    /// <inheritdoc />
+    public bool ProvidesClusterWideActiveOperationEnumeration => CanUseRedisBackplane;
+
     public async Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
         var effectiveTtl = ttl ?? TimeSpan.FromHours(24);

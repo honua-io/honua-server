@@ -546,30 +546,35 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             return SourceLoadResult.Empty;
         }
 
+        var enumerationIncomplete = !_progressStore!.ProvidesClusterWideActiveOperationEnumeration;
         IReadOnlyList<string> ids;
         try
         {
-            ids = await _progressStore!.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
+            ids = await _progressStore.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new SourceLoadResult(
                 Array.Empty<OperateEvent>(),
-                ScanTruncated: false,
+                ScanTruncated: true,
                 PartialResult: true,
                 Exception: ex);
         }
 
         if (ids.Count == 0)
         {
-            return SourceLoadResult.Empty;
+            return new SourceLoadResult(
+                Array.Empty<OperateEvent>(),
+                ScanTruncated: enumerationIncomplete,
+                PartialResult: enumerationIncomplete);
         }
 
         // GetActiveOperationIdsAsync returns IDs in undefined order; we must
         // load and order everything before truncating so the newest jobs are
         // not silently dropped when ids.Count > pageSize.
         var mapped = new List<OperateEvent>(ids.Count);
-        var partialResult = false;
+        var scanTruncated = enumerationIncomplete;
+        var partialResult = enumerationIncomplete;
         foreach (var id in ids)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -580,6 +585,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                scanTruncated = true;
                 partialResult = true;
                 ObservabilityFeedLog.ProgressFetchFailed(_logger, id, ex);
                 continue;
@@ -587,6 +593,10 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
             if (progress is null)
             {
+                // The active-ID snapshot raced expiry/deletion or a backend replica did
+                // not expose the indexed record, so completeness cannot be proven.
+                scanTruncated = true;
+                partialResult = true;
                 continue;
             }
 
@@ -602,10 +612,10 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         mapped.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
         if (mapped.Count <= pageSize)
         {
-            return new SourceLoadResult(mapped, ScanTruncated: false, partialResult);
+            return new SourceLoadResult(mapped, scanTruncated, partialResult);
         }
 
-        return new SourceLoadResult(mapped.GetRange(0, pageSize), ScanTruncated: false, partialResult);
+        return new SourceLoadResult(mapped.GetRange(0, pageSize), scanTruncated, partialResult);
     }
 
     private async Task<SourceLoadResult> LoadSingleJobAsync(
@@ -614,6 +624,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         CancellationToken cancellationToken)
     {
         var partialResult = false;
+        var scanTruncated = false;
         Exception? firstException = null;
         if (_jobStore is not null)
         {
@@ -625,6 +636,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 partialResult = true;
+                scanTruncated = true;
                 firstException = ex;
             }
 
@@ -643,7 +655,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         {
             return new SourceLoadResult(
                 Array.Empty<OperateEvent>(),
-                ScanTruncated: false,
+                scanTruncated,
                 partialResult,
                 firstException);
         }
@@ -651,6 +663,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         var progress = await LoadSingleProgressJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
         return progress with
         {
+            ScanTruncated = scanTruncated || progress.ScanTruncated,
             PartialResult = partialResult || progress.PartialResult,
             Exception = firstException ?? progress.Exception,
         };
@@ -663,32 +676,42 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     {
         Debug.Assert(_progressStore is not null);
 
+        var lookupIncomplete = !_progressStore!.ProvidesClusterWideActiveOperationEnumeration;
         IOperationProgress? progress;
         try
         {
-            progress = await _progressStore!.GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+            progress = await _progressStore.GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ObservabilityFeedLog.ProgressFetchFailed(_logger, operationId, ex);
             return new SourceLoadResult(
                 Array.Empty<OperateEvent>(),
-                ScanTruncated: false,
+                ScanTruncated: true,
                 PartialResult: true);
         }
 
         if (progress is null)
         {
-            return SourceLoadResult.Empty;
+            return new SourceLoadResult(
+                Array.Empty<OperateEvent>(),
+                ScanTruncated: lookupIncomplete,
+                PartialResult: lookupIncomplete);
         }
 
         var value = MapProgress(progress);
         if (!MatchesFilter(filter, value))
         {
-            return SourceLoadResult.Empty;
+            return new SourceLoadResult(
+                Array.Empty<OperateEvent>(),
+                ScanTruncated: lookupIncomplete,
+                PartialResult: lookupIncomplete);
         }
 
-        return new SourceLoadResult(new[] { value }, ScanTruncated: false);
+        return new SourceLoadResult(
+            new[] { value },
+            ScanTruncated: lookupIncomplete,
+            PartialResult: lookupIncomplete);
     }
 
     private async Task<SourceLoadResult> LoadDurableJobsAsync(

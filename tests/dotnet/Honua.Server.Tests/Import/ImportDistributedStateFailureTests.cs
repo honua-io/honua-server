@@ -14,14 +14,27 @@ using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Import;
 
 [Collection("Unit")]
 public sealed class ImportDistributedStateFailureTests
 {
+    [UnitTest]
+    public void UniversalProgressStore_WithoutDistributedCache_DoesNotClaimClusterWideEnumeration()
+    {
+        var store = new UniversalProgressStore(
+            cache: null,
+            NullLogger<UniversalProgressStore>.Instance);
+
+        store.ProvidesClusterWideActiveOperationEnumeration.Should().BeFalse();
+    }
+
     [UnitTest]
     public async Task UniversalProgressStore_WithConfiguredDistributedCache_WhenCacheWriteFails_ThrowsInsteadOfUsingNodeLocalState()
     {
@@ -46,8 +59,14 @@ public sealed class ImportDistributedStateFailureTests
     public async Task UniversalProgressStore_WithMemoryDistributedCache_TracksActiveOperationIdsWithoutRedisBackplane()
     {
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
+        var store = new UniversalProgressStore(
+            cache,
+            NullLogger<UniversalProgressStore>.Instance,
+            Substitute.For<IConnectionMultiplexer>());
         var progress = ExportProgress.CreateInitial("export-1", "csv", "svc", 1, 10);
+
+        store.ProvidesClusterWideActiveOperationEnumeration.Should().BeFalse(
+            "a process-local distributed cache is not made authoritative by a multiplexer registration");
 
         await store.SetProgressAsync("export-1", progress, TimeSpan.FromMinutes(5));
 
@@ -59,6 +78,20 @@ public sealed class ImportDistributedStateFailureTests
 
         await store.DeleteProgressAsync("export-1");
         (await store.GetActiveOperationIdsAsync(OperationType.Export)).Should().NotContain("export-1");
+    }
+
+    [UnitTest]
+    public void UniversalProgressStore_WithRedisCacheAndMultiplexer_ClaimsClusterWideEnumeration()
+    {
+        var services = new ServiceCollection();
+        services.AddStackExchangeRedisCache(options => options.Configuration = "localhost:6379");
+        using var provider = services.BuildServiceProvider();
+        var store = new UniversalProgressStore(
+            provider.GetRequiredService<IDistributedCache>(),
+            NullLogger<UniversalProgressStore>.Instance,
+            Substitute.For<IConnectionMultiplexer>());
+
+        store.ProvidesClusterWideActiveOperationEnumeration.Should().BeTrue();
     }
 
     [UnitTest]

@@ -12,6 +12,12 @@ namespace Honua.Core.Features.Infrastructure.Abstractions;
 public interface IUniversalProgressStore
 {
     /// <summary>
+    /// Gets whether active-operation enumeration is backed by a cluster-wide index.
+    /// Implementations default to local or otherwise incomplete coverage.
+    /// </summary>
+    bool ProvidesClusterWideActiveOperationEnumeration => false;
+
+    /// <summary>
     /// Store progress for any operation.
     /// </summary>
     /// <param name="operationId">Operation identifier</param>
