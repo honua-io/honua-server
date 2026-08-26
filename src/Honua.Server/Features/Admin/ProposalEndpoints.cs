@@ -119,9 +119,20 @@ internal static class ProposalEndpoints
         [FromServices] IOperationProposalStore proposalStore,
         HttpContext context)
     {
+        OperationApproverIdentity approver;
         try
         {
-            var approver = OperationApproverIdentity.Capture(context.User);
+            approver = OperationApproverIdentity.Capture(context.User);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Problem(
+                detail: "An authenticated approver with a stable identity is required.",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        try
+        {
             var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, approver, context)
                 .ConfigureAwait(false);
             if (denied != null)

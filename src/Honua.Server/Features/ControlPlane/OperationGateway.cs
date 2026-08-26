@@ -175,6 +175,12 @@ internal sealed partial class OperationGateway : IOperationGateway
             throw new InvalidOperationException("An identified approver is required.");
         }
 
+        if (proposal.Authority is not null && approverIdentity is null)
+        {
+            throw new InvalidOperationException(
+                "Issuer-qualified approver identity is required for this proposal.");
+        }
+
         var isSelfApproval = proposal.Authority is { } proposerAuthority
             ? approverIdentity is not null
                 ? approverIdentity.Matches(proposerAuthority)

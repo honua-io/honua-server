@@ -110,7 +110,7 @@ public sealed class OperationGatewayAutonomyTests
         proposal.AutonomyMetadata.EvidencePosture.Should().BeEquivalentTo(request.AutonomyContext!.EvidencePosture);
         proposal.Plan.ExecutionPayload.Should().NotBeNull();
 
-        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, HumanApprover());
         approved.Should().NotBeNull();
         evaluator.ProposalApprovedCount.Should().Be(1);
         evaluator.ProposalRejectedCount.Should().Be(0);
@@ -154,12 +154,12 @@ public sealed class OperationGatewayAutonomyTests
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
         var routed = await sut.RouteAsync(Request());
 
-        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, HumanApprover());
         await first.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("simulated proposal counter outage");
         (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Submitted);
 
-        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, HumanApprover());
         await retry.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*cannot be approved*");
         evaluator.ProposalApprovedCount.Should().Be(2,
@@ -451,6 +451,13 @@ public sealed class OperationGatewayAutonomyTests
                 RequiredEvidenceSourceIds = [EvidenceSourceIds.AlertDispatch],
             },
         };
+
+    private static OperationApproverIdentity HumanApprover() => new()
+    {
+        Actor = "human-approver",
+        Issuer = "https://approver.example",
+        Scheme = "Bearer",
+    };
 
     private static EvidencePostureEnvelope CompleteEvidence()
     {

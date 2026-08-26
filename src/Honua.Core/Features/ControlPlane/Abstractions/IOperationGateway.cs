@@ -249,9 +249,9 @@ public interface IOperationGateway
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Applies a previously created proposal once a human approves it, handing the
-    /// stored execution payload to the registered executor. The proposal must be
-    /// in <see cref="OperationProposalStatus.AwaitingApproval"/>.
+    /// Legacy compatibility entrypoint for callers that cannot supply issuer-qualified
+    /// approver identity. Implementations must fail closed for proposals with captured
+    /// proposer authority; modern callers use the qualified overload below.
     /// </summary>
     /// <param name="proposalId">Proposal identifier.</param>
     /// <param name="approvedBy">Principal that approved the proposal.</param>
@@ -274,7 +274,8 @@ public interface IOperationGateway
         string proposalId,
         OperationApproverIdentity approver,
         CancellationToken cancellationToken = default)
-        => ApplyApprovedProposalAsync(proposalId, approver.Actor, cancellationToken);
+        => throw new NotSupportedException(
+            "The operation gateway must implement issuer-qualified proposal approval.");
 
     /// <summary>
     /// Rejects a previously created proposal with a required reason.
