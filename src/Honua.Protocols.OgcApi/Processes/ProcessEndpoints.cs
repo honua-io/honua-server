@@ -906,12 +906,26 @@ internal static class ProcessEndpoints
             {
                 Title = name,
                 Description = $"Artifact result of type {kind}.",
-                Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = MediaTypes.Json }
+                Schema = new OgcProcessIoSchema
+                {
+                    Type = "object",
+                    ContentMediaType = GetDefaultOutputContentMediaType(kind)
+                }
             };
         }
 
         return outputs.ToImmutable();
     }
+
+    internal static string GetDefaultOutputContentMediaType(ArtifactKind kind)
+        => kind switch
+        {
+            ArtifactKind.FeatureLayer => "application/geo+json",
+            ArtifactKind.Raster => "image/tiff",
+            ArtifactKind.Table or ArtifactKind.Report or ArtifactKind.Scalar or ArtifactKind.Map => MediaTypes.Json,
+            ArtifactKind.File or ArtifactKind.AppBundle => "application/octet-stream",
+            _ => "application/octet-stream"
+        };
 
     private static void AddOutputBindings(
         Dictionary<string, string> metadata,

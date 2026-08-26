@@ -227,7 +227,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             && schema.GetProperty("contentMediaType").GetString() == "application/geo+json");
         root.GetProperty("inputs").GetProperty("distance").GetProperty("schema")
             .GetProperty("type").GetString().Should().Be("number");
-        root.GetProperty("outputs").TryGetProperty("outputFeatureLayer", out _).Should().BeTrue();
+        root.GetProperty("outputs").GetProperty("outputFeatureLayer").GetProperty("schema")
+            .GetProperty("contentMediaType").GetString().Should().Be("application/geo+json");
     }
 
     [IntegrationTest]
@@ -287,7 +288,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             .Select(e => e.GetString()).Should().Contain("async-execute");
         // The GDAL slope tool emits a raster artifact, so the description advertises
         // an outputRaster output.
-        root.GetProperty("outputs").TryGetProperty("outputRaster", out _).Should().BeTrue();
+        root.GetProperty("outputs").GetProperty("outputRaster").GetProperty("schema")
+            .GetProperty("contentMediaType").GetString().Should().Be("image/tiff");
         // Execute link is present so callers can drive direct execution.
         root.GetProperty("links").EnumerateArray()
             .Select(l => l.GetProperty("rel").GetString())
