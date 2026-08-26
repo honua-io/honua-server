@@ -87,6 +87,30 @@ public sealed class CurrentOperationAuthorityRevalidatorTests
     }
 
     [Fact]
+    public async Task RevalidateAsync_LegacyOperatorBearerWithoutMembershipIssuer_DeniesBeforeLookup()
+    {
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        var sut = CreateSut(authorization, membership, Substitute.For<IAdminApiKeyStore>());
+        var authority = CreateAuthority() with
+        {
+            Issuer = "honua-operator-bearer",
+            MembershipIssuer = null,
+            Scheme = "OperatorBearer",
+            Roles = ["admin"],
+            RoleCeiling = ["admin"],
+        };
+
+        var result = await sut.RevalidateAsync(CreateProposal(authority));
+
+        result.IsAllowed.Should().BeFalse();
+        result.Reason.Should().Contain("membership issuer");
+        await membership.DidNotReceiveWithAnyArgs()
+            .ResolveMembershipAsync(default!, default, default);
+        await authorization.DidNotReceiveWithAnyArgs().EvaluateAsync(default!, default!, default);
+    }
+
+    [Fact]
     public async Task RevalidateAsync_InactiveMembershipFailsBeforeGrantEvaluation()
     {
         var membership = Substitute.For<IPrincipalMembershipSource>();

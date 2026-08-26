@@ -37,6 +37,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal static class JobSecurityContextCapture
 {
+    private const string OperatorBearerScheme = "OperatorBearer";
     private const int MaxMembershipIssuerLength = 512;
 
     /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
@@ -103,6 +104,7 @@ internal static class JobSecurityContextCapture
         // unresolved revalidation would fall back to the captured roles (fail OPEN) instead of
         // failing closed. Truncation must never be able to relax a restriction (honua-server#3081).
         JobSecurityContextClaimTypes.ManagedMembershipMarker,
+        JobSecurityContextClaimTypes.AuthenticationScheme,
         JobSecurityContextClaimTypes.MembershipIssuer,
     };
 
@@ -117,6 +119,7 @@ internal static class JobSecurityContextCapture
         "refresh_token",
         "client_secret",
         "password",
+        JobSecurityContextClaimTypes.AuthenticationScheme,
         JobSecurityContextClaimTypes.MembershipPrincipalId,
         JobSecurityContextClaimTypes.MembershipIssuer,
     };
@@ -213,6 +216,18 @@ internal static class JobSecurityContextCapture
             captured.Add(new JobSecurityClaim(
                 JobSecurityContextClaimTypes.MembershipIssuer,
                 membershipIssuer));
+        }
+
+        var authenticationScheme = CanonicalSecurityActor.FindStampedValue(
+                principal,
+                CanonicalSecurityActor.AuthenticationSchemeClaim)
+            ?? principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated)
+                ?.AuthenticationType;
+        if (!string.IsNullOrWhiteSpace(authenticationScheme))
+        {
+            captured.Add(new JobSecurityClaim(
+                JobSecurityContextClaimTypes.AuthenticationScheme,
+                authenticationScheme));
         }
 
         var tenantId = tenantContext is null
@@ -315,8 +330,10 @@ internal static class JobSecurityContextCapture
         // authorizing deferred work. Fail closed in that case: strip the roles and report an
         // explicit unresolved status. HasRemovedRoles is set so the existing deferred-lane callers
         // refuse the operation through their role-removal branch unchanged (honua-server#3081).
+        var operatorMembershipIssuerMissing =
+            IsOperatorBearerSnapshot(context) && ResolveUpstreamMembershipIssuer(context) is null;
         JobSecurityContextMembershipResult SnapshotFallbackOrFailClosed() =>
-            SnapshotIndicatesManagedMembership(context)
+            SnapshotIndicatesManagedMembership(context) || operatorMembershipIssuerMissing
                 ? new JobSecurityContextMembershipResult(
                     StripRoleClaims(context, options),
                     JobSecurityContextMembershipStatus.ManagedUnresolved,
@@ -324,6 +341,11 @@ internal static class JobSecurityContextCapture
                 : new JobSecurityContextMembershipResult(
                     context,
                     JobSecurityContextMembershipStatus.SnapshotFallback);
+
+        if (operatorMembershipIssuerMissing)
+        {
+            return SnapshotFallbackOrFailClosed();
+        }
 
         if (source is null)
         {
@@ -431,7 +453,15 @@ internal static class JobSecurityContextCapture
 
     private static string? ResolveMembershipIssuer(JobSecurityContext context)
     {
-        var membershipIssuer = context.Claims.FirstOrDefault(claim =>
+        var membershipIssuer = ResolveUpstreamMembershipIssuer(context);
+
+        return membershipIssuer ?? context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, "iss", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+    }
+
+    private static string? ResolveUpstreamMembershipIssuer(JobSecurityContext context)
+        => context.Claims.FirstOrDefault(claim =>
             string.Equals(
                 claim.Type,
                 JobSecurityContextClaimTypes.MembershipIssuer,
@@ -439,10 +469,14 @@ internal static class JobSecurityContextCapture
             && !string.IsNullOrWhiteSpace(claim.Value)
             && claim.Value.Length <= MaxMembershipIssuerLength)?.Value;
 
-        return membershipIssuer ?? context.Claims.FirstOrDefault(claim =>
-            string.Equals(claim.Type, "iss", StringComparison.Ordinal)
-            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
-    }
+    private static bool IsOperatorBearerSnapshot(JobSecurityContext context)
+        => context.Claims.Any(claim =>
+                string.Equals(
+                    claim.Type,
+                    JobSecurityContextClaimTypes.AuthenticationScheme,
+                    StringComparison.Ordinal)
+                && string.Equals(claim.Value, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase))
+            || context.PrincipalId?.StartsWith("operatorbearer:", StringComparison.OrdinalIgnoreCase) == true;
 
     /// <summary>
     /// Whether the snapshot was captured for a principal whose role membership is authoritatively
@@ -479,10 +513,23 @@ internal static class JobSecurityContextCapture
 
         try
         {
-            var issuer = CanonicalSecurityActor.FindStampedValue(
+            var membershipIssuer = CanonicalSecurityActor.FindStampedValue(
+                principal,
+                JobSecurityContextClaimTypes.MembershipIssuer);
+            var authenticationScheme = CanonicalSecurityActor.FindStampedValue(
                     principal,
-                    JobSecurityContextClaimTypes.MembershipIssuer)
-                ?? principal.FindFirstValue("iss");
+                    CanonicalSecurityActor.AuthenticationSchemeClaim)
+                ?? principal.Identity?.AuthenticationType;
+            if (string.Equals(authenticationScheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase) &&
+                membershipIssuer is null)
+            {
+                // An operator bearer without its upstream issuer cannot be mapped back to the
+                // exact managed identity safely. Mark the capture as managed without querying
+                // the transport issuer so replay fails closed and requires resubmission.
+                return true;
+            }
+
+            var issuer = membershipIssuer ?? principal.FindFirstValue("iss");
             return await source.ResolveMembershipAsync(principalId, issuer, cancellationToken).ConfigureAwait(false)
                 is not null;
         }

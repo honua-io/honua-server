@@ -235,7 +235,13 @@ public sealed class McpPlatformOpsReaderTests
 
         using var services = CreateServices(
             gateway,
-            new StaticExecutorCatalog([OperationClass.MetadataRelease, OperationClass.Deploy]));
+            new StaticExecutorCatalog(
+            [
+                OperationClass.Seed,
+                OperationClass.MetadataRelease,
+                OperationClass.AdminConfigChange,
+                OperationClass.Deploy,
+            ]));
         var reader = CreateReader(store: store, services: services);
 
         var output = await reader.ProposeRollbackAsync(

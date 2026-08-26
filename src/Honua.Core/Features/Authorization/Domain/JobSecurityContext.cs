@@ -61,6 +61,9 @@ public sealed record JobSecurityContext(
 /// </summary>
 public static class JobSecurityContextClaimTypes
 {
+    /// <summary>Framework-derived authentication scheme retained for durable trust decisions.</summary>
+    public const string AuthenticationScheme = "honua:auth_scheme";
+
     /// <summary>
     /// Framework-derived upstream issuer used only to re-query managed membership after an
     /// operator session has been exchanged for a server-issued bearer credential.

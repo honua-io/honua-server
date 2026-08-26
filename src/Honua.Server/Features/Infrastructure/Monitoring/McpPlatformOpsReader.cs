@@ -134,14 +134,9 @@ internal sealed class McpPlatformOpsReader(
     {
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
-        var catalog = _services.GetService<IOperationExecutorCatalog>();
         return new McpSupportedOperationKindsOutput
         {
-            SupportedKinds = catalog?.SupportedKinds
-                .Where(McpProposableOperationKinds.Contains)
-                .Select(kind => kind.ToString())
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray() ?? []
+            SupportedKinds = ResolveSupportedKinds() ?? []
         };
     }
 
@@ -318,6 +313,7 @@ internal sealed class McpPlatformOpsReader(
     {
         var catalog = _services.GetService<IOperationExecutorCatalog>();
         return catalog?.SupportedKinds
+            .Where(McpProposableOperationKinds.Contains)
             .Select(kind => kind.ToString())
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();

@@ -28,6 +28,7 @@ internal sealed class CurrentOperationAuthorityRevalidator(
     IOptions<ApiKeyAuthenticationOptions> apiKeyOptions,
     IConnectionSecretResolver? secretResolver = null) : IOperationAuthorityRevalidator
 {
+    private const string OperatorBearerScheme = "OperatorBearer";
     private const string ServiceScheme = "Service";
     private const string TrustedServiceIssuer = "honua-server";
     private const string TrustedServiceActor = "ops-findings";
@@ -151,6 +152,13 @@ internal sealed class CurrentOperationAuthorityRevalidator(
             return CurrentAuthority.Allowed(
                 IntersectCeiling(currentRoles, authority.RoleCeiling),
                 permissions);
+        }
+
+        if (string.Equals(authority.Scheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase) &&
+            authority.MembershipIssuer is null)
+        {
+            return CurrentAuthority.Denied(
+                "the retained operator-bearer membership issuer is unavailable; resubmission is required");
         }
 
         var membership = await membershipSource.ResolveMembershipAsync(

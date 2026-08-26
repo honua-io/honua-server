@@ -103,7 +103,7 @@ public sealed record OperationAuthorityContext
         var scheme = identity.AuthenticationType;
         var actor = ResolveActor(identity);
         var issuer = identity.FindFirst("iss")?.Value ?? scheme;
-        var membershipIssuer = string.Equals(scheme, OperatorBearerScheme, StringComparison.Ordinal)
+        var membershipIssuer = string.Equals(scheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase)
             ? identity.FindFirst(MembershipIssuerClaimType)?.Value
             : null;
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
@@ -210,7 +210,7 @@ public sealed record OperationAuthorityContext
 
         if (MembershipIssuer is not null &&
             (!IsBounded(MembershipIssuer, 512) ||
-             !string.Equals(Scheme, OperatorBearerScheme, StringComparison.Ordinal)))
+             !string.Equals(Scheme, OperatorBearerScheme, StringComparison.OrdinalIgnoreCase)))
         {
             error = "Operation membership issuer is invalid for the authentication scheme.";
             return false;

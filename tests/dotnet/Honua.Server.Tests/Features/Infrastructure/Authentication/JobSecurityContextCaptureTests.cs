@@ -443,6 +443,10 @@ public sealed class JobSecurityContextCaptureTests
             (ClaimsIdentity)principal.Identity!,
             JobSecurityContextClaimTypes.MembershipIssuer,
             upstreamIssuer);
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "operatorbearer");
         var source = new FixedMembershipSource(new PrincipalMembership(true, ["viewer"]));
 
         var membershipManaged = await JobSecurityContextCapture.IsManagedMembershipAsync(principal, source);
@@ -460,8 +464,36 @@ public sealed class JobSecurityContextCaptureTests
         captured.Claims.Should().ContainSingle(claim =>
             claim.Type == JobSecurityContextClaimTypes.MembershipIssuer
             && claim.Value == upstreamIssuer);
+        captured.Claims.Should().ContainSingle(claim =>
+            claim.Type == JobSecurityContextClaimTypes.AuthenticationScheme
+            && claim.Value == "operatorbearer");
         captured.Claims.Should().NotContain(claim => claim.Value == "https://forged.example.com");
         result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+    }
+
+    [UnitTest]
+    public async Task LegacyOperatorBearerSnapshot_WithoutUpstreamIssuer_FailsClosedWithoutLookup()
+    {
+        var context = new JobSecurityContext(
+            "operatorbearer:subject:honua-operator-bearer:managed-operator",
+            TenantId: "tenant-1",
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-operator"),
+                new JobSecurityClaim("iss", "honua-operator-bearer"),
+                new JobSecurityClaim(ClaimTypes.Role, "admin"),
+            ]);
+        var source = new FixedMembershipSource(new PrincipalMembership(true, ["admin"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            source,
+            new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+        result.HasRemovedRoles.Should().BeTrue();
+        result.Context.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        source.ResolvedPrincipalId.Should().BeNull();
+        source.ResolvedIssuers.Should().BeEmpty();
     }
 
     [UnitTest]
