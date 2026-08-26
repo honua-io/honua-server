@@ -71,7 +71,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, membersResponse.StatusCode);
         var membership = await ReadAsync<ConsoleTeamMembership>(membersResponse);
         Assert.Equal(WorkspaceId, membership.WorkspaceId);
-        Assert.True(membership.CanInvite);
+        Assert.False(membership.CanInvite);
 
         var createRequest = new ConsoleRoleWriteRequest
         {
@@ -165,6 +165,46 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    public async Task ConsoleAccess_RoleNames_AreGloballyUniqueAcrossWorkspaces()
+    {
+        const string firstWorkspace = "name-owner";
+        const string secondWorkspace = "name-other";
+        const string sharedName = "shared-workspace-role";
+        var firstRole = await CreateRoleAsync(firstWorkspace, sharedName);
+
+        var createCollision = await _client.PostAsJsonAsync(
+            $"/api/v1/console/access/{secondWorkspace}/roles",
+            new ConsoleRoleWriteRequest { Name = sharedName.ToUpperInvariant(), Grants = [] },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.Conflict, createCollision.StatusCode);
+        await AssertRoleNameConflictAsync(createCollision);
+
+        var secondRole = await CreateRoleAsync(secondWorkspace, "rename-source-role");
+        var updateCollision = await _client.PutAsJsonAsync(
+            $"/api/v1/console/access/{secondWorkspace}/roles/{secondRole.Id}",
+            new ConsoleRoleWriteRequest { Name = sharedName, Grants = [] },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.Conflict, updateCollision.StatusCode);
+        await AssertRoleNameConflictAsync(updateCollision);
+
+        // A role may preserve its own name; the global collision check excludes its ID.
+        var preserveOwnName = await _client.PutAsJsonAsync(
+            $"/api/v1/console/access/{firstWorkspace}/roles/{firstRole.Id}",
+            new ConsoleRoleWriteRequest { Name = firstRole.Name, Grants = [] },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, preserveOwnName.StatusCode);
+
+        var secondOverview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/roles"));
+        Assert.Contains(secondOverview.Roles, role =>
+            role.Id == secondRole.Id && role.Name == secondRole.Name);
+        Assert.DoesNotContain(secondOverview.Roles, role =>
+            string.Equals(role.Name, sharedName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/access/{workspaceId}/members")]
     public async Task ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedWorkspace()
     {
@@ -243,5 +283,15 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.NotNull(envelope);
         Assert.True(envelope.Success, envelope.Message);
         return Assert.IsType<T>(envelope.Data);
+    }
+
+    private static async Task AssertRoleNameConflictAsync(HttpResponseMessage response)
+    {
+        var envelope = JsonSerializer.Deserialize<ApiResponse<object>>(
+            await response.Content.ReadAsStringAsync(), JsonOptions);
+        Assert.NotNull(envelope);
+        Assert.False(envelope.Success);
+        var message = Assert.IsType<string>(envelope.Message);
+        Assert.Contains("unique across workspaces", message, StringComparison.OrdinalIgnoreCase);
     }
 }
