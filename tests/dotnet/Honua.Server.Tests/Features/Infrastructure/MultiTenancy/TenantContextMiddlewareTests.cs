@@ -223,7 +223,7 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
-    public async Task OperatorBearerWithoutTenantClaim_DoesNotInheritAnonymousDefault()
+    public async Task OperatorBearerWithoutTenantClaim_TenantBoundRouteIsRejected()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "operator"),
@@ -232,7 +232,48 @@ public class TenantContextMiddlewareTests
         var client = await CreateAppAsync(principal);
         var response = await client.GetAsync("/tenant");
 
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task OperatorBearerWithoutTenantClaim_ExplicitControlPlaneRouteContinues()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Anonymous:<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task BearerWithTenantResolutionDisabled_StampsIssuerQualifiedActor()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("iss", "https://issuer.example"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal, options => options.Enabled = false);
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "bearer:subject:https%3A%2F%2Fissuer.example:user-1",
+            CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim));
+        Assert.Equal(
+            "https://issuer.example",
+            CanonicalSecurityActor.FindStampedValue(principal, "honua:issuer"));
+        Assert.Null(CanonicalSecurityActor.FindStampedValue(
+            principal,
+            CanonicalSecurityActor.EffectiveTenantClaim));
     }
 
     [IntegrationTest]

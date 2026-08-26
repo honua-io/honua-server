@@ -641,7 +641,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 17,
+      "provingTestCount": 19,
       "maturity": {
         "implemented": 2
       },
@@ -949,7 +949,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 23,
+      "provingTestCount": 24,
       "maturity": {
         "implemented": 6
       },

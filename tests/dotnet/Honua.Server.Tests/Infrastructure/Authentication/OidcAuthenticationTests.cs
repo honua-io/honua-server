@@ -723,9 +723,14 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/capabilities")]
     [Endpoint("GET /api/v1/admin/openapi.json")]
     [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    [Endpoint("GET /docs/protocols.openapi.json")]
     public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
     {
-        using var factory = CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings());
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
 
         var endpointsByRoute = factory.Services
@@ -739,7 +744,8 @@ public class OidcAuthenticationTests
             "/api/v{version:apiVersion}/admin/version",
             "/api/v{version:apiVersion}/admin/capabilities",
             "/api/v{version:apiVersion}/admin/openapi.json",
-            "/.well-known/oauth-protected-resource/mcp"
+            "/.well-known/oauth-protected-resource/mcp",
+            "/docs/protocols.openapi.json"
         })
         {
             var endpoint = Assert.Single(endpointsByRoute[route], endpoint =>
@@ -752,9 +758,14 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/capabilities")]
     [Endpoint("GET /api/v1/admin/openapi.json")]
     [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    [Endpoint("GET /docs/protocols.openapi.json")]
     public async Task GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk()
     {
-        using var factory = CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings());
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
@@ -762,15 +773,68 @@ public class OidcAuthenticationTests
         {
             "/api/v1/admin/capabilities",
             "/api/v1/admin/openapi.json",
-            "/.well-known/oauth-protected-resource/mcp"
+            "/.well-known/oauth-protected-resource/mcp",
+            "/docs/protocols.openapi.json"
         })
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, route);
             request.Headers.Add("Authorization", $"Bearer {token}");
             var response = await client.SendAsync(request);
 
+            if (response.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                _output.WriteLine($"{route} returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            }
+
             Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /docs")]
+    public void ApiDocumentationEndpoints_AreMarkedTenantIndependent()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+
+        var documentationEndpoints = factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/docs", StringComparison.Ordinal) == true)
+            .ToArray();
+
+        Assert.NotEmpty(documentationEndpoints);
+        Assert.All(documentationEndpoints, endpoint =>
+            Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /docs")]
+    public async Task ApiDocumentationEndpoint_OidcEnabled_TenantlessValidBearer_ReturnsOk()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/docs");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        if (response.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            _output.WriteLine($"/docs returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+        }
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
     }
 
     [IntegrationTest]

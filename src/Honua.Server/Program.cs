@@ -1137,18 +1137,15 @@ if (serveApiDocs)
 
         > This is the full protocol surface. The document switcher only lists the OpenAPI-described protocols; the standards above are reached through their own discovery documents.
         """;
-    var protocolsOverviewDoc = new
-    {
-        openapi = "3.0.3",
-        info = new
-        {
-            title = "Honua — supported protocols",
-            version = "1.0.0",
-            description = protocolsOverviewDescription,
-        },
-        paths = new Dictionary<string, object>(),
-    };
-    app.MapGet("/docs/protocols.openapi.json", () => Results.Json(protocolsOverviewDoc));
+    var encodedProtocolsOverviewDescription =
+        System.Text.Json.JsonEncodedText.Encode(protocolsOverviewDescription).ToString();
+    var protocolsOverviewJson = $$$"""
+        {"openapi":"3.0.3","info":{"title":"Honua — supported protocols","version":"1.0.0","description":"{{{encodedProtocolsOverviewDescription}}}"},"paths":{}}
+        """;
+    app.MapGet(
+            "/docs/protocols.openapi.json",
+            () => Results.Text(protocolsOverviewJson, "application/json; charset=utf-8"))
+        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
     app.MapScalarApiReference("/docs", options =>
     {
@@ -1164,7 +1161,7 @@ if (serveApiDocs)
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
             .AddDocument("stac", "STAC API", "/stac/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
-    });
+    }).WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 }
 
 // Add correlation ID middleware early in pipeline (before request logging)
