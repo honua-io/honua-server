@@ -570,13 +570,21 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             "foreign_pull_request_run_ids"
         ] == [208]
 
-        # A head whose image work was CANCELLED was superseded by a later push.
-        # It can never acquire a successful outcome, so it is an excluded head
-        # rather than a permanent failure.
+        # A head whose image work was CANCELLED BY A LATER PUSH can never
+        # acquire a successful outcome, so it is an excluded head rather than a
+        # permanent failure. Supersession must be WITNESSED: a later run of the
+        # same workflow, associated with the same pull request, at a different
+        # head. `cancelled` on its own does not say who cancelled it.
+        cancelled = image_run(
+            209, MODULE.SERVING_WORKFLOW, HEAD_B, 11, conclusion="cancelled",
+            started="2026-08-16T00:00:00Z",
+        )
+        witness = image_run(
+            210, MODULE.SERVING_WORKFLOW, HEAD_D, 11,
+            started="2026-08-16T00:05:00Z", completed="2026-08-16T00:07:00Z",
+        )
         pages(root / "serving", "workflow_runs", [
-            image_run(209, MODULE.SERVING_WORKFLOW, HEAD_B, 11, conclusion="cancelled"),
-            serving[1],
-            serving[2],
+            cancelled, witness, serving[1], serving[2],
         ])
         superseded = MODULE.summarize(
             index,
@@ -588,7 +596,47 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         )
         assert superseded["counts"]["authoritative_image_outcome_failures"] == 0
         assert superseded["counts"]["image_outcome_superseded_heads"] == 1
+        assert superseded["image_outcome_superseded_heads"][0]["serving"][
+            "superseded_by_run_ids"
+        ] == [210]
         assert superseded["gates"]["authoritative_image_outcomes_clean"]
+
+        # An operator cancel or an infrastructure abort produces the SAME
+        # conclusion with no later head behind it. That is a real missing
+        # outcome and must stay a failure.
+        pages(root / "serving", "workflow_runs", [cancelled, serving[1], serving[2]])
+        unwitnessed = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert unwitnessed["counts"]["image_outcome_superseded_heads"] == 0
+        assert unwitnessed["counts"]["authoritative_image_outcome_failures"] == 1
+        assert unwitnessed["image_outcome_failures"][0]["reason"] == (
+            "no-successful-image-outcome"
+        )
+
+        # A later run for a DIFFERENT pull request is not a witness either.
+        other_pr = image_run(
+            211, MODULE.SERVING_WORKFLOW, HEAD_D, 99,
+            started="2026-08-16T00:05:00Z", completed="2026-08-16T00:07:00Z",
+        )
+        pages(root / "serving", "workflow_runs", [
+            cancelled, other_pr, serving[1], serving[2],
+        ])
+        foreign_witness = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert foreign_witness["counts"]["image_outcome_superseded_heads"] == 0
+        assert foreign_witness["counts"]["authoritative_image_outcome_failures"] == 1
 
         # A head pushed shortly before the audit still has its image work
         # RUNNING. The image catalogs carry no completed filter, so the run is
@@ -997,6 +1045,70 @@ def test_head_tree_receipts_are_never_reuse_evidence() -> None:
         assert ledger["counts"]["serving_reuse_eligible_heads"] == 0
 
 
+def test_supersession_can_be_witnessed_by_a_later_receipt() -> None:
+    """A later validated receipt is a witness when the run association is absent.
+
+    GitHub leaves `pull_requests` empty on a large share of these runs, so
+    requiring an ASSOCIATED later run as the only witness would miss most real
+    supersessions and turn them back into permanent failures. `gate_run_id` is
+    push-monotone and comes from a validated receipt rather than a live API
+    field, so a higher one on the same pull request proves the head was pushed
+    past. Still fail closed when no witness of either kind exists.
+    """
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    ALL = {"generic": True, "lambda": True, "functions": True}
+
+    def receipt(head: str, gate: int) -> dict:
+        return native_receipt(
+            blobs, pr=11, head=head, worker=False, serving=ALL,
+            legacy_serving=ALL, legacy_worker=False, gate_run_id=gate,
+        )
+
+    def serving(run_id: int, head: str, conclusion: str, started: str) -> dict:
+        return image_run(
+            run_id, MODULE.SERVING_WORKFLOW, head, 11, conclusion=conclusion,
+            started=started, associations=[],
+        )
+
+    cancelled = serving(201, HEAD_B, "cancelled", "2026-08-16T00:00:00Z")
+    later = serving(202, HEAD_C, "success", "2026-08-16T01:00:00Z")
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        witnessed = reuse_ledger(
+            [receipt(HEAD_B, 1000), receipt(HEAD_C, 1001)],
+            [cancelled, later],
+            [],
+            root,
+        )
+        assert witnessed["counts"]["authoritative_image_outcome_failures"] == 0
+        assert witnessed["counts"]["image_outcome_superseded_heads"] == 1
+        excluded = witnessed["image_outcome_superseded_heads"][0]
+        assert excluded["head_sha"] == HEAD_B
+        assert excluded["serving"]["superseded_by_run_ids"] == []
+        assert excluded["serving"]["superseded_by_later_receipt"] is True
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        # The same cancelled run with NO later push behind it, by either
+        # witness, is an operator cancel or an infrastructure abort.
+        alone = reuse_ledger([receipt(HEAD_B, 1000)], [cancelled], [], root)
+        assert alone["counts"]["image_outcome_superseded_heads"] == 0
+        assert alone["counts"]["authoritative_image_outcome_failures"] == 1
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        # An EARLIER receipt is not a later push either.
+        backwards = reuse_ledger(
+            [receipt(HEAD_B, 1000), receipt(HEAD_C, 999)],
+            [cancelled, later],
+            [],
+            root,
+        )
+        assert backwards["counts"]["image_outcome_superseded_heads"] == 0
+        assert backwards["counts"]["authoritative_image_outcome_failures"] == 1
+
+
 def test_malformed_image_input_evidence_fails_closed() -> None:
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     broken_receipts = []
@@ -1387,6 +1499,7 @@ test_reuse_ordering_is_independent_of_observer_run_id()
 test_reuse_only_credits_variants_the_workflow_actually_built()
 test_reuse_keys_are_scoped_per_variant()
 test_head_tree_receipts_are_never_reuse_evidence()
+test_supersession_can_be_witnessed_by_a_later_receipt()
 test_malformed_image_input_evidence_fails_closed()
 test_full_mode_pr_gate_receipts_are_not_receipt_loss()
 test_loss_separates_missing_from_not_yet_indexed()

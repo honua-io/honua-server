@@ -967,6 +967,34 @@ def _image_outcome(
             continue
         matches.append(run)
     success = [run for run in matches if run.get("status") == "completed" and run.get("conclusion") == "success"]
+    cancelled = [run for run in matches if run.get("conclusion") == "cancelled"]
+    # Witnesses for supersession: a run of the SAME workflow, explicitly
+    # associated with this pull request, at a DIFFERENT head, started after this
+    # head's own work began. Only an association naming this PR is used, because
+    # that is the one thing the live `pull_requests` array can still prove.
+    started_here = [
+        value for value in (_run_time(run, "run_started_at", "created_at") for run in cancelled)
+        if value is not None
+    ]
+    superseding: list[int] = []
+    if started_here:
+        earliest = min(started_here)
+        for run in runs:
+            began = _run_time(run, "run_started_at", "created_at")
+            if (
+                run.get("path") == workflow
+                and run.get("event") == "pull_request"
+                and run.get("head_sha") != observation["head_sha"]
+                and isinstance(run.get("id"), int)
+                and began is not None
+                and began > earliest
+                and any(
+                    isinstance(pull, dict)
+                    and pull.get("number") == observation["pull_request"]
+                    for pull in (run.get("pull_requests") or [])
+                )
+            ):
+                superseding.append(run["id"])
     started = [
         value for value in (_run_time(run, "run_started_at", "created_at") for run in matches)
         if value is not None
@@ -976,12 +1004,19 @@ def _image_outcome(
     ]
     return {
         "success": bool(success),
-        # A head whose image work was cancelled was superseded by a later push
-        # on the same pull request. It can never acquire a successful outcome,
-        # so demanding one made a normal, correct cancellation permanently red.
-        "superseded": bool(matches) and not success and all(
-            run.get("conclusion") == "cancelled" for run in matches
-        ),
+        # A head whose image work was cancelled BY A LATER PUSH can never
+        # acquire a successful outcome, so demanding one made a normal, correct
+        # cancellation permanently red. But `cancelled` alone does not say who
+        # cancelled it: an operator cancel or an infrastructure abort produces
+        # the same conclusion and is a real missing outcome. Supersession must
+        # therefore be WITNESSED — a later run of the same workflow, associated
+        # with the same pull request, at a different head — not inferred from
+        # the conclusion. Without a witness the head stays a failure.
+        "cancelled_only": bool(cancelled) and not success and len(cancelled) == len(matches),
+        "superseded": bool(cancelled) and not success and len(cancelled) == len(matches)
+        and bool(superseding),
+        "superseded_by_run_ids": sorted(superseding),
+        "superseded_by_later_receipt": False,
         # The image catalogs are collected WITHOUT a completed filter, so a head
         # pushed shortly before the audit has its image work still running. That
         # is an undetermined outcome, not an absent one: the next audit sees it.
@@ -1196,6 +1231,14 @@ def summarize(
 
     serving_catalog = flatten_pages(serving_runs, "workflow_runs")
     worker_catalog = flatten_pages(worker_runs, "workflow_runs")
+    # A second, receipt-borne witness for supersession. `gate_run_id` is
+    # push-monotone (see `_reuse_order_key`), and it comes from a validated
+    # receipt rather than the live `pull_requests` array — which GitHub leaves
+    # empty often enough that run-association evidence alone would miss most
+    # real supersessions and turn them back into permanent failures.
+    later_pushes: dict[int, list[int]] = defaultdict(list)
+    for item in native:
+        later_pushes[item["pull_request"]].append(item["gate_run_id"])
     native_countable: list[dict[str, Any]] = []
     image_failures: list[dict[str, Any]] = []
     superseded_heads: list[dict[str, Any]] = []
@@ -1221,10 +1264,23 @@ def summarize(
                 "serving": serving,
                 "worker": worker,
             }
-            # A head is superseded when every missing outcome was CANCELLED —
-            # a later push on the same pull request replaced it. Nothing can
-            # ever make it green, and nothing should: it is an excluded head,
-            # not a failed one.
+            # A head is superseded when every missing outcome was CANCELLED and
+            # a later push on the same pull request is WITNESSED — by a later
+            # associated run of the same workflow, or by another validated
+            # receipt for the same PR at a higher (push-monotone) gate run.
+            # Nothing can ever make such a head green, and nothing should: it
+            # is an excluded head, not a failed one. An all-cancelled head with
+            # no witness stays a failure, because an operator cancel and an
+            # infrastructure abort look identical from the conclusion alone.
+            pushed_past = any(
+                gate > item["gate_run_id"]
+                for gate in later_pushes.get(item["pull_request"], [])
+            )
+            for name in missing:
+                outcome = outcomes[name]
+                if pushed_past and outcome["cancelled_only"] and not outcome["superseded"]:
+                    outcome["superseded"] = True
+                    outcome["superseded_by_later_receipt"] = True
             if all(outcomes[name]["superseded"] for name in missing):
                 superseded_heads.append({**record, "reason": "image-outcome-superseded-head"})
                 continue
@@ -1490,9 +1546,9 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
         if not isinstance(value, dict) or value.get("contract") != LEDGER_CONTRACT:
             continue
         generated = value.get("generated_at")
-        gates = value.get("gates")
+        counts = value.get("counts")
         emission = value.get("receipt_emission")
-        if not isinstance(gates, dict) or not isinstance(emission, dict):
+        if not isinstance(counts, dict) or not isinstance(emission, dict):
             continue
         loss = emission.get("all")
         if not isinstance(loss, dict):
@@ -1502,8 +1558,21 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
         except ValueError:
             continue
         day = stamp.date().isoformat()
-        green = bool(gates.get("integrity_clean")) and bool(
-            gates.get("receipt_loss_within_budget")
+        # Re-derive green from each ledger's OWN measurements against TODAY's
+        # policy, never from the gate it recorded at the time. Trusting the
+        # stored gate would let a day that passed under a looser budget keep
+        # counting after the budget is tightened, so lowering
+        # `maximum_receipt_loss_ratio` could leave `promotion_gate_ready` true
+        # on evidence that no longer satisfies it.
+        failures = counts.get("integrity_failures", 0)
+        measured = bool(loss.get("measured"))
+        ratio_value = loss.get("loss_ratio", 0.0)
+        green = (
+            failures == 0
+            and measured
+            and isinstance(ratio_value, (int, float))
+            and not isinstance(ratio_value, bool)
+            and float(ratio_value) < policy["maximum_receipt_loss_ratio"]
         )
         existing = days.get(day)
         # Two ledgers on one day (a schedule plus a dispatch) must not let the
@@ -1512,9 +1581,9 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
             days[day] = {
                 "date": day,
                 "green": green,
-                "integrity_failures": value.get("counts", {}).get("integrity_failures", 0),
-                "loss_ratio": loss.get("loss_ratio", 0.0),
-                "measured": bool(loss.get("measured")),
+                "integrity_failures": failures,
+                "loss_ratio": ratio_value if green else loss.get("loss_ratio", 0.0),
+                "measured": measured,
             }
     streak = 0
     maximum_loss = 0.0

@@ -182,7 +182,8 @@ now separate, counted, named facts:
 | `integrity_failures` | The receipt is malformed, violates its trust boundary, is not attributable to its producer, or contradicts its own declared policy head. | Yes |
 | `receipt_loss_regression` | A successful observer that OWED a receipt did not leave one, above `maximum_receipt_loss_ratio`. | Yes |
 | `policy_generation_superseded_receipts` | Cohort drift: the receipt is intact but pins the previous generation of the nine policy inputs. | No |
-| `image_outcome_superseded_heads` | The head's authoritative image run was cancelled by a later push on the same PR. It can never acquire a successful outcome. | No |
+| `image_outcome_superseded_heads` | The head's authoritative image run was cancelled by a **witnessed** later push on the same PR. It can never acquire a successful outcome. | No |
+| `image_outcome_pending_heads` | The head's image run is still building. Undetermined, not absent — the next audit sees how it ended. | No |
 | `quarantined` | Named in `.github/impact-routing-tombstones.json` with an owning issue and an expiry. | No, until the expiry |
 
 Cohort drift is the important distinction. Every receipt pins the blob SHAs of
@@ -197,6 +198,25 @@ The one case where a stale policy input IS an integrity failure: the receipt's
 own `policy_sha` equals the commit the ledger checked out. The two are then
 directly comparable, and a mismatch means the receipt claims blobs its declared
 head does not contain.
+
+### Supersession must be witnessed
+
+A `cancelled` conclusion does not say **who** cancelled the run: a later push,
+an operator, and an infrastructure abort all look identical. So a head is
+excluded as superseded only when a later push on the same pull request is
+positively witnessed, by either:
+
+- a later run of the same workflow, at a different head, whose live
+  `pull_requests` association names this pull request
+  (`superseded_by_run_ids`); or
+- another validated receipt for the same pull request with a strictly higher
+  `gate_run_id`, which is push-monotone and comes from signed evidence rather
+  than a live API field (`superseded_by_later_receipt`).
+
+The second witness is not redundant: GitHub leaves `pull_requests` empty on a
+large share of these runs, and on live `trunk` evidence it is the only witness
+available for 14 of 36 superseded heads. An all-cancelled head with **no**
+witness of either kind stays a failure.
 
 ### Receipt loss
 
