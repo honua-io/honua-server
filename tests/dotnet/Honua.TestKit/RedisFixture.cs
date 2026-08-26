@@ -12,6 +12,11 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class RedisFixture : IAsyncLifetime
 {
+    /// <summary>
+    /// Canonical xUnit collection name for tests that share this fixture.
+    /// </summary>
+    public const string CollectionName = "Redis";
+
     // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly RedisSharedState SharedState = new();
