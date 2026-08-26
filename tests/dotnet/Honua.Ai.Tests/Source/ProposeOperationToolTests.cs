@@ -379,8 +379,9 @@ public sealed class ProposeOperationToolTests
             .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
-        result.StructuredContent.Value.GetProperty("message").GetString()
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
+        content.GetProperty("message").GetString()
             .Should().Be("MetadataRelease executionPayload requires action 'create'.");
         gateway.ProposalOnlyCalls.Should().Be(0);
         gateway.LastRequest.Should().BeNull();
