@@ -103,6 +103,14 @@ internal sealed class ProcessCatalogResource : IMcpResource
             .Select(kind => kind.ToString())
             .ToList(),
         RuntimeProfile = process.RuntimeProfile,
+        ExecutionKind = process.ExecutionKind.ToString(),
+        SupportedExecutionModes = Enum.GetValues<ProcessExecutionModes>()
+            .Where(mode => mode != ProcessExecutionModes.None
+                && (process.SupportedExecutionModes & mode) != 0)
+            .Select(mode => mode.ToString())
+            .ToList(),
+        ConfigurationDependency = process.ConfigurationDependency,
+        ExecutionCapabilityReason = process.ExecutionCapabilityReason,
         Parameters = process.Parameters
             .Select(parameter => new McpProcessParameter
             {

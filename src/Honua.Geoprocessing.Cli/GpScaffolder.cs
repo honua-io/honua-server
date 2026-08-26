@@ -486,7 +486,7 @@ No Redis, no job store, no control plane — the whole loop runs offline.
         sb.Append($"  4. Plan it:   honua gp plan {processId}\n");
         sb.Append($"\nIf you scaffolded with --output, also add this line to {registrationFile}:\n");
         sb.Append($"     {registrationCall}\n");
-        sb.Append("  and add a matching ProcessDefinition to BuiltInProcessCatalog so it has a title and is plannable.\n");
+        sb.Append("  add a matching ProcessDefinition to BuiltInProcessCatalog, and classify the id in ProcessExecutionCapabilityCatalog.JobProcessIds.\n");
         return sb.ToString();
     }
 }

@@ -7,6 +7,9 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Geoprocessing;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -197,6 +200,9 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
     {
         services.RemoveAll<IRoleStore>();
         services.AddSingleton<IRoleStore>(new ProcessExecuteOnlyRoleStore());
+        services.RemoveAll<IProcessCatalog>();
+        services.AddSingleton<IProcessCatalog>(
+            new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "source.honua-layer"));
     }
 
     /// <summary>

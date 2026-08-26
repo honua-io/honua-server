@@ -938,6 +938,23 @@ public static class GpCli
                 Console.WriteLine($"  NOTE: could not auto-catalog ({error}). Add a ProcessDefinition by hand.");
             }
         }
+
+        var capabilityFile = Path.Join(
+            repoRoot,
+            "src/Honua.Geoprocessing/Features/Geoprocessing/ProcessExecutionCapabilityCatalog.cs");
+        if (File.Exists(capabilityFile))
+        {
+            var source = await File.ReadAllTextAsync(capabilityFile).ConfigureAwait(false);
+            if (GpScaffoldInjector.TryInsertJobClassification(source, processId, out var updated, out var error))
+            {
+                await File.WriteAllTextAsync(capabilityFile, updated).ConfigureAwait(false);
+                Console.WriteLine($"  classified {processId} as a job capability");
+            }
+            else
+            {
+                Console.WriteLine($"  NOTE: could not auto-classify ({error}). Add the process id to JobProcessIds by hand.");
+            }
+        }
     }
 
     /// <summary>

@@ -162,6 +162,88 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_WorkflowOnlyAndUnavailableProcesses_ReportCanonicalCapability()
+    {
+        var workflowPlan = new AnalysisPlan
+        {
+            PlanId = "plan-workflow-only",
+            IntentId = "intent-workflow-only",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "source",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "source.geojson",
+                    Inputs = new Dictionary<string, string> { ["inline"] = "{}" }
+                }
+            ]
+        };
+        var unavailablePlan = new AnalysisPlan
+        {
+            PlanId = "plan-unavailable",
+            IntentId = "intent-unavailable",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "kriging",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.interpolate-kriging",
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        _sut.ValidatePlan(workflowPlan, CreatePrincipal()).Violations
+            .Should().Contain(violation => violation.Code == "WORKFLOW_ONLY_PROCESS");
+        _sut.ValidatePlan(unavailablePlan, CreatePrincipal()).Violations
+            .Should().Contain(violation => violation.Code == "PROCESS_UNAVAILABLE");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_JobWithoutAsyncMode_ReportsNotExecutable()
+    {
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.sync-job",
+            Title = "Sync job",
+            Description = "Test-only sync job.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess(definition.ProcessId).Returns(definition);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-sync-job",
+            IntentId = "intent-sync-job",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "sync-job",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var (violations, _) = DirectSubmitPlanValidator.Evaluate(plan, catalog);
+
+        violations.Should().ContainSingle(violation =>
+            violation.Code == "ASYNC_EXECUTION_UNSUPPORTED");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_NonGeoprocessStep_WarnsItIsIgnored()
     {
         var plan = new AnalysisPlan
@@ -414,6 +496,162 @@ public sealed class GeoprocessingJobServiceTests
         job.OperationId.Should().NotBeNullOrWhiteSpace();
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_NonJobCapability_RejectsBeforeDurablePersistence()
+    {
+        var unavailablePlan = new AnalysisPlan
+        {
+            PlanId = "plan-unavailable",
+            IntentId = "intent-unavailable",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "kriging",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.interpolate-kriging",
+                    Inputs = new Dictionary<string, string>(),
+                },
+            ],
+        };
+
+        var act = () => _sut.SubmitJobAsync(unavailablePlan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*PROCESS_UNAVAILABLE*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithoutGeoprocessStep_RejectsBeforeDurablePersistence()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-query-only",
+            IntentId = "intent-query-only",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "query",
+                    Kind = AnalysisPlanStepKind.QueryFeatures,
+                    Inputs = new Dictionary<string, string> { ["layerId"] = "1" },
+                },
+            ],
+        };
+
+        var act = () => _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*NO_EXECUTABLE_STEP*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ProtocolOnlyCapability_RejectsBeforeDurablePersistence()
+    {
+        var act = () => _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*SYNC_ONLY_PROCESS*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WorkflowOnlyCapability_RequiresTrustedWorkflowBoundary()
+    {
+        var act = () => _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*WORKFLOW_ONLY_PROCESS*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJobWithSecurityContext_WorkflowOnlyCapability_IsAcceptedForTrustedWorkflow()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobWithSecurityContextAsync(
+            CreateSinkPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
+            CreateSubmitterSecurityContext());
+
+        job.Status.Should().Be(ExecutionJobStatus.Queued);
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJobWithSecurityContext_WorkflowOnlyWithoutAsyncMode_IsRejected()
+    {
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.sync-workflow",
+            Title = "Sync workflow process",
+            Description = "Test-only workflow process without async support.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.WorkflowOnly,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess(definition.ProcessId).Returns(definition);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            catalog,
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-sync-workflow",
+            IntentId = "intent-sync-workflow",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "sync-workflow",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var act = () => sut.SubmitJobWithSecurityContextAsync(
+            plan,
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string> { ["orchestration.runId"] = "run-1" },
+            CreateSubmitterSecurityContext());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*ASYNC_EXECUTION_UNSUPPORTED*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -1171,7 +1409,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_SinkProcessRequiresApproval_ThrowsApprovalException()
+    public async Task SubmitWorkflowJob_SinkProcessRequiresApproval_ThrowsApprovalException()
     {
         // A sink/write process must pass the same approval gate as a destructive
         // mutation (#2262). The evaluator requires approval only when the request
@@ -1181,7 +1419,7 @@ public sealed class GeoprocessingJobServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
 
-        var act = async () => await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+        var act = async () => await SubmitTrustedWorkflowJobAsync(CreateSinkPlan());
 
         await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
         await _jobStore.DidNotReceive().TryCreateAsync(
@@ -1219,7 +1457,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var sut = CreateServiceWithGateway(gateway);
 
-        var act = async () => await sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), "idem-1", CreatePrincipal());
+        var act = async () => await sut.SubmitJobAsync(CreateImportPlan(), "idem-1", CreatePrincipal());
 
         var thrown = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
         thrown.ProposalId.Should().Be("gp-proposal-1");
@@ -1248,7 +1486,7 @@ public sealed class GeoprocessingJobServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
 
-        var act = async () => await _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());
+        var act = async () => await _sut.SubmitJobAsync(CreateImportPlan(), null, CreatePrincipal());
 
         var thrown = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
         thrown.ProposalId.Should().BeNull();
@@ -1272,7 +1510,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var payload = new GeoprocessExecutionPayload
         {
-            Plan = CreateDeleteFeaturesPlan(),
+            Plan = CreateImportPlan(),
             IdempotencyKey = "idem-resume",
             RequestedBy = "subject-123",
             SubmitterSecurityContext = CreateSubmitterSecurityContext(),
@@ -1305,7 +1543,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var payload = new GeoprocessExecutionPayload
         {
-            Plan = CreateDeleteFeaturesPlan(),
+            Plan = CreateImportPlan(),
             IdempotencyKey = "idem-resume-revoked",
             RequestedBy = "subject-123",
             SubmitterSecurityContext = CreateSubmitterSecurityContext(),
@@ -1342,7 +1580,7 @@ public sealed class GeoprocessingJobServiceTests
             principalMembershipSource: membershipSource);
         var payload = new GeoprocessExecutionPayload
         {
-            Plan = CreateDeleteFeaturesPlan(),
+            Plan = CreateImportPlan(),
             IdempotencyKey = "idem-resume-role-revoked",
             RequestedBy = "subject-123",
             SubmitterSecurityContext = CreateSubmitterSecurityContext(),
@@ -1435,7 +1673,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var payload = new GeoprocessExecutionPayload
         {
-            Plan = CreateDeleteFeaturesPlan(),
+            Plan = CreateImportPlan(),
             IdempotencyKey = "idem-resume-identity",
             RequestedBy = "subject-123",
             SubmitterSecurityContext = CreateSubmitterSecurityContext(),
@@ -1520,7 +1758,7 @@ public sealed class GeoprocessingJobServiceTests
         var inherited = CreateSubmitterSecurityContext();
 
         var job = await _sut.SubmitJobWithSecurityContextAsync(
-            CreateDeleteFeaturesPlan(), null, orchestratorPrincipal, null, inherited);
+            CreateImportPlan(), null, orchestratorPrincipal, null, inherited);
 
         job.Audit.SubmitterSecurityContext.Should().BeSameAs(inherited);
         job.Audit.SubmitterSecurityContext!.Claims.Should().NotContain(
@@ -1556,7 +1794,7 @@ public sealed class GeoprocessingJobServiceTests
             [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
 
         await sut.SubmitJobWithSecurityContextAsync(
-            CreateLayerSourcePlan(42), null, orchestratorPrincipal, null, inherited);
+            CreateLayerSourcePlan(42), null, orchestratorPrincipal, TrustedWorkflowMetadata(), inherited);
 
         gatedPrincipal.Should().NotBeNull();
         gatedPrincipal!.IsInRole("analyst").Should().BeTrue();
@@ -1655,11 +1893,11 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_SinkProcessWithoutMutatingPermission_ThrowsAuthorizationException()
+    public async Task SubmitWorkflowJob_SinkProcessWithoutMutatingPermission_ThrowsAuthorizationException()
     {
         DenyMutatingProcessPermission();
 
-        var act = async () => await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+        var act = async () => await SubmitTrustedWorkflowJobAsync(CreateSinkPlan());
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
         await _jobStore.DidNotReceive().TryCreateAsync(
@@ -1673,7 +1911,7 @@ public sealed class GeoprocessingJobServiceTests
     {
         DenyMutatingProcessPermission();
 
-        var act = async () => await _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());
+        var act = async () => await _sut.SubmitJobAsync(CreateImportPlan(), null, CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
         await _jobStore.DidNotReceive().TryCreateAsync(
@@ -1683,12 +1921,12 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_SinkProcessWithMutatingPermission_CreatesJob()
+    public async Task SubmitWorkflowJob_SinkProcessWithMutatingPermission_CreatesJob()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var job = await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+        var job = await SubmitTrustedWorkflowJobAsync(CreateSinkPlan());
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         await _authEvaluator.Received().EvaluateAsync(
@@ -4623,6 +4861,43 @@ public sealed class GeoprocessingJobServiceTests
                 }
             }
         ]
+    };
+
+    private Task<ExecutionJobRecord> SubmitTrustedWorkflowJobAsync(AnalysisPlan plan)
+        => _sut.SubmitJobWithSecurityContextAsync(
+            plan,
+            null,
+            CreatePrincipal(),
+            TrustedWorkflowMetadata(),
+            CreateSubmitterSecurityContext());
+
+    private static Dictionary<string, string> TrustedWorkflowMetadata()
+        => new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["orchestration.runId"] = "run-1",
+        };
+
+    private static AnalysisPlan CreateImportPlan() => new()
+    {
+        PlanId = "plan-import",
+        IntentId = "intent-import",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-import",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "import.dataset",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["connection"] = "primary",
+                    ["sourcePath"] = "/staging/parcels.geojson",
+                    ["fileName"] = "parcels.geojson",
+                    ["tableName"] = "imported_parcels",
+                    ["layerName"] = "Parcels",
+                },
+            },
+        ],
     };
 
     private static AnalysisPlan CreateDeleteFeaturesPlan() => new()

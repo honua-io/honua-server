@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit;
@@ -112,6 +113,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             {
                 services.RemoveAll<IOperatorApprovalEvaluator>();
                 services.AddSingleton<IOperatorApprovalEvaluator>(new DestructiveOnlyApprovalEvaluator());
+                MakeDeleteFeaturesJobCallable(services);
             });
 
         try
@@ -152,6 +154,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             {
                 services.RemoveAll<IOperatorApprovalEvaluator>();
                 services.AddSingleton<IOperatorApprovalEvaluator>(new DestructiveOnlyApprovalEvaluator());
+                MakeDeleteFeaturesJobCallable(services);
             });
 
         try
@@ -313,6 +316,13 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             EstimatedArtifactKinds = [ArtifactKind.Scalar]
         }
     };
+
+    private static void MakeDeleteFeaturesJobCallable(IServiceCollection services)
+    {
+        services.RemoveAll<IProcessCatalog>();
+        services.AddSingleton<IProcessCatalog>(
+            new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "data-management.delete-features"));
+    }
 
     private static EvalScenario BuildArtifactKindMismatchScenario() => new()
     {

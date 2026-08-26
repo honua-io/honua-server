@@ -182,4 +182,53 @@ public sealed class GpScaffoldInjectorTests
 
         twice.Should().Be(once);
     }
+
+    private const string CapabilityCatalogSource =
+        """
+        internal static class ProcessExecutionCapabilityCatalog
+        {
+            private static readonly FrozenSet<string> JobProcessIds = IdSet(
+                "geometry.buffer",
+                "gdal.ogr2ogr");
+
+            private static readonly FrozenSet<string> ProtocolOnlyProcessIds = IdSet(
+                "analytics.cluster");
+        }
+        """;
+
+    [Fact]
+    public void TryInsertJobClassification_InsertsOnlyInJobSet()
+    {
+        GpScaffoldInjector.TryInsertJobClassification(
+            CapabilityCatalogSource,
+            "geometry.recenter",
+            out var result,
+            out var error).Should().BeTrue(error);
+
+        var jobSetEnd = result.IndexOf(");", result.IndexOf("JobProcessIds", StringComparison.Ordinal), StringComparison.Ordinal);
+        var inserted = result.IndexOf("\"geometry.recenter\"", StringComparison.Ordinal);
+        inserted.Should().BePositive().And.BeLessThan(jobSetEnd);
+        result.Should().Contain("\"gdal.ogr2ogr\",\n        \"geometry.recenter\"");
+    }
+
+    [Fact]
+    public void TryInsertJobClassification_IsIdempotent()
+    {
+        GpScaffoldInjector.TryInsertJobClassification(
+            CapabilityCatalogSource, "geometry.recenter", out var once, out _).Should().BeTrue();
+        GpScaffoldInjector.TryInsertJobClassification(
+            once, "geometry.recenter", out var twice, out _).Should().BeTrue();
+
+        twice.Should().Be(once);
+    }
+
+    [Fact]
+    public void TryInsertJobClassification_MissingJobSet_FailsClosed()
+    {
+        GpScaffoldInjector.TryInsertJobClassification(
+            "internal static class Empty { }", "geometry.recenter", out _, out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain("JobProcessIds");
+    }
 }

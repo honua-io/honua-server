@@ -134,7 +134,7 @@ internal static class ProcessEndpoints
         processBuilder.Add(summary);
 
         foreach (var definition in processCatalog.ListProcesses()
-                     .Where(ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess)
+                     .Where(ProcessExecutionCapabilityCatalog.IsOgcCallable)
                      .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
         {
             processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
@@ -173,7 +173,7 @@ internal static class ProcessEndpoints
         }
 
         var definition = processCatalog.GetProcess(processId);
-        if (definition == null || !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+        if (definition == null || !ProcessExecutionCapabilityCatalog.IsOgcCallable(definition))
         {
             OgcProcessesLog.ProcessNotFound(logger, processId);
             return OgcProcessesResults.NoSuchProcess(processId);
@@ -201,7 +201,7 @@ internal static class ProcessEndpoints
         // both respond-async and respond-sync can be checked against the same
         // header values.
         var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
-        var preferSync = hasPreferHeader
+        var requestedSync = hasPreferHeader
             && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
 
         try
@@ -215,7 +215,7 @@ internal static class ProcessEndpoints
             var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : processCatalog.GetProcess(processId);
-            if (definition != null && !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+            if (definition != null && !ProcessExecutionCapabilityCatalog.IsOgcCallable(definition))
             {
                 definition = null;
             }
@@ -226,6 +226,11 @@ internal static class ProcessEndpoints
                 OgcProcessesLog.ProcessNotFound(logger, processId);
                 return OgcProcessesResults.NoSuchProcess(processId);
             }
+
+            var preferSync = requestedSync
+                && (string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
+                    || definition != null
+                    && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0);
 
             OgcExecuteRequest? request;
             try
@@ -582,7 +587,7 @@ internal static class ProcessEndpoints
             Title = definition.Title,
             Description = definition.Description,
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
+            JobControlOptions = BuildOgcJobControlOptions(definition),
             OutputTransmission = ImmutableArray.Create("value"),
             Links = ImmutableArray.Create(
                 Link.Create(
@@ -597,9 +602,9 @@ internal static class ProcessEndpoints
         {
             Id = definition.ProcessId,
             Title = definition.Title,
-            Description = $"{definition.Description} First-slice migration evidence projection; execution supports bounded synchronous responses and asynchronous document-mode artifact references.",
+            Description = $"{definition.Description} Execution supports the catalog-advertised job-control modes; asynchronous execution returns document-mode artifact references when the runtime publishes results.",
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
+            JobControlOptions = BuildOgcJobControlOptions(definition),
             OutputTransmission = ImmutableArray.Create("value"),
             Inputs = definition.Parameters
                 .ToImmutableDictionary(
@@ -619,6 +624,22 @@ internal static class ProcessEndpoints
                     MediaTypes.Json,
                     "Execute process"))
         };
+
+    private static ImmutableArray<string> BuildOgcJobControlOptions(ProcessDefinition definition)
+    {
+        var options = ImmutableArray.CreateBuilder<string>(2);
+        if ((definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0)
+        {
+            options.Add("async-execute");
+        }
+
+        if ((definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0)
+        {
+            options.Add("sync-execute");
+        }
+
+        return options.ToImmutable();
+    }
 
     private static OgcProcessIoDescription ToOgcInputDescription(ProcessParameterSpec parameter)
         => new()

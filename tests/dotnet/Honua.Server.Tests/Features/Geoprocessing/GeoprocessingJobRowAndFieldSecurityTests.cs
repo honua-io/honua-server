@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
@@ -184,6 +185,10 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
                     options.DefaultChallengeScheme = RlsClaimsTestAuthHandler.SchemeName;
                     options.DefaultScheme = RlsClaimsTestAuthHandler.SchemeName;
                 });
+
+                services.RemoveAll<IProcessCatalog>();
+                services.AddSingleton<IProcessCatalog>(
+                    new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "source.honua-layer"));
 
                 WireDurableRuntime(services);
             });
