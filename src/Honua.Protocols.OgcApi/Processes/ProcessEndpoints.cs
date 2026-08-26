@@ -109,6 +109,7 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status410Gone)
             .Produces<OgcProcessError>(StatusCodes.Status413PayloadTooLarge)
             .Produces<OgcProcessError>(StatusCodes.Status408RequestTimeout)
+            .Produces(StatusCodes.Status499ClientClosedRequest)
             .Produces<OgcProcessError>(StatusCodes.Status500InternalServerError)
             .Produces<OgcProcessError>(StatusCodes.Status422UnprocessableEntity)
             .Produces<OgcProcessError>(StatusCodes.Status501NotImplemented)
