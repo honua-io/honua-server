@@ -204,10 +204,11 @@ internal sealed class Cql2FilterProcessor(
 
     /// <summary>
     /// Replaces a property that is absent from the current collection, but declared by
-    /// another selected collection, with SQL <c>NULL</c>. The surrounding expression is
-    /// intentionally preserved so the provider evaluates AND/OR/NOT with SQL
-    /// three-valued logic. Properties absent from every selected collection remain
-    /// references and continue through the existing unknown-field error path.
+    /// another selected collection, with SQL <c>NULL</c>. Typed predicates that cannot
+    /// accept a null operand collapse to a null Boolean result, while the surrounding
+    /// expression is preserved so the provider evaluates AND/OR/NOT with SQL three-valued
+    /// logic. Properties absent from every selected collection remain references and
+    /// continue through the existing unknown-field error path.
     /// </summary>
     internal static FilterExpression ApplyCrossCollectionNullSemantics(
         FilterExpression expression,
@@ -219,10 +220,10 @@ internal sealed class Cql2FilterProcessor(
         ArgumentNullException.ThrowIfNull(crossCollectionResources);
 
         var localSchema = FilterFieldSchema.From(resource);
-        return RewriteMissingNode(expression, localSchema, crossCollectionResources);
+        return RewriteMissingNode(expression, localSchema, crossCollectionResources).Expression;
     }
 
-    private static FilterExpression RewriteMissingNode(
+    private static MissingNodeRewrite RewriteMissingNode(
         FilterExpression expression,
         FilterFieldSchema localSchema,
         IReadOnlyList<MetadataV2Resource> crossCollectionResources)
@@ -232,73 +233,91 @@ internal sealed class Cql2FilterProcessor(
             case PropertyReference property:
                 if (localSchema.TryGetFieldType(property.PropertyName, out _))
                 {
-                    return property;
+                    return new MissingNodeRewrite(property, HasSubstitutedNull: false);
                 }
 
                 return IsDeclaredByAnotherCollection(property.PropertyName, crossCollectionResources)
-                    ? new Literal(null, LiteralType.Null)
-                    : property;
+                    ? new MissingNodeRewrite(new Literal(null, LiteralType.Null), HasSubstitutedNull: true)
+                    : new MissingNodeRewrite(property, HasSubstitutedNull: false);
             case BinaryExpression binary:
-                return binary with
-                {
-                    Left = RewriteMissingNode(binary.Left, localSchema, crossCollectionResources),
-                    Right = RewriteMissingNode(binary.Right, localSchema, crossCollectionResources)
-                };
+                var binaryLeft = RewriteMissingNode(binary.Left, localSchema, crossCollectionResources);
+                var binaryRight = RewriteMissingNode(binary.Right, localSchema, crossCollectionResources);
+                return new MissingNodeRewrite(
+                    binary with { Left = binaryLeft.Expression, Right = binaryRight.Expression },
+                    binaryLeft.HasSubstitutedNull || binaryRight.HasSubstitutedNull);
             case UnaryExpression unary:
-                return unary with
-                {
-                    Operand = RewriteMissingNode(unary.Operand, localSchema, crossCollectionResources)
-                };
+                var unaryOperand = RewriteMissingNode(unary.Operand, localSchema, crossCollectionResources);
+                return new MissingNodeRewrite(
+                    unary with { Operand = unaryOperand.Expression },
+                    unaryOperand.HasSubstitutedNull);
             case SpatialPredicate spatial:
-                return spatial with
-                {
-                    Left = RewriteMissingNode(spatial.Left, localSchema, crossCollectionResources),
-                    Right = RewriteMissingNode(spatial.Right, localSchema, crossCollectionResources)
-                };
+                var spatialLeft = RewriteMissingNode(spatial.Left, localSchema, crossCollectionResources);
+                var spatialRight = RewriteMissingNode(spatial.Right, localSchema, crossCollectionResources);
+                return CollapseTypedPredicate(
+                    spatial with { Left = spatialLeft.Expression, Right = spatialRight.Expression },
+                    spatialLeft.HasSubstitutedNull || spatialRight.HasSubstitutedNull);
             case SpatialDistancePredicate spatialDistance:
-                return spatialDistance with
-                {
-                    Left = RewriteMissingNode(spatialDistance.Left, localSchema, crossCollectionResources),
-                    Right = RewriteMissingNode(spatialDistance.Right, localSchema, crossCollectionResources),
-                    Distance = RewriteMissingNode(spatialDistance.Distance, localSchema, crossCollectionResources)
-                };
+                var distanceLeft = RewriteMissingNode(spatialDistance.Left, localSchema, crossCollectionResources);
+                var distanceRight = RewriteMissingNode(spatialDistance.Right, localSchema, crossCollectionResources);
+                var distanceValue = RewriteMissingNode(spatialDistance.Distance, localSchema, crossCollectionResources);
+                return CollapseTypedPredicate(
+                    spatialDistance with
+                    {
+                        Left = distanceLeft.Expression,
+                        Right = distanceRight.Expression,
+                        Distance = distanceValue.Expression
+                    },
+                    distanceLeft.HasSubstitutedNull ||
+                    distanceRight.HasSubstitutedNull ||
+                    distanceValue.HasSubstitutedNull);
             case TemporalPredicate temporal:
-                return temporal with
-                {
-                    Left = RewriteMissingNode(temporal.Left, localSchema, crossCollectionResources),
-                    Right = RewriteMissingNode(temporal.Right, localSchema, crossCollectionResources)
-                };
+                var temporalLeft = RewriteMissingNode(temporal.Left, localSchema, crossCollectionResources);
+                var temporalRight = RewriteMissingNode(temporal.Right, localSchema, crossCollectionResources);
+                return CollapseTypedPredicate(
+                    temporal with { Left = temporalLeft.Expression, Right = temporalRight.Expression },
+                    temporalLeft.HasSubstitutedNull || temporalRight.HasSubstitutedNull);
             case ArrayPredicate array:
-                return array with
-                {
-                    Left = RewriteMissingNode(array.Left, localSchema, crossCollectionResources),
-                    Right = RewriteMissingNode(array.Right, localSchema, crossCollectionResources)
-                };
+                var arrayLeft = RewriteMissingNode(array.Left, localSchema, crossCollectionResources);
+                var arrayRight = RewriteMissingNode(array.Right, localSchema, crossCollectionResources);
+                return CollapseTypedPredicate(
+                    array with { Left = arrayLeft.Expression, Right = arrayRight.Expression },
+                    arrayLeft.HasSubstitutedNull || arrayRight.HasSubstitutedNull);
             case FunctionCall functionCall:
-                return functionCall with
-                {
-                    Arguments = functionCall.Arguments
-                        .Select(argument => RewriteMissingNode(argument, localSchema, crossCollectionResources))
-                        .ToArray()
-                };
+                var arguments = functionCall.Arguments
+                    .Select(argument => RewriteMissingNode(argument, localSchema, crossCollectionResources))
+                    .ToArray();
+                return new MissingNodeRewrite(
+                    functionCall with { Arguments = arguments.Select(static argument => argument.Expression).ToArray() },
+                    arguments.Any(static argument => argument.HasSubstitutedNull));
             case ArrayLiteral arrayLiteral:
-                return arrayLiteral with
-                {
-                    Elements = arrayLiteral.Elements
-                        .Select(element => RewriteMissingNode(element, localSchema, crossCollectionResources))
-                        .ToArray()
-                };
+                var elements = arrayLiteral.Elements
+                    .Select(element => RewriteMissingNode(element, localSchema, crossCollectionResources))
+                    .ToArray();
+                return new MissingNodeRewrite(
+                    arrayLiteral with { Elements = elements.Select(static element => element.Expression).ToArray() },
+                    elements.Any(static element => element.HasSubstitutedNull));
             case ValueList valueList:
-                return valueList with
-                {
-                    Values = valueList.Values
-                        .Select(value => RewriteMissingNode(value, localSchema, crossCollectionResources))
-                        .ToArray()
-                };
+                var values = valueList.Values
+                    .Select(value => RewriteMissingNode(value, localSchema, crossCollectionResources))
+                    .ToArray();
+                return new MissingNodeRewrite(
+                    valueList with { Values = values.Select(static value => value.Expression).ToArray() },
+                    values.Any(static value => value.HasSubstitutedNull));
             default:
-                return expression;
+                return new MissingNodeRewrite(expression, HasSubstitutedNull: false);
         }
     }
+
+    private static MissingNodeRewrite CollapseTypedPredicate(
+        FilterExpression expression,
+        bool hasSubstitutedNull)
+        => hasSubstitutedNull
+            ? new MissingNodeRewrite(new Literal(null, LiteralType.Null), HasSubstitutedNull: true)
+            : new MissingNodeRewrite(expression, HasSubstitutedNull: false);
+
+    private readonly record struct MissingNodeRewrite(
+        FilterExpression Expression,
+        bool HasSubstitutedNull);
 
     private static bool IsDeclaredByAnotherCollection(
         string propertyName,
