@@ -960,6 +960,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/bearer")]
     [Endpoint("GET /api/v1/admin/config")]
     [Endpoint("GET /api/v1/admin/auth/config")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi()
     {
         using var stubFactory = CreateStubFactory();
@@ -998,6 +999,24 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
             var authConfigResponse = await bearerClient.GetAsync("/api/v1/admin/auth/config");
             authConfigResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var geometryContent = new StringContent(
+                """
+                {
+                    "geometries": {
+                        "geometryType": "esriGeometryPoint",
+                        "geometries": [{"x": 0, "y": 0}]
+                    },
+                    "inSR": "4326",
+                    "outSR": "3857"
+                }
+                """,
+                Encoding.UTF8,
+                "application/json");
+            var geometryResponse = await bearerClient.PostAsync(
+                "/rest/services/Utilities/Geometry/GeometryServer/project",
+                geometryContent);
+            geometryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

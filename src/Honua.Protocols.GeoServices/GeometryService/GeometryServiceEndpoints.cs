@@ -3,6 +3,7 @@
 
 using Honua.Protocols.GeoServices.GeometryService.Services;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Protocols.GeoServices.GeometryService;
 
@@ -21,9 +22,15 @@ internal static class GeometryServiceEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Every GeometryServer route is a stateless mathematical operation over
+        // inline coordinates. Group metadata makes that tenant-independent
+        // contract explicit without broad path-based exemptions in middleware.
+        var geometryGroup = endpoints.MapGroup(string.Empty)
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
         // Esri REST clients probe the GeometryServer root for the service description
         // and capabilities before invoking operations.
-        endpoints.MapGet(GeometryRoutePrefix, HandleServiceInfo)
+        geometryGroup.MapGet(GeometryRoutePrefix, HandleServiceInfo)
             .WithDisplayName("Geometry Service Info")
             .WithName("GeometryServiceInfo")
             .WithTags("GeometryService");
@@ -31,13 +38,13 @@ internal static class GeometryServiceEndpoints
         // Esri clients hydrate the GeometryServer descriptor by POSTing
         // {"f":"json"}; mirror the GET root so discovery succeeds. Anonymous by
         // design like the other GeometryServer POST companions in this file.
-        endpoints.MapPost(GeometryRoutePrefix, HandleServiceInfo)
+        geometryGroup.MapPost(GeometryRoutePrefix, HandleServiceInfo)
             .WithDisplayName("Geometry Service Info (POST)")
             .WithName("GeometryServiceInfoPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
             .WithDisplayName("Geometry Service Buffer (GET)")
             .WithName("GeometryServiceBufferGet")
             .WithTags("GeometryService");
@@ -47,249 +54,249 @@ internal static class GeometryServiceEndpoints
         // mutation. POSTs mirror the GET form (used when payload exceeds URL
         // limits). Marked AllowAnonymous so the audit guard records the
         // intentional decision. Applied to every POST in this file.
-        endpoints.MapPost($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
             .WithDisplayName("Geometry Service Buffer (POST)")
             .WithName("GeometryServiceBufferPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/simplify", (Delegate)HandleSimplify)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/simplify", (Delegate)HandleSimplify)
             .WithDisplayName("Geometry Service Simplify (GET)")
             .WithName("GeometryServiceSimplifyGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/simplify", (Delegate)HandleSimplify)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/simplify", (Delegate)HandleSimplify)
             .WithDisplayName("Geometry Service Simplify (POST)")
             .WithName("GeometryServiceSimplifyPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/project", (Delegate)HandleProject)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/project", (Delegate)HandleProject)
             .WithDisplayName("Geometry Service Project (GET)")
             .WithName("GeometryServiceProjectGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/project", (Delegate)HandleProject)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/project", (Delegate)HandleProject)
             .WithDisplayName("Geometry Service Project (POST)")
             .WithName("GeometryServiceProjectPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/intersect", (Delegate)HandleIntersect)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/intersect", (Delegate)HandleIntersect)
             .WithDisplayName("Geometry Service Intersect (GET)")
             .WithName("GeometryServiceIntersectGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/intersect", (Delegate)HandleIntersect)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/intersect", (Delegate)HandleIntersect)
             .WithDisplayName("Geometry Service Intersect (POST)")
             .WithName("GeometryServiceIntersectPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/union", (Delegate)HandleUnion)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/union", (Delegate)HandleUnion)
             .WithDisplayName("Geometry Service Union (GET)")
             .WithName("GeometryServiceUnionGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/union", (Delegate)HandleUnion)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/union", (Delegate)HandleUnion)
             .WithDisplayName("Geometry Service Union (POST)")
             .WithName("GeometryServiceUnionPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/clip", (Delegate)HandleClip)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/clip", (Delegate)HandleClip)
             .WithDisplayName("Geometry Service Clip (GET)")
             .WithName("GeometryServiceClipGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/clip", (Delegate)HandleClip)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/clip", (Delegate)HandleClip)
             .WithDisplayName("Geometry Service Clip (POST)")
             .WithName("GeometryServiceClipPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/difference", (Delegate)HandleDifference)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/difference", (Delegate)HandleDifference)
             .WithDisplayName("Geometry Service Difference (GET)")
             .WithName("GeometryServiceDifferenceGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/difference", (Delegate)HandleDifference)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/difference", (Delegate)HandleDifference)
             .WithDisplayName("Geometry Service Difference (POST)")
             .WithName("GeometryServiceDifferencePost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/areasAndLengths", (Delegate)HandleArea)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/areasAndLengths", (Delegate)HandleArea)
             .WithDisplayName("Geometry Service Areas And Lengths (GET)")
             .WithName("GeometryServiceAreasAndLengthsGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/areasAndLengths", (Delegate)HandleArea)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/areasAndLengths", (Delegate)HandleArea)
             .WithDisplayName("Geometry Service Areas And Lengths (POST)")
             .WithName("GeometryServiceAreasAndLengthsPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/lengths", (Delegate)HandleLength)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/lengths", (Delegate)HandleLength)
             .WithDisplayName("Geometry Service Lengths (GET)")
             .WithName("GeometryServiceLengthsGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/lengths", (Delegate)HandleLength)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/lengths", (Delegate)HandleLength)
             .WithDisplayName("Geometry Service Lengths (POST)")
             .WithName("GeometryServiceLengthsPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/distance", (Delegate)HandleDistance)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/distance", (Delegate)HandleDistance)
             .WithDisplayName("Geometry Service Distance (GET)")
             .WithName("GeometryServiceDistanceGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/distance", (Delegate)HandleDistance)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/distance", (Delegate)HandleDistance)
             .WithDisplayName("Geometry Service Distance (POST)")
             .WithName("GeometryServiceDistancePost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/relation", (Delegate)HandleRelation)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/relation", (Delegate)HandleRelation)
             .WithDisplayName("Geometry Service Relation (GET)")
             .WithName("GeometryServiceRelationGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/relation", (Delegate)HandleRelation)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/relation", (Delegate)HandleRelation)
             .WithDisplayName("Geometry Service Relation (POST)")
             .WithName("GeometryServiceRelationPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/densify", (Delegate)HandleDensify)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/densify", (Delegate)HandleDensify)
             .WithDisplayName("Geometry Service Densify (GET)")
             .WithName("GeometryServiceDensifyGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/densify", (Delegate)HandleDensify)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/densify", (Delegate)HandleDensify)
             .WithDisplayName("Geometry Service Densify (POST)")
             .WithName("GeometryServiceDensifyPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/convexHull", (Delegate)HandleConvexHull)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/convexHull", (Delegate)HandleConvexHull)
             .WithDisplayName("Geometry Service Convex Hull (GET)")
             .WithName("GeometryServiceConvexHullGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/convexHull", (Delegate)HandleConvexHull)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/convexHull", (Delegate)HandleConvexHull)
             .WithDisplayName("Geometry Service Convex Hull (POST)")
             .WithName("GeometryServiceConvexHullPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/generalize", (Delegate)HandleGeneralize)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/generalize", (Delegate)HandleGeneralize)
             .WithDisplayName("Geometry Service Generalize (GET)")
             .WithName("GeometryServiceGeneralizeGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/generalize", (Delegate)HandleGeneralize)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/generalize", (Delegate)HandleGeneralize)
             .WithDisplayName("Geometry Service Generalize (POST)")
             .WithName("GeometryServiceGeneralizePost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/labelPoints", (Delegate)HandleLabelPoints)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/labelPoints", (Delegate)HandleLabelPoints)
             .WithDisplayName("Geometry Service Label Points (GET)")
             .WithName("GeometryServiceLabelPointsGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/labelPoints", (Delegate)HandleLabelPoints)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/labelPoints", (Delegate)HandleLabelPoints)
             .WithDisplayName("Geometry Service Label Points (POST)")
             .WithName("GeometryServiceLabelPointsPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/cut", (Delegate)HandleCut)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/cut", (Delegate)HandleCut)
             .WithDisplayName("Geometry Service Cut (GET)")
             .WithName("GeometryServiceCutGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/cut", (Delegate)HandleCut)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/cut", (Delegate)HandleCut)
             .WithDisplayName("Geometry Service Cut (POST)")
             .WithName("GeometryServiceCutPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/trimExtend", (Delegate)HandleTrimExtend)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/trimExtend", (Delegate)HandleTrimExtend)
             .WithDisplayName("Geometry Service Trim Extend (GET)")
             .WithName("GeometryServiceTrimExtendGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/trimExtend", (Delegate)HandleTrimExtend)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/trimExtend", (Delegate)HandleTrimExtend)
             .WithDisplayName("Geometry Service Trim Extend (POST)")
             .WithName("GeometryServiceTrimExtendPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/offset", (Delegate)HandleOffset)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/offset", (Delegate)HandleOffset)
             .WithDisplayName("Geometry Service Offset (GET)")
             .WithName("GeometryServiceOffsetGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/offset", (Delegate)HandleOffset)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/offset", (Delegate)HandleOffset)
             .WithDisplayName("Geometry Service Offset (POST)")
             .WithName("GeometryServiceOffsetPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/autoComplete", (Delegate)HandleAutoComplete)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/autoComplete", (Delegate)HandleAutoComplete)
             .WithDisplayName("Geometry Service Auto Complete (GET)")
             .WithName("GeometryServiceAutoCompleteGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/autoComplete", (Delegate)HandleAutoComplete)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/autoComplete", (Delegate)HandleAutoComplete)
             .WithDisplayName("Geometry Service Auto Complete (POST)")
             .WithName("GeometryServiceAutoCompletePost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/reshape", (Delegate)HandleReshape)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/reshape", (Delegate)HandleReshape)
             .WithDisplayName("Geometry Service Reshape (GET)")
             .WithName("GeometryServiceReshapeGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/reshape", (Delegate)HandleReshape)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/reshape", (Delegate)HandleReshape)
             .WithDisplayName("Geometry Service Reshape (POST)")
             .WithName("GeometryServiceReshapePost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/findTransformations", (Delegate)HandleFindTransformations)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/findTransformations", (Delegate)HandleFindTransformations)
             .WithDisplayName("Geometry Service Find Transformations (GET)")
             .WithName("GeometryServiceFindTransformationsGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/findTransformations", (Delegate)HandleFindTransformations)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/findTransformations", (Delegate)HandleFindTransformations)
             .WithDisplayName("Geometry Service Find Transformations (POST)")
             .WithName("GeometryServiceFindTransformationsPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/toGeoCoordinateString", (Delegate)HandleToGeoCoordinateString)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/toGeoCoordinateString", (Delegate)HandleToGeoCoordinateString)
             .WithDisplayName("Geometry Service To Geo Coordinate String (GET)")
             .WithName("GeometryServiceToGeoCoordinateStringGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/toGeoCoordinateString", (Delegate)HandleToGeoCoordinateString)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/toGeoCoordinateString", (Delegate)HandleToGeoCoordinateString)
             .WithDisplayName("Geometry Service To Geo Coordinate String (POST)")
             .WithName("GeometryServiceToGeoCoordinateStringPost")
             .WithTags("GeometryService")
             .AllowAnonymous();
 
-        endpoints.MapGet($"{GeometryRoutePrefix}/fromGeoCoordinateString", (Delegate)HandleFromGeoCoordinateString)
+        geometryGroup.MapGet($"{GeometryRoutePrefix}/fromGeoCoordinateString", (Delegate)HandleFromGeoCoordinateString)
             .WithDisplayName("Geometry Service From Geo Coordinate String (GET)")
             .WithName("GeometryServiceFromGeoCoordinateStringGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost($"{GeometryRoutePrefix}/fromGeoCoordinateString", (Delegate)HandleFromGeoCoordinateString)
+        geometryGroup.MapPost($"{GeometryRoutePrefix}/fromGeoCoordinateString", (Delegate)HandleFromGeoCoordinateString)
             .WithDisplayName("Geometry Service From Geo Coordinate String (POST)")
             .WithName("GeometryServiceFromGeoCoordinateStringPost")
             .WithTags("GeometryService")
