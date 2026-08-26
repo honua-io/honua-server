@@ -189,6 +189,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
+          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
+          # scopes: this workflow overrides the base-image ARGs to its mirrored
+          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
+          # from the first instruction down and the caches are not interchangeable.
           cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
@@ -299,6 +303,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
+          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
+          # scopes: this workflow overrides the base-image ARGs to its mirrored
+          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
+          # from the first instruction down and the caches are not interchangeable.
           cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
@@ -380,6 +388,59 @@ jobs:
               "${tag}-arm64"
           done
 
+  verify-functions-aot:
+    name: Build & Boundary-Verify Azure Functions AOT
+    # The Azure Functions AOT image is a production serving variant, but the only
+    # lane that BUILDS it is `deploy-platform-images.yml` — release tags plus one
+    # weekly scan-only schedule. Between releases its final-rootfs evidence came
+    # from `serving-image-boundary.yml` firing on `src/**`, which #3204 narrowed
+    # to image-defining inputs. This job carries the daily source-driven rootfs
+    # proof for the variant so the narrowing defers that evidence by at most one
+    # night instead of up to a week.
+    #
+    # It deliberately publishes NOTHING. `deploy-platform-images.yml` stays the
+    # sole publisher of this variant and re-verifies the exact digest it promotes;
+    # adding a second published tag surface here would add release semantics this
+    # job does not need. Its base image comes straight from MCR
+    # (`AZURE_FUNCTIONS_BASE_IMAGE`, not a `DOTNET_*_IMAGE` arg), so it is not a
+    # consumer of the `mirror-base-images` GHCR mirror and does not depend on it.
+    runs-on: ubuntu-24.04
+    # 180, matching the other native-AOT ceilings: a cold build does not fit in
+    # 90 minutes and a timeout is self-perpetuating (see build-lambda-aot).
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Build nightly Azure Functions AOT serving image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.functions.aot
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:nightly-functions-aot
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=nightly-functions-aot-amd64
+          # ignore-error: a failed cache export must not fail an otherwise
+          # successful build; the cache is an accelerator, not evidence.
+          cache-to: type=gha,mode=max,scope=nightly-functions-aot-amd64,ignore-error=true
+          provenance: false
+          sbom: false
+
+      - name: Verify nightly Azure Functions AOT serving-image contents
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:nightly-functions-aot
+
   build-jit:
     name: Build & Push JIT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -449,6 +510,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
+          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
+          # scopes: this workflow overrides the base-image ARGs to its mirrored
+          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
+          # from the first instruction down and the caches are not interchangeable.
           cache-from: type=gha,scope=nightly-jit-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
