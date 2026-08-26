@@ -382,9 +382,20 @@ public sealed class ServingImageBoundaryTests
                 "a variant with no nightly rootfs verification would lose coverage outright");
         }
 
-        var batchCi = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/ci.yml"));
-        batchCi.Should().Contain("aot-build:",
+        var batchCi = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/ci.yml"))
+            .ReplaceLineEndings("\n");
+        var aotJobIndex = batchCi.IndexOf("\n  aot-build:\n", StringComparison.Ordinal);
+        aotJobIndex.Should().BeGreaterThan(-1,
             "the batch train keeps native-AOT compile risk pre-merge for source changes");
+        var aotConditionIndex = batchCi.IndexOf("\n    if:", aotJobIndex, StringComparison.Ordinal);
+        aotConditionIndex.Should().BeGreaterThan(aotJobIndex);
+        var aotCondition = batchCi[aotConditionIndex..batchCi.IndexOf("\n    runs-on:", aotConditionIndex, StringComparison.Ordinal)];
+        aotCondition.Should().NotContain("full_ci",
+            "an ordinary merge-train batch is a SELECTIVE batch and reports full_ci=false, so a "
+            + "full_ci-gated AOT job would never run on the landing path - which would leave "
+            + "source changes with no pre-merge native-AOT compile gate at all (#3204)");
+        aotCondition.Should().Contain("integration_changes",
+            "the AOT compile gate must still be scoped to batches that change runtime source");
 
         var prGate = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
         prGate.Should().Contain("validate-serving-image-boundary.py",

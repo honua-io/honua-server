@@ -2711,7 +2711,19 @@ jobs:
 
   aot-build:
     name: AOT Build Verification
-    if: ${{ success() && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    # NOT gated on `full_ci` (#3204). A merge-train batch is dispatched as
+    # `workflow_dispatch` on `train/batch/*` WITHOUT `full_ci=true`, which the
+    # `changes` job classifies as a selective batch and reports `full_ci=false`.
+    # While this job required `full_ci == 'true'` it therefore never ran on the
+    # ordinary landing path - the only pre-merge native-AOT compile signal for a
+    # source change was `serving-image-boundary.yml` building the AOT images on
+    # every push, which #3204 narrowed to image-defining inputs. Requiring only
+    # the change classes it actually depends on keeps AOT compile risk pre-merge
+    # at BATCH granularity: once per landing batch instead of three container
+    # builds per review-fix push. It runs alongside the shard matrix (p90 88.6m)
+    # under a 45-minute ceiling, so it is not expected to extend the batch
+    # critical path.
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 45

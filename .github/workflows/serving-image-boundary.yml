@@ -17,7 +17,11 @@ name: Serving Image Boundary
 # owner before the image is published:
 #
 #   * AOT compile risk (`src/**`, `eng/**`, props, solution) -> the merge train's
-#     batch CI `aot-build` job, pre-merge, on the exact batch that lands.
+#     batch CI `aot-build` job, pre-merge, on the exact batch that lands. That
+#     job was gated on `full_ci`, which an ordinary selective batch reports as
+#     false, so it never ran on the landing path; #3204 rescoped it to the
+#     change classes it depends on. Compile risk is now paid once per batch
+#     instead of three container builds per review-fix push.
 #   * Boundary DETECTOR correctness -> `pr-gate.yml`, per PR, per push, on every
 #     clean and injected-rootfs fixture (no container build required).
 #   * Final-rootfs boundary for all three production variants -> post-merge

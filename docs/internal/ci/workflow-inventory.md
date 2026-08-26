@@ -141,7 +141,21 @@ lanes that already existed or were extended here:
 | Final rootfs — Azure Functions AOT | `nightly-container-build.yml` `verify-functions-aot` (added with this change) | daily, verification only; publishes nothing |
 | Final rootfs — every published variant | `deploy.yml`, `deploy-platform-images.yml`, `release-bundle.yml` | on the exact digest, before promotion |
 
-The Azure Functions row is the one that had to be added: before this change the
+Two of those rows only became true as part of this change.
+
+**`aot-build` had to be ungated from `full_ci`.** An ordinary merge-train batch
+is dispatched as `workflow_dispatch` on `train/batch/*` *without* `full_ci=true`,
+which the `changes` job classifies as a **selective** batch and reports
+`full_ci=false`. A `full_ci`-gated AOT job therefore never ran on the ordinary
+landing path, which means the only pre-merge native-AOT compile signal for a
+source change was `serving-image-boundary.yml` building the images on every push.
+The job is now scoped to `integration_changes` + `non_test_changes`, keeping AOT
+compile risk pre-merge at **batch** granularity: one job under a 45-minute
+ceiling per landing batch, alongside the shard matrix (p90 88.6m), in place of
+three container builds per review-fix push. An architecture test pins the
+condition so it cannot silently regain a `full_ci` gate.
+
+**The Azure Functions row had to be added.** Before this change the
 only lane that BUILT that variant post-merge was `deploy-platform-images.yml`
 (release tags plus one weekly scan-only schedule), so deferring source-driven
 runs without it would have widened that variant's detection window from a push
