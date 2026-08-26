@@ -968,6 +968,7 @@ def _image_outcome(
         matches.append(run)
     success = [run for run in matches if run.get("status") == "completed" and run.get("conclusion") == "success"]
     cancelled = [run for run in matches if run.get("conclusion") == "cancelled"]
+    cancelled_only = bool(cancelled) and not success and len(cancelled) == len(matches)
     # Witnesses for supersession: a run of the SAME workflow, explicitly
     # associated with this pull request, at a DIFFERENT head, started after this
     # head's own work began. Only an association naming this PR is used, because
@@ -1012,9 +1013,8 @@ def _image_outcome(
         # therefore be WITNESSED — a later run of the same workflow, associated
         # with the same pull request, at a different head — not inferred from
         # the conclusion. Without a witness the head stays a failure.
-        "cancelled_only": bool(cancelled) and not success and len(cancelled) == len(matches),
-        "superseded": bool(cancelled) and not success and len(cancelled) == len(matches)
-        and bool(superseding),
+        "cancelled_only": cancelled_only,
+        "superseded": cancelled_only and bool(superseding),
         "superseded_by_run_ids": sorted(superseding),
         "superseded_by_later_receipt": False,
         # The image catalogs are collected WITHOUT a completed filter, so a head
