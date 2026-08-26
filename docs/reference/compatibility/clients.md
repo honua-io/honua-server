@@ -49,7 +49,9 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **OGC API Processes negotiates sync and async execution.** Omission runs a process
   synchronously when it advertises `sync-execute`; `Prefer: respond-async` requests a
   durable job. Document-mode JSON is the default, while synchronous single-output
-  values may request raw mode. A Redis-backed job store is required for async and job routes.
+  values may request raw mode. All execution modes currently submit through the durable
+  job pipeline, so a Redis-backed job store is required for synchronous, asynchronous,
+  and job routes.
 - **OGC API Maps does not claim the styled-map conformance class**, and temporal
   raster mosaics use newest-batch semantics — layers with mixed-date scenes can show
   coverage gaps under a `datetime` filter until per-pixel temporal mosaicking lands.

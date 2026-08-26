@@ -221,7 +221,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             .GetProperty("oneOf").EnumerateArray().ToArray();
         wkbSchemas.Should().Contain(schema =>
             schema.GetProperty("type").GetString() == "string"
-            && schema.GetProperty("contentMediaType").GetString() == "application/wkb");
+            && schema.GetProperty("contentMediaType").GetString() == "application/wkb"
+            && schema.GetProperty("format").GetString() == "byte");
         wkbSchemas.Should().Contain(schema =>
             schema.GetProperty("type").GetString() == "object"
             && schema.GetProperty("contentMediaType").GetString() == "application/geo+json");
