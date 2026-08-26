@@ -138,7 +138,9 @@ internal static class ConsoleAccessEndpoints
             ActiveCount = users.Count(static user => user.IsActive),
             PendingCount = 0,
             DeactivatedCount = users.Count(static user => !user.IsActive),
-            CanInvite = true,
+            // Invitations are not mutable until a workspace-scoped invitation store and
+            // endpoint exist. Do not advertise a capability the server cannot honor.
+            CanInvite = false,
         };
 
         return Results.Ok(ApiResponse<ConsoleTeamMembership>.CreateSuccess(membership));
@@ -156,13 +158,31 @@ internal static class ConsoleAccessEndpoints
             return BadRequest(error);
         }
 
+        var requestedName = request.Name.Trim();
+        var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        if (HasRoleNameCollision(allRoles, requestedName))
+        {
+            return RoleNameConflict(requestedName);
+        }
+
         var role = new RoleDefinition
         {
-            Name = request.Name.Trim(),
+            Name = requestedName,
             Description = NormalizeDescription(request.Description),
             Permissions = grants,
         };
-        var created = await roleStore.CreateRoleAsync(role, context.RequestAborted).ConfigureAwait(false);
+        RoleDefinition created;
+        try
+        {
+            created = await roleStore.CreateRoleAsync(role, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // The durable store enforces the same global name uniqueness. Translate a
+            // race between the preflight and insert into the public conflict contract.
+            return RoleNameConflict(requestedName);
+        }
+
         _ = await roleStore.SetPermissionsAsync(created.RoleId, grants, context.RequestAborted).ConfigureAwait(false);
         created = await roleStore.GetRoleAsync(created.RoleId, context.RequestAborted).ConfigureAwait(false) ?? created;
         await RecordRoleAuditAsync(
@@ -203,16 +223,32 @@ internal static class ConsoleAccessEndpoints
             return Results.NotFound(ApiResponse<object>.Failure("Role not found."));
         }
 
-        var updated = await roleStore.UpdateRoleAsync(new RoleDefinition
+        var requestedName = request.Name.Trim();
+        var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
+        if (HasRoleNameCollision(allRoles, requestedName, existing.RoleId))
         {
-            RoleId = existing.RoleId,
-            Name = request.Name.Trim(),
-            Description = NormalizeDescription(request.Description),
-            IsBuiltIn = false,
-            Permissions = grants,
-            CreatedAt = existing.CreatedAt,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        }, context.RequestAborted).ConfigureAwait(false);
+            return RoleNameConflict(requestedName);
+        }
+
+        RoleDefinition? updated;
+        try
+        {
+            updated = await roleStore.UpdateRoleAsync(new RoleDefinition
+            {
+                RoleId = existing.RoleId,
+                Name = requestedName,
+                Description = NormalizeDescription(request.Description),
+                IsBuiltIn = false,
+                Permissions = grants,
+                CreatedAt = existing.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            }, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            return RoleNameConflict(requestedName);
+        }
+
         if (updated is null)
         {
             return Results.NotFound(ApiResponse<object>.Failure("Role not found."));
@@ -399,6 +435,14 @@ internal static class ConsoleAccessEndpoints
             .Select(static role => role.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    private static bool HasRoleNameCollision(
+        IReadOnlyList<RoleDefinition> roles,
+        string requestedName,
+        Guid? currentRoleId = null) =>
+        roles.Any(role =>
+            role.RoleId != currentRoleId &&
+            string.Equals(role.Name, requestedName, StringComparison.OrdinalIgnoreCase));
+
     private static bool TryValidateWrite(
         string workspaceId,
         ConsoleRoleWriteRequest? request,
@@ -539,4 +583,8 @@ internal static class ConsoleAccessEndpoints
 
     private static IResult BadRequest(string message) =>
         Results.BadRequest(ApiResponse<object>.Failure(message));
+
+    private static IResult RoleNameConflict(string roleName) =>
+        Results.Conflict(ApiResponse<object>.Failure(
+            $"Role name '{roleName}' is already in use. Role names must be unique across workspaces."));
 }
