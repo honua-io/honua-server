@@ -105,6 +105,7 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status403Forbidden)
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .Produces<OgcProcessError>(StatusCodes.Status409Conflict)
+            .Produces<OgcProcessError>(StatusCodes.Status410Gone)
             .Produces<OgcProcessError>(StatusCodes.Status408RequestTimeout)
             .Produces<OgcProcessError>(StatusCodes.Status500InternalServerError)
             .Produces<OgcProcessError>(StatusCodes.Status422UnprocessableEntity)

@@ -129,6 +129,39 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_MalformedNestedGeoJson_ReturnsSanitizedValidationError()
+    {
+        var malformedInputs = new[]
+        {
+            """{"type":"Feature","geometry":[]}""",
+            """{"type":"Feature","geometry":{}}""",
+            """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"coordinates":[0,0]}}]}"""
+        };
+
+        foreach (var geoJson in malformedInputs)
+        {
+            using var content = new StringContent(
+                "{\"inputs\":{\"wkb\":" + geoJson + ",\"srid\":4326,\"distance\":25.5}}",
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution",
+                content);
+
+            response.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest,
+                "malformed nested GeoJSON {0} must be rejected",
+                geoJson);
+            using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            error.RootElement.GetProperty("title").GetString().Should().Be("Invalid analysis plan");
+            error.RootElement.GetProperty("detail").GetString().Should().Contain("valid GeoJSON geometry");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_SynchronousFailure_ReturnsRegisteredJobFailedException()
     {
         _fixture.SetTerminalFailure("Worker rejected the input.");

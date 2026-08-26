@@ -275,11 +275,16 @@ public sealed class OpenApiDriftTests
             "raw mode is limited to the synchronous single-output execution path");
 
         var responses = execute.GetProperty("responses");
-        foreach (var status in new[] { "200", "201", "408", "409", "413", "499", "500" })
+        foreach (var status in new[] { "200", "201", "408", "409", "410", "413", "499", "500" })
         {
             responses.TryGetProperty(status, out _).Should().BeTrue(
                 "the execution operation must document runtime outcome {0}", status);
         }
+
+        responses.GetProperty("409").GetProperty("description").GetString().Should().NotContain("cancel",
+            "409 is reserved for conflicts rather than terminal job dismissal");
+        responses.GetProperty("410").GetProperty("description").GetString().Should().Contain("dismiss",
+            "synchronous cancellation uses the registered job-dismissed response");
 
         var success = responses.GetProperty("200");
         success.TryGetProperty("headers", out _).Should().BeFalse(
