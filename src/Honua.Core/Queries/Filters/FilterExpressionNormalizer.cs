@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -172,7 +173,11 @@ public static class FilterExpressionNormalizer
     {
         if (!schema.TryGetFieldType(property.PropertyName, out var fieldType))
         {
-            throw new ArgumentException($"Unknown field '{property.PropertyName}' in filter expression.");
+            // Typed so a caller fanning one filter across several resources (STAC item
+            // search over multiple collections) can tell an unresolvable property apart
+            // from an invalid filter. Message is unchanged; UnknownFilterFieldException
+            // derives from ArgumentException so existing handlers still map it to a 400.
+            throw UnknownFilterFieldException.ForProperty(property.PropertyName);
         }
 
         return fieldType switch

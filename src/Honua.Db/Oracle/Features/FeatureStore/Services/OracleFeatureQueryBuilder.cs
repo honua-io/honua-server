@@ -210,8 +210,7 @@ internal static partial class OracleFeatureQueryBuilder
 
         foreach (var column in columns)
         {
-            OracleIdentifier.EnsureValid(column, "attribute column");
-            sb.Append(", ").Append(OracleIdentifier.Quote(column));
+            sb.Append(", ").Append(OracleIdentifier.QuoteAttribute(column));
         }
     }
 
@@ -401,9 +400,8 @@ internal static partial class OracleFeatureQueryBuilder
         foreach (var orderBy in query.OrderBy.Value)
         {
             var column = resolveColumnName(orderBy.Field);
-            OracleIdentifier.EnsureValid(column, "order-by column");
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{OracleIdentifier.Quote(column)} {direction}");
+            clauses.Add($"{OracleIdentifier.QuoteAttribute(column)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));

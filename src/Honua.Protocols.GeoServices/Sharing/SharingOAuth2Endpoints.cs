@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -32,6 +33,7 @@ internal static class SharingOAuth2Endpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .WithDisplayName("ArcGIS Portal OAuth2 Authorize")
             .WithName("SharingRestOAuth2Authorize")
             .WithSummary("Initiate the ArcGIS named-user authorization-code flow")
@@ -43,6 +45,7 @@ internal static class SharingOAuth2Endpoints
             .Produces(StatusCodes.Status404NotFound);
 
         endpoints.MapGet(PortalOAuthRoutes.CallbackPath, HandleCallbackAsync)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .WithDisplayName("ArcGIS Portal OAuth2 Callback")
             .WithName("SharingRestOAuth2Callback")
             .WithSummary("OIDC provider return endpoint for the ArcGIS named-user flow")

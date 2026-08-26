@@ -8,6 +8,8 @@
 // route opts into AllowAnonymous explicitly so authorization-policy tooling
 // can see the intent rather than treating it as an accidental gap.
 
+using Honua.Infrastructure.Middleware;
+
 namespace Honua.Protocols.GeoServices.MapServer;
 
 /// <summary>
@@ -99,6 +101,7 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerExportTiles")
             .WithSummary("Export rendered map tiles to a storage-backed archive")
             .WithDescription("Exports bounded WebMercatorQuad PNG tiles to configured cloud file storage")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/exportTiles",

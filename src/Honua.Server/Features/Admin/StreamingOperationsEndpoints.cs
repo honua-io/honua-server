@@ -7,6 +7,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -35,6 +36,7 @@ internal static class StreamingOperationsEndpoints
         group.MapGet("/alerts", HandleAlertStream)
             .WithDisplayName("Stream Alert Notifications")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(WebSocketEndpointMetadata.Instance)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapDelete("/subscribers/{subscriberId:guid}", HandleDisconnectSubscriber)

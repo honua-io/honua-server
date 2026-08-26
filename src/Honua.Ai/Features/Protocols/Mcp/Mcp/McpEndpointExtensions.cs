@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -87,6 +88,7 @@ internal static class McpEndpointExtensions
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpDataAccessSurfaceStream")
+            .WithMetadata(LongLivedStreamEndpointMetadata.Instance)
             .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
             .WithDescription("Streamable-HTTP transport GET endpoint. Opens a text/event-stream the server uses to push notifications (e.g. progress, listChanged). Requires a valid Mcp-Session-Id.")
             .WithTags("Mcp");

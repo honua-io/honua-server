@@ -84,6 +84,21 @@ public sealed record FilterTranslationResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// Whether the failure was caused by a property the resource does not declare, as opposed
+    /// to a malformed or unsupported expression.
+    /// </summary>
+    /// <remarks>
+    /// Callers that evaluate one filter against several resources use this to tell "this
+    /// collection does not have that field, skip it" apart from "this filter is invalid,
+    /// reject the request". Normalisation already surfaced the distinction through
+    /// <c>UnknownFilterFieldException</c>; translation must surface it too, because
+    /// normalisation only resolves properties that appear in comparison-to-literal position
+    /// and an unknown field first becomes visible at translation for every other shape
+    /// (review finding on honua-server#3489).
+    /// </remarks>
+    public bool IsUnknownField { get; init; }
+
+    /// <summary>
     /// Creates a successful translation result.
     /// </summary>
     /// <param name="expression">Translated expression.</param>
@@ -95,8 +110,11 @@ public sealed record FilterTranslationResult
     /// Creates a failed translation result.
     /// </summary>
     /// <param name="errorMessage">Failure reason.</param>
-    public static FilterTranslationResult Failure(string errorMessage) =>
-        new() { IsSuccess = false, ErrorMessage = errorMessage };
+    /// <param name="isUnknownField">
+    /// Whether the failure was an unknown property rather than an invalid expression.
+    /// </param>
+    public static FilterTranslationResult Failure(string errorMessage, bool isUnknownField = false) =>
+        new() { IsSuccess = false, ErrorMessage = errorMessage, IsUnknownField = isUnknownField };
 }
 
 /// <summary>

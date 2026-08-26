@@ -76,7 +76,22 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
         result.Sql.Should().Contain(" LIMIT $");
     }
 
-    private static MetadataV2Resource CreateResource()
+    [Fact]
+    public void BuildSelectFlatGeobufQuery_WithOverlongAlias_RejectsInsteadOfTruncating()
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
+        var resource = CreateResource(Field(new string('a', 64), MetadataV2FieldType.String));
+
+        var build = () => queryBuilder.BuildSelectFlatGeobufQuery(
+            resource, layerId: 1, query: new FeatureQuery());
+
+        build.Should().Throw<ArgumentException>()
+            .WithMessage("*cannot be represented as a PostgreSQL binary projection alias*");
+    }
+
+    private static MetadataV2Resource CreateResource(params MetadataV2Field[] additionalFields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test-layer", Name = "Test Layer" },
@@ -94,6 +109,7 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
                 Field("name", MetadataV2FieldType.String),
                 Field("population", MetadataV2FieldType.Integer),
                 Field("active", MetadataV2FieldType.Boolean),
+                .. additionalFields,
             ],
         };
 
