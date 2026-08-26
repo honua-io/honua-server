@@ -53,23 +53,50 @@ public sealed class WebSocketEndpointMetadata
 /// </remarks>
 internal sealed class HeadRequestRejectedEndpointMetadata
 {
+    private readonly Func<HttpContext, bool> _shouldReject;
+
     /// <summary>
     /// Creates metadata for a side-effecting GET endpoint that rejects HEAD.
     /// </summary>
     /// <param name="allowedMethods">Methods clients may use for the operation.</param>
     public HeadRequestRejectedEndpointMetadata(IReadOnlyList<string> allowedMethods)
+        : this(allowedMethods, static _ => true)
+    {
+    }
+
+    /// <summary>
+    /// Creates metadata for an endpoint where only selected GET-compatible requests have side
+    /// effects and must reject HEAD.
+    /// </summary>
+    /// <param name="allowedMethods">Methods clients may use for the selected operation.</param>
+    /// <param name="shouldReject">
+    /// A predicate evaluated after routing and before the handler runs. It returns
+    /// <see langword="true"/> when the selected request must reject HEAD.
+    /// </param>
+    public HeadRequestRejectedEndpointMetadata(
+        IReadOnlyList<string> allowedMethods,
+        Func<HttpContext, bool> shouldReject)
     {
         ArgumentNullException.ThrowIfNull(allowedMethods);
+        ArgumentNullException.ThrowIfNull(shouldReject);
         if (allowedMethods.Count == 0 || allowedMethods.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException("At least one non-empty allowed method is required.", nameof(allowedMethods));
         }
 
         AllowedMethods = [.. allowedMethods];
+        _shouldReject = shouldReject;
     }
 
     /// <summary>Methods advertised in the synthetic 405 response's <c>Allow</c> header.</summary>
     public IReadOnlyList<string> AllowedMethods { get; }
+
+    /// <summary>Returns whether this routed HEAD request must stop before endpoint execution.</summary>
+    public bool ShouldReject(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return _shouldReject(context);
+    }
 }
 
 /// <summary>
@@ -568,7 +595,8 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
             return;
         }
 
-        if (endpoint?.Metadata.GetMetadata<HeadRequestRejectedEndpointMetadata>() is { } rejected)
+        if (endpoint?.Metadata.GetMetadata<HeadRequestRejectedEndpointMetadata>() is { } rejected &&
+            rejected.ShouldReject(context))
         {
             context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
             context.Response.Headers.Allow = string.Join(", ", rejected.AllowedMethods);

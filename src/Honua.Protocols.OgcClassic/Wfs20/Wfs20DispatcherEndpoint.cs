@@ -90,6 +90,14 @@ internal static class Wfs20DispatcherEndpoint
     internal static readonly IReadOnlySet<string> ImplementedOperations =
         new HashSet<string>(_operationHandlers.Keys, StringComparer.OrdinalIgnoreCase);
 
+    private static readonly HashSet<string> HeadRejectedKvpOperations =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Transaction",
+            "CreateStoredQuery",
+            "DropStoredQuery",
+        };
+
     private static readonly string[] SupportedHttpMethods = new[] { "GET", "POST" };
     /// <summary>
     /// Maps the single WFS 2.0 dispatcher endpoint
@@ -108,6 +116,7 @@ internal static class Wfs20DispatcherEndpoint
         // so disabling caching for the whole dispatcher keeps reads correct without a measurable cost.
         // Mirrors the WMTS and WCS classic endpoints, which opt out the same way.
         endpoints.MapMethods("/wfs", SupportedHttpMethods, HandleWfsRequest)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata(SupportedHttpMethods, ShouldRejectHead))
             .WithDisplayName("WFS 2.0 Service")
             .WithName("Wfs20Service")
             .WithSummary("OGC Web Feature Service 2.0")
@@ -120,6 +129,19 @@ internal static class Wfs20DispatcherEndpoint
             .Produces(405);
 
         return endpoints;
+    }
+
+    /// <summary>
+    /// Rejects HEAD only for the KVP operations that mutate features or stored-query state.
+    /// Discovery and query operations on the same route retain normal GET-equivalent HEAD
+    /// behavior.
+    /// </summary>
+    private static bool ShouldRejectHead(HttpContext context)
+    {
+        var operation = context.Request.Query[Wfs20Utilities.ParameterNames.Request]
+            .FirstOrDefault()
+            ?.Trim();
+        return operation is not null && HeadRejectedKvpOperations.Contains(operation);
     }
 
     /// <summary>
