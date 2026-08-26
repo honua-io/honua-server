@@ -101,7 +101,7 @@ Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `b
 | GET | `/ogc/processes/jobs`, `.../jobs/{jobId}`, `.../jobs/{jobId}/results` | Job list (active only, `limit`), status, results. |
 | DELETE | `/ogc/processes/jobs/{jobId}` | Dismiss (cancel) a job. |
 
-The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. Job endpoints require Redis-backed durable storage (503 otherwise).
+The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
 
 In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/honua-geoprocessing/execution` with `Prefer: respond-async` and this body:
 
