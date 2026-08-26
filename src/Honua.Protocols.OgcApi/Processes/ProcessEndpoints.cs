@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
@@ -13,6 +14,8 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
@@ -36,7 +39,7 @@ internal static class ProcessEndpoints
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime.",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
+        JobControlOptions = ImmutableArray.Create("async-execute"),
         OutputTransmission = ImmutableArray.Create("value")
     };
 
@@ -54,7 +57,7 @@ internal static class ProcessEndpoints
                       "document-mode results body (empty until the canonical process declares " +
                       "value-typed outputs).",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
+        JobControlOptions = ImmutableArray.Create("async-execute"),
         OutputTransmission = ImmutableArray.Create("value"),
         Inputs = ImmutableDictionary.CreateRange(new[]
         {
@@ -96,13 +99,17 @@ internal static class ProcessEndpoints
             .WithSummary("Execute a process")
             .Accepts<OgcExecuteRequest>(MediaTypes.Json)
             .Produces<OgcResultsDocument>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status200OK, contentType: MediaTypes.GeoJson)
             .Produces<OgcStatusInfo>(StatusCodes.Status201Created)
             .Produces<OgcProcessError>(StatusCodes.Status400BadRequest)
             .Produces<OgcProcessError>(StatusCodes.Status401Unauthorized)
             .Produces<OgcProcessError>(StatusCodes.Status403Forbidden)
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .Produces<OgcProcessError>(StatusCodes.Status409Conflict)
+            .Produces<OgcProcessError>(StatusCodes.Status410Gone)
+            .Produces<OgcProcessError>(StatusCodes.Status413PayloadTooLarge)
             .Produces<OgcProcessError>(StatusCodes.Status408RequestTimeout)
+            .Produces(StatusCodes.Status499ClientClosedRequest)
             .Produces<OgcProcessError>(StatusCodes.Status500InternalServerError)
             .Produces<OgcProcessError>(StatusCodes.Status422UnprocessableEntity)
             .Produces<OgcProcessError>(StatusCodes.Status501NotImplemented)
@@ -197,12 +204,9 @@ internal static class ProcessEndpoints
         EnrichActivity("ExecuteProcess");
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
-        // OGC API Processes Part 1 §7.9.4: inspect the Prefer header once so
-        // both respond-async and respond-sync can be checked against the same
-        // header values.
-        var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
-        var requestedSync = hasPreferHeader
-            && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
+        // OGC API Processes Part 1 defines respond-async. Omission selects
+        // synchronous execution when the catalog says the process supports it.
+        var preferAsync = HasPreference(context.Request.Headers["Prefer"], "respond-async");
 
         try
         {
@@ -227,10 +231,13 @@ internal static class ProcessEndpoints
                 return OgcProcessesResults.NoSuchProcess(processId);
             }
 
-            var preferSync = requestedSync
-                && (string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
-                    || definition != null
-                    && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0);
+            // The canonical process accepts arbitrary multi-step plans whose inner
+            // processes may be async-only. Keep that plan surface asynchronous;
+            // synchronous execution is safe only for a concrete catalog definition
+            // that explicitly advertises the capability.
+            var supportsSync = definition != null
+                && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0;
+            var executeSynchronously = supportsSync && !preferAsync;
 
             OgcExecuteRequest? request;
             try
@@ -267,17 +274,34 @@ internal static class ProcessEndpoints
                     "Request body is required.");
             }
 
+            var rawResponse = string.Equals(request.Response, "raw", StringComparison.OrdinalIgnoreCase);
             if (request.Response != null
-                && !string.Equals(request.Response, "document", StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(request.Response, "document", StringComparison.OrdinalIgnoreCase)
+                && !rawResponse)
             {
                 OgcProcessesLog.UnsupportedResponseMode(logger, processId, request.Response);
                 return OgcProcessesResults.Error(
                     StatusCodes.Status501NotImplemented,
                     "Unsupported response mode",
-                    $"Response mode '{request.Response}' is not supported. V1 only supports 'document' mode.");
+                    $"Response mode '{request.Response}' is not supported.");
             }
 
-            if (!TryBuildAnalysisPlan(processId, request, definition, out var analysisPlan, out var parseError))
+            if (rawResponse && !executeSynchronously)
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid response mode",
+                    "Raw responses require a supported synchronous value request.");
+            }
+
+            var geometryService = context.RequestServices.GetRequiredService<IGeometryService>();
+            if (!TryBuildAnalysisPlan(
+                    processId,
+                    request,
+                    definition,
+                    geometryService,
+                    out var analysisPlan,
+                    out var parseError))
             {
                 OgcProcessesLog.PlanStructureInvalid(logger, processId, parseError ?? "Unknown plan parsing error.");
                 return OgcProcessesResults.Error(
@@ -286,7 +310,7 @@ internal static class ProcessEndpoints
                     parseError ?? "The analysis plan payload is invalid.");
             }
 
-            OgcProcessesLog.ExecutionRequested(logger, processId, !preferSync);
+            OgcProcessesLog.ExecutionRequested(logger, processId, !executeSynchronously);
 
             var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -309,15 +333,13 @@ internal static class ProcessEndpoints
 
             OgcProcessesLog.JobCreated(logger, jobRecord.OperationId, processId);
 
-            if (preferSync)
+            if (executeSynchronously)
             {
                 var terminal = await terminalService.WaitForResultAsync(
                     jobRecord.OperationId,
                     context.User,
                     TimeSpan.FromSeconds(30),
                     cancellationToken).ConfigureAwait(false);
-                context.Response.Headers["Preference-Applied"] = "respond-sync";
-
                 if (terminal.Outcome is GeoprocessingTerminalResultOutcome.Timeout
                     or GeoprocessingTerminalResultOutcome.ClientDisconnected)
                 {
@@ -329,16 +351,15 @@ internal static class ProcessEndpoints
 
                 return terminal.Outcome switch
                 {
-                    GeoprocessingTerminalResultOutcome.Succeeded => JobEndpoints.BuildResultsResponse(
-                        context, logger, jobRecord.OperationId, terminal.ResultPackage!),
-                    GeoprocessingTerminalResultOutcome.Failed => OgcProcessesResults.Error(
-                        StatusCodes.Status500InternalServerError,
-                        "Process execution failed",
-                        terminal.Job?.ErrorMessage ?? $"Job '{jobRecord.OperationId}' failed."),
-                    GeoprocessingTerminalResultOutcome.Cancelled => OgcProcessesResults.Error(
-                        StatusCodes.Status409Conflict,
-                        "Process execution cancelled",
-                        $"Job '{jobRecord.OperationId}' was cancelled."),
+                    GeoprocessingTerminalResultOutcome.Succeeded => rawResponse
+                        ? BuildRawResultsResponse(context, terminal.ResultPackage!)
+                        : JobEndpoints.BuildResultsResponse(
+                            context, logger, jobRecord.OperationId, terminal.ResultPackage!),
+                    GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(
+                        jobRecord.OperationId,
+                        terminal.Job?.ErrorMessage),
+                    GeoprocessingTerminalResultOutcome.Cancelled => JobEndpoints.BuildJobDismissedResult(
+                        jobRecord.OperationId),
                     GeoprocessingTerminalResultOutcome.NotFound => OgcProcessesResults.NoSuchJob(jobRecord.OperationId),
                     GeoprocessingTerminalResultOutcome.Timeout => OgcProcessesResults.Error(
                         StatusCodes.Status408RequestTimeout,
@@ -359,10 +380,11 @@ internal static class ProcessEndpoints
 
             context.Response.Headers.Location = $"{baseUrl}{BasePath}/jobs/{jobRecord.OperationId}";
 
-            // OGC API Processes Part 1 §7.9.4.2: the server SHALL include
-            // Preference-Applied: respond-async on every async 201 response,
-            // regardless of whether the client sent a Prefer header.
-            context.Response.Headers["Preference-Applied"] = "respond-async";
+            // Acknowledge only a client preference that was actually honored.
+            if (preferAsync)
+            {
+                context.Response.Headers["Preference-Applied"] = "respond-async";
+            }
 
             return Results.Json(
                 statusInfo,
@@ -514,6 +536,7 @@ internal static class ProcessEndpoints
         string processId,
         OgcExecuteRequest request,
         ProcessDefinition? processDefinition,
+        IGeometryService geometryService,
         out AnalysisPlan? plan,
         out string? error)
     {
@@ -540,6 +563,7 @@ internal static class ProcessEndpoints
         }
 
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var inputSrid = TryReadInputSrid(request.Inputs);
         foreach (var input in request.Inputs)
         {
             if (input.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
@@ -548,7 +572,28 @@ internal static class ProcessEndpoints
                 return false;
             }
 
-            inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
+            var parameter = processDefinition.Parameters.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, input.Key, StringComparison.Ordinal));
+            if (parameter?.ValueType == ProcessParameterValueType.Wkb
+                && input.Value.ValueKind == JsonValueKind.Object)
+            {
+                if (!TryConvertGeoJsonInput(
+                        input.Key,
+                        input.Value,
+                        inputSrid,
+                        geometryService,
+                        out var normalized,
+                        out error))
+                {
+                    return false;
+                }
+
+                inputs[input.Key] = normalized!;
+            }
+            else
+            {
+                inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
+            }
         }
 
         var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
@@ -572,6 +617,80 @@ internal static class ProcessEndpoints
         return true;
     }
 
+    private static int? TryReadInputSrid(ImmutableDictionary<string, JsonElement> inputs)
+    {
+        if (!inputs.TryGetValue("srid", out var srid))
+        {
+            return null;
+        }
+
+        if (srid.ValueKind == JsonValueKind.Number && srid.TryGetInt32(out var numeric))
+        {
+            return numeric;
+        }
+
+        return srid.ValueKind == JsonValueKind.String
+            && int.TryParse(srid.GetString(), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var text)
+            ? text
+            : null;
+    }
+
+    internal static bool TryConvertGeoJsonInput(
+        string inputName,
+        JsonElement input,
+        int? srid,
+        IGeometryService geometryService,
+        out string? normalized,
+        out string? error)
+    {
+        normalized = null;
+        error = null;
+        var geoJson = input;
+        var isDirectGeoJson = input.ValueKind == JsonValueKind.Object
+            && input.TryGetProperty("type", out var type)
+            && type.ValueKind == JsonValueKind.String;
+        if (!isDirectGeoJson && input.TryGetProperty("value", out var value))
+        {
+            if (input.TryGetProperty("mediaType", out var mediaType)
+                && (mediaType.ValueKind != JsonValueKind.String
+                    || !string.Equals(mediaType.GetString(), "application/geo+json", StringComparison.OrdinalIgnoreCase)))
+            {
+                error = $"Input '{inputName}' declares an unsupported mediaType.";
+                return false;
+            }
+
+            geoJson = value;
+        }
+
+        if (geoJson.ValueKind != JsonValueKind.Object)
+        {
+            error = $"Input '{inputName}' GeoJSON value must be an object.";
+            return false;
+        }
+
+        try
+        {
+            var wkb = geometryService.ConvertGeoJsonToWkb(
+                geoJson.GetRawText(),
+                srid,
+                allowContainers: true);
+            if (wkb == null || wkb.Length == 0)
+            {
+                error = $"Input '{inputName}' must contain a GeoJSON geometry.";
+                return false;
+            }
+
+            normalized = Convert.ToBase64String(wkb);
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            error = $"Input '{inputName}' must contain valid GeoJSON geometry.";
+            return false;
+        }
+    }
+
     private static string JsonElementToCanonicalInput(JsonElement element)
         => element.ValueKind switch
         {
@@ -579,6 +698,101 @@ internal static class ProcessEndpoints
             JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => element.GetRawText(),
             _ => element.GetRawText()
         };
+
+    private static bool HasPreference(IEnumerable<string?> values, string preference)
+        => values
+            .SelectMany(value => (value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries))
+            .Select(value => value.Split(';', 2, StringSplitOptions.TrimEntries)[0])
+            .Any(value => string.Equals(value.Trim(), preference, StringComparison.OrdinalIgnoreCase));
+
+    private static IResult BuildRawResultsResponse(
+        HttpContext context,
+        AnalysisResultPackage resultPackage)
+    {
+        if (resultPackage.Artifacts.Count != 1)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Raw response unavailable",
+                "Raw response mode requires exactly one value output.");
+        }
+
+        var artifact = resultPackage.Artifacts[0];
+        var uri = artifact.Uri;
+        var separator = uri?.IndexOf(',') ?? -1;
+        if (string.IsNullOrWhiteSpace(uri)
+            || !uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            || separator <= 5)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Raw response unavailable",
+                "The single output is a reference and cannot be returned as a raw value.");
+        }
+
+        var descriptor = uri[5..separator];
+        if (!descriptor.EndsWith(";base64", StringComparison.OrdinalIgnoreCase))
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status400BadRequest,
+                "Raw response unavailable",
+                "The single output is not an inline base64 value.");
+        }
+
+        var mediaTypeSeparator = descriptor.IndexOf(';');
+        var mediaType = mediaTypeSeparator > 0
+            ? descriptor[..mediaTypeSeparator]
+            : artifact.ContentType ?? "application/octet-stream";
+        if (!MediaTypeHeaderValue.TryParse(mediaType, out _))
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status500InternalServerError,
+                "Invalid process result",
+                "The inline result declares an invalid media type.");
+        }
+
+        var encoded = uri[(separator + 1)..];
+        var maxArtifactBytes = context.RequestServices
+            .GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
+            ?? 50L * 1024L * 1024L;
+        var estimatedBytes = (encoded.Length / 4L) * 3L;
+        if (encoded.EndsWith("==", StringComparison.Ordinal))
+        {
+            estimatedBytes -= 2L;
+        }
+        else if (encoded.EndsWith('='))
+        {
+            estimatedBytes -= 1L;
+        }
+        if (estimatedBytes > maxArtifactBytes)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status413PayloadTooLarge,
+                "Raw response too large",
+                "The inline result exceeds the configured artifact response limit.");
+        }
+
+        try
+        {
+            var payload = Convert.FromBase64String(encoded);
+            if (payload.LongLength > maxArtifactBytes)
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status413PayloadTooLarge,
+                    "Raw response too large",
+                    "The inline result exceeds the configured artifact response limit.");
+            }
+
+            return Results.Bytes(payload, mediaType);
+        }
+        catch (FormatException)
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status500InternalServerError,
+                "Invalid process result",
+                "The inline result payload is not valid base64 data.");
+        }
+    }
 
     private static OgcProcessSummary ToOgcProcessSummary(ProcessDefinition definition, string baseUrl)
         => new()
@@ -650,20 +864,35 @@ internal static class ProcessEndpoints
                 : parameter.Description,
             Schema = new OgcProcessIoSchema
             {
-                Type = parameter.ValueType switch
-                {
-                    ProcessParameterValueType.WholeNumber or ProcessParameterValueType.Srid => "integer",
-                    ProcessParameterValueType.FloatingPoint => "number",
-                    ProcessParameterValueType.Flag => "boolean",
-                    ProcessParameterValueType.WkbArray => "array",
-                    _ => "string"
-                },
+                Type = parameter.ValueType == ProcessParameterValueType.Wkb
+                    ? null
+                    : parameter.ValueType switch
+                    {
+                        ProcessParameterValueType.WholeNumber or ProcessParameterValueType.Srid => "integer",
+                        ProcessParameterValueType.FloatingPoint => "number",
+                        ProcessParameterValueType.Flag => "boolean",
+                        ProcessParameterValueType.WkbArray => "array",
+                        _ => "string"
+                    },
                 ContentMediaType = parameter.ValueType switch
                 {
-                    ProcessParameterValueType.Wkb => "application/wkb",
                     ProcessParameterValueType.WkbArray => "application/json",
                     _ => null
-                }
+                },
+                OneOf = parameter.ValueType == ProcessParameterValueType.Wkb
+                    ? ImmutableArray.Create(
+                        new OgcProcessIoSchema
+                        {
+                            Type = "string",
+                            Format = "byte",
+                            ContentMediaType = "application/wkb"
+                        },
+                        new OgcProcessIoSchema
+                        {
+                            Type = "object",
+                            ContentMediaType = "application/geo+json"
+                        })
+                    : null
             }
         };
 
@@ -679,11 +908,32 @@ internal static class ProcessEndpoints
             {
                 Title = name,
                 Description = $"Artifact result of type {kind}.",
-                Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = MediaTypes.Json }
+                Schema = GetDefaultOutputSchema(kind)
             };
         }
 
         return outputs.ToImmutable();
+    }
+
+    internal static string GetDefaultOutputContentMediaType(ArtifactKind kind)
+        => kind switch
+        {
+            ArtifactKind.FeatureLayer => "application/geo+json",
+            ArtifactKind.Raster => "image/tiff",
+            ArtifactKind.Table or ArtifactKind.Report or ArtifactKind.Scalar or ArtifactKind.Map => MediaTypes.Json,
+            ArtifactKind.File or ArtifactKind.AppBundle => "application/octet-stream",
+            _ => "application/octet-stream"
+        };
+
+    internal static OgcProcessIoSchema GetDefaultOutputSchema(ArtifactKind kind)
+    {
+        var isBinary = kind is ArtifactKind.Raster or ArtifactKind.File or ArtifactKind.AppBundle;
+        return new OgcProcessIoSchema
+        {
+            Type = isBinary ? "string" : "object",
+            Format = isBinary ? "binary" : null,
+            ContentMediaType = GetDefaultOutputContentMediaType(kind)
+        };
     }
 
     private static void AddOutputBindings(

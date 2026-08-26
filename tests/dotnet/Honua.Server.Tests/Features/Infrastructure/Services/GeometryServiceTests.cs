@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -84,6 +85,97 @@ public sealed class GeometryServiceTests
         ex.Message.Should().NotContain("LineNumber");
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"point\"")]
+    public void ConvertGeoJsonToWkb_WithNonObjectRoot_ReturnsSanitizedError(string geoJson)
+    {
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
+    [Theory]
+    [InlineData("""{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""")]
+    [InlineData("""{"type":"FeatureCollection","features":[]}""")]
+    public void ConvertGeoJsonToWkb_WithContainerWithoutOptIn_ReturnsSanitizedError(string geoJson)
+    {
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
+    [Theory]
+    [InlineData("""{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""", 1)]
+    [InlineData("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}},{"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{}}]}""", 2)]
+    public void ConvertGeoJsonToWkb_WithGeoJsonContainer_ExtractsAllGeometries(string geoJson, int expectedCount)
+    {
+        var wkb = _service.ConvertGeoJsonToWkb(geoJson, 4326, allowContainers: true);
+
+        wkb.Should().NotBeNull();
+        var geometry = new WKBReader().Read(wkb!);
+        geometry.SRID.Should().Be(4326);
+        geometry.NumGeometries.Should().Be(expectedCount);
+    }
+
+    [Theory]
+    [InlineData("""{"geometry":{"type":"Point","coordinates":[1,2]}}""")]
+    [InlineData("""{"type":"Point","geometry":{"type":"Point","coordinates":[1,2]}}""")]
+    public void ConvertGeoJsonToWkb_WithInvalidFeatureCollectionMember_ReturnsSanitizedError(string member)
+    {
+        var geoJson = $$"""{"type":"FeatureCollection","features":[{{member}}]}""";
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson, 4326, allowContainers: true);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
+    [Theory]
+    [InlineData("""{"type":"FeatureCollection","features":[]}""", true)]
+    [InlineData("""{"type":"GeometryCollection","geometries":[]}""", false)]
+    [InlineData("""{"type":"Polygon","coordinates":[]}""", false)]
+    [InlineData("""{"type":"MultiPoint","coordinates":[]}""", false)]
+    [InlineData("""{"type":"MultiLineString","coordinates":[]}""", false)]
+    [InlineData("""{"type":"MultiPolygon","coordinates":[]}""", false)]
+    [InlineData("""{"type":"Feature","geometry":{"type":"GeometryCollection","geometries":[]},"properties":{}}""", true)]
+    public void ConvertGeoJsonToWkb_WithEmptyGeometry_ReturnsSanitizedError(string geoJson, bool allowContainers)
+    {
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson, 4326, allowContainers);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
+    [Fact]
+    public void GeometryServiceContract_PreservesLegacyGeoJsonConversionSignature()
+    {
+        var method = typeof(IGeometryService).GetMethod(
+            nameof(IGeometryService.ConvertGeoJsonToWkb),
+            [typeof(string), typeof(int?)]);
+
+        method.Should().NotBeNull();
+        method!.IsAbstract.Should().BeTrue();
+        method.GetParameters()[1].HasDefaultValue.Should().BeTrue();
+        method.GetParameters()[1].DefaultValue.Should().BeNull();
+    }
+
+    [Fact]
+    public void GeometryServiceContract_LegacyImplementationSupportsCompatibleCalls()
+    {
+        IGeometryService service = new LegacyGeometryService();
+
+        service.ConvertGeoJsonToWkb("legacy", 4326).Should().Equal(1, 2, 3);
+        service.ConvertGeoJsonToWkb("legacy", 4326, allowContainers: false).Should().Equal(1, 2, 3);
+
+        var action = () => service.ConvertGeoJsonToWkb("legacy", 4326, allowContainers: true);
+        var exception = action.Should().Throw<NotSupportedException>().Which;
+        exception.Message.Should().Be(
+            "GeoJSON container conversion is not supported by this geometry service implementation.");
+    }
+
 
     [Fact]
     public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
@@ -132,5 +224,22 @@ public sealed class GeometryServiceTests
         ex.Message.Should().Contain("Invalid WKB geometry format.");
         ex.Message.Should().NotContain("BytePositionInLine");
         ex.Message.Should().NotContain("LineNumber");
+    }
+
+    private sealed class LegacyGeometryService : IGeometryService
+    {
+        public (bool HasZ, bool HasM) DetectZM(byte[]? wkb) => (false, false);
+
+        public (bool HasZ, bool HasM) DetectZM(Memory<byte> wkb) => (false, false);
+
+        public string? ConvertWkbToGeoJson(byte[]? wkb) => null;
+
+        public string? ConvertWkbToGeoJson(Memory<byte> wkb) => null;
+
+        public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null) => [1, 2, 3];
+
+        public byte[]? ConvertWktToWkb(string? wkt, int? srid = null) => null;
+
+        public GeometryInfo? GetGeometryInfo(byte[]? wkb) => null;
     }
 }

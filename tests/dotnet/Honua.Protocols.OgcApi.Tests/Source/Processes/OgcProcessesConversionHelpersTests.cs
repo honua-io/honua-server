@@ -4,7 +4,9 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,6 +22,29 @@ public sealed class OgcProcessesConversionHelpersTests
     private const string BaseUrl = "https://example.com";
     private const string ProcessId = "honua-geoprocessing";
     private const string ResultsRelation = "http://www.opengis.net/def/rel/ogc/1.0/results";
+
+    [Theory]
+    [InlineData(ArtifactKind.Scalar, "application/json", "object", null)]
+    [InlineData(ArtifactKind.FeatureLayer, "application/geo+json", "object", null)]
+    [InlineData(ArtifactKind.Table, "application/json", "object", null)]
+    [InlineData(ArtifactKind.Raster, "image/tiff", "string", "binary")]
+    [InlineData(ArtifactKind.File, "application/octet-stream", "string", "binary")]
+    [InlineData(ArtifactKind.Report, "application/json", "object", null)]
+    [InlineData(ArtifactKind.Map, "application/json", "object", null)]
+    [InlineData(ArtifactKind.AppBundle, "application/octet-stream", "string", "binary")]
+    [Operation(Operations.ProcessDiscovery)]
+    public void GetDefaultOutputSchema_MapsEveryArtifactKind(
+        ArtifactKind kind,
+        string expectedMediaType,
+        string expectedType,
+        string? expectedFormat)
+    {
+        var schema = ProcessEndpoints.GetDefaultOutputSchema(kind);
+
+        schema.ContentMediaType.Should().Be(expectedMediaType);
+        schema.Type.Should().Be(expectedType);
+        schema.Format.Should().Be(expectedFormat);
+    }
 
     [Fact]
     [Operation(Operations.JobStatus)]
@@ -126,6 +151,26 @@ public sealed class OgcProcessesConversionHelpersTests
         inline.Payload.Should().Equal(0, 0, 0);
     }
 
+    [Fact]
+    [Operation(Operations.ProcessExecution)]
+    public void TryConvertGeoJsonInput_LegacyGeometryService_ReturnsSanitizedError()
+    {
+        using var document = JsonDocument.Parse(
+            """{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""");
+
+        var converted = ProcessEndpoints.TryConvertGeoJsonInput(
+            "wkb",
+            document.RootElement,
+            4326,
+            new LegacyGeometryService(),
+            out var normalized,
+            out var error);
+
+        converted.Should().BeFalse();
+        normalized.Should().BeNull();
+        error.Should().Be("Input 'wkb' must contain valid GeoJSON geometry.");
+    }
+
     private static ExecutionJobRecord CreateJob(ExecutionJobStatus status)
     {
         var now = DateTimeOffset.UtcNow;
@@ -143,5 +188,22 @@ public sealed class OgcProcessesConversionHelpersTests
                 WorkloadName = "test-workload"
             }
         };
+    }
+
+    private sealed class LegacyGeometryService : IGeometryService
+    {
+        public (bool HasZ, bool HasM) DetectZM(byte[]? wkb) => (false, false);
+
+        public (bool HasZ, bool HasM) DetectZM(Memory<byte> wkb) => (false, false);
+
+        public string? ConvertWkbToGeoJson(byte[]? wkb) => null;
+
+        public string? ConvertWkbToGeoJson(Memory<byte> wkb) => null;
+
+        public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null) => [1, 2, 3];
+
+        public byte[]? ConvertWktToWkb(string? wkt, int? srid = null) => null;
+
+        public GeometryInfo? GetGeometryInfo(byte[]? wkb) => null;
     }
 }

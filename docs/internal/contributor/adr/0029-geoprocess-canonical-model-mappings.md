@@ -4,6 +4,10 @@
 
 Accepted
 
+Amended in 2026-08 by honua-server#3268 to permit the bounded OGC raw-response
+subset described below. Document mode remains the default and the canonical
+multi-step plan surface remains asynchronous.
+
 For raster processes, [ADR-0071](0071-raster-execution-boundary.md) is the
 controlling engine and placement decision. As of ADR-0071's 2026-08-11
 single-engine amendment (honua-server#3085, #3167), ordinary non-ML
@@ -102,8 +106,9 @@ Adapters reshape it:
   document-mode body on success (empty `{}` until the canonical process
   declares value-typed outputs and the execution engine populates result
   storage); failed jobs return `500`, and dismissed jobs return `410`. This
-  is a Honua v1 adapter decision — the full OGC spec (§7.13) also supports
-  raw-mode responses and reference-based transmission, which are deferred
+  is the default Honua adapter behavior. A synchronous request may instead
+  select raw mode when it produces exactly one inline value; asynchronous,
+  referenced, and multi-output requests remain document mode.
 
 ### Parameter Translation Is An Adapter Concern
 
@@ -135,9 +140,10 @@ into the canonical model:
 4. **GeoServer PPIO and process groups**: GeoServer-internal concerns with no
    relevance to Honua's architecture.
 
-5. **OGC response mode negotiation** (`document` vs `raw`): deferred. V1
-   supports only document-mode responses. Raw-mode responses (direct media type,
-   multipart, `204` with `Link` headers) are out of scope.
+5. **OGC response mode negotiation** (`document` vs `raw`): document mode is
+   the default. Raw mode is supported only for bounded synchronous execution
+   that produces exactly one inline value. Raw multipart responses and `204`
+   responses with `Link` headers remain out of scope.
 
 6. **OGC output transmission negotiation** (`value` vs `reference`): deferred.
    When successful results are populated, V1 returns them by value.

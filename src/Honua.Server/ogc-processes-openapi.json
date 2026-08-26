@@ -141,7 +141,7 @@
           {
             "name": "Prefer",
             "in": "header",
-            "description": "Optional execution preference. Use 'respond-sync' for a bounded synchronous result or 'respond-async' for an asynchronous job. Async execution is the default when omitted.",
+            "description": "Optional execution preference. Use 'respond-async' for an asynchronous job. When omitted, processes advertising 'sync-execute' use bounded synchronous execution; async-only processes remain asynchronous. Other preference tokens are ignored.",
             "schema": { "type": "string" }
           }
         ],
@@ -158,16 +158,18 @@
         },
         "responses": {
           "200": {
-            "description": "Synchronous execution completed successfully",
-            "headers": {
-              "Preference-Applied": {
-                "description": "Confirms that the requested 'respond-sync' preference was applied.",
-                "schema": { "type": "string", "enum": ["respond-sync"] }
-              }
-            },
+            "description": "Synchronous execution completed successfully. Document mode returns a results document; raw mode returns the single inline output with its artifact media type.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Results" }
+                "schema": {
+                  "anyOf": [
+                    { "$ref": "#/components/schemas/Results" },
+                    { "$ref": "#/components/schemas/RawJsonValue" }
+                  ]
+                }
+              },
+              "application/geo+json": {
+                "schema": { "type": "object" }
               }
             }
           },
@@ -230,12 +232,31 @@
             }
           },
           "409": {
-            "description": "Synchronous execution was cancelled or conflicts with an existing execution",
+            "description": "Execution conflicts with an existing execution",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
               }
             }
+          },
+          "410": {
+            "description": "Synchronous execution observed a dismissed job",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "413": {
+            "description": "Synchronous raw output exceeds the configured inline artifact limit",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client disconnected during synchronous execution"
           },
           "500": {
             "description": "Synchronous process execution failed",
@@ -658,9 +679,18 @@
             "type": "string",
             "description": "JSON Schema type (string, number, object, array, etc.)."
           },
+          "format": {
+            "type": "string",
+            "description": "Optional JSON Schema format hint such as binary."
+          },
           "contentMediaType": {
             "type": "string",
             "description": "Content media type hint for complex inputs."
+          },
+          "oneOf": {
+            "type": "array",
+            "description": "Alternative schemas accepted for this value.",
+            "items": { "$ref": "#/components/schemas/ProcessIoSchema" }
           }
         }
       },
@@ -678,9 +708,9 @@
           },
           "response": {
             "type": "string",
-            "enum": ["document"],
+            "enum": ["document", "raw"],
             "default": "document",
-            "description": "Response mode. V1 only supports 'document'."
+            "description": "Response mode. 'raw' is supported for synchronous single-value results; asynchronous execution requires 'document'."
           }
         }
       },
@@ -789,6 +819,9 @@
         "type": "object",
         "description": "Document-mode results map keyed by output identifier (OGC API Processes Part 1 §7.11.1). V1 canonical process declares no value-typed outputs, so the map is empty.",
         "additionalProperties": true
+      },
+      "RawJsonValue": {
+        "description": "An arbitrary JSON object, array, string, number, boolean, or null returned by raw-mode synchronous execution."
       }
     }
   }
