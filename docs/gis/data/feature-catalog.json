@@ -17433,6 +17433,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_AnalyticPlanWithExecuteOnlyGrant_IsNotForbidden",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_Base64WkbInput_PreservesExistingCanonicalRepresentation",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_EmptyFeatureCollection_ReturnsSanitizedValidationErrorWithoutSubmittingJob",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_MalformedNestedGeoJson_ReturnsSanitizedValidationError",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_OmittedPreferForAsyncOnlyProcess_ReturnsAsyncWithoutAcknowledgement",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_OmittedPreferRawGeoJson_ReturnsInlineValueAndSubmitsCanonicalWkb",
