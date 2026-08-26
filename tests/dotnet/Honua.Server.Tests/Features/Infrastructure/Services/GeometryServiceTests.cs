@@ -120,6 +120,18 @@ public sealed class GeometryServiceTests
         geometry.NumGeometries.Should().Be(expectedCount);
     }
 
+    [Theory]
+    [InlineData("""{"geometry":{"type":"Point","coordinates":[1,2]}}""")]
+    [InlineData("""{"type":"Point","geometry":{"type":"Point","coordinates":[1,2]}}""")]
+    public void ConvertGeoJsonToWkb_WithInvalidFeatureCollectionMember_ReturnsSanitizedError(string member)
+    {
+        var geoJson = $$"""{"type":"FeatureCollection","features":[{{member}}]}""";
+        var action = () => _service.ConvertGeoJsonToWkb(geoJson, 4326, allowContainers: true);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Be("Invalid GeoJSON format.");
+    }
+
 
     [Fact]
     public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()

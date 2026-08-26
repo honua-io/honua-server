@@ -184,6 +184,9 @@ internal sealed class GeometryService : IGeometryService
     private static Geometry ReadFeatureGeometry(JsonElement feature, GeoJsonReader reader)
     {
         if (feature.ValueKind != JsonValueKind.Object
+            || !feature.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String
+            || !string.Equals(type.GetString(), "Feature", StringComparison.Ordinal)
             || !feature.TryGetProperty("geometry", out var geometry)
             || geometry.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
