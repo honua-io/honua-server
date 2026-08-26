@@ -11,6 +11,9 @@ internal sealed partial class FeatureQueryBuilder
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex ValidFieldNameRegex();
 
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_:]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex ValidJsonAttributeNameRegex();
+
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex NamedParameterRegex();
 
@@ -22,6 +25,19 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return ValidFieldNameRegex().IsMatch(fieldName);
+    }
+
+    private static bool IsValidJsonAttributeName(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return false;
+        }
+
+        // JSONB attribute keys are always bound as parameter values, never interpolated as
+        // SQL identifiers. Permit the namespace separator used by STAC-style canonical
+        // field names while retaining the stricter identifier rule for physical columns.
+        return ValidJsonAttributeNameRegex().IsMatch(fieldName);
     }
 
     internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)

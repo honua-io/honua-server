@@ -90,7 +90,7 @@ internal sealed partial class FeatureQueryBuilder
     {
         var fieldName = orderBy.Field;
 
-        if (!IsValidFieldName(fieldName))
+        if (!IsValidJsonAttributeName(fieldName))
         {
             throw new ArgumentException($"Invalid field name for ordering: {fieldName}");
         }
