@@ -39,6 +39,8 @@ public sealed class UniversalProgressStoreIntegrationTests
         var cache = provider.GetRequiredService<IDistributedCache>();
         var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance, multiplexer);
 
+        store.ProvidesClusterWideActiveOperationEnumeration.Should().BeTrue();
+
         await store.SetProgressAsync(
             "export-1",
             ExportProgress.CreateInitial("export-1", "csv", "svc", 1, 10),

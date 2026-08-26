@@ -735,6 +735,10 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle();
         page.Items[0].Kind.Should().Be(OperateEventKind.Alert);
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse("the service filter excludes progress-derived jobs");
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
     }
 
     [UnitTest]
@@ -756,6 +760,103 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().HaveCount(1);
         page.Items[0].EventId.Should().Be("job:job-new");
+        page.HasMore.Should().BeTrue();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_EmptyLocalProgressSnapshotIsPartialAndTruncated()
+    {
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: new FakeProgressStore());
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job)
+            .WhoseValue.Should().Be("job source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_LocalEnumerationCanOmitReachableRecordWithoutClaimingHasMore()
+    {
+        var store = new FakeProgressStore();
+        store.AddOutOfBand("peer-or-evicted", NewJob("peer-or-evicted", DateTimeOffset.UtcNow));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: store);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty("the process-local enumeration omitted the reachable record");
+        page.HasMore.Should().BeFalse("unknown coverage does not prove another matching row");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_ClusterWideProgressEnumerationCanBeComplete()
+    {
+        var store = new FakeProgressStore
+        {
+            ProvidesClusterWideActiveOperationEnumeration = true
+        };
+        store.Add(NewJob("cluster-wide", DateTimeOffset.UtcNow));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: store);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("cluster-wide");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_ClusterWideEnumerationNullRaceIsPartialAndTruncated()
+    {
+        var store = new FakeProgressStore
+        {
+            ProvidesClusterWideActiveOperationEnumeration = true
+        };
+        store.AddMissingActiveId("expired-after-enumeration");
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: store);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
 
     [UnitTest]
@@ -777,6 +878,9 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().HaveCount(1);
         page.Items[0].EventId.Should().Be("job:specific");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
         store.ActiveIdsCalls.Should().Be(0, "direct lookup must skip the unordered active-ids list");
     }
 
@@ -798,6 +902,8 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle();
         page.Items[0].EventId.Should().Be("job:job-failed");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
     }
 
     [UnitTest]
@@ -827,6 +933,10 @@ public sealed class LocalOperateEventFeedTests
         operationIds.Should().Contain("progress-only");
         page.Items.Should().ContainSingle(item => item.OperationId == "durable-job");
         page.Items.Single(item => item.OperationId == "durable-job").Title.Should().Be("Geoprocessing Running");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue("the process-local progress source may omit other jobs");
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
 
     [UnitTest]
@@ -848,7 +958,37 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle();
         page.Items[0].EventId.Should().Be("job:specific");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
         progressStore.ActiveIdsCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DirectDurableHitSkipsIncompleteProgressAndRemainsComplete()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(NewExecutionJob("durable-hit", now, ExecutionJobStatus.Running));
+        var progressStore = new FakeProgressStore();
+        progressStore.AddOutOfBand("durable-hit", NewJob("durable-hit", now.AddMinutes(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            OperationId = "durable-hit",
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("durable-hit");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
+        progressStore.ProgressGetCalls.Should().Be(0);
     }
 
     [UnitTest]
@@ -1160,6 +1300,7 @@ public sealed class LocalOperateEventFeedTests
         });
 
         page.Items.Should().ContainSingle().Which.OperationId.Should().Be("progress-fallback");
+        page.Truncated.Should().BeTrue();
         page.PartialResult.Should().BeTrue();
         page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
@@ -1210,6 +1351,7 @@ public sealed class LocalOperateEventFeedTests
         });
 
         page.Items.Should().ContainSingle().Which.OperationId.Should().Be("available");
+        page.Truncated.Should().BeTrue();
         page.PartialResult.Should().BeTrue();
         page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
@@ -1233,6 +1375,7 @@ public sealed class LocalOperateEventFeedTests
         });
 
         page.Items.Should().ContainSingle().Which.OperationId.Should().Be("durable-preserved");
+        page.Truncated.Should().BeTrue();
         page.PartialResult.Should().BeTrue();
         page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
@@ -1254,6 +1397,7 @@ public sealed class LocalOperateEventFeedTests
         });
 
         page.Items.Should().BeEmpty();
+        page.Truncated.Should().BeTrue();
         page.PartialResult.Should().BeTrue();
         page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
@@ -1278,6 +1422,7 @@ public sealed class LocalOperateEventFeedTests
         });
 
         page.Items.Should().ContainSingle().Which.OperationId.Should().Be("direct-fallback");
+        page.Truncated.Should().BeTrue();
         page.PartialResult.Should().BeTrue();
         page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
@@ -1575,8 +1720,10 @@ public sealed class LocalOperateEventFeedTests
         private readonly List<string> _activeIds = new();
         private readonly Dictionary<string, IOperationProgress> _records = new();
         public int ActiveIdsCalls { get; private set; }
+        public int ProgressGetCalls { get; private set; }
         public HashSet<string> ThrowOnGetIds { get; } = new(StringComparer.Ordinal);
         public bool ThrowOnActiveIds { get; init; }
+        public bool ProvidesClusterWideActiveOperationEnumeration { get; init; }
 
         public void Add(IOperationProgress progress)
         {
@@ -1590,6 +1737,9 @@ public sealed class LocalOperateEventFeedTests
             _records[operationId] = progress;
         }
 
+        public void AddMissingActiveId(string operationId)
+            => _activeIds.Add(operationId);
+
         public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
         {
             ActiveIdsCalls++;
@@ -1602,9 +1752,12 @@ public sealed class LocalOperateEventFeedTests
         }
 
         public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => ThrowOnGetIds.Contains(operationId)
+        {
+            ProgressGetCalls++;
+            return ThrowOnGetIds.Contains(operationId)
                 ? Task.FromException<IOperationProgress?>(new InvalidOperationException("progress record unavailable"))
                 : Task.FromResult(_records.GetValueOrDefault(operationId));
+        }
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
             where TProgress : class, IOperationProgress
