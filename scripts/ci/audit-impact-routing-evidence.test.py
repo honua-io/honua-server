@@ -590,6 +590,43 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert superseded["counts"]["image_outcome_superseded_heads"] == 1
         assert superseded["gates"]["authoritative_image_outcomes_clean"]
 
+        # A head pushed shortly before the audit still has its image work
+        # RUNNING. The image catalogs carry no completed filter, so the run is
+        # visible with a null conclusion: an undetermined outcome, not an
+        # absent one. The next audit sees how it ended.
+        building = image_run(210, MODULE.SERVING_WORKFLOW, HEAD_B, 11)
+        building["status"] = "in_progress"
+        building["conclusion"] = None
+        pages(root / "serving", "workflow_runs", [building, serving[1], serving[2]])
+        in_flight = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert in_flight["counts"]["authoritative_image_outcome_failures"] == 0
+        assert in_flight["counts"]["image_outcome_pending_heads"] == 1
+        assert in_flight["gates"]["authoritative_image_outcomes_clean"]
+
+        # ...but a run that COMPLETED without success is a real failure.
+        failed = image_run(211, MODULE.SERVING_WORKFLOW, HEAD_B, 11, conclusion="failure")
+        pages(root / "serving", "workflow_runs", [failed, serving[1], serving[2]])
+        unsuccessful = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert unsuccessful["counts"]["authoritative_image_outcome_failures"] == 1
+        assert unsuccessful["counts"]["image_outcome_pending_heads"] == 0
+        assert unsuccessful["image_outcome_failures"][0]["reason"] == (
+            "no-successful-image-outcome"
+        )
+
         pages(root / "serving", "workflow_runs", serving)
         pages(root / "worker", "workflow_runs", [worker[0]])
         missing = MODULE.summarize(
@@ -1283,6 +1320,14 @@ def test_repeated_audits_are_idempotent_and_retries_do_not_double_count() -> Non
             policy(), REPOSITORY_ROOT, now=now,
         )
         assert json.dumps(flipped, sort_keys=True) == json.dumps(first, sort_keys=True)
+
+        # The step summary is the only surface most readers ever see, and it is
+        # rendered outside every other assertion here. Render it, so a count
+        # renamed in the ledger cannot pass the suite and then crash the job.
+        rendered = MODULE.markdown(first)
+        assert "## CI impact-routing evidence ledger" in rendered
+        assert "Receipt loss:" in rendered
+        assert "policy generation" in rendered
 
 
 def test_trend_measures_the_consecutive_green_promotion_gate() -> None:

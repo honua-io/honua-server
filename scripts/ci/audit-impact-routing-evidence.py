@@ -984,6 +984,12 @@ def _image_outcome(
         "superseded": bool(matches) and not success and all(
             run.get("conclusion") == "cancelled" for run in matches
         ),
+        # The image catalogs are collected WITHOUT a completed filter, so a head
+        # pushed shortly before the audit has its image work still running. That
+        # is an undetermined outcome, not an absent one: the next audit sees it.
+        "in_flight": not success and any(
+            run.get("status") != "completed" for run in matches
+        ),
         "observed": bool(matches),
         "run_ids": sorted(run.get("id") for run in matches if isinstance(run.get("id"), int)),
         "conclusions": sorted({str(run.get("conclusion")) for run in matches}),
@@ -1195,6 +1201,7 @@ def summarize(
     native_countable: list[dict[str, Any]] = []
     image_failures: list[dict[str, Any]] = []
     superseded_heads: list[dict[str, Any]] = []
+    pending_heads: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
@@ -1222,6 +1229,12 @@ def summarize(
             # not a failed one.
             if all(outcomes[name]["superseded"] for name in missing):
                 superseded_heads.append({**record, "reason": "image-outcome-superseded-head"})
+                continue
+            if all(
+                outcomes[name]["superseded"] or outcomes[name]["in_flight"]
+                for name in missing
+            ):
+                pending_heads.append({**record, "reason": "image-outcome-pending"})
                 continue
             record["reason"] = (
                 "no-exact-head-image-run"
@@ -1343,6 +1356,7 @@ def summarize(
             "worker_reuse_eligible_heads": len(worker_reuse),
             "authoritative_image_outcome_failures": len(image_failures),
             "image_outcome_superseded_heads": len(superseded_heads),
+            "image_outcome_pending_heads": len(pending_heads),
             "integrity_failures": len(failures),
             "quarantined_by_tombstone": len(quarantined),
             "stale_tombstones": len(stale_tombstones),
@@ -1360,6 +1374,7 @@ def summarize(
         "docs_only_failures": docs_failures,
         "image_outcome_failures": image_failures,
         "image_outcome_superseded_heads": superseded_heads,
+        "image_outcome_pending_heads": pending_heads,
         "policy_generation_superseded_receipts": drifted,
         "quarantined": quarantined,
         "stale_tombstones": stale_tombstones,
@@ -1409,7 +1424,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"worker `{', '.join(ledger['savings_mechanism']['worker']) or 'none'}`",
         f"- Docs-only gate failures: `{counts['docs_only_failure_heads']}`",
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`"
-        f" (superseded heads excluded: `{counts['image_outcome_superseded_heads']}`)",
+        f" (excluded: `{counts['image_outcome_superseded_heads']}` superseded, "
+        f"`{counts['image_outcome_pending_heads']}` still building)",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
         "- Receipt loss: "
         f"`{loss['receipts_missing']}` of `{loss['receipts_owed']}` owed = "
@@ -1438,8 +1454,8 @@ def markdown(ledger: dict[str, Any]) -> str:
             )
             if ledger.get("skipped_observations_by_code") else ""
         ),
-        f"- Successful observers with no receipt and no skip marker: "
-        f"`{counts['observation_receipts_not_emitted']}`",
+        f"- Successful observers that owed a receipt and left none: "
+        f"`{counts['observation_receipts_missing']}`",
         "",
         "| Gate | Passed |",
         "|---|---|",
