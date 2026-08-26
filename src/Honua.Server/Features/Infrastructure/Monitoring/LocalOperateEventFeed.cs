@@ -88,22 +88,49 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         bool Wanted(OperateEventKind kind) => requestedKinds is null || requestedKinds.Contains(kind);
 
         var collected = new List<OperateEvent>();
+        var queriedSources = new List<OperateEventKind>();
         Dictionary<OperateEventKind, string>? sourceErrors = null;
         var partial = false;
 
-        var alertTask = Wanted(OperateEventKind.Alert) && _alertQuery is not null
+        var queryAlerts = Wanted(OperateEventKind.Alert) && _alertQuery is not null;
+        if (queryAlerts)
+        {
+            queriedSources.Add(OperateEventKind.Alert);
+        }
+
+        var alertTask = queryAlerts
             ? LoadAlertsAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
-        var auditTask = Wanted(OperateEventKind.Audit) && _auditReader is not null
+        var queryAudit = Wanted(OperateEventKind.Audit) && _auditReader is not null;
+        if (queryAudit)
+        {
+            queriedSources.Add(OperateEventKind.Audit);
+        }
+
+        var auditTask = queryAudit
             ? LoadAuditAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
-        var jobTask = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null)
+        var queryJobs = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null);
+        if (queryJobs)
+        {
+            queriedSources.Add(OperateEventKind.Job);
+        }
+
+        var jobTask = queryJobs
             ? LoadJobsAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
-        var releaseTask = Wanted(OperateEventKind.Release) && _releaseTimeline is not null && ReleaseSourceCanMatch(filter)
+        var queryReleases = Wanted(OperateEventKind.Release) &&
+            _releaseTimeline is not null &&
+            ReleaseSourceCanMatch(filter);
+        if (queryReleases)
+        {
+            queriedSources.Add(OperateEventKind.Release);
+        }
+
+        var releaseTask = queryReleases
             ? LoadReleasesAsync(filter, pageSize)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
@@ -163,6 +190,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         return new OperateEventPage
         {
             Items = trimmed,
+            QueriedSources = queriedSources,
             PartialResult = partial,
             SourceErrors = sourceErrors
         };
