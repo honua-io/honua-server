@@ -33,7 +33,7 @@ jobs:
             image_name: Development JIT Image
             dockerfile: Dockerfile
             tag_suffix: -jit
-            cache_scope: release-jit
+            cache_scope: honua-jit
             sarif_output: trivy-results
             sarif_category: trivy
             arch: amd64
@@ -43,7 +43,7 @@ jobs:
             image_name: Development JIT Image
             dockerfile: Dockerfile
             tag_suffix: -jit
-            cache_scope: release-jit
+            cache_scope: honua-jit
             sarif_output: trivy-results
             sarif_category: trivy
             arch: arm64
@@ -53,7 +53,7 @@ jobs:
             image_name: Production Native-AOT Image
             dockerfile: docker/Dockerfile.aot
             tag_suffix: ""
-            cache_scope: release-aot
+            cache_scope: honua-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
             arch: amd64
@@ -63,7 +63,7 @@ jobs:
             image_name: Production Native-AOT Image
             dockerfile: docker/Dockerfile.aot
             tag_suffix: ""
-            cache_scope: release-aot
+            cache_scope: honua-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
             arch: arm64

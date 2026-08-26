@@ -116,8 +116,8 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=pr-aot-boundary
-          cache-to: type=gha,mode=max,scope=pr-aot-boundary
+          cache-from: type=gha,scope=honua-aot-amd64
+          cache-to: type=gha,mode=max,scope=honua-aot-amd64
           provenance: false
           sbom: false
 
@@ -158,8 +158,8 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=pr-functions-aot-boundary
-          cache-to: type=gha,mode=max,scope=pr-functions-aot-boundary
+          cache-from: type=gha,scope=honua-functions-aot-amd64
+          cache-to: type=gha,mode=max,scope=honua-functions-aot-amd64
           provenance: false
           sbom: false
 

@@ -189,6 +189,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
+          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
+          # scopes: this workflow overrides the base-image ARGs to its mirrored
+          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
+          # from the first instruction down and the caches are not interchangeable.
           cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
@@ -299,6 +303,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
+          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
+          # scopes: this workflow overrides the base-image ARGs to its mirrored
+          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
+          # from the first instruction down and the caches are not interchangeable.
           cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
@@ -448,6 +456,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
+          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
+          # scopes: this workflow overrides the base-image ARGs to its mirrored
+          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
+          # from the first instruction down and the caches are not interchangeable.
           cache-from: type=gha,scope=nightly-jit-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must

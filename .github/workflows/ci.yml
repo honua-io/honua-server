@@ -2815,8 +2815,13 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Shared with every other lane that builds ./Dockerfile for linux/amd64
+          # (security-nightly, the cite-* suites, deploy.yml's jit amd64 leg). These
+          # produce identical layers; the only build-arg that differs between them is
+          # HONUA_GIT_SHA, declared at Dockerfile:188 of 208 in the runtime stage,
+          # after every expensive layer.
+          cache-from: type=gha,scope=honua-jit-amd64
+          cache-to: type=gha,mode=max,scope=honua-jit-amd64
           # provenance/sbom must be false for `load: true` — the local docker exporter
           # can't load a manifest list. SBOM is generated separately via Anchore below.
           provenance: false

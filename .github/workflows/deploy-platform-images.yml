@@ -40,7 +40,7 @@ jobs:
             image_name: ECS Development JIT Image
             dockerfile: Dockerfile
             tag_suffix: -ecs-jit
-            cache_scope: release-ecs-jit
+            cache_scope: honua-jit
             sarif_output: trivy-results-ecs
             sarif_category: trivy-ecs
             arch: arm64
@@ -52,7 +52,7 @@ jobs:
             image_name: ECS AOT Image
             dockerfile: docker/Dockerfile.aot
             tag_suffix: -ecs-aot
-            cache_scope: release-ecs-aot
+            cache_scope: honua-aot
             sarif_output: trivy-results-ecs-aot
             sarif_category: trivy-ecs-aot
             arch: arm64
@@ -100,7 +100,7 @@ jobs:
             image_name: Functions AOT Image
             dockerfile: docker/Dockerfile.functions.aot
             tag_suffix: -functions-aot
-            cache_scope: release-functions-aot
+            cache_scope: honua-functions-aot
             sarif_output: trivy-results-functions-aot
             sarif_category: trivy-functions-aot
             arch: amd64
