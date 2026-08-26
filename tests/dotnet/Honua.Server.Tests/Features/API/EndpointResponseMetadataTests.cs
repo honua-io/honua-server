@@ -110,6 +110,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         const string path = "/ogc/processes/processes/{processId}/execution";
         GetResponseMetadata("POST", path, StatusCodes.Status409Conflict).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status410Gone).Should().NotBeEmpty();
+        GetResponseMetadata("POST", path, StatusCodes.Status413PayloadTooLarge).Should().NotBeEmpty();
     }
 
     public void Dispose()
