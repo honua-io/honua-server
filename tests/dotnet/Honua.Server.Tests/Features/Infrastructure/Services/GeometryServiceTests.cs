@@ -84,6 +84,19 @@ public sealed class GeometryServiceTests
         ex.Message.Should().NotContain("LineNumber");
     }
 
+    [Theory]
+    [InlineData("""{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""", 1)]
+    [InlineData("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}},{"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{}}]}""", 2)]
+    public void ConvertGeoJsonToWkb_WithGeoJsonContainer_ExtractsAllGeometries(string geoJson, int expectedCount)
+    {
+        var wkb = _service.ConvertGeoJsonToWkb(geoJson, 4326);
+
+        wkb.Should().NotBeNull();
+        var geometry = new WKBReader().Read(wkb!);
+        geometry.SRID.Should().Be(4326);
+        geometry.NumGeometries.Should().Be(expectedCount);
+    }
+
 
     [Fact]
     public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
