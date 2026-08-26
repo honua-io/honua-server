@@ -12794,6 +12794,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_ListStoredQueries_ReturnsGetFeatureByIdDefinition",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_ListStoredQueries_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_MissingRequestParam_ReturnsExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_PrefixedField_AdvertisedNcNameRoundTripsAndRejectsUnknownNames",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Insert_ReturnsTransactionResponseAndCreatesFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_UnsupportedOperation_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20NumberMatchedPolicyTests.Wfs_GetFeature_GeoJsonOutput_WithUnknownNumberMatchedPolicy_OmitsNumberMatched",
@@ -15475,8 +15476,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AuthenticatedAdminWithoutStableActor_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_SameActorFromDifferentIssuer_IsAllowed",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_BlockedTier_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_DirectExecuteTier_ExecutesImmediately",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies"
@@ -16049,7 +16052,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueAcrossWorkspaces"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -21243,7 +21246,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated"
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleUpdate_RenameAssignedConsoleRole_ReturnsBadRequestWithoutOrphaningMember"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -21444,7 +21448,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueAcrossWorkspaces"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
