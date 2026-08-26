@@ -38,8 +38,19 @@ internal sealed class TenantContextMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
+        var principal = context.User;
+        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
+
         if (!_options.Enabled)
         {
+            // Single-tenant mode deliberately has no effective tenant, but bearer
+            // audit and durable-job attribution must still use the validator-owned,
+            // issuer-qualified actor rather than falling back to a bare subject.
+            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+            {
+                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
+            }
+
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -55,9 +66,6 @@ internal sealed class TenantContextMiddleware(
         }
 
         var path = context.Request.Path.Value;
-        var principal = context.User;
-        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
-
         // 1. Header override (admin-only). Evaluate first so a logged-in admin can target
         //    a specific tenant explicitly even if they also carry a tid claim.
         if (TryReadHeader(context, out var headerTenantId))
@@ -114,16 +122,15 @@ internal sealed class TenantContextMiddleware(
             tenantContext.Set(null, TenantContextSource.Anonymous);
             CanonicalSecurityActor.StampRequestBinding(principal!, null);
 
-            // External OIDC bearers cannot enter tenant-bound routes with a null
+            // Bearers cannot enter tenant-bound routes with a null
             // tenant: schema/data middleware would otherwise use the deployment's
             // configured default. Only explicitly tenant-independent control-plane
             // routes may continue without a tenant; other admin routes can read or
-            // mutate tenant-bound metadata. Honua's separately validated
-            // OperatorBearer remains available for tenantless operator-only routes;
-            // MCP data-bearing operations apply their own tenant requirement to that
-            // scheme.
-            if (CanonicalSecurityActor.IsTenantScopedBearerPrincipal(principal!)
-                && !context.Request.Path.StartsWithSegments(
+            // mutate tenant-bound metadata. Separately validated OperatorBearer
+            // principals use the same boundary and remain available only on routes
+            // carrying the explicit tenant-independent marker. MCP data-bearing
+            // operations apply their own tenant requirement to both bearer schemes.
+            if (!context.Request.Path.StartsWithSegments(
                     "/mcp",
                     StringComparison.OrdinalIgnoreCase)
                 && !IsTenantIndependentControlPlaneEndpoint(context))

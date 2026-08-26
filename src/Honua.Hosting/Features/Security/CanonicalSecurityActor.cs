@@ -134,26 +134,6 @@ internal static class CanonicalSecurityActor
             || principal.Identities.Any(static identity =>
                 identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)));
 
-    /// <summary>
-    /// Returns whether the principal came from the external OIDC JWT bearer
-    /// validator. Unlike Honua's operator bearer, these callers are tenant-scoped
-    /// and must not reach shared data/control-plane middleware without a validated
-    /// tenant claim or authorized override.
-    /// </summary>
-    internal static bool IsTenantScopedBearerPrincipal(ClaimsPrincipal? principal) =>
-        principal is not null
-        && principal.Identities.Any(static identity => identity.IsAuthenticated)
-        && (string.Equals(
-                FindStampedValue(principal, AuthenticationSchemeClaim),
-                OidcAuthenticationExtensions.JwtBearerScheme,
-                StringComparison.OrdinalIgnoreCase)
-            || principal.Identities.Any(static identity =>
-                identity.IsAuthenticated
-                && string.Equals(
-                    identity.AuthenticationType,
-                    OidcAuthenticationExtensions.JwtBearerScheme,
-                    StringComparison.OrdinalIgnoreCase)));
-
     private static bool IsBearerScheme(string? scheme) =>
         string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
         || string.Equals(scheme, OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase);
