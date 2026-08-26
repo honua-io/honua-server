@@ -318,6 +318,75 @@ public sealed class StacSearchTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
+    public Task SearchGet_AcrossCollections_MissingPropertyIsNull_MatchesItem()
+        => AssertCrossCollectionMissingPropertyFilterAsync(
+            "properties.collection_specific_field IS NULL",
+            expectsItem: true);
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public Task SearchGet_AcrossCollections_OrBranchCanMatchWhenOtherPropertyIsMissing()
+        => AssertCrossCollectionMissingPropertyFilterAsync(
+            "properties.collection_specific_field = 1 OR id = '__ITEM_ID__'",
+            expectsItem: true);
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_AcrossCollections_PreservesAndOrNotNullTruthTable()
+    {
+        (string Filter, bool ExpectsItem)[] cases =
+        [
+            ("properties.collection_specific_field IS NOT NULL", false),
+            ("properties.collection_specific_field = 1 AND id = '__ITEM_ID__'", false),
+            ("NOT (properties.collection_specific_field = 1)", false),
+            ("NOT (properties.collection_specific_field IS NULL)", false),
+            ("NOT (properties.collection_specific_field IS NOT NULL)", true)
+        ];
+
+        foreach (var (filter, expectsItem) in cases)
+        {
+            await AssertCrossCollectionMissingPropertyFilterAsync(filter, expectsItem);
+        }
+    }
+
+    private async Task AssertCrossCollectionMissingPropertyFilterAsync(string filter, bool expectsItem)
+    {
+        _fixture.UpdateV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new MetadataV2Field
+            {
+                Name = "collection_specific_field",
+                Type = MetadataV2FieldType.Integer,
+                Nullable = true
+            });
+        var featureId = await _fixture.InsertFeatureAsync(1, "Cross-collection item B");
+        var itemId = featureId.ToString(CultureInfo.InvariantCulture);
+        filter = filter.Replace("__ITEM_ID__", itemId, StringComparison.Ordinal);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections=0,1&limit=100&filter-lang=cql2-text&filter={Uri.EscapeDataString(filter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var returnedIds = JsonDocument.Parse(content).RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString());
+        if (expectsItem)
+        {
+            returnedIds.Should().Contain(itemId, content);
+        }
+        else
+        {
+            returnedIds.Should().NotContain(itemId, content);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
     public async Task SearchGet_WithRegistryBackedFilterCrs_AcceptsNonDefaultCrs()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);

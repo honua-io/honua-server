@@ -86,6 +86,19 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_NullLiteral_EmitsSqlNullWithoutUntypedParameter()
+    {
+        var expression = new UnaryExpression(
+            UnaryOperator.IsNull,
+            new Literal(null, LiteralType.Null));
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("NULL IS NULL");
+        result.Parameters.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Translate_BinaryComparison_ReturnsCorrectSQL()
     {
         // Arrange

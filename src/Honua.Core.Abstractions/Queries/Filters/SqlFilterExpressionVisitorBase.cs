@@ -137,11 +137,13 @@ public abstract class SqlFilterExpressionVisitorBase
         return placeholder;
     }
 
-    /// <summary>Translates a <see cref="Literal"/> into a single parameter placeholder.</summary>
+    /// <summary>
+    /// Translates a <see cref="Literal"/> into SQL <c>NULL</c> or a parameter placeholder.
+    /// </summary>
     protected virtual string TranslateLiteral(Literal literal)
     {
         ArgumentNullException.ThrowIfNull(literal);
-        return AddParameter(literal.Value);
+        return literal.Type == LiteralType.Null ? "NULL" : AddParameter(literal.Value);
     }
 
     /// <summary>Translates a <see cref="ValueList"/> into a parenthesised comma-joined list.</summary>
