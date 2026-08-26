@@ -242,6 +242,7 @@ jobs:
     needs: [rc-image, integration, sdk-cut]
     if: ${{ always() && needs.rc-image.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     outputs:
       verdict: ${{ steps.validate.outputs.verdict }}
     steps:
@@ -317,6 +318,7 @@ jobs:
     needs: [rc-image, aggregate]
     if: ${{ github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     environment: release-promote
     steps:
       - name: Checkout

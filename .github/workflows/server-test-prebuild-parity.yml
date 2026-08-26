@@ -52,6 +52,7 @@ jobs:
        github.event.workflow_run.event == 'pull_request' &&
        github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       pr: ${{ steps.resolve.outputs.pr }}
       head_sha: ${{ steps.resolve.outputs.head_sha }}
@@ -473,6 +474,7 @@ jobs:
       always() && needs.plan.result == 'success' &&
       needs.plan.outputs.has_candidates == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout trusted verifier policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

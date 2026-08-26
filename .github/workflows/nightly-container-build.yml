@@ -334,6 +334,7 @@ jobs:
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: [build-lambda-aot, mirror-base-images]
     if: ${{ needs.build-lambda-aot.result == 'success' }}
     permissions:
@@ -460,6 +461,7 @@ jobs:
   manifest-aot:
     name: Publish AOT Manifests
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: [build-aot, mirror-base-images]
     if: ${{ needs.build-aot.result == 'success' }}
     permissions:
@@ -522,6 +524,7 @@ jobs:
   manifest-jit:
     name: Publish JIT Manifests
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: [build-jit, mirror-base-images]
     if: ${{ needs.build-jit.result == 'success' }}
     permissions:

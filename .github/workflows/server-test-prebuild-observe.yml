@@ -73,6 +73,7 @@ jobs:
       (vars.HONUA_SERVER_TEST_PREBUILD_SHADOW == 'true' &&
        github.event.workflow_run.event == 'pull_request_target')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       skip: ${{ steps.target.outputs.skip }}
       base_sha: ${{ steps.target.outputs.base_sha }}

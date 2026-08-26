@@ -52,6 +52,7 @@ jobs:
   load-matrix:
     name: Load SDK Compatibility Matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -656,6 +657,7 @@ jobs:
       - sdk-compat-matrix
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout honua-server
         uses: actions/checkout@v7.0.1

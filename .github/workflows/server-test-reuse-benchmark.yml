@@ -35,6 +35,7 @@ jobs:
   plan:
     name: Reuse benchmark plan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       baseline: ${{ steps.plan.outputs.baseline }}
       producers: ${{ steps.plan.outputs.producers }}
@@ -312,6 +313,7 @@ jobs:
     needs: [plan, producer, baseline, reused-consumer]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Download benchmark plan
