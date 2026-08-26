@@ -302,6 +302,7 @@ jobs:
   conformance-summary:
     name: CITE Conformance Summary
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: wfs20-cite-conformance
     if: always()
 

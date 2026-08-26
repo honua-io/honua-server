@@ -43,6 +43,7 @@ jobs:
   plan:
     name: Resolve exact prebuild experiment
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       baseline: ${{ steps.matrix.outputs.baseline }}
       candidates: ${{ steps.matrix.outputs.candidates }}
@@ -394,6 +395,7 @@ jobs:
     needs: [plan, baseline, candidate]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout exact trusted policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

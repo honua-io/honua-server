@@ -23,6 +23,7 @@ jobs:
   tooling:
     name: Release tooling smokes
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1

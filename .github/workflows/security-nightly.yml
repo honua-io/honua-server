@@ -33,6 +33,7 @@ jobs:
   nuget-vulnerability-scan:
     name: NuGet Vulnerability Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
@@ -144,6 +145,7 @@ jobs:
   trivy-filesystem-scan:
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: read
       contents: read
@@ -191,6 +193,7 @@ jobs:
   container-security-scan:
     name: Container Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read

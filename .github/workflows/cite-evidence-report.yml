@@ -299,6 +299,7 @@ jobs:
     needs: evidence
     if: inputs.publish_pages
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deploy-pages.outputs.page_url }}

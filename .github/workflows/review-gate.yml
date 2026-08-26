@@ -33,6 +33,7 @@ jobs:
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     name: Resolve pull request identity
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: read
@@ -69,6 +70,7 @@ jobs:
     if: needs.resolve.outputs.pr != ''
     name: Publish SHA-bound review attestation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     concurrency:
       # Resolve first so fork workflow_run events (whose pull_requests array is
       # empty) serialize with review/comment events under the same PR identity.
