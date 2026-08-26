@@ -101,6 +101,17 @@ public sealed class EndpointResponseMetadataTests : IDisposable
             .Should().NotBeEmpty();
     }
 
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void OgcProcessExecute_AdvertisesDismissedAndConflictResponses()
+    {
+        using var _ = _factory.CreateClient();
+
+        const string path = "/ogc/processes/processes/{processId}/execution";
+        GetResponseMetadata("POST", path, StatusCodes.Status409Conflict).Should().NotBeEmpty();
+        GetResponseMetadata("POST", path, StatusCodes.Status410Gone).Should().NotBeEmpty();
+    }
+
     public void Dispose()
     {
         _factory.Dispose();

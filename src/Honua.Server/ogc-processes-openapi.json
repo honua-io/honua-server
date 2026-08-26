@@ -238,7 +238,15 @@
             }
           },
           "409": {
-            "description": "Synchronous execution was cancelled or conflicts with an existing execution",
+            "description": "Execution conflicts with an existing execution",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "410": {
+            "description": "Synchronous execution observed a dismissed job",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
