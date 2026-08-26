@@ -45,6 +45,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     /// </summary>
     private string? _upstreamMethodOnUnwind;
     private bool? _midstreamHandlerObservedResponseStarted;
+    private bool _webSocketHandlerInvoked;
 
     /// <summary>
     /// Completed by the streaming route when its loop unwinds, so a test can prove the handler
@@ -220,18 +221,29 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             "payload.bin",
             enableRangeProcessing: true));
 
-        _app.MapGet("/websocket-only", context =>
+        _app.MapGet("/websocket-only", async context =>
         {
+            _webSocketHandlerInvoked = true;
             context.Response.Headers["X-Method-Seen"] = context.Request.Method;
             if (context.WebSockets.IsWebSocketRequest)
             {
                 context.Response.StatusCode = StatusCodes.Status101SwitchingProtocols;
-                return Task.CompletedTask;
+                return;
+            }
+
+            if (context.Request.Headers.Accept.ToString()
+                .Contains("text/event-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.ContentType = "text/event-stream";
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+                await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
+                return;
             }
 
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            return Task.CompletedTask;
-        }).WithMetadata(WebSocketEndpointMetadata.Instance);
+        })
+            .WithMetadata(WebSocketEndpointMetadata.Instance)
+            .WithMetadata(LongLivedStreamEndpointMetadata.Instance);
 
         // Streaming query handlers explicitly select chunked framing. Their HEAD equivalent
         // must not gain a counted Content-Length alongside Transfer-Encoding.
@@ -439,7 +451,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     }
 
     [UnitTest]
-    public async Task InvokeAsync_HeadWithWebSocketUpgrade_DoesNotEnterGetUpgradeSemantics()
+    public async Task InvokeAsync_HeadWithWebSocketUpgrade_RejectsBeforeEndpointExecution()
     {
         using var request = new HttpRequestMessage(HttpMethod.Head, "/websocket-only");
         request.Headers.Connection.Add("Upgrade");
@@ -450,7 +462,24 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Headers.GetValues("X-Method-Seen").Should().ContainSingle().Which.Should().Be("HEAD");
+        _webSocketHandlerInvoked.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadWithWebSocketUpgradeAndSseAccept_RejectsWithoutOpeningStream()
+    {
+        using var timeout = new CancellationTokenSource(StreamProbeTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/websocket-only");
+        request.Headers.Connection.Add("Upgrade");
+        request.Headers.TryAddWithoutValidation("Upgrade", "websocket");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Version", "13");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+
+        using var response = await _client.SendAsync(request, timeout.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _webSocketHandlerInvoked.Should().BeFalse();
     }
 
     [UnitTest]

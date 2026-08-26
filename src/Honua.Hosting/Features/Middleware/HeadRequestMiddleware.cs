@@ -541,11 +541,11 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
         if (endpoint?.Metadata.GetMetadata<WebSocketEndpointMetadata>() is not null &&
             IsWebSocketUpgradeAttempt(context.Request))
         {
-            // Routing needed GET to select the WebSocket-only endpoint, but negotiation must
-            // evaluate the method the client actually sent. A valid WebSocket handshake is GET;
-            // preserving HEAD here makes the endpoint reject the upgrade instead of opening a
-            // long-lived socket whose frames bypass the suppressed response-body feature.
-            await _next(context).ConfigureAwait(false);
+            // A valid WebSocket handshake is GET. Reject an upgrade-shaped HEAD centrally:
+            // WebSocket frames bypass the suppressed response-body feature, and allowing a
+            // dual-transport handler to evaluate alternate Accept headers could select an SSE
+            // loop after WebSocket negotiation fails and retain a bounded stream session.
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
         }
 
