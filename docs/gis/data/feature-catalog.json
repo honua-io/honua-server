@@ -17418,7 +17418,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepUnsupportedKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownDependsOn_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownProcessId_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownRespondSyncPreference_DefaultsToCanonicalSynchronousPath",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownRespondSyncPreference_DefaultsToCanonicalAsyncPath",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnsupportedArtifactKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_AsyncOnlyProcess_TreatsRespondSyncAsUnknownPreference",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_RasterProcessDirect_CreatesSameJobAsPlanWrapped",
@@ -17434,7 +17434,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_Base64WkbInput_PreservesExistingCanonicalRepresentation",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_OmittedPreferForAsyncOnlyProcess_ReturnsAsyncWithoutAcknowledgement",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_OmittedPreferRawGeoJson_ReturnsInlineValueAndSubmitsCanonicalWkb"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_OmittedPreferRawGeoJson_ReturnsInlineValueAndSubmitsCanonicalWkb",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_SynchronousFailure_ReturnsRegisteredJobFailedException"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",

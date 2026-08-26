@@ -193,6 +193,8 @@ public sealed class OpenApiDriftTests
         var ioSchemaProps = ioSchema.GetProperty("properties");
         ioSchemaProps.TryGetProperty("type", out _).Should()
             .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
+        ioSchemaProps.TryGetProperty("format", out _).Should()
+            .BeTrue("ProcessIoSchema must document binary output format hints emitted by process descriptions");
         ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
             .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
         var oneOf = ioSchemaProps.GetProperty("oneOf");

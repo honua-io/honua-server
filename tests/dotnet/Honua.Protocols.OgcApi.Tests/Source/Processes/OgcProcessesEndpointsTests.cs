@@ -290,6 +290,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         // an outputRaster output.
         root.GetProperty("outputs").GetProperty("outputRaster").GetProperty("schema")
             .GetProperty("contentMediaType").GetString().Should().Be("image/tiff");
+        root.GetProperty("outputs").GetProperty("outputRaster").GetProperty("schema")
+            .GetProperty("type").GetString().Should().Be("string");
+        root.GetProperty("outputs").GetProperty("outputRaster").GetProperty("schema")
+            .GetProperty("format").GetString().Should().Be("binary");
         // Execute link is present so callers can drive direct execution.
         root.GetProperty("links").EnumerateArray()
             .Select(l => l.GetProperty("rel").GetString())

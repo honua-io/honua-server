@@ -109,6 +109,12 @@ public sealed record OgcProcessIoSchema
     public string? Type { get; init; }
 
     /// <summary>
+    /// Optional JSON Schema format hint (for example, binary).
+    /// </summary>
+    [JsonPropertyName("format")]
+    public string? Format { get; init; }
+
+    /// <summary>
     /// Content media type hint for complex inputs.
     /// </summary>
     [JsonPropertyName("contentMediaType")]

@@ -4,6 +4,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -124,11 +125,41 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         _fixture.SubmittedPlan!.Steps.Single().Inputs["wkb"].Should().Be(PointWkbBase64);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_SynchronousFailure_ReturnsRegisteredJobFailedException()
+    {
+        _fixture.SetTerminalFailure("Worker rejected the input.");
+        try
+        {
+            using var content = new StringContent(
+                $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            error.RootElement.GetProperty("type").GetString().Should().Be(
+                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-failed");
+            error.RootElement.GetProperty("detail").GetString().Should().Be("Worker rejected the input.");
+        }
+        finally
+        {
+            _fixture.ResetTerminalResult();
+        }
+    }
 }
 
 public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 {
     private const string JobId = "ogc-sync-result-job";
+    private GeoprocessingTerminalResult _terminalResult;
 
     public WebAppFixture App { get; }
 
@@ -137,6 +168,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
     public OgcProcessesSynchronousExecutionFixture()
     {
         var job = CreateJob();
+        _terminalResult = CreateSucceededTerminalResult(job);
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.EnsureCallerAuthorizedAsync(
                 Arg.Any<ClaimsPrincipal>(),
@@ -162,10 +194,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new GeoprocessingTerminalResult(
-                GeoprocessingTerminalResultOutcome.Succeeded,
-                job,
-                CreateResultPackage()));
+            .Returns(_ => _terminalResult);
 
         App = new WebAppFixture().ConfigureServices(services =>
         {
@@ -180,14 +209,31 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public Task DisposeAsync() => App.DisposeAsync();
 
-    private static ExecutionJobRecord CreateJob()
+    public void SetTerminalFailure(string message)
+    {
+        var failedJob = CreateJob(ExecutionJobStatus.Failed, message);
+        _terminalResult = new GeoprocessingTerminalResult(
+            GeoprocessingTerminalResultOutcome.Failed,
+            failedJob);
+    }
+
+    public void ResetTerminalResult()
+    {
+        var succeededJob = CreateJob();
+        _terminalResult = CreateSucceededTerminalResult(succeededJob);
+    }
+
+    private static ExecutionJobRecord CreateJob(
+        ExecutionJobStatus status = ExecutionJobStatus.Succeeded,
+        string? errorMessage = null)
         => new()
         {
             OperationId = JobId,
-            Status = ExecutionJobStatus.Succeeded,
+            Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = errorMessage,
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -196,6 +242,12 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 WorkloadName = "geometry-buffer"
             }
         };
+
+    private static GeoprocessingTerminalResult CreateSucceededTerminalResult(ExecutionJobRecord job)
+        => new(
+            GeoprocessingTerminalResultOutcome.Succeeded,
+            job,
+            CreateResultPackage());
 
     private static AnalysisResultPackage CreateResultPackage()
         => AnalysisResultPackage.CreateCompleted(
