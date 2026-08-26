@@ -452,7 +452,32 @@ internal static class StartupConfigurationHelpers
         builder.WebHost.UseStaticWebAssets();
     }
 
-    private static void EnsureStaticWebAssetContentRootsExist()
+    /// <summary>
+    /// Pre-creates every content-root directory referenced by a static-web-assets runtime
+    /// manifest next to the entry assembly, so that any loader which later opens those roots
+    /// cannot abort host construction with <see cref="DirectoryNotFoundException"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This must run before <c>WebApplication.CreateBuilder</c>. In the <c>Development</c>
+    /// environment ASP.NET Core loads the static-web-assets manifest <i>implicitly</i> — the
+    /// framework's own <c>ConfigureWebDefaults</c> calls <c>StaticWebAssetsLoader</c> during
+    /// builder construction — so the explicit, already-hardened
+    /// <see cref="LoadHostedBlazorStaticWebAssets"/> path never gets a chance to guard it. The
+    /// loader opens each declared content root as a <c>PhysicalFileProvider</c>, which throws
+    /// for a root that is not materialized on disk.
+    /// </para>
+    /// <para>
+    /// That is not hypothetical: the sharded CI test runners do not materialize every content
+    /// root the manifest names — both the Blazor <c>obj/&lt;Config&gt;/&lt;tfm&gt;/compressed/</c>
+    /// output of honua-server#2904 and package-sourced roots under
+    /// <c>~/.nuget/packages/&lt;package&gt;/&lt;version&gt;/staticwebassets/</c> — so every test
+    /// that boots a host with <c>UseEnvironment("Development")</c> died in host
+    /// construction before its own assertions ran. Creating the missing roots empty is safe:
+    /// an absent asset is exactly what an empty root serves, and the alternative is no host.
+    /// </para>
+    /// </remarks>
+    public static void EnsureStaticWebAssetContentRootsExist()
     {
         try
         {
