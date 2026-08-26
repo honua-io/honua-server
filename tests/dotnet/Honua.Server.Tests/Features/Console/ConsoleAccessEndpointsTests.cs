@@ -92,7 +92,8 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 
         var updateRequest = createRequest with
         {
-            Name = "dashboard-reviewer",
+            Name = created.Name,
+            Description = "Reviews and comments on dashboards.",
             Grants =
             [
                 new ConsolePermissionGrant { Permission = "view-public", Grant = "granted" },
@@ -103,7 +104,8 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             $"/api/v1/console/access/{WorkspaceId}/roles/{created.Id}", updateRequest, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
         var updated = await ReadAsync<ConsoleRbacRole>(updateResponse);
-        Assert.Equal("dashboard-reviewer", updated.Name);
+        Assert.Equal(created.Name, updated.Name);
+        Assert.Equal("Reviews and comments on dashboards.", updated.Description);
         Assert.Contains(updated.Grants, static grant => grant.Permission == "comment" && grant.Grant == "granted");
         Assert.Contains(updated.Grants, static grant => grant.Permission == "publish" && grant.Grant == "not-granted");
 
@@ -167,7 +169,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
     [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
-    public async Task ConsoleAccess_RoleNames_AreGloballyUniqueAcrossWorkspaces()
+    public async Task ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate()
     {
         const string firstWorkspace = "name-owner";
         const string secondWorkspace = "name-other";
@@ -181,27 +183,49 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, createCollision.StatusCode);
         await AssertRoleNameConflictAsync(createCollision);
 
-        var secondRole = await CreateRoleAsync(secondWorkspace, "rename-source-role");
-        var updateCollision = await _client.PutAsJsonAsync(
-            $"/api/v1/console/access/{secondWorkspace}/roles/{secondRole.Id}",
-            new ConsoleRoleWriteRequest { Name = sharedName, Grants = [] },
-            JsonOptions);
-        Assert.Equal(HttpStatusCode.Conflict, updateCollision.StatusCode);
-        await AssertRoleNameConflictAsync(updateCollision);
-
-        // A role may preserve its own name; the global collision check excludes its ID.
+        // Permission and description updates preserve the immutable role name.
         var preserveOwnName = await _client.PutAsJsonAsync(
             $"/api/v1/console/access/{firstWorkspace}/roles/{firstRole.Id}",
             new ConsoleRoleWriteRequest { Name = firstRole.Name, Grants = [] },
             JsonOptions);
         Assert.Equal(HttpStatusCode.OK, preserveOwnName.StatusCode);
+    }
 
-        var secondOverview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/roles"));
-        Assert.Contains(secondOverview.Roles, role =>
-            role.Id == secondRole.Id && role.Name == secondRole.Name);
-        Assert.DoesNotContain(secondOverview.Roles, role =>
-            string.Equals(role.Name, sharedName, StringComparison.OrdinalIgnoreCase));
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    public async Task ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember()
+    {
+        const string workspace = "immutable-role-name";
+        var role = await CreateRoleAsync(workspace, "assigned-reviewer");
+        var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        var assignedUser = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "assigned-reviewer@example.test",
+            DisplayName = "Assigned Reviewer",
+            Roles = [role.Name],
+        }));
+
+        var renameResponse = await _client.PutAsJsonAsync(
+            $"/api/v1/console/access/{workspace}/roles/{role.Id}",
+            new ConsoleRoleWriteRequest { Name = "renamed-reviewer", Grants = [] },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, renameResponse.StatusCode);
+        var error = JsonSerializer.Deserialize<ApiResponse<object>>(
+            await renameResponse.Content.ReadAsStringAsync(), JsonOptions);
+        Assert.NotNull(error);
+        Assert.False(error.Success);
+        Assert.Contains("cannot be changed", Assert.IsType<string>(error.Message), StringComparison.OrdinalIgnoreCase);
+
+        var overview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
+        Assert.Contains(overview.Roles, candidate => candidate.Id == role.Id && candidate.Name == role.Name);
+        Assert.DoesNotContain(overview.Roles, static candidate => candidate.Name == "renamed-reviewer");
+
+        var membership = await ReadAsync<ConsoleTeamMembership>(
+            await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));
+        Assert.Contains(membership.Members, member =>
+            member.Id == assignedUser.UserId && member.RoleId == role.Id && member.RoleName == role.Name);
     }
 
     [IntegrationTest]

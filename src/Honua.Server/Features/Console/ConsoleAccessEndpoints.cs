@@ -224,6 +224,11 @@ internal static class ConsoleAccessEndpoints
         }
 
         var requestedName = request.Name.Trim();
+        if (!string.Equals(requestedName, existing.Name, StringComparison.Ordinal))
+        {
+            return BadRequest("Role names cannot be changed after creation.");
+        }
+
         var allRoles = await roleStore.ListRolesAsync(context.RequestAborted).ConfigureAwait(false);
         if (HasRoleNameCollision(allRoles, requestedName, existing.RoleId))
         {
