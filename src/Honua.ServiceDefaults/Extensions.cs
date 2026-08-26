@@ -294,7 +294,18 @@ public static partial class Extensions
     /// <summary>
     /// Maps the native Prometheus text exposition endpoint.
     /// </summary>
+    /// <param name="app">The application endpoint builder.</param>
     public static WebApplication MapPrometheusEndpoint(this WebApplication app)
+        => MapPrometheusEndpoint(app, configureEndpoint: null);
+
+    /// <summary>
+    /// Maps the native Prometheus text exposition endpoint and applies host conventions.
+    /// </summary>
+    /// <param name="app">The application endpoint builder.</param>
+    /// <param name="configureEndpoint">Optional endpoint conventions supplied by the host.</param>
+    public static WebApplication MapPrometheusEndpoint(
+        this WebApplication app,
+        Action<IEndpointConventionBuilder>? configureEndpoint)
     {
         var options = new PrometheusOptions();
         app.Configuration.GetSection(PrometheusOptions.SectionName).Bind(options);
@@ -309,8 +320,9 @@ public static partial class Extensions
             return app;
         }
 
-        app.MapPrometheusScrapingEndpoint(NormalizePrometheusPath(options.Path))
+        var endpoint = app.MapPrometheusScrapingEndpoint(NormalizePrometheusPath(options.Path))
             .RequireAuthorization("Admin");
+        configureEndpoint?.Invoke(endpoint);
         return app;
     }
 

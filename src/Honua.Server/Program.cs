@@ -1379,7 +1379,8 @@ await RunDatabaseMigrationsAsync();
 
 // Configure health endpoints
 app.MapHealthEndpoints();
-app.MapPrometheusEndpoint();
+app.MapPrometheusEndpoint(endpoint =>
+    endpoint.WithMetadata(TenantIndependentControlPlaneMetadata.Instance));
 
 // Configure admin auth bootstrap endpoint (anonymous - must precede admin group)
 app.MapAdminAuthEndpoints();

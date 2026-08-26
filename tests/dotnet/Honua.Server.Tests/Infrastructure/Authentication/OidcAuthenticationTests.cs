@@ -773,6 +773,111 @@ public class OidcAuthenticationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/config")]
+    [Endpoint("POST /oauth/token")]
+    [Endpoint("GET /sharing/rest/oauth2/authorize")]
+    [Endpoint("POST /sharing/rest/oauth2/introspect")]
+    [Endpoint("GET /saml/metadata")]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /healthz/ready")]
+    [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /metrics")]
+    [Endpoint("GET /api/v1/metrics/health")]
+    [Endpoint("GET /monitoring/health/production")]
+    [Endpoint("GET /api/v1/admin/performance/database/query-cache/statistics")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/resources/tracking")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
+    {
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+
+        var routeEndpoints = factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        var families = new (string Name, Func<string, bool> Matches)[]
+        {
+            ("admin authentication", route => route.StartsWith("/api/v{version:apiVersion}/admin/auth", StringComparison.Ordinal)),
+            ("mobile authentication", route => route.Equals("/oauth/token", StringComparison.Ordinal)),
+            ("Portal OAuth", route => route.StartsWith("/sharing/rest/oauth2/", StringComparison.Ordinal)),
+            ("SAML authentication", route => route.StartsWith("/saml/", StringComparison.Ordinal)),
+            ("health probes", route => route is "/healthz/live" or "/healthz/ready" or "/healthz/metrics"),
+            ("Prometheus", route => route.Equals("/metrics", StringComparison.Ordinal)),
+            ("metrics API", route => route.StartsWith("/api/v{version:apiVersion}/metrics/", StringComparison.Ordinal)),
+            ("production monitoring", route => route.StartsWith("/monitoring/", StringComparison.Ordinal)),
+            ("database performance", route => route.StartsWith("/api/v{version:apiVersion}/admin/performance/database/", StringComparison.Ordinal)),
+            ("enhanced performance", route => route.StartsWith("/api/v{version:apiVersion}/admin/performance/enhanced/", StringComparison.Ordinal)),
+            ("stateless GeometryServer", route => route.StartsWith("/rest/services/Utilities/Geometry/GeometryServer/", StringComparison.Ordinal))
+        };
+
+        foreach (var family in families)
+        {
+            var endpoints = routeEndpoints
+                .Where(endpoint => family.Matches(endpoint.RoutePattern.RawText ?? string.Empty))
+                .ToArray();
+
+            Assert.NotEmpty(endpoints);
+            Assert.All(endpoints, endpoint =>
+                Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+        }
+    }
+
+    [UnitTest]
+    public void MapPrometheusEndpoint_PreservesPublicOneParameterOverload()
+    {
+        var method = typeof(Honua.ServiceDefaults.Extensions).GetMethod(
+            nameof(Honua.ServiceDefaults.Extensions.MapPrometheusEndpoint),
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+            binder: null,
+            types: [typeof(Microsoft.AspNetCore.Builder.WebApplication)],
+            modifiers: null);
+
+        Assert.NotNull(method);
+        Assert.Equal(typeof(Microsoft.AspNetCore.Builder.WebApplication), method.ReturnType);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/oauth2/authorize")]
+    [Endpoint("GET /saml/metadata")]
+    [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /metrics")]
+    [Endpoint("GET /api/v1/metrics/health")]
+    [Endpoint("GET /monitoring/health/production")]
+    [Endpoint("GET /api/v1/admin/performance/database/query-cache/statistics")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/resources/tracking")]
+    public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
+    {
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        foreach (var route in new[]
+        {
+            "/sharing/rest/oauth2/authorize",
+            "/saml/metadata",
+            "/healthz/metrics",
+            "/metrics",
+            "/api/v1/metrics/health",
+            "/monitoring/health/production",
+            "/api/v1/admin/performance/database/query-cache/statistics",
+            "/api/v1/admin/performance/enhanced/resources/tracking"
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var response = await client.SendAsync(request);
+
+            Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.NotEqual(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/capabilities")]
     [Endpoint("GET /api/v1/admin/openapi.json")]
     [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]

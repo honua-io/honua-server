@@ -48,9 +48,11 @@ internal static class HealthEndpoints
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
         var metricsEndpoint = endpoints.MapMethods("/healthz/metrics", [HttpMethods.Get], HandlePerformanceMetrics)
             .WithDisplayName("Performance Metrics")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
         _ = endpoints.MapMethods("/healthz/metrics", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithDisplayName("Performance Metrics Method Not Allowed");
+            .WithDisplayName("Performance Metrics Method Not Allowed")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         metricsEndpoint.RequireAdminAuthorization();
     }
