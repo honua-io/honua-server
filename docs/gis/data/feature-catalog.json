@@ -3193,7 +3193,9 @@
       "proving_tests": [
         "Honua.Server.Tests.AdminEndpointTests.GetAdminOpenApiSpec_ReturnsValidOpenApiSpecification",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetOpenApi_WithoutAuth_Returns200WithValidOpenApiDocument",
-        "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_AdminOpenApiWithoutApiKey_ShouldReturn200"
+        "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_AdminOpenApiWithoutApiKey_ShouldReturn200",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

@@ -721,6 +721,7 @@ public class OidcAuthenticationTests
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/version")]
     [Endpoint("GET /api/v1/admin/capabilities")]
+    [Endpoint("GET /api/v1/admin/openapi.json")]
     [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
     public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
     {
@@ -737,16 +738,19 @@ public class OidcAuthenticationTests
         {
             "/api/v{version:apiVersion}/admin/version",
             "/api/v{version:apiVersion}/admin/capabilities",
+            "/api/v{version:apiVersion}/admin/openapi.json",
             "/.well-known/oauth-protected-resource/mcp"
         })
         {
-            var endpoint = Assert.Single(endpointsByRoute[route]);
+            var endpoint = Assert.Single(endpointsByRoute[route], endpoint =>
+                endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains(HttpMethod.Get.Method) == true);
             Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
         }
     }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/capabilities")]
+    [Endpoint("GET /api/v1/admin/openapi.json")]
     [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
     public async Task GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk()
     {
@@ -757,6 +761,7 @@ public class OidcAuthenticationTests
         foreach (var route in new[]
         {
             "/api/v1/admin/capabilities",
+            "/api/v1/admin/openapi.json",
             "/.well-known/oauth-protected-resource/mcp"
         })
         {
