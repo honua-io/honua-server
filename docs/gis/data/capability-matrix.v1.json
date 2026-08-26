@@ -1114,7 +1114,7 @@
       "category": "Ops",
       "edition": "Community",
       "entryCount": 15,
-      "provingTestCount": 57,
+      "provingTestCount": 58,
       "maturity": {
         "implemented": 15
       },
@@ -1815,7 +1815,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 262,
+      "provingTestCount": 263,
       "maturity": {
         "implemented": 21
       },
