@@ -303,12 +303,12 @@ public sealed class OpenApiDriftTests
         document.RootElement.GetProperty("components").GetProperty("schemas")
             .GetProperty("RawJsonValue").TryGetProperty("type", out _).Should().BeFalse(
                 "raw JSON can be an object, array, string, number, boolean, or null");
-        success.GetProperty("content").TryGetProperty("application/geo+json", out _).Should().BeTrue(
-            "raw synchronous geometry outputs retain their artifact media type");
-        success.GetProperty("content").TryGetProperty("application/wkb", out _).Should().BeTrue(
-            "raw synchronous WKB outputs retain their artifact media type");
-        success.GetProperty("content").TryGetProperty("image/tiff", out _).Should().BeTrue(
-            "raw synchronous raster outputs retain their artifact media type");
+        success.GetProperty("content")
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .Should().BeEquivalentTo(
+                ["application/json", "application/geo+json"],
+                "only JSON scalar and GeoJSON feature outputs are reachable from current sync-capable processes");
     }
 
     [ArchitectureTest]

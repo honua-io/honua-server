@@ -99,10 +99,7 @@ internal static class ProcessEndpoints
             .WithSummary("Execute a process")
             .Accepts<OgcExecuteRequest>(MediaTypes.Json)
             .Produces<OgcResultsDocument>(StatusCodes.Status200OK)
-            .Produces(
-                StatusCodes.Status200OK,
-                contentType: MediaTypes.GeoJson,
-                additionalContentTypes: ["application/wkb", "image/tiff", "application/octet-stream"])
+            .Produces(StatusCodes.Status200OK, contentType: MediaTypes.GeoJson)
             .Produces<OgcStatusInfo>(StatusCodes.Status201Created)
             .Produces<OgcProcessError>(StatusCodes.Status400BadRequest)
             .Produces<OgcProcessError>(StatusCodes.Status401Unauthorized)
