@@ -1110,10 +1110,8 @@ internal sealed partial class Wfs20Handler
                 : new TransactionFieldResolution(gmlField, IsGmlProperty: true);
         }
 
-        var resolvedName = FilterExpressionHelpers.ResolveFieldName(
-            resource,
-            normalizedName,
-            allowGeometryAlias: true);
+        var resolvedName = WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true) ??
+            WfsPropertyNameResolver.Resolve(resource, normalizedName, allowGeometryAlias: true);
         if (resolvedName == null)
         {
             throw new ArgumentException($"Unknown property '{rawName}' for feature type '{GetResourceFeatureTypeName(resource)}'.");

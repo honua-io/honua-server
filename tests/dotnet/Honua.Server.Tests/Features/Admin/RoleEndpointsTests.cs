@@ -126,7 +126,11 @@ public class RoleEndpointsTests : IAsyncLifetime
             await createResponse.Content.ReadAsStringAsync(), _jsonOptions);
 
         // Update
-        var updateRequest = new UpdateRoleRequest { Description = "Updated description" };
+        var updateRequest = new UpdateRoleRequest
+        {
+            Name = "update-test",
+            Description = "Updated description",
+        };
         var response = await _client.PutAsJsonAsync(
             $"/api/v1/admin/roles/{created!.Data!.RoleId}", updateRequest, _jsonOptions);
 

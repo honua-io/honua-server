@@ -5,6 +5,7 @@ using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -97,6 +98,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
 
         // Most urgent first; stable ordering by rule then id keeps output deterministic.
         return findings
+            .Select(finding => AttachEvidencePosture(finding, now))
             .OrderByDescending(f => (int)f.Severity)
             .ThenBy(f => f.Rule, StringComparer.Ordinal)
             .ThenBy(f => f.Id, StringComparer.Ordinal)
@@ -122,6 +124,16 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId };
         }
 
+        if (!EvidencePosture.IsActionable(finding.EvidencePosture, finding.RequiredSourceIds, DateTimeOffset.UtcNow))
+        {
+            return new OpsFindingProposalResult
+            {
+                Status = OpsFindingProposalStatus.EvidenceIncomplete,
+                FindingId = findingId,
+                Message = "Required finding evidence is incomplete, stale, unavailable, or backend-unverified; no operation was proposed.",
+            };
+        }
+
         // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
         // registered (which requires Redis — see Program.cs). Without it the server still evaluates
         // and serves findings, but their recommended fixes cannot be routed for approval. Report a
@@ -143,6 +155,15 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             Kind = action.Kind,
             ActionDiscriminator = action.ActionDiscriminator,
             RequestedByAgent = RequestedByAgent,
+            Authority = OperationAuthorityContext.CaptureService(
+                "honua-server",
+                RequestedByAgent,
+                "platform") with
+            {
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Update,
+                ResourceId = findingId,
+            },
             Reason = action.Reason,
             ExecutionPayload = action.ExecutionPayload,
             // Idempotency-keyed on the deterministic finding id so re-proposing the same live
@@ -156,6 +177,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 ActionMarkedAutoSafe = action.AutoSafe,
                 BlastRadius = Math.Max(1, action.BlastRadius),
                 EvidenceRefs = finding.EvidenceRefs,
+                EvidencePosture = finding.EvidencePosture,
+                RequiredEvidenceSourceIds = finding.RequiredSourceIds,
             },
         };
 
@@ -182,6 +205,98 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         OperationGatewayOutcome.Canceled => OpsFindingProposalStatus.Canceled,
         _ => OpsFindingProposalStatus.NotSupported,
     };
+
+    private OpsFinding AttachEvidencePosture(OpsFinding finding, DateTimeOffset evaluatedAt)
+    {
+        if (finding.EvidencePosture is not null && finding.RequiredSourceIds.Count > 0)
+        {
+            return finding with
+            {
+                EvidenceRefs = finding.EvidenceRefs
+                    .Concat(EvidencePosture.ToEvidenceReferences(finding.EvidencePosture))
+                    .ToArray(),
+            };
+        }
+
+        if (finding.Rule == RulePlatformReleaseRuntimeDivergence)
+        {
+            var sources = new[]
+            {
+                EvidencePosture.Source(
+                    EvidenceSourceIds.PlatformRelease,
+                    EvidenceBackendKinds.Configuration,
+                    "control-plane-options",
+                    evaluatedAt,
+                    evaluatedAt,
+                    evaluatedAt: evaluatedAt),
+                EvidencePosture.Source(
+                    EvidenceSourceIds.DeployOperations,
+                    EvidenceBackendKinds.DurableStore,
+                    "workflow-operation-store",
+                    evaluatedAt,
+                    evaluatedAt,
+                    evaluatedAt: evaluatedAt),
+            };
+            var combinedPosture = EvidencePosture.Envelope(evaluatedAt, sources);
+            return finding with
+            {
+                EvidencePosture = combinedPosture,
+                RequiredSourceIds = [EvidenceSourceIds.PlatformRelease, EvidenceSourceIds.DeployOperations],
+                EvidenceRefs = finding.EvidenceRefs.Concat(EvidencePosture.ToEvidenceReferences(combinedPosture)).ToArray(),
+            };
+        }
+
+        var (sourceId, backendKind, backendId, observedAt, completeness, reasons) = finding.Rule switch
+        {
+            RuleAlertDispatchBacklog or RuleAlertDispatchChannelFailure =>
+                (EvidenceSourceIds.AlertDispatch, EvidenceBackendKinds.DurableStore, "alert-dispatch-store",
+                    _alertHealth.LastPollAt, _alertHealth.IsStoragePollFailing
+                        ? EvidenceCompletenessStatuses.Unavailable
+                        : EvidenceCompletenessStatuses.Complete,
+                    _alertHealth.IsStoragePollFailing
+                        ? new[] { EvidenceReasonCodes.SourceUnavailable }
+                        : Array.Empty<string>()),
+            RuleDbBoundedAdmissionPressure =>
+                (EvidenceSourceIds.Database, EvidenceBackendKinds.InProcess, "database-pressure-signal",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+            RuleGpQueueDepth =>
+                (EvidenceSourceIds.GeoprocessingQueue, EvidenceBackendKinds.DurableStore, "execution-job-store",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+            RuleServingLatencySlo =>
+                (EvidenceSourceIds.ServingLatency, EvidenceBackendKinds.DurableStore, "ops-health-rollup-store",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+            RuleDeployManualIntervention =>
+                (EvidenceSourceIds.DeployOperations, EvidenceBackendKinds.DurableStore, "workflow-operation-store",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+            RulePlatformReleaseSkew =>
+                (EvidenceSourceIds.PlatformRelease, EvidenceBackendKinds.Configuration, "control-plane-options",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+            RulePendingContractMigrations =>
+                (EvidenceSourceIds.DeployReadiness, EvidenceBackendKinds.InProcess, "deploy-preflight-probe",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+            _ =>
+                (EvidenceSourceIds.DeployReadiness, EvidenceBackendKinds.Configuration, "control-plane-options",
+                    (DateTimeOffset?)evaluatedAt, EvidenceCompletenessStatuses.Complete, Array.Empty<string>()),
+        };
+
+        var source = EvidencePosture.Source(
+            sourceId,
+            backendKind,
+            backendId,
+            observedAt,
+            observedAt,
+            completeness: completeness,
+            reasonCodes: reasons,
+            evaluatedAt: evaluatedAt);
+        var posture = EvidencePosture.Envelope(evaluatedAt, [source]);
+
+        return finding with
+        {
+            EvidencePosture = posture,
+            RequiredSourceIds = [sourceId],
+            EvidenceRefs = finding.EvidenceRefs.Concat(EvidencePosture.ToEvidenceReferences(posture)).ToArray(),
+        };
+    }
 
     // Rule (a): alert-dispatch backlog / dead-letters over threshold. Dead-letters carry a real
     // recommended action now that the ops-action registry has a redrive actuator (#2579): re-enqueue
@@ -621,10 +736,11 @@ internal sealed class OpsFindingsService : IOpsFindingsService
 
         var latestPerProtocol = rows
             .GroupBy(row => row.Point.Protocol, StringComparer.Ordinal)
-            .Select(group => group.OrderByDescending(row => row.BucketStart).First().Point);
+            .Select(group => group.OrderByDescending(row => row.BucketStart).First());
 
-        foreach (var point in latestPerProtocol)
+        foreach (var row in latestPerProtocol)
         {
+            var point = row.Point;
             // Min-sample guard (#2809): a protocol with too few in-window requests has statistically
             // meaningless percentiles (at n=1, p95 == that single request), so a lone slow or failed request
             // would flap a finding. Require a configurable minimum sample count before evaluating.
@@ -648,6 +764,23 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             }
 
             var subject = new OpsFindingSubject { Protocol = point.Protocol };
+            var source = EvidencePosture.Source(
+                EvidenceSourceIds.ServingLatency,
+                EvidenceBackendKinds.DurableStore,
+                "ops-health-rollup-store",
+                row.BucketStart,
+                row.BucketStart,
+                coverage: new EvidenceCoverage
+                {
+                    RequestedFrom = now.AddMinutes(-options.ServingLatencyLookbackMinutes),
+                    RequestedTo = now,
+                    ReturnedFrom = rows.Min(item => item.BucketStart),
+                    ReturnedTo = rows.Max(item => item.BucketStart),
+                    ReturnedCount = rows.Count,
+                },
+                maximumObservationAgeSeconds: Math.Max(60, (int)Math.Ceiling(options.ServingLatencyLookbackMinutes * 60)),
+                evaluatedAt: now);
+            var posture = EvidencePosture.Envelope(now, [source]);
 
             findings.Add(new OpsFinding
             {
@@ -659,6 +792,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 DetectedAt = now,
                 Subject = subject,
                 EvidenceRefs = ["GET /api/v1/admin/observability/ops-health/history", $"protocol:{point.Protocol}"],
+                EvidencePosture = posture,
+                RequiredSourceIds = [EvidenceSourceIds.ServingLatency],
                 RecommendedAction = null,
             });
         }

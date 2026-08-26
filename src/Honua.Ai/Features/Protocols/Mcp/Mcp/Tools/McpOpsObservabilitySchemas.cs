@@ -129,11 +129,15 @@ internal static class McpOpsObservabilitySchemas
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["generatedAt", "overallStatus", "health", "servingLatency", "geoprocessing", "alertDispatch", "deploy", "database"],
+          "required": ["generatedAt", "evidencePosture", "overallStatus", "health", "servingLatency", "geoprocessing", "alertDispatch", "deploy", "database"],
           "properties": {
             "generatedAt": {
               "type": "string",
               "format": "date-time"
+            },
+            "evidencePosture": {
+              "type": "object",
+              "additionalProperties": true
             },
             "overallStatus": {
               "type": "string"
@@ -171,14 +175,18 @@ internal static class McpOpsObservabilitySchemas
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["generatedAt", "findings"],
+          "required": ["generatedAt", "evidencePosture", "findings"],
           "properties": {
+            "evidencePosture": {
+              "type": "object",
+              "additionalProperties": true
+            },
             "findings": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": true,
-                "required": ["id", "rule", "severity", "title", "explanation", "detectedAt", "subject", "evidenceRefs"]
+                "required": ["id", "rule", "severity", "title", "explanation", "detectedAt", "subject", "evidenceRefs", "evidencePosture", "requiredSourceIds"]
               }
             }
           }
@@ -190,8 +198,12 @@ internal static class McpOpsObservabilitySchemas
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["items"],
+          "required": ["items", "evidencePosture"],
           "properties": {
+            "evidencePosture": {
+              "type": "object",
+              "additionalProperties": true
+            },
             "items": {
               "type": "array",
               "items": {
@@ -212,8 +224,12 @@ internal static class McpOpsObservabilitySchemas
         {
           "type": "object",
           "additionalProperties": true,
-          "required": ["items"],
+          "required": ["items", "evidencePosture"],
           "properties": {
+            "evidencePosture": {
+              "type": "object",
+              "additionalProperties": true
+            },
             "items": {
               "type": "array",
               "items": {

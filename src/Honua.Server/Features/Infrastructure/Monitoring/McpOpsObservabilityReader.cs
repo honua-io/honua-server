@@ -84,10 +84,13 @@ internal sealed class McpOpsObservabilityReader(
                 StringComparison.OrdinalIgnoreCase));
         }
 
+        var selected = filtered.ToArray();
+        var generatedAt = DateTimeOffset.UtcNow;
         var response = new OpsFindingsListResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
-            Findings = filtered.Select(OpsFindingResponseMapper.Map).ToArray(),
+            GeneratedAt = generatedAt,
+            EvidencePosture = EvidencePostureProjection.ForFindings(generatedAt, selected),
+            Findings = selected.Select(OpsFindingResponseMapper.Map).ToArray(),
         };
 
         return Serialize(response, OpsObservabilityJsonContext.Default.OpsFindingsListResponse);
@@ -124,10 +127,18 @@ internal sealed class McpOpsObservabilityReader(
             .Select(ObservabilityAlertEventResponseMapper.Map)
             .ToArray();
 
+        var generatedAt = DateTimeOffset.UtcNow;
         var response = new ObservabilityAlertEventPageResponse
         {
             Items = items,
-            NextCursor = page.NextCursor
+            NextCursor = page.NextCursor,
+            EvidencePosture = EvidencePostureProjection.ForAlertEvents(
+                generatedAt,
+                filter.From,
+                filter.To,
+                filter.PageSize,
+                items.Select(item => item.OccurredAt).ToArray(),
+                page.NextCursor is not null),
         };
 
         return Serialize(response, ObservabilityJsonContext.Default.ObservabilityAlertEventPageResponse);
@@ -153,13 +164,26 @@ internal sealed class McpOpsObservabilityReader(
         };
 
         var page = await _operateEvents.ListAsync(filter, cancellationToken).ConfigureAwait(false);
+        var generatedAt = DateTimeOffset.UtcNow;
+        var (includedSources, failedSources) = EvidencePostureProjection.ResolveOperateEventSources(page);
         var response = new OperateEventPageResponse
         {
             Items = page.Items.Select(OperateEventResponseMapper.Map).ToArray(),
             PartialResult = page.PartialResult,
             SourceErrors = page.SourceErrors?.ToDictionary(
                 pair => pair.Key.ToString().ToLowerInvariant(),
-                pair => pair.Value)
+                pair => pair.Value),
+            EvidencePosture = EvidencePostureProjection.ForOperateEvents(
+                generatedAt,
+                filter.From,
+                filter.To,
+                filter.PageSize,
+                page.Items.Select(item => item.OccurredAt).ToArray(),
+                page.PartialResult,
+                page.HasMore,
+                page.Truncated,
+                includedSources,
+                failedSources),
         };
 
         return Serialize(response, ObservabilityJsonContext.Default.OperateEventPageResponse);

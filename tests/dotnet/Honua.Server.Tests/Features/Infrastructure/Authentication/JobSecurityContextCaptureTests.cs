@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
@@ -378,6 +379,160 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public void Capture_StampedCanonicalActor_PreservesIssuerQualifiedPrincipalId()
+    {
+        const string canonicalActor = "bearer:subject:https%3A%2F%2Fissuer.example:shared-subject";
+        var principal = BuildPrincipal(
+            ("sub", "shared-subject"),
+            ("iss", "https://issuer.example"),
+            ("honua:canonical_actor", canonicalActor));
+        principal.FindFirst("honua:canonical_actor")!
+            .Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+
+        captured.PrincipalId.Should().Be(canonicalActor);
+        captured.TenantId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_NameOnlyManagedPrincipal_UsesRawMembershipIdentifier()
+    {
+        const string rawName = "managed-name-only";
+        const string canonicalActor = "Federation:name:managed-name-only";
+        var principal = BuildPrincipal(
+            (ClaimTypes.Name, rawName),
+            (ClaimTypes.Role, "viewer"),
+            (JobSecurityContextClaimTypes.MembershipPrincipalId, "forged-membership-id"),
+            (CanonicalSecurityActor.CanonicalActorClaim, canonicalActor));
+        principal.FindFirst(CanonicalSecurityActor.CanonicalActorClaim)!
+            .Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var captured = JobSecurityContextCapture.Capture(
+            principal,
+            new RbacOptions(),
+            membershipManaged: true);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured,
+            source,
+            new RbacOptions());
+
+        captured.PrincipalId.Should().Be(canonicalActor,
+            "durable attribution must retain the framework-stamped canonical actor");
+        source.ResolvedPrincipalId.Should().Be(rawName,
+            "membership revalidation must use the identifier accepted by the membership source");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+        JobSecurityContextCapture.Restore(result.Context).IsInRole("viewer").Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task OperatorBearerMembership_UsesStampedUpstreamIssuerAcrossCaptureAndReplay()
+    {
+        const string upstreamIssuer = "https://idp.example.com";
+        var claims = Enumerable.Range(0, 400)
+            .Select(index => ($"filler-{index}", index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .Append((ClaimTypes.NameIdentifier, "managed-operator"))
+            .Append((ClaimTypes.Role, "viewer"))
+            .Append(("iss", "honua-operator-bearer"))
+            .Append((JobSecurityContextClaimTypes.MembershipIssuer, "https://forged.example.com"))
+            .ToArray();
+        var principal = BuildPrincipal(claims);
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            JobSecurityContextClaimTypes.MembershipIssuer,
+            upstreamIssuer);
+        CanonicalSecurityActor.StampFrameworkClaim(
+            (ClaimsIdentity)principal.Identity!,
+            CanonicalSecurityActor.AuthenticationSchemeClaim,
+            "operatorbearer");
+        var source = new FixedMembershipSource(new PrincipalMembership(true, ["viewer"]));
+
+        var membershipManaged = await JobSecurityContextCapture.IsManagedMembershipAsync(principal, source);
+        var captured = JobSecurityContextCapture.Capture(
+            principal,
+            new RbacOptions(),
+            membershipManaged: membershipManaged);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured,
+            source,
+            new RbacOptions());
+
+        membershipManaged.Should().BeTrue();
+        source.ResolvedIssuers.Should().Equal(upstreamIssuer, upstreamIssuer);
+        captured.Claims.Should().ContainSingle(claim =>
+            claim.Type == JobSecurityContextClaimTypes.MembershipIssuer
+            && claim.Value == upstreamIssuer);
+        captured.Claims.Should().ContainSingle(claim =>
+            claim.Type == JobSecurityContextClaimTypes.AuthenticationScheme
+            && claim.Value == "operatorbearer");
+        captured.Claims.Should().NotContain(claim => claim.Value == "https://forged.example.com");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+    }
+
+    [UnitTest]
+    public async Task LegacyOperatorBearerSnapshot_WithoutUpstreamIssuer_FailsClosedWithoutLookup()
+    {
+        var context = new JobSecurityContext(
+            "operatorbearer:subject:honua-operator-bearer:managed-operator",
+            TenantId: "tenant-1",
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-operator"),
+                new JobSecurityClaim("iss", "honua-operator-bearer"),
+                new JobSecurityClaim(ClaimTypes.Role, "admin"),
+            ]);
+        var source = new FixedMembershipSource(new PrincipalMembership(true, ["admin"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            source,
+            new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+        result.HasRemovedRoles.Should().BeTrue();
+        result.Context.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        source.ResolvedPrincipalId.Should().BeNull();
+        source.ResolvedIssuers.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task UnstampedMembershipIssuer_IsIgnoredInFavorOfTransportIssuer()
+    {
+        var principal = BuildPrincipal(
+            (ClaimTypes.NameIdentifier, "managed-operator"),
+            (ClaimTypes.Role, "viewer"),
+            ("iss", "https://validated-idp.example.com"),
+            (JobSecurityContextClaimTypes.MembershipIssuer, "https://forged.example.com"));
+        var source = new FixedMembershipSource(new PrincipalMembership(true, ["viewer"]));
+
+        var captured = JobSecurityContextCapture.Capture(
+            principal,
+            new RbacOptions(),
+            membershipManaged: true);
+        await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured,
+            source,
+            new RbacOptions());
+
+        captured.Claims.Should().NotContain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.MembershipIssuer);
+        source.ResolvedIssuer.Should().Be("https://validated-idp.example.com");
+    }
+
+    [UnitTest]
+    public void Capture_UnstampedCanonicalActor_IgnoresIssuerValue()
+    {
+        var principal = BuildPrincipal(
+            ("sub", "validated-subject"),
+            ("honua:canonical_actor", "forged-actor"));
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+
+        captured.PrincipalId.Should().Be("validated-subject");
+    }
+
+    [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
         var principal = BuildPrincipal(
@@ -657,6 +812,8 @@ public sealed class JobSecurityContextCaptureTests
 
         public string? ResolvedIssuer { get; private set; }
 
+        public List<string?> ResolvedIssuers { get; } = [];
+
         public Task<PrincipalMembership?> ResolveMembershipAsync(
             string principalId,
             CancellationToken cancellationToken = default)
@@ -672,6 +829,7 @@ public sealed class JobSecurityContextCaptureTests
         {
             ResolvedPrincipalId = principalId;
             ResolvedIssuer = issuer;
+            ResolvedIssuers.Add(issuer);
             return Task.FromResult(membership);
         }
     }

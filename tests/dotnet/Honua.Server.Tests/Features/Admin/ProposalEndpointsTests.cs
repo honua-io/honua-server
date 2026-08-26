@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -12,6 +13,8 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -44,12 +47,16 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IProposalNotifier>();
                 services.RemoveAll<IOperationGateway>();
                 services.RemoveAll<IOperationExecutor>();
+                services.RemoveAll<IOperationAuthorityRevalidator>();
+                services.RemoveAll<IClaimsTransformation>();
 
                 services.AddSingleton<IOperationProposalStore>(_proposalStore);
                 services.AddSingleton<IGuardrailLadder>(_ladder);
                 services.AddSingleton<IProposalNotifier>(_notifier);
                 services.AddSingleton<IOperationExecutor>(_executor);
                 services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
+                services.AddHttpContextAccessor();
+                services.AddTransient<IClaimsTransformation, MissingApproverActorClaimsTransformation>();
             });
     }
 
@@ -65,7 +72,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         OperationProposalStatus status = OperationProposalStatus.AwaitingApproval,
         string? requestedBy = "agent:test",
         OperationProposalAutonomyMetadata? autonomyMetadata = null,
-        string? executionPayload = null)
+        string? executionPayload = null,
+        OperationAuthorityContext? authority = null)
     {
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
@@ -74,6 +82,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             Kind = OperationClass.AdminConfigChange,
             Status = status,
             RequestedBy = requestedBy,
+            Authority = authority ?? CreateAuthority(requestedBy ?? "agent:test"),
             AutonomyMetadata = autonomyMetadata,
             Plan = new OperationProposalPlan
             {
@@ -173,11 +182,47 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     {
         // The admin client authenticates as the "admin" principal; seeding the
         // proposal with that same requester must trip the separation-of-duties guard.
-        var proposal = await SeedProposalAsync(requestedBy: "admin");
+        var proposal = await SeedProposalAsync(
+            requestedBy: "admin",
+            authority: CreateAuthority("admin", issuer: "ApiKey", scheme: "ApiKey"));
 
         var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_SameActorFromDifferentIssuer_IsAllowed()
+    {
+        var proposal = await SeedProposalAsync(
+            requestedBy: "admin",
+            authority: CreateAuthority("admin", issuer: "https://idp-a.example", scheme: "Bearer"));
+
+        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _executor.Executed.Should().BeTrue();
+        var stored = await _proposalStore.GetAsync(proposal.ProposalId);
+        stored!.Approval!.Approver.Should().Be("admin");
+        stored.Approval.ApproverIdentity.Should().NotBeNull();
+        stored.Approval.ApproverIdentity!.Issuer.Should().Be("ApiKey");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_AuthenticatedAdminWithoutStableActor_ReturnsUnauthorized()
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var client = _fixture.CreateAdminClient();
+        client.DefaultRequestHeaders.Add(MissingApproverActorClaimsTransformation.HeaderName, "true");
+
+        var response = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _executor.Executed.Should().BeFalse();
+        (await _proposalStore.GetAsync(proposal.ProposalId))!.Status
+            .Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
     [IntegrationTest]
@@ -231,7 +276,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         {
             Kind = OperationClass.AdminConfigChange,
             RequestedBy = "agent:proposer",
-            Reason = "tighten setting"
+            Reason = "tighten setting",
+            Authority = CreateAuthority("agent:proposer"),
         });
 
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
@@ -272,6 +318,18 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
     }
+
+    private static OperationAuthorityContext CreateAuthority(
+        string actor,
+        string issuer = "test-proposer",
+        string scheme = "Service") => new()
+        {
+            Issuer = issuer,
+            Actor = actor,
+            Scheme = scheme,
+            EffectiveTenant = "tenant-1",
+            ScopeGoverned = false,
+        };
 
     private sealed class StubGuardrailLadder : IGuardrailLadder
     {
@@ -332,6 +390,34 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         {
             ResolvedCount++;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class MissingApproverActorClaimsTransformation(IHttpContextAccessor httpContextAccessor)
+        : IClaimsTransformation
+    {
+        public const string HeaderName = "X-Test-Missing-Approver-Actor";
+
+        public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+        {
+            if (httpContextAccessor.HttpContext?.Request.Headers.ContainsKey(HeaderName) != true)
+            {
+                return Task.FromResult(principal);
+            }
+
+            foreach (var identity in principal.Identities.OfType<ClaimsIdentity>())
+            {
+                var actorClaims = identity.Claims
+                    .Where(claim => claim.Type is ClaimTypes.NameIdentifier or ClaimTypes.Name or
+                        "sub" or "api_key_id" or "api_key_name")
+                    .ToArray();
+                foreach (var claim in actorClaims)
+                {
+                    identity.RemoveClaim(claim);
+                }
+            }
+
+            return Task.FromResult(principal);
         }
     }
 

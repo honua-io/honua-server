@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -29,6 +30,8 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions> options)
 {
+    private const int MaxMembershipIssuerLength = 512;
+
     // JWT registered claims the handler manages itself: copying them out of the
     // source session claims (which carry the upstream id token's iss/exp/etc.) would
     // collide with the descriptor below and break issuer/lifetime validation, so they
@@ -47,6 +50,12 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
 
     /// <summary>Whether operator bearer issuance and validation are enabled and configured.</summary>
     public bool Enabled => _options.IsUsable;
+
+    /// <summary>
+    /// Gets the issuer that every successfully validated operator bearer was
+    /// cryptographically checked against.
+    /// </summary>
+    internal string ValidatedIssuer => _options.ResolveIssuer();
 
     /// <summary>
     /// Mints an operator bearer carrying <paramref name="sessionClaims"/>, with an
@@ -73,7 +82,12 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
-        var token = SignJwt(sessionClaims, now, expiresAt);
+        if (!TryResolveMembershipIssuer(sessionClaims, out var membershipIssuer))
+        {
+            return null;
+        }
+
+        var token = SignJwt(sessionClaims, membershipIssuer, now, expiresAt);
         return new OperatorBearerIssuance(token, expiresAt);
     }
 
@@ -83,7 +97,7 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
     /// <see langword="null"/> when the feature is disabled or the token is
     /// invalid/expired.
     /// </summary>
-    public async Task<IReadOnlyList<AdminAuthSessionClaim>?> TryValidateAsync(string? token)
+    public async Task<OperatorBearerValidation?> TryValidateAsync(string? token)
     {
         if (!Enabled || string.IsNullOrWhiteSpace(token))
         {
@@ -110,8 +124,20 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
+        var membershipIssuers = result.ClaimsIdentity.Claims
+            .Where(static claim => claim.Type == OperationAuthorityContext.MembershipIssuerClaimType)
+            .Select(static claim => claim.Value.Trim())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        if (membershipIssuers.Length > 1 ||
+            membershipIssuers.FirstOrDefault()?.Length > MaxMembershipIssuerLength)
+        {
+            return null;
+        }
+
         var claims = result.ClaimsIdentity.Claims
-            .Where(static claim => !ReservedClaimTypes.Contains(claim.Type))
+            .Where(static claim => !ReservedClaimTypes.Contains(claim.Type) &&
+                claim.Type != OperationAuthorityContext.MembershipIssuerClaimType)
             .Select(static claim => new AdminAuthSessionClaim
             {
                 Type = claim.Type,
@@ -119,7 +145,9 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             })
             .ToArray();
 
-        return claims.Length == 0 ? null : claims;
+        return claims.Length == 0
+            ? null
+            : new OperatorBearerValidation(claims, membershipIssuers.FirstOrDefault());
     }
 
     /// <summary>
@@ -154,6 +182,7 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
 
     private string SignJwt(
         IReadOnlyList<AdminAuthSessionClaim> sessionClaims,
+        string? membershipIssuer,
         DateTimeOffset issuedAt,
         DateTimeOffset expiresAt)
     {
@@ -161,9 +190,14 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = sessionClaims
-            .Where(claim => !ReservedClaimTypes.Contains(claim.Type))
+            .Where(claim => !ReservedClaimTypes.Contains(claim.Type) &&
+                claim.Type != OperationAuthorityContext.MembershipIssuerClaimType)
             .Select(claim => new Claim(claim.Type, claim.Value))
             .ToList();
+        if (membershipIssuer is not null)
+        {
+            claims.Add(new Claim(OperationAuthorityContext.MembershipIssuerClaimType, membershipIssuer));
+        }
 
         var now = issuedAt.UtcDateTime;
         var descriptor = new SecurityTokenDescriptor
@@ -180,7 +214,26 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         return handler.CreateToken(descriptor);
     }
+
+    private static bool TryResolveMembershipIssuer(
+        IReadOnlyList<AdminAuthSessionClaim> sessionClaims,
+        out string? membershipIssuer)
+    {
+        var issuers = sessionClaims
+            .Where(static claim => claim.Type == JwtRegisteredClaimNames.Iss)
+            .Select(static claim => claim.Value.Trim())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        membershipIssuer = issuers.FirstOrDefault();
+        return issuers.Length <= 1 &&
+            (membershipIssuer is null || membershipIssuer.Length <= MaxMembershipIssuerLength);
+    }
 }
 
 /// <summary>A minted operator bearer and its clamped expiry.</summary>
 internal sealed record OperatorBearerIssuance(string Token, DateTimeOffset ExpiresAt);
+
+/// <summary>Validated operator-session claims plus the trusted upstream membership issuer.</summary>
+internal sealed record OperatorBearerValidation(
+    IReadOnlyList<AdminAuthSessionClaim> Claims,
+    string? MembershipIssuer);

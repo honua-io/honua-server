@@ -79,7 +79,10 @@ internal sealed class AdminPortalCredentialVerifier(
         string? configuredPassword;
         try
         {
-            configuredPassword = await ResolveAdminPasswordAsync(cancellationToken).ConfigureAwait(false);
+            configuredPassword = await AdminPasswordResolver.ResolveAsync(
+                _apiKeyOptions,
+                _secretResolver,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -108,28 +111,6 @@ internal sealed class AdminPortalCredentialVerifier(
             DisplayName: AdminUsername,
             TenantId: _tenantContext?.TenantId,
             Roles: AdminRoles);
-    }
-
-    private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
-    {
-        var configuredPassword = _apiKeyOptions.AdminPassword;
-        if (string.IsNullOrWhiteSpace(configuredPassword))
-        {
-            return null;
-        }
-
-        var resolvedPassword = configuredPassword;
-        if (_secretResolver is not null)
-        {
-            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-            if (canResolve)
-            {
-                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _apiKeyOptions.EnvironmentName);
-        return resolvedPassword;
     }
 
     private static bool ConstantTimeEquals(string provided, string configured)

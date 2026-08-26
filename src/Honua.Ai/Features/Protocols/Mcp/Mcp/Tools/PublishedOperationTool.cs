@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -325,12 +326,13 @@ internal sealed class PublishedOperationTool : IMcpTool
         {
             writer.WriteStartObject();
             writer.WriteString("type", "object");
+            writer.WriteBoolean("additionalProperties", false);
 
             writer.WriteStartObject("properties");
             foreach (var parameter in parameters)
             {
                 writer.WriteStartObject(parameter.Name);
-                writer.WriteString("type", "string");
+                WriteSchema(writer, parameter.Schema);
                 if (!string.IsNullOrWhiteSpace(parameter.Title))
                 {
                     writer.WriteString("description", parameter.Title);
@@ -353,5 +355,54 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
+    }
+
+    private static void WriteSchema(Utf8JsonWriter writer, WorkflowSchemaDefinition schema)
+    {
+        writer.WriteString("type", schema.Type switch
+        {
+            WorkflowSchemaValueType.Text => "string",
+            WorkflowSchemaValueType.WholeNumber => "integer",
+            WorkflowSchemaValueType.DecimalNumber => "number",
+            WorkflowSchemaValueType.Flag => "boolean",
+            WorkflowSchemaValueType.List => "array",
+            WorkflowSchemaValueType.Structured => "object",
+            _ => throw new InvalidOperationException($"Unsupported workflow schema type '{schema.Type}'."),
+        });
+
+        if (!string.IsNullOrWhiteSpace(schema.Format))
+        {
+            writer.WriteString("format", schema.Format);
+        }
+
+        if (schema.EnumValues.Count > 0)
+        {
+            writer.WriteStartArray("enum");
+            foreach (var value in schema.EnumValues)
+            {
+                writer.WriteStringValue(value);
+            }
+            writer.WriteEndArray();
+        }
+
+        if (schema.Type == WorkflowSchemaValueType.List && schema.Items is not null)
+        {
+            writer.WriteStartObject("items");
+            WriteSchema(writer, schema.Items);
+            writer.WriteEndObject();
+        }
+
+        if (schema.Type == WorkflowSchemaValueType.Structured)
+        {
+            writer.WriteBoolean("additionalProperties", false);
+            writer.WriteStartObject("properties");
+            foreach (var property in schema.Properties.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                writer.WriteStartObject(property.Key);
+                WriteSchema(writer, property.Value);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
     }
 }

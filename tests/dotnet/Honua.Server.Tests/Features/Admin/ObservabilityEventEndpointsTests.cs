@@ -102,6 +102,41 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/events")]
+    public async Task ListEvents_EmptySuccessfulSource_RemainsInEvidenceCoverage()
+    {
+        _feed.Page = new OperateEventPage
+        {
+            Items =
+            [
+                new OperateEvent
+                {
+                    EventId = "alert:1",
+                    Kind = OperateEventKind.Alert,
+                    Severity = OperateEventSeverity.Warning,
+                    OccurredAt = DateTimeOffset.UtcNow,
+                    Title = "Alert",
+                },
+            ],
+            QueriedSources = [OperateEventKind.Alert, OperateEventKind.Audit],
+        };
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/events");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var coverage = doc.RootElement.GetProperty("evidencePosture")
+            .GetProperty("sources")[0]
+            .GetProperty("coverage");
+        coverage.GetProperty("includedComponentIds").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().BeEquivalentTo(["alert", "audit"]);
+        coverage.GetProperty("expectedComponentIds").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().BeEquivalentTo(["alert", "audit"]);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/events")]
     public async Task ListEvents_RejectsDefinedNumericKind()
     {
         var response = await _client.GetAsync("/api/v1/admin/observability/events?kind=1");
@@ -150,6 +185,20 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
         items.GetArrayLength().Should().Be(1);
         items[0].GetProperty("action").GetString().Should().Be("alert.resolve");
         items[0].GetProperty("actor").GetString().Should().Be("bob");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/audit")]
+    public async Task ListAudit_MalformedCursor_ReturnsBadRequestProblem()
+    {
+        _auditReader.Exception = new InvalidAuditLogCursorException();
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/audit?cursor=malformed");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        doc.RootElement.GetProperty("detail").GetString().Should().Contain("cursor");
     }
 
     [IntegrationTest]
@@ -251,8 +300,10 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     {
         public AuditEventPage Page { get; set; } = new() { Items = Array.Empty<AuditEventRecord>() };
 
+        public Exception? Exception { get; set; }
+
         public Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default)
-            => Task.FromResult(Page);
+            => Exception is null ? Task.FromResult(Page) : Task.FromException<AuditEventPage>(Exception);
     }
 
     private sealed class StubAuditExporter : IAuditLogExporter

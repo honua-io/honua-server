@@ -75,7 +75,7 @@ public sealed class McpPlatformOpsToolTests
             .EnumerateArray()
             .Select(element => element.GetString())
             .Should()
-            .Equal("AdminConfigChange", "Deploy");
+            .Equal("Deploy", "MetadataRelease");
         reader.SupportedOperationKindsCalls.Should().Be(1);
         reader.LastPrincipal.Should().BeSameAs(context.User);
     }
@@ -167,7 +167,7 @@ public sealed class McpPlatformOpsToolTests
             SupportedOperationKindsCalls++;
             return Task.FromResult(new McpSupportedOperationKindsOutput
             {
-                SupportedKinds = ["AdminConfigChange", "Deploy"]
+                SupportedKinds = ["Deploy", "MetadataRelease"]
             });
         }
 

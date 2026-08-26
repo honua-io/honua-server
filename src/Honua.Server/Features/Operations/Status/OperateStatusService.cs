@@ -174,7 +174,7 @@ internal sealed class OperateStatusService : IOperateStatusService
         {
             Source = "GET /api/v1/admin/observability/ops-health",
             Available = gp.Available,
-            TotalActive = gp.TotalActive,
+            TotalActive = gp.TotalActive ?? 0,
             Queued = queued,
             Running = running,
             Backends = backends,

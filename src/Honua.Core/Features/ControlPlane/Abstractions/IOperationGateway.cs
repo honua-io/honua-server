@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
@@ -68,6 +69,12 @@ public enum OperationGatewayOutcome
 public sealed record OperationGatewayRequest
 {
     /// <summary>
+    /// Stable invocation identity assigned before policy evaluation. Replays reuse
+    /// the identity persisted on the proposal.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>
     /// Operation class being routed.
     /// </summary>
     public required OperationClass Kind { get; init; }
@@ -90,6 +97,12 @@ public sealed record OperationGatewayRequest
     /// Agent identifier when the request originated from an autonomous agent.
     /// </summary>
     public string? RequestedByAgent { get; init; }
+
+    /// <summary>
+    /// Trusted authenticated proposer authority. This is retained for approved
+    /// execution and is never replaced by the approver's authority.
+    /// </summary>
+    public OperationAuthorityContext? Authority { get; init; }
 
     /// <summary>
     /// Free-form operator reason or change note.
@@ -150,6 +163,12 @@ public sealed record OperationGatewayAutonomyContext
 
     /// <summary>Gets the supporting evidence references for audit/diagnostic context.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = Array.Empty<string>();
+
+    /// <summary>Gets the exact bounded source posture used by the finding decision.</summary>
+    public EvidencePostureEnvelope? EvidencePosture { get; init; }
+
+    /// <summary>Gets the source identifiers that must remain actionable when the gateway re-evaluates the route.</summary>
+    public IReadOnlyList<string> RequiredEvidenceSourceIds { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -157,6 +176,9 @@ public sealed record OperationGatewayAutonomyContext
 /// </summary>
 public sealed record OperationGatewayResult
 {
+    /// <summary>Stable invocation identity for this routing result.</summary>
+    public string? OperationInstanceId { get; init; }
+
     /// <summary>
     /// Routing outcome.
     /// </summary>
@@ -211,7 +233,8 @@ public interface IOperationGateway
     /// <c>operation.proposed</c> audit, pending notification, and idempotency handling
     /// as the ladder-routed approval path, so the resulting proposal is surfaced and
     /// resolved through the same <c>honua://proposals/{id}</c> resource and
-    /// <see cref="ApplyApprovedProposalAsync"/> / <see cref="RejectProposalAsync"/>
+    /// <see cref="ApplyApprovedProposalAsync(string, OperationApproverIdentity, CancellationToken)"/> /
+    /// <see cref="RejectProposalAsync"/>
     /// path. Used when the caller has already determined the operation must be gated
     /// and only needs it persisted for human resolution (ADR-0064, #2814).
     /// </summary>
@@ -226,9 +249,9 @@ public interface IOperationGateway
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Applies a previously created proposal once a human approves it, handing the
-    /// stored execution payload to the registered executor. The proposal must be
-    /// in <see cref="OperationProposalStatus.AwaitingApproval"/>.
+    /// Legacy compatibility entrypoint for callers that cannot supply issuer-qualified
+    /// approver identity. Implementations must fail closed for proposals with captured
+    /// proposer authority; modern callers use the qualified overload below.
     /// </summary>
     /// <param name="proposalId">Proposal identifier.</param>
     /// <param name="approvedBy">Principal that approved the proposal.</param>
@@ -238,6 +261,21 @@ public interface IOperationGateway
         string proposalId,
         string approvedBy,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies a previously created proposal using issuer-qualified approver identity
+    /// for the separation-of-duties decision.
+    /// </summary>
+    /// <param name="proposalId">Proposal identifier.</param>
+    /// <param name="approver">Canonical authenticated identity that approved the proposal.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated proposal, or null when the proposal is not found.</returns>
+    Task<OperationProposal?> ApplyApprovedProposalAsync(
+        string proposalId,
+        OperationApproverIdentity approver,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "The operation gateway must implement issuer-qualified proposal approval.");
 
     /// <summary>
     /// Rejects a previously created proposal with a required reason.

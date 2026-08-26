@@ -49,6 +49,9 @@ internal sealed class McpProposeOperationArgument
     [JsonPropertyName("kind")]
     public string? Kind { get; set; }
 
+    [JsonPropertyName("resourceId")]
+    public string? ResourceId { get; set; }
+
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
 
@@ -211,13 +214,14 @@ internal sealed class McpProposeOperationOutput
 }
 
 /// <summary>
-/// Read-only projection of the operation kinds that the live gateway can route.
+/// Read-only projection of the operation kinds that the live gateway can route through
+/// the validated generic MCP proposal contract.
 /// </summary>
 internal sealed class McpSupportedOperationKindsOutput
 {
     /// <summary>
     /// Stable <see cref="Honua.Core.Features.Guardrails.Domain.OperationClass"/> identifiers
-    /// backed by registered operation executors.
+    /// backed by registered operation executors and safely representable by the MCP adapter.
     /// </summary>
     [JsonPropertyName("supportedKinds")]
     public IReadOnlyList<string> SupportedKinds { get; set; } = [];

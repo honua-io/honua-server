@@ -539,6 +539,8 @@ if (connectedRedis != null)
         Honua.ControlPlane.RedisOperationProposalStore>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationAuthorityRevalidator,
+        Honua.ControlPlane.CurrentOperationAuthorityRevalidator>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.DeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
@@ -1304,6 +1306,29 @@ app.UseApiKeyAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// MCP bearer credentials must be fully validated before tenant context, schema
+// routing, or tenant status observes the request. The endpoint filter remains
+// defense-in-depth for non-standard hosting pipelines.
+Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions.UseMcpBearerAuthentication(app);
+
+// Audit enters after the bearer has been validated, so its actor context is the
+// canonical validated principal. Invalid bearer responses are deferred until the
+// rejection boundary below, allowing the shared audit layer to record their 401.
+app.UseHonuaAuditLog();
+
+// Invalid bearer validation attempts use the normal application rate limiter,
+// partitioned by source IP because there is no trusted actor/tenant. The branch
+// terminates before tenant context, schema routing, status checks, or endpoints.
+app.UseWhen(
+    static context => Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
+        .HasAuthenticationFailure(context),
+    static invalidBearer =>
+    {
+        invalidBearer.UseRateLimiting();
+        Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
+            .UseMcpBearerAuthenticationRejection(invalidBearer);
+    });
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
@@ -1318,11 +1343,6 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
-
-// Audit-log middleware records security-relevant request outcomes. It runs after
-// auth so the audit actor is the authenticated principal, and before endpoint
-// execution so 401/403/5xx responses are still observed (#1144).
-app.UseHonuaAuditLog();
 
 // App-level rate limiting (issue #355). Runs after authentication and tenant resolution
 // so buckets partition by tenant + authenticated user/API-key identity (falling back to
@@ -1479,6 +1499,7 @@ app.MapSamlEndpoints();
 
 // Configure Console metadata v2 content + RBAC endpoints (#1162)
 app.MapConsoleSessionEndpoints();
+app.MapConsoleAccessEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)

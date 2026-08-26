@@ -5,17 +5,22 @@
   "description": "Argument shape for the control-plane proposal tool (advertised name honua_propose_operation). Proposes an in-scope mutating control-plane operation for human approval on a deterministic server; the proposal is NEVER autonomously executed — execution stays approval-gated behind the human console inbox — consistent with the ADR-0028 posture (deterministic server, approval-gated mutation, no autonomous AI data edits) in taxonomy.md §Non-Goals. x-honua-reference-shape: tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "x-honua-supported-kinds": {
-    "description": "Capability discovery: the kind enum is the full, wire-compatible OperationClass vocabulary, but not every member is routable by a given server at runtime. Clients learn which kinds are actually routable from the reference self-describing capability surface (list_capabilities) rather than assuming the full enum. In the reference implementation, Seed is currently NOT routable through the operation gateway; AdminConfigChange, Deploy, and MetadataRelease are. Advertising a non-routable kind yields a NotSupported outcome; the enum is retained unchanged so the wire contract stays stable as kinds become routable.",
-    "routable": ["AdminConfigChange", "Deploy", "MetadataRelease"],
-    "notRoutable": ["Seed"]
+    "description": "Capability discovery for the generic MCP proposal surface. Deploy and MetadataRelease have validated resource-bound execution specifications. AdminConfigChange and Seed require dedicated surfaces and are rejected before the gateway.",
+    "routable": ["Deploy", "MetadataRelease"],
+    "notRoutable": ["AdminConfigChange", "Seed"]
   },
   "type": "object",
-  "required": ["kind"],
+  "required": ["kind", "resourceId", "executionPayload"],
   "properties": {
     "kind": {
       "type": "string",
-      "description": "In-scope mutating control-plane operation class to propose. Wire-compatible OperationClass enum; the routable subset is discoverable at runtime (see x-honua-supported-kinds). Seed is currently not routable in the reference.",
-      "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+      "description": "Mutating control-plane operation class safely representable by this generic proposal tool.",
+      "enum": ["Deploy", "MetadataRelease"]
+    },
+    "resourceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact tenant-scoped target resource identifier bound to the proposal."
     },
     "reason": {
       "type": "string",
@@ -23,11 +28,13 @@
     },
     "executionPayload": {
       "type": "string",
-      "description": "Opaque, class-specific JSON execution payload replayed when the proposal is approved."
+      "minLength": 2,
+      "description": "Class-specific JSON execution specification whose target identifier exactly matches resourceId."
     },
     "idempotencyKey": {
       "type": "string",
       "description": "Stable idempotency key for the underlying operation."
     }
-  }
+  },
+  "additionalProperties": false
 }

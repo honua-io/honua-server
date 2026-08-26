@@ -42,6 +42,42 @@ proposal authority.
 5. Graduate: promote a repeated, deterministic, low-risk concern up the autonomy
    ladder only after its signal, executor, guardrails, and proof exist.
 
+### Evidence posture contract
+
+The REST and MCP projections for ops health, findings, alert events, Operate
+events, platform-release status, and deploy-operation reads include the same
+additive `evidencePosture` envelope. Its schema version is `1.0`. `generatedAt`
+is only the response/evaluation time; each source separately reports
+`observedAt`, `lastSuccessfulAt`, a privacy-safe backend identity, completeness,
+validity, reason codes, and structured query/replica/component coverage.
+
+The closed completeness vocabulary is `complete`, `partial`, `unavailable`, and
+`notConfigured`. Source and reason-code values are also closed server-owned
+vocabularies; clients must not parse prose or treat transport success as source
+success. Paging with `hasMore`, partial component/replica coverage, stale or
+future timestamps, missing observations, an unverified backend, and source
+outages all make the affected evidence non-actionable. `notConfigured` is
+distinct from a configured source that is unavailable.
+
+Schema `1.0` source IDs are `health-checks`, `serving-latency`,
+`geoprocessing-queue`, `alert-dispatch`, `deploy-readiness`,
+`platform-release`, `database`, `cache`, `ops-findings`, `alert-events`,
+`operate-events`, and `deploy-operations`. Backend kinds are `inProcess`,
+`configuration`, `healthCheckService`, `durableStore`, `composite`,
+`notConfigured`, and `unverified`. Reason codes are `source-not-configured`, `source-unavailable`,
+`never-succeeded`, `missing-observation-time`, `future-observation-time`,
+`invalid-time-window`, `stale-observation`, `stale-last-success`,
+`partial-result`, `incomplete-replica-coverage`, `page-truncated`,
+`backend-unverified`, `component-coverage-unknown`, and `malformed-evidence`.
+New vocabulary values require a schema-version change; consumers should reject
+unknown values for an action decision.
+
+Each finding includes its exact envelope and `requiredSourceIds`. The proposal
+endpoint re-evaluates that posture and returns `409 Conflict` with a stable
+non-actionable result before making any gateway or actuator call when required
+evidence is incomplete. Existing top-level fields remain additive compatibility
+fields, but clients must use `evidencePosture` for remediation decisions.
+
 ## The two seats
 
 The Console `/operate` seat is the human seat. It reads the same status,

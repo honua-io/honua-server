@@ -75,7 +75,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
         var principal = await EnsureAuthorizedAsync(
                 httpContext,
-                OperatorOperation.Create,
+                OperatorOperation.Update,
                 StudioAuthorizationOperation.UpdateDraft,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -94,7 +94,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             lifecycleService,
             draftId,
             StudioAuthorizationOperation.UpdateDraft,
-            OperatorOperation.Create,
+            OperatorOperation.Update,
             cancellationToken).ConfigureAwait(false);
         RequireAuthorizedGeneration(draft, generation);
         var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);

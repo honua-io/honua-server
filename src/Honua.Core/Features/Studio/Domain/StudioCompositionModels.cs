@@ -7,8 +7,9 @@ using System.Text.Json.Serialization;
 namespace Honua.Core.Features.Studio.Domain;
 
 /// <summary>
-/// Canonical composition payload for <see cref="StudioPackageFamily.Map"/> and
-/// <see cref="StudioPackageFamily.App"/> Studio package drafts. Persisted
+/// Canonical composition payload for <see cref="StudioPackageFamily.Map"/>,
+/// <see cref="StudioPackageFamily.App"/>, and <see cref="StudioPackageFamily.Dashboard"/>
+/// Studio package drafts. Persisted
 /// verbatim in <see cref="StudioPackageEnvelope.Body"/> (honua-server#3002,
 /// AD-8: composition state IS the lifecycle draft). The shape mirrors the
 /// honua-sdk-js agent-tools vocabulary (<c>src/agent-tools/index.ts</c> —

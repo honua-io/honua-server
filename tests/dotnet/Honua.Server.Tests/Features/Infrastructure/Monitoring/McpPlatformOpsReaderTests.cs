@@ -11,13 +11,16 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -81,7 +84,7 @@ public sealed class McpPlatformOpsReaderTests
 
         var result = await reader.GetSupportedOperationKindsAsync(principal, CancellationToken.None);
 
-        result.SupportedKinds.Should().Equal("AdminConfigChange", "Deploy", "MetadataRelease");
+        result.SupportedKinds.Should().Equal("Deploy", "MetadataRelease");
         await authorization.Received(1).AuthorizeAsync(
             principal,
             Arg.Is<object>(resource => IsOpsReadResource(resource, principal)),
@@ -113,7 +116,7 @@ public sealed class McpPlatformOpsReaderTests
         var changed = await reader.GetSupportedOperationKindsAsync(CreatePrincipal(), CancellationToken.None);
 
         initial.SupportedKinds.Should().Equal("Deploy");
-        changed.SupportedKinds.Should().Equal("AdminConfigChange", "MetadataRelease");
+        changed.SupportedKinds.Should().Equal("MetadataRelease");
     }
 
     [UnitTest]
@@ -232,7 +235,13 @@ public sealed class McpPlatformOpsReaderTests
 
         using var services = CreateServices(
             gateway,
-            new StaticExecutorCatalog([OperationClass.MetadataRelease, OperationClass.Deploy]));
+            new StaticExecutorCatalog(
+            [
+                OperationClass.Seed,
+                OperationClass.MetadataRelease,
+                OperationClass.AdminConfigChange,
+                OperationClass.Deploy,
+            ]));
         var reader = CreateReader(store: store, services: services);
 
         var output = await reader.ProposeRollbackAsync(
@@ -255,6 +264,9 @@ public sealed class McpPlatformOpsReaderTests
         gateway.LastRequest!.Kind.Should().Be(OperationClass.Deploy);
         gateway.LastRequest.RequestedBy.Should().Be("ops-agent");
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:ops-agent");
+        gateway.LastRequest.Authority.Should().NotBeNull();
+        gateway.LastRequest.Authority!.Actor.Should().Be("ops-agent");
+        gateway.LastRequest.Authority.EffectiveTenant.Should().Be("tenant-1");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
 
@@ -315,6 +327,38 @@ public sealed class McpPlatformOpsReaderTests
         payload.CurrentRevision.Should().Be("rev-10");
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeRollback_MultiTenancyDisabled_RoutesWithTenantlessAuthority()
+    {
+        var store = new RecordingWorkflowOperationStore(
+            BuildDeployOperation(
+                "op-latest",
+                targetId: "serving-us-west",
+                desiredRevision: "rev-10",
+                currentRevision: "rev-9",
+                status: WorkflowOperationStatus.Succeeded));
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.Executed,
+            Decision = new GuardrailDecision(
+                GuardrailTier.DirectExecute,
+                OperationClass.Deploy,
+                HonuaEdition.Pro,
+                "test"),
+        });
+
+        using var services = CreateServices(gateway, multiTenancyEnabled: false, tenantId: null);
+        var reader = CreateReader(store: store, services: services);
+
+        await reader.ProposeRollbackAsync(
+            CreatePrincipal(),
+            new McpProposeRollbackArgument { TargetId = "serving-us-west", ToRevision = "rev-9" },
+            CancellationToken.None);
+
+        gateway.LastRequest!.Authority!.EffectiveTenant.Should().Be(OperationAuthorityContext.Tenantless);
+    }
+
     private static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
@@ -347,9 +391,19 @@ public sealed class McpPlatformOpsReaderTests
 
     private static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
-        IOperationExecutorCatalog? catalog = null)
+        IOperationExecutorCatalog? catalog = null,
+        bool multiTenancyEnabled = true,
+        string? tenantId = "tenant-1")
     {
         var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new TestTenantContext(tenantId));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MultiTenancy:Enabled"] = multiTenancyEnabled.ToString(),
+            })
+            .Build());
+        services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
         if (gateway is not null)
         {
             services.AddSingleton(gateway);
@@ -370,6 +424,20 @@ public sealed class McpPlatformOpsReaderTests
                 new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
             ],
             "test"));
+
+    private sealed class TestTenantContext(string? tenantId) : ITenantContext
+    {
+        public string? TenantId { get; } = tenantId;
+
+        public TenantContextSource Source => TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string tenantId, out string? reason)
+        {
+            tenantId = TenantId ?? string.Empty;
+            reason = TenantId is null ? "no tenant claim present" : null;
+            return TenantId is not null;
+        }
+    }
 
     private static bool IsOpsReadResource(object resource, ClaimsPrincipal principal)
         => resource is DefaultHttpContext context &&

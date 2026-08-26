@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.ControlPlane;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -38,6 +39,9 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(MetadataRollbackPlanResponse))]
 [JsonSerializable(typeof(MetadataEvidenceRefResponse))]
 [JsonSerializable(typeof(DeployRequestFingerprintPayload))]
+[JsonSerializable(typeof(EvidencePostureEnvelope))]
+[JsonSerializable(typeof(EvidenceSourcePosture))]
+[JsonSerializable(typeof(EvidenceCoverage))]
 internal sealed partial class DeployControlJsonContext : JsonSerializerContext
 {
 }

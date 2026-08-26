@@ -14,6 +14,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
@@ -989,15 +990,10 @@ internal static class ImageServerSoapEndpoints
 
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersInDocument = MaxRequestCharacters
-            };
-            using var reader = XmlReader.Create(context.Request.Body, settings);
-            var request = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
+            var request = await SoapXmlDocumentReader.LoadAsync(
+                context.Request.Body,
+                MaxRequestCharacters,
+                context.RequestAborted).ConfigureAwait(false);
             var envelopeNamespace = request.Root?.Name.Namespace;
             if (request.Root?.Name.LocalName != "Envelope" ||
                 (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))

@@ -2,6 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,8 +60,7 @@ internal sealed class ProposalStatusResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetProposal");
-        _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         var proposalId = uri[McpResourceUris.ProposalsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
 
@@ -65,6 +69,59 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         var proposal = await store.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
+        var authority = proposal.Authority;
+        var callerAuthority = OperationAuthorityContext.Capture(
+            principal,
+            httpContext.RequestServices.GetRequiredService<ITenantContext>(),
+            httpContext.RequestServices.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true));
+        if (authority?.ResourceType is not { } resourceType ||
+            authority.Operation is not { } operation ||
+            string.IsNullOrWhiteSpace(authority.ResourceId) ||
+            !string.Equals(authority.EffectiveTenant, callerAuthority.EffectiveTenant, StringComparison.Ordinal))
+        {
+            throw ProposalNotFound(proposalId);
+        }
+
+        var isRetainedProposer =
+            string.Equals(authority.Actor, callerAuthority.Actor, StringComparison.Ordinal) &&
+            string.Equals(authority.Issuer, callerAuthority.Issuer, StringComparison.Ordinal) &&
+            string.Equals(authority.MembershipIssuer, callerAuthority.MembershipIssuer, StringComparison.Ordinal) &&
+            string.Equals(authority.Scheme, callerAuthority.Scheme, StringComparison.Ordinal);
+        var readOperation = isRetainedProposer ? operation : OperatorOperation.Read;
+
+        var jobService = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
+            ?? throw new InvalidOperationException("The authorization service is unavailable.");
+        try
+        {
+            await jobService.EnsureCallerAuthorizedAsync(
+                principal,
+                resourceType,
+                readOperation,
+                cancellationToken).ConfigureAwait(false);
+
+            var evaluator = httpContext.RequestServices.GetService<IOperatorAuthorizationEvaluator>();
+            if (evaluator is not null)
+            {
+                var exact = await evaluator.EvaluateAsync(
+                    principal,
+                    new OperatorAuthorizationRequest
+                    {
+                        ResourceType = resourceType,
+                        ResourceId = authority.ResourceId,
+                        Operation = readOperation,
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                if (!exact.IsAllowed)
+                {
+                    throw ProposalNotFound(proposalId);
+                }
+            }
+        }
+        catch (GeoprocessingAuthorizationException)
+        {
+            throw ProposalNotFound(proposalId);
+        }
 
         var resource = new McpProposalResource
         {
@@ -86,4 +143,7 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         return McpResourceHelpers.SingleJsonContent(uri, resource, McpJsonContext.Default.McpProposalResource);
     }
+
+    private static KeyNotFoundException ProposalNotFound(string proposalId)
+        => new($"Proposal '{proposalId}' was not found.");
 }

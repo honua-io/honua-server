@@ -32,6 +32,33 @@ public sealed class ProgramMiddlewareOrderTests
         serilogIndex.Should().BeLessThan(outputCacheIndex);
     }
 
+    [UnitTest]
+    public void Program_AuthenticatesAndRejectsMcpBearer_BeforeTenantAuthorityBoundary()
+    {
+        var source = File.ReadAllText(ResolveProgramPath());
+
+        var authenticateIndex = source.IndexOf(".UseMcpBearerAuthentication(app);", StringComparison.Ordinal);
+        var auditIndex = source.IndexOf("app.UseHonuaAuditLog();", StringComparison.Ordinal);
+        var invalidRateLimitIndex = source.IndexOf("invalidBearer.UseRateLimiting();", StringComparison.Ordinal);
+        var rejectIndex = source.IndexOf(".UseMcpBearerAuthenticationRejection(invalidBearer);", StringComparison.Ordinal);
+        var tenantIndex = source.IndexOf("app.UseHonuaTenantContext();", StringComparison.Ordinal);
+        var schemaIndex = source.IndexOf("app.UseHonuaTenantSchemaRouting();", StringComparison.Ordinal);
+        var statusIndex = source.IndexOf("app.UseHonuaTenantStatusEnforcement();", StringComparison.Ordinal);
+        var normalRateLimitIndex = source.LastIndexOf("app.UseRateLimiting();", StringComparison.Ordinal);
+
+        authenticateIndex.Should().BeGreaterThan(-1);
+        auditIndex.Should().BeGreaterThan(authenticateIndex,
+            "audit must observe the canonical principal established by MCP bearer validation");
+        invalidRateLimitIndex.Should().BeGreaterThan(auditIndex,
+            "invalid credentials must enter the shared rate limiter inside the audit boundary");
+        rejectIndex.Should().BeGreaterThan(invalidRateLimitIndex);
+        rejectIndex.Should().BeLessThan(tenantIndex,
+            "invalid credentials must be rejected before tenant resolution");
+        tenantIndex.Should().BeLessThan(schemaIndex);
+        schemaIndex.Should().BeLessThan(statusIndex);
+        statusIndex.Should().BeLessThan(normalRateLimitIndex);
+    }
+
     private static string ResolveProgramPath()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

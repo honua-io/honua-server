@@ -2,9 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Builder;
+using System.Security.Claims;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -28,9 +32,10 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <para>
 /// Validation reuses the multi-authority OIDC stack rather than a parallel config surface:
 /// the token is authenticated through the already-registered
-/// <see cref="OidcAuthenticationExtensions.JwtBearerScheme"/>, which enforces issuer,
-/// audience, signature, and lifetime against every configured authority and normalizes the
-/// claims through the shared <c>OidcClaimsTransformation</c>. Acceptance is gated on the
+/// <see cref="OidcAuthenticationExtensions.CompositeScheme"/>, which selects a
+/// framework-owned bearer validator and enforces issuer, audience, signature, and lifetime
+/// against every configured authority while normalizing claims through the shared
+/// <c>OidcClaimsTransformation</c>. Acceptance is gated on the
 /// same signal that drives the RFC 9728 metadata (honua-server#2849): when no authorization
 /// server is configured there is nothing to validate against, so a presented token is left
 /// unauthenticated and the request keeps its prior anonymous behaviour.
@@ -47,6 +52,84 @@ namespace Honua.Ai.Protocols.Mcp;
 internal static class McpBearerAuthenticationEndpointExtensions
 {
     private const string BearerPrefix = "Bearer ";
+    private static readonly object AuthenticationFailureKey = new();
+    private static readonly object ValidatedPrincipalKey = new();
+
+    /// <summary>
+    /// Validates MCP bearer credentials before tenant resolution. Endpoint filters
+    /// remain as a defense-in-depth check, but cannot be the authority boundary.
+    /// </summary>
+    public static IApplicationBuilder UseMcpBearerAuthentication(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (httpContext, next) =>
+        {
+            if (!IsMcpTransportPath(httpContext.Request.Path)
+                || !HasBearerCredential(httpContext))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var options = httpContext.RequestServices
+                .GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
+            if (McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count == 0)
+            {
+                // No authority means no bearer identity. Anonymous discovery remains
+                // available, while tool handlers still require an authenticated principal.
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var result = await httpContext.AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme)
+                .ConfigureAwait(false);
+            if (result.Succeeded && result.Principal is not null)
+            {
+                var trustedPrincipal = CreateTrustedBearerPrincipal(result);
+                if (trustedPrincipal is not null)
+                {
+                    httpContext.User = trustedPrincipal;
+                    httpContext.Items[ValidatedPrincipalKey] = trustedPrincipal;
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            // Defer the response to a second middleware placed inside the shared
+            // audit and invalid-credential rate-limit layers, but still before
+            // tenant resolution. No tenant or endpoint code can observe this request.
+            httpContext.Items[AuthenticationFailureKey] = true;
+            await next().ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>
+    /// Writes the fail-closed MCP invalid-token response after shared audit/rate
+    /// middleware has entered, but before tenant resolution or endpoint execution.
+    /// </summary>
+    public static IApplicationBuilder UseMcpBearerAuthenticationRejection(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (httpContext, next) =>
+        {
+            if (!HasAuthenticationFailure(httpContext))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            McpProtectedResourceMetadataEndpointExtensions.StampChallengeOnUnauthorized(httpContext);
+            await BuildInvalidTokenResult().ExecuteAsync(httpContext).ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>Whether early MCP bearer validation failed for this request.</summary>
+    public static bool HasAuthenticationFailure(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return context.Items.TryGetValue(AuthenticationFailureKey, out var value) && value is true;
+    }
 
     /// <summary>
     /// Endpoint filter that validates a presented bearer token and authenticates the caller
@@ -82,8 +165,17 @@ internal static class McpBearerAuthenticationEndpointExtensions
             return await next(context).ConfigureAwait(false);
         }
 
+        // The application middleware already validated this exact principal before
+        // tenant resolution. Tenant middleware stamps that same instance with the
+        // canonical actor/effective tenant, so preserve it rather than authenticating
+        // again and discarding framework-owned request-binding provenance.
+        if (HasEarlyValidatedBearerPrincipal(httpContext))
+        {
+            return await next(context).ConfigureAwait(false);
+        }
+
         var result = await httpContext
-            .AuthenticateAsync(OidcAuthenticationExtensions.JwtBearerScheme)
+            .AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme)
             .ConfigureAwait(false);
 
         if (result.Succeeded && result.Principal is not null)
@@ -91,8 +183,12 @@ internal static class McpBearerAuthenticationEndpointExtensions
             // Bind the validated principal to the request so the JSON-RPC handler and the
             // per-tool grant checks observe the same claim shape the X-API-Key path
             // produces.
-            httpContext.User = result.Principal;
-            return await next(context).ConfigureAwait(false);
+            var trustedPrincipal = CreateTrustedBearerPrincipal(result);
+            if (trustedPrincipal is not null)
+            {
+                httpContext.User = trustedPrincipal;
+                return await next(context).ConfigureAwait(false);
+            }
         }
 
         // A presented-but-invalid token is an RFC 6750 invalid_token rejection. Answer 401
@@ -100,6 +196,11 @@ internal static class McpBearerAuthenticationEndpointExtensions
         // stamped by the response hook the transport arms on every MCP route.
         return BuildInvalidTokenResult();
     }
+
+    internal static bool HasEarlyValidatedBearerPrincipal(HttpContext context) =>
+        context.Items.TryGetValue(ValidatedPrincipalKey, out var principal)
+        && ReferenceEquals(principal, context.User)
+        && CanonicalSecurityActor.IsBearerPrincipal(context.User);
 
     private static bool HasBearerCredential(HttpContext context)
     {
@@ -119,6 +220,41 @@ internal static class McpBearerAuthenticationEndpointExtensions
         }
 
         return false;
+    }
+
+    private static bool IsMcpTransportPath(PathString path) =>
+        path.Equals(McpEndpointExtensions.RoutePath, StringComparison.OrdinalIgnoreCase)
+        || path.Equals($"{McpEndpointExtensions.RoutePath}/", StringComparison.OrdinalIgnoreCase);
+
+    internal static ClaimsPrincipal? CreateTrustedBearerPrincipal(AuthenticateResult result)
+    {
+        var principal = result.Principal;
+        if (principal is null)
+        {
+            return null;
+        }
+
+        // A policy scheme forwards to the concrete validator and preserves that
+        // handler's ticket scheme. Only those framework-owned bearer schemes may
+        // cross this authority boundary; no token claim can choose the scheme.
+        var scheme = result.Ticket?.AuthenticationScheme;
+        if (!string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(scheme, OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var sourceIdentity = principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated);
+        var identity = new ClaimsIdentity(
+            principal.Claims.Where(static claim =>
+                !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
+                || ((claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType
+                        || claim.Type == JobSecurityContextClaimTypes.MembershipIssuer)
+                    && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))),
+            scheme,
+            sourceIdentity?.NameClaimType ?? ClaimTypes.Name,
+            sourceIdentity?.RoleClaimType ?? ClaimTypes.Role);
+        return new ClaimsPrincipal(identity);
     }
 
     private static IResult BuildInvalidTokenResult()

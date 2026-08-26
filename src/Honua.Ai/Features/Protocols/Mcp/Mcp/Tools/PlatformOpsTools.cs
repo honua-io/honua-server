@@ -102,7 +102,8 @@ internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger)
 }
 
 /// <summary>
-/// MCP tool that reports operation kinds backed by the live executor catalog.
+/// MCP tool that reports operation kinds backed by the live executor catalog and safely
+/// representable by <see cref="ProposeOperationTool"/>.
 /// </summary>
 internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKindsTool> logger) : IMcpTool
 {
@@ -117,8 +118,8 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
         Name = ToolName,
         Title = "Supported operation kinds",
         Description =
-            "Read-only discovery of stable operation-kind identifiers backed by executors registered "
-            + "in the live operation gateway. Use this before honua_propose_operation; absent kinds "
+            "Read-only discovery of stable operation-kind identifiers backed by live executors and "
+            + "safely representable by honua_propose_operation. Use this before proposing; absent kinds "
             + "remain fail-closed and cannot be routed.",
         InputSchema = McpPlatformOpsSchemas.SupportedOperationKindsInputSchema,
         OutputSchema = McpPlatformOpsSchemas.SupportedOperationKindsOutputSchema,
