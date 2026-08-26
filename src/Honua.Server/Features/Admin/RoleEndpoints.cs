@@ -212,10 +212,17 @@ internal static partial class RoleEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Role not found"));
             }
 
+            if (request.Name is not null &&
+                !string.Equals(request.Name, existing.Name, StringComparison.Ordinal))
+            {
+                return TypedResults.BadRequest(
+                    ApiResponse<object>.Failure("Role names cannot be changed after creation."));
+            }
+
             var updated = new RoleDefinition
             {
                 RoleId = existing.RoleId,
-                Name = request.Name ?? existing.Name,
+                Name = existing.Name,
                 Description = request.Description ?? existing.Description,
                 IsBuiltIn = existing.IsBuiltIn,
                 Permissions = existing.Permissions,

@@ -26,7 +26,7 @@ public interface IRoleStore
     Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates an existing role definition.
+    /// Updates an existing role definition. Role names are immutable after creation.
     /// </summary>
     Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default);
 

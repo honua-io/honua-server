@@ -99,54 +99,50 @@ internal sealed class PostgresRoleStore : IRoleStore
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Built-in roles' name/description may be updated, but the is_built_in
-        // flag is immutable so a built-in role can never be demoted to deletable.
+        // Role names and the is_built_in flag are immutable. Membership projections
+        // retain role names, so renaming a role would orphan existing assignments.
         var updateRole = $"""
             UPDATE {_rolesTable}
-            SET name = @name, description = @description, updated_at = NOW()
+            SET description = @description, updated_at = NOW()
             WHERE role_id = @role_id
-            RETURNING created_at, is_built_in
+            RETURNING name, created_at, is_built_in
             """;
 
+        string storedName;
         DateTimeOffset createdAt;
         bool isBuiltIn;
 
-        try
+        await using (var command = new NpgsqlCommand(updateRole, connection.Connection, transaction))
         {
-            await using (var command = new NpgsqlCommand(updateRole, connection.Connection, transaction))
+            command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, role.RoleId);
+            command.Parameters.AddWithValue("description", NpgsqlDbType.Text, (object?)role.Description ?? DBNull.Value);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, role.RoleId);
-                command.Parameters.AddWithValue("name", NpgsqlDbType.Varchar, role.Name);
-                command.Parameters.AddWithValue("description", NpgsqlDbType.Text, (object?)role.Description ?? DBNull.Value);
-
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    await reader.DisposeAsync().ConfigureAwait(false);
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return null;
-                }
-
-                createdAt = reader.GetFieldValue<DateTimeOffset>(0);
-                isBuiltIn = reader.GetBoolean(1);
+                await reader.DisposeAsync().ConfigureAwait(false);
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return null;
             }
 
-            await ReplacePermissionsAsync(connection.Connection, transaction, role.RoleId, role.Permissions, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            storedName = reader.GetString(0);
+            createdAt = reader.GetFieldValue<DateTimeOffset>(1);
+            isBuiltIn = reader.GetBoolean(2);
         }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+
+        if (!string.Equals(role.Name, storedName, StringComparison.Ordinal))
         {
-            // Renaming into an existing role name hits the same unique index as
-            // CreateRoleAsync; translate it the same way instead of leaking a raw
-            // PostgresException (generic 500) to the caller.
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException($"Role with ID '{role.RoleId}' or name '{role.Name}' already exists.", ex);
+            throw new InvalidOperationException("Role names cannot be changed after creation.");
         }
+
+        await ReplacePermissionsAsync(connection.Connection, transaction, role.RoleId, role.Permissions, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new RoleDefinition
         {
             RoleId = role.RoleId,
-            Name = role.Name,
+            Name = storedName,
             Description = role.Description,
             IsBuiltIn = isBuiltIn,
             Permissions = role.Permissions,
