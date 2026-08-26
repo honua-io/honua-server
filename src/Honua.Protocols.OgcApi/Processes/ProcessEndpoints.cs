@@ -201,7 +201,7 @@ internal static class ProcessEndpoints
         // both respond-async and respond-sync can be checked against the same
         // header values.
         var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
-        var preferSync = hasPreferHeader
+        var requestedSync = hasPreferHeader
             && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
 
         try
@@ -226,6 +226,11 @@ internal static class ProcessEndpoints
                 OgcProcessesLog.ProcessNotFound(logger, processId);
                 return OgcProcessesResults.NoSuchProcess(processId);
             }
+
+            var preferSync = requestedSync
+                && (string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
+                    || definition != null
+                    && (definition.SupportedExecutionModes & ProcessExecutionModes.Sync) != 0);
 
             OgcExecuteRequest? request;
             try

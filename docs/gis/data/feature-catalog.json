@@ -17308,6 +17308,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownProcessId_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnsupportedArtifactKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_WithoutRespondAsync_DefaultsToAsync",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_AsyncOnlyProcess_IgnoresRespondSyncPreference",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_RasterProcessDirect_CreatesSameJobAsPlanWrapped",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenCreateFails_DoesNotReturnCreated",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenQueuePersistenceFails_RollsBackCreatedJobUsingFreshVersionToken",
