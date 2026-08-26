@@ -271,16 +271,3 @@ internal sealed class TenantContextMiddleware(
         return true;
     }
 }
-
-/// <summary>
-/// Marks a control-plane endpoint whose data is global rather than tenant-scoped, allowing a
-/// validated external bearer to reach endpoint authorization without an effective tenant.
-/// </summary>
-internal sealed class TenantIndependentControlPlaneMetadata
-{
-    internal static TenantIndependentControlPlaneMetadata Instance { get; } = new();
-
-    private TenantIndependentControlPlaneMetadata()
-    {
-    }
-}

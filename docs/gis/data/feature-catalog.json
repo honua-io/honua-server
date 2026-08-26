@@ -895,7 +895,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_DerivesAuthorizationServersFromEveryConfiguredAuthority",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithNoAuthorizationServerConfigured_IsAbsent",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithOidcConfigured_ReturnsRfc9728Document"
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithOidcConfigured_ReturnsRfc9728Document",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk"
       ],
       "proof_ledger_surface": "mcp-operator",
       "maturity": "implemented",
@@ -1236,7 +1238,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetCapabilities_WithoutAuth_Returns200WithCompatibilityContract",
         "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope",
-        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesRouteHonestyTests.AdvertisedManifestCapabilities_MatchRegisteredRoutes"
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesRouteHonestyTests.AdvertisedManifestCapabilities_MatchRegisteredRoutes",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4164,7 +4168,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_MtlsCapabilityDisabled_ValidBearerToken_ReturnsCleanOk",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminVersionEndpoint_IsMarkedTenantIndependent"
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
