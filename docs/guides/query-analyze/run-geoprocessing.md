@@ -64,7 +64,7 @@ Expected (trimmed):
 - **401 on execution** — discovery is anonymous but `POST .../execution` is not; send your `X-API-Key` (or bearer token).
 - **403** — the identity authenticates but lacks `Process.Execute` or the additional `Process.ExecuteMutatingProcess` / `Process.ExecuteCustomCode` grant required by the selected execution tier.
 - **404 for a process id you saw in the full catalog** — only first-slice vector processes are projected through OGC API Processes; others run via the canonical `honua-geoprocessing` plan process or are listed in the [reference](../../reference/geoprocessing-operations.md).
-- **400 `Raw response unavailable`** — raw mode is limited to a synchronous request whose completed result contains exactly one inline value. Use document mode for multiple outputs or artifact references.
+- **400 `Invalid response mode` / `Raw response unavailable`** — raw mode requires a process that supports synchronous execution and a completed result containing exactly one inline value. Use document mode for async-only processes, multiple outputs, or artifact references.
 - **Job stuck in `accepted`** — the job queue needs the durable job substrate (Redis) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps
