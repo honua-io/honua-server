@@ -45,6 +45,19 @@ internal static class McpToolSchemas
             .OrderBy(processId => processId, StringComparer.Ordinal)
             .ToArray();
 
+    /// <summary>
+    /// Closed set of process ids that the MCP execute tool may submit to the
+    /// job runtime. Validation and dry-run schemas retain the complete catalog
+    /// so they can diagnose plans that use protocol- or workflow-only entries.
+    /// </summary>
+    public static readonly IReadOnlyList<string> JobCallableProcessIdNames =
+        new BuiltInProcessCatalog()
+            .ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .Select(process => process.ProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
+
     private const string CancelJobArgumentSchemaJson = """
         {
           "type": "object",
@@ -474,7 +487,11 @@ internal static class McpToolSchemas
         var stepKindExamples = string.Join(", ", PlanStepKindNames);
         var artifactKindEnum = JsonStringArray(ArtifactKindNames);
         var artifactKindExamples = string.Join(", ", ArtifactKindNames);
-        var processIdExamples = JsonStringArray(ProcessIdNames);
+        var processIdExamples = JsonStringArray(
+            requireExecutableShape ? JobCallableProcessIdNames : ProcessIdNames);
+        var processIdDescription = requireExecutableShape
+            ? "For a Geoprocess step, the id of a process that can be submitted to the job runtime. Valid ids are enumerated in this property's examples. The honua://catalog/processes resource (resources/read) also includes broader validation and workflow entries; when consulting it, select only entries whose executionKind=Job and whose supportedExecutionModes includes Async. The resource documents each process's typed parameters, allowed values, output artifact kinds, and input shape."
+            : "For a Geoprocess step, the id of the process to run. Valid ids are the closed set advertised by the honua://catalog/processes resource (resources/read) and enumerated in this property's examples; that resource documents each process's typed parameters, allowed values, and output artifact kinds. Read it to discover the correct id and its input shape before hand-authoring a plan.";
 
         // Validate/dry-run tools must accept partial plans so the server can
         // report EMPTY_PLAN_ID/EMPTY_STEPS as structured violations; execute
@@ -517,7 +534,7 @@ internal static class McpToolSchemas
                           },
                           "processId": {
                             "type": "string",
-                            "description": "For a Geoprocess step, the id of the process to run. Valid ids are the closed set advertised by the honua://catalog/processes resource (resources/read) and enumerated in this property's examples; that resource documents each process's typed parameters, allowed values, and output artifact kinds. Read it to discover the correct id and its input shape before hand-authoring a plan.",
+                            "description": "{{processIdDescription}}",
                             "examples": {{processIdExamples}}
                           },
                           "inputs": {

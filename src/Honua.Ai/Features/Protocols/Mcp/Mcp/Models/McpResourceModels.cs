@@ -343,6 +343,18 @@ internal sealed class McpProcessEntry
     /// </summary>
     [JsonPropertyName("runtimeProfile")]
     public string RuntimeProfile { get; set; } = string.Empty;
+
+    [JsonPropertyName("executionKind")]
+    public string ExecutionKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("supportedExecutionModes")]
+    public IReadOnlyList<string> SupportedExecutionModes { get; set; } = [];
+
+    [JsonPropertyName("configurationDependency")]
+    public string? ConfigurationDependency { get; set; }
+
+    [JsonPropertyName("executionCapabilityReason")]
+    public string? ExecutionCapabilityReason { get; set; }
 }
 
 internal sealed class McpProcessParameter

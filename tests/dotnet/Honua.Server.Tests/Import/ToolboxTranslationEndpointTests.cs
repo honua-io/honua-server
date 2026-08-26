@@ -505,8 +505,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_SyncOnlyProcess_IsUnsupportedRegardlessOfMapping()
     {
         // analytics.cluster runs only through the synchronous layer-scoped analytics surface;
-        // the job runtime rejects it with SYNC_ONLY_PROCESS. A complete parameter mapping
-        // must therefore still be unsupported, pointing at the -managed counterpart.
+        // the job runtime rejects it as not asynchronously job-executable. A complete
+        // parameter mapping must therefore still be unsupported.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -532,7 +532,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         tool.GetProperty("classification").GetString().Should().Be("unsupported");
         var issue = tool.GetProperty("issues").EnumerateArray()
             .Single(entry => entry.GetProperty("code").GetString() == "process-not-job-executable");
-        issue.GetProperty("message").GetString().Should().Contain("job-dispatchable");
+        issue.GetProperty("message").GetString().Should()
+            .Contain("cannot be submitted as an asynchronous process job");
     }
 
     [IntegrationTest]

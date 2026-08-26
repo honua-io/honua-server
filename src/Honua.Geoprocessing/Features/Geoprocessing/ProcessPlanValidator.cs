@@ -339,12 +339,10 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterInterpolateIdwSemantics(step, violations);
                 break;
             case "raster.interpolate-kriging":
-                // Kriging is advertised but flagged unsupported by the native worker
-                // (no kriging-capable backend is bundled). The plan is still
-                // shape-validated (the base type-validator enforces the required
-                // 'points' input); the worker FAILS the job at execution with a clear
-                // message rather than the validator blocking it, so the limitation is
-                // surfaced as a job failure rather than a submit-time rejection.
+                // Kriging remains shape-validated here so diagnostic tooling can
+                // describe malformed inputs. The catalog capability layer classifies
+                // it as Unavailable and the direct-submit validator rejects execution
+                // with the canonical operator-facing reason.
                 break;
             case "raster.mosaic":
                 ValidateRasterMosaicSemantics(step, violations);
@@ -354,7 +352,8 @@ internal static partial class ProcessPlanValidator
                 // whether a backend is actually configured is a deployment concern the
                 // static validator cannot see, so an unconfigured deployment surfaces
                 // the clear "no cloud inference backend is configured" message as a
-                // job failure at execution (the raster.interpolate-kriging posture).
+                // job failure at execution. Unlike unavailable kriging, imagery is a
+                // configuration-dependent Job capability and remains directly callable.
                 ValidateImageryClassifySemantics(step, violations);
                 break;
             case "raster.map-algebra":

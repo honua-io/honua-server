@@ -54,6 +54,10 @@ internal sealed class ProcessCatalogWorkflowNodeProvider(IProcessCatalog process
 
     private static WorkflowNodeDefinition ToNodeDefinition(ProcessDefinition process)
     {
+        var jobCallable = ProcessExecutionEligibility.IsJobCallable(process);
+        var workflowCallable = ProcessExecutionEligibility.IsWorkflowCallable(process);
+        var executable = jobCallable || workflowCallable;
+
         var parameterSchemas = process.Parameters
             .Select(parameter => new WorkflowNodeParameterSchema
             {
@@ -102,10 +106,10 @@ internal sealed class ProcessCatalogWorkflowNodeProvider(IProcessCatalog process
             {
                 CanValidate = true,
                 CanDryRun = true,
-                SupportsJob = true,
-                SupportsSchedule = true,
-                SupportsProcessEndpoint = true,
-                Executable = true
+                SupportsJob = jobCallable,
+                SupportsSchedule = executable,
+                SupportsProcessEndpoint = jobCallable,
+                Executable = executable
             },
             RuntimeHints = new WorkflowNodeRuntimeHints
             {

@@ -157,7 +157,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
-        processes.Should().NotBeEmpty();
+        processes.Should().HaveCount(80, "the canonical plan process plus all 79 catalog Job processes are projected once");
 
         var first = processes[0];
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
@@ -166,8 +166,19 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("sync-execute");
         jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
 
-        processes.Select(p => p.GetProperty("id").GetString())
-            .Should().Contain(["geometry.buffer", "geometry.clip", "geometry.intersect", "geometry.project"]);
+        var ids = processes.Select(p => p.GetProperty("id").GetString()).ToArray();
+        ids.Should().Contain([
+            "geometry.buffer",
+            "analytics.spatial-join",
+            "proximity.near",
+            "statistics.summarize",
+            "transform.reproject"]);
+        ids.Should().NotContain([
+            "analytics.cluster",
+            "analytics.density",
+            "source.geojson",
+            "sink.geojson-file",
+            "raster.interpolate-kriging"]);
     }
 
     // -----------------------------------------------------------------------
@@ -210,6 +221,45 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         root.GetProperty("inputs").GetProperty("distance").GetProperty("schema")
             .GetProperty("type").GetString().Should().Be("number");
         root.GetProperty("outputs").TryGetProperty("outputFeatureLayer", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_CatalogJobExamples_AreProjectedDirectly()
+    {
+        string[] processIds =
+        [
+            "analytics.spatial-join",
+            "proximity.near",
+            "statistics.summarize",
+            "transform.reproject",
+        ];
+
+        foreach (var processId in processIds)
+        {
+            var response = await _fixture.Client.GetAsync($"/ogc/processes/processes/{processId}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"catalog Job process '{processId}' must be OGC-callable");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_NonJobCatalogEntries_Return404()
+    {
+        string[] processIds =
+        [
+            "analytics.cluster",
+            "source.geojson",
+            "raster.interpolate-kriging",
+        ];
+
+        foreach (var processId in processIds)
+        {
+            var response = await _fixture.Client.GetAsync($"/ogc/processes/processes/{processId}");
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"'{processId}' is not classified as a direct Job process");
+        }
     }
 
     [IntegrationTest]
@@ -349,6 +399,22 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_NonJobCatalogEntries_Return404()
+    {
+        foreach (var processId in new[] { "analytics.cluster", "source.geojson", "raster.interpolate-kriging" })
+        {
+            using var content = new StringContent("{\"inputs\":{}}", Encoding.UTF8, "application/json");
+            var response = await _fixture.Client.PostAsync(
+                $"/ogc/processes/processes/{processId}/execution",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"'{processId}' is not a directly callable Job process");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_InvalidId_Returns404()
@@ -370,10 +436,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithoutRespondAsync_DefaultsToAsync()
     {
-        var body = """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""";
+        var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
-            "/ogc/processes/processes/honua-geoprocessing/execution", content);
+            "/ogc/processes/processes/geometry.buffer/execution", content);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
@@ -384,20 +450,22 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_PreferRespondSync_UsesCanonicalBoundedResultPath()
     {
-        // The fixture intentionally lacks a durable runtime, so successful admission may\n        // resolve to 503; the regression is that respond-sync reaches the shared lifecycle path.
+        // The fixture intentionally lacks a durable runtime, so successful admission may
+        // resolve to 503; the regression is that respond-sync reaches the shared lifecycle path.
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Headers.Add("Prefer", "respond-sync");
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            $"{{\"inputs\":{{\"plan\":{{\"planId\":\"p1\",\"steps\":[{{\"stepId\":\"s1\",\"kind\":\"geoprocess\",\"processId\":\"geometry.buffer\",\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":\"4326\",\"distance\":\"25.5\"}}}}]}}}}}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.RequestTimeout,
-            HttpStatusCode.ServiceUnavailable);
+            new[] { HttpStatusCode.OK, HttpStatusCode.RequestTimeout, HttpStatusCode.ServiceUnavailable },
+            "the executable plan should reach the bounded synchronous lifecycle path; body: {0}",
+            responseBody);
         response.StatusCode.Should().NotBe(HttpStatusCode.UnprocessableEntity,
             "respond-sync is supported through the canonical bounded terminal/result service");
     }
@@ -410,9 +478,9 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         // OGC API Processes Part 1 §7.9.4.2: the server SHALL include
         // Preference-Applied: respond-async on every async 201 response.
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/honua-geoprocessing/execution");
+            "/ogc/processes/processes/geometry.buffer/execution");
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -673,12 +741,11 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     public async Task Execute_ResponseModeDocument_IsAccepted()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/honua-geoprocessing/execution");
+            "/ogc/processes/processes/geometry.buffer/execution");
         request.Headers.Add("Prefer", "respond-async");
-        // queryFeatures is a non-geoprocess kind â€” catalog validation skips it,
-        // so this request exercises only response-mode handling, not catalog checks.
+        // Use a real job-callable process so this test isolates response-mode handling.
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}},"response":"document"}""",
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}},\"response\":\"document\"}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -746,7 +813,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
                 "/ogc/processes/processes/honua-geoprocessing/execution");
             request.Headers.Add("Prefer", "respond-async");
             request.Content = new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess","processId":"data-management.delete-features","inputs":{"layerId":"0","where":"OBJECTID > 0"}}]}}}""",
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess","processId":"import.dataset","inputs":{"connection":"primary","sourcePath":"/staging/parcels.geojson","fileName":"parcels.geojson","tableName":"imported_parcels","layerName":"Parcels"}}]}}}""",
                 Encoding.UTF8, "application/json");
 
             var response = await client.SendAsync(request);
@@ -780,13 +847,12 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             var client = approvalFixture.CreateAdminClient();
 
             using var request = new HttpRequestMessage(HttpMethod.Post,
-                "/ogc/processes/processes/honua-geoprocessing/execution");
+                "/ogc/processes/processes/geometry.buffer/execution");
             request.Headers.Add("Prefer", "respond-async");
-            // queryFeatures is a non-geoprocess step kind â€” catalog validation skips it
-            // and the destructive classifier sees no Geoprocess step, so the submission
-            // should not trigger the IsDestructive branch of the evaluator.
+            // geometry.buffer is job-callable and non-destructive, so this isolates the
+            // destructive-only approval policy without bypassing executable-step validation.
             request.Content = new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+                $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
                 Encoding.UTF8, "application/json");
 
             var response = await client.SendAsync(request);
@@ -799,6 +865,25 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         {
             await approvalFixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_PlanWithoutGeoprocessStep_Returns400()
+    {
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("NO_EXECUTABLE_STEP");
     }
 
     [IntegrationTest]

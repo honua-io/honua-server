@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.AiBuilder.Fixtures;
 using Honua.Ai.AiBuilder.Planning;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Discovery;
@@ -210,16 +211,32 @@ public sealed class McpToolDescriptionTeachingTests
     [UnitTest]
     public void ExecutePlanSchema_ProcessIdAndInputs_DocumentCatalogDiscovery()
     {
-        AssertPlanStepDocumentsCatalog(McpToolSchemas.ExecutePlanArgumentSchema);
+        var jobCallableIds = new BuiltInProcessCatalog()
+            .ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .Select(process => process.ProcessId)
+            .ToArray();
+
+        AssertPlanStepDocumentsCatalog(McpToolSchemas.ExecutePlanArgumentSchema, jobCallableIds);
+        ExtractProcessIdExamples(McpToolSchemas.ExecutePlanArgumentSchema)
+            .Should().NotContain(["analytics.cluster", "source.geojson", "raster.interpolate-kriging"]);
+        ExtractProcessIdDescription(McpToolSchemas.ExecutePlanArgumentSchema)
+            .Should().Contain("executionKind=Job")
+            .And.Contain("supportedExecutionModes includes Async");
     }
 
     [UnitTest]
     public void PlanArgumentSchema_ProcessIdAndInputs_DocumentCatalogDiscovery()
     {
-        AssertPlanStepDocumentsCatalog(McpToolSchemas.PlanArgumentSchema);
+        AssertPlanStepDocumentsCatalog(McpToolSchemas.PlanArgumentSchema, McpToolSchemas.ProcessIdNames);
+        ExtractProcessIdDescription(McpToolSchemas.PlanArgumentSchema)
+            .Should().Contain("closed set advertised by the honua://catalog/processes resource")
+            .And.NotContain("executionKind=Job");
     }
 
-    private static void AssertPlanStepDocumentsCatalog(JsonElement planSchema)
+    private static void AssertPlanStepDocumentsCatalog(
+        JsonElement planSchema,
+        IEnumerable<string> expectedProcessIds)
     {
         var stepProperties = planSchema
             .GetProperty("properties").GetProperty("plan")
@@ -229,15 +246,31 @@ public sealed class McpToolDescriptionTeachingTests
         var processId = stepProperties.GetProperty("processId");
         processId.GetProperty("description").GetString().Should().Contain("honua://catalog/processes");
 
-        var examples = processId.GetProperty("examples").EnumerateArray()
-            .Select(x => x.GetString())
-            .ToArray();
+        var examples = ExtractProcessIdExamples(planSchema);
         examples.Should().Contain("geometry.buffer");
-        examples.Should().BeEquivalentTo(McpToolSchemas.ProcessIdNames);
+        examples.Should().BeEquivalentTo(expectedProcessIds);
 
         var inputs = stepProperties.GetProperty("inputs");
         var inputsDescription = inputs.GetProperty("description").GetString();
         inputsDescription.Should().Contain("string-encoded");
         inputsDescription.Should().Contain("honua://catalog/processes");
     }
+
+    private static string?[] ExtractProcessIdExamples(JsonElement planSchema)
+        => planSchema
+            .GetProperty("properties").GetProperty("plan")
+            .GetProperty("properties").GetProperty("steps")
+            .GetProperty("items").GetProperty("properties")
+            .GetProperty("processId").GetProperty("examples")
+            .EnumerateArray()
+            .Select(x => x.GetString())
+            .ToArray();
+
+    private static string ExtractProcessIdDescription(JsonElement planSchema)
+        => planSchema
+            .GetProperty("properties").GetProperty("plan")
+            .GetProperty("properties").GetProperty("steps")
+            .GetProperty("items").GetProperty("properties")
+            .GetProperty("processId").GetProperty("description")
+            .GetString()!;
 }

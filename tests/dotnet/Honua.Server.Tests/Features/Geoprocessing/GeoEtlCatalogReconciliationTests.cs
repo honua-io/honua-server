@@ -3,9 +3,11 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -87,5 +89,59 @@ public sealed class GeoEtlCatalogReconciliationTests
                 ProcessCatalogWorkflowNodeProvider.ToNodeTypeId(processId),
                 $"process '{processId}' must surface as a workflow node");
         }
+    }
+
+    [UnitTest]
+    public async Task NodeProvider_ProjectsExecutionClassificationIntoPublicationFlags()
+    {
+        IProcessCatalog catalog = new BuiltInProcessCatalog();
+        var provider = new ProcessCatalogWorkflowNodeProvider(catalog);
+
+        var nodes = (await provider.ListNodesAsync())
+            .ToDictionary(node => node.ProcessId!, StringComparer.Ordinal);
+
+        var job = nodes["geometry.buffer"].CapabilityFlags;
+        job.SupportsJob.Should().BeTrue();
+        job.SupportsSchedule.Should().BeTrue();
+        job.SupportsProcessEndpoint.Should().BeTrue();
+        job.Executable.Should().BeTrue();
+
+        var workflowOnly = nodes["source.geojson"].CapabilityFlags;
+        workflowOnly.SupportsJob.Should().BeFalse();
+        workflowOnly.SupportsSchedule.Should().BeTrue();
+        workflowOnly.SupportsProcessEndpoint.Should().BeFalse();
+        workflowOnly.Executable.Should().BeTrue();
+
+        var protocolOnly = nodes["conversion.geometry-format"].CapabilityFlags;
+        protocolOnly.SupportsJob.Should().BeFalse();
+        protocolOnly.SupportsSchedule.Should().BeFalse();
+        protocolOnly.SupportsProcessEndpoint.Should().BeFalse();
+        protocolOnly.Executable.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task NodeProvider_DoesNotAdvertiseWorkflowOnlyProcessWithoutAsyncMode()
+    {
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.sync-workflow",
+            Title = "Sync workflow process",
+            Description = "Test-only workflow process without async support.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.WorkflowOnly,
+            SupportedExecutionModes = ProcessExecutionModes.Sync
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.ListProcesses().Returns([definition]);
+        var provider = new ProcessCatalogWorkflowNodeProvider(catalog);
+
+        var node = (await provider.ListNodesAsync()).Should().ContainSingle().Subject;
+
+        node.CapabilityFlags.SupportsJob.Should().BeFalse();
+        node.CapabilityFlags.SupportsSchedule.Should().BeFalse();
+        node.CapabilityFlags.SupportsProcessEndpoint.Should().BeFalse();
+        node.CapabilityFlags.Executable.Should().BeFalse();
     }
 }

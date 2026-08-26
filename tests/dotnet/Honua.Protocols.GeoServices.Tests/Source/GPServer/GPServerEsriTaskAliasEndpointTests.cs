@@ -68,8 +68,8 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         // Both addressing forms are published for an aliased process...
         tasks.Should().Contain("geometry.buffer");
         tasks.Should().Contain("Buffer");
-        // ...a non-aliased Honua-specific process keeps only its internal-ID name...
-        tasks.Should().Contain("analytics.cluster");
+        // ...a non-aliased Honua-specific job process keeps only its internal-ID name...
+        tasks.Should().Contain("analytics.cluster-managed");
         // ...and no task name is ever published twice (duplicate-name handling).
         tasks.Should().OnlyHaveUniqueItems();
     }
@@ -453,6 +453,8 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             Title = "Custom Buffer",
             Description = CustomBufferDescription,
             Category = "custom",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async,
             Parameters =
             [
                 new ProcessParameterSpec

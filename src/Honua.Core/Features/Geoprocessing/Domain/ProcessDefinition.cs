@@ -79,6 +79,61 @@ public sealed record ProcessDefinition
     /// routing decision in the catalog rather than hard-coded in the submit path.
     /// </summary>
     public string RuntimeProfile { get; init; } = RuntimeProfiles.Managed;
+
+    /// <summary>
+    /// Canonical execution surface for this process. Catalog providers must classify
+    /// every registered process explicitly; <see cref="ProcessExecutionKind.Unclassified"/>
+    /// is fail-closed and must never be projected as callable.
+    /// </summary>
+    public ProcessExecutionKind ExecutionKind { get; init; } = ProcessExecutionKind.Unclassified;
+
+    /// <summary>The synchronous/asynchronous modes supported by the canonical execution surface.</summary>
+    public ProcessExecutionModes SupportedExecutionModes { get; init; } = ProcessExecutionModes.None;
+
+    /// <summary>
+    /// Optional deployment configuration or runtime capability required before this
+    /// process can execute, expressed as a stable operator-facing key.
+    /// </summary>
+    public string? ConfigurationDependency { get; init; }
+
+    /// <summary>
+    /// Operator-facing explanation for a non-job classification or configuration
+    /// dependency. Null only when the process is an unconditional job capability.
+    /// </summary>
+    public string? ExecutionCapabilityReason { get; init; }
+}
+
+/// <summary>Canonical surface through which a process may execute.</summary>
+public enum ProcessExecutionKind
+{
+    /// <summary>Missing catalog classification. Consumers must fail closed.</summary>
+    Unclassified,
+
+    /// <summary>Callable through the shared geoprocessing job runtime.</summary>
+    Job,
+
+    /// <summary>Callable only through an owning protocol endpoint, not as a process job.</summary>
+    ProtocolOnly,
+
+    /// <summary>Composable only inside a workflow DAG, not directly callable.</summary>
+    WorkflowOnly,
+
+    /// <summary>Advertised for inspection but not callable in this build.</summary>
+    Unavailable
+}
+
+/// <summary>Execution modes supported by a process's canonical surface.</summary>
+[Flags]
+public enum ProcessExecutionModes
+{
+    /// <summary>No callable execution mode.</summary>
+    None = 0,
+
+    /// <summary>Asynchronous submit/poll execution.</summary>
+    Async = 1,
+
+    /// <summary>Synchronous request/response execution.</summary>
+    Sync = 2
 }
 
 /// <summary>
