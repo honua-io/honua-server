@@ -303,6 +303,37 @@ public class RedshiftFeatureQueryBuilderTests
         Assert.Contains("ORDER BY \"name\" ASC", result.Sql, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("eo:cloud_cover")]
+    [InlineData("owner.name")]
+    [InlineData("cloud-cover")]
+    public void BuildSelectQuery_OrderByExtendedFieldName_QuotesSingleIdentifier(string fieldName)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(fieldName))
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, [fieldName]);
+
+        Assert.Contains($"ORDER BY \"{fieldName}\" ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("name;DROP")]
+    [InlineData("owner name")]
+    [InlineData("name/name")]
+    public void BuildSelectQuery_OrderByUnsafeFieldName_Throws(string fieldName)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(fieldName))
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, _attributes));
+    }
+
     [Fact]
     public void BuildCountQuery_GeneratesCountStar()
     {

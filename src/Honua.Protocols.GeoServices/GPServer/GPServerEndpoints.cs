@@ -11,6 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.GPServer.Models;
 using Honua.ServiceDefaults;
@@ -101,6 +102,7 @@ internal static class GPServerEndpoints
             .WithName("GPServerSubmitJobGet")
             .WithSummary("Submit an asynchronous GP job using GET")
             .WithDescription("Queues a GP task for background processing and returns a job ID")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("GPServer");
 
         // Synchronous execute (POST + GET). Sync-eligible tasks
@@ -126,6 +128,7 @@ internal static class GPServerEndpoints
             .WithName("GPServerExecuteGet")
             .WithSummary("Execute a synchronous GP task using GET")
             .WithDescription("Runs a sync-eligible GP task inline and returns its result envelope")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("GPServer");
 
         // Jobs listing / history for a task (submitted/running/completed/failed),
@@ -167,6 +170,7 @@ internal static class GPServerEndpoints
             .WithName("GPServerCancelJob")
             .WithSummary("Cancel a GP job")
             .WithDescription("Cancels an in-flight GP job")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("GPServer");
 
         // HANDLER-AUTHORIZED (#1144): GetJobAsync/CancelJobAsync resolve

@@ -226,7 +226,7 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
         var clauses = new List<string>(orderBy.Length);
         foreach (var clause in orderBy)
         {
-            DatabricksIdentifier.ValidateIdentifier(clause.Field);
+            DatabricksIdentifier.ValidateAttributeName(clause.Field);
             clauses.Add($"{Dialect.QuoteIdentifier(clause.Field)} {(clause.Ascending ? "ASC" : "DESC")}");
         }
 

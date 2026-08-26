@@ -107,7 +107,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
                 continue;
             }
 
-            sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field)} AS {ValidateAndQuoteIdentifier(field.Name)}");
+            sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field)} AS {QuoteAttributeFieldAlias(field.Name)}");
         }
     }
 

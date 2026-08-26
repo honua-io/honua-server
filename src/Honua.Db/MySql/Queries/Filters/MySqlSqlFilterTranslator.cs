@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Exceptions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.MySql;
 using Honua.Db.MySql.Features.Infrastructure;
@@ -124,8 +125,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
             return GetGeometryColumnExpression(context);
         }
 
-        throw new ArgumentException(
-            $"Field '{property.PropertyName}' is not defined on layer '{context.ResourceName}'.");
+        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
     }
 
     protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
@@ -221,7 +221,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
                             return GetGeometryColumnExpression(context);
                         }
 
-                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                     }
 
                     if (!field.Value.IsGeometry)
