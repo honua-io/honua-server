@@ -7,6 +7,7 @@ using Honua.Core.Features.Federation.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Admin.Federation.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.Federation;
@@ -32,6 +33,7 @@ internal static class FederationEndpoints
     public static void MapFederationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/federation/sources")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Federation")

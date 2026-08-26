@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
@@ -49,6 +50,7 @@ internal static class CatalogEndpoints
             .WithSummary("Get OpenAPI 3.0 specification for STAC API")
             .WithDescription("The OpenAPI specification describes the STAC API endpoints.")
             .WithTags("STAC")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("StacCatalog")
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);

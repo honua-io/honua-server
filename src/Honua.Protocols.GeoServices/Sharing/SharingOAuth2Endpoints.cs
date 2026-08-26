@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -31,7 +32,10 @@ internal static class SharingOAuth2Endpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        endpoints.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
+        var oauthGroup = endpoints.MapGroup(string.Empty)
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
+        oauthGroup.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Authorize")
             .WithName("SharingRestOAuth2Authorize")
             .WithSummary("Initiate the ArcGIS named-user authorization-code flow")
@@ -42,7 +46,7 @@ internal static class SharingOAuth2Endpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
-        endpoints.MapGet(PortalOAuthRoutes.CallbackPath, HandleCallbackAsync)
+        oauthGroup.MapGet(PortalOAuthRoutes.CallbackPath, HandleCallbackAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Callback")
             .WithName("SharingRestOAuth2Callback")
             .WithSummary("OIDC provider return endpoint for the ArcGIS named-user flow")
@@ -57,7 +61,7 @@ internal static class SharingOAuth2Endpoints
         // refresh tokens as URL query-string parameters — logged verbatim by
         // every proxy, CDN, and access-log middleware in the chain (CWE-598).
         // BH7-001: GET registration removed; POST-only enforced.
-        endpoints.MapPost(PortalOAuthRoutes.TokenPath, HandleTokenAsync)
+        oauthGroup.MapPost(PortalOAuthRoutes.TokenPath, HandleTokenAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token")
             .WithName("SharingRestOAuth2TokenPost")
             .WithSummary("Exchange an authorization code or refresh token for a portal access token")
@@ -68,7 +72,7 @@ internal static class SharingOAuth2Endpoints
             .Produces<OAuth2ErrorResponse>(StatusCodes.Status400BadRequest, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
-        endpoints.MapPost(PortalOAuthRoutes.RevokePath, HandleRevokeAsync)
+        oauthGroup.MapPost(PortalOAuthRoutes.RevokePath, HandleRevokeAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
             .WithName("SharingRestOAuth2Revoke")
             .WithSummary("RFC 7009 per-token revocation for opaque and JWT access tokens and refresh tokens")
@@ -79,7 +83,7 @@ internal static class SharingOAuth2Endpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
-        endpoints.MapPost(PortalOAuthRoutes.IntrospectPath, HandleIntrospectAsync)
+        oauthGroup.MapPost(PortalOAuthRoutes.IntrospectPath, HandleIntrospectAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Introspection")
             .WithName("SharingRestOAuth2Introspect")
             .WithSummary("RFC 7662 token introspection for opaque and JWT access tokens")

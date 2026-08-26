@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -39,6 +40,7 @@ internal static class CoreEndpoints
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Tiles")
             .WithDescription("The OpenAPI specification describes all available OGC Tiles endpoints")
             .WithTags("OGC API Tiles")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcTilesOpenApi")
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);

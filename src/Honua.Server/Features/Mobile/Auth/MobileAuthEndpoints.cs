@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -31,6 +32,7 @@ internal static class MobileAuthEndpoints
             .WithName("RefreshMobileAuthToken")
             .WithSummary("Refresh a mobile runtime auth token")
             .WithTags("Mobile", "Auth")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .AllowAnonymous();
     }
 

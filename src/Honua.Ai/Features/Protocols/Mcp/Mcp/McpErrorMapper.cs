@@ -345,6 +345,21 @@ internal static class McpErrorMapper
     };
 
     /// <summary>
+    /// Creates the fail-closed response for an authenticated caller whose validated
+    /// principal has no durable actor identifier suitable for session ownership.
+    /// </summary>
+    public static McpJsonRpcError SessionActorRequired() => new()
+    {
+        Code = JsonRpcServerError,
+        Message = "Authenticated MCP sessions require a durable subject or API-key identity.",
+        Data = new McpErrorData
+        {
+            Code = Codes.PermissionDenied,
+            RequiresReauthentication = true
+        }
+    };
+
+    /// <summary>
     /// Creates the structured, retryable error returned when a new
     /// <c>initialize</c> is refused because the session cap is reached and the
     /// configured policy is to reject rather than evict (A3 session hardening;

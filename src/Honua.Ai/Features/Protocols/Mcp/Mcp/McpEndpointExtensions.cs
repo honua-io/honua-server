@@ -147,7 +147,16 @@ internal static class McpEndpointExtensions
         {
             var root = document.RootElement;
             var isInitialize = IsInitialize(root);
-            var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(context.User);
+            var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+            if (principalKey is null)
+            {
+                McpLog.SessionRejected(logger, "durable-actor-required");
+                await WriteSingleAsync(
+                    context,
+                    ErrorResponse(JsonNullId, McpErrorMapper.SessionActorRequired()),
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
 
             // Streamable-HTTP session enforcement: when the client presents an
             // Mcp-Session-Id it MUST be one this server issued, otherwise the
@@ -294,7 +303,14 @@ internal static class McpEndpointExtensions
         }
 
         var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
-        var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(context.User);
+        var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+        if (principalKey is null)
+        {
+            McpLog.SessionRejected(logger, "durable-actor-required");
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
         var validation = string.IsNullOrEmpty(sessionId)
             ? McpSessionValidation.Unknown
             : sessions.ValidateAccess(sessionId, principalKey);
@@ -373,7 +389,14 @@ internal static class McpEndpointExtensions
 
         // Only the principal that owns the session may terminate it (A3 binding;
         // #2537): a mismatched identity is forbidden, an unknown/expired id 404s.
-        var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(context.User);
+        var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+        if (principalKey is null)
+        {
+            McpLog.SessionRejected(logger, "durable-actor-required");
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        }
+
         switch (sessions.ValidateAccess(sessionId, principalKey))
         {
             case McpSessionValidation.PrincipalMismatch:

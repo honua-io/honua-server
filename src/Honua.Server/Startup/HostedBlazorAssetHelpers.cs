@@ -33,7 +33,7 @@ internal static class HostedBlazorAssetHelpers
         });
     }
 
-    public static void MapHostedBlazorFallback(
+    public static IEndpointConventionBuilder MapHostedBlazorFallback(
         IEndpointRouteBuilder endpoints,
         PathString pathPrefix)
     {
@@ -42,7 +42,7 @@ internal static class HostedBlazorAssetHelpers
         var fallbackRoute = $"{prefix}/{{*path:nonfile}}";
         var fallbackFile = $"{prefix.TrimStart('/')}/index.html";
 
-        endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
+        return endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
     }
 
     public static void FilterHostedBlazorStaticAssetEndpoints(

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Coverages.Handlers;
 using Honua.Protocols.Ogc.Api.Coverages.Models;
@@ -47,6 +48,7 @@ public static class OgcCoveragesEndpoints
             .WithName("GetCoveragesOpenApiSpecAlias")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API - Coverages")
             .WithDescription("The OpenAPI specification describes all available OGC API - Coverages endpoints.")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcCoveragesOpenApi");
@@ -56,6 +58,7 @@ public static class OgcCoveragesEndpoints
             .WithName("GetCoveragesOpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API - Coverages")
             .WithDescription("The OpenAPI specification describes all available OGC API - Coverages endpoints.")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcCoveragesOpenApi");

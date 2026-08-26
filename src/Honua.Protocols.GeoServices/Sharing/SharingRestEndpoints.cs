@@ -13,6 +13,7 @@ using Honua.Core.Features.Portal.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -108,6 +109,7 @@ public static class SharingRestEndpoints
             .WithSummary("Portal version and authentication info")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<SharingInfoResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 

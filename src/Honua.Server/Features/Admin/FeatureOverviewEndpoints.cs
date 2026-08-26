@@ -6,6 +6,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +24,7 @@ internal static class FeatureOverviewEndpoints
     public static void MapFeatureOverviewEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/features")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Features")

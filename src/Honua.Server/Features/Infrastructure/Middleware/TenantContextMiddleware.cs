@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -37,8 +38,19 @@ internal sealed class TenantContextMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
+        var principal = context.User;
+        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
+
         if (!_options.Enabled)
         {
+            // Single-tenant mode deliberately has no effective tenant, but bearer
+            // audit and durable-job attribution must still use the validator-owned,
+            // issuer-qualified actor rather than falling back to a bare subject.
+            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+            {
+                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
+            }
+
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -54,9 +66,6 @@ internal sealed class TenantContextMiddleware(
         }
 
         var path = context.Request.Path.Value;
-        var principal = context.User;
-        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
-
         // 1. Header override (admin-only). Evaluate first so a logged-in admin can target
         //    a specific tenant explicitly even if they also carry a tid claim.
         if (TryReadHeader(context, out var headerTenantId))
@@ -64,6 +73,7 @@ internal sealed class TenantContextMiddleware(
             if (isAuthenticated && PrincipalHasMultiTenantAdminRole(principal!))
             {
                 tenantContext.Set(headerTenantId, TenantContextSource.Header);
+                CanonicalSecurityActor.StampRequestBinding(principal!, headerTenantId);
                 TenantContextLog.HeaderOverrideAccepted(
                     _logger,
                     GetPrincipalIdentifier(principal),
@@ -80,13 +90,58 @@ internal sealed class TenantContextMiddleware(
                 GetPrincipalIdentifier(principal),
                 TenantContextOptions.TenantHeaderName,
                 path);
+
+            // A bearer caller with an unauthorized override must fail closed. Falling
+            // through to a claim or default tenant would make the request appear valid
+            // to downstream middleware while silently discarding the caller's choice.
+            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+            {
+                // Audit still needs the issuer-qualified actor even though the rejected
+                // override has no accepted effective tenant.
+                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
         }
 
         // 2. Claim-based resolution.
         if (isAuthenticated && TryReadClaim(principal!, out var claimTenantId))
         {
             tenantContext.Set(claimTenantId, TenantContextSource.Claim);
+            CanonicalSecurityActor.StampRequestBinding(principal!, claimTenantId);
             TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Claim), claimTenantId, path);
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        // An authenticated bearer without a validated tenant claim must never inherit
+        // the anonymous public default. Tenant-required operations will reject the
+        // null context downstream rather than running under the wrong tenant.
+        if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+        {
+            tenantContext.Set(null, TenantContextSource.Anonymous);
+            CanonicalSecurityActor.StampRequestBinding(principal!, null);
+
+            // Bearers cannot enter tenant-bound routes with a null
+            // tenant: schema/data middleware would otherwise use the deployment's
+            // configured default. Only explicitly tenant-independent control-plane
+            // routes may continue without a tenant; other admin routes can read or
+            // mutate tenant-bound metadata. Separately validated OperatorBearer
+            // principals use the same boundary and remain available only on routes
+            // carrying the explicit tenant-independent marker. MCP data-bearing
+            // operations apply their own tenant requirement to both bearer schemes.
+            if (!context.Request.Path.StartsWithSegments(
+                    "/mcp",
+                    StringComparison.OrdinalIgnoreCase)
+                && !IsTenantIndependentControlPlaneEndpoint(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            // MCP intentionally keeps tenantless discovery separate from data-bearing
+            // operations. Its shared tool/resource authorization helpers enforce the
+            // tenant requirement before lookup or execution.
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -198,6 +253,9 @@ internal sealed class TenantContextMiddleware(
             ?? principal.FindFirst("sub")?.Value
             ?? principal.Identity.Name;
     }
+
+    private static bool IsTenantIndependentControlPlaneEndpoint(HttpContext context) =>
+        context.GetEndpoint()?.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null;
 
     // Tenant ids should be safe to embed in logs and downstream SQL filters. Allow the
     // same character set as correlation ids — letters, digits, hyphen, underscore, dot,

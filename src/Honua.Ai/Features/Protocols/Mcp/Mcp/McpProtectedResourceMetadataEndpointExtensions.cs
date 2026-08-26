@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
@@ -50,6 +51,7 @@ internal static class McpProtectedResourceMetadataEndpointExtensions
             .WithName("McpProtectedResourceMetadata")
             .WithSummary("OAuth 2.0 Protected Resource Metadata (RFC 9728) for the /mcp resource.")
             .WithDescription("Publishes the resource identifier and the issuer identifiers of the authorization servers that guard POST /mcp, derived from the host's OIDC authority configuration. Mapped only when an authorization server is configured.")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithTags("Mcp");
 
         return endpoints;

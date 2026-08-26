@@ -1096,8 +1096,10 @@ if (serveStacOpsDemo)
 {
     HostedBlazorAssetHelpers.ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
     app.MapGet("/samples/stac-ops", () => Results.Redirect("/samples/stac-ops/index.html"))
+        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
         .ExcludeFromDescription();
-    HostedBlazorAssetHelpers.MapHostedBlazorFallback(app, stacOpsDemoPathPrefix);
+    HostedBlazorAssetHelpers.MapHostedBlazorFallback(app, stacOpsDemoPathPrefix)
+        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 }
 else
 {
@@ -1137,18 +1139,15 @@ if (serveApiDocs)
 
         > This is the full protocol surface. The document switcher only lists the OpenAPI-described protocols; the standards above are reached through their own discovery documents.
         """;
-    var protocolsOverviewDoc = new
-    {
-        openapi = "3.0.3",
-        info = new
-        {
-            title = "Honua — supported protocols",
-            version = "1.0.0",
-            description = protocolsOverviewDescription,
-        },
-        paths = new Dictionary<string, object>(),
-    };
-    app.MapGet("/docs/protocols.openapi.json", () => Results.Json(protocolsOverviewDoc));
+    var encodedProtocolsOverviewDescription =
+        System.Text.Json.JsonEncodedText.Encode(protocolsOverviewDescription).ToString();
+    var protocolsOverviewJson = $$$"""
+        {"openapi":"3.0.3","info":{"title":"Honua — supported protocols","version":"1.0.0","description":"{{{encodedProtocolsOverviewDescription}}}"},"paths":{}}
+        """;
+    app.MapGet(
+            "/docs/protocols.openapi.json",
+            () => Results.Text(protocolsOverviewJson, "application/json; charset=utf-8"))
+        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
     app.MapScalarApiReference("/docs", options =>
     {
@@ -1164,7 +1163,7 @@ if (serveApiDocs)
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
             .AddDocument("stac", "STAC API", "/stac/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
-    });
+    }).WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 }
 
 // Add correlation ID middleware early in pipeline (before request logging)
@@ -1304,6 +1303,29 @@ app.UseApiKeyAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// MCP bearer credentials must be fully validated before tenant context, schema
+// routing, or tenant status observes the request. The endpoint filter remains
+// defense-in-depth for non-standard hosting pipelines.
+Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions.UseMcpBearerAuthentication(app);
+
+// Audit enters after the bearer has been validated, so its actor context is the
+// canonical validated principal. Invalid bearer responses are deferred until the
+// rejection boundary below, allowing the shared audit layer to record their 401.
+app.UseHonuaAuditLog();
+
+// Invalid bearer validation attempts use the normal application rate limiter,
+// partitioned by source IP because there is no trusted actor/tenant. The branch
+// terminates before tenant context, schema routing, status checks, or endpoints.
+app.UseWhen(
+    static context => Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
+        .HasAuthenticationFailure(context),
+    static invalidBearer =>
+    {
+        invalidBearer.UseRateLimiting();
+        Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
+            .UseMcpBearerAuthenticationRejection(invalidBearer);
+    });
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
@@ -1318,11 +1340,6 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
-
-// Audit-log middleware records security-relevant request outcomes. It runs after
-// auth so the audit actor is the authenticated principal, and before endpoint
-// execution so 401/403/5xx responses are still observed (#1144).
-app.UseHonuaAuditLog();
 
 // App-level rate limiting (issue #355). Runs after authentication and tenant resolution
 // so buckets partition by tenant + authenticated user/API-key identity (falling back to
@@ -1364,7 +1381,8 @@ await RunDatabaseMigrationsAsync();
 
 // Configure health endpoints
 app.MapHealthEndpoints();
-app.MapPrometheusEndpoint();
+app.MapPrometheusEndpoint(endpoint =>
+    endpoint.WithMetadata(TenantIndependentControlPlaneMetadata.Instance));
 
 // Configure admin auth bootstrap endpoint (anonymous - must precede admin group)
 app.MapAdminAuthEndpoints();
