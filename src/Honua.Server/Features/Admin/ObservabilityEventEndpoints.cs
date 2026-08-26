@@ -61,6 +61,7 @@ internal static class ObservabilityEventEndpoints
                 filter.PageSize,
                 page.Items.Select(item => item.OccurredAt).ToArray(),
                 page.PartialResult,
+                page.HasMore,
                 includedSources,
                 failedSources),
         };

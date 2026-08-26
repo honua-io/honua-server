@@ -295,6 +295,11 @@ public sealed record OperateEventPage
     public required IReadOnlyList<OperateEvent> Items { get; init; }
 
     /// <summary>
+    /// Set to true when additional matching events were omitted by the requested page size.
+    /// </summary>
+    public bool HasMore { get; init; }
+
+    /// <summary>
     /// Event-feed components selected for this request, including components that
     /// succeeded with zero rows or failed while being queried.
     /// </summary>

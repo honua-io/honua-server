@@ -82,6 +82,7 @@ internal static class EvidencePostureProjection
         int requestedPageSize,
         IReadOnlyList<DateTimeOffset> returnedTimestamps,
         bool partialResult,
+        bool hasMore,
         IReadOnlyCollection<string> includedSources,
         IReadOnlyCollection<string> failedSources)
     {
@@ -106,6 +107,8 @@ internal static class EvidencePostureProjection
                 ReturnedTo = observedAt,
                 RequestedPageSize = requestedPageSize,
                 ReturnedCount = returnedTimestamps.Count,
+                HasMore = hasMore,
+                Truncated = hasMore,
                 IncludedComponentIds = includedSources.ToArray(),
                 ExpectedComponentIds = includedSources.Concat(failedSources).ToArray(),
             },

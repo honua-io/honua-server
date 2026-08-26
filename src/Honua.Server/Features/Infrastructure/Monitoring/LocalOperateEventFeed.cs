@@ -84,6 +84,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         ArgumentNullException.ThrowIfNull(filter);
 
         var pageSize = Math.Min(MaxPageSize, Math.Max(1, filter.PageSize));
+        var probeSize = pageSize + 1;
         var requestedKinds = filter.Kinds is { Count: > 0 } ? new HashSet<OperateEventKind>(filter.Kinds) : null;
         bool Wanted(OperateEventKind kind) => requestedKinds is null || requestedKinds.Contains(kind);
 
@@ -99,7 +100,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         var alertTask = queryAlerts
-            ? LoadAlertsAsync(filter, pageSize, cancellationToken)
+            ? LoadAlertsAsync(filter, probeSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
         var queryAudit = Wanted(OperateEventKind.Audit) && _auditReader is not null;
@@ -109,7 +110,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         var auditTask = queryAudit
-            ? LoadAuditAsync(filter, pageSize, cancellationToken)
+            ? LoadAuditAsync(filter, probeSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
         var queryJobs = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null);
@@ -119,7 +120,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         var jobTask = queryJobs
-            ? LoadJobsAsync(filter, pageSize, cancellationToken)
+            ? LoadJobsAsync(filter, probeSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
         var queryReleases = Wanted(OperateEventKind.Release) &&
@@ -131,7 +132,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         var releaseTask = queryReleases
-            ? LoadReleasesAsync(filter, pageSize)
+            ? LoadReleasesAsync(filter, probeSize)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
         try
@@ -185,11 +186,13 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         collected.RemoveAll(item => !MatchesFilter(filter, item, matchResourceRef: false));
 
         collected.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+        var hasMore = collected.Count > pageSize;
         var trimmed = collected.Take(pageSize).ToArray();
 
         return new OperateEventPage
         {
             Items = trimmed,
+            HasMore = hasMore,
             QueriedSources = queriedSources,
             PartialResult = partial,
             SourceErrors = sourceErrors
