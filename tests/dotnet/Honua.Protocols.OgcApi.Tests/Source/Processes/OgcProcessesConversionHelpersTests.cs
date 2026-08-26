@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit.Attributes;
@@ -20,6 +21,23 @@ public sealed class OgcProcessesConversionHelpersTests
     private const string BaseUrl = "https://example.com";
     private const string ProcessId = "honua-geoprocessing";
     private const string ResultsRelation = "http://www.opengis.net/def/rel/ogc/1.0/results";
+
+    [Theory]
+    [InlineData(ArtifactKind.Scalar, "application/json")]
+    [InlineData(ArtifactKind.FeatureLayer, "application/geo+json")]
+    [InlineData(ArtifactKind.Table, "application/json")]
+    [InlineData(ArtifactKind.Raster, "image/tiff")]
+    [InlineData(ArtifactKind.File, "application/octet-stream")]
+    [InlineData(ArtifactKind.Report, "application/json")]
+    [InlineData(ArtifactKind.Map, "application/json")]
+    [InlineData(ArtifactKind.AppBundle, "application/octet-stream")]
+    [Operation(Operations.ProcessDiscovery)]
+    public void GetDefaultOutputContentMediaType_MapsEveryArtifactKind(
+        ArtifactKind kind,
+        string expectedMediaType)
+    {
+        ProcessEndpoints.GetDefaultOutputContentMediaType(kind).Should().Be(expectedMediaType);
+    }
 
     [Fact]
     [Operation(Operations.JobStatus)]
