@@ -717,9 +717,7 @@ def _entry_identity(entry: dict[str, Any], expected_stream: str) -> str | None:
     )
 
 
-def _drift(
-    label: str, entry: dict[str, Any], value: dict[str, Any], policy_head_sha: str | None
-) -> None:
+def _drift(label: str, value: dict[str, Any], policy_head_sha: str | None) -> None:
     """Raise for a receipt that does not describe the current policy generation.
 
     The receipt's `policy_sha` is the trunk commit the trusted observer executed
@@ -780,7 +778,7 @@ def _validate_pr_gate(
         or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
         or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
     ):
-        _drift("PR Gate", entry, value, policy_head_sha)
+        _drift("PR Gate", value, policy_head_sha)
     return {
         "stream": PR_GATE_STREAM,
         "pull_request": pull_request,
@@ -900,7 +898,7 @@ def _validate_native(
     # Same ordering rule as the PR Gate receipt: prove the receipt is sound
     # first, then decide whether it belongs to the current cohort.
     if drifted:
-        _drift("native-image", entry, value, policy_head_sha)
+        _drift("native-image", value, policy_head_sha)
     return {
         "stream": NATIVE_STREAM,
         "pull_request": pull_request,
