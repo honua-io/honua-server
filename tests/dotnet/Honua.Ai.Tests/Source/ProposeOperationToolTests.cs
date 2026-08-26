@@ -300,8 +300,9 @@ public sealed class ProposeOperationToolTests
             .InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
-        result.StructuredContent.Value.GetProperty("message").GetString()
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
+        content.GetProperty("message").GetString()
             .Should().Be($"The authority-bound 'resourceId' must not exceed {OperationAuthorityContext.MaxResourceIdLength} characters.");
         gateway.LastRequest.Should().BeNull();
     }
