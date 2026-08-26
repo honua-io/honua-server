@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -150,6 +151,26 @@ public sealed class OgcProcessesConversionHelpersTests
         inline.Payload.Should().Equal(0, 0, 0);
     }
 
+    [Fact]
+    [Operation(Operations.ProcessExecution)]
+    public void TryConvertGeoJsonInput_LegacyGeometryService_ReturnsSanitizedError()
+    {
+        using var document = JsonDocument.Parse(
+            """{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}""");
+
+        var converted = ProcessEndpoints.TryConvertGeoJsonInput(
+            "wkb",
+            document.RootElement,
+            4326,
+            new LegacyGeometryService(),
+            out var normalized,
+            out var error);
+
+        converted.Should().BeFalse();
+        normalized.Should().BeNull();
+        error.Should().Be("Input 'wkb' must contain valid GeoJSON geometry.");
+    }
+
     private static ExecutionJobRecord CreateJob(ExecutionJobStatus status)
     {
         var now = DateTimeOffset.UtcNow;
@@ -167,5 +188,22 @@ public sealed class OgcProcessesConversionHelpersTests
                 WorkloadName = "test-workload"
             }
         };
+    }
+
+    private sealed class LegacyGeometryService : IGeometryService
+    {
+        public (bool HasZ, bool HasM) DetectZM(byte[]? wkb) => (false, false);
+
+        public (bool HasZ, bool HasM) DetectZM(Memory<byte> wkb) => (false, false);
+
+        public string? ConvertWkbToGeoJson(byte[]? wkb) => null;
+
+        public string? ConvertWkbToGeoJson(Memory<byte> wkb) => null;
+
+        public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null) => [1, 2, 3];
+
+        public byte[]? ConvertWktToWkb(string? wkt, int? srid = null) => null;
+
+        public GeometryInfo? GetGeometryInfo(byte[]? wkb) => null;
     }
 }

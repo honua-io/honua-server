@@ -636,7 +636,7 @@ internal static class ProcessEndpoints
             : null;
     }
 
-    private static bool TryConvertGeoJsonInput(
+    internal static bool TryConvertGeoJsonInput(
         string inputName,
         JsonElement input,
         int? srid,
@@ -684,7 +684,7 @@ internal static class ProcessEndpoints
             normalized = Convert.ToBase64String(wkb);
             return true;
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
         {
             error = $"Input '{inputName}' must contain valid GeoJSON geometry.";
             return false;

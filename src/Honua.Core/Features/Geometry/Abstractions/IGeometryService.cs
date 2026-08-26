@@ -57,13 +57,35 @@ public interface IGeometryService
     /// </summary>
     /// <param name="geoJson">The GeoJSON string.</param>
     /// <param name="srid">Optional SRID to assign to the geometry.</param>
+    /// <returns>WKB bytes, or null for null/empty input.</returns>
+    /// <exception cref="ArgumentException">Thrown when GeoJSON format is invalid.</exception>
+    byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null);
+
+    /// <summary>
+    /// Converts GeoJSON string to WKB format, optionally unwrapping GeoJSON containers.
+    /// </summary>
+    /// <param name="geoJson">The GeoJSON string.</param>
+    /// <param name="srid">Optional SRID to assign to the geometry.</param>
     /// <param name="allowContainers">
     /// Whether GeoJSON Feature and FeatureCollection containers may be unwrapped to their geometries.
-    /// Geometry-only protocol fields should retain the default value of <see langword="false"/>.
+    /// Geometry-only protocol fields should pass <see langword="false"/>.
     /// </param>
     /// <returns>WKB bytes, or null for null/empty input.</returns>
     /// <exception cref="ArgumentException">Thrown when GeoJSON format is invalid.</exception>
-    byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null, bool allowContainers = false);
+    /// <exception cref="NotSupportedException">
+    /// Thrown when <paramref name="allowContainers"/> is <see langword="true"/> and the service
+    /// implementation predates container conversion support.
+    /// </exception>
+    byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid, bool allowContainers)
+    {
+        if (allowContainers)
+        {
+            throw new NotSupportedException(
+                "GeoJSON container conversion is not supported by this geometry service implementation.");
+        }
+
+        return ConvertGeoJsonToWkb(geoJson, srid);
+    }
 
     /// <summary>
     /// Converts WKT (Well-Known Text) to WKB format.

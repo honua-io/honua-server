@@ -121,7 +121,11 @@ internal sealed class GeometryService : IGeometryService
     }
 
     /// <inheritdoc />
-    public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null, bool allowContainers = false)
+    public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null)
+        => ConvertGeoJsonToWkb(geoJson, srid, allowContainers: false);
+
+    /// <inheritdoc />
+    public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid, bool allowContainers)
     {
         if (string.IsNullOrWhiteSpace(geoJson))
         {

@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -148,6 +149,33 @@ public sealed class GeometryServiceTests
         ex.Message.Should().Be("Invalid GeoJSON format.");
     }
 
+    [Fact]
+    public void GeometryServiceContract_PreservesLegacyGeoJsonConversionSignature()
+    {
+        var method = typeof(IGeometryService).GetMethod(
+            nameof(IGeometryService.ConvertGeoJsonToWkb),
+            [typeof(string), typeof(int?)]);
+
+        method.Should().NotBeNull();
+        method!.IsAbstract.Should().BeTrue();
+        method.GetParameters()[1].HasDefaultValue.Should().BeTrue();
+        method.GetParameters()[1].DefaultValue.Should().BeNull();
+    }
+
+    [Fact]
+    public void GeometryServiceContract_LegacyImplementationSupportsCompatibleCalls()
+    {
+        IGeometryService service = new LegacyGeometryService();
+
+        service.ConvertGeoJsonToWkb("legacy", 4326).Should().Equal(1, 2, 3);
+        service.ConvertGeoJsonToWkb("legacy", 4326, allowContainers: false).Should().Equal(1, 2, 3);
+
+        var action = () => service.ConvertGeoJsonToWkb("legacy", 4326, allowContainers: true);
+        var exception = action.Should().Throw<NotSupportedException>().Which;
+        exception.Message.Should().Be(
+            "GeoJSON container conversion is not supported by this geometry service implementation.");
+    }
+
 
     [Fact]
     public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
@@ -196,5 +224,22 @@ public sealed class GeometryServiceTests
         ex.Message.Should().Contain("Invalid WKB geometry format.");
         ex.Message.Should().NotContain("BytePositionInLine");
         ex.Message.Should().NotContain("LineNumber");
+    }
+
+    private sealed class LegacyGeometryService : IGeometryService
+    {
+        public (bool HasZ, bool HasM) DetectZM(byte[]? wkb) => (false, false);
+
+        public (bool HasZ, bool HasM) DetectZM(Memory<byte> wkb) => (false, false);
+
+        public string? ConvertWkbToGeoJson(byte[]? wkb) => null;
+
+        public string? ConvertWkbToGeoJson(Memory<byte> wkb) => null;
+
+        public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null) => [1, 2, 3];
+
+        public byte[]? ConvertWktToWkb(string? wkt, int? srid = null) => null;
+
+        public GeometryInfo? GetGeometryInfo(byte[]? wkb) => null;
     }
 }
