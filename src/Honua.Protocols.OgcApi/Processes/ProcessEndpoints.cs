@@ -354,10 +354,8 @@ internal static class ProcessEndpoints
                     GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(
                         jobRecord.OperationId,
                         terminal.Job?.ErrorMessage),
-                    GeoprocessingTerminalResultOutcome.Cancelled => OgcProcessesResults.Error(
-                        StatusCodes.Status409Conflict,
-                        "Process execution cancelled",
-                        $"Job '{jobRecord.OperationId}' was cancelled."),
+                    GeoprocessingTerminalResultOutcome.Cancelled => JobEndpoints.BuildJobDismissedResult(
+                        jobRecord.OperationId),
                     GeoprocessingTerminalResultOutcome.NotFound => OgcProcessesResults.NoSuchJob(jobRecord.OperationId),
                     GeoprocessingTerminalResultOutcome.Timeout => OgcProcessesResults.Error(
                         StatusCodes.Status408RequestTimeout,

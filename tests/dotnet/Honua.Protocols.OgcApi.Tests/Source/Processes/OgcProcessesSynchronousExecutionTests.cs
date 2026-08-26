@@ -154,6 +154,35 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
             _fixture.ResetTerminalResult();
         }
     }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_SynchronousCancellation_ReturnsRegisteredJobDismissedException()
+    {
+        _fixture.SetTerminalCancellation();
+        try
+        {
+            using var content = new StringContent(
+                $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Gone);
+            using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            error.RootElement.GetProperty("type").GetString().Should().Be(
+                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-dismissed");
+            error.RootElement.GetProperty("status").GetInt32().Should().Be(410);
+        }
+        finally
+        {
+            _fixture.ResetTerminalResult();
+        }
+    }
 }
 
 public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
@@ -215,6 +244,14 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
         _terminalResult = new GeoprocessingTerminalResult(
             GeoprocessingTerminalResultOutcome.Failed,
             failedJob);
+    }
+
+    public void SetTerminalCancellation()
+    {
+        var cancelledJob = CreateJob(ExecutionJobStatus.Cancelled);
+        _terminalResult = new GeoprocessingTerminalResult(
+            GeoprocessingTerminalResultOutcome.Cancelled,
+            cancelledJob);
     }
 
     public void ResetTerminalResult()
