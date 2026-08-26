@@ -7,6 +7,7 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
@@ -295,6 +296,27 @@ public sealed class McpAuthorizationHelperTests
         var act = () => McpAuthorizationHelper.EnsureBearerDataTenantAsync(context, "tools/call");
 
         await act.Should().NotThrowAsync();
+    }
+
+    [UnitTest]
+    public async Task EnsureBearerDataTenantAsync_TenantResolutionDisabled_AllowsSingleTenantBearerDataCalls()
+    {
+        var context = CreateBearerContext("subject", "https://issuer.example", tenant: null);
+        var auditLog = new CapturingAuditLog();
+        context.RequestServices = new ServiceCollection()
+            .AddSingleton<ITenantContext>(new StubTenantContext(tenantId: null))
+            .AddSingleton<IAuditLog>(auditLog)
+            .AddSingleton(Options.Create(new TenantContextOptions { Enabled = false }))
+            .BuildServiceProvider();
+
+        foreach (var target in new[] { "tools/call", "resources/read" })
+        {
+            var act = () => McpAuthorizationHelper.EnsureBearerDataTenantAsync(context, target);
+
+            await act.Should().NotThrowAsync();
+        }
+
+        auditLog.Events.Should().BeEmpty();
     }
 
     [UnitTest]

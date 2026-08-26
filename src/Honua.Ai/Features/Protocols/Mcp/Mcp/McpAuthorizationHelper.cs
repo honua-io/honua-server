@@ -7,7 +7,9 @@ using System.Text;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -166,6 +168,16 @@ internal static class McpAuthorizationHelper
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
         if (!CanonicalSecurityActor.IsBearerPrincipal(context.User))
+        {
+            return;
+        }
+
+        // A deployment that explicitly disables tenant resolution uses one configured
+        // database/schema for every protocol. In that supported mode a null tenant is
+        // not an unresolved authority boundary, so MCP follows the same single-tenant
+        // data path as the other bearer-backed protocols. Missing options remain
+        // fail-closed; only the explicit Enabled=false policy bypasses this requirement.
+        if (context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == false)
         {
             return;
         }
