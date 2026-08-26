@@ -324,13 +324,22 @@ internal static class ConsoleAccessEndpoints
             return BadRequest("pageSize must be between 1 and 200.");
         }
 
-        var page = await auditReader.ListAsync(new AuditLogFilter
+        AuditEventPage page;
+        try
         {
-            ResourceType = AuditResourceType(normalizedWorkspaceId),
-            EventTypes = [AuditEventType.Authorization],
-            PageSize = pageSize,
-            Cursor = cursor,
-        }, context.RequestAborted).ConfigureAwait(false);
+            page = await auditReader.ListAsync(new AuditLogFilter
+            {
+                ResourceType = AuditResourceType(normalizedWorkspaceId),
+                EventTypes = [AuditEventType.Authorization],
+                PageSize = pageSize,
+                Cursor = cursor,
+            }, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidAuditLogCursorException)
+        {
+            return BadRequest("cursor is malformed.");
+        }
+
         var result = new ConsoleRoleAuditPage
         {
             Entries = page.Items.Select(static item => new ConsoleRoleAuditEntry

@@ -116,7 +116,9 @@ internal sealed class InMemoryRoleStore : IRoleStore
                 return Task.FromResult(false);
             }
 
-            _roleIdsByName.Remove(role.Name);
+            // Preserve the global name reservation after deletion. Managed-user
+            // memberships retain role names, so reusing a deleted name could attach
+            // stale members to a different role and permission set.
             return Task.FromResult(true);
         }
     }

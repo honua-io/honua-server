@@ -86,4 +86,30 @@ public sealed class InMemoryRoleStoreTests
         stored!.Name.Should().Be("immutable-reviewer");
         stored.Description.Should().Be("Updated description");
     }
+
+    [Fact]
+    public async Task DeleteRoleAsync_TombstonesNameAndRemovesEffectivePermissions()
+    {
+        var store = new InMemoryRoleStore();
+        var created = await store.CreateRoleAsync(new RoleDefinition
+        {
+            Name = "deleted-reviewer",
+            Permissions =
+            [
+                new PermissionGrant { Service = "*", Layer = "*", Operation = "query" },
+            ],
+        });
+
+        (await store.DeleteRoleAsync(created.RoleId)).Should().BeTrue();
+        (await store.GetRoleAsync(created.RoleId)).Should().BeNull();
+        (await store.GetEffectivePermissionsAsync("stale-user", [created.Name]))
+            .Permissions.Should().BeEmpty();
+
+        var recreate = () => store.CreateRoleAsync(new RoleDefinition
+        {
+            Name = created.Name.ToUpperInvariant(),
+        });
+        await recreate.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already exists*");
+    }
 }

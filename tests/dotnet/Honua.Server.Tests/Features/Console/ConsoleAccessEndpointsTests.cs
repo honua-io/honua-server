@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Models;
@@ -134,6 +135,21 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         using var anonymous = _fixture.CreateClient();
         var response = await anonymous.GetAsync($"/api/v1/console/access/{WorkspaceId}/roles");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles/audit")]
+    public async Task ConsoleAccess_RoleAudit_MalformedCursorReturnsBadRequest()
+    {
+        var response = await _client.GetAsync(
+            $"/api/v1/console/access/{WorkspaceId}/roles/audit?cursor=not-a-valid-cursor");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = JsonSerializer.Deserialize<ApiResponse<object>>(
+            await response.Content.ReadAsStringAsync(), JsonOptions);
+        Assert.NotNull(error);
+        Assert.False(error.Success);
+        Assert.Contains("cursor", Assert.IsType<string>(error.Message), StringComparison.OrdinalIgnoreCase);
     }
 
     [IntegrationTest]
@@ -284,6 +300,77 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));
         Assert.Contains(membership.Members, member =>
             member.Id == assignedUser.UserId && member.RoleId == role.Id && member.RoleName == role.Name);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    public async Task ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions()
+    {
+        const string ownerWorkspace = "delete-assigned-owner";
+        const string otherWorkspace = "delete-assigned-other";
+        var role = await CreateRoleAsync(ownerWorkspace, "deleted-assigned-reviewer");
+        var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        var assignedUser = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "deleted-assigned-reviewer@example.test",
+            DisplayName = "Deleted Assigned Reviewer",
+            Roles = [role.Name],
+        }));
+
+        var delete = await _client.DeleteAsync(
+            $"/api/v1/console/access/{ownerWorkspace}/roles/{role.Id}");
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        var roleStore = _fixture.Services.GetRequiredService<IRoleStore>();
+        var effective = await roleStore.GetEffectivePermissionsAsync(assignedUser.UserId, assignedUser.Roles);
+        Assert.Empty(effective.Permissions);
+
+        var regrantedUser = Assert.IsType<ManagedUser>(await userStore.ReplaceUserAsync(
+            assignedUser.UserId,
+            new ScimUserProvisioning
+            {
+                UserName = "deleted-assigned-reviewer@example.test",
+                DisplayName = assignedUser.DisplayName,
+                Active = true,
+                Roles = [role.Name.ToUpperInvariant()],
+            }));
+        effective = await roleStore.GetEffectivePermissionsAsync(regrantedUser.UserId, regrantedUser.Roles);
+        Assert.Empty(effective.Permissions);
+
+        var recreate = await _client.PostAsJsonAsync(
+            $"/api/v1/console/access/{otherWorkspace}/roles",
+            new ConsoleRoleWriteRequest { Name = role.Name.ToUpperInvariant(), Grants = [] },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.Conflict, recreate.StatusCode);
+        await AssertRoleNameConflictAsync(recreate);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/roles/{id}")]
+    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    public async Task AdminRoleDelete_AssignedConsoleRoleAlsoReservesName()
+    {
+        const string ownerWorkspace = "admin-delete-owner";
+        const string otherWorkspace = "admin-delete-other";
+        var role = await CreateRoleAsync(ownerWorkspace, "admin-deleted-assigned-reviewer");
+        var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
+        _ = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "admin-deleted-assigned-reviewer@example.test",
+            DisplayName = "Admin Deleted Assigned Reviewer",
+            Roles = [role.Name],
+        }));
+
+        var delete = await _client.DeleteAsync($"/api/v1/admin/roles/{role.Id}");
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        var recreate = await _client.PostAsJsonAsync(
+            $"/api/v1/console/access/{otherWorkspace}/roles",
+            new ConsoleRoleWriteRequest { Name = role.Name, Grants = [] },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.Conflict, recreate.StatusCode);
+        await AssertRoleNameConflictAsync(recreate);
     }
 
     [IntegrationTest]

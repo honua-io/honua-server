@@ -22,6 +22,7 @@ internal sealed class PostgresRoleStore : IRoleStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _rolesTable;
     private readonly string _permissionsTable;
+    private readonly string _managedUserRolesTable;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PostgresRoleStore"/> class.
@@ -35,6 +36,7 @@ internal sealed class PostgresRoleStore : IRoleStore
         _connectionProvider = connectionProvider;
         _rolesTable = SchemaSearchPath.QualifyTable("rbac_roles", schemaName);
         _permissionsTable = SchemaSearchPath.QualifyTable("rbac_role_permissions", schemaName);
+        _managedUserRolesTable = SchemaSearchPath.QualifyTable("managed_user_roles", schemaName);
     }
 
     /// <inheritdoc />
@@ -104,7 +106,7 @@ internal sealed class PostgresRoleStore : IRoleStore
         var updateRole = $"""
             UPDATE {_rolesTable}
             SET description = @description, updated_at = NOW()
-            WHERE role_id = @role_id
+            WHERE role_id = @role_id AND deleted_at IS NULL
             RETURNING name, created_at, is_built_in
             """;
 
@@ -154,15 +156,49 @@ internal sealed class PostgresRoleStore : IRoleStore
     /// <inheritdoc />
     public async Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
     {
-        // Built-in roles are protected: the DELETE only affects non-built-in
-        // rows, so a built-in id deletes 0 rows and returns false.
-        var sql = $"DELETE FROM {_rolesTable} WHERE role_id = @role_id AND is_built_in = FALSE";
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, roleId);
-        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return affected > 0;
+        await using var transaction = await connection.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Keep the row and globally unique name as a tombstone. Managed-user
+        // memberships are name-based, so physically deleting the row would allow a
+        // concurrent or later create to inherit stale assignments. Removing grants in
+        // the same transaction makes the deleted identity immediately non-authorizing.
+        var tombstone = $"""
+            UPDATE {_rolesTable}
+            SET deleted_at = NOW(), updated_at = NOW()
+            WHERE role_id = @role_id
+              AND is_built_in = FALSE
+              AND deleted_at IS NULL
+            RETURNING name
+            """;
+        string? deletedRoleName;
+        await using (var command = new NpgsqlCommand(tombstone, connection.Connection, transaction))
+        {
+            command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, roleId);
+            deletedRoleName = (string?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (deletedRoleName is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        var deletePermissions = $"DELETE FROM {_permissionsTable} WHERE role_id = @role_id";
+        await using (var command = new NpgsqlCommand(deletePermissions, connection.Connection, transaction))
+        {
+            command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, roleId);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var deleteMemberships = $"DELETE FROM {_managedUserRolesTable} WHERE LOWER(role) = LOWER(@role_name)";
+        await using (var command = new NpgsqlCommand(deleteMemberships, connection.Connection, transaction))
+        {
+            command.Parameters.AddWithValue("role_name", NpgsqlDbType.Varchar, deletedRoleName);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     /// <inheritdoc />
@@ -185,7 +221,7 @@ internal sealed class PostgresRoleStore : IRoleStore
 
         // No-op (return empty) when the role does not exist, matching the
         // in-memory store's contract.
-        var exists = $"SELECT 1 FROM {_rolesTable} WHERE role_id = @role_id";
+        var exists = $"SELECT 1 FROM {_rolesTable} WHERE role_id = @role_id AND deleted_at IS NULL FOR UPDATE";
         await using (var existsCommand = new NpgsqlCommand(exists, connection.Connection, transaction))
         {
             existsCommand.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, roleId);
@@ -228,6 +264,7 @@ internal sealed class PostgresRoleStore : IRoleStore
             FROM {_rolesTable} r
             JOIN {_permissionsTable} p ON p.role_id = r.role_id
             WHERE LOWER(r.name) = ANY(@role_names)
+              AND r.deleted_at IS NULL
             """;
 
         var loweredNames = roles
@@ -286,7 +323,9 @@ internal sealed class PostgresRoleStore : IRoleStore
         Guid? roleId,
         CancellationToken cancellationToken)
     {
-        var filter = roleId.HasValue ? "WHERE role_id = @role_id" : string.Empty;
+        var filter = roleId.HasValue
+            ? "WHERE role_id = @role_id AND deleted_at IS NULL"
+            : "WHERE deleted_at IS NULL";
         var sql = $"""
             SELECT role_id, name, description, is_built_in, created_at, updated_at
             FROM {_rolesTable}
@@ -384,9 +423,11 @@ internal sealed class PostgresRoleStore : IRoleStore
         CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT service, layer, operation
-            FROM {_permissionsTable}
-            WHERE role_id = @role_id
+            SELECT p.service, p.layer, p.operation
+            FROM {_permissionsTable} p
+            JOIN {_rolesTable} r ON r.role_id = p.role_id
+            WHERE p.role_id = @role_id
+              AND r.deleted_at IS NULL
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);

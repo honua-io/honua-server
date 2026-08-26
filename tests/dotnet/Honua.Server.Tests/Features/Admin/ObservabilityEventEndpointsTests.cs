@@ -188,6 +188,20 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/audit")]
+    public async Task ListAudit_MalformedCursor_ReturnsBadRequestProblem()
+    {
+        _auditReader.Exception = new InvalidAuditLogCursorException();
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/audit?cursor=malformed");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        doc.RootElement.GetProperty("detail").GetString().Should().Contain("cursor");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/logs")]
     public async Task ListLogs_ReturnsInstanceMetadataAndItems()
     {
@@ -286,8 +300,10 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     {
         public AuditEventPage Page { get; set; } = new() { Items = Array.Empty<AuditEventRecord>() };
 
+        public Exception? Exception { get; set; }
+
         public Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default)
-            => Task.FromResult(Page);
+            => Exception is null ? Task.FromResult(Page) : Task.FromException<AuditEventPage>(Exception);
     }
 
     private sealed class StubAuditExporter : IAuditLogExporter

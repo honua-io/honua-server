@@ -146,10 +146,59 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
             (await store.GetRoleAsync(AdminRoleId)).Should().NotBeNull();
 
             // A custom role can be deleted.
-            var custom = new RoleDefinition { RoleId = Guid.NewGuid(), Name = "temp", IsBuiltIn = false };
+            var custom = new RoleDefinition
+            {
+                RoleId = Guid.NewGuid(),
+                Name = "temp",
+                IsBuiltIn = false,
+                Permissions = [new PermissionGrant { Service = "maps", Layer = "*", Operation = "query" }],
+            };
             await store.CreateRoleAsync(custom);
+            await fixture.ExecuteAsync($"""
+                INSERT INTO "{schema}".managed_user_roles (user_id, role)
+                VALUES ('stale-user', 'TEMP')
+                """);
             (await store.DeleteRoleAsync(custom.RoleId)).Should().BeTrue();
             (await store.GetRoleAsync(custom.RoleId)).Should().BeNull();
+            (await store.GetPermissionsAsync(custom.RoleId)).Should().BeEmpty();
+            (await store.SetPermissionsAsync(custom.RoleId,
+                [new PermissionGrant { Service = "*", Layer = "*", Operation = "*" }])).Should().BeEmpty();
+            (await store.UpdateRoleAsync(new RoleDefinition
+            {
+                RoleId = custom.RoleId,
+                Name = custom.Name,
+                Description = "must not revive",
+            })).Should().BeNull();
+            (await store.ListRolesAsync()).Should().NotContain(role => role.RoleId == custom.RoleId);
+
+            (await store.GetEffectivePermissionsAsync("stale-user", [custom.Name]))
+                .Permissions.Should().BeEmpty();
+            var recreate = () => store.CreateRoleAsync(new RoleDefinition
+            {
+                RoleId = Guid.NewGuid(),
+                Name = custom.Name.ToUpperInvariant(),
+                IsBuiltIn = false,
+            });
+            await recreate.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*already exists*");
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT r.deleted_at IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM "{schema}".rbac_role_permissions p
+                       WHERE p.role_id = r.role_id)
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM "{schema}".managed_user_roles ur
+                       WHERE LOWER(ur.role) = LOWER(r.name))
+                FROM "{schema}".rbac_roles r
+                WHERE r.role_id = @role_id
+                """;
+            command.Parameters.AddWithValue("role_id", custom.RoleId);
+            (await command.ExecuteScalarAsync()).Should().Be(true);
         }
         finally
         {
@@ -307,7 +356,8 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
                 description   TEXT,
                 is_built_in   BOOLEAN      NOT NULL DEFAULT FALSE,
                 created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-                updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+                updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+                deleted_at    TIMESTAMPTZ
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS uq_rbac_roles_name_lower_{schema}
@@ -319,6 +369,12 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
                 layer         VARCHAR(256) NOT NULL,
                 operation     VARCHAR(64)  NOT NULL,
                 CONSTRAINT rbac_role_permissions_unique_{schema} UNIQUE (role_id, service, layer, operation)
+            );
+
+            CREATE TABLE IF NOT EXISTS "{schema}".managed_user_roles (
+                user_id    VARCHAR(256) NOT NULL,
+                role       VARCHAR(256) NOT NULL,
+                created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
             );
 
             CREATE TABLE IF NOT EXISTS "{schema}".rbac_role_memberships (
