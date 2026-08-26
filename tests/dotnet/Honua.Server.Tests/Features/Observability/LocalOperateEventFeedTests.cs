@@ -80,6 +80,28 @@ public sealed class LocalOperateEventFeedTests
     }
 
     [UnitTest]
+    public async Task ListAsync_EmptySuccessfulSource_RemainsInQueriedSources()
+    {
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(10, AlertSeverity.Warning, DateTimeOffset.UtcNow) }
+        };
+        var auditReader = new FakeAuditReader();
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery,
+            auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { PageSize = 10 });
+
+        page.Items.Should().ContainSingle().Which.Kind.Should().Be(OperateEventKind.Alert);
+        page.QueriedSources.Should().BeEquivalentTo(
+            [OperateEventKind.Alert, OperateEventKind.Audit],
+            "a successful empty component still contributes to composite coverage");
+        page.SourceErrors.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task ListAsync_AuditDetails_ProjectsOnlyBoundedCausalMetadata()
     {
         var auditReader = new FakeAuditReader

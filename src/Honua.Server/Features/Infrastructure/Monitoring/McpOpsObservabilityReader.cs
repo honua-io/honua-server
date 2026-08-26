@@ -165,13 +165,7 @@ internal sealed class McpOpsObservabilityReader(
 
         var page = await _operateEvents.ListAsync(filter, cancellationToken).ConfigureAwait(false);
         var generatedAt = DateTimeOffset.UtcNow;
-        var failedSources = page.SourceErrors?.Keys
-            .Select(source => source.ToString().ToLowerInvariant())
-            .ToArray() ?? [];
-        var includedSources = page.Items
-            .Select(item => item.Kind.ToString().ToLowerInvariant())
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        var (includedSources, failedSources) = EvidencePostureProjection.ResolveOperateEventSources(page);
         var response = new OperateEventPageResponse
         {
             Items = page.Items.Select(OperateEventResponseMapper.Map).ToArray(),

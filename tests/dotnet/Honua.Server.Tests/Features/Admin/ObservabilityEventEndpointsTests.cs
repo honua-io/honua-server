@@ -102,6 +102,41 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/events")]
+    public async Task ListEvents_EmptySuccessfulSource_RemainsInEvidenceCoverage()
+    {
+        _feed.Page = new OperateEventPage
+        {
+            Items =
+            [
+                new OperateEvent
+                {
+                    EventId = "alert:1",
+                    Kind = OperateEventKind.Alert,
+                    Severity = OperateEventSeverity.Warning,
+                    OccurredAt = DateTimeOffset.UtcNow,
+                    Title = "Alert",
+                },
+            ],
+            QueriedSources = [OperateEventKind.Alert, OperateEventKind.Audit],
+        };
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/events");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var coverage = doc.RootElement.GetProperty("evidencePosture")
+            .GetProperty("sources")[0]
+            .GetProperty("coverage");
+        coverage.GetProperty("includedComponentIds").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().BeEquivalentTo(["alert", "audit"]);
+        coverage.GetProperty("expectedComponentIds").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().BeEquivalentTo(["alert", "audit"]);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/events")]
     public async Task ListEvents_RejectsDefinedNumericKind()
     {
         var response = await _client.GetAsync("/api/v1/admin/observability/events?kind=1");

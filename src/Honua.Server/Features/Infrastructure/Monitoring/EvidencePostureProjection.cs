@@ -116,6 +116,31 @@ internal static class EvidencePostureProjection
         return EvidencePosture.Envelope(generatedAt, [source]);
     }
 
+    public static (string[] IncludedSources, string[] FailedSources) ResolveOperateEventSources(
+        OperateEventPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        var failedKinds = page.SourceErrors?.Keys.ToHashSet() ?? [];
+        var queriedKinds = page.QueriedSources
+            .Concat(page.Items.Select(static item => item.Kind))
+            .Concat(failedKinds)
+            .Distinct()
+            .ToArray();
+
+        var includedSources = queriedKinds
+            .Where(kind => !failedKinds.Contains(kind))
+            .Select(static kind => kind.ToString().ToLowerInvariant())
+            .OrderBy(static source => source, StringComparer.Ordinal)
+            .ToArray();
+        var failedSources = failedKinds
+            .Select(static kind => kind.ToString().ToLowerInvariant())
+            .OrderBy(static source => source, StringComparer.Ordinal)
+            .ToArray();
+
+        return (includedSources, failedSources);
+    }
+
     public static EvidencePostureEnvelope ForPlatformRelease(DateTimeOffset generatedAt)
         => EvidencePosture.Envelope(
             generatedAt,
