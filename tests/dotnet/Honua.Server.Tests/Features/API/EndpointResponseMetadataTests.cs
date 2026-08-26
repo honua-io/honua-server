@@ -172,6 +172,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         GetResponseMetadata("POST", path, StatusCodes.Status409Conflict).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status410Gone).Should().NotBeEmpty();
         GetResponseMetadata("POST", path, StatusCodes.Status413PayloadTooLarge).Should().NotBeEmpty();
+        GetResponseMetadata("POST", path, StatusCodes.Status499ClientClosedRequest).Should().NotBeEmpty();
     }
 
     public void Dispose()
