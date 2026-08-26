@@ -170,6 +170,69 @@ its verdict depends on the vulnerability database at scan time, so identical
 inputs never imply an identical verdict; scanning is re-run on every head and is
 excluded from every savings estimate.
 
+## What the ledger calls a failure (#3343)
+
+The ledger fails closed on **integrity** and on **measured receipt loss**, and
+on nothing else. Three other outcomes used to be reported as integrity failures,
+which is how the check became permanently red and therefore ignorable. They are
+now separate, counted, named facts:
+
+| Bucket | Meaning | Red? |
+|---|---|---|
+| `integrity_failures` | The receipt is malformed, violates its trust boundary, is not attributable to its producer, or contradicts its own declared policy head. | Yes |
+| `receipt_loss_regression` | A successful observer that OWED a receipt did not leave one, above `maximum_receipt_loss_ratio`. | Yes |
+| `policy_generation_superseded_receipts` | Cohort drift: the receipt is intact but pins the previous generation of the nine policy inputs. | No |
+| `image_outcome_superseded_heads` | The head's authoritative image run was cancelled by a later push on the same PR. It can never acquire a successful outcome. | No |
+| `quarantined` | Named in `.github/impact-routing-tombstones.json` with an owning issue and an expiry. | No, until the expiry |
+
+Cohort drift is the important distinction. Every receipt pins the blob SHAs of
+nine files, so **any** commit touching one of them — a Dependabot
+`actions/checkout` bump does it — starts a new policy generation and every
+receipt in the retention window then describes the previous one. That resets the
+countable sample **by design** (see "Changing the selector…" in
+`native-image-impact-routing.md`); it is not evidence loss and must never redden
+the integrity check. `policy_generation_sha256` names the current generation.
+
+The one case where a stale policy input IS an integrity failure: the receipt's
+own `policy_sha` equals the commit the ledger checked out. The two are then
+directly comparable, and a mismatch means the receipt claims blobs its declared
+head does not contain.
+
+### Receipt loss
+
+`receipt_emission` reports, per stream and overall:
+
+- `receipts_indexed` — a receipt was found and downloaded;
+- `receipts_skipped` — the observer recorded a deliberate skip, so owed nothing;
+- `receipts_pending_index` — the observer finished inside
+  `receipt_index_grace_minutes` and its artifact catalog may not be final. Not
+  loss, and removed from the denominator rather than counted as delivered;
+- `receipts_missing` — owed and absent. This is loss;
+- `receipts_owed`, `loss_ratio`, and `measured`.
+
+`measured: false` (nothing was owed) blocks promotion but is not a regression:
+an idle window is not evidence of health, and it is not a reason to go red.
+
+### Tombstones
+
+`.github/impact-routing-tombstones.json` quarantines evidence that no future run
+could ever verify — a producer run whose artifacts are gone, a head whose image
+work was destroyed rather than superseded. Every entry needs a reason, an owning
+issue, and an expiry, and **the auditor fails closed on an expired tombstone**,
+so a quarantine cannot become permanent by neglect. A tombstone that matches
+nothing is reported as stale so it can be removed. Widening a threshold or
+deleting a failing receipt class is never an alternative to an entry here.
+
+### Promotion streak
+
+`audit-impact-routing-evidence.py trend` reads the ledger artifacts this
+workflow has already retained and reports `consecutive_green_days` against
+`promotion_green_days`, plus the worst `loss_ratio` inside the streak. A day is
+green when it had zero integrity failures and measured loss inside budget; a day
+with no ledger breaks the streak, because a missing measurement is not a passing
+one. No shadow optimisation may be promoted while `promotion_gate_ready` is
+false.
+
 ## Rollback and incident handling
 
 The observers and ledger can be disabled independently without changing the

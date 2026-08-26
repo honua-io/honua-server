@@ -15,9 +15,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v2"
-INDEX_CONTRACT = "honua.impact-routing-evidence-index/v1"
-LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v2"
+POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
+INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
+LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v3"
+TOMBSTONE_CONTRACT = "honua.impact-routing-evidence-tombstones/v1"
+TREND_CONTRACT = "honua.impact-routing-evidence-trend/v1"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
 NATIVE_CONTRACT = "honua.ci.native-image-impact-observation/v3"
 REPOSITORY = "honua-io/honua-server"
@@ -31,8 +33,17 @@ PR_GATE_WORKFLOW = ".github/workflows/pr-gate-impact-observe.yml"
 NATIVE_WORKFLOW = ".github/workflows/native-image-impact-observe.yml"
 SERVING_WORKFLOW = ".github/workflows/serving-image-boundary.yml"
 WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
+# The PR Gate observer names its receipt after the mode it classified:
+# `pr-gate-impact-<mode>-v3-attempt-N` where mode is `docs-only` OR `full`
+# (pr-gate-impact-observe.yml, "Upload trusted PR Gate impact observation").
+# Matching only `docs-only` made every `full` observation — the overwhelming
+# majority — invisible to the index, which then reported each one as
+# `observation-receipt-not-emitted`. That is not receipt loss: the receipts were
+# emitted and retained, the reader could not see them. Both modes are indexed;
+# only docs-only heads feed the docs-only promotion sample.
+PR_GATE_MODES = ("docs-only", "full")
 PR_GATE_ARTIFACT = re.compile(
-    r"^pr-gate-impact-docs-only-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
+    r"^pr-gate-impact-(?P<mode>docs-only|full)-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
 NATIVE_ARTIFACT = re.compile(
     r"^native-image-impact-observation-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
@@ -61,6 +72,24 @@ TERMINAL_CONCLUSIONS = {
 }
 
 
+class CohortDrift(Exception):
+    """The receipt is well formed but describes a superseded policy generation.
+
+    Every receipt pins the blob SHAs of the nine files that define routing
+    behaviour. Any commit that touches one of them — including a mechanical
+    `actions/checkout` version bump — moves the policy generation, and every
+    receipt already in the retention window then describes the previous one.
+
+    That is cohort drift, not a receipt-integrity violation: the receipt is
+    intact, attributable and internally consistent, it simply attests to a
+    policy the repository no longer runs. Reporting it as an integrity failure
+    made the ledger fail closed on routine repository maintenance, which is how
+    a permanently red integrity check gets trained away. Drifted receipts are
+    excluded from the countable cohort and counted separately; only a receipt
+    that CONTRADICTS its own declared policy head is an integrity failure.
+    """
+
+
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     value: dict[str, Any] = {}
     for key, item in pairs:
@@ -86,6 +115,14 @@ def write_json(path: Path, value: object) -> None:
         encoding="utf-8",
         newline="\n",
     )
+
+
+def ratio(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number")
+    if not 0 < float(value) <= 1:
+        raise ValueError(f"{label} must be greater than 0 and at most 1")
+    return float(value)
 
 
 def positive_int(value: object, label: str) -> int:
@@ -138,7 +175,11 @@ def load_policy(value: object) -> dict[str, Any]:
     catalogs = positive_int(
         value.get("maximum_producer_run_catalogs"), "maximum producer run catalogs"
     )
-    if pages > 10 or downloads > 500 or catalogs > 1200:
+    # The download bound covers BOTH streams. It was sized when the PR Gate
+    # stream was (wrongly) contributing nothing, so restoring that stream's
+    # receipts to the index needs roughly double the budget or the collector
+    # fail-closes on its own cap.
+    if pages > 10 or downloads > 1000 or catalogs > 1600:
         raise ValueError("GitHub query, catalog, or download bound is unsafe")
     if catalogs < downloads:
         raise ValueError("catalog bound must not be smaller than the download bound")
@@ -153,6 +194,21 @@ def load_policy(value: object) -> dict[str, Any]:
         "minimum_worker_reuse_heads",
     ):
         positive_int(value.get(field), field.replace("_", " "))
+    grace = positive_int(
+        value.get("receipt_index_grace_minutes"), "receipt index grace minutes"
+    )
+    if grace > 360:
+        raise ValueError("receipt index grace exceeds the policy bound")
+    green_days = positive_int(value.get("promotion_green_days"), "promotion green days")
+    if green_days > 30:
+        raise ValueError("promotion green days exceeds the policy bound")
+    loss = ratio(value.get("maximum_receipt_loss_ratio"), "maximum receipt loss ratio")
+    # The promotion gate for every shadow optimisation is "green for
+    # promotion_green_days consecutive days with receipt loss under the budget".
+    # A budget looser than 5% would silently redefine that gate, so the policy
+    # loader refuses it the same way it refuses disabling a fail-closed flag.
+    if loss > 0.05:
+        raise ValueError("maximum receipt loss ratio exceeds the promotion bound")
     for field in (
         "require_zero_integrity_failures",
         "require_zero_docs_only_gate_failures",
@@ -161,6 +217,48 @@ def load_policy(value: object) -> dict[str, Any]:
         if value.get(field) is not True:
             raise ValueError(f"{field} must remain fail closed")
     return dict(value)
+
+
+def load_tombstones(value: object, now: datetime) -> list[dict[str, Any]]:
+    """Explicit, expiring quarantine for evidence that can never be verified.
+
+    A receipt whose producer run or artifact no longer exists, or an exact head
+    whose authoritative image work was destroyed rather than merely superseded,
+    is unrecoverable: no future run can turn it green. Failing on it forever
+    teaches reviewers to ignore the ledger. Deleting the failing class hides it.
+
+    A tombstone is the third option: name the exact evidence, say why it cannot
+    be verified, link the issue that owns it, and set an expiry. The auditor
+    fails closed on an EXPIRED tombstone, so a quarantine cannot become
+    permanent by neglect.
+    """
+    if not isinstance(value, dict) or value.get("contract") != TOMBSTONE_CONTRACT:
+        raise ValueError("impact-routing tombstone contract is invalid")
+    entries = value.get("tombstones")
+    if not isinstance(entries, list):
+        raise ValueError("impact-routing tombstones are invalid")
+    result: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("impact-routing tombstone entry is invalid")
+        kind = entry.get("kind")
+        if kind not in ("receipt", "image-outcome"):
+            raise ValueError("impact-routing tombstone kind is invalid")
+        if kind == "receipt":
+            positive_int(entry.get("producer_run_id"), "tombstone producer run id")
+        else:
+            exact_sha(entry.get("head_sha"), "tombstone head")
+        reason = entry.get("reason")
+        issue = entry.get("issue")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("impact-routing tombstone reason is invalid")
+        if not isinstance(issue, str) or not issue.startswith(
+            f"https://github.com/{REPOSITORY}/issues/"
+        ):
+            raise ValueError("impact-routing tombstone needs an owning issue link")
+        expires = parse_time(entry.get("expires_at"), "tombstone expiry")
+        result.append({**entry, "expired": expires <= now})
+    return result
 
 
 def receipt_cutoff(policy: dict[str, Any], now: datetime | None = None) -> datetime:
@@ -202,6 +300,14 @@ def current_blobs(root: Path) -> dict[str, str]:
     ]
     blobs["native_policy_inputs_sha256"] = hashlib.sha256(
         json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    # One name for "which generation of the routing policy is current". A
+    # receipt either belongs to it or it does not; the ledger reports the
+    # difference as cohort drift instead of integrity loss.
+    blobs["policy_generation_sha256"] = hashlib.sha256(
+        json.dumps(
+            [[key, blobs[key]] for key in sorted(paths)], separators=(",", ":")
+        ).encode("utf-8")
     ).hexdigest()
     return blobs
 
@@ -303,10 +409,27 @@ def _discover_stream(
     artifact_pattern: re.Pattern[str],
     cutoff: datetime,
     skip_pattern: re.Pattern[str],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    now: datetime,
+    grace: timedelta,
+) -> tuple[
+    list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, int]
+]:
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    emission = {
+        "observer_runs_successful": 0,
+        "receipts_indexed": 0,
+        "receipts_skipped": 0,
+        "receipts_pending_index": 0,
+        "receipts_missing": 0,
+    }
+    # Runs are collected from `cutoff - 1h`, so an artifact uploaded by a run
+    # that started just inside that hour is created BEFORE `cutoff`. Filtering
+    # artifacts at `cutoff` while admitting their producers at `cutoff - 1h`
+    # discarded those receipts and then reported them as missing — a pure
+    # boundary artefact of two different window edges. Align the two.
+    artifact_cutoff = cutoff - timedelta(hours=1)
     by_run: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for artifact in artifacts:
         run_id = artifact.get("workflow_run", {}).get("id")
@@ -332,6 +455,7 @@ def _discover_stream(
                 "reason": f"observer-run-{run['conclusion']}",
             })
             continue
+        emission["observer_runs_successful"] += 1
         matches = []
         for artifact in by_run.get(run_id, []):
             match = artifact_pattern.fullmatch(str(artifact.get("name", "")))
@@ -339,7 +463,8 @@ def _discover_stream(
                 match
                 and int(match.group("attempt")) == run["run_attempt"]
                 and artifact.get("expired") is False
-                and parse_time(artifact.get("created_at"), "artifact creation") >= cutoff
+                and parse_time(artifact.get("created_at"), "artifact creation")
+                >= artifact_cutoff
             ):
                 matches.append(artifact)
         if not matches:
@@ -355,6 +480,7 @@ def _discover_stream(
                 and artifact.get("expired") is False
             })
             if len(skip_codes) == 1:
+                emission["receipts_skipped"] += 1
                 exclusions.append({
                     "stream": stream,
                     "producer_run_id": run_id,
@@ -368,10 +494,23 @@ def _discover_stream(
                     "reason": "observation-skip-marker-ambiguous",
                 })
                 continue
+            # "Missing" and "not indexed yet" are different facts and only one
+            # of them is loss. GitHub finalises a run's artifact catalog after
+            # the run completes, so an observer that finished inside the grace
+            # window can legitimately have nothing listed yet. Counting those as
+            # loss put a floor under the loss ratio that no producer fix could
+            # ever remove.
+            pending = (
+                parse_time(run["updated_at"], "observer run update") >= now - grace
+            )
+            emission["receipts_pending_index" if pending else "receipts_missing"] += 1
             exclusions.append({
                 "stream": stream,
                 "producer_run_id": run_id,
-                "reason": "observation-receipt-not-emitted",
+                "reason": (
+                    "observation-receipt-pending-index" if pending
+                    else "observation-receipt-missing"
+                ),
             })
             continue
         if len(matches) != 1:
@@ -397,6 +536,7 @@ def _discover_stream(
         except (TypeError, ValueError) as error:
             failures.append({"stream": stream, "producer_run_id": run_id, "reason": str(error)})
             continue
+        emission["receipts_indexed"] += 1
         entries.append({
             "stream": stream,
             "artifact_id": artifact_id,
@@ -415,7 +555,7 @@ def _discover_stream(
         if run_id not in seen_runs and any(
             (artifact_pattern.fullmatch(str(item.get("name", "")))
              or skip_pattern.fullmatch(str(item.get("name", ""))))
-            and parse_time(item.get("created_at"), "artifact creation") >= cutoff
+            and parse_time(item.get("created_at"), "artifact creation") >= artifact_cutoff
             for item in values
         ):
             failures.append({
@@ -423,7 +563,7 @@ def _discover_stream(
                 "producer_run_id": run_id,
                 "reason": "observation-artifact-producer-not-in-bounded-run-catalog",
             })
-    return entries, exclusions, failures
+    return entries, exclusions, failures, emission
 
 
 def discover(
@@ -435,7 +575,9 @@ def discover(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     policy = load_policy(policy_value)
-    cutoff = receipt_cutoff(policy, now)
+    current = now or datetime.now(timezone.utc)
+    cutoff = receipt_cutoff(policy, current)
+    grace = timedelta(minutes=policy["receipt_index_grace_minutes"])
     streams = (
         (
             PR_GATE_STREAM, pr_gate_runs, pr_gate_artifacts, PR_GATE_WORKFLOW,
@@ -449,10 +591,11 @@ def discover(
     entries: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    emissions: dict[str, dict[str, int]] = {}
     for (
         stream, runs_root, artifacts_root, workflow, artifact_pattern, skip_pattern,
     ) in streams:
-        found, omitted, invalid = _discover_stream(
+        found, omitted, invalid, emission = _discover_stream(
             stream,
             flatten_pages(runs_root, "workflow_runs"),
             flatten_artifact_catalogs(artifacts_root),
@@ -460,10 +603,13 @@ def discover(
             artifact_pattern,
             cutoff,
             skip_pattern,
+            current,
+            grace,
         )
         entries.extend(found)
         exclusions.extend(omitted)
         failures.extend(invalid)
+        emissions[stream] = emission
     entries.sort(key=lambda item: (item["stream"], item["producer_run_id"]))
     if len({item["artifact_id"] for item in entries}) != len(entries):
         failures.append({"reason": "artifact identity is duplicated across streams"})
@@ -471,10 +617,49 @@ def discover(
         "contract": INDEX_CONTRACT,
         "repository": REPOSITORY,
         "cutoff": cutoff.isoformat().replace("+00:00", "Z"),
+        "generated_at": current.isoformat().replace("+00:00", "Z"),
         "artifacts": entries,
         "exclusions": exclusions,
+        "receipt_emission": receipt_emission(emissions),
         "integrity_failures": failures,
     }
+
+
+def receipt_emission(emissions: dict[str, dict[str, int]]) -> dict[str, Any]:
+    """Receipt loss, stated so it can only mean one thing.
+
+    The denominator is every successful observer that OWED a receipt: a run that
+    recorded a deliberate skip owed nothing, and a run still inside the indexing
+    grace window has not yet failed to deliver. Both are removed rather than
+    silently counted as delivered, so the ratio cannot be improved by
+    reclassifying work away from it.
+    """
+    total = {
+        key: sum(value[key] for value in emissions.values())
+        for key in (
+            "observer_runs_successful",
+            "receipts_indexed",
+            "receipts_skipped",
+            "receipts_pending_index",
+            "receipts_missing",
+        )
+    }
+    per_stream = {}
+    for name, value in list(emissions.items()) + [("all", total)]:
+        owed = (
+            value["observer_runs_successful"]
+            - value["receipts_skipped"]
+            - value["receipts_pending_index"]
+        )
+        per_stream[name] = {
+            **value,
+            "receipts_owed": owed,
+            "loss_ratio": round(value["receipts_missing"] / owed, 6) if owed > 0 else 0.0,
+            # An owed-count of zero is not evidence of health, so say so rather
+            # than publishing a flattering 0.0 loss ratio with nothing behind it.
+            "measured": owed > 0,
+        }
+    return per_stream
 
 
 def _archive_json(entry: dict[str, Any], root: Path) -> object:
@@ -515,7 +700,7 @@ def _archive_json(entry: dict[str, Any], root: Path) -> object:
     )
 
 
-def _entry_identity(entry: dict[str, Any], expected_stream: str) -> None:
+def _entry_identity(entry: dict[str, Any], expected_stream: str) -> str | None:
     if entry.get("stream") != expected_stream:
         raise ValueError("receipt stream differs from index")
     positive_int(entry.get("artifact_id"), "index artifact id")
@@ -527,10 +712,35 @@ def _entry_identity(entry: dict[str, Any], expected_stream: str) -> None:
         raise ValueError("index artifact name differs from producer attempt")
     exact_sha(entry.get("producer_head_sha"), "producer head")
     parse_time(entry.get("artifact_created_at"), "artifact creation")
+    return (
+        artifact_match.group("mode") if expected_stream == PR_GATE_STREAM else None
+    )
 
 
-def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str]) -> dict[str, Any]:
-    _entry_identity(entry, PR_GATE_STREAM)
+def _drift(
+    label: str, entry: dict[str, Any], value: dict[str, Any], policy_head_sha: str | None
+) -> None:
+    """Raise for a receipt that does not describe the current policy generation.
+
+    The receipt's `policy_sha` is the trunk commit the trusted observer executed
+    from, and the blob SHAs are what that commit contained. When `policy_sha`
+    equals the ledger's OWN checkout, the two are directly comparable and a
+    mismatch is a genuine contradiction — the receipt claims blobs that its
+    declared head does not contain. That is a real integrity failure and stays
+    fail-closed. Otherwise the receipt simply predates a policy change.
+    """
+    if policy_head_sha is not None and value.get("policy_sha") == policy_head_sha:
+        raise ValueError(f"{label} receipt contradicts its own declared policy head")
+    raise CohortDrift(f"{label} receipt describes a superseded policy generation")
+
+
+def _validate_pr_gate(
+    entry: dict[str, Any],
+    value: object,
+    blobs: dict[str, str],
+    policy_head_sha: str | None = None,
+) -> dict[str, Any]:
+    name_mode = _entry_identity(entry, PR_GATE_STREAM)
     if not isinstance(value, dict) or value.get("contract") != PR_GATE_CONTRACT:
         raise ValueError("PR Gate receipt contract is invalid")
     if (
@@ -543,13 +753,6 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
         raise ValueError("PR Gate receipt trust boundary is invalid")
     if value.get("policy_sha") != entry["producer_head_sha"]:
         raise ValueError("PR Gate receipt policy head differs from producer")
-    if (
-        value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
-        or value.get("gate_workflow_blob_sha") != blobs["pr_gate_workflow"]
-        or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
-        or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
-    ):
-        raise ValueError("PR Gate receipt policy inputs are not current")
     pull_request = positive_int(value.get("pull_request"), "PR Gate pull request")
     head = exact_sha(value.get("head_sha"), "PR Gate head")
     exact_sha(value.get("base_sha"), "PR Gate base")
@@ -559,8 +762,25 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
         raise ValueError("PR Gate authoritative result identity is invalid")
     mode = value.get("mode")
-    if mode != "docs-only" or value.get("reason") != "internal-markdown-only":
+    # The artifact name carries the mode, so the two must agree: a receipt whose
+    # body disagrees with the name it was stored under is not addressable
+    # evidence, whichever half is wrong.
+    if mode not in PR_GATE_MODES or mode != name_mode:
+        raise ValueError("PR Gate receipt mode differs from its artifact name")
+    reason = value.get("reason")
+    if not isinstance(reason, str) or not reason:
+        raise ValueError("PR Gate receipt reason is invalid")
+    if mode == "docs-only" and reason != "internal-markdown-only":
         raise ValueError("PR Gate docs-only reason is invalid")
+    # Currency is checked last: everything above is what makes the receipt
+    # trustworthy, and all of it must hold before drift can be the verdict.
+    if (
+        value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
+        or value.get("gate_workflow_blob_sha") != blobs["pr_gate_workflow"]
+        or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
+        or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
+    ):
+        _drift("PR Gate", entry, value, policy_head_sha)
     return {
         "stream": PR_GATE_STREAM,
         "pull_request": pull_request,
@@ -572,7 +792,12 @@ def _validate_pr_gate(entry: dict[str, Any], value: object, blobs: dict[str, str
     }
 
 
-def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]) -> dict[str, Any]:
+def _validate_native(
+    entry: dict[str, Any],
+    value: object,
+    blobs: dict[str, str],
+    policy_head_sha: str | None = None,
+) -> dict[str, Any]:
     _entry_identity(entry, NATIVE_STREAM)
     if not isinstance(value, dict) or value.get("schema") != NATIVE_CONTRACT:
         raise ValueError("native-image receipt contract is invalid")
@@ -595,10 +820,9 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
     }
-    if any(value.get(field) != expected for field, expected in expected_blobs.items()):
-        raise ValueError("native-image receipt policy inputs are not current")
-    if value.get("policy_inputs_sha256") != blobs["native_policy_inputs_sha256"]:
-        raise ValueError("native-image policy manifest digest is not current")
+    drifted = any(
+        value.get(field) != expected for field, expected in expected_blobs.items()
+    ) or value.get("policy_inputs_sha256") != blobs["native_policy_inputs_sha256"]
     pull_request = positive_int(value.get("pull_request"), "native-image pull request")
     head = exact_sha(value.get("head_sha"), "native-image head")
     base = exact_sha(value.get("base_sha"), "native-image base")
@@ -673,6 +897,10 @@ def _validate_native(entry: dict[str, Any], value: object, blobs: dict[str, str]
     }
     if comparison != expected_comparison:
         raise ValueError("native-image comparison does not replay")
+    # Same ordering rule as the PR Gate receipt: prove the receipt is sound
+    # first, then decide whether it belongs to the current cohort.
+    if drifted:
+        _drift("native-image", entry, value, policy_head_sha)
     return {
         "stream": NATIVE_STREAM,
         "pull_request": pull_request,
@@ -715,21 +943,31 @@ def _image_outcome(
     rejected_ids = []
     for run in same_head:
         pulls = run.get("pull_requests")
-        associations = pulls if isinstance(pulls, list) else []
-        identity_matches = [
-            pull
-            for pull in associations
+        associations = [
+            pull for pull in (pulls if isinstance(pulls, list) else [])
             if isinstance(pull, dict)
-            and pull.get("number") == observation["pull_request"]
-            and isinstance(pull.get("base"), dict)
-            and pull["base"].get("sha") == observation["base_sha"]
-            and isinstance(pull.get("head"), dict)
-            and pull["head"].get("sha") == observation["head_sha"]
         ]
-        if len(associations) == 1 and len(identity_matches) == 1:
-            matches.append(run)
-        elif isinstance(run.get("id"), int):
-            rejected_ids.append(run["id"])
+        numbers = {pull.get("number") for pull in associations}
+        # `pull_requests` on a workflow run is a LIVE projection of the pull
+        # request, not a snapshot of it at run time: `base.sha` and `head.sha`
+        # track the PR's CURRENT tip. Requiring `head.sha == observation head`
+        # therefore matched only a PR's most recent head and rejected every
+        # earlier one, and GitHub leaves the array empty often enough that the
+        # check also rejected runs with no association at all. Both rejections
+        # were reported as identity mismatches — a tamper-shaped word for an
+        # API-shape artefact — and they were the sole cause of every
+        # authoritative-outcome failure in run 32038145537.
+        #
+        # The run-invariant binding is the one already required above: a run's
+        # own `head_sha` is the 40-hex content address of the exact tree it
+        # built, on the exact workflow, from a pull-request event. An
+        # association is used only for what it can still soundly prove — that a
+        # run belongs to a DIFFERENT pull request.
+        if numbers and observation["pull_request"] not in numbers:
+            if isinstance(run.get("id"), int):
+                rejected_ids.append(run["id"])
+            continue
+        matches.append(run)
     success = [run for run in matches if run.get("status") == "completed" and run.get("conclusion") == "success"]
     started = [
         value for value in (_run_time(run, "run_started_at", "created_at") for run in matches)
@@ -740,9 +978,16 @@ def _image_outcome(
     ]
     return {
         "success": bool(success),
+        # A head whose image work was cancelled was superseded by a later push
+        # on the same pull request. It can never acquire a successful outcome,
+        # so demanding one made a normal, correct cancellation permanently red.
+        "superseded": bool(matches) and not success and all(
+            run.get("conclusion") == "cancelled" for run in matches
+        ),
+        "observed": bool(matches),
         "run_ids": sorted(run.get("id") for run in matches if isinstance(run.get("id"), int)),
         "conclusions": sorted({str(run.get("conclusion")) for run in matches}),
-        "identity_mismatch_run_ids": sorted(rejected_ids),
+        "foreign_pull_request_run_ids": sorted(rejected_ids),
         # Attestation timing. ``started_at`` is when this head's own image work
         # began; ``completed_at`` is when its evidence became available to a
         # later head. Missing timestamps degrade to "unusable as a source".
@@ -877,14 +1122,33 @@ def summarize(
     worker_runs: Path,
     policy_value: object,
     repository_root: Path,
+    tombstone_value: object | None = None,
+    policy_head_sha: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     policy = load_policy(policy_value)
+    current = now or datetime.now(timezone.utc)
     if not isinstance(index_value, dict) or index_value.get("contract") != INDEX_CONTRACT:
         raise ValueError("impact-routing evidence index is invalid")
     entries = index_value.get("artifacts")
     if not isinstance(entries, list):
         raise ValueError("impact-routing evidence index artifacts are invalid")
+    tombstones = load_tombstones(
+        tombstone_value
+        if tombstone_value is not None
+        else {"contract": TOMBSTONE_CONTRACT, "tombstones": []},
+        current,
+    )
+    receipt_tombstones = {
+        item["producer_run_id"]: item for item in tombstones if item["kind"] == "receipt"
+    }
+    head_tombstones = {
+        item["head_sha"]: item for item in tombstones if item["kind"] == "image-outcome"
+    }
+    used_tombstones: set[int] = set()
+    quarantined: list[dict[str, Any]] = []
     failures = list(index_value.get("integrity_failures", []))
+    drifted: list[dict[str, Any]] = []
     observations: dict[str, list[dict[str, Any]]] = {PR_GATE_STREAM: [], NATIVE_STREAM: []}
     blobs = current_blobs(repository_root)
     for entry in entries:
@@ -894,11 +1158,17 @@ def summarize(
                 raise ValueError("evidence index entry is invalid")
             receipt = _archive_json(entry, archives)
             observation = (
-                _validate_pr_gate(entry, receipt, blobs)
+                _validate_pr_gate(entry, receipt, blobs, policy_head_sha)
                 if entry.get("stream") == PR_GATE_STREAM
-                else _validate_native(entry, receipt, blobs)
+                else _validate_native(entry, receipt, blobs, policy_head_sha)
             )
             observations[observation["stream"]].append(observation)
+        except CohortDrift as error:
+            drifted.append({
+                "producer_run_id": run_id,
+                "stream": entry.get("stream") if isinstance(entry, dict) else None,
+                "reason": str(error),
+            })
         except (
             KeyError,
             OSError,
@@ -907,7 +1177,13 @@ def summarize(
             ValueError,
             zipfile.BadZipFile,
         ) as error:
-            failures.append({"producer_run_id": run_id, "reason": str(error)})
+            record = {"producer_run_id": run_id, "reason": str(error)}
+            tombstone = receipt_tombstones.get(run_id)
+            if tombstone is not None and not tombstone["expired"]:
+                used_tombstones.add(id(tombstone))
+                quarantined.append({**record, "tombstone": tombstone})
+            else:
+                failures.append(record)
     pr_gate = _deduplicate(observations[PR_GATE_STREAM], failures)
     native = _deduplicate(observations[NATIVE_STREAM], failures)
     docs_only = [item for item in pr_gate if item["mode"] == "docs-only"]
@@ -918,6 +1194,7 @@ def summarize(
     worker_catalog = flatten_pages(worker_runs, "workflow_runs")
     native_countable: list[dict[str, Any]] = []
     image_failures: list[dict[str, Any]] = []
+    superseded_heads: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
@@ -931,13 +1208,32 @@ def summarize(
         if worker_required and not worker["success"]:
             missing.append("worker")
         if missing:
-            image_failures.append({
+            outcomes = {"serving": serving, "worker": worker}
+            record = {
                 "head_sha": item["head_sha"],
                 "pull_request": item["pull_request"],
                 "missing_successful_outcomes": missing,
                 "serving": serving,
                 "worker": worker,
-            })
+            }
+            # A head is superseded when every missing outcome was CANCELLED —
+            # a later push on the same pull request replaced it. Nothing can
+            # ever make it green, and nothing should: it is an excluded head,
+            # not a failed one.
+            if all(outcomes[name]["superseded"] for name in missing):
+                superseded_heads.append({**record, "reason": "image-outcome-superseded-head"})
+                continue
+            record["reason"] = (
+                "no-exact-head-image-run"
+                if any(not outcomes[name]["observed"] for name in missing)
+                else "no-successful-image-outcome"
+            )
+            tombstone = head_tombstones.get(item["head_sha"])
+            if tombstone is not None and not tombstone["expired"]:
+                used_tombstones.add(id(tombstone))
+                quarantined.append({**record, "tombstone": tombstone})
+            else:
+                image_failures.append(record)
             continue
         native_countable.append({**item, "serving_outcome": serving, "worker_outcome": worker})
 
@@ -976,8 +1272,29 @@ def summarize(
             if ready
         ),
     }
+    # An expired tombstone is a failure in its own right: quarantine that has
+    # outlived its expiry is exactly the "permanently red, permanently ignored"
+    # state the tombstone mechanism exists to prevent.
+    for tombstone in tombstones:
+        if tombstone["expired"]:
+            failures.append({
+                "reason": "impact-routing tombstone expired without resolution",
+                "tombstone": tombstone,
+            })
+    stale_tombstones = [
+        tombstone for tombstone in tombstones
+        if not tombstone["expired"] and id(tombstone) not in used_tombstones
+    ]
+    emission = index_value.get("receipt_emission")
+    if not isinstance(emission, dict) or not isinstance(emission.get("all"), dict):
+        raise ValueError("impact-routing evidence index receipt emission is invalid")
+    loss = emission["all"]
     gates = {
         "integrity_clean": not failures,
+        # Loss is only a gate once something was actually owed; an unmeasured
+        # window must not read as a pass.
+        "receipt_loss_within_budget": bool(loss["measured"])
+        and loss["loss_ratio"] < policy["maximum_receipt_loss_ratio"],
         "docs_only_sample_ready": len(docs_success) >= policy["minimum_docs_only_heads"],
         "docs_only_gate_failures_zero": not docs_failures,
         "native_sample_ready": len(native_countable) >= policy["minimum_native_heads"],
@@ -1002,8 +1319,15 @@ def summarize(
         # path router requires a narrowing/avoidance mechanism; a reuse-only
         # sample authorizes reviewing build-evidence reuse, nothing else.
         "savings_mechanism": savings_mechanism,
+        "generated_at": current.isoformat().replace("+00:00", "Z"),
+        # A measured breach of the loss budget. Distinct from the promotion
+        # gate: an unmeasured window blocks promotion without being red.
+        "receipt_loss_regression": bool(loss["measured"])
+        and loss["loss_ratio"] >= policy["maximum_receipt_loss_ratio"],
         "policy": policy,
+        "policy_generation_sha256": blobs["policy_generation_sha256"],
         "current_policy_blobs": blobs,
+        "receipt_emission": emission,
         "counts": {
             "discovered_artifacts": len(entries),
             "validated_pr_gate_receipts": len(pr_gate),
@@ -1018,21 +1342,27 @@ def summarize(
             "serving_reuse_eligible_heads": len(serving_reuse),
             "worker_reuse_eligible_heads": len(worker_reuse),
             "authoritative_image_outcome_failures": len(image_failures),
+            "image_outcome_superseded_heads": len(superseded_heads),
             "integrity_failures": len(failures),
+            "quarantined_by_tombstone": len(quarantined),
+            "stale_tombstones": len(stale_tombstones),
+            "receipts_superseded_policy_generation": len(drifted),
             "observations_skipped": sum(
                 1 for item in index_value.get("exclusions", [])
                 if str(item.get("reason", "")).startswith("observation-skipped:")
             ),
-            "observation_receipts_not_emitted": sum(
-                1 for item in index_value.get("exclusions", [])
-                if item.get("reason") == "observation-receipt-not-emitted"
-            ),
+            "observation_receipts_missing": loss["receipts_missing"],
+            "observation_receipts_pending_index": loss["receipts_pending_index"],
         },
         "skipped_observations_by_code": skipped_by_code(index_value.get("exclusions", [])),
         "gates": gates,
         "signals": signals,
         "docs_only_failures": docs_failures,
         "image_outcome_failures": image_failures,
+        "image_outcome_superseded_heads": superseded_heads,
+        "policy_generation_superseded_receipts": drifted,
+        "quarantined": quarantined,
+        "stale_tombstones": stale_tombstones,
         "integrity_failures": failures,
         "countable": {
             "docs_only": docs_success,
@@ -1061,6 +1391,7 @@ def markdown(ledger: dict[str, Any]) -> str:
     counts = ledger["counts"]
     gates = ledger["gates"]
     policy = ledger["policy"]
+    loss = ledger["receipt_emission"]["all"]
     rows = "\n".join(f"| `{name}` | `{str(value).lower()}` |" for name, value in gates.items())
     return "\n".join([
         "## CI impact-routing evidence ledger",
@@ -1077,8 +1408,28 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"serving `{', '.join(ledger['savings_mechanism']['serving']) or 'none'}`, "
         f"worker `{', '.join(ledger['savings_mechanism']['worker']) or 'none'}`",
         f"- Docs-only gate failures: `{counts['docs_only_failure_heads']}`",
-        f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`",
+        f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`"
+        f" (superseded heads excluded: `{counts['image_outcome_superseded_heads']}`)",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
+        "- Receipt loss: "
+        f"`{loss['receipts_missing']}` of `{loss['receipts_owed']}` owed = "
+        f"`{loss['loss_ratio'] * 100:.2f}%`"
+        + ("" if loss["measured"] else " (unmeasured: nothing was owed)")
+        + f", budget `{policy['maximum_receipt_loss_ratio'] * 100:.2f}%`",
+        f"- Receipts awaiting indexing (not loss): `{counts['observation_receipts_pending_index']}`",
+        "- Receipts outside the current policy generation "
+        f"`{ledger['policy_generation_sha256'][:12]}` (cohort drift, not loss): "
+        f"`{counts['receipts_superseded_policy_generation']}`",
+        f"- Quarantined by tombstone: `{counts['quarantined_by_tombstone']}`"
+        + (
+            " — " + ", ".join(
+                f"`{item['tombstone']['issue'].rsplit('/', 1)[-1]}` "
+                f"(expires `{item['tombstone']['expires_at']}`)"
+                for item in ledger.get("quarantined", [])
+            )
+            if ledger.get("quarantined") else ""
+        ),
+        f"- Tombstones matching nothing (candidates for removal): `{counts['stale_tombstones']}`",
         f"- Observations skipped (superseded source): `{counts['observations_skipped']}`"
         + (
             " — " + ", ".join(
@@ -1094,11 +1445,110 @@ def markdown(ledger: dict[str, Any]) -> str:
         "|---|---|",
         rows,
         "",
+        "Cohort drift is not receipt loss: any commit touching one of the nine pinned policy "
+        "inputs — a dependency bump included — starts a new policy generation, and receipts "
+        "attesting to the previous one stay intact but stop being countable.",
         "A successful observer shell without one exact stable-name receipt is never counted. ",
         "Reuse is *build* reuse only: the GDAL worker's Trivy scan is re-run on every head "
         "because its verdict depends on the vulnerability database at scan time, never on a "
         "previous head's attestation.",
         "Native decisions are countable only when every required exact-head legacy image workflow has a successful outcome.",
+        "",
+    ])
+
+
+def trend(ledgers: list[object], policy_value: object, now: datetime | None = None) -> dict[str, Any]:
+    """Turn a pile of retained ledgers into the promotion gate's actual question.
+
+    The gate for every shadow optimisation is "green for N consecutive days with
+    receipt loss under budget". A single run cannot answer that, so the auditor
+    reads its own retained ledger artifacts and states the streak directly
+    rather than leaving a human to reconstruct it from run history.
+
+    A day is green when the ledger for that day had zero integrity failures AND
+    measured receipt loss inside the budget. A day with no ledger BREAKS the
+    streak: a missing measurement is not a passing one.
+    """
+    policy = load_policy(policy_value)
+    current = now or datetime.now(timezone.utc)
+    days: dict[str, dict[str, Any]] = {}
+    for value in ledgers:
+        if not isinstance(value, dict) or value.get("contract") != LEDGER_CONTRACT:
+            continue
+        generated = value.get("generated_at")
+        gates = value.get("gates")
+        emission = value.get("receipt_emission")
+        if not isinstance(gates, dict) or not isinstance(emission, dict):
+            continue
+        loss = emission.get("all")
+        if not isinstance(loss, dict):
+            continue
+        try:
+            stamp = parse_time(generated, "ledger generation")
+        except ValueError:
+            continue
+        day = stamp.date().isoformat()
+        green = bool(gates.get("integrity_clean")) and bool(
+            gates.get("receipt_loss_within_budget")
+        )
+        existing = days.get(day)
+        # Two ledgers on one day (a schedule plus a dispatch) must not let the
+        # greener one paper over the other.
+        if existing is None or (existing["green"] and not green):
+            days[day] = {
+                "date": day,
+                "green": green,
+                "integrity_failures": value.get("counts", {}).get("integrity_failures", 0),
+                "loss_ratio": loss.get("loss_ratio", 0.0),
+                "measured": bool(loss.get("measured")),
+            }
+    streak = 0
+    maximum_loss = 0.0
+    cursor = current.date()
+    # Today may not have run yet, so start the walk at the most recent day that
+    # actually produced a ledger; a gap anywhere before that still breaks it.
+    while cursor.isoformat() not in days and streak == 0 and cursor >= current.date() - timedelta(days=1):
+        cursor -= timedelta(days=1)
+    while True:
+        day = days.get(cursor.isoformat())
+        if day is None or not day["green"]:
+            break
+        streak += 1
+        maximum_loss = max(maximum_loss, float(day["loss_ratio"]))
+        cursor -= timedelta(days=1)
+    required = policy["promotion_green_days"]
+    return {
+        "contract": TREND_CONTRACT,
+        "generated_at": current.isoformat().replace("+00:00", "Z"),
+        "required_green_days": required,
+        "maximum_receipt_loss_ratio": policy["maximum_receipt_loss_ratio"],
+        "consecutive_green_days": streak,
+        "maximum_loss_ratio_in_streak": round(maximum_loss, 6),
+        "promotion_gate_ready": streak >= required,
+        "days": [days[key] for key in sorted(days, reverse=True)],
+    }
+
+
+def trend_markdown(value: dict[str, Any]) -> str:
+    rows = "\n".join(
+        f"| `{day['date']}` | `{str(day['green']).lower()}` | "
+        f"`{day['integrity_failures']}` | `{day['loss_ratio'] * 100:.2f}%` |"
+        for day in value["days"]
+    )
+    return "\n".join([
+        "## Impact-routing ledger promotion trend",
+        "",
+        f"Consecutive green days: **{value['consecutive_green_days']}** / "
+        f"{value['required_green_days']} "
+        f"(worst receipt loss in streak `{value['maximum_loss_ratio_in_streak'] * 100:.2f}%`, "
+        f"budget `{value['maximum_receipt_loss_ratio'] * 100:.2f}%`)",
+        "",
+        f"Promotion gate ready: **{str(value['promotion_gate_ready']).lower()}** — no shadow "
+        "optimisation may be promoted until this is true.",
+        "",
+        "| Day | Green | Integrity failures | Receipt loss |",
+        "|---|---|---|---|",
+        rows,
         "",
     ])
 
@@ -1125,8 +1575,16 @@ def main() -> int:
     summary_parser.add_argument("--serving-runs", type=Path, required=True)
     summary_parser.add_argument("--worker-runs", type=Path, required=True)
     summary_parser.add_argument("--repository-root", type=Path, required=True)
+    summary_parser.add_argument("--tombstones", type=Path)
+    summary_parser.add_argument("--policy-head-sha")
     summary_parser.add_argument("--output", type=Path, required=True)
     summary_parser.add_argument("--markdown", type=Path, required=True)
+
+    trend_parser = subparsers.add_parser("trend")
+    trend_parser.add_argument("--policy", type=Path, required=True)
+    trend_parser.add_argument("--ledgers", type=Path, required=True)
+    trend_parser.add_argument("--output", type=Path, required=True)
+    trend_parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
 
     policy = load_policy(load_json(args.policy))
@@ -1162,6 +1620,20 @@ def main() -> int:
         )
         write_json(args.output, result)
         return 1 if result["integrity_failures"] else 0
+    if args.command == "trend":
+        ledgers: list[object] = []
+        for path in sorted(args.ledgers.rglob("*.json")):
+            try:
+                ledgers.append(load_json(path))
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+        result = trend(ledgers, policy)
+        write_json(args.output, result)
+        args.markdown.write_text(trend_markdown(result), encoding="utf-8", newline="\n")
+        print(trend_markdown(result))
+        return 0
+    if args.policy_head_sha is not None:
+        exact_sha(args.policy_head_sha, "policy head")
     ledger = summarize(
         load_json(args.index),
         args.archives,
@@ -1169,11 +1641,17 @@ def main() -> int:
         args.worker_runs,
         policy,
         args.repository_root,
+        load_json(args.tombstones) if args.tombstones else None,
+        args.policy_head_sha,
     )
     write_json(args.output, ledger)
     args.markdown.write_text(markdown(ledger), encoding="utf-8", newline="\n")
     print(markdown(ledger))
-    return 1 if not ledger["gates"]["integrity_clean"] else 0
+    # Loss is a fail-closed condition for FUTURE receipts alongside integrity:
+    # a producer that stops emitting must redden the ledger, and cohort drift —
+    # which is not loss — must not. A window that owed nothing is unmeasured,
+    # which blocks promotion but is not a regression to go red over.
+    return 1 if (ledger["integrity_failures"] or ledger["receipt_loss_regression"]) else 0
 
 
 if __name__ == "__main__":

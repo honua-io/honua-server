@@ -1,0 +1,14 @@
+{
+  "contract": "honua.impact-routing-evidence-tombstones/v1",
+  "comment": [
+    "Evidence that can NEVER be verified, quarantined explicitly instead of failing forever.",
+    "Add an entry only when no future ledger run could turn the finding green: the producer run",
+    "or its artifact is gone, or a head's authoritative image work was destroyed rather than",
+    "merely superseded (superseded heads are classified automatically and need no entry).",
+    "Every entry needs an owning issue and an expiry; the auditor FAILS on an expired tombstone,",
+    "so a quarantine cannot become permanent by neglect. Widening thresholds is not an",
+    "alternative to an entry here, and neither is deleting a failing receipt class.",
+    "kind=receipt needs producer_run_id; kind=image-outcome needs head_sha."
+  ],
+  "tombstones": []
+}

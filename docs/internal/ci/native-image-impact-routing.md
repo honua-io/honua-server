@@ -140,11 +140,16 @@ Routing authority stays with the existing workflows until at least 20 distinct
 PR observations satisfy the machine-readable cohort policy in
 `.github/impact-routing-promotion.json`. The report-only Impact Routing Evidence
 Ledger selects only the producer's current attempt and rejects missing or
-ambiguous artifacts, policy-input drift, duplicate head identities, and missing
-receipts. It queries the authoritative Serving Image Boundary and GDAL Worker
-Image histories and counts an impacted head only when every required image run
-for the receipt's exact PR, base SHA, and head SHA completed successfully.
-Successful observer shells are never evidence by themselves.
+ambiguous artifacts, duplicate head identities, and missing receipts; receipts
+pinning a superseded policy generation are excluded from the cohort rather than
+failed (#3343). It queries the authoritative Serving Image Boundary and GDAL
+Worker Image histories and counts an impacted head only when every required
+image run at that exact head SHA, on that exact workflow, from a
+`pull_request` event, completed successfully. A run's own `head_sha` is the
+run-invariant binding; the `pull_requests` array on a workflow run is a LIVE
+projection of the pull request and can only be trusted to say that a run belongs
+to a *different* PR. Successful observer shells are never evidence by
+themselves.
 
 The ledger still requires positive impacted cohorts and a demonstrated savings
 cohort; twenty unrelated negative observations cannot authorize promotion. The
@@ -178,10 +183,23 @@ only leave the digest by also leaving the decision.
 Changing the selector changes `policy_blob_sha`, which invalidates every
 outstanding receipt by design. The v3 receipt contract deliberately resets the
 observed sample: the v2 sample could never satisfy a narrowing-only savings gate,
-so it carried no promotion value. The promotion policy and ledger contracts move
-to `honua.impact-routing-promotion-policy/v2` and
-`honua.impact-routing-evidence-ledger/v2` in the same step, because the policy
-gained required reuse minimums and the ledger renamed its savings gates.
+so it carried no promotion value.
+
+That reset is **cohort drift, not receipt loss**, and the ledger says so (#3343).
+Any commit touching one of the nine pinned policy inputs — including a
+dependency bump that changes nothing about routing — starts a new policy
+generation, named by `policy_generation_sha256`. Receipts pinning the previous
+generation stop being countable and are reported under
+`policy_generation_superseded_receipts`. Reporting them as *integrity* failures
+made the ledger red on routine repository maintenance and gave every
+`observe`→`enforce` promotion gate an unusable signal; see
+`impact-routing-evidence.md`, "What the ledger calls a failure".
+
+The promotion policy and ledger contracts are
+`honua.impact-routing-promotion-policy/v3` and
+`honua.impact-routing-evidence-ledger/v3`: v2 added required reuse minimums and
+renamed the savings gates, and v3 added the receipt-loss budget, the indexing
+grace window, and the consecutive-green promotion streak.
 
 ### Enforcement proposal (unchanged in shape, redirected in mechanism)
 
