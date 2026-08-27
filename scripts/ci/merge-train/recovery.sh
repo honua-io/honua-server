@@ -13,9 +13,10 @@ train_recovery_batch_pr_records() {
   git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" \
     "refs/heads/${TRAIN_BASE_BRANCH}:refs/remotes/${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}" 2>/dev/null || true
   local range="${batch}" base_ref="${recorded_base}"
-  [[ -z "${base_ref}" ]] && base_ref="${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}"
-  git -C "${TRAIN_REPO_ROOT}" rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null \
-    && range="${base_ref}..${batch}"
+  if [[ -n "${base_ref}" ]] && \
+     git -C "${TRAIN_REPO_ROOT}" rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
+    range="${base_ref}..${batch}"
+  fi
   git -C "${TRAIN_REPO_ROOT}" log --reverse --format='%H%x09%s' "${range}" |
     while IFS=${HONUA_TAB} read -r merge_commit subject; do
       if [[ "${subject}" =~ ^train:\ merge\ \#([0-9]+)$ ]]; then
@@ -24,6 +25,66 @@ train_recovery_batch_pr_records() {
         [[ -n "${validated}" ]] && printf '%s\t%s\n' "${pr}" "${validated}"
       fi
     done | awk -F '\t' '!seen[$1]++'
+}
+
+train_recovery_batch_tip_pr_records() {
+  local batch="$1"
+  if [[ -n "${TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH:-}" ]]; then
+    "${TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH}" "${batch}" "" | sed '/^$/d'; return 0
+  fi
+  [[ -z "${batch}" ]] && return 0
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" \
+    "+refs/heads/${batch}:refs/heads/${batch}" 2>/dev/null || return 0
+  local commit subject pr validated
+  while IFS= read -r commit; do
+    subject="$(git -C "${TRAIN_REPO_ROOT}" show -s --format=%s "${commit}")"
+    [[ "${subject}" =~ ^train:\ merge\ \#([0-9]+)$ ]] || break
+    pr="${BASH_REMATCH[1]}"
+    validated="$(git -C "${TRAIN_REPO_ROOT}" rev-list --parents -n 1 "${commit}" | awk '{print $3}')"
+    [[ -n "${validated}" ]] && printf '%s\t%s\n' "${pr}" "${validated}"
+  done < <(git -C "${TRAIN_REPO_ROOT}" rev-list --first-parent "${batch}")
+}
+
+# A failure that the train cannot attribute to a member (for example an
+# artifact-service failure after every test passed) deliberately escalates all
+# members and resets active_batch to select. A later green rerun is therefore
+# no longer eligible for the active-batch landing path above. Recover only the
+# stale escalation labels in that case: batch commits are immutable receipts,
+# and each label is cleared only while the PR is still open at the exact head
+# admitted into that batch.
+train_recovery_clear_superseded_escalations() {
+  local run_id="$1" batch="$2" event_sha="$3"
+  local info workflow status conclusion run_branch run_sha records record pr validated pr_info sha state labels
+  info="$(train_recovery_run_info "${run_id}" 2>/dev/null || true)"
+  IFS=${HONUA_TAB} read -r workflow status conclusion run_branch run_sha <<<"${info}"
+  if [[ "${workflow}" != CI || "${status}" != completed || "${conclusion}" != success \
+     || "${run_branch}" != "${batch}" || "${run_sha}" != "${event_sha}" ]]; then
+    train_warn "RECOVERY CLEAR DECLINED: batch=${batch:-<none>} prs=<unknown> reason=run ${run_id} is not successful CI for the supplied batch head"
+    return 0
+  fi
+
+  records="$(train_recovery_batch_tip_pr_records "${batch}")"
+  if [[ -z "${records}" ]]; then
+    train_warn "RECOVERY CLEAR DECLINED: batch=${batch} prs=<none> reason=no immutable batch-member records were found"
+    return 0
+  fi
+
+  while IFS= read -r record; do
+    IFS=${HONUA_TAB} read -r pr validated <<<"${record}"
+    [[ -z "${pr}" ]] && continue
+    pr_info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
+    IFS=${HONUA_TAB} read -r sha state labels <<<"${pr_info}"
+    if [[ "${state}" != OPEN ]]; then
+      train_warn "RECOVERY CLEAR DECLINED: batch=${batch} prs=#${pr} reason=PR is not open"
+    elif [[ "${sha}" != "${validated}" ]]; then
+      train_warn "RECOVERY CLEAR DECLINED: batch=${batch} prs=#${pr} reason=current head does not match admitted head ${validated}"
+    elif ! train_recovery_has_label "${labels}" "${TRAIN_LABEL_ESCALATED}"; then
+      train_log "RECOVERY CLEAR DECLINED: batch=${batch} prs=#${pr} reason=train:escalated is not present"
+    else
+      train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_ESCALATED}"
+      train_notice "RECOVERY CLEAR: batch=${batch} prs=#${pr} reason=green exact-head rerun superseded the escalation"
+    fi
+  done <<<"${records}"
 }
 
 train_recovery_pr_info() {

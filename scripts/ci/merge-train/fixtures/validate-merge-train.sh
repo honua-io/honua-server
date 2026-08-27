@@ -1517,6 +1517,35 @@ assert_contains "recovery: successful resume queues continued drain" "${RECOVERY
 assert_not_contains "recovery: never stamps CI Gate on mutable heads" "${RECOVERY_LOG}" "statuses/"
 assert_contains "recovery: finalize clears stale escalation" "${RECOVERY_LOG}" "gh pr edit 1944 --remove-label train:escalated"
 
+# An unattributable artifact/infra failure escalates the member and resets
+# active_batch before a green rerun arrives. The label-only fallback must use
+# the immutable batch receipt even though active state is already at select.
+__recover_records_superseded() {
+  [[ "$1" == train/batch/deadbee/123 && -z "$2" ]] || return 0
+  printf '1944\tsha1944\n1961\tsha1961\n'
+}
+export -f __recover_records_superseded
+export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records_superseded
+SUPERSEDED_LOG="$(train_recovery_clear_superseded_escalations 123 train/batch/deadbee/123 "${RECOVERY_BATCH_SHA}" 2>&1)"
+assert_contains "recovery: superseded artifact failure clears exact-head escalation" "${SUPERSEDED_LOG}" "gh pr edit 1944 --remove-label train:escalated"
+assert_contains "recovery: superseded clear names batch and PR" "${SUPERSEDED_LOG}" "batch=train/batch/deadbee/123 prs=#1944"
+
+__recover_info_superseded_changed() {
+  case "$1" in
+    1944) printf 'changed1944\tOPEN\ttrain:escalated,train:landing\n' ;;
+    1961) printf 'sha1961\tOPEN\ttrain:escalated,train:landing\n' ;;
+  esac
+}
+export -f __recover_info_superseded_changed
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info_superseded_changed
+SUPERSEDED_DECLINE_LOG="$(train_recovery_clear_superseded_escalations 123 train/batch/deadbee/123 "${RECOVERY_BATCH_SHA}" 2>&1)"
+assert_not_contains "recovery: superseded clear refuses moved head" "${SUPERSEDED_DECLINE_LOG}" "gh pr edit 1944 --remove-label train:escalated"
+assert_contains "recovery: declined clear names batch and PR" "${SUPERSEDED_DECLINE_LOG}" "RECOVERY CLEAR DECLINED: batch=train/batch/deadbee/123 prs=#1944"
+assert_contains "recovery: declined clear explains moved head" "${SUPERSEDED_DECLINE_LOG}" "current head does not match admitted head sha1944"
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
+export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
+
 # Member reconstruction must use the recorded assembly base, not current trunk.
 # The record seam returns no members unless it receives base123; this remains
 # recoverable even when current trunk already equals the batch SHA.
