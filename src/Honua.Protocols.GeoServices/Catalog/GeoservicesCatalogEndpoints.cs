@@ -709,12 +709,30 @@ internal static class GeoservicesCatalogEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
         var soapUrl = $"{baseUrl}/services";
+
+        // secureSoapUrl must follow the scheme of the SAME resolved public URL that produced
+        // soapUrl, not the internal transport. Behind a TLS-terminating proxy -- the ordinary
+        // deployment -- `Public:BaseUrl` is https while `Request.IsHttps` is false, which
+        // published the contradictory pair `soapUrl: "https://..."` with `secureSoapUrl: null`
+        // and left a client that selects the secure field unable to find the SOAP endpoint.
         var response = new RestInfoResponse
         {
             SoapUrl = soapUrl,
-            SecureSoapUrl = context.Request.IsHttps ? soapUrl : null
+            SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null
         };
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
+    }
+
+    /// <summary>
+    /// Whether the resolved public base URL is served over TLS. A configured absolute base URL
+    /// carries its own scheme and is authoritative; a relative or empty base means no public URL
+    /// was configured, so the request transport is the only signal available.
+    /// </summary>
+    private static bool IsHttpsBaseUrl(string baseUrl, HttpContext context)
+    {
+        return Uri.TryCreate(baseUrl, UriKind.Absolute, out var absolute)
+            ? string.Equals(absolute.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            : context.Request.IsHttps;
     }
 
     /// <summary>
