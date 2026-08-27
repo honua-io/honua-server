@@ -19,6 +19,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -95,6 +96,40 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         payload.RootElement.GetProperty("secureSoapUrl").ValueKind.Should().Be(JsonValueKind.Null);
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/info")]
+    public async Task GetRestInfo_HttpsPublicBaseUrl_PublishesSecureSoapUrl()
+    {
+        // Behind a TLS-terminating proxy the public base URL is https while the internal
+        // request transport is plain http. Deriving secureSoapUrl from Request.IsHttps
+        // published `soapUrl: "https://..."` alongside `secureSoapUrl: null`, so a client
+        // that selects the secure field could not reach the SOAP endpoint at all.
+        const string publicBaseUrl = "https://gis.public.example.test";
+
+        // A configured public base URL forces an isolated host, so this cannot reuse the
+        // shared fixture's client.
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", publicBaseUrl));
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.GetAsync("/rest/info");
+
+            response.Be200Ok();
+            var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var expected = $"{publicBaseUrl}/services";
+            payload.RootElement.GetProperty("soapUrl").GetString().Should().Be(expected);
+            payload.RootElement.GetProperty("secureSoapUrl").GetString().Should().Be(
+                expected,
+                "secureSoapUrl must follow the scheme of the same resolved public URL that produced soapUrl");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
