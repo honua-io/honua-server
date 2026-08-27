@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -23,6 +25,8 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -235,6 +239,74 @@ public sealed class OperationsToolsetTests
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
         descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
+    }
+
+    [UnitTest]
+    public async Task LaneD_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var snapshot = await catalog.GetSnapshotAsync(CancellationToken.None);
+        var descriptors = snapshot.Operations
+            .Where(operation => AdminOperateOperationCatalog.Definitions.Any(definition => definition.OperationId == operation.OperationId))
+            .ToArray();
+        var publishedNames = (await source.GetToolsAsync(CancellationToken.None))
+            .Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+
+        descriptors.Should().HaveCount(AdminOperateOperationCatalog.Definitions.Count);
+        foreach (var descriptor in descriptors)
+            publishedNames.Should().Contain(PublishedOperationTool.ProjectName(descriptor.OperationId));
+    }
+
+    [UnitTest]
+    public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminOperateOperationCatalog.Definitions)
+        {
+            var operation = AdminOperateOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Should()
+                .ContainSingle(item => item.OperationId == definition.OperationId).Subject;
+            descriptor.InputSchema.Should().NotBeNull();
+            descriptor.OutputSchema.Should().NotBeNull();
+        }
+    }
+
+    [UnitTest]
+    public void LaneD_DestructiveOperations_AreApprovalGated_AndRollbackIsTruthful()
+    {
+        var destructive = AdminOperateOperationCatalog.Descriptors
+            .Where(descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly).ToArray();
+        destructive.Should().OnlyContain(descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+
+        var rollback = destructive.Should().ContainSingle(
+            descriptor => descriptor.OperationId == "admin.metadata.coordinated-releases.rollback").Subject;
+        rollback.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.DestroysState);
+        rollback.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.DeploymentScope);
+        rollback.Policy.SupportsDryRun.Should().BeFalse(
+            "#3301 has not landed and the coordinated release endpoint exposes no rollback dry run");
+    }
+
+    [UnitTest]
+    public void LaneD_EachDescriptorHasARegisteredExecutor()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOperationsToolset(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+        var executorIds = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationExecutor) && descriptor.ImplementationFactory is not null)
+            .Select(descriptor => (IOperationExecutor)descriptor.ImplementationFactory!(provider))
+            .Select(static executor => executor.OperationId).ToHashSet(StringComparer.Ordinal);
+
+        executorIds.Should().Contain(AdminOperateOperationCatalog.Definitions.Select(static definition => definition.OperationId));
     }
 
     [UnitTest]

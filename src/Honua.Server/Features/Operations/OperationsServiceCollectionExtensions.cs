@@ -112,6 +112,18 @@ internal static class OperationsServiceCollectionExtensions
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Geoprocess);
         }
 
+        foreach (var definition in AdminOperateOperationCatalog.Definitions)
+        {
+            services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
+                definition,
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<IHttpContextAccessor>(),
+                sp.GetRequiredService<TimeProvider>()));
+        }
+
+        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
         // One policy seam combines typed operation rules with the legacy guardrail ladder.
         // TryAdd preserves an explicitly registered stricter PDP supplied by a host.
         services
