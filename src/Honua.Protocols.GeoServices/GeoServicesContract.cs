@@ -14,10 +14,11 @@ namespace Honua.Protocols.GeoServices;
 /// <remarks>
 /// This is Honua's own contract version for its independent Esri-compatible surface.
 /// It is deliberately <b>not</b> an ArcGIS Server / Portal release number: Honua does
-/// not impersonate an ArcGIS release, and none of the GeoServices wire models advertise
-/// a <c>currentVersion</c>/<c>fullVersion</c> field (guarded by
-/// <c>NoArcGisServerVersionTests</c>). The value is bumped only on a breaking change to
-/// the rolled-up GeoServices wire contract.
+/// not impersonate an ArcGIS release. GeoServices service models do not advertise
+/// <c>currentVersion</c>/<c>fullVersion</c> (guarded by <c>NoArcGisServerVersionTests</c>).
+/// The sole exception is the <c>/rest/info</c> ArcGIS REST compatibility selector required
+/// by ArcGIS Pro's native ImageServer reader; see honua-server#3375. This value is bumped
+/// only on a breaking change to the rolled-up GeoServices wire contract.
 /// </remarks>
 public static class GeoServicesContract
 {

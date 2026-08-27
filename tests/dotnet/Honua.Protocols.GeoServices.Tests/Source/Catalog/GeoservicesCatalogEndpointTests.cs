@@ -86,9 +86,12 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
-        payload.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        // ArcGIS Pro 3.7's native ImageServer reader requires this REST compatibility
+        // selector before it will execute any image operation (honua-server#3375).
+        payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
+        payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/services");
+        payload.RootElement.GetProperty("secureSoapUrl").ValueKind.Should().Be(JsonValueKind.Null);
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();
     }
@@ -244,7 +247,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants()
-                .Should().ContainSingle(element => element.Name.LocalName == "GetServiceDescriptionsResult");
+                .Should().ContainSingle(element => element.Name.LocalName == "ServiceDescriptions");
             var description = payload.Descendants()
                 .Where(element => element.Name.LocalName == "ServiceDescription")
                 .First(element => element.Elements().Any(child =>
@@ -258,9 +261,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
                 .Value.Should().EndWith("/services/test/ImageServer");
-            description.Elements()
-                .Single(element => element.Name.LocalName == "Capabilities")
-                .Value.Should().Be("Image,Metadata");
+            description.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+                .Value.Should().Be("tns:ServiceDescription");
 
             var advertisedUrl = description.Elements()
                 .Single(element => element.Name.LocalName == "Url")
@@ -328,13 +330,13 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     {
         var operations = new (string Operation, string ExpectedResult)[]
         {
-            ("GetServiceDescriptions", "GetServiceDescriptionsResult"),
-            ("GetServiceDescriptionsEx", "GetServiceDescriptionsExResult"),
-            ("GetFolders", "GetFoldersResult"),
-            ("GetMessageVersion", "GetMessageVersionResult"),
-            ("GetMessageFormats", "GetMessageFormatsResult"),
-            ("GetTokenServiceURL", "GetTokenServiceURLResult"),
-            ("RequiresTokens", "RequiresTokensResult")
+            ("GetServiceDescriptions", "ServiceDescriptions"),
+            ("GetServiceDescriptionsEx", "ServiceDescriptions"),
+            ("GetFolders", "FolderNames"),
+            ("GetMessageVersion", "MessageVersion"),
+            ("GetMessageFormats", "MessageFormats"),
+            ("GetTokenServiceURL", "TokenServiceURL"),
+            ("RequiresTokens", "Result")
         };
 
         foreach (var (operation, expectedResult) in operations)
@@ -354,6 +356,59 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             response.Be200Ok();
             var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
             payload.Descendants().Should().ContainSingle(element => element.Name.LocalName == expectedResult);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetMessageVersion")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_ArcGisPro37LegacyNamespace_NegotiatesCatalogVersion()
+    {
+        const string request = """<?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://www.esri.com/schemas/ArcGIS/9.0"><soap:Body><tns:GetMessageVersion></tns:GetMessageVersion></soap:Body></soap:Envelope>""";
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+
+        using var response = await _fixture.Client.PostAsync("/services", content);
+
+        response.Be200Ok();
+        var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        XNamespace legacyArcGis = "http://www.esri.com/schemas/ArcGIS/9.0";
+        payload.Descendants().Should().ContainSingle(
+            element => element.Name == XNamespace.None + "MessageVersion"
+                && element.Value == "esriArcGISVersion108");
+        payload.Descendants().Should().ContainSingle(
+            element => element.Name == legacyArcGis + "GetMessageVersionResponse");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetVersion")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_ArcGisPro37LegacyNamespace_EchoesNegotiatedNamespace()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            const string operation =
+                "<GetVersion xmlns=\"http://www.esri.com/schemas/ArcGIS/9.0\" />";
+            using var response = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation);
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            XNamespace legacyArcGis = "http://www.esri.com/schemas/ArcGIS/9.0";
+            payload.Descendants().Should().ContainSingle(
+                element => element.Name == legacyArcGis + "GetVersionResponse");
+            payload.Descendants().Should().ContainSingle(
+                element => element.Name == XNamespace.None + "Result" && element.Value == "10.8");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 
@@ -451,7 +506,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         folderResponse.Be200Ok();
         var folderPayload = XDocument.Parse(await folderResponse.Content.ReadAsStringAsync());
         folderPayload.Descendants().Should().ContainSingle(
-            element => element.Name.LocalName == "GetServiceDescriptionsExResult");
+            element => element.Name.LocalName == "ServiceDescriptions");
         folderPayload.Descendants().Should().NotContain(
             element => element.Name.LocalName == "ServiceDescription");
 
@@ -961,7 +1016,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
     [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
     [InterfaceOperation(TestProtocols.ImageServer, "GetKeyProperties")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
     [InterfaceOperation(TestProtocols.ImageServer, "GetMetadata")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExecuteAISRequest")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreArcGisShaped()
     {
@@ -978,8 +1036,10 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             var metadataXml = XDocument.Parse(await metadata.Content.ReadAsStringAsync());
             var result = metadataXml.Descendants().Single(element => element.Name.LocalName == "Result");
             XNamespace arcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
-            result.Name.Should().Be(arcGis + "Result");
-            result.Descendants().Should().OnlyContain(element => element.Name.Namespace == arcGis);
+            result.Name.Should().Be(XNamespace.None + "Result");
+            metadataXml.Descendants().Should().ContainSingle(
+                element => element.Name == arcGis + "GetServiceInfoResponse");
+            result.Descendants().Should().OnlyContain(element => element.Name.Namespace == XNamespace.None);
             result.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
                 .Value.Should().Be("tns:ImageServiceInfo");
             result.Elements().Single(element => element.Name.LocalName == "Name")
@@ -1025,16 +1085,32 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             fixedScaleXml.Descendants()
                 .Should().NotContain(element => element.Name.LocalName == "IsFixedScaleMapResponse");
 
-            foreach (var operation in new[] { "GetKeyProperties", "GetMetadata" })
+            foreach (var operation in new[]
+                     {
+                         "GetKeyProperties", "GetKeyPropertiesX", "GetMetadata", "GetMultidimensionalInfo"
+                     })
             {
                 using var companion = await PostSoapAsync(
                     fixture.Client,
                     $"/services/{WebAppFixture.TestServiceId}/ImageServer",
                     operation);
                 companion.Be200Ok();
-                XDocument.Parse(await companion.Content.ReadAsStringAsync())
-                    .Descendants().Should().Contain(element => element.Name.LocalName == "Result");
+                var companionXml = XDocument.Parse(await companion.Content.ReadAsStringAsync());
+                companionXml.Descendants().Should().Contain(element => element.Name.LocalName == "Result");
             }
+
+            using var extensionDefinition = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                """
+                <ExecuteAISRequest xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <AISRequest><Name>GetProperty</Name><Arguments><String>ClientXADef</String></Arguments></AISRequest>
+                </ExecuteAISRequest>
+                """);
+            extensionDefinition.Be200Ok();
+            var extensionXml = XDocument.Parse(await extensionDefinition.Content.ReadAsStringAsync());
+            extensionXml.Descendants().Single(element => element.Name.LocalName == "Result")
+                .Value.Should().Contain("<XADef><ImageServer>");
         }
         finally
         {
@@ -1714,6 +1790,37 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(raster);
+        rasterStore.GetStatisticsAsync(
+                Arg.Any<int>(),
+                raster.Id,
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(1, bandCount).Select(band => new RasterStatistics
+            {
+                Band = band,
+                MinValue = 0,
+                MaxValue = 200,
+                MeanValue = 100,
+                StandardDeviation = 25,
+                ValidPixelCount = 64,
+                NoDataPixelCount = 0
+            }).ToArray());
+        rasterStore.GetHistogramsAsync(
+                Arg.Any<int>(),
+                raster.Id,
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(1, bandCount).Select(band => new RasterHistogram
+            {
+                Band = band,
+                BinCount = 2,
+                Min = 0,
+                Max = 200,
+                Counts = [32, 32]
+            }).ToArray());
         rasterStore.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
             .Returns([raster]);
         rasterStore.ExportImageAsync(
