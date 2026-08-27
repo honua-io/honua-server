@@ -27,6 +27,22 @@ train_recovery_batch_pr_records() {
     done | awk -F '\t' '!seen[$1]++'
 }
 
+# Commits the batch itself may add ON TOP of its member merges: the derived
+# artifact refresh (train.sh train_refresh_derived_artifacts) and the format
+# forward-fix (forward-fix.sh train_forward_fix). Both are train-authored, both
+# land after the `train: merge #N` commits, and either can be the batch tip when
+# a rerun of that batch turns green. Reconstruction must traverse them instead of
+# stopping dead, or the batch reports no members and its escalations never clear.
+: "${TRAIN_RECOVERY_TIP_COMMIT_SUBJECTS:=style: dotnet format (train forward-fix)|chore(ci): refresh generated merge-train artifacts}"
+
+train_recovery_is_train_tip_subject() {
+  local subject="$1" candidate
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" && "${subject}" == "${candidate}" ]] && return 0
+  done < <(tr '|' '\n' <<<"${TRAIN_RECOVERY_TIP_COMMIT_SUBJECTS}")
+  return 1
+}
+
 train_recovery_batch_tip_pr_records() {
   local batch="$1"
   if [[ -n "${TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH:-}" ]]; then
@@ -35,14 +51,74 @@ train_recovery_batch_tip_pr_records() {
   [[ -z "${batch}" ]] && return 0
   git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" \
     "+refs/heads/${batch}:refs/heads/${batch}" 2>/dev/null || return 0
+  # `train/batch/<trunk-sha7>/<epoch>` (assemble.sh) records the trunk the batch
+  # was assembled from. That name is the batch receipt's own bound: landing is an
+  # FF-CAS, so trunk's first-parent history is the PREVIOUS batches and their
+  # tips are `train: merge #N` commits too. Without this stop, traversing train
+  # tip commits would keep walking backwards and attribute already-landed members
+  # to this batch.
+  local base_sha7="${batch#train/batch/}"; base_sha7="${base_sha7%%/*}"
+  [[ "${base_sha7}" =~ ^[0-9a-fA-F]{4,40}$ ]] || base_sha7=""
   local commit subject pr validated
   while IFS= read -r commit; do
+    [[ -n "${base_sha7}" && "${commit}" == "${base_sha7}"* ]] && break
     subject="$(git -C "${TRAIN_REPO_ROOT}" show -s --format=%s "${commit}")"
-    [[ "${subject}" =~ ^train:\ merge\ \#([0-9]+)$ ]] || break
-    pr="${BASH_REMATCH[1]}"
-    validated="$(git -C "${TRAIN_REPO_ROOT}" rev-list --parents -n 1 "${commit}" | awk '{print $3}')"
-    [[ -n "${validated}" ]] && printf '%s\t%s\n' "${pr}" "${validated}"
+    if [[ "${subject}" =~ ^train:\ merge\ \#([0-9]+)$ ]]; then
+      pr="${BASH_REMATCH[1]}"
+      validated="$(git -C "${TRAIN_REPO_ROOT}" rev-list --parents -n 1 "${commit}" | awk '{print $3}')"
+      [[ -n "${validated}" ]] && printf '%s\t%s\n' "${pr}" "${validated}"
+    elif ! train_recovery_is_train_tip_subject "${subject}"; then
+      break
+    fi
   done < <(git -C "${TRAIN_REPO_ROOT}" rev-list --first-parent "${batch}")
+}
+
+# train_recovery_superseding_batch <batch> <admitted-head>: escalation provenance.
+#
+# `train:escalated` carries no batch identity, so "the PR is open at the head this
+# batch admitted and is escalated" is NOT by itself evidence that THIS batch is
+# what escalated it. select.sh excludes escalated PRs, so a member admitted here
+# was unlabelled at assembly time: the label now present was applied either by
+# this batch or by a batch minted LATER that re-admitted the same commit (after a
+# manual release, or after this very fallback cleared the earlier label). A later
+# batch's escalation is newer evidence than this rerun, and clearing it would put
+# a head the train just rejected back into selection.
+#
+# A later batch that re-admitted this head merged the same commit, so its branch
+# contains it. Print that branch and return 0 when one exists; return 1 only when
+# no `train/batch/*` minted after this one contains the admitted head — i.e. this
+# batch is provably the only train that could have applied the label. Provenance
+# that cannot be read (unparsable name, unreachable remote) is reported as
+# superseding: declining leaves a label a human can remove, while clearing the
+# wrong one silently re-admits a rejected head.
+train_recovery_superseding_batch() {
+  local batch="$1" validated="$2"
+  if [[ -n "${TRAIN_RECOVERY_SUPERSEDING_BATCH_FOR:-}" ]]; then
+    "${TRAIN_RECOVERY_SUPERSEDING_BATCH_FOR}" "${batch}" "${validated}"; return $?
+  fi
+  local epoch="${batch##*/}" refs ref branch other
+  [[ "${epoch}" =~ ^[0-9]+$ && -n "${validated}" ]] || {
+    printf '<unreadable batch provenance>\n'; return 0
+  }
+  refs="$(git -C "${TRAIN_REPO_ROOT}" ls-remote --heads "${TRAIN_REMOTE}" \
+    'refs/heads/train/batch/*' 2>/dev/null)" || {
+    printf '<batch branch list unavailable>\n'; return 0
+  }
+  while read -r _ ref; do
+    branch="${ref#refs/heads/}"
+    [[ -z "${branch}" || "${branch}" == "${batch}" ]] && continue
+    other="${branch##*/}"
+    [[ "${other}" =~ ^[0-9]+$ ]] || continue
+    (( other > epoch )) || continue
+    git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" \
+      "+refs/heads/${branch}:refs/heads/${branch}" 2>/dev/null \
+      || { printf '%s\n' "${branch}"; return 0; }
+    if git -C "${TRAIN_REPO_ROOT}" merge-base --is-ancestor \
+         "${validated}" "refs/heads/${branch}" 2>/dev/null; then
+      printf '%s\n' "${branch}"; return 0
+    fi
+  done <<<"${refs}"
+  return 1
 }
 
 # A failure that the train cannot attribute to a member (for example an
@@ -54,7 +130,7 @@ train_recovery_batch_tip_pr_records() {
 # admitted into that batch.
 train_recovery_clear_superseded_escalations() {
   local run_id="$1" batch="$2" event_sha="$3"
-  local info workflow status conclusion run_branch run_sha records record pr validated pr_info sha state labels
+  local info workflow status conclusion run_branch run_sha records record pr validated pr_info sha state labels superseding
   info="$(train_recovery_run_info "${run_id}" 2>/dev/null || true)"
   IFS=${HONUA_TAB} read -r workflow status conclusion run_branch run_sha <<<"${info}"
   if [[ "${workflow}" != CI || "${status}" != completed || "${conclusion}" != success \
@@ -80,6 +156,8 @@ train_recovery_clear_superseded_escalations() {
       train_warn "RECOVERY CLEAR DECLINED: batch=${batch} prs=#${pr} reason=current head does not match admitted head ${validated}"
     elif ! train_recovery_has_label "${labels}" "${TRAIN_LABEL_ESCALATED}"; then
       train_log "RECOVERY CLEAR DECLINED: batch=${batch} prs=#${pr} reason=train:escalated is not present"
+    elif superseding="$(train_recovery_superseding_batch "${batch}" "${validated}")"; then
+      train_warn "RECOVERY CLEAR DECLINED: batch=${batch} prs=#${pr} reason=train:escalated is not provably this batch's; ${superseding} re-admitted this head"
     else
       train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_ESCALATED}"
       train_notice "RECOVERY CLEAR: batch=${batch} prs=#${pr} reason=green exact-head rerun superseded the escalation"

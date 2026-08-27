@@ -1492,8 +1492,12 @@ __recover_state() {
   jq -nc --arg branch "$1" --arg base "$2" --arg phase "$3" --arg run "$4" \
     '{active_batch:{branch:$branch,trunk_base:$base,included:[1944,1961],phase:$phase,run_id:($run|tonumber),fwdfix_attempts:0,flake_reruns:0},config:{max_batch:10,flake_signatures:""},last_landed_trunk:null}'
 }
+__recover_no_superseding() { return 1; }
+__recover_superseding() { printf 'train/batch/deadbee/999\n'; }
 export -f __recover_records __recover_info __recover_run __recover_remote \
-  __recover_trunk __recover_land __recover_dispatch __recover_continuation_exists __recover_state
+  __recover_trunk __recover_land __recover_dispatch __recover_continuation_exists __recover_state \
+  __recover_no_superseding __recover_superseding
+export TRAIN_RECOVERY_SUPERSEDING_BATCH_FOR=__recover_no_superseding
 export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
 export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
 export TRAIN_RECOVERY_RUN_INFO_FOR=__recover_run
@@ -1542,6 +1546,17 @@ SUPERSEDED_DECLINE_LOG="$(train_recovery_clear_superseded_escalations 123 train/
 assert_not_contains "recovery: superseded clear refuses moved head" "${SUPERSEDED_DECLINE_LOG}" "gh pr edit 1944 --remove-label train:escalated"
 assert_contains "recovery: declined clear names batch and PR" "${SUPERSEDED_DECLINE_LOG}" "RECOVERY CLEAR DECLINED: batch=train/batch/deadbee/123 prs=#1944"
 assert_contains "recovery: declined clear explains moved head" "${SUPERSEDED_DECLINE_LOG}" "current head does not match admitted head sha1944"
+
+# train:escalated carries no batch identity. An open PR at the admitted head with
+# the label is NOT proof this batch applied it: a batch minted later can have
+# re-admitted the same commit and escalated it on newer evidence. Clearing that
+# label would put a head the train just rejected back into selection.
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
+export TRAIN_RECOVERY_SUPERSEDING_BATCH_FOR=__recover_superseding
+SUPERSEDED_PROVENANCE_LOG="$(train_recovery_clear_superseded_escalations 123 train/batch/deadbee/123 "${RECOVERY_BATCH_SHA}" 2>&1)"
+assert_not_contains "recovery: superseded clear refuses a later batch's escalation" "${SUPERSEDED_PROVENANCE_LOG}" "gh pr edit 1944 --remove-label train:escalated"
+assert_contains "recovery: declined clear names the superseding batch" "${SUPERSEDED_PROVENANCE_LOG}" "is not provably this batch's; train/batch/deadbee/999 re-admitted this head"
+export TRAIN_RECOVERY_SUPERSEDING_BATCH_FOR=__recover_no_superseding
 export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
 export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
 export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
@@ -1680,7 +1695,78 @@ unset TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH TRAIN_RECOVERY_PR_INFO_FOR \
   TRAIN_RECOVERY_TRUNK_HEAD_FOR TRAIN_RECOVERY_LAND_CMD \
   TRAIN_RECOVERY_DISPATCH_CMD TRAIN_RECOVERY_CONTINUATION_EXISTS_FOR \
   TRAIN_RECOVERY_BEFORE_DISPATCH_CMD TRAIN_RECOVERY_STATE_JSON TRAIN_STATE_ISSUE_OVERRIDE \
+  TRAIN_RECOVERY_SUPERSEDING_BATCH_FOR \
   RECOVERY_TRUNK RECOVERY_REMOTE RECOVERY_CONTINUATION_EXISTS
+
+echo
+echo "== Cap. 2c: batch-receipt reconstruction and escalation provenance (real git) =="
+# Real branches, no seams: the label-only fallback reconstructs members from the
+# immutable batch branch alone, so the traversal itself is the contract.
+git -C "${WORK}" checkout -q -B recon700 origin/trunk
+printf 'r700\n' >"${WORK}/recon700.txt"
+git -C "${WORK}" add -A; git -C "${WORK}" commit -qm "pr recon700"
+git -C "${WORK}" push -q origin HEAD:refs/heads/recon700
+for __recon_pr in 701 702; do
+  git -C "${WORK}" checkout -q -B "recon${__recon_pr}" origin/trunk
+  printf 'r%s\n' "${__recon_pr}" >"${WORK}/recon${__recon_pr}.txt"
+  git -C "${WORK}" add -A; git -C "${WORK}" commit -qm "pr recon${__recon_pr}"
+  git -C "${WORK}" push -q origin "HEAD:refs/heads/recon${__recon_pr}"
+done
+RECON_HEAD701="$(git -C "${WORK}" rev-parse recon701)"
+RECON_HEAD702="$(git -C "${WORK}" rev-parse recon702)"
+
+# Landing is an FF-CAS, so trunk after a landed batch ENDS in that batch's own
+# `train: merge #N` commit. Stand one up as the base the next batch branches from.
+git -C "${WORK}" checkout -q -B recon-landed origin/trunk
+git -C "${WORK}" merge -q --no-ff --no-edit -m "train: merge #700" recon700
+RECON_LANDED="$(git -C "${WORK}" rev-parse HEAD)"
+
+# This batch: two member merges, then the two train-authored commits a batch adds
+# on top of them (derived-artifact refresh, then a format forward-fix).
+RECON_BATCH="train/batch/${RECON_LANDED:0:7}/1000"
+git -C "${WORK}" checkout -q -B "${RECON_BATCH}" "${RECON_LANDED}"
+git -C "${WORK}" merge -q --no-ff --no-edit -m "train: merge #701" recon701
+git -C "${WORK}" merge -q --no-ff --no-edit -m "train: merge #702" recon702
+printf 'derived\n' >>"${WORK}/shared.txt"
+git -C "${WORK}" add -A; git -C "${WORK}" commit -qm "chore(ci): refresh generated merge-train artifacts"
+printf 'formatted\n' >>"${WORK}/shared.txt"
+git -C "${WORK}" add -A; git -C "${WORK}" commit -qm "style: dotnet format (train forward-fix)"
+git -C "${WORK}" push -q origin "HEAD:refs/heads/${RECON_BATCH}"
+git -C "${WORK}" checkout -q "${RECON_LANDED}"
+
+RECON_RECORDS="$(train_recovery_batch_tip_pr_records "${RECON_BATCH}")"
+assert_contains "recon: forward-fix tip still reconstructs #701" "${RECON_RECORDS}" "701${HONUA_TAB}${RECON_HEAD701}"
+assert_contains "recon: traverses the derived-artifact commit to #702" "${RECON_RECORDS}" "702${HONUA_TAB}${RECON_HEAD702}"
+assert_not_contains "recon: bounded by the trunk the branch name records" "${RECON_RECORDS}" "700${HONUA_TAB}"
+
+# A batch minted after this one that re-merged the same admitted head could have
+# applied the train:escalated label now on the PR; its evidence is newer.
+RECON_SUPER="train/batch/${RECON_LANDED:0:7}/2000"
+git -C "${WORK}" checkout -q -B "${RECON_SUPER}" "${RECON_LANDED}"
+git -C "${WORK}" merge -q --no-ff --no-edit -m "train: merge #701" recon701
+git -C "${WORK}" push -q origin "HEAD:refs/heads/${RECON_SUPER}"
+git -C "${WORK}" checkout -q "${RECON_LANDED}"
+
+if RECON_SUPER_OUT="$(train_recovery_superseding_batch "${RECON_BATCH}" "${RECON_HEAD701}")"; then
+  assert_eq "provenance: later batch re-admitting the head supersedes" "${RECON_SUPER_OUT}" "${RECON_SUPER}"
+else
+  bad "provenance: later batch re-admitting the head supersedes"
+fi
+if train_recovery_superseding_batch "${RECON_BATCH}" "${RECON_HEAD702}" >/dev/null; then
+  bad "provenance: later batch that never re-admitted this head does not supersede"
+else
+  ok "provenance: later batch that never re-admitted this head does not supersede"
+fi
+if train_recovery_superseding_batch "${RECON_SUPER}" "${RECON_HEAD701}" >/dev/null; then
+  bad "provenance: newest batch owns its own escalation"
+else
+  ok "provenance: newest batch owns its own escalation"
+fi
+if RECON_UNREADABLE="$(train_recovery_superseding_batch "train/batch/${RECON_LANDED:0:7}/not-an-epoch" "${RECON_HEAD701}")"; then
+  assert_contains "provenance: unreadable batch name fails closed" "${RECON_UNREADABLE}" "unreadable batch provenance"
+else
+  bad "provenance: unreadable batch name fails closed"
+fi
 
 echo
 echo "== Roll-forward Cap. 4: autofix disabled (TRAIN_AUTOFIX=0) => behaves like today =="
