@@ -164,7 +164,9 @@ internal sealed class Cql2FilterProcessor(
         var translationResult = _filterExpressionService.Translate(parsedExpression, resource);
         return translationResult.IsSuccess
             ? ProcessingResult.Success(translationResult.SqlFilter, parsedExpression)
-            : ProcessingResult.Failure(translationResult.ErrorMessage ?? "Invalid filter expression.");
+            : ProcessingResult.Failure(
+                translationResult.ErrorMessage ?? "Invalid filter expression.",
+                translationResult.IsUnknownField);
     }
 
     /// <summary>

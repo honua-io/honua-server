@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -142,8 +143,13 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         }
 
         // Validate field exists in the resource schema
+        // UnknownFilterFieldException (an ArgumentException) rather than the base type, so a
+        // caller evaluating one filter across several resources can tell an undeclared property
+        // apart from an invalid expression. Normalisation only resolves properties in
+        // comparison-to-literal position, so for every other shape -- IS NULL, spatial
+        // predicates, BETWEEN -- this is the first place an unknown field is detected at all.
         var field = context.TryGetField(property.PropertyName) ??
-            throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
+            throw new UnknownFilterFieldException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
 
         if (field.IsGeometry)
         {

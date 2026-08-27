@@ -1443,6 +1443,38 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"{ValidateAndQuoteIdentifier(mapping.SchemaName!)}.{table}";
     }
 
+    /// <summary>
+    /// Quotes a SELECT alias for a schema field that <see cref="ResolveAttributeFields"/> has
+    /// already admitted, accepting either shape that method admits.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ValidateAndQuoteIdentifier"/> is the wrong guard for an alias derived from a
+    /// declared field name. It enforces <c>SchemaSearchPath.IsValidIdentifier</c>
+    /// (<c>^[A-Za-z_][A-Za-z0-9_]*$</c>), which rejects the colon in a STAC extension queryable
+    /// such as <c>eo:cloud_cover</c>. Before those names were admitted to the projection the
+    /// field was silently dropped; admitting them turned the same request into an
+    /// <see cref="InvalidOperationException"/> and an HTTP 500 on the FlatGeobuf/Geobuf path,
+    /// because the encoded-binary builder aliases every resolved field unconditionally
+    /// (review finding on honua-server#3489).
+    ///
+    /// The alias is safe to emit with doubling-only quoting, exactly as the native
+    /// <c>FeatureQueryBuilder</c> path does: the JSONB branch admits a name only through
+    /// <c>IsValidJsonAttributeKey</c>, whose pattern
+    /// (<c>^[a-zA-Z0-9_][a-zA-Z0-9_:.\-]{0,254}$</c>) contains no quote, whitespace, backslash
+    /// or control character, so nothing can terminate the quoted alias. The guard is re-asserted
+    /// here rather than assumed, so this stays correct if the caller's filter ever widens.
+    /// </remarks>
+    private static string QuoteAttributeFieldAlias(string fieldName)
+    {
+        var sanitized = fieldName.Trim();
+        if (!IsSafeIdentifier(sanitized) && !FeatureQueryBuilder.IsValidJsonAttributeKey(sanitized))
+        {
+            throw new InvalidOperationException($"Invalid PostGIS projection alias '{fieldName}'.");
+        }
+
+        return $"\"{sanitized.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
     private static string ValidateAndQuoteIdentifier(string identifier)
     {
         var sanitized = identifier.Trim();
