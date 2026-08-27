@@ -19,7 +19,7 @@ pyproj==3.7.0
 # --- dataframe / IO runtime the client is built on -------------------------
 pandas==2.2.3
 numpy==2.1.3
-pyarrow==17.0.0
+pyarrow==23.0.1
 
 # --- lane harness ----------------------------------------------------------
 httpx==0.27.2
