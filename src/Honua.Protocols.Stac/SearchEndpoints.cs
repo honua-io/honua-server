@@ -375,18 +375,19 @@ internal static class SearchEndpoints
             long totalMatched = 0;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
-            // STAC item search is a union across the selected collections. When the
-            // request spans more than one collection, a collection whose schema does not
-            // declare a property the filter references simply contributes no items — the
-            // same treatment `datetime` already gets in TryBuildLayerQuery for a layer
-            // with no temporal field. Rejecting the whole search was a real interop
-            // failure: an unscoped `client.search(filter=...)` on any collection-specific
-            // property (or even on `datetime`, which /stac/queryables advertises
-            // catalog-wide) returned 400 (honua-server#3392). The error is retained and
-            // still returned when *no* collection can satisfy the filter, so a typo is
-            // never silently answered with an empty result set.
+            // STAC item search is a union across the selected collections. A property
+            // absent from one selected collection is evaluated as NULL for that
+            // collection, preserving SQL AND/OR/NOT semantics. Rejecting the whole search
+            // was a real interop failure: an unscoped `client.search(filter=...)` on any
+            // collection-specific property (or on `datetime`, which /stac/queryables
+            // advertises catalog-wide) returned 400 (honua-server#3392). The error is
+            // retained and still returned when no selected collection declares the
+            // property, so a typo is never silently answered with an empty result set.
             string? inapplicableFilterError = null;
             var appliedToAnyCollection = false;
+            IReadOnlyList<MetadataV2Resource>? crossCollectionResources = targets.Length > 1
+                ? targets.Select(target => target.Resource).ToArray()
+                : null;
             foreach (var target in targets)
             {
                 if (hasEmptyIdFilter)
@@ -404,6 +405,7 @@ internal static class SearchEndpoints
                     defaultFilterLangIsText,
                     target.LayerIndex.ToString(CultureInfo.InvariantCulture),
                     isStorageBound,
+                    crossCollectionResources,
                     cancellationToken);
                 if (!layerQueryResult.IsSuccess)
                 {
@@ -710,6 +712,7 @@ internal static class SearchEndpoints
         bool defaultFilterLangIsText,
         string collectionId,
         bool isStorageBound,
+        IReadOnlyList<MetadataV2Resource>? crossCollectionResources,
         CancellationToken cancellationToken)
     {
         var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
@@ -784,6 +787,7 @@ internal static class SearchEndpoints
             filterProcessor,
             defaultFilterLangIsText,
             collectionId,
+            crossCollectionResources,
             cancellationToken);
         if (!filterQueryResult.IsSuccess)
         {
@@ -853,6 +857,7 @@ internal static class SearchEndpoints
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         string collectionId,
+        IReadOnlyList<MetadataV2Resource>? crossCollectionResources,
         CancellationToken cancellationToken)
     {
         var result = await filterProcessor.ProcessFilterAsync(
@@ -862,7 +867,8 @@ internal static class SearchEndpoints
             request.FilterCrs,
             defaultFilterLangIsText,
             cancellationToken,
-            collectionId).ConfigureAwait(false);
+            collectionId,
+            crossCollectionResources).ConfigureAwait(false);
 
         return result.IsSuccess
             ? (true, result.SqlFilter, result.Expression, null, false)
