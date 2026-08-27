@@ -4,6 +4,8 @@
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing.Matching;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Middleware;
@@ -25,6 +27,20 @@ public sealed class LongLivedStreamEndpointMetadata
 
     /// <summary>The shared marker instance.</summary>
     public static LongLivedStreamEndpointMetadata Instance { get; } = new();
+}
+
+/// <summary>
+/// Marks an endpoint that originally accepted HEAD but not GET and is exposed as a hidden GET
+/// routing candidate so the shared pre-routing HEAD fallback can still select it.
+/// </summary>
+public sealed class ExplicitHeadOnlyEndpointMetadata
+{
+    private ExplicitHeadOnlyEndpointMetadata()
+    {
+    }
+
+    /// <summary>The shared marker instance.</summary>
+    public static ExplicitHeadOnlyEndpointMetadata Instance { get; } = new();
 }
 
 /// <summary>
@@ -58,7 +74,9 @@ public sealed class LongLivedStreamEndpointMetadata
 /// an <c>IStartupFilter</c> is the only seam that precedes it without moving endpoint
 /// matching after the whole pipeline). It rewrites the request method to <c>GET</c> so the
 /// GET endpoint is selected, and replaces the response body feature with a write-discarding,
-/// byte-counting one.
+/// byte-counting one. Explicit HEAD-only plugin routes are surfaced as hidden GET candidates;
+/// <see cref="ExplicitHeadEndpointMatcherPolicy"/> gives those candidates precedence only for
+/// requests marked by this rewrite.
 /// </description>
 /// </item>
 /// <item>
@@ -299,6 +317,57 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
                 }
             }
         }
+    }
+}
+
+/// <summary>
+/// Selects a hidden explicit-HEAD candidate ahead of the ordinary GET candidate for a request
+/// rewritten from HEAD, while preventing that hidden candidate from accepting a real GET.
+/// </summary>
+internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpointSelectorPolicy
+{
+    public override int Order => 0;
+
+    public bool AppliesToEndpoints(IReadOnlyList<Endpoint> endpoints)
+        => endpoints.Any(static endpoint =>
+            endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>() is not null);
+
+    public Task ApplyAsync(HttpContext httpContext, CandidateSet candidates)
+    {
+        var rewrittenFromHead = HeadRequestSupport.WasRewrittenFromHead(httpContext);
+        var hasExplicitHeadCandidate = false;
+
+        if (rewrittenFromHead)
+        {
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                if (candidates.IsValidCandidate(i) &&
+                    candidates[i].Endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>() is not null)
+                {
+                    hasExplicitHeadCandidate = true;
+                    break;
+                }
+            }
+        }
+
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            if (!candidates.IsValidCandidate(i))
+            {
+                continue;
+            }
+
+            var isExplicitHeadOnly =
+                candidates[i].Endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>() is not null;
+
+            if ((rewrittenFromHead && hasExplicitHeadCandidate && !isExplicitHeadOnly) ||
+                (!rewrittenFromHead && HttpMethods.IsGet(httpContext.Request.Method) && isExplicitHeadOnly))
+            {
+                candidates.SetValidity(i, false);
+            }
+        }
+
+        return Task.CompletedTask;
     }
 }
 
@@ -664,6 +733,8 @@ internal static class HeadRequestMiddlewareExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<IStartupFilter, HeadRequestStartupFilter>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<MatcherPolicy, ExplicitHeadEndpointMatcherPolicy>());
         return services;
     }
 

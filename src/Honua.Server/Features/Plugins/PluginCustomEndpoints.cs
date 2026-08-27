@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Licensing;
 using Honua.Plugins;
 using Honua.Plugins.Abstractions;
@@ -52,10 +53,17 @@ public static class PluginCustomEndpoints
 
     private static void MapOne(IEndpointRouteBuilder endpoints, ICustomEndpoint endpoint)
     {
-        var methods = endpoint.Methods is { Count: > 0 }
+        var declaredMethods = endpoint.Methods is { Count: > 0 }
             ? endpoint.Methods.ToArray()
             : throw new InvalidOperationException(
                 $"Plugin custom endpoint '{endpoint.GetType().FullName}' must declare at least one HTTP method.");
+
+        var exposesHeadFallback =
+            declaredMethods.Any(HttpMethods.IsHead) &&
+            !declaredMethods.Any(HttpMethods.IsGet);
+        var routingMethods = exposesHeadFallback
+            ? [.. declaredMethods, HttpMethods.Get]
+            : declaredMethods;
 
         if (string.IsNullOrWhiteSpace(endpoint.Pattern))
         {
@@ -67,10 +75,18 @@ public static class PluginCustomEndpoints
 
         // Capture the singleton endpoint instance so the handler delegate is static-rooted and
         // AOT-safe (no per-request service resolution of the plugin type, no reflection).
-        var builder = endpoints.MapMethods(pattern, methods, (HttpContext context, CancellationToken ct)
+        var builder = endpoints.MapMethods(pattern, routingMethods, (HttpContext context, CancellationToken ct)
             => HandleAsync(endpoint, context, ct))
             .WithTags("Plugins")
             .WithDisplayName($"Plugin endpoint: {pattern}");
+
+        if (exposesHeadFallback)
+        {
+            // The shared HEAD middleware rewrites before routing. This hidden GET candidate lets
+            // the selector policy choose the plugin's explicit HEAD handler without exposing that
+            // handler to genuine GET requests or eclipsing a separate GET endpoint.
+            builder.WithMetadata(ExplicitHeadOnlyEndpointMetadata.Instance);
+        }
 
         if (endpoint.RequiresAuthorization)
         {

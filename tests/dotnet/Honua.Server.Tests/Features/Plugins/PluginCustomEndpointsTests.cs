@@ -7,6 +7,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Middleware;
 using Honua.Plugins;
 using Honua.Plugins.Abstractions;
 using Honua.Sample.UtilityValidationPlugin;
@@ -16,6 +17,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,11 +56,19 @@ public sealed class PluginCustomEndpointsTests
                                 ["Plugins:Enabled"] = enabled ? "true" : "false",
                             })
                             .Build();
-                        services.AddHonuaPlugins(configuration, p => p.Add<UtilityStatusEndpointPlugin>());
+                        services.AddHonuaHeadRequestSupport();
+                        services.AddHonuaPlugins(configuration, p =>
+                        {
+                            p.Add<UtilityStatusEndpointPlugin>();
+                            p.Add<SplitGetEndpointPlugin>();
+                            p.Add<SplitHeadEndpointPlugin>();
+                        });
                     })
                     .Configure(app =>
                     {
                         app.UseRouting();
+                        app.UseHonuaHeadRequestMethod();
+                        app.UseHonuaHeadRequestGetSemantics();
                         app.UseEndpoints(endpoints => endpoints.MapHonuaPluginEndpoints());
                     });
             })
@@ -110,5 +120,60 @@ public sealed class PluginCustomEndpointsTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "the operator kill-switch (Plugins:Enabled=false) disables contributed routes");
+    }
+
+    [IntegrationTest]
+    public async Task CustomEndpoint_SeparateExplicitHeadRoute_SelectsHeadPlugin()
+    {
+        using var server = CreateServer(HonuaEdition.Enterprise);
+        using var client = server.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/plugins/split");
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task CustomEndpoint_SeparateExplicitHeadRoute_DoesNotCaptureGet()
+    {
+        using var server = CreateServer(HonuaEdition.Enterprise);
+        using var client = server.CreateClient();
+
+        using var response = await client.GetAsync("/plugins/split");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("split-get");
+    }
+
+    [Plugin("split-get", "1.0.0", Capabilities = PluginCapability.CustomEndpoints)]
+    public sealed class SplitGetEndpointPlugin : ICustomEndpoint
+    {
+        public IReadOnlyList<string> Methods { get; } = ["GET"];
+
+        public string Pattern => "split";
+
+        public bool RequiresAuthorization => false;
+
+        public ValueTask<PluginEndpointResponse> HandleAsync(
+            PluginEndpointRequest request,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(PluginEndpointResponse.Json("{\"handler\":\"split-get\"}"));
+    }
+
+    [Plugin("split-head", "1.0.0", Capabilities = PluginCapability.CustomEndpoints)]
+    public sealed class SplitHeadEndpointPlugin : ICustomEndpoint
+    {
+        public IReadOnlyList<string> Methods { get; } = ["HEAD"];
+
+        public string Pattern => "split";
+
+        public bool RequiresAuthorization => false;
+
+        public ValueTask<PluginEndpointResponse> HandleAsync(
+            PluginEndpointRequest request,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(PluginEndpointResponse.Status(StatusCodes.Status202Accepted));
     }
 }
