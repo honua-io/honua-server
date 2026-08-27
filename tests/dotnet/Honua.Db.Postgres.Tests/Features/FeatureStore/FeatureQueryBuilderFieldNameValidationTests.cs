@@ -75,10 +75,12 @@ public sealed class FeatureQueryBuilderFieldNameValidationTests
     }
 
     [Fact]
-    public void IsValidJsonAttributeKey_WithOverlongName_ReturnsFalse()
+    public void IsValidJsonAttributeKey_WithLongDeclaredName_ReturnsTrue()
     {
-        FeatureQueryBuilder.IsValidJsonAttributeKey(new string('a', 256)).Should().BeFalse();
-        FeatureQueryBuilder.IsValidJsonAttributeKey(new string('a', 255)).Should().BeTrue();
+        // JSON-backed field names are parameter-bound at every call site and the
+        // metadata contract does not declare a 255-character limit. Do not impose an
+        // identifier-style length cap that makes an advertised field unqueryable.
+        FeatureQueryBuilder.IsValidJsonAttributeKey(new string('a', 1_024)).Should().BeTrue();
     }
 
     [Fact]

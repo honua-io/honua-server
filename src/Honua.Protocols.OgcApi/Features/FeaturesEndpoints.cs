@@ -190,7 +190,11 @@ internal static partial class FeaturesEndpoints
         value = null;
         error = null;
 
-        if (string.IsNullOrWhiteSpace(raw))
+        // A missing parameter is optional, but a present empty/whitespace value is
+        // still invalid input. In particular, form-style query decoding turns `+`
+        // into a space; treating that as omitted would silently accept a value that
+        // the published integer schema rejects.
+        if (raw is null)
         {
             return true;
         }
