@@ -140,6 +140,23 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Calculate is exposed as GET for GeoServices compatibility but performs a bulk update.
+    /// HEAD must therefore stop before the handler instead of inheriting its GET semantics.
+    /// </summary>
+    [IntegrationTest]
+    public async Task Head_CalculateRoute_Returns405MethodNotAllowed()
+    {
+        var client = _fixture.CreateClient();
+        var path = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate";
+
+        using var request = new HttpRequestMessage(HttpMethod.Head, path);
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+    }
+
+    /// <summary>
     /// Only HEAD changes: <c>HealthEndpoints.NonGetMethods</c> -&gt; <c>HandleGetMethodNotAllowed</c>
     /// must keep answering 405 for the mutating methods.
     /// </summary>
