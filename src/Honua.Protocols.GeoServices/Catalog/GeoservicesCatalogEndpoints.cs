@@ -15,6 +15,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.ImageServer;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -40,7 +41,6 @@ internal static class GeoservicesCatalogEndpoints
     private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
     private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
-    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private const int MaxSoapRequestCharacters = 1_048_576;
 
     /// <summary>
@@ -365,7 +365,7 @@ internal static class GeoservicesCatalogEndpoints
         var operation = operations[0];
 
         var operationNamespace = operation.Name.Namespace;
-        if (operationNamespace != ArcGisSoapNamespace)
+        if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
         {
             return CreateSoapFault(
                 "Unsupported ArcGIS SOAP operation namespace.",
@@ -391,6 +391,7 @@ internal static class GeoservicesCatalogEndpoints
 
         try
         {
+            XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
             XElement payload;
             switch (operation.Name.LocalName)
             {
@@ -432,25 +433,27 @@ internal static class GeoservicesCatalogEndpoints
                             folderName).ConfigureAwait(false));
                     break;
                 case "GetFolders":
-                    payload = new XElement(operationNamespace + "GetFoldersResult");
+                    payload = new XElement(
+                        "FolderNames",
+                        new XAttribute(xsi + "type", "tns:ArrayOfString"));
                     break;
                 case "GetMessageVersion":
-                    payload = new XElement(operationNamespace + "GetMessageVersionResult", "esriArcGISVersion108");
+                    payload = new XElement("MessageVersion", "esriArcGISVersion108");
                     break;
                 case "GetMessageFormats":
-                    payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
+                    payload = new XElement("MessageFormats", "esriServiceCatalogMessageFormatSoap");
                     break;
                 case "GetTokenServiceURL":
                     payload = new XElement(
-                        operationNamespace + "GetTokenServiceURLResult",
+                        "TokenServiceURL",
                         tokenOptions.Value.Enabled
                             ? $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/sharing/rest/generateToken"
                             : string.Empty);
                     break;
                 case "RequiresTokens":
                     payload = new XElement(
-                        operationNamespace + "RequiresTokensResult",
-                        tokenOptions.Value.Enabled);
+                        "Result",
+                        tokenOptions.Value.Enabled ? "1" : "0");
                     break;
                 default:
                     return CompleteSoapCatalogOperation(scope, CreateSoapFault(
@@ -464,6 +467,9 @@ internal static class GeoservicesCatalogEndpoints
                 new XElement(
                     soap + "Envelope",
                     new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
+                    new XAttribute(XNamespace.Xmlns + "xsi", xsi.NamespaceName),
+                    new XAttribute(XNamespace.Xmlns + "xsd", "http://www.w3.org/2001/XMLSchema"),
+                    new XAttribute(XNamespace.Xmlns + "tns", operationNamespace.NamespaceName),
                     new XElement(
                         soap + "Body",
                         new XElement(
@@ -471,7 +477,7 @@ internal static class GeoservicesCatalogEndpoints
                             payload))));
 
             return CompleteSoapCatalogOperation(scope, Results.Content(
-                response.ToString(SaveOptions.DisableFormatting),
+                ArcGisSoapNamespaces.SerializeResponse(response),
                 contentType: SoapContentTypeFor(soap),
                 contentEncoding: Encoding.UTF8));
         }
@@ -630,7 +636,7 @@ internal static class GeoservicesCatalogEndpoints
                     fault)));
 
         return Results.Content(
-            response.ToString(SaveOptions.DisableFormatting),
+            ArcGisSoapNamespaces.SerializeResponse(response),
             contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8,
             statusCode: statusCode);
@@ -858,7 +864,13 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var response = new RestInfoResponse();
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var soapUrl = $"{baseUrl}/services";
+        var response = new RestInfoResponse
+        {
+            SoapUrl = soapUrl,
+            SecureSoapUrl = context.Request.IsHttps ? soapUrl : null
+        };
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }
 
