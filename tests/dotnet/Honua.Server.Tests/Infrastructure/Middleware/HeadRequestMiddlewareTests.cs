@@ -105,6 +105,10 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         _app.MapMethods("/dual", ["GET", "HEAD"], async context =>
         {
             context.Response.Headers["X-Method-Seen"] = context.Request.Method;
+            if (context.Request.Headers.TryGetValue("Range", out var range))
+            {
+                context.Response.Headers["X-Range-Seen"] = range;
+            }
             context.Response.ContentType = "application/vnd.pmtiles";
 
             if (HttpMethods.IsHead(context.Request.Method))
@@ -208,6 +212,25 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             context.Response.ContentType = "application/octet-stream";
             context.Response.Headers.AcceptRanges = "bytes";
             await context.Response.WriteAsync("ranged-payload");
+        });
+
+        _app.MapGet("/range-enabled-file", () => Results.File(
+            new byte[FixedLengthPayloadSize],
+            "application/octet-stream",
+            "payload.bin",
+            enableRangeProcessing: true));
+
+        _app.MapGet("/websocket-only", context =>
+        {
+            context.Response.Headers["X-Method-Seen"] = context.Request.Method;
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = StatusCodes.Status101SwitchingProtocols;
+                return Task.CompletedTask;
+            }
+
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return Task.CompletedTask;
         });
 
         // Streaming query handlers explicitly select chunked framing. Their HEAD equivalent
@@ -386,6 +409,48 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             "a caught mid-stream failure cannot replace an already-started GET response");
         _midstreamHandlerObservedResponseStarted.Should().BeTrue();
         (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadWithRangeOnGetOnlyFile_IgnoresRangeAndReturnsFullMetadata()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/range-enabled-file");
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 7);
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentLength.Should().Be(FixedLengthPayloadSize);
+        response.Content.Headers.ContentRange.Should().BeNull();
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadWithRangeOnExplicitHeadRoute_PreservesRangeHeader()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/dual");
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 7);
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentLength.Should().Be(DualEndpointContentLength);
+        response.Headers.GetValues("X-Range-Seen").Should().ContainSingle().Which.Should().Be("bytes=0-7");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadWithWebSocketUpgrade_DoesNotEnterGetUpgradeSemantics()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/websocket-only");
+        request.Headers.Connection.Add("Upgrade");
+        request.Headers.TryAddWithoutValidation("Upgrade", "websocket");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Version", "13");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Headers.GetValues("X-Method-Seen").Should().ContainSingle().Which.Should().Be("HEAD");
     }
 
     [UnitTest]
