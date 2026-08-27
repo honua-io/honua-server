@@ -209,9 +209,24 @@ public sealed class ImageServerStatisticsBudgetTests
         var result = await ImageServerStatisticsBudget.ResolveCancellableAsync<RasterStatistics>(
             async ct =>
             {
-                using var registration = ct.Register(
-                    () => cancellationObserved.TrySetResult(true));
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                // Observe cancellation from the delay itself rather than from a Register
+                // callback disposed as this lambda unwinds. Callbacks run LIFO, so Task.Delay's
+                // own registration -- made after the one here -- runs first, resumes this method,
+                // and disposes a `using` registration while Cancel() is still walking toward it.
+                // The callback registered here then never runs and the TCS is never set, which
+                // fails the wait below with a TimeoutException on an unlucky interleaving. The
+                // catch observes the same fact (the token was cancelled) without depending on
+                // callback ordering or on which thread resumes the continuation.
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    cancellationObserved.TrySetResult(true);
+                    throw;
+                }
+
                 return Sample;
             },
             onBudgetExceeded: () => budgetExceeded = true,
