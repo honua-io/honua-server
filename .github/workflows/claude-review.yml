@@ -377,7 +377,14 @@ jobs:
           # predated a rebase. Scoped to dependabot rather than '*': the trust boundary
           # is that this workflow always runs the default-branch copy, but there is no
           # reason to widen the set of identities that can start a paid reviewer run.
-          allowed_bots: 'dependabot[bot]'
+          # `github-actions[bot]` is this repository's own scheduled catch-up
+          # (#3541) dispatching claude-review.yml with GITHUB_TOKEN. Without it
+          # every catch-up run the scheduler starts is refused as "Workflow
+          # initiated by non-human actor" -- the lane would dispatch, report
+          # success, and review nothing. Same trust boundary as above: the
+          # dispatch originates from a workflow in this repository running the
+          # default-branch copy of this file.
+          allowed_bots: 'dependabot[bot],github-actions[bot]'
           # Read-only analysis tools, plus exactly two append-only publishing
           # tools. No `gh api`, no general Bash, no git: nothing in this set can
           # merge, push, or edit a workflow.

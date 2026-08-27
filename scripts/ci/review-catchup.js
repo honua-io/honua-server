@@ -25,15 +25,33 @@ function latestBy(items, keyOf, startedAtOf) {
   return latest;
 }
 
+// GitHub App that publishes this repository's canonical `PR Gate`. Branch
+// protection binds the required check to the same app id, so anything published
+// under that context by another producer is not the gate the train honours.
+const CANONICAL_GATE_APP_ID = 15368;
+
+function isCanonicalProducer(item) {
+  const appId = item?.app?.id;
+  // Absent app metadata means the producer cannot be established. Fail closed:
+  // an unattributable success must not be read as a green canonical gate.
+  return appId === CANONICAL_GATE_APP_ID;
+}
+
 function currentPrGate(statusResponse, checkRuns) {
   // The combined status endpoint has already reduced commit statuses to the
   // latest state per context. Do not replace it with /statuses (raw history).
-  const status = (statusResponse.statuses || []).find(item => item.context === 'PR Gate');
+  // Bind to the canonical producer as well as the name: `PR Gate` is a context
+  // string anyone can publish, and matching the name alone lets a success from
+  // some other producer mask a failing canonical gate -- the catch-up would then
+  // spend a paid review on a head that is not actually green.
+  const status = (statusResponse.statuses || []).find(
+    item => item.context === 'PR Gate' && isCanonicalProducer(item),
+  );
   // The check-runs endpoint returns retry history. Reduce it independently by
   // name and started_at so an old failed attempt cannot make a green head look
   // current (or an old success hide a current failure).
   const check = latestBy(
-    checkRuns,
+    (checkRuns || []).filter(isCanonicalProducer),
     item => item.name,
     item => item.started_at,
   ).get('PR Gate');
@@ -137,7 +155,11 @@ async function enumerateCatchups({
     else if (pr.base?.repo?.full_name !== `${repo.owner}/${repo.repo}`) reason = 'unexpected base repository';
     else if (pr.base?.ref !== repository.default_branch) reason = `does not target ${repository.default_branch}`;
     else if (pr.head?.repo?.full_name !== `${repo.owner}/${repo.repo}`) reason = 'fork';
-    else if ((pr.labels || []).some(label => ['hold', 'train:escalated'].includes(label.name))) {
+    // Every documented hold mechanism must suppress a paid review, not just the
+    // two the train itself keys on.
+    else if ((pr.labels || []).some(
+      label => ['hold', 'train:hold', 'train:escalated'].includes(label.name),
+    )) {
       reason = 'held/escalated';
     }
 
@@ -156,8 +178,16 @@ async function enumerateCatchups({
     }
 
     if (!reason) {
-      const evidence = await hasCleanExactHeadAttestation(github, repo, pr.number, head);
-      reason = !evidence.eligible || evidence.clean ? evidence.reason : null;
+      // A push, label, comment or review landing between the snapshot's two
+      // stability reads makes it throw. Contain that to this PR: letting it
+      // reject the whole enumeration discarded every earlier selection and let
+      // one busy PR starve catch-up for all the others, indefinitely.
+      try {
+        const evidence = await hasCleanExactHeadAttestation(github, repo, pr.number, head);
+        reason = !evidence.eligible || evidence.clean ? evidence.reason : null;
+      } catch (error) {
+        reason = `attestation snapshot unstable: ${error?.message || error}`;
+      }
     }
 
     if (!reason && selected.length >= limit) reason = `bounded after ${limit} selections`;
@@ -169,6 +199,7 @@ async function enumerateCatchups({
 }
 
 module.exports = {
+  CANONICAL_GATE_APP_ID,
   DEFAULT_LIMIT,
   DEFAULT_MIN_AGE_MINUTES,
   DISPATCH_TITLE_PREFIX,
