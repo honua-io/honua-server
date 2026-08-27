@@ -16,4 +16,5 @@ node --test \
   scripts/ci/review-first-evidence-ledger.test.js \
   scripts/ci/review-gate-evidence.test.js \
   scripts/ci/review-gate-snapshot.test.js \
+  scripts/ci/review-catchup.test.js \
   scripts/ci/claude-review-lane.test.js

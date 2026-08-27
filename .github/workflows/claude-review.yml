@@ -1,4 +1,8 @@
 name: Claude Review
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+    && format('Claude catch-up #{0} @ {1}', inputs.pr, inputs.head)
+    || 'Claude Review' }}
 
 # Second attesting reviewer for the required `Review Gate` context (#3213, #3314).
 #
@@ -35,11 +39,23 @@ name: Claude Review
 # `::notice::` rather than failing PRs. See docs/internal/ci/gate-model.md.
 
 on:
+  schedule:
+    - cron: '17,47 * * * *'
   workflow_run:
     workflows: [PR Gate]
     types: [completed]
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request selected by the scheduled catch-up pass
+        required: true
+        type: string
+      head:
+        description: Exact pull request head selected by the catch-up pass
+        required: true
+        type: string
 
 permissions: {}
 
@@ -52,12 +68,57 @@ permissions: {}
 # no cancellation: its trusted resolve step fails closed once the PR has moved.
 concurrency:
   group: >-
-    claude-review-${{ github.event_name == 'workflow_run'
+    claude-review-${{ github.event_name == 'schedule'
+      && 'scheduled-catch-up'
+      || github.event_name == 'workflow_dispatch'
+      && format('head-{0}', inputs.head)
+      || github.event_name == 'workflow_run'
       && format('head-{0}', github.event.workflow_run.head_sha)
       || format('comment-{0}', github.event.comment.id) }}
   cancel-in-progress: false
 
 jobs:
+  catch-up:
+    name: Select bounded unattested green heads
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: read
+    steps:
+      - name: Check out trusted catch-up policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Select and dispatch at most three review heads
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { enumerateCatchups } = require('./scripts/ci/review-catchup');
+            const result = await enumerateCatchups({ github, repo: context.repo });
+            for (const decision of result.decisions) {
+              core.info(`#${decision.number} ${decision.head}: ${decision.reason}`);
+            }
+            for (const target of result.selected) {
+              await github.rest.actions.createWorkflowDispatch({
+                ...context.repo,
+                workflow_id: 'claude-review.yml',
+                ref: context.ref.replace('refs/heads/', ''),
+                inputs: { pr: String(target.number), head: target.head },
+              });
+            }
+            core.summary.addHeading('Scheduled review catch-up');
+            core.summary.addCodeBlock(result.decisions.map(decision =>
+              `#${decision.number} ${decision.head} ${decision.reason}`).join('\n'));
+            await core.summary.write();
+
   review:
     name: Post exact-head Claude review evidence
     # Same-repo, non-fork, pull_request-originated PR Gate runs only; plus an
@@ -74,6 +135,7 @@ jobs:
         contains(github.event.comment.body, '@claude review') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
           github.event.comment.author_association))
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -104,6 +166,8 @@ jobs:
           SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           COMMENT_ISSUE: ${{ github.event.issue.number }}
+          CATCHUP_PR: ${{ inputs.pr }}
+          CATCHUP_HEAD: ${{ inputs.head }}
           HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         with:
@@ -146,7 +210,7 @@ jobs:
               }
               number = resolved.pullRequestNumber;
               head = resolved.headSha;
-            } else {
+            } else if (context.eventName === 'issue_comment') {
               number = Number(process.env.COMMENT_ISSUE);
               const { data: pr } = await github.rest.pulls.get({
                 ...context.repo, pull_number: number,
@@ -159,6 +223,12 @@ jobs:
               }
               number = pr.number;
               head = pr.head.sha;
+            } else {
+              number = Number(process.env.CATCHUP_PR);
+              head = process.env.CATCHUP_HEAD;
+              if (!Number.isInteger(number) || number <= 0 || !/^[0-9a-f]{40}$/.test(head || '')) {
+                throw new Error('scheduled catch-up dispatch must bind a PR number and full head SHA');
+              }
             }
 
             const { data: pr } = await github.rest.pulls.get({
@@ -307,7 +377,14 @@ jobs:
           # predated a rebase. Scoped to dependabot rather than '*': the trust boundary
           # is that this workflow always runs the default-branch copy, but there is no
           # reason to widen the set of identities that can start a paid reviewer run.
-          allowed_bots: 'dependabot[bot]'
+          # `github-actions[bot]` is this repository's own scheduled catch-up
+          # (#3541) dispatching claude-review.yml with GITHUB_TOKEN. Without it
+          # every catch-up run the scheduler starts is refused as "Workflow
+          # initiated by non-human actor" -- the lane would dispatch, report
+          # success, and review nothing. Same trust boundary as above: the
+          # dispatch originates from a workflow in this repository running the
+          # default-branch copy of this file.
+          allowed_bots: 'dependabot[bot],github-actions[bot]'
           # Read-only analysis tools, plus exactly two append-only publishing
           # tools. No `gh api`, no general Bash, no git: nothing in this set can
           # merge, push, or edit a workflow.
