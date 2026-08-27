@@ -15,6 +15,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.PrintingTools.Layout;
 using Honua.Server.Features.PrintingTools.Models;
@@ -64,6 +65,7 @@ internal static class PrintingToolsEndpoints
             .WithName("PrintingToolsExecuteGet")
             .WithSummary("Execute a synchronous print task using GET")
             .WithDescription("Composes a map layout from a web map JSON definition and returns the output")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("PrintingTools");
 
         // Async submit job (POST + GET per GP contract)
@@ -86,6 +88,7 @@ internal static class PrintingToolsEndpoints
             .WithName("PrintingToolsSubmitJobGet")
             .WithSummary("Submit an asynchronous print job using GET")
             .WithDescription("Queues a print job for background processing and returns a job ID")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("PrintingTools");
 
         // Job status
