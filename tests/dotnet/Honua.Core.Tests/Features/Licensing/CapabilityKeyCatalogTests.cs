@@ -124,6 +124,27 @@ public sealed class CapabilityKeyCatalogTests
         }
     }
 
+    [Fact]
+    public void DeployableKeys_ExcludesDescriptiveKeysButKeepsEverythingElse()
+    {
+        var deployable = CapabilityKeyCatalog.DeployableKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
+        var descriptive = CapabilityKeyCatalog.DescriptiveKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
+
+        descriptive.Should().NotBeEmpty("the catalog must carry descriptive keys for this split to mean anything");
+        deployable.Should().NotIntersectWith(descriptive);
+        deployable.Should().BeEquivalentTo(
+            CapabilityKeyCatalog.All.Select(k => k.Key).Except(descriptive, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void DescriptiveKeys_AreAllMarkedExperimental()
+    {
+        // The status string is the contract shared with capability-keys.v1.json and the deployment
+        // profile generator; a descriptive key that loses it silently becomes deployable again.
+        CapabilityKeyCatalog.DescriptiveKeys.Should().OnlyContain(
+            k => k.Status == CapabilityKeyCatalog.ExperimentalStatus);
+    }
+
     public static TheoryData<string> AllCommunityKeys()
     {
         var data = new TheoryData<string>();

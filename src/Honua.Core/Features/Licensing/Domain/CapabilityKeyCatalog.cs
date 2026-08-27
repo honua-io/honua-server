@@ -40,6 +40,14 @@ public sealed record CapabilityKeyDefinition(
 public static class CapabilityKeyCatalog
 {
     /// <summary>
+    /// Release-posture value marking a key as descriptive-only: it names a surface in the
+    /// public vocabulary but no runtime gate resolves it, so it is not deployable. This is the
+    /// contract shared with the generated <c>capability-keys.v1.json</c> artifact and every
+    /// consumer that reads it, including <c>scripts/deployment/generate-capability-profile.py</c>.
+    /// </summary>
+    public const string ExperimentalStatus = "experimental";
+
+    /// <summary>
     /// Capability categories introduced alongside the existing
     /// <see cref="FeatureCatalog.Categories"/> set. Community-only groupings
     /// that do not correspond to an edition-gated feature category.
@@ -222,11 +230,11 @@ public static class CapabilityKeyCatalog
     public static IReadOnlyList<CapabilityKeyDefinition> DescriptiveKeys { get; } =
     [
         new("provider.redshift", "Amazon Redshift Provider", Categories.DataProviders,
-            HonuaEdition.Enterprise, "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.", Status: "experimental"),
+            HonuaEdition.Enterprise, "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.", Status: ExperimentalStatus),
         new("provider.snowflake", "Snowflake Provider", Categories.DataProviders,
-            HonuaEdition.Enterprise, "Experimental, off-by-default Snowflake feature provider; enabling the capability key alone does not enable the provider.", Status: "experimental"),
+            HonuaEdition.Enterprise, "Experimental, off-by-default Snowflake feature provider; enabling the capability key alone does not enable the provider.", Status: ExperimentalStatus),
         new("provider.databricks", "Databricks SQL Provider", Categories.DataProviders,
-            HonuaEdition.Enterprise, "Experimental, off-by-default Databricks SQL feature provider; enabling the capability key alone does not enable the provider.", Status: "experimental"),
+            HonuaEdition.Enterprise, "Experimental, off-by-default Databricks SQL feature provider; enabling the capability key alone does not enable the provider.", Status: ExperimentalStatus),
     ];
 
     /// <summary>
@@ -248,5 +256,20 @@ public static class CapabilityKeyCatalog
             feature.MinimumEdition,
             feature.Description,
             Status: null)),
+    ];
+
+    /// <summary>
+    /// The deployable subset of <see cref="All"/> — every key a deployment profile may enable.
+    /// Keys carrying <see cref="ExperimentalStatus"/> are excluded: no route resolves to them,
+    /// so enabling one narrows a deployment to nothing served (every request 404s at
+    /// <c>UseDeploymentCapabilityProfile</c>) while still deriving a paid <c>requiredEdition</c>
+    /// from the key's edition qualifier. They stay in <see cref="All"/> because the vocabulary
+    /// is what the crosswalk artifact and honua-evidence resolve against; they are kept out of
+    /// deployment inputs because that is the only place their lack of enforcement is harmful.
+    /// </summary>
+    public static IReadOnlyList<CapabilityKeyDefinition> DeployableKeys { get; } =
+    [
+        .. All.Where(static capability =>
+            !string.Equals(capability.Status, ExperimentalStatus, StringComparison.Ordinal)),
     ];
 }

@@ -63,6 +63,20 @@ internal sealed class DeploymentCapabilityProfile
                 $"Unknown deployment profile capability key(s): {string.Join(", ", unknown)}.");
         }
 
+        // Descriptive keys name a surface in the vocabulary but no route resolves to one, so a
+        // profile that enables one narrows the deployment to nothing served: every request would
+        // 404 below in Invoke. Fail at configuration time with the reason instead.
+        var deployable = CapabilityKeyCatalog.DeployableKeys
+            .Select(static capability => capability.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var notDeployable = requested.Where(key => !deployable.Contains(key)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        if (notDeployable.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Deployment profile capability key(s) are descriptive-only and cannot be enabled: {string.Join(", ", notDeployable)}. " +
+                "They carry no runtime gate, so enabling one serves nothing.");
+        }
+
         var duplicates = requested.GroupBy(static key => key, StringComparer.Ordinal)
             .Where(static group => group.Count() > 1)
             .Select(static group => group.Key)
