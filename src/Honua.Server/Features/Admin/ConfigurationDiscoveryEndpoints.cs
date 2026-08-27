@@ -4,6 +4,7 @@
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -20,6 +21,7 @@ internal static class ConfigurationDiscoveryEndpoints
     public static void MapConfigurationDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/configuration")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Configuration")

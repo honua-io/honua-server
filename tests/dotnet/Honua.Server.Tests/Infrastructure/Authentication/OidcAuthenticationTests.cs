@@ -11,14 +11,17 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Tests;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
@@ -264,7 +267,8 @@ public class OidcAuthenticationTests
         string[]? roles = null,
         string issuer = TestIssuer,
         string audience = TestAudience,
-        int expiresInMinutes = 60)
+        int expiresInMinutes = 60,
+        string? tenantId = null)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -284,6 +288,11 @@ public class OidcAuthenticationTests
                 claims.Add(new Claim("roles", role));
                 claims.Add(new Claim(ClaimTypes.Role, role));
             }
+        }
+
+        if (tenantId is not null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
         }
 
         var token = new JwtSecurityToken(
@@ -650,7 +659,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"]);
+        var token = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -705,6 +714,461 @@ public class OidcAuthenticationTests
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
             _output.WriteLine($"Unexpected status {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+        }
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/version")]
+    [Endpoint("GET /api/v1/admin/capabilities")]
+    [Endpoint("GET /api/v1/admin/openapi.json")]
+    [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    [Endpoint("GET /docs/protocols.openapi.json")]
+    [Endpoint("GET /openapi.json")]
+    [Endpoint("GET /ogc/features/api")]
+    [Endpoint("GET /ogc/coverages/api")]
+    [Endpoint("GET /ogc/coverages/openapi.json")]
+    [Endpoint("GET /ogc/tiles/openapi.json")]
+    [Endpoint("GET /ogc/maps/openapi.json")]
+    [Endpoint("GET /ogc/styles/openapi.json")]
+    [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /stac/openapi.json")]
+    public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+
+        var endpointsByRoute = factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToLookup(endpoint => endpoint.RoutePattern.RawText);
+
+        foreach (var route in new[]
+        {
+            "/api/v{version:apiVersion}/admin/version",
+            "/api/v{version:apiVersion}/admin/capabilities",
+            "/api/v{version:apiVersion}/admin/openapi.json",
+            "/.well-known/oauth-protected-resource/mcp",
+            "/docs/protocols.openapi.json",
+            "/openapi.json",
+            "/ogc/features/api",
+            "/ogc/coverages/api",
+            "/ogc/coverages/openapi.json",
+            "/ogc/tiles/openapi.json",
+            "/ogc/maps/openapi.json",
+            "/ogc/styles/openapi.json",
+            "/ogc/processes/openapi.json",
+            "/stac/openapi.json"
+        })
+        {
+            var endpoint = Assert.Single(endpointsByRoute[route], endpoint =>
+                endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains(HttpMethod.Get.Method) == true);
+            Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/config")]
+    [Endpoint("POST /oauth/token")]
+    [Endpoint("GET /sharing/rest/oauth2/authorize")]
+    [Endpoint("POST /sharing/rest/oauth2/introspect")]
+    [Endpoint("GET /saml/metadata")]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /healthz/ready")]
+    [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /metrics")]
+    [Endpoint("GET /api/v1/metrics/health")]
+    [Endpoint("GET /monitoring/health/production")]
+    [Endpoint("GET /api/v1/admin/performance/database/query-cache/statistics")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/resources/tracking")]
+    [Endpoint("GET /api/v1/admin/tenants")]
+    [Endpoint("GET /api/v1/admin/license/status")]
+    [Endpoint("GET /api/v1/admin/configuration/discover")]
+    [Endpoint("GET /api/v1/admin/features")]
+    [Endpoint("GET /api/v1/admin/identity/providers")]
+    [Endpoint("GET /api/v1/admin/geocoding/providers")]
+    [Endpoint("GET /api/v1/admin/operations/geocoding/providers")]
+    [Endpoint("GET /api/v1/admin/geoprocessing/tools/usage-ranking")]
+    [Endpoint("POST /api/v1/admin/external-services/discover")]
+    [Endpoint("GET /api/v1/admin/federation/sources")]
+    [Endpoint("GET /api/v1/admin/observability/errors")]
+    [Endpoint("GET /api/v1/admin/observability/logs")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    [Endpoint("GET /hubs/admin")]
+    [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
+    [Endpoint("POST /api/mobile/exceptions")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/oauth-clients")]
+    [Endpoint("GET /api/v1/admin/oauth-scopes")]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("GET /api/v1/admin/rate-limits/status")]
+    [Endpoint("GET /api/v1/admin/cache/status")]
+    [Endpoint("GET /api/v1/admin/operations/cache/health")]
+    [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
+    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
+    [Endpoint("GET /samples/stac-ops")]
+    [Endpoint("GET /sharing/rest/info")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeStacOpsDemo"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+
+        var routeEndpoints = factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        var families = new (string Name, Func<string, bool> Matches)[]
+        {
+            ("admin authentication", route => route.StartsWith("/api/v{version:apiVersion}/admin/auth", StringComparison.Ordinal)),
+            ("mobile authentication", route => route.Equals("/oauth/token", StringComparison.Ordinal)),
+            ("Portal OAuth", route => route.StartsWith("/sharing/rest/oauth2/", StringComparison.Ordinal)),
+            ("SAML authentication", route => route.StartsWith("/saml/", StringComparison.Ordinal)),
+            ("health probes", route => route is "/healthz/live" or "/healthz/ready" or "/healthz/metrics"),
+            ("Prometheus", route => route.Equals("/metrics", StringComparison.Ordinal)),
+            ("metrics API", route => route.StartsWith("/api/v{version:apiVersion}/metrics/", StringComparison.Ordinal)),
+            ("production monitoring", route => route.StartsWith("/monitoring/", StringComparison.Ordinal)),
+            ("database performance", route => route.StartsWith("/api/v{version:apiVersion}/admin/performance/database/", StringComparison.Ordinal)),
+            ("enhanced performance", route => route.StartsWith("/api/v{version:apiVersion}/admin/performance/enhanced/", StringComparison.Ordinal)),
+            ("tenant lifecycle administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/tenants", StringComparison.Ordinal)),
+            ("license administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/license", StringComparison.Ordinal)),
+            ("configuration discovery", route => route.StartsWith("/api/v{version:apiVersion}/admin/configuration", StringComparison.Ordinal)),
+            ("feature overview", route => route.Equals("/api/v{version:apiVersion}/admin/features/", StringComparison.Ordinal)),
+            ("identity status", route => route.StartsWith("/api/v{version:apiVersion}/admin/identity", StringComparison.Ordinal)),
+            ("geocoding operations", route => route.StartsWith("/api/v{version:apiVersion}/admin/operations/geocoding", StringComparison.Ordinal)),
+            ("geoprocessing usage", route => route.StartsWith("/api/v{version:apiVersion}/admin/geoprocessing", StringComparison.Ordinal)),
+            ("external service discovery", route => route.StartsWith("/api/v{version:apiVersion}/admin/external-services", StringComparison.Ordinal)),
+            ("federation planning", route => route.StartsWith("/api/v{version:apiVersion}/admin/federation/sources", StringComparison.Ordinal)),
+            ("streaming operations", route => route.StartsWith("/api/v{version:apiVersion}/admin/operations/streaming", StringComparison.Ordinal)),
+            ("mobile exception ingestion", route => route.Equals("/api/mobile/exceptions", StringComparison.Ordinal)),
+            ("admin API keys", route => route.StartsWith("/api/v{version:apiVersion}/admin/api-keys", StringComparison.Ordinal)),
+            ("OAuth clients", route => route.StartsWith("/api/v{version:apiVersion}/admin/oauth-clients", StringComparison.Ordinal)),
+            ("OAuth scopes", route => route.StartsWith("/api/v{version:apiVersion}/admin/oauth-scopes", StringComparison.Ordinal)),
+            ("client-certificate trust", route => route.StartsWith("/api/v{version:apiVersion}/admin/security/client-certificates", StringComparison.Ordinal)),
+            ("rate-limit policy administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/rate-limits", StringComparison.Ordinal)),
+            ("admin realtime hub", route => route.Equals("/hubs/admin", StringComparison.Ordinal)),
+            ("hosted STAC demo", route => route.StartsWith("/samples/stac-ops", StringComparison.Ordinal)),
+            ("stateless GeometryServer", route => route.StartsWith("/rest/services/Utilities/Geometry/GeometryServer/", StringComparison.Ordinal))
+        };
+
+        foreach (var (name, endpoints) in families.Select(family =>
+                     (family.Name, routeEndpoints
+                         .Where(endpoint => family.Matches(endpoint.RoutePattern.RawText ?? string.Empty))
+                         .ToArray())))
+        {
+            Assert.True(endpoints.Length > 0, $"No endpoints were mapped for the {name} family.");
+            Assert.All(endpoints, endpoint =>
+                Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+        }
+
+        // These route prefixes are shared with tenant/data-backed endpoints, so pin only
+        // the deployment-global endpoint mappings rather than exempting the whole prefix.
+        var deploymentGlobalMixedEndpoints = new[]
+        {
+            "Get Geocoding Providers",
+            "Get Recent Errors",
+            "Get Telemetry Status",
+            "Get Migration Status",
+            "List Recent Server Logs",
+            "Get Cache Status",
+            "Get Cache Health",
+            "Get Cache Statistics",
+            "Get Redis Cache Metrics",
+            "ArcGIS Portal Sharing Info"
+        }.Select(displayName =>
+            Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
+        Assert.All(deploymentGlobalMixedEndpoints, endpoint =>
+            Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+
+        var deploymentGlobalGeocodingImport = Assert.Single(routeEndpoints, endpoint =>
+            endpoint.RoutePattern.RawText == "/api/v{version:apiVersion}/admin/geocoding/reference-data/import");
+        Assert.NotNull(deploymentGlobalGeocodingImport.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
+
+        var tenantBackedMixedEndpoints = new[] { "List Audit Log Entries", "List Operate Events" }
+            .Select(displayName =>
+                Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
+        Assert.All(tenantBackedMixedEndpoints, endpoint =>
+            Assert.Null(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+
+        var tenantBackedCacheInvalidations = new[]
+        {
+            "/api/v{version:apiVersion}/admin/cache/invalidate",
+            "/api/v{version:apiVersion}/admin/operations/cache/invalidate"
+        }.Select(route =>
+            Assert.Single(routeEndpoints, endpoint => endpoint.RoutePattern.RawText == route));
+        Assert.All(tenantBackedCacheInvalidations, endpoint =>
+            Assert.Null(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+
+        var markedAdminEndpoints = routeEndpoints.Where(endpoint =>
+        {
+            var route = endpoint.RoutePattern.RawText ?? string.Empty;
+            return endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null &&
+                endpoint.Metadata.GetMetadata<IAllowAnonymous>() is null &&
+                (route.StartsWith("/api/v{version:apiVersion}/admin/", StringComparison.Ordinal) ||
+                 route.StartsWith("/api/v{version:apiVersion}/metrics/", StringComparison.Ordinal) ||
+                 route.StartsWith("/monitoring/", StringComparison.Ordinal) ||
+                 route is "/metrics" or "/hubs/admin" or "/api/mobile/exceptions");
+        });
+
+        Assert.All(markedAdminEndpoints, endpoint =>
+            Assert.Contains(
+                endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                authorization => authorization.Policy == AuthenticationExtensions.AdminPolicy));
+    }
+
+    [UnitTest]
+    public void MapPrometheusEndpoint_PreservesPublicOneParameterOverload()
+    {
+        var method = typeof(Honua.ServiceDefaults.Extensions).GetMethod(
+            nameof(Honua.ServiceDefaults.Extensions.MapPrometheusEndpoint),
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+            binder: null,
+            types: [typeof(Microsoft.AspNetCore.Builder.WebApplication)],
+            modifiers: null);
+
+        Assert.NotNull(method);
+        Assert.Equal(typeof(Microsoft.AspNetCore.Builder.WebApplication), method.ReturnType);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/oauth2/authorize")]
+    [Endpoint("GET /saml/metadata")]
+    [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /metrics")]
+    [Endpoint("GET /api/v1/metrics/health")]
+    [Endpoint("GET /monitoring/health/production")]
+    [Endpoint("GET /api/v1/admin/performance/database/query-cache/statistics")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/resources/tracking")]
+    [Endpoint("GET /api/v1/admin/tenants")]
+    [Endpoint("GET /api/v1/admin/license/status")]
+    [Endpoint("GET /api/v1/admin/license/entitlements")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("GET /api/v1/admin/rate-limits/status")]
+    [Endpoint("GET /api/v1/admin/cache/status")]
+    [Endpoint("GET /api/v1/admin/operations/cache/health")]
+    [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
+    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
+    [Endpoint("GET /samples/stac-ops")]
+    [Endpoint("GET /samples/stac-ops/")]
+    [Endpoint("GET /sharing/rest/info")]
+    public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeStacOpsDemo"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        foreach (var request in new[]
+        {
+            "/sharing/rest/oauth2/authorize",
+            "/saml/metadata",
+            "/healthz/metrics",
+            "/metrics",
+            "/api/v1/metrics/health",
+            "/monitoring/health/production",
+            "/api/v1/admin/performance/database/query-cache/statistics",
+            "/api/v1/admin/performance/enhanced/resources/tracking",
+            "/api/v1/admin/tenants",
+            "/api/v1/admin/license/status",
+            "/api/v1/admin/license/entitlements",
+            "/api/v1/admin/security/client-certificates/profiles",
+            "/api/v1/admin/rate-limits/status",
+            "/api/v1/admin/cache/status",
+            "/api/v1/admin/operations/cache/health",
+            "/api/v1/admin/operations/cache/statistics",
+            "/api/v1/admin/operations/cache/redis",
+            "/samples/stac-ops",
+            "/samples/stac-ops/",
+            "/sharing/rest/info"
+        }.Select(route => new HttpRequestMessage(HttpMethod.Get, route)))
+        {
+            using (request)
+            {
+                request.Headers.Add("Authorization", $"Bearer {token}");
+                var response = await client.SendAsync(request);
+
+                Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+                Assert.NotEqual(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
+            }
+        }
+
+        using var importRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/v1/admin/geocoding/reference-data/import");
+        importRequest.Headers.Add("Authorization", $"Bearer {token}");
+        var importResponse = await client.SendAsync(importRequest);
+
+        Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, importResponse.StatusCode);
+        Assert.NotEqual(System.Net.HttpStatusCode.Forbidden, importResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/tenants")]
+    [Endpoint("GET /api/v1/admin/license/status")]
+    public async Task DeploymentGlobalAdministration_PreservesAdminAuthorization()
+    {
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["viewer"]);
+
+        async Task AssertAdminAuthorizationAsync(string route)
+        {
+            var unauthenticatedResponse = await client.GetAsync(route);
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, unauthenticatedResponse.StatusCode);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var nonAdminResponse = await client.SendAsync(request);
+
+            Assert.Equal(System.Net.HttpStatusCode.Forbidden, nonAdminResponse.StatusCode);
+        }
+
+        await AssertAdminAuthorizationAsync("/api/v1/admin/tenants");
+        await AssertAdminAuthorizationAsync("/api/v1/admin/license/status");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/capabilities")]
+    [Endpoint("GET /api/v1/admin/openapi.json")]
+    [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    [Endpoint("GET /docs/protocols.openapi.json")]
+    public async Task GlobalDiscoveryEndpoints_OidcEnabled_TenantlessValidBearer_ReturnOk()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        foreach (var route in new[]
+        {
+            "/api/v1/admin/capabilities",
+            "/api/v1/admin/openapi.json",
+            "/.well-known/oauth-protected-resource/mcp",
+            "/docs/protocols.openapi.json"
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var response = await client.SendAsync(request);
+
+            if (response.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                _output.WriteLine($"{route} returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            }
+
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /openapi.json")]
+    [Endpoint("GET /ogc/features/api")]
+    [Endpoint("GET /ogc/coverages/api")]
+    [Endpoint("GET /ogc/coverages/openapi.json")]
+    [Endpoint("GET /ogc/tiles/openapi.json")]
+    [Endpoint("GET /ogc/maps/openapi.json")]
+    [Endpoint("GET /ogc/styles/openapi.json")]
+    [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /stac/openapi.json")]
+    public async Task OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        foreach (var route in new[]
+        {
+            "/openapi.json",
+            "/ogc/features/api",
+            "/ogc/coverages/api",
+            "/ogc/coverages/openapi.json",
+            "/ogc/tiles/openapi.json",
+            "/ogc/maps/openapi.json",
+            "/ogc/styles/openapi.json",
+            "/ogc/processes/openapi.json",
+            "/stac/openapi.json"
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, route);
+            request.Headers.Add("Authorization", $"Bearer {token}");
+            var response = await client.SendAsync(request);
+
+            if (response.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                _output.WriteLine($"{route} returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            }
+
+            Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.NotEqual(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /docs")]
+    public void ApiDocumentationEndpoints_AreMarkedTenantIndependent()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+
+        var documentationEndpoints = factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/docs", StringComparison.Ordinal) == true)
+            .ToArray();
+
+        Assert.NotEmpty(documentationEndpoints);
+        Assert.All(documentationEndpoints, endpoint =>
+            Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /docs")]
+    public async Task ApiDocumentationEndpoint_OidcEnabled_TenantlessValidBearer_ReturnsOk()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["ServeApiDocs"] = "true",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/docs");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        if (response.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            _output.WriteLine($"/docs returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
         }
 
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
@@ -832,7 +1296,9 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: [$"non-admin-{Guid.NewGuid():N}"]);
+        var token = GenerateTestJwtToken(
+            roles: [$"non-admin-{Guid.NewGuid():N}"],
+            tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -871,7 +1337,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var validBearer = GenerateTestJwtToken(roles: ["admin"]);
+        var validBearer = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act - invalid API key is present, valid bearer should still succeed
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -921,7 +1387,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"]);
+        var token = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
@@ -1501,7 +1967,7 @@ public class OidcAuthenticationTests
 
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"], issuer: oktaIssuer);
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: oktaIssuer, tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -1531,7 +1997,7 @@ public class OidcAuthenticationTests
 
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer);
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer, tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -1563,7 +2029,11 @@ public class OidcAuthenticationTests
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
         // Token uses the API audience (not the ClientId) as the audience claim
-        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer, audience: apiAudience);
+        var token = GenerateTestJwtToken(
+            roles: ["admin"],
+            issuer: auth0Issuer,
+            audience: apiAudience,
+            tenantId: "test-tenant");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");

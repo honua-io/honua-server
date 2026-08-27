@@ -13,6 +13,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -42,6 +43,7 @@ internal static partial class SamlEndpoints
 
         var group = endpoints.MapGroup("/saml")
             .WithTags("Identity", "SAML")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .AllowAnonymous()
             // #2978: SAML SP authentication is an Enterprise entitlement (FeatureCatalog
             // .SamlAuthenticationKey; ADR-0024 Identity Governance tier). Gated at the group

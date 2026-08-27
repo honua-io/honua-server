@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 
@@ -56,6 +57,7 @@ internal static class CoreEndpoints
             .WithTags(Tag)
             .WithName("OgcProcessesOpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Processes")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcOpenApi")
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound);

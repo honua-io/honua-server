@@ -6,6 +6,7 @@ using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -43,6 +44,7 @@ internal static partial class RateLimitEndpoints
     public static void MapRateLimitEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/rate-limits")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Rate Limits")

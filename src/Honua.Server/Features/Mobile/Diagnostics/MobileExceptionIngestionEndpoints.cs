@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -29,6 +30,7 @@ internal static class MobileExceptionIngestionEndpoints
             .WithName("UploadMobileExceptionReport")
             .WithSummary("Upload a sanitized mobile exception report")
             .WithTags("Mobile", "Diagnostics")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireAdminAuthorization();
     }
 

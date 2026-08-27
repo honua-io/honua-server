@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.SignalR;
@@ -87,6 +88,7 @@ internal static class AdminRealtimeHubExtensions
     public static IEndpointConventionBuilder MapAdminRealtimeHub(this IEndpointRouteBuilder endpoints)
         => endpoints.MapHub<AdminHub>(AdminRealtimeContract.HubPath)
             .WithDisplayName("Admin realtime hub")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireAdminAuthorization();
 }
 

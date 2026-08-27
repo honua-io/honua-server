@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
 using Microsoft.AspNetCore.Http;
@@ -46,6 +47,7 @@ internal static class AdminAuthEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin Auth")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .AllowAnonymous();
 
         _ = group.MapGet("/config", HandleGetAuthConfig)

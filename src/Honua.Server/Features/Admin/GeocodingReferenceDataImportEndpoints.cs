@@ -6,6 +6,7 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Http.Features;
@@ -33,6 +34,7 @@ internal static class GeocodingReferenceDataImportEndpoints
     public static void MapGeocodingReferenceDataImportEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/geocoding")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Geocoding")

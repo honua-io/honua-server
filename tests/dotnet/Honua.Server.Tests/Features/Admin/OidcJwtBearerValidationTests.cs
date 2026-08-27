@@ -80,6 +80,9 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                // This fixture isolates OIDC trust and tenant routing. Keep the
+                // independently tested admin mTLS gate from short-circuiting first.
+                builder.UseSetting("Authentication:ClientCertificates:Mode", "Optional");
                 // Point the real JwtBearer pipeline at the fake IdP: discovery + JWKS come from
                 // WireMock, so signature/issuer/audience/expiry validation runs against real
                 // RSA-signed tokens rather than a stub.
@@ -116,21 +119,29 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/oidc/providers")]
     public async Task AdminEndpoint_ValidJwt_IsAccepted()
     {
-        // Assert on the authentication/authorization boundary these tests exist to prove
-        // (401 = the JwtBearer trust chain rejected the token) rather than a literal 200:
-        // AdminPolicy's role assertion is a separate RBAC concern from token *validity*, and
-        // 403 here (reached only for an authenticated principal) already proves the token's
-        // signature/issuer/audience/expiry were all accepted by the real JwtBearer pipeline —
-        // exactly what "accept-valid" needs to demonstrate, without conflating it with the
-        // (correctly independent) admin-role authorization gate.
+        // This token carries the admin role but no tenant claim. A 200 proves tenant
+        // resolution preserved the tenant-independent control plane instead of
+        // short-circuiting every generic OIDC bearer before endpoint authorization.
         var response = await SendWithTokenAsync(CreateToken());
         var body = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized,
-            "a correctly signed, non-expired token with the right issuer/audience must be accepted by the JwtBearer pipeline. Body: {0}", body);
-        response.StatusCode.Should().BeOneOf(
-            [HttpStatusCode.OK, HttpStatusCode.Forbidden],
-            "the request must reach authorization (not fail at authentication) for a fully valid token. Body: {0}", body);
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "a valid admin bearer without tenant claims must reach the tenant-independent admin control plane. Body: {0}",
+            body);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task AdminEndpoint_VersionOnePointZeroValidJwt_IsAccepted()
+    {
+        var response = await SendWithTokenAsync(
+            CreateToken(),
+            "/api/v1.0/admin/oidc/providers");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "every accepted spelling of API version 1.0 must reach the same explicitly tenant-independent endpoint. Body: {0}",
+            body);
     }
 
     [IntegrationTest]
@@ -195,9 +206,9 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
             "an unauthenticated request must not reach the admin endpoint");
     }
 
-    private async Task<HttpResponseMessage> SendWithTokenAsync(string token)
+    private async Task<HttpResponseMessage> SendWithTokenAsync(string token, string route = AdminRoute)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, AdminRoute);
+        using var request = new HttpRequestMessage(HttpMethod.Get, route);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await _fixture.Client.SendAsync(request);
     }

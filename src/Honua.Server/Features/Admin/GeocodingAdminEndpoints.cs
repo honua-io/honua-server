@@ -4,6 +4,7 @@
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +20,7 @@ internal static class GeocodingAdminEndpoints
     public static void MapGeocodingAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/geocoding")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Geocoding")

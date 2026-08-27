@@ -10,6 +10,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Middleware;
 using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
@@ -31,6 +32,7 @@ internal static class ProductionMonitoringEndpoints
     {
         var group = app.MapGroup("/monitoring")
             .WithTags("Monitoring")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireAdminAuthorization()
             .ExcludeFromDescription();
 

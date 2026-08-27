@@ -62,6 +62,13 @@ public sealed record JobSecurityContext(
 public static class JobSecurityContextClaimTypes
 {
     /// <summary>
+    /// Framework-derived identifier used only to re-query the configured live membership source.
+    /// This remains separate from <see cref="JobSecurityContext.PrincipalId"/>, which may carry an
+    /// issuer-qualified canonical actor for durable attribution and cross-request identity checks.
+    /// </summary>
+    public const string MembershipPrincipalId = "honua:membership-principal-id";
+
+    /// <summary>
     /// Marks a captured principal whose role membership is authoritatively owned by the
     /// configured live <c>IPrincipalMembershipSource</c> — a managed SCIM/OIDC-provisioned
     /// identity rather than a federated identity the source does not mirror.

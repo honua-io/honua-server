@@ -10,6 +10,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -46,9 +47,11 @@ internal static class AdminEndpoints
         // Configuration documentation endpoint (self-documenting)
         _ = adminGroup.MapMethods("/config", [HttpMethods.Get], HandleGetConfiguration)
             .WithDisplayName("Get Configuration Documentation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
         _ = adminGroup.MapMethods("/config", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
-            .WithDisplayName("Get Configuration Documentation Method Not Allowed");
+            .WithDisplayName("Get Configuration Documentation Method Not Allowed")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         // Runtime OpenAPI endpoint for admin/control-plane contract. The document is
         // public API documentation (the same bundled admin-api.json snapshot committed
@@ -58,6 +61,7 @@ internal static class AdminEndpoints
         _ = adminGroup.MapMethods("/openapi.json", [HttpMethods.Get], HandleGetOpenApiSpec)
             .WithDisplayName("Get Admin OpenAPI Specification")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .AllowAnonymous();
         _ = adminGroup.MapMethods("/openapi.json", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
             .WithDisplayName("Get Admin OpenAPI Specification Method Not Allowed");

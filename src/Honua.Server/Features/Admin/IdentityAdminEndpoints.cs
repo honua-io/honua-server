@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -26,6 +27,7 @@ internal static class IdentityAdminEndpoints
     public static void MapIdentityAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/identity")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Identity")

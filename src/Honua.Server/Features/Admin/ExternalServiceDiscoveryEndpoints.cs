@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -17,6 +18,7 @@ internal static class ExternalServiceDiscoveryEndpoints
     public static void MapExternalServiceDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/external-services")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "External Services")

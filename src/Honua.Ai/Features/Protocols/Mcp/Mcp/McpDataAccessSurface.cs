@@ -457,6 +457,25 @@ internal sealed class McpDataAccessSurface
             return SuccessResponse(request.Id, authResult, McpJsonContext.Default.McpToolsCallResult);
         }
 
+        try
+        {
+            await McpAuthorizationHelper.EnsureBearerDataTenantAsync(httpContext, "tools/call")
+                .ConfigureAwait(false);
+        }
+        catch (GeoprocessingAuthorizationException ex)
+        {
+            McpTelemetry.ToolCallCount.Add(
+                1,
+                new KeyValuePair<string, object?>("tool_name", McpTelemetry.UnknownToolName),
+                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
+                new KeyValuePair<string, object?>("workflow_family", McpTelemetry.WorkflowFamily.Unknown));
+            McpLog.AuthorizationDenied(_logger, "tools/call", authenticated: true);
+            return SuccessResponse(
+                request.Id,
+                McpToolHelpers.ErrorResult(ex),
+                McpJsonContext.Default.McpToolsCallResult);
+        }
+
         McpToolsCallParams? parameters;
         try
         {
@@ -655,6 +674,21 @@ internal sealed class McpDataAccessSurface
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
             McpLog.AuthorizationDenied(_logger, "resources/read", authenticated: false);
             return ErrorResponse(request.Id, McpErrorMapper.Unauthenticated());
+        }
+
+        try
+        {
+            await McpAuthorizationHelper.EnsureBearerDataTenantAsync(httpContext, "resources/read")
+                .ConfigureAwait(false);
+        }
+        catch (GeoprocessingAuthorizationException ex)
+        {
+            McpTelemetry.ResourceReadCount.Add(
+                1,
+                new KeyValuePair<string, object?>("resource_family", McpTelemetry.ResourceFamily.Unknown),
+                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+            McpLog.AuthorizationDenied(_logger, "resources/read", authenticated: true);
+            return ErrorResponse(request.Id, McpErrorMapper.Map(ex));
         }
 
         McpResourcesReadParams? parameters;
