@@ -1049,7 +1049,12 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         if (expression is PropertyReference propertyReference)
         {
             var field = context.TryGetField(propertyReference.PropertyName);
-            if (field is null || field.Value.Type != MetadataV2FieldType.Json)
+            if (field is null)
+            {
+                throw UnknownFilterFieldException.ForProperty(propertyReference.PropertyName);
+            }
+
+            if (field.Value.Type != MetadataV2FieldType.Json)
             {
                 throw new ArgumentException($"Array predicates require JSON array fields. '{propertyReference.PropertyName}' is not JSON.");
             }

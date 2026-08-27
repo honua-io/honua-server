@@ -169,9 +169,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// An unknown path is still a 404 for HEAD — the rewrite must not turn a miss into a match.
     /// </summary>
     [IntegrationTest]
-    [Operation(Operations.GetMetadata)]
-    [Protocol(TestProtocols.OgcApiFeatures)]
-    [Endpoint("GET /ogc/features")]
     public async Task Head_UnknownPath_Returns404NotFound()
     {
         var client = _fixture.CreateClient();
