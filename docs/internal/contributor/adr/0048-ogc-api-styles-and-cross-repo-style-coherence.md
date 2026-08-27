@@ -133,10 +133,13 @@ API before the storage is fully first-class:
   promote `manage-styles` to full POST/DELETE; enable one-style-many-layers reuse. The Phase 1
   API contract is preserved.
 - **Phase 3: cross-repo rollout.** geospatial-grpc `StyleRef` (proto-first) → SDK styleId clients
-  → **honua-console** styleId picker + editor → MCP `honua://styles/{styleId}` resources/tools.
-  The style editor is re-homed to **honua-console** (the active admin/console UI home;
-  `honua-server-admin` is archived/dead, so ADR-0007's original `honua-server-admin#80` routing is
-  stale). The console editor is **dual-mode**: MapLibre/Maputnik visual authoring **and**
+  → **honua-console** styleId picker + embedded Studio editor → MCP `honua://styles/{styleId}`
+  resources/tools. The editor is implemented in **honua-studio**
+  ([honua-studio#22](https://github.com/honua-io/honua-studio/issues/22)) and that Studio component
+  is hosted by **honua-console** ([honua-console#324](https://github.com/honua-io/honua-console/issues/324));
+  these are complementary responsibilities, not a re-home into Console. (ADR-0007's original
+  `honua-server-admin#80` routing is stale either way — `honua-server-admin` is archived/dead.)
+  The Studio editor is **dual-mode**: MapLibre/Maputnik visual authoring **and**
   Esri-renderer (`drawingInfo`) authoring for Esri-familiar users, both writing the one canonical
   style over `/ogc/styles` (the server round-trips MapLibre ↔ Esri per ADR-0002). Mobile annotation
   styling stays intentionally orthogonal (documented, not unified).
@@ -170,9 +173,10 @@ API before the storage is fully first-class:
 ## Related ADRs
 - **ADR-0002** (MapLibre as Canonical Style Format) — canonical-format decision stands; its
   one-style-per-layer *storage* framing is superseded by the first-class model as the target.
-- **ADR-0007** (Embedded Maputnik Style Editor) — the editor is re-homed to **honua-console**
-  (not the archived `honua-server-admin`) and is **dual-mode**: MapLibre/Maputnik + Esri-renderer
-  (`drawingInfo`) authoring. The console styleId picker / editor consumes `/ogc/styles`.
+- **ADR-0007** (Embedded Maputnik Style Editor) — the editor is implemented in **honua-studio**
+  and embedded by **honua-console** (not owned by Console, and not the archived
+  `honua-server-admin`); it is **dual-mode**: MapLibre/Maputnik + Esri-renderer (`drawingInfo`)
+  authoring. The Console styleId picker and the embedded Studio editor consume `/ogc/styles`.
 - **ADR-0040** (Metadata v2 Canonical Graph) — this ADR resolves its open design question #8;
   the producer + storage for `Type=Style` / `StyleResourceIds` is the Phase 2 epic.
 
