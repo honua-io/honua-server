@@ -6,12 +6,14 @@ using Honua.TestKit;
 namespace Honua.Server.Tests;
 
 /// <summary>
-/// Collection definition for Server tests that share a Redis container.
-/// Some Redis-backed tests also create database-backed web app fixtures, so
-/// this collection is isolated from other collections to avoid shared seed
-/// setup contention.
+/// Per-assembly collection definition for tests that share a Redis fixture.
 /// </summary>
-[CollectionDefinition("Redis", DisableParallelization = true)]
+/// <remarks>
+/// xUnit discovers collection definitions per test assembly, so each consuming assembly
+/// requires this definition. Keep this canonical pattern aligned across test assemblies;
+/// the shared collection name and fixture live in <see cref="RedisFixture"/>.
+/// </remarks>
+[CollectionDefinition(RedisFixture.CollectionName, DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class RedisCollection : ICollectionFixture<RedisFixture>
 {
