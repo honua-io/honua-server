@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
 import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("generate-protocol-harness-fragment.py")
+REPOSITORY_ROOT = SCRIPT.parents[2]
+CONTRACT = REPOSITORY_ROOT / "docs" / "gis" / "data" / "protocol-harness-assignments.v1.json"
+WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "protocol-harness-certification.yml"
 SPEC = importlib.util.spec_from_file_location("protocol_harness_fragment", SCRIPT)
 module = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -46,6 +51,40 @@ def contract():
 
 
 class ProtocolHarnessFragmentTests(unittest.TestCase):
+    def test_workflow_executes_every_governed_project_in_sorted_evidence_order(self):
+        value = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        expected_projects = sorted({
+            module.test_project(test_id)
+            for assignment in value["assignments"]
+            for test_id in assignment["test_ids"]
+        })
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        invocations = re.findall(
+            r"^\s+run_project (\S+) (\S+) code_(\S+)$",
+            workflow,
+            flags=re.MULTILINE,
+        )
+
+        self.assertEqual(expected_projects, [project for project, _slug, _output in invocations])
+        expected_evidence = [(slug, output) for _project, slug, output in invocations]
+        self.assertEqual(
+            [(output, code) for output, code in re.findall(r'echo "exit_(\S+)=\$\{code_(\S+)\}"', workflow)],
+            [(output, output) for _slug, output in expected_evidence],
+        )
+        self.assertEqual(
+            re.findall(
+                r'--trx evidence/(\S+)\.trx --trx-exit-code "\$\{\{ steps\.tests\.outputs\.exit_(\S+) \}\}"',
+                workflow,
+            ),
+            expected_evidence,
+        )
+        codes = re.search(r"codes=\((.*?)\n\s*\)", workflow, flags=re.DOTALL)
+        self.assertIsNotNone(codes)
+        self.assertEqual(
+            re.findall(r'"\$\{\{ steps\.tests\.outputs\.exit_(\S+) \}\}"', codes.group(1)),
+            [output for _slug, output in expected_evidence],
+        )
+
     def test_filter_contains_every_unique_owned_test(self):
         value = contract()
         value["assignments"].append({**value["assignments"][0], "operation": "GET /other"})
@@ -54,6 +93,45 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             "FullyQualifiedName~ExampleTests.Get_ReturnsDocument",
             module.test_filter(value, "Honua.Server.Tests"),
         )
+
+    def test_filter_routes_mutation_scenarios_to_their_protocol_projects(self):
+        value = contract()
+        value["assignments"] = [
+            {
+                **value["assignments"][0],
+                "test_ids": ["OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState"],
+            },
+            {
+                **value["assignments"][0],
+                "test_ids": ["Wfs20MutationScenarioTests.Transaction_InsertUpdateReplaceDelete_RoundTripsEachState"],
+            },
+            {
+                **value["assignments"][0],
+                "test_ids": ["FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState"],
+            },
+        ]
+
+        filters = {
+            project: module.test_filter(value, project)
+            for project in (
+                "Honua.Protocols.OgcApi.Tests",
+                "Honua.Protocols.OgcClassic.Tests",
+                "Honua.Protocols.GeoServices.Tests",
+            )
+        }
+        expected_project_by_class = {
+            "OgcFeaturesMutationScenarioTests": "Honua.Protocols.OgcApi.Tests",
+            "Wfs20MutationScenarioTests": "Honua.Protocols.OgcClassic.Tests",
+            "FeatureServerMutationScenarioTests": "Honua.Protocols.GeoServices.Tests",
+        }
+        for class_name, expected_project in expected_project_by_class.items():
+            with self.subTest(class_name=class_name):
+                self.assertIn(class_name, filters[expected_project])
+                for project, test_filter in filters.items():
+                    if project != expected_project:
+                        self.assertNotIn(class_name, test_filter)
+        with self.assertRaisesRegex(ValueError, "no governed tests belong"):
+            module.test_filter(value, "Honua.Server.Tests")
 
     def test_exact_pass_is_bound_to_test_ids(self):
         with tempfile.TemporaryDirectory() as directory:

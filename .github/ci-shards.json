@@ -604,6 +604,7 @@
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExceptionMappingTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerGetEstimatesTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerH3TileTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMutationScenarioTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerServiceQueryTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerSpatialLimitsTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerSpatialReferenceTests.cs",

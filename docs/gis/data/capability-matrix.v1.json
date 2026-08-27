@@ -765,7 +765,7 @@
       "category": "Editing",
       "edition": "Pro",
       "entryCount": 7,
-      "provingTestCount": 94,
+      "provingTestCount": 104,
       "maturity": {
         "implemented": 7
       },
@@ -1815,7 +1815,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 256,
+      "provingTestCount": 264,
       "maturity": {
         "implemented": 21
       },
@@ -2057,7 +2057,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 110,
+      "provingTestCount": 112,
       "maturity": {
         "implemented": 2
       },
