@@ -57,10 +57,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-verify:
-    name: Build and verify AOT serving images
+  # Impact detection is its own job so the three variant builds can fan out in
+  # parallel below. It is the only leg that needs full history for the
+  # base..head diff; the build legs take a shallow checkout of the context.
+  detect:
+    name: Detect serving-image boundary impact
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 10
+    outputs:
+      selected: ${{ steps.impact.outputs.selected }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -74,10 +79,22 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+
+          # `selected` is the JSON array the build matrix filters on. Emitting a
+          # list rather than three booleans keeps the matrix leg's condition to a
+          # single membership test.
+          emit() {
+            local selected="" variant
+            for variant in "$@"; do
+              selected="${selected:+$selected,}\"$variant\""
+            done
+            echo "selected=[$selected]" >> "$GITHUB_OUTPUT"
+            echo "Selected serving variants: [$selected]"
+          }
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "generic=true" >> "$GITHUB_OUTPUT"
-            echo "lambda=true" >> "$GITHUB_OUTPUT"
-            echo "functions=true" >> "$GITHUB_OUTPUT"
+            # A manual run has no base ref to diff against, so it proves all three.
+            emit generic lambda functions
             exit 0
           fi
 
@@ -111,78 +128,89 @@ jobs:
             esac
           done <<< "$changed"
 
-          echo "generic=$generic" >> "$GITHUB_OUTPUT"
-          echo "lambda=$lambda" >> "$GITHUB_OUTPUT"
-          echo "functions=$functions" >> "$GITHUB_OUTPUT"
+          chosen=()
+          if [[ "$generic" == "true" ]]; then chosen+=(generic); fi
+          if [[ "$lambda" == "true" ]]; then chosen+=(lambda); fi
+          if [[ "$functions" == "true" ]]; then chosen+=(functions); fi
+          emit ${chosen[@]+"${chosen[@]}"}
+
+  build-and-verify:
+    name: Build and verify ${{ matrix.description }}
+    needs: detect
+    if: needs.detect.outputs.selected != '[]'
+    runs-on: ubuntu-latest
+    # Still 180, even though a leg now builds ONE variant instead of three in
+    # series. A cold native-AOT build of a single variant has been observed not
+    # to fit in 90 minutes (nightly-container-build's build-lambda-aot carries
+    # the same ceiling for the same reason), and a timeout is self-perpetuating:
+    # buildx exports `cache-to` only after a successful build, so a killed leg
+    # leaves the next run just as cold. The ceiling is a bound, not a budget.
+    timeout-minutes: 180
+    strategy:
+      # Each leg is independent evidence for a different production image, so
+      # one variant's failure must not cancel and hide the others.
+      fail-fast: false
+      matrix:
+        include:
+          - variant: generic
+            description: canonical native-AOT serving image
+            dockerfile: docker/Dockerfile.aot
+            tag: honua-server:aot-boundary
+            # Cache scopes are unchanged from the serial job on purpose: warm
+            # `pr-*-boundary` caches survive this refactor.
+            cache_scope: pr-aot-boundary
+          - variant: lambda
+            description: Lambda native-AOT serving image
+            dockerfile: docker/Dockerfile.lambda.aot
+            tag: honua-server:lambda-aot-boundary
+            cache_scope: pr-lambda-aot-boundary
+          - variant: functions
+            description: Azure Functions native-AOT serving image
+            dockerfile: docker/Dockerfile.functions.aot
+            tag: honua-server:functions-aot-boundary
+            cache_scope: pr-functions-aot-boundary
+    env:
+      # `matrix` is not available in a job-level `if`, so selection is applied
+      # per step. An unselected leg costs one shallow checkout instead of the
+      # 45+ minutes its build would take - cheaper than rebuilding this include
+      # table as JSON inside `detect` and hiding the variant set from review.
+      IMPACTED: ${{ contains(fromJSON(needs.detect.outputs.selected), matrix.variant) }}
+    steps:
+      # No `fetch-depth: 0` here: only `detect` diffs base..head. A build leg
+      # needs the build context, not the history.
+      - uses: actions/checkout@v7.0.1
+        if: env.IMPACTED == 'true'
 
       - name: Set up Docker Buildx
+        if: env.IMPACTED == 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
-      - name: Build canonical native-AOT serving image
-        if: steps.impact.outputs.generic == 'true'
+      - name: Build ${{ matrix.description }}
+        if: env.IMPACTED == 'true'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
-          file: docker/Dockerfile.aot
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           load: true
-          tags: honua-server:aot-boundary
+          tags: ${{ matrix.tag }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=honua-aot-amd64
-          cache-to: type=gha,mode=max,scope=honua-aot-amd64
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
           provenance: false
           sbom: false
 
-      - name: Verify canonical serving-image contents
-        if: steps.impact.outputs.generic == 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:aot-boundary
-
-      - name: Build Lambda native-AOT serving image
-        if: steps.impact.outputs.lambda == 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.lambda.aot
-          platforms: linux/amd64
-          load: true
-          tags: honua-server:lambda-aot-boundary
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=pr-lambda-aot-boundary
-          cache-to: type=gha,mode=max,scope=pr-lambda-aot-boundary
-          provenance: false
-          sbom: false
-
-      - name: Verify Lambda serving-image contents
-        if: steps.impact.outputs.lambda == 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:lambda-aot-boundary
-
-      - name: Build Azure Functions native-AOT serving image
-        if: steps.impact.outputs.functions == 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.functions.aot
-          platforms: linux/amd64
-          load: true
-          tags: honua-server:functions-aot-boundary
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=honua-functions-aot-amd64
-          cache-to: type=gha,mode=max,scope=honua-functions-aot-amd64
-          provenance: false
-          sbom: false
-
-      - name: Verify Azure Functions serving-image contents
-        if: steps.impact.outputs.functions == 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:functions-aot-boundary
+      - name: Verify ${{ matrix.description }} contents
+        if: env.IMPACTED == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image ${{ matrix.tag }}
 
       - name: Smoke-test canonical serving image
-        if: steps.impact.outputs.generic == 'true'
+        # Only the canonical image serves HTTP; the Lambda and Azure Functions
+        # variants are invoked through their host runtimes and have no liveness
+        # endpoint to probe.
+        if: env.IMPACTED == 'true' && matrix.variant == 'generic'
         shell: bash
         run: |
           set -euo pipefail
@@ -208,5 +236,5 @@ jobs:
           exit 1
 
       - name: Clean up serving-image smoke container
-        if: always() && steps.impact.outputs.generic == 'true'
+        if: always() && env.IMPACTED == 'true' && matrix.variant == 'generic'
         run: docker rm -f honua-aot-boundary || true
