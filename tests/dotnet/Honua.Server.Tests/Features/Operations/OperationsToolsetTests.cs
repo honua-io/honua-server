@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Health;
@@ -14,6 +17,8 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -70,6 +75,46 @@ public sealed class OperationsToolsetTests
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
         descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
+    }
+
+    [UnitTest]
+    public async Task LaneB_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var snapshot = await catalog.GetSnapshotAsync(CancellationToken.None);
+        var laneBDescriptors = snapshot.Operations
+            .Where(operation => AdminApiOperationCatalog.Definitions.Any(definition => definition.OperationId == operation.OperationId))
+            .ToArray();
+        var publishedNames = (await source.GetToolsAsync(CancellationToken.None))
+            .Select(static tool => tool.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        laneBDescriptors.Should().HaveCount(AdminApiOperationCatalog.Definitions.Count);
+        foreach (var descriptor in laneBDescriptors)
+        {
+            publishedNames.Should().Contain(PublishedOperationTool.ProjectName(descriptor.OperationId));
+        }
+    }
+
+    [UnitTest]
+    public void LaneB_DescriptorSchemas_AreProjectedFromAdminApiComponents()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminApiOperationCatalog.Definitions)
+        {
+            var operation = AdminApiOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            AdminApiOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId,
+                "every lane-B descriptor must be built from an operation in admin-api.json");
+        }
     }
 
     [UnitTest]
