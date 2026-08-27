@@ -70,9 +70,23 @@ jobs:
           echo "requested_cut=${normalized_cut}" >> "$GITHUB_OUTPUT"
 
       - name: Set up .NET
+        # NOT routed through ./.github/actions/setup-dotnet-ci: this job checks the
+        # repo out under producer/ for source-host certification isolation, so the
+        # root-relative composite path does not exist, and hashFiles() — which always
+        # resolves against the workspace root — would not find the key inputs either.
+        # The NuGet cache the composite provides is wired inline below instead.
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('producer/Directory.Packages.props', 'producer/NuGet.config', 'producer/global.json') }}-${{ hashFiles('producer/**/*.csproj') }}
+          restore-keys: |
+            ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('producer/Directory.Packages.props', 'producer/NuGet.config', 'producer/global.json') }}-
+            ${{ github.repository }}-${{ runner.os }}-nuget-
 
       - name: Authenticate the pinned private package feed
         env:

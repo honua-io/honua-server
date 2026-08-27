@@ -78,6 +78,26 @@ jobs:
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7.0.1
+      # NOT routed through ./.github/actions/setup-dotnet-ci — deliberate, and it
+      # applies to every job in this workflow (see `baseline` and `reused-consumer`).
+      #
+      # This workflow is a measuring instrument, not a build. `summary` gates on
+      # `p90_test_start_ms` and `rounded_runner_minutes` against thresholds
+      # predeclared in .github/server-test-reuse-benchmark.json, and
+      # summarize-server-test-reuse-benchmark.py discards the in-job timers in
+      # favour of the HOSTED job interval from the Actions API
+      # (`bind_hosted_intervals`). Every step between hosted job start and
+      # `test_started_epoch_ms` lands in p90, and the post-job cache save lands in
+      # the billed minutes. Adding a NuGet cache step therefore changes what the
+      # benchmark measures, asymmetrically across the two arms it is comparing:
+      # `producer`/`baseline` restore and would get faster, `reused-consumer`
+      # restores nothing and would only get slower. Those two moves push
+      # `billed_ok`/`p90_ok` (strict `<` comparisons) in opposite directions and
+      # can report a reuse regression that does not exist in the code under test.
+      #
+      # Each job here also does its own `dotnet nuget update source` below, so the
+      # composite's `Configure GitHub Packages` step would be redundant as well.
+      # Keep this workflow on raw setup-dotnet so its numbers stay comparable.
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -175,6 +195,9 @@ jobs:
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7.0.1
+      # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
+      # on the `producer` job. Caching NuGet here would speed up only the baseline
+      # arm and bias the gated comparison.
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -239,6 +262,12 @@ jobs:
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7.0.1
+      # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
+      # on the `producer` job. This job restores nothing: it unpacks the producer
+      # payload and runs `dotnet test --no-build --no-restore`
+      # (scripts/ci/benchmark-server-test-transfer.sh), so `restore_ms` is 0 for
+      # every consumer mode. A NuGet cache step here would be pure overhead
+      # charged to this arm's p90 and billed minutes.
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
