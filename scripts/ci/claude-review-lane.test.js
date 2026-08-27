@@ -107,7 +107,10 @@ test('an exhausted review posts the explicit fallback without widening token per
   assert.match(source, /steps\.claude\.outcome == 'failure'/);
   assert.match(source, /\.subtype == "error_max_turns"/);
   assert.match(source, /review exhausted its turn budget at .* turns for an .*line diff; Codex attestation or a human @claude review re-request can satisfy Review Gate/);
-  assert.match(source, /steps\.exhausted\.outputs\.max_turns == 'true'/);
+  assert.match(
+    source,
+    /if: failure\(\) && steps\.claude\.outcome == 'failure' && steps\.exhausted\.outputs\.max_turns == 'true'/,
+  );
 });
 
 test('no comment event can cancel a review already in flight', () => {

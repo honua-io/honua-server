@@ -414,7 +414,7 @@ jobs:
             > review-input/exhausted-body.md
 
       - name: Publish reviewer turn-budget fallback
-        if: steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
+        if: failure() && steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
         uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
         with:
           # Use the same App identity and append-only write surface as the main
